@@ -25,32 +25,117 @@ resource "aws_secretsmanager_secret" "open_ai_key" {
   name = "OPEN_AI_KEY"
 }
 
+resource "aws_secretsmanager_secret" "slack_scorekeeper_token" {
+  name = "SLACK_SCOREKEEPER_TOKEN"
+}
+
+variable "slack_scorekeeper_token" {
+  description = "Slack Scorekeeper Token"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "slack_scorekeeper_token" {
+  secret_id     = aws_secretsmanager_secret.slack_scorekeeper_token.id
+  secret_string = var.slack_scorekeeper_token
+}
+
+resource "aws_secretsmanager_secret" "slack_scorekeeper_webhook_url" {
+  name = "SLACK_SCOREKEEPER_WEBHOOK_URL"
+}
+
+variable "slack_scorekeeper_webhook_url" {
+  description = "Slack Scorekeeper Webhook Url"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "slack_scorekeeper_webhook_url" {
+  secret_id     = aws_secretsmanager_secret.slack_scorekeeper_webhook_url.id
+  secret_string = var.slack_scorekeeper_webhook_url
+}
+
+resource "aws_secretsmanager_secret" "twilio_phone_number" {
+  name = "TWILIO_PHONE_NUMBER"
+}
+
+variable "twilio_phone_number" {
+  description = "Twilio Phone Number"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "twilio_phone_number" {
+  secret_id     = aws_secretsmanager_secret.twilio_phone_number.id
+  secret_string = var.twilio_phone_number
+}
+
+resource "aws_secretsmanager_secret" "twilio_auth_token" {
+  name = "TWILIO_AUTH_TOKEN"
+}
+
+variable "twilio_auth_token" {
+  description = "Twilio AuthToken"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "twilio_auth_token" {
+  secret_id     = aws_secretsmanager_secret.twilio_auth_token.id
+  secret_string = var.twilio_auth_token
+}
+
+resource "aws_secretsmanager_secret" "twilio_account_sid" {
+  name = "TWILIO_ACCOUNT_SID"
+}
+
+variable "twilio_account_sid" {
+  description = "Twilio Account SID"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "twilio_account_sid" {
+  secret_id     = aws_secretsmanager_secret.twilio_account_sid.id
+  secret_string = var.twilio_account_sid
+}
+
 variable "open_ai_key" {
   description = "API key for Open AI"
   type        = string
 }
+
 
 resource "aws_secretsmanager_secret_version" "open_ai_key" {
   secret_id     = aws_secretsmanager_secret.open_ai_key.id
   secret_string = var.open_ai_key
 }
 
-resource "aws_secretsmanager_secret" "smart_things_pat" {
-  name = "SMART_THINGS_PAT"
-}
-
-variable "smart_things_pat" {
-  description = "Personal access token for smart things"
-  type        = string
-}
-
-resource "aws_secretsmanager_secret_version" "smart_things_pat" {
-  secret_id     = aws_secretsmanager_secret.smart_things_pat.id
-  secret_string = var.smart_things_pat
-}
-
 resource "aws_ecr_repository" "core" {
   name                 = "core"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "authenticator" {
+  name                 = "authenticator"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+
+resource "aws_ecr_repository" "texter" {
+  name                 = "texter"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "scorekeeper" {
+  name                 = "scorekeeper"  
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -67,8 +152,26 @@ resource "aws_ecr_repository" "fount_of_erebos" {
   }
 }
 
+resource "aws_ecr_repository" "crystal_crisis" {
+  name                 = "crystal-crisis"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 resource "aws_ecr_repository" "ear" {
   name                 = "ear"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "trivai" {
+  name                 = "trivai"  
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -98,8 +201,8 @@ module "ecs" {
 
   services = {
     poltergeist_core = {
-      cpu    = 1024
-      memory = 4096
+      cpu    = 2048
+      memory = 5120
 
       # Container definition(s)
       container_definitions = {
@@ -119,7 +222,7 @@ module "ecs" {
         }
 
         "fount-of-erebos" = {
-          cpu       = 512
+          cpu       = 256
           memory    = 1024
           essential = true
           secrets = [{
@@ -137,16 +240,111 @@ module "ecs" {
           ]
         }
 
-        "ear" = {
+        "texter" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name = "TWILIO_AUTH_TOKEN",
+            valueFrom = "${aws_secretsmanager_secret.twilio_auth_token.arn}"
+          }, {
+            name = "TWILIO_ACCOUNT_SID",
+            valueFrom = "${aws_secretsmanager_secret.twilio_account_sid.arn}"
+          }, {
+            name = "GUESS_HOW_MANY_PHONE_NUMBER",
+            valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
+          }]
+          image     = "${aws_ecr_repository.texter.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "texter"
+              containerPort = 8084
+              hostPort      = 8084
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "trivai" = {
           cpu       = 256
           memory    = 1024
           essential = true
-          image     = "${aws_ecr_repository.ear.repository_url}:latest"
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name = "SENDGRID_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.sendgrid_api_key.arn}"
+          }, {
+            name = "GUESS_HOW_MANY_PHONE_NUMBER",
+            valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
+          }]
+          image     = "${aws_ecr_repository.trivai.repository_url}:latest"
           port_mappings = [
             {
-              name          = "ear"
+              name          = "trivai"
               containerPort = 8082
               hostPort      = 8082
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "authenticator" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          image     = "${aws_ecr_repository.authenticator.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "authenticator"
+              containerPort = 8089
+              hostPort      = 8089
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "scorekeeper" = {
+          cpu       = 256
+          memory    = 1024
+          essential = true
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name = "SLACK_SCOREKEEPER_WEBHOOK_URL",
+            valueFrom = "${aws_secretsmanager_secret.slack_scorekeeper_webhook_url.arn}"
+          }]
+          image     = "${aws_ecr_repository.scorekeeper.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "scorekeeper"
+              containerPort = 8086
+              hostPort      = 8086
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "crystal-crisis" = {
+          cpu       = 256
+          memory    = 1024
+          essential = true
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          image     = "${aws_ecr_repository.crystal_crisis.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "crystal-crisis"
+              containerPort = 8091
+              hostPort      = 8091
               protocol      = "tcp"
             }
           ]
@@ -301,4 +499,91 @@ module "vpc" {
   single_nat_gateway = true
 
   tags = local.tags
+}
+
+resource "aws_secretsmanager_secret" "db_password" {
+  name = "DB_PASSWORD"
+}
+
+variable "db_password" {
+  description = "Password for da db"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "db_password" {
+  secret_id     = aws_secretsmanager_secret.db_password.id
+  secret_string = var.db_password
+}
+
+resource "aws_secretsmanager_secret" "sendgrid_api_key" {
+  name = "SENDGRID_API_KEY"
+}
+
+variable "sendgrid_api_key" {
+  description = "key for the sendgrid"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "sendgrid_api_key" {
+  secret_id     = aws_secretsmanager_secret.sendgrid_api_key.id
+  secret_string = var.sendgrid_api_key
+}
+
+resource "aws_subnet" "main" {
+  vpc_id     = module.vpc.vpc_id
+  cidr_block = "10.0.92.0/28"
+  availability_zone = "us-east-1a"
+}
+
+resource "aws_subnet" "secondary" {
+  vpc_id     = module.vpc.vpc_id
+  cidr_block = "10.0.184.0/28"
+  availability_zone = "us-east-1b"
+}
+
+resource "aws_db_subnet_group" "main" {
+  name       = "main"
+  subnet_ids = [aws_subnet.main.id, aws_subnet.secondary.id]
+
+  tags = {
+    Name = "main"
+  }
+}
+
+resource "aws_security_group" "db_sg" {
+  name        = "db_sg"
+  description = "Allow inbound traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description = "PostgreSQL"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_db_instance" "poltergeist-db" {
+  identifier        = "poltergeist"
+  engine            = "postgres"
+  engine_version    = "15.2"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  db_name           = "poltergeist"
+  username          = "db_user"
+  password          = var.db_password
+  skip_final_snapshot = true
+  db_subnet_group_name = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+
+  parameter_group_name = "default.postgres15"
+  backup_retention_period = 1
 }

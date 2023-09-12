@@ -4,4 +4,17 @@ use (
     ./proteus
     ./fount-of-erebos
     ./core
+    ./trivai
+    ./texter
+    ./scorekeeper
+    ./authenticator
+    ./crystal-crisis-api
+    ./pkg/db
+    ./pkg/models
+    ./pkg/deep_priest
+    ./pkg/slack
+    ./pkg/util
+    ./pkg/twilio
+    ./pkg/email
+    ./pkg/texter
 )
