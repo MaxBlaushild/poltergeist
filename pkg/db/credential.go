@@ -3,7 +3,7 @@ package db
 import (
 	"context"
 
-	"github.com/MaxBlaushild/authenticator/internal/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"gorm.io/gorm"
 )
 

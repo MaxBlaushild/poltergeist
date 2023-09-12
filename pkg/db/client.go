@@ -13,13 +13,15 @@ import (
 type client struct {
 	db                    *gorm.DB
 	scoreHandle           *scoreHandler
-	userhandle            *userHandler
+	userHandle            *userHandle
 	questionSetHandle     *questionSetHandle
 	matchHandle           *matchHandle
 	userSubmissionHandle  *userSubmissionHandle
 	questionHandle        *questionHandle
 	howManyQuestionHandle *howManyQuestionHandle
 	howManyAnswerHandle   *howManyAnswerHandle
+	challengeHandle       *challengeHandle
+	credentialHandle      *credentialHandle
 }
 
 type ClientConfig struct {
@@ -50,13 +52,15 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	return &client{
 		db:                    db,
 		scoreHandle:           &scoreHandler{db: db},
-		userhandle:            &userHandler{db: db},
+		userHandle:            &userHandle{db: db},
 		questionSetHandle:     &questionSetHandle{db: db},
 		matchHandle:           &matchHandle{db: db},
 		userSubmissionHandle:  &userSubmissionHandle{db: db},
 		questionHandle:        &questionHandle{db: db},
 		howManyQuestionHandle: &howManyQuestionHandle{db: db},
 		howManyAnswerHandle:   &howManyAnswerHandle{db: db},
+		challengeHandle:       &challengeHandle{db: db},
+		credentialHandle:      &credentialHandle{db: db},
 	}, err
 }
 
@@ -66,10 +70,6 @@ func (c *client) Score() ScoreHandle {
 
 func (c *client) Migrate(ctx context.Context, m ...interface{}) error {
 	return c.db.WithContext(ctx).AutoMigrate(m...)
-}
-
-func (c *client) User() UserHandle {
-	return c.userhandle
 }
 
 func (c *client) QuestionSet() QuestionSetHandle {
@@ -94,4 +94,15 @@ func (c *client) HowManyAnswer() HowManyAnswerHandle {
 
 func (c *client) HowManyQuestion() HowManyQuestionHandle {
 	return c.howManyQuestionHandle
+}
+
+func (c *client) User() UserHandle {
+	return c.userHandle
+}
+func (c *client) Challenge() ChallengeHandle {
+	return c.challengeHandle
+}
+
+func (c *client) Credential() CredentialHandle {
+	return c.credentialHandle
 }

@@ -16,20 +16,13 @@ type DbClient interface {
 	Question() QuestionHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
+	Challenge() ChallengeHandle
+	Credential() CredentialHandle
 }
 
 type ScoreHandle interface {
 	Upsert(ctx context.Context, username string) (*models.Score, error)
 	FindAll(ctx context.Context) ([]models.Score, error)
-}
-
-type UserHandle interface {
-	Insert(ctx context.Context, userID string, phoneNumber string) (*models.User, error)
-	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
-	Verify(ctx context.Context, id uint) error
-	FindByID(ctx context.Context, id uint) (*models.User, error)
-	FindAll(ctx context.Context) ([]models.User, error)
-	FindByUserID(ctx context.Context, userID string) (*models.User, error)
 }
 
 type QuestionHandle interface {
@@ -63,4 +56,26 @@ type HowManyQuestionHandle interface {
 	MarkDone(ctx context.Context, howManyQuestionID uint) error
 	FindTodaysQuestion(ctx context.Context) (*models.HowManyQuestion, error)
 	FindById(ctx context.Context, id uint) (*models.HowManyQuestion, error)
+}
+
+type UserHandle interface {
+	Insert(ctx context.Context, name string, phoneNumber string) (*models.User, error)
+	FindByID(ctx context.Context, id uint) (*models.User, error)
+	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
+	FindUsersByIDs(ctx context.Context, userIDs []uint) ([]models.User, error)
+	FindAll(ctx context.Context) ([]models.User, error)
+	Delete(ctx context.Context, userID uint) error
+	DeleteAll(ctx context.Context) error
+}
+
+type ChallengeHandle interface {
+	Insert(ctx context.Context, challenge string, userID uint) error
+	Find(ctx context.Context, challenge string) (*models.Challenge, error)
+}
+
+type CredentialHandle interface {
+	Insert(ctx context.Context, credentialID string, publicKey string, userID uint) (*models.Credential, error)
+	FindAll(ctx context.Context) ([]models.Credential, error)
+	Delete(ctx context.Context, credentialID uint) error
+	DeleteAll(ctx context.Context) error
 }

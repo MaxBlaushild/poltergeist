@@ -1,4 +1,4 @@
-module github.com/MaxBlaushild/trivai
+module github.com/MaxBlaushild/poltergeist/trivai
 
 go 1.19
 

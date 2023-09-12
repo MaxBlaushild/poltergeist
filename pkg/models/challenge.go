@@ -4,7 +4,7 @@ import "gorm.io/gorm"
 
 type Challenge struct {
 	gorm.Model
-	AuthUser   AuthUser
+	AuthUser   User
 	AuthUserID uint
 	Challenge  string
 }

@@ -17,4 +17,5 @@ use (
     ./pkg/twilio
     ./pkg/email
     ./pkg/texter
+    ./pkg/encoding
 )

@@ -10,7 +10,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
-	"github.com/MaxBlaushild/trivai/internal/trivai"
+	"github.com/MaxBlaushild/poltergeist/trivai/internal/trivai"
 	"github.com/gin-gonic/gin"
 )
 
@@ -36,16 +36,10 @@ func NewServer(
 		texterClient: texterClient,
 	}
 
-	// r.POST("/trivai/register", s.register)
-	// r.POST("/trivai/login", s.login)
 	r.POST("/trivai/matches", s.createMatch)
 	r.POST("/trivai/question_sets/:questionSetID/answer", s.submitAnswers)
-	r.POST("/trivai/verify", s.verifyEmail)
 	r.GET("/trivai/questions", s.getQuestions)
 	r.GET("/trivai/users/:userId", s.getUser)
-
-	// r.GET("/trivai/users/:userID/matches/current", s.getCurrentMatch)
-	// r.GET("/trivai/users/:userID/question_sets/:questionSetID/user_submission", s.getUserSubmissionForQuestionSet)
 
 	r.POST("/")
 	r.POST("/trivai/receive-sms", s.receiveSms)
@@ -103,7 +97,7 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 	correctness, offBy := s.triviaClient.GradeHowManyQuestion(ctx, guess, question.HowMany)
 
 	answer := models.HowManyAnswer{
-		UserID:            user.UserID,
+		UserID:            strconv.FormatUint(uint64(user.ID), 10),
 		HowManyQuestionID: question.ID,
 		Correctness:       correctness,
 		OffBy:             offBy,
@@ -124,18 +118,26 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 	})
 }
 
-func (s *Server) getUser(ctx *gin.Context) {
-	userId := ctx.Param("userId")
+func (s *Server) getUser(c *gin.Context) {
+	userId := c.Param("userId")
 
-	user, err := s.dbClient.User().FindByUserID(ctx, userId)
+	uint64Val, err := strconv.ParseUint(userId, 10, 64) // Base 10, BitSize 64
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{
+		c.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(c, uint(uint64Val))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
 			"message": "no user found",
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, user)
 }
 
 func (s *Server) subscribeToHowManyQuestions(ctx *gin.Context) {
@@ -362,96 +364,6 @@ func (s *Server) getCurrentMatch(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, match)
-}
-
-// func (s *Server) register(c *gin.Context) {
-// 	var registerRequest struct {
-// 		Name     string `json:"name" binding:"required"`
-// 		Email    string `json:"email" binding:"required"`
-// 		Password string `json:"password" binding:"required"`
-// 	}
-
-// 	if err := c.Bind(&registerRequest); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"message": "question must be included",
-// 		})
-// 		return
-// 	}
-
-// 	user, err := s.dbClient.User().Insert(
-// 		c,
-// 		registerRequest.Name,
-// 		registerRequest.Email,
-// 		registerRequest.Password,
-// 	)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"message": "email already exists",
-// 		})
-// 		return
-// 	}
-
-// 	if err := s.emailClient.SendVerificationEmail(user.ID, &models.User{
-// 		Email: registerRequest.Email,
-// 		Name:  registerRequest.Name,
-// 	}); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"message": err.Error(),
-// 		})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"message": "sweet!"})
-// }
-
-// func (s *Server) login(c *gin.Context) {
-// 	var loginRequest struct {
-// 		Email    string `json:"email" binding:"required"`
-// 		Password string `json:"password" binding:"required"`
-// 	}
-
-// 	if err := c.Bind(&loginRequest); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{
-// 			"message": "question must be included",
-// 		})
-// 		return
-// 	}
-
-// 	user, err := s.dbClient.User().FindByEmail(c, loginRequest.Email)
-// 	if err != nil {
-// 		c.JSON(http.StatusNotFound, gin.H{
-// 			"message": "no user for email",
-// 		})
-// 		return
-// 	}
-
-// 	if user.PasswordMatches(loginRequest.Password) {
-// 		c.JSON(http.StatusOK, user)
-// 	} else {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"message": "fuck off!"})
-// 	}
-// }
-
-func (s *Server) verifyEmail(c *gin.Context) {
-	var verifyEmailRequest struct {
-		UserID uint `json:"userId"`
-	}
-
-	if err := c.Bind(&verifyEmailRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	if err := s.dbClient.User().Verify(c, verifyEmailRequest.UserID); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "no user for id",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "You're all set!"})
 }
 
 func (s *Server) createMatch(c *gin.Context) {

@@ -3,7 +3,7 @@ package models
 import (
 	"fmt"
 
-	"github.com/MaxBlaushild/authenticator/internal/encoding"
+	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"gorm.io/gorm"
@@ -13,7 +13,7 @@ type Credential struct {
 	gorm.Model
 	CredentialID string // base64url
 	PublicKey    string // base64url
-	AuthUser     AuthUser
+	AuthUser     User
 	AuthUserID   uint
 }
 

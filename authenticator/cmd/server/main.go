@@ -7,9 +7,9 @@ import (
 	"strconv"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
-	"github.com/MaxBlaushild/authenticator/internal/db"
-	"github.com/MaxBlaushild/authenticator/internal/encoding"
-	"github.com/MaxBlaushild/authenticator/internal/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -38,7 +38,7 @@ func main() {
 
 	if err := dbClient.Migrate(
 		ctx,
-		&models.AuthUser{},
+		&models.User{},
 		&models.Challenge{},
 		&models.Credential{},
 	); err != nil {
