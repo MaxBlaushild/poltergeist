@@ -13,8 +13,8 @@ type Credential struct {
 	gorm.Model
 	CredentialID string // base64url
 	PublicKey    string // base64url
-	AuthUser     User
-	AuthUserID   uint
+	User         User
+	UserID       uint
 }
 
 func (c *Credential) ToWebauthnCredential() (*webauthn.Credential, error) {

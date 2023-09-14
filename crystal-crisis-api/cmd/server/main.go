@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/MaxBlaushild/poltergeist/crystal-crisis-api/internal/auth"
 	"github.com/MaxBlaushild/poltergeist/crystal-crisis-api/internal/config"
-	"github.com/MaxBlaushild/poltergeist/crystal-crisis-api/internal/db"
-	"github.com/MaxBlaushild/poltergeist/crystal-crisis-api/internal/models"
-	"github.com/MaxBlaushild/poltergeist/crystal-crisis-api/internal/texter"
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
 )
 

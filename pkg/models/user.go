@@ -12,8 +12,9 @@ import (
 type User struct {
 	gorm.Model
 	Name        string       `json:"name"`
-	PhoneNumber string       `json:"phoneNumber"`
+	PhoneNumber string       `json:"phoneNumber" gorm:"unique"`
 	Credentials []Credential `json:"credentials"`
+	Active      bool         `json:"active"`
 }
 
 func (user *User) WebAuthnID() []byte {
@@ -55,4 +56,8 @@ func (user *User) WebAuthnCredentials() []webauthn.Credential {
 	}
 
 	return credentials
+}
+
+func (u *User) TableName() string {
+	return "geist_users"
 }

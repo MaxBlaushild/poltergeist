@@ -1,6 +1,6 @@
 .PHONY: dev
 dev:
-	go run ./cmd/server/main.go --config-name localdev
+	go run ./cmd/server/main.go --config-name local
 
 PHONY: ecr-push
 ecr-push:

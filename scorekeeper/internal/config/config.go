@@ -33,7 +33,7 @@ type loadConfigParams struct {
 
 func ParseFlagsAndGetConfig() (*Config, error) {
 	var params loadConfigParams
-	flag.StringVar(&params.Name, "config-name", "local", "The name of the config file.")
+	flag.StringVar(&params.Name, "config-name", "live", "The name of the config file.")
 	flag.StringVar(&params.Type, "config-type", "env", "The type of the config file.")
 	flag.StringVar(&params.Path, "config-path", ".", "The path of the config file.")
 	flag.Parse()

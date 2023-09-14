@@ -19,6 +19,7 @@ type PublicConfig struct {
 	RpID          string `mapstructure:"RP_ID"`
 	RpOrigin      string `mapstructure:"RP_ORIGIN"`
 	RpDisplayName string `mapstructure:"RP_DISPLAY_NAME"`
+	PhoneNumber   string `mapstructure:"PHONE_NUMBER"`
 }
 
 type Config struct {
@@ -34,7 +35,7 @@ type loadConfigParams struct {
 
 func ParseFlagsAndGetConfig() (*Config, error) {
 	var params loadConfigParams
-	flag.StringVar(&params.Name, "config-name", "local", "The name of the config file.")
+	flag.StringVar(&params.Name, "config-name", "live", "The name of the config file.")
 	flag.StringVar(&params.Type, "config-type", "env", "The type of the config file.")
 	flag.StringVar(&params.Path, "config-path", ".", "The path of the config file.")
 	flag.Parse()

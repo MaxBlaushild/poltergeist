@@ -10,9 +10,11 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/pkg/errors"
 )
 
 func main() {
@@ -39,8 +41,9 @@ func main() {
 	if err := dbClient.Migrate(
 		ctx,
 		&models.User{},
-		&models.Challenge{},
 		&models.Credential{},
+		&models.Challenge{},
+		&models.TextVerificationCode{},
 	); err != nil {
 		panic(err)
 	}
@@ -55,6 +58,138 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	texterClient := texter.NewTexterClient()
+
+	r.POST("/authenticator/text/verification-code", func(c *gin.Context) {
+		var requestBody struct {
+			PhoneNumber string `json:"phoneNumber" binding:"required"`
+			AppName     string `json:"appName" binding:"required"`
+		}
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		code, err := dbClient.TextVerificationCode().Insert(c, requestBody.PhoneNumber)
+		if err != nil {
+			c.JSON(500, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if err := texterClient.Text(&texter.Text{
+			Body: fmt.Sprintf("%s is your %s verification code", code.Code, requestBody.AppName),
+			To:   requestBody.PhoneNumber,
+			From: cfg.Public.PhoneNumber,
+		}); err != nil {
+			c.JSON(500, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"message": "all goody",
+		})
+	})
+
+	r.GET("/authenticator/users/:phoneNumber", func(c *gin.Context) {
+		phoneNumber := c.Param("phoneNumber")
+
+		user, err := dbClient.User().FindByPhoneNumber(c, phoneNumber)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, user)
+	})
+
+	r.POST("/authenticator/text/login", func(c *gin.Context) {
+		var requestBody struct {
+			PhoneNumber string `json:"phoneNumber" binding:"required"`
+			Code        string `json:"code" binding:"required"`
+		}
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		code, err := dbClient.TextVerificationCode().Find(c, requestBody.PhoneNumber, requestBody.Code)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if err := dbClient.TextVerificationCode().MarkUsed(ctx, code.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		user, err := dbClient.User().FindByPhoneNumber(ctx, requestBody.PhoneNumber)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, user)
+	})
+
+	r.POST("/authenticator/text/register", func(c *gin.Context) {
+		var requestBody struct {
+			PhoneNumber string `json:"phoneNumber" binding:"required"`
+			Code        string `json:"code" binding:"required"`
+			Name        string `json:"name"`
+		}
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		code, err := dbClient.TextVerificationCode().Find(c, requestBody.PhoneNumber, requestBody.Code)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": errors.Wrap(err, "text verification code finding error").Error(),
+			})
+			return
+		}
+
+		if err := dbClient.TextVerificationCode().MarkUsed(ctx, code.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "text verification code marking error").Error(),
+			})
+			return
+		}
+
+		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "inserting user error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, user)
+	})
 
 	r.POST("/authenticator/nuke", func(c *gin.Context) {
 		if err := dbClient.Credential().DeleteAll(c); err != nil {
@@ -152,8 +287,6 @@ func main() {
 			return
 		}
 
-		fmt.Println(getUsersRequest)
-
 		users, err := dbClient.User().FindUsersByIDs(c, getUsersRequest.UserIDs)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
@@ -163,7 +296,7 @@ func main() {
 		c.JSON(200, users)
 	})
 
-	r.POST("/authenticator/registration-options", func(ctx *gin.Context) {
+	r.POST("/authenticator/webauthn/registration-options", func(ctx *gin.Context) {
 		var registerOptionsRequest struct {
 			Name        string `json:"name" binding:"required"`
 			PhoneNumber string `json:"phoneNumber" binding:"required"`
@@ -207,7 +340,7 @@ func main() {
 		ctx.JSON(200, options)
 	})
 
-	r.POST("/authenticator/register", func(c *gin.Context) {
+	r.POST("/authenticator/webauthn/register", func(c *gin.Context) {
 		response, err := protocol.ParseCredentialCreationResponseBody(c.Request.Body)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
@@ -252,7 +385,7 @@ func main() {
 		c.JSON(200, user)
 	})
 
-	r.POST("/authenticator/login-options", func(c *gin.Context) {
+	r.POST("/authenticator/webauthn/login-options", func(c *gin.Context) {
 		var loginOptions struct {
 			PhoneNumber string `json:"phoneNumber" binding:"required"`
 		}
@@ -290,7 +423,7 @@ func main() {
 		c.JSON(200, options)
 	})
 
-	r.POST("/authenticator/login", func(c *gin.Context) {
+	r.POST("/authenticator/webauthn/login", func(c *gin.Context) {
 		response, err := protocol.ParseCredentialRequestResponseBody(c.Request.Body)
 		if err != nil {
 			c.JSON(400, gin.H{
@@ -327,24 +460,3 @@ func main() {
 
 	r.Run(":8089")
 }
-
-// func LoginHandler(c *gin.Context) {
-// 	// Typically, retrieve the user first
-// 	user := &User{
-// 		ID:       1,
-// 		Username: "exampleUser",
-// 		// ... and other fields
-// 	}
-
-// 	// Start authentication
-// 	options, sessionData, err := w.BeginLogin(user)
-// 	if err != nil {
-// 		c.JSON(500, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	// Store sessionData, e.g., in a session store or a database.
-// 	// ...
-
-// 	c.JSON(200, options)
-// }

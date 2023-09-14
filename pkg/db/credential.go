@@ -15,7 +15,7 @@ func (h *credentialHandle) Insert(ctx context.Context, credentialID string, publ
 	credential := models.Credential{
 		CredentialID: credentialID,
 		PublicKey:    publicKey,
-		AuthUserID:   userID,
+		UserID:       userID,
 	}
 
 	if err := h.db.WithContext(ctx).Create(&credential).Error; err != nil {

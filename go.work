@@ -18,4 +18,5 @@ use (
     ./pkg/email
     ./pkg/texter
     ./pkg/encoding
+    ./pkg/auth
 )

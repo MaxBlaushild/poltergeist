@@ -17,7 +17,7 @@ func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string
 		PhoneNumber: phoneNumber,
 	}
 
-	if err := h.db.WithContext(ctx).Create(&user).Error; err != nil {
+	if err := h.db.WithContext(ctx).Model(&models.User{}).Create(&user).Error; err != nil {
 		return nil, err
 	}
 
