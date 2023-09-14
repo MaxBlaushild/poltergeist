@@ -1,0 +1,77 @@
+input {
+  background-color: #191e1d;
+  color: white;
+  font-family: 'Jost';
+  height: 50px;
+  box-sizing: border-box;
+  font-size: 20px;
+  line-height: 18px;
+  padding: 26px;
+  border: none;
+  border-radius: 8px;
+}
+
+.Subscribe__inputGroup {
+  display: flex;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+input:focus {
+  outline: none !important;
+  border: 1px solid #00bbb0;
+}
+
+.Subscribe__button {
+  color: white;
+  border: none;
+  height: 50px;
+  border-radius: 8px;
+  font-family: Jost;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 26px;
+  padding: 10px 20px;
+}
+
+.Button__disabled {
+  background-color: #9c9c9c;
+}
+
+.Button__enabled {
+  background-color: #00bbb0;
+}
+
+.Subscribe {
+  background-color: #292f30;
+  border-radius: 16px;
+  padding: 48px;
+}
+
+.Subscribe__Title {
+  margin-bottom: 4px;
+}
+
+.Subscribe__Script {
+  font-size: 30px;
+  color: white;
+  line-height: 46px;
+  margin-top: 4px;
+}
+
+@media screen and (max-width: 760px) {
+  .Subscribe__inputGroup {
+    flex-direction: column;
+  }
+
+  .Subscribe__button {
+    width: 100%;
+    display: block;
+  }
+}
+
+.Subscribe__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

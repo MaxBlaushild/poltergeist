@@ -1,0 +1,36 @@
+.Stats__answer {
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 38px;
+  color: #00bbb0;
+  text-align: center;
+  width: 100%;
+  margin: 4px;
+}
+
+.Stats__divider {
+  width: 80%;
+  height: 1px;
+  margin: auto;
+  background: white;
+  margin-top: 7px;
+  margin-bottom: 7px;
+}
+
+.Stats__guess {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 29px;
+  text-align: center;
+  width: 100%;
+  margin: 4px;
+}
+
+.Stats__offBy {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 23px;
+  text-align: center;
+  width: 100%;
+  margin: 4px;
+}

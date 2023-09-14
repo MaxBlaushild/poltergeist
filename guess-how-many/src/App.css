@@ -1,0 +1,102 @@
+.App {
+  text-align: center;
+  background-color: #1d1e21;
+  height: 100vh;
+  color: white;
+  text-align: left;
+}
+
+.App__container {
+  width: 960px;
+  margin: auto;
+  padding-top: 21px;
+  padding-bottom: 48px;
+}
+
+h2 {
+  font-weight: 500;
+  font-style: normal;
+  font-size: 26px;
+  margin-bottom: 10px;
+}
+
+h3 {
+  font-weight: 400;
+  font-style: normal;
+  color: #9c9c9c;
+  font-size: 16px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+h4 {
+  font-weight: 400;
+  font-style: normal;
+  color: #9c9c9c;
+  font-size: 16px;
+  margin-top: 0px;
+  margin-bottom: 0px;
+}
+
+.GradeRow {
+  display: flex;
+}
+
+.Rotated {
+  transform: rotate(270deg);
+}
+
+.Card {
+  background-color: #292f30;
+  border-radius: 16px;
+  padding: 48px;
+}
+
+.App__content {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.App__Header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+@media screen and (max-width: 760px) {
+  .App__container {
+    margin: 32px;
+    margin-top: 0px;
+    width: unset;
+    box-sizing: border-box;
+  }
+
+  .Card {
+    padding: 30px;
+  }
+
+  .App__mobile-hidden {
+    display: none !important;
+  }
+
+  h4 {
+    font-size: 13px;
+  }
+
+  .App__content {
+    gap: 12px;
+  }
+}
+
+@media screen and (min-width: 760px) {
+  .App__desktop-hidden {
+    display: none !important;
+  }
+}
+
+.App__text-center {
+  text-align: center;
+}

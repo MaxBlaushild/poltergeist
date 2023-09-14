@@ -1,0 +1,45 @@
+.Grade {
+  margin-right: 8px;
+  width: 100%;
+  max-width: 632px;
+  box-sizing: border-box;
+}
+
+.Grade__question {
+  font-size: 36px;
+  color: white;
+  font-weight: 400;
+  line-height: 46px;
+  margin-top: 4px;
+}
+
+.Grade__answer {
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 38px;
+  color: #00bbb0;
+  margin-bottom: 10px;
+}
+
+.Grade__divider {
+  width: 236px;
+  height: 1px;
+  left: 288px;
+  top: 447px;
+  background: white;
+}
+
+.Grade__guess {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 29px;
+  margin-top: 15px;
+  margin-bottom: 12px;
+}
+
+.Grade__offBy {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 23px;
+  margin-top: 0px;
+}

@@ -1,0 +1,54 @@
+.Guess__question {
+  font-size: 36px;
+  color: white;
+  font-weight: 400;
+  line-height: 46px;
+  margin-top: 4px;
+}
+
+.Guess__input {
+  background-color: #191e1d;
+  color: white;
+  font-family: 'Jost';
+  height: 60px;
+  max-width: 364px;
+  box-sizing: border-box;
+  font-size: 20px;
+  line-height: 26px;
+  width: calc(100% - 60px);
+  padding-left: 26px;
+  border: none;
+  border-radius: 8px 0px 0px 8px;
+}
+
+.Guess__input:focus {
+  outline: none !important;
+  border: 1px solid #00bbb0;
+}
+
+.Guess__button {
+  background-color: #00bbb0;
+  height: 60px;
+  width: 60px;
+  padding: 0px;
+  border: none;
+  box-sizing: border-box;
+  position: relative;
+  top: 0;
+  float: right;
+  border-radius: 0px 8px 8px 0px;
+}
+
+.Guess__guesser {
+  width: 100%;
+  max-width: 424px;
+  margin: auto;
+  height: 60px;
+}
+
+@media screen and (max-width: 760px) {
+  .Guess__question {
+    font-size: 20px;
+    line-height: 26px;
+  }
+}
