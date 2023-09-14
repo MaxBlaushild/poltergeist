@@ -8,7 +8,13 @@ type HowManyAnswer struct {
 	HowManyQuestionID uint            `json:"howManyQuestionId"`
 	Answer            int             `json:"answer"`
 	Guess             int             `json:"guess"`
-	Correctness       float64         `json:"correctness"`
 	OffBy             int             `json:"offBy"`
-	UserID            string          `json:"userId" gorm:"index"`
+	Correctness       float64         `json:"correctness"`
+	User              User            `json:"user"`
+	UserID            *uint           `json:"userId"`
+	EphemeralUserID   *string         `json:"ephemeralUserId"`
+}
+
+func (h *HowManyAnswer) TableName() string {
+	return "how_many_as"
 }

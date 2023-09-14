@@ -26,7 +26,6 @@ func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string
 
 func (h *userHandle) FindByID(ctx context.Context, id uint) (*models.User, error) {
 	var user models.User
-
 	if err := h.db.WithContext(ctx).Preload("Credentials").First(&user, id).Error; err != nil {
 		return nil, err
 	}
@@ -36,7 +35,6 @@ func (h *userHandle) FindByID(ctx context.Context, id uint) (*models.User, error
 
 func (h *userHandle) FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error) {
 	var user models.User
-
 	if err := h.db.WithContext(ctx).Preload("Credentials").Where(&models.User{PhoneNumber: phoneNumber}).First(&user).Error; err != nil {
 		return nil, err
 	}

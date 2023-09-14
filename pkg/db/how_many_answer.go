@@ -11,12 +11,25 @@ type howManyAnswerHandle struct {
 	db *gorm.DB
 }
 
-func (h *howManyAnswerHandle) FindByQuestionIDAndUserID(ctx context.Context, id uint, userID string) (*models.HowManyAnswer, error) {
+func (h *howManyAnswerHandle) FindByQuestionIDAndUserID(ctx context.Context, id uint, userID uint) (*models.HowManyAnswer, error) {
 	howManyAnswer := models.HowManyAnswer{}
 
 	if err := h.db.WithContext(ctx).Where(&models.HowManyAnswer{
 		HowManyQuestionID: id,
-		UserID:            userID,
+		UserID:            &userID,
+	}).First(&howManyAnswer).Error; err != nil {
+		return nil, err
+	}
+
+	return &howManyAnswer, nil
+}
+
+func (h *howManyAnswerHandle) FindByQuestionIDAndEphemeralUserID(ctx context.Context, id uint, userID string) (*models.HowManyAnswer, error) {
+	howManyAnswer := models.HowManyAnswer{}
+
+	if err := h.db.WithContext(ctx).Where(&models.HowManyAnswer{
+		HowManyQuestionID: id,
+		EphemeralUserID:   &userID,
 	}).First(&howManyAnswer).Error; err != nil {
 		return nil, err
 	}

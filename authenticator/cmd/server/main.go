@@ -98,8 +98,30 @@ func main() {
 		})
 	})
 
-	r.GET("/authenticator/users/:phoneNumber", func(c *gin.Context) {
-		phoneNumber := c.Param("phoneNumber")
+	r.GET("/authenticator/users", func(c *gin.Context) {
+		phoneNumber := c.Query("phoneNumber")
+		id := c.Query("id")
+
+		if len(id) != 0 {
+			uint64Val, err := strconv.ParseUint(id, 10, 64)
+			if err != nil {
+				c.JSON(400, gin.H{
+					"error": "bad id",
+				})
+				return
+			}
+
+			user, err := dbClient.User().FindByID(c, uint(uint64Val))
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": err.Error(),
+				})
+				return
+			}
+
+			c.JSON(200, user)
+			return
+		}
 
 		user, err := dbClient.User().FindByPhoneNumber(c, phoneNumber)
 		if err != nil {

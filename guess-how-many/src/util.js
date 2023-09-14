@@ -1,13 +1,23 @@
 import { v4 as uuidv4 } from 'uuid';
 
 export const getUserID = () => {
-  let userId = localStorage.getItem('user-id');
-
-  if (userId) {
-    return userId;
+  const id = localStorage.getItem('user-id');
+  if (id) {
+    try {
+      const intId = parseInt(id);
+      return {
+        userId: intId,
+      };
+    } catch (e) {
+      localStorage.removeItem('user-id');
+    }
   }
 
-  userId = uuidv4();
-  localStorage.setItem('user-id', userId);
-  return userId;
+  let ephemeralUserId = localStorage.getItem('ephemeral-user-id');
+  if (!ephemeralUserId) {
+    ephemeralUserId = uuidv4();
+    localStorage.setItem('ephemeral-user-id', ephemeralUserId);
+  }
+
+  return { ephemeralUserId };
 };

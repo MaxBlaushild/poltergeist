@@ -10,3 +10,7 @@ type HowManyQuestion struct {
 	Valid       bool   `json:"valid"`
 	Done        bool   `json:"done"`
 }
+
+func (h *HowManyQuestion) TableName() string {
+	return "how_many_qs"
+}

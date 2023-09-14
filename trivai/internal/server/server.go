@@ -47,7 +47,7 @@ func NewServer(
 	r.GET("/trivai/how_many_questions/current", s.getCurrentQuestion)
 	r.POST("/trivai/how_many_questions/grade", s.gradeQuestion)
 	r.GET("/trivai/how_many_questions", s.getHowManyQuestions)
-	r.GET("/trivai/how_many_questions/:id/users/:userId/answer", s.getHowManyQuestionAnswer)
+	r.GET("/trivai/how_many_questions/answer", s.getHowManyQuestionAnswer)
 	r.POST("/trivai/how_many_questions", s.generateNewHowManyQuestion)
 	r.POST("/trivai/how_many_questions/:id/validate", s.markHowManyQuestionValid)
 
@@ -97,7 +97,7 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 	correctness, offBy := s.triviaClient.GradeHowManyQuestion(ctx, guess, question.HowMany)
 
 	answer := models.HowManyAnswer{
-		UserID:            strconv.FormatUint(uint64(user.ID), 10),
+		UserID:            &user.ID,
 		HowManyQuestionID: question.ID,
 		Correctness:       correctness,
 		OffBy:             offBy,
@@ -164,34 +164,78 @@ func (s *Server) subscribeToHowManyQuestions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, user)
 }
 
-func (s *Server) getHowManyQuestionAnswer(ctx *gin.Context) {
-	id := ctx.Param("id")
-	userId := ctx.Param("userId")
+func (s *Server) getHowManyQuestionAnswer(c *gin.Context) {
+	stringQuestionID := c.Query("questionId")
+	stringUserID := c.Query("userId")
+	ephemeralUserID := c.Query("ephemeralUserId")
 
-	ui, err := strconv.ParseUint(id, 10, 32)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid id",
+	if len(stringQuestionID) == 0 {
+		c.JSON(400, gin.H{
+			"error": "question id is required",
 		})
 		return
 	}
 
-	answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndUserID(ctx, uint(ui), userId)
+	questionId64, err := strconv.ParseUint(stringQuestionID, 10, 32)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid question id",
+		})
+		return
+	}
+
+	if len(stringUserID) != 0 && len(ephemeralUserID) != 0 {
+		c.JSON(400, gin.H{
+			"error": "only allowed one of user id and emphemeral user id",
+		})
+		return
+	}
+
+	if len(stringUserID) == 0 && len(ephemeralUserID) == 0 {
+		c.JSON(400, gin.H{
+			"error": "one of user id and emphemeral user id required",
+		})
+		return
+	}
+
+	if len(stringUserID) != 0 {
+		userId64, err := strconv.ParseUint(stringUserID, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "invalid id",
+			})
+			return
+		}
+
+		answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndUserID(c, uint(questionId64), uint(userId64))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"message": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, answer)
+		return
+	}
+
+	answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndEphemeralUserID(c, uint(questionId64), ephemeralUserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, answer)
+	c.JSON(http.StatusOK, answer)
 }
 
 func (s *Server) gradeQuestion(ctx *gin.Context) {
 	var gradeRequest struct {
-		Guess  int    `json:"guess" binding:"required"`
-		Id     uint   `json:"id" binding:"required"`
-		UserId string `json:"userId" binding:"required"`
+		Guess           int     `json:"guess" binding:"required"`
+		Id              uint    `json:"id" binding:"required"`
+		UserId          *uint   `json:"userId"`
+		EphemeralUserId *string `json:"ephemeralUserId"`
 	}
 
 	if err := ctx.Bind(&gradeRequest); err != nil {
@@ -218,6 +262,7 @@ func (s *Server) gradeQuestion(ctx *gin.Context) {
 		OffBy:             offBy,
 		Answer:            question.HowMany,
 		Guess:             gradeRequest.Guess,
+		EphemeralUserID:   gradeRequest.EphemeralUserId,
 	}
 
 	if _, err := s.dbClient.HowManyAnswer().Insert(ctx, &answer); err != nil {

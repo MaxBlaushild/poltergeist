@@ -19,7 +19,7 @@ func (h *neighborHandle) Create(ctx context.Context, crystalOneID uint, crystalT
 }
 
 func (h *neighborHandle) FindAll(ctx context.Context) ([]models.Neighbor, error) {
-	var neighbors []models.Neighbor
+	var neighbors 			[]models.Neighbor
 
 	if err := h.db.WithContext(ctx).Find(&neighbors).Error; err != nil {
 		return nil, err

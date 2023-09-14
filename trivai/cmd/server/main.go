@@ -8,6 +8,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/config"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/server"
@@ -32,6 +33,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	dbClient.Migrate(ctx, &models.HowManyQuestion{}, &models.HowManyAnswer{})
 
 	deepPriest := deep_priest.SummonDeepPriest()
 	texterClient := texter.NewTexterClient()

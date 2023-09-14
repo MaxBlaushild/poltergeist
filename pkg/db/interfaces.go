@@ -51,7 +51,8 @@ type UserSubmissionHandle interface {
 }
 
 type HowManyAnswerHandle interface {
-	FindByQuestionIDAndUserID(ctx context.Context, id uint, userID string) (*models.HowManyAnswer, error)
+	FindByQuestionIDAndUserID(ctx context.Context, id uint, userID uint) (*models.HowManyAnswer, error)
+	FindByQuestionIDAndEphemeralUserID(ctx context.Context, id uint, userID string) (*models.HowManyAnswer, error)
 	Insert(ctx context.Context, a *models.HowManyAnswer) (*models.HowManyAnswer, error)
 }
 

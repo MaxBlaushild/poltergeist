@@ -34,10 +34,16 @@ function App() {
       data: { text, ID: id, explanation },
     } = res;
     try {
-      const answerRes = await axios.get(
-        `${process.env.REACT_APP_API_URL}/trivai/how_many_questions/${id}/users/${userId}/answer`,
-      );
+      let url = `${process.env.REACT_APP_API_URL}/trivai/how_many_questions/answer?questionId=${id}&`;
+
+      if (userId.userId) {
+        url += `userId=${userId.userId}`;
+      } else {
+        url += `ephemeralUserId=${userId.ephemeralUserId}`;
+      }
+      const answerRes = await axios.get(url);
       const { data: grade } = answerRes;
+      console.log(grade);
       setGrade(grade);
       setGuess(grade.guess);
     } catch (e) {}
@@ -50,7 +56,7 @@ function App() {
   const checkGuess = useCallback(async (_guess) => {
     const res = await axios.post(
       `${process.env.REACT_APP_API_URL}/trivai/how_many_questions/grade`,
-      { guess: parseInt(_guess), id: questionId, userId },
+      { guess: parseInt(_guess), id: questionId, ...userId },
     );
     const { data } = res;
     setGrade(data);

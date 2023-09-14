@@ -18,13 +18,12 @@ function Subscribe() {
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
   const buttonClasses = ['Subscribe__button'];
-  const userId = getUserID();
+  const { userId } = getUserID();
 
   const fetchUser = async () => {
-    console.log('ree');
     if (userId) {
       const res = await axios.get(
-        `${process.env.REACT_APP_API_URL}/trivai/users/${userId}`,
+        `${process.env.REACT_APP_API_URL}/authenticator/users?id=${userId}`,
       );
       const {
         data: { phoneNumber: existingPhoneNumber },
@@ -60,23 +59,30 @@ function Subscribe() {
     try {
       // get the user
       await axios.get(
-        `${process.env.REACT_APP_API_URL}/authenticator/users/` + phoneNumber,
+        `${process.env.REACT_APP_API_URL}/authenticator/users?phoneNumber=` +
+          encodeURIComponent(phoneNumber),
       );
-      await axios.post(
+      const {
+        data: { ID: id },
+      } = await axios.post(
         `${process.env.REACT_APP_API_URL}/authenticator/text/login`,
         { phoneNumber, code },
       );
       setExistingPhoneNumber(phoneNumber);
       setWaitingOnVerificationCode(false);
+      localStorage.setItem('user-id', id);
       toast('Successfully logged in!');
     } catch (e) {
       try {
-        await axios.post(
+        const {
+          data: { ID: id },
+        } = await axios.post(
           `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
           { phoneNumber, code, name: '' },
         );
         setExistingPhoneNumber(phoneNumber);
         setWaitingOnVerificationCode(false);
+        localStorage.setItem('user-id', id);
         toast('Successfully registered!');
       } catch (e) {
         toast('Something went wrong!');
@@ -112,10 +118,10 @@ function Subscribe() {
               <div className="Subscribe__inputGroup">
                 <input
                   type="text"
-                  inputmode="numeric"
+                  inputMode="numeric"
                   pattern="[0-9]*"
                   value={code}
-                  autocomplete="one-time-code"
+                  autoComplete="one-time-code"
                   onChange={(e) => {
                     const inputValue = e.target.value;
 
