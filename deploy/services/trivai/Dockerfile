@@ -1,20 +1,20 @@
 # Use the official Golang image as the base image
-FROM golang:1.19
+FROM golang:1.18
+
+ENV GOPATH=/app
 
 # Set the working directory
 WORKDIR /app
 
-# Copy go.mod and go.sum to download dependencies
-COPY go.mod go.sum ./
+COPY ./pkg ./pkg
+COPY ./trivai ./trivai
 
-# Download dependencies
-RUN go mod download
-
-# Copy the source code
-COPY . .
+# RUN cd ./trivai
+# RUN go mod download
+WORKDIR /app/trivai/cmd/server
 
 # Build the Go application
-RUN go build -o main ./cmd/server
+RUN go build -o main /app/trivai/cmd/server
 
 # Expose the port on which the server will run
 EXPOSE 8087
