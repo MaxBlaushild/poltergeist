@@ -1,6 +1,7 @@
 import './App.css';
+import React from 'react';
 import GoogleMap from 'google-maps-react-markers';
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import ClueImage from './two-bridges-clue.png';
 import mapOptions from './map-options.json';
 import markerPin from './crystal-node (2).png';
@@ -14,12 +15,7 @@ import IconButton from '@mui/material/IconButton';
 import axios from 'axios';
 import Toolbar from '@mui/material/Toolbar';
 import { MuiTelInput } from 'mui-tel-input';
-import {
-  create,
-  get,
-  parseCreationOptionsFromJSON,
-  parseRequestOptionsFromJSON,
-} from '@github/webauthn-json/browser-ponyfill';
+import toast from 'react-hot-toast';
 
 const style = {
   position: 'absolute',
@@ -93,12 +89,22 @@ const Marker = ({
   );
 };
 
+const getUserID = () => {
+  const stringId = localStorage.getItem('user-id');
+
+  if (stringId) {
+    return parseInt(stringId);
+  }
+
+  return null;
+};
+
 function App() {
   const mapRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCrystal, setSelectedCrystal] = useState(null);
-  const [userID, setUserID] = useState(localStorage.getItem('userID'));
+  const [userID, setUserID] = useState(getUserID());
   const [phoneNumber, setPhoneNumber] = useState('');
   const [name, setName] = useState('');
   const [shouldRegister, setShouldRegister] = useState(false);
@@ -106,66 +112,90 @@ function App() {
   const [crystals, setCrystals] = useState(null);
   const [teams, setTeams] = useState(null);
   const [users, setUsers] = useState(null);
+  const [code, setCode] = useState('');
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [waitingOnVerificationCode, setWaitingOnVerificationCode] =
+    useState(false);
 
-  const login = useCallback(async () => {
-    const res = await axios.post(
-      `${process.env.REACT_APP_API_URL}/authenticator/login-options`,
-      {
-        phoneNumber: phoneNumber.replace(/\s+/g, ''), // no spaces
-      },
-    );
-    const { data } = res;
-
-    const credentialRequestOptions = parseRequestOptionsFromJSON(data);
-    const response = await get(credentialRequestOptions);
-    const loginRes = await axios.post(
-      `${process.env.REACT_APP_API_URL}/authenticator/login`,
-      response,
-    );
-    const { data: user } = loginRes;
-    localStorage.setItem('userID', user.ID);
-    setUserID(user.ID);
-  }, [phoneNumber]);
-
-  const register = useCallback(async () => {
-    const res = await axios.post(
-      `${process.env.REACT_APP_API_URL}/authenticator/registration-options`,
-      {
-        name,
-        phoneNumber: phoneNumber.replace(/\s+/g, ''), // no spaces
-      },
-    );
-    const { data } = res;
-
-    const credentialCreateOptions = parseCreationOptionsFromJSON(data);
-    const response = await create(credentialCreateOptions);
-    const { data: user } = await axios.post(
-      `${process.env.REACT_APP_API_URL}/authenticator/register`,
-      response,
-    );
-    localStorage.setItem('userID', user.ID);
-    setUserID(user.ID);
-  }, [name, phoneNumber]);
-
-  const logister = useCallback(async () => {
+  const getVerificationCode = React.useCallback(async () => {
     try {
-      if (shouldRegister) {
-        await register();
-      } else {
-        await login();
-      }
-
-      setIsLoggingIn(false);
+      // get the user
+      await axios.get(
+        `${process.env.REACT_APP_API_URL}/authenticator/users?phoneNumber=` +
+          encodeURIComponent(phoneNumber.replace(/ /g, '')),
+      );
     } catch (e) {
-      console.log(e);
       setShouldRegister(true);
     }
-  }, [setShouldRegister, login, register, shouldRegister, setIsLoggingIn]);
+
+    try {
+      await axios.post(
+        `${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`,
+        {
+          phoneNumber: phoneNumber.replace(/ /g, ''),
+          appName: 'Crystal Crisis',
+        },
+      );
+      toast('Verification code sent!');
+      setWaitingOnVerificationCode(true);
+    } catch (e) {
+      toast('Something went wrong!');
+    }
+  });
+
+  const login = React.useCallback(async () => {
+    try {
+      const {
+        data: { ID: id },
+      } = await axios.post(
+        `${process.env.REACT_APP_API_URL}/authenticator/text/login`,
+        { phoneNumber: phoneNumber.replace(/ /g, ''), code },
+      );
+      setUserID(id);
+      setWaitingOnVerificationCode(false);
+      localStorage.setItem('user-id', id);
+      setIsLoggingIn(false);
+      toast('Successfully logged in!');
+    } catch (e) {
+      try {
+        const {
+          data: { ID: id },
+        } = await axios.post(
+          `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
+          { phoneNumber: phoneNumber.replace(/ /g, ''), code, name: '' },
+        );
+        setUserID(id);
+        setWaitingOnVerificationCode(false);
+        setIsLoggingIn(false);
+        localStorage.setItem('user-id', id);
+        toast('Successfully logged in!');
+      } catch (e) {
+        toast('Something went wrong!');
+      }
+    }
+  });
+
+  const register = React.useCallback(async () => {
+    try {
+      const {
+        data: { ID: id },
+      } = await axios.post(
+        `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
+        { phoneNumber: phoneNumber.replace(/ /g, ''), code, name },
+      );
+      setUserID(id);
+      setWaitingOnVerificationCode(false);
+      setIsLoggingIn(false);
+      localStorage.setItem('user-id', id);
+      toast('Successfully registered!');
+    } catch (e) {
+      toast('Something went wrong!');
+    }
+  });
 
   const logout = useCallback(async () => {
-    localStorage.removeItem('userID');
-    setUserID('');
+    localStorage.removeItem('user-id');
+    setUserID(null);
   }, [setUserID]);
 
   const onGoogleApiLoaded = async ({ map, maps }) => {
@@ -523,13 +553,38 @@ function App() {
                 />
               </div>
             )}
+            {waitingOnVerificationCode && (
+              <TextField
+                required
+                style={{
+                  fontFamily: 'Poppins',
+                }}
+                id="verification-code-required"
+                label="Verification code"
+                placeholder="XXXXXX"
+                value={code}
+                onChange={(e) => {
+                  const inputValue = e.target.value;
 
+                  if (/^\d*$/.test(inputValue) && inputValue.length <= 6) {
+                    setCode(inputValue);
+                  }
+                }}
+              />
+            )}
             <Button
               variant="contained"
               style={{
                 background: '#4290F5',
               }}
-              onClick={logister}
+              disabled={waitingOnVerificationCode ? code.length !== 6 : false}
+              onClick={
+                waitingOnVerificationCode
+                  ? shouldRegister
+                    ? register
+                    : login
+                  : getVerificationCode
+              }
             >
               {shouldRegister ? 'Register' : 'Join the fight'}
             </Button>

@@ -11,13 +11,13 @@ import (
 )
 
 const (
-	scorekeeperCharacterPrompt = "You are a worker at a click farm based in Bangladesh. "
-	updateScorePrompt          = "You have just manually updated the score for a user in a game, and you are reporting the new score to the american firm that hired you. You are grateful for your job.Please try to work in a grammatical mistake or two. "
+	scorekeeperCharacterPrompt = "You are a worker at a click farm. "
+	updateScorePrompt          = "You have just manually updated the score for a user in a game, and you are reporting the new score to the american firm that hired you. You are grateful for your job. Please try to work in a grammatical mistake or two. "
 	findScoresPrompt           = "You have just been asked for an update on all of the current scores for all of the users in the game from your american employers. The scores are as follows: "
 	cheatingPrompt             = "You have just found out that one of your employers has tried to cheat at the game they have hired you to proctor. You are to politely chide them for cheating."
 
 	praiseEmployersPrompt = "You should include praise for your employers who have hired you for such a wonderful opportunity, and the fact that you are bangladeshi should leak into the way you talk. "
-	metaphorPrompt        = "You should include a metaphor in your response that involves a thing or a concept from India or Bangladesh. "
+	metaphorPrompt        = "You should include a metaphor in your response. "
 
 	messagePrompt              = "Please write a slack message to send to your employers. "
 	slackMessageTruncatePrompt = "Please include only the message contents in your response. "

@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
+import { Toaster } from 'react-hot-toast';
 
 const theme = createTheme({
   overrides: {
@@ -37,7 +38,9 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
+      {/* <Toaster> */}
       <App />
+      {/* </Toaster> */}
     </ThemeProvider>
   </React.StrictMode>,
 );
