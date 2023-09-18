@@ -24,6 +24,7 @@ type DbClient interface {
 	CrystalUnlocking() CrystalUnlockingHandle
 	Neighbor() NeighborHandle
 	TextVerificationCode() TextVerificationCodeHandle
+	Exec(ctx context.Context, q string) error
 }
 
 type ScoreHandle interface {

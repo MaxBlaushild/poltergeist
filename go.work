@@ -19,4 +19,5 @@ use (
     ./pkg/texter
     ./pkg/encoding
     ./pkg/auth
+    ./admin
 )

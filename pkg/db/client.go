@@ -80,6 +80,10 @@ func (c *client) Score() ScoreHandle {
 	return c.scoreHandle
 }
 
+func (c *client) Exec(ctx context.Context, q string) error {
+	return c.db.WithContext(ctx).Exec(q).Error
+}
+
 func (c *client) Migrate(ctx context.Context, m ...interface{}) error {
 	return c.db.WithContext(ctx).AutoMigrate(m...)
 }
