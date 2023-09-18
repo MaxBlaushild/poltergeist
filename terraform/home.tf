@@ -124,6 +124,15 @@ resource "aws_ecr_repository" "authenticator" {
   }
 }
 
+resource "aws_ecr_repository" "admin" {
+  name                 = "admin"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 
 resource "aws_ecr_repository" "texter" {
   name                 = "texter"  
@@ -304,6 +313,25 @@ module "ecs" {
               name          = "authenticator"
               containerPort = 8089
               hostPort      = 8089
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "admin" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          image     = "${aws_ecr_repository.admin.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "admin"
+              containerPort = 9093
+              hostPort      = 9093
               protocol      = "tcp"
             }
           ]

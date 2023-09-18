@@ -60,3 +60,11 @@ authenticator/ecr-push:
 	docker build -f ./deploy/services/authenticator/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest .
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest
+
+PHONY: admin/ecr-push
+admin/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	docker build -f ./deploy/services/admin/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest .
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest

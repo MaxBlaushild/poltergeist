@@ -18,6 +18,7 @@ func main() {
 	scorekeeperUrl, _ := url.Parse("http://localhost:8086")
 	authenticatorUrl, _ := url.Parse("http://localhost:8089")
 	crystalCrisisUrl, _ := url.Parse("http://localhost:8091")
+	adminDashboardUrl, _ := url.Parse("http://localhost:9093")
 
 	fountProxy := httputil.NewSingleHostReverseProxy(fountUrl)
 	trivaiProxy := httputil.NewSingleHostReverseProxy(trivaiUrl)
@@ -25,6 +26,7 @@ func main() {
 	scorekeeperProxy := httputil.NewSingleHostReverseProxy(scorekeeperUrl)
 	authenticatorProxy := httputil.NewSingleHostReverseProxy(authenticatorUrl)
 	crystalCrisisProxy := httputil.NewSingleHostReverseProxy(crystalCrisisUrl)
+	adminDashboardProxy := httputil.NewSingleHostReverseProxy(adminDashboardUrl)
 
 	router.POST("/consult", func(c *gin.Context) {
 		fountProxy.ServeHTTP(c.Writer, c.Request)
@@ -48,6 +50,10 @@ func main() {
 
 	router.Any("/crystal-crisis/*any", func(c *gin.Context) {
 		crystalCrisisProxy.ServeHTTP(c.Writer, c.Request)
+	})
+
+	router.Any("/admin/*any", func(c *gin.Context) {
+		adminDashboardProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
 	router.GET("/", func(c *gin.Context) {

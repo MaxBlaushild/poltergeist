@@ -50,7 +50,7 @@ func main() {
 				Driver:       adminConfig.DriverPostgresql,
 			},
 		},
-		UrlPrefix:   "",
+		UrlPrefix:   "/admin",
 		Language:    "en",
 		Debug:       false,
 		IndexUrl:    "/",
@@ -71,7 +71,7 @@ func main() {
 		panic(err)
 	}
 
-	ginEngine.GET("/", ada.Content(rndrer.GetDashboard))
+	ginEngine.GET("/admin", ada.Content(rndrer.GetDashboard))
 
 	if err := ginEngine.Run(":9093"); err != nil {
 		panic(err)
