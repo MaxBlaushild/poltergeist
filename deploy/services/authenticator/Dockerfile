@@ -1,22 +1,29 @@
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./authenticator ./authenticator
+COPY ./go/pkg ./pkg
+COPY ./go/authenticator ./authenticator
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/authenticator/cmd/server
+WORKDIR /usr/home/app/authenticator/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/authenticator/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/authenticator
 
-# Expose the port on which the server will run
+FROM scratch
+
+COPY --from=builder /usr/home/app/authenticator/*.env /etc/authenticator/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/authenticator /usr/local/bin/authenticator
+
+WORKDIR /etc/authenticator
+
 EXPOSE 8089
 
-# Run the binary
-CMD ["/app/main"]
+ENTRYPOINT ["/usr/local/bin/authenticator"]

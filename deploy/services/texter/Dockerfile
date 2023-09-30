@@ -1,22 +1,29 @@
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./texter ./texter
+COPY ./go/pkg ./pkg
+COPY ./go/texter ./texter
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/texter/cmd/server
+WORKDIR /usr/home/app/texter/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/texter/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/texter
 
-# Expose the port on which the server will run
+FROM scratch
+
+COPY --from=builder /usr/home/app/texter/*.env /etc/texter/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/texter /usr/local/bin/texter
+
+WORKDIR /etc/texter
+
 EXPOSE 8084
 
-# Run the binary
-CMD ["/app/main"]
+ENTRYPOINT ["/usr/local/bin/texter"]

@@ -1,22 +1,29 @@
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./core ./core
+COPY ./go/pkg ./pkg
+COPY ./go/core ./core
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/core/cmd/server
+WORKDIR /usr/home/app/core/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/core/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/core
 
-# Expose the port on which the server will run
+FROM scratch
+
+COPY --from=builder /usr/home/app/core/*.env /etc/core/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/core /usr/local/bin/core
+
+WORKDIR /etc/core
+
 EXPOSE 8080
 
-# Run the binary
-CMD ["/app/main"]
+ENTRYPOINT ["/usr/local/bin/core"]

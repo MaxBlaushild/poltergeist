@@ -17,6 +17,7 @@ type PublicConfig struct {
 	DbPort   string `mapstructure:"DB_PORT"`
 	DbName   string `mapstructure:"DB_NAME"`
 	AdminEnv string `mapstructure:"ADMIN_ENV"`
+	SslMode  string `mapstructure:"SSL_MODE"`
 }
 
 type Config struct {

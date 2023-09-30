@@ -1,22 +1,29 @@
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./crystal-crisis-api ./crystal-crisis-api
+COPY ./go/pkg ./pkg
+COPY ./go/crystal-crisis-api ./crystal-crisis-api
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/crystal-crisis-api/cmd/server
+WORKDIR /usr/home/app/crystal-crisis-api/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/crystal-crisis-api/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/crystal-crisis-api
 
-# Expose the port on which the server will run
+FROM scratch
+
+COPY --from=builder /usr/home/app/crystal-crisis-api/live.env /etc/crystal-crisis-api/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/crystal-crisis-api /usr/local/bin/crystal-crisis-api
+
+WORKDIR /etc/crystal-crisis-api
+
 EXPOSE 8091
 
-# Run the binary
-CMD ["/app/main"]
+ENTRYPOINT ["/usr/local/bin/crystal-crisis-api"]

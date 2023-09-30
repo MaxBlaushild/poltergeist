@@ -1,22 +1,29 @@
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./scorekeeper ./scorekeeper
+COPY ./go/pkg ./pkg
+COPY ./go/scorekeeper ./scorekeeper
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/scorekeeper/cmd/server
+WORKDIR /usr/home/app/scorekeeper/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/scorekeeper/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/scorekeeper
 
-# Expose the port on which the server will run
+FROM scratch
+
+COPY --from=builder /usr/home/app/scorekeeper/*.env /etc/scorekeeper/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/scorekeeper /usr/local/bin/scorekeeper
+
+WORKDIR /etc/scorekeeper
+
 EXPOSE 8086
 
-# Run the binary
-CMD ["/app/main"]
+ENTRYPOINT ["/usr/local/bin/scorekeeper"]

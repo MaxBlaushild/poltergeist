@@ -5,11 +5,15 @@ deploy-all:
 deps:
 	docker-compose -f deps.docker-compose.yml up -d
 
+PHONY: trivai/build
+trivai/build:
+	docker build -f ./deploy/services/trivai/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/trivai:latest .
+
 PHONY: trivai/ecr-push
 trivai/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/trivai/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/trivai:latest .
+	make trivai/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/trivai:latest
 
@@ -37,13 +41,17 @@ fount-of-erebos/ecr-push:
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/fount-of-erebos:latest
 
+PHONY: crystal-crisis-api/build
+crystal-crisis-api/build:
+	docker build -f ./deploy/services/crystal-crisis-api/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis:latest .
+
 PHONY: crystal-crisis-api/ecr-push
 crystal-crisis-api/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/crystal-crisis-api/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis-api:latest .
+	make crystal-crisis-api/build
 	# Push the Docker image to ECR
-	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis-api:latest
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/crystal-crisis:latest
 
 PHONY: core/ecr-push
 core/ecr-push:
@@ -61,10 +69,14 @@ authenticator/ecr-push:
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/authenticator:latest
 
+PHONY: admin/build
+admin/build:
+	docker build -f ./deploy/services/admin/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest .
+
 PHONY: admin/ecr-push
 admin/ecr-push:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
 	# Build the Docker image
-	docker build -f ./deploy/services/admin/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest .
+	make admin/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest

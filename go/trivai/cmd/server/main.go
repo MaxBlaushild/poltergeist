@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"

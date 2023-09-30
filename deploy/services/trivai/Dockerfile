@@ -1,23 +1,29 @@
-# Use the official Golang image as the base image
-FROM golang:1.18
+FROM golang:1.18 AS builder
 
-ENV GOPATH=/app
+ENV CGO_ENABLED=0
+ENV GOPATH=/usr/home/app
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /usr/home/app
 
-COPY ./pkg ./pkg
-COPY ./trivai ./trivai
+COPY ./go/pkg ./pkg
+COPY ./go/trivai ./trivai
 
 # RUN cd ./trivai
 # RUN go mod download
-WORKDIR /app/trivai/cmd/server
+WORKDIR /usr/home/app/trivai/cmd/server
 
 # Build the Go application
-RUN go build -o main /app/trivai/cmd/server
+RUN go build -installsuffix 'static' -o /usr/local/bin/trivai
 
-# Expose the port on which the server will run
-EXPOSE 8087
+FROM scratch
 
-# Run the binary
-CMD ["/app/main"]
+COPY --from=builder /usr/home/app/trivai/*.env /etc/trivai/
+COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+COPY --from=builder /usr/local/bin/trivai /usr/local/bin/trivai
+
+WORKDIR /etc/trivai
+
+EXPOSE 8082
+
+ENTRYPOINT ["/usr/local/bin/trivai"]

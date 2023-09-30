@@ -40,14 +40,10 @@ func main() {
 		Env: cfg.Public.AdminEnv,
 		Databases: adminConfig.DatabaseList{
 			"default": adminConfig.Database{
-				Host:         cfg.Public.DbHost,
-				Port:         cfg.Public.DbPort,
-				User:         cfg.Public.DbUser,
-				Name:         cfg.Public.DbName,
-				Pwd:          cfg.Secret.DbPassword,
 				MaxIdleConns: 5,
 				MaxOpenConns: 5,
 				Driver:       adminConfig.DriverPostgresql,
+				Dsn:          fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", cfg.Public.DbUser, cfg.Secret.DbPassword, cfg.Public.DbHost, cfg.Public.DbPort, cfg.Public.DbName, cfg.Public.SslMode),
 			},
 		},
 		UrlPrefix:   "/admin",
