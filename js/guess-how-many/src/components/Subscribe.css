@@ -57,6 +57,11 @@ input:focus {
   color: white;
   line-height: 46px;
   margin-top: 4px;
+
+  @media screen and (max-width: 760px) {
+    font-size: 20px;
+    line-height: 26px;
+  }
 }
 
 @media screen and (max-width: 760px) {
@@ -74,4 +79,13 @@ input:focus {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.Subscribe__upgradeSubscription {
+  display: flex;
+  gap: 12px;
+
+  @media screen and (max-width: 760px) {
+    flex-direction: column;
+  }
 }

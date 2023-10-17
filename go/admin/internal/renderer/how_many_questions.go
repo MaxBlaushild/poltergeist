@@ -33,8 +33,11 @@ func (r *renderer) GetHowManyQuestions(ctx *context.Context) table.Table {
 
 	info.
 		SetTable("how_many_qs").
-		SetTitle("How Mnay Questions").
+		SetTitle("How Many Questions").
 		SetDescription("The questions we ask in guess with us")
+
+	questionsTable.GetNewForm().SetTable("how_many_qs")
+	questionsTable.GetActualNewForm().SetTable("how_many_qs")
 
 	return questionsTable
 }

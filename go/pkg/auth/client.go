@@ -6,11 +6,18 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"gorm.io/gorm"
 )
 
 type GetUsersRequest struct {
 	UserIDs []uint `json:"userIds" binding:"required"`
+}
+
+type RegisterByTextRequest struct {
+	PhoneNumber string `json:"phoneNumber" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	Name        string `json:"name"`
 }
 
 type User struct {
@@ -23,6 +30,7 @@ type authClient struct{}
 
 type AuthClient interface {
 	GetUsers(userIDs []uint) ([]User, error)
+	RegisterByText(request *RegisterByTextRequest) (*models.User, error)
 }
 
 const (
@@ -60,4 +68,30 @@ func (d *authClient) GetUsers(userIDs []uint) ([]User, error) {
 	}
 
 	return users, nil
+}
+
+func (d *authClient) RegisterByText(request *RegisterByTextRequest) (*models.User, error) {
+	jsonBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(baseUrl+"/authenticator/text/register", "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var user models.User
+	err = json.Unmarshal(body, &user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }

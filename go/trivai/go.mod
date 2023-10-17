@@ -4,6 +4,7 @@ go 1.18
 
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
+	github.com/MaxBlaushild/poltergeist/pkg/billing => ../pkg/billing
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
@@ -27,6 +28,8 @@ require (
 )
 
 require (
+	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-20230915032001-394ea26a68dd // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/encoding v0.0.0-00010101000000-000000000000 // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect

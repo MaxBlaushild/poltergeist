@@ -8,9 +8,10 @@ import (
 )
 
 type Text struct {
-	Body string `json:"body" binding:"required"`
-	To   string `json:"to" binding:"required"`
-	From string `json:"from" binding:"required"`
+	Body     string `json:"body" binding:"required"`
+	To       string `json:"to" binding:"required"`
+	From     string `json:"from" binding:"required"`
+	TextType string `json:"textType" binding:reuqired`
 }
 
 type texterClient struct{}

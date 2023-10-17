@@ -1,23 +1,27 @@
-go 1.19
+go 1.21
+
+toolchain go1.21.3
 
 use (
-    ./go/proteus
-    ./go/fount-of-erebos
-    ./go/core
-    ./go/trivai
-    ./go/texter
-    ./go/scorekeeper
-    ./go/authenticator
-    ./go/crystal-crisis-api
-    ./go/pkg/db
-    ./go/pkg/models
-    ./go/pkg/deep_priest
-    ./go/pkg/slack
-    ./go/pkg/util
-    ./go/pkg/twilio
-    ./go/pkg/email
-    ./go/pkg/texter
-    ./go/pkg/encoding
-    ./go/pkg/auth
-    ./go/admin
+	./go/admin
+	./go/authenticator
+	./go/billing
+	./go/core
+	./go/crystal-crisis-api
+	./go/fount-of-erebos
+	./go/pkg/auth
+	./go/pkg/billing
+	./go/pkg/db
+	./go/pkg/deep_priest
+	./go/pkg/email
+	./go/pkg/encoding
+	./go/pkg/models
+	./go/pkg/slack
+	./go/pkg/texter
+	./go/pkg/twilio
+	./go/pkg/util
+	./go/proteus
+	./go/scorekeeper
+	./go/texter
+	./go/trivai
 )

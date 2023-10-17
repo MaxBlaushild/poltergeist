@@ -24,6 +24,8 @@ type DbClient interface {
 	CrystalUnlocking() CrystalUnlockingHandle
 	Neighbor() NeighborHandle
 	TextVerificationCode() TextVerificationCodeHandle
+	SentText() SentTextHandle
+	GuessHowManySubscription() GuessHowManySubscriptionHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -116,4 +118,17 @@ type TextVerificationCodeHandle interface {
 	Insert(ctx context.Context, phoneNumber string) (*models.TextVerificationCode, error)
 	Find(ctx context.Context, phoneNumber string, code string) (*models.TextVerificationCode, error)
 	MarkUsed(ctx context.Context, id uint) error
+}
+
+type SentTextHandle interface {
+	GetCount(ctx context.Context, phoneNumber string, textType string) (int64, error)
+	Insert(ctx context.Context, textType string, phoneNumber string, text string) (*models.SentText, error)
+}
+
+type GuessHowManySubscriptionHandle interface {
+	Insert(ctx context.Context, userID uint) error
+	FindAll(ctx context.Context) ([]models.GuessHowManySubscription, error)
+	IncrementNumFreeQuestions(ctx context.Context, userID uint) error
+	FindByUserID(ctx context.Context, userID uint) (*models.GuessHowManySubscription, error)
+	SetSubscribed(ctx context.Context, userID uint, subscribed bool) error
 }

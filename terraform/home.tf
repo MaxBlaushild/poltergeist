@@ -90,6 +90,20 @@ variable "twilio_account_sid" {
   type        = string
 }
 
+resource "aws_secretsmanager_secret_version" "stripe_secret_key" {
+  secret_id     = aws_secretsmanager_secret.stripe_secret_key.id
+  secret_string = var.stripe_secret_key
+}
+
+resource "aws_secretsmanager_secret" "stripe_secret_key" {
+  name = "STRIPE_SECRET_KEY"
+}
+
+variable "stripe_secret_key" {
+  description = "Stripe Secret Key"
+  type        = string
+}
+
 resource "aws_secretsmanager_secret_version" "twilio_account_sid" {
   secret_id     = aws_secretsmanager_secret.twilio_account_sid.id
   secret_string = var.twilio_account_sid
@@ -133,6 +147,14 @@ resource "aws_ecr_repository" "admin" {
   }
 }
 
+resource "aws_ecr_repository" "billing" {
+  name                 = "billing"  
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
 
 resource "aws_ecr_repository" "texter" {
   name                 = "texter"  
@@ -210,8 +232,8 @@ module "ecs" {
 
   services = {
     poltergeist_core = {
-      cpu    = 2048
-      memory = 5120
+      cpu    = 4096
+      memory = 8192
 
       # Container definition(s)
       container_definitions = {
@@ -262,6 +284,9 @@ module "ecs" {
           }, {
             name = "GUESS_HOW_MANY_PHONE_NUMBER",
             valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
+          }, {
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
           image     = "${aws_ecr_repository.texter.repository_url}:latest"
           port_mappings = [
@@ -337,9 +362,31 @@ module "ecs" {
           ]
         }
 
+        "billing" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name = "STRIPE_SECRET_KEY",
+            valueFrom = "${aws_secretsmanager_secret.stripe_secret_key.arn}"
+          }]
+          image     = "${aws_ecr_repository.billing.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "billing"
+              containerPort = 8022
+              hostPort      = 8022
+              protocol      = "tcp"
+            }
+          ]
+        }
+
         "scorekeeper" = {
           cpu       = 256
-          memory    = 1024
+          memory    = 512
           essential = true
           secrets = [{
             name = "DB_PASSWORD",

@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/twilio"
 	"github.com/MaxBlaushild/poltergeist/texter/internal/config"
 	"github.com/gin-gonic/gin"
@@ -24,9 +27,10 @@ type TwilioSMSRequest struct {
 }
 
 type Text struct {
-	Body string `json:"body" binding:"required"`
-	To   string `json:"to" binding:"required"`
-	From string `json:"from" binding:"required"`
+	Body     string `json:"body" binding:"required"`
+	To       string `json:"to" binding:"required"`
+	From     string `json:"from" binding:"required"`
+	TextType string `json:"textType" binding:"required"`
 }
 
 func forwardText(ctx *gin.Context, url string, text *Text) (*Text, error) {
@@ -62,9 +66,29 @@ func forwardText(ctx *gin.Context, url string, text *Text) (*Text, error) {
 
 func main() {
 	router := gin.Default()
+	ctx := context.Background()
+
+	fmt.Println("IN THE TEXTER")
 
 	cfg, err := config.ParseFlagsAndGetConfig()
 	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(cfg)
+
+	dbClient, err := db.NewClient(db.ClientConfig{
+		Name:     "poltergeist",
+		Host:     cfg.Public.DbHost,
+		Port:     cfg.Public.DbPort,
+		User:     cfg.Public.DbUser,
+		Password: cfg.Secret.DbPassword,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	if err := dbClient.Migrate(ctx, &models.SentText{}); err != nil {
 		panic(err)
 	}
 
@@ -73,10 +97,42 @@ func main() {
 		AuthToken:  cfg.Secret.TwilioAuthToken,
 	})
 
+	router.GET("/texter/sent-texts/count", func(ctx *gin.Context) {
+		phoneNumber := ctx.Query("phoneNumber")
+		textType := ctx.Query("textType")
+
+		if len(phoneNumber) == 0 {
+			ctx.JSON(400, gin.H{
+				"error": "phone number is required",
+			})
+			return
+		}
+
+		if len(textType) == 0 {
+			ctx.JSON(400, gin.H{
+				"error": "text type is required",
+			})
+			return
+		}
+
+		count, err := dbClient.SentText().GetCount(ctx, phoneNumber, textType)
+		if err != nil {
+			ctx.JSON(500, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(200, gin.H{
+			"count": count,
+		})
+	})
+
 	router.POST("/texter/send-sms", func(ctx *gin.Context) {
 		var text Text
 
 		if err := ctx.Bind(&text); err != nil {
+			fmt.Println(err)
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"message": "shit sms request",
 			})
@@ -93,6 +149,10 @@ func main() {
 				"message": "sending text went wrong",
 			})
 			return
+		}
+
+		if _, err := dbClient.SentText().Insert(ctx, text.TextType, text.To, text.Body); err != nil {
+			fmt.Println(err)
 		}
 
 		ctx.JSON(200, gin.H{

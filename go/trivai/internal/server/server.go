@@ -1,24 +1,32 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
+	"github.com/MaxBlaushild/poltergeist/trivai/internal/config"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/trivai"
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	dbClient     db.DbClient
-	emailClient  email.EmailClient
-	triviaClient trivai.TrivaiClient
-	texterClient texter.TexterClient
+	dbClient      db.DbClient
+	emailClient   email.EmailClient
+	triviaClient  trivai.TrivaiClient
+	texterClient  texter.TexterClient
+	billingClient billing.Client
+	cfg           config.Config
+	authClient    auth.AuthClient
 }
 
 func NewServer(
@@ -26,19 +34,26 @@ func NewServer(
 	emailClient email.EmailClient,
 	trivaiClient trivai.TrivaiClient,
 	texterClient texter.TexterClient,
+	billingClient billing.Client,
+	cfg config.Config,
+	authClient auth.AuthClient,
 ) Server {
 	r := gin.Default()
 
 	s := Server{
-		dbClient:     dbClient,
-		emailClient:  emailClient,
-		triviaClient: trivaiClient,
-		texterClient: texterClient,
+		dbClient:      dbClient,
+		emailClient:   emailClient,
+		triviaClient:  trivaiClient,
+		texterClient:  texterClient,
+		billingClient: billingClient,
+		cfg:           cfg,
+		authClient:    authClient,
 	}
 
 	r.POST("/trivai/matches", s.createMatch)
 	r.POST("/trivai/question_sets/:questionSetID/answer", s.submitAnswers)
 	r.GET("/trivai/questions", s.getQuestions)
+	r.GET("/trivai/subscriptions/:userID", s.getSubscription)
 	r.GET("/trivai/users/:userId", s.getUser)
 
 	r.POST("/")
@@ -50,10 +65,176 @@ func NewServer(
 	r.GET("/trivai/how_many_questions/answer", s.getHowManyQuestionAnswer)
 	r.POST("/trivai/how_many_questions", s.generateNewHowManyQuestion)
 	r.POST("/trivai/how_many_questions/:id/validate", s.markHowManyQuestionValid)
+	r.POST("/trivai/begin-checkout", s.beginCheckout)
+	r.POST("/trivai/finish-checkout", s.finishCheckout)
+	r.POST("/trivai/register", s.register)
 
 	r.Run(":8082")
 
 	return s
+}
+
+func getToken(ctx *gin.Context) (string, error) {
+	authHeader := ctx.GetHeader("Authorization")
+	if authHeader == "" {
+		return "", errors.New("missing authorization header")
+	}
+
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", errors.New("invalid authorization header")
+	}
+
+	return parts[1], nil
+}
+
+func getUserID(ctx *gin.Context) (uint, error) {
+	userID, err := getToken(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	ui64, err := strconv.ParseUint(userID, 10, 64)
+	if err != nil {
+		return 0, errors.New("invalid user id format")
+	}
+
+	return uint(ui64), nil
+}
+
+func (s *Server) getSubscription(ctx *gin.Context) {
+	userId := ctx.Param("userID")
+
+	uint64Val, err := strconv.ParseUint(userId, 10, 64)
+	if err != nil {
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	subscription, err := s.dbClient.GuessHowManySubscription().FindByUserID(ctx, uint(uint64Val))
+	if err != nil {
+		ctx.JSON(404, gin.H{
+			"error": err.Error(),
+		})
+	}
+
+	ctx.JSON(200, subscription)
+}
+
+func (s *Server) register(ctx *gin.Context) {
+	var requestBody auth.RegisterByTextRequest
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.authClient.RegisterByText(&requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(200, user)
+}
+
+func (s *Server) finishCheckout(ctx *gin.Context) {
+	var onSubscribe billing.OnSubscribe
+
+	if err := ctx.Bind(&onSubscribe); err != nil {
+		fmt.Println("marshal error")
+		fmt.Println(err)
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	userId, ok := onSubscribe.Metadata["user_id"]
+	fmt.Println(onSubscribe)
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "user id is required to subscribe",
+		})
+		return
+	}
+
+	uint64Val, err := strconv.ParseUint(userId, 10, 64)
+	if err != nil {
+		ctx.JSON(400, gin.H{
+			"error": "bad user id provided",
+		})
+		return
+	}
+
+	if err := s.dbClient.GuessHowManySubscription().SetSubscribed(ctx, uint(uint64Val), true); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(200, gin.H{
+		"message": "cool beans!",
+	})
+}
+
+func (s *Server) beginCheckout(ctx *gin.Context) {
+	userId := ctx.PostForm("userId")
+
+	if len(userId) == 0 {
+		ctx.JSON(400, gin.H{
+			"error": "user id required",
+		})
+		return
+	}
+
+	ui64, err := strconv.ParseUint(userId, 10, 64)
+	if err != nil {
+		ctx.JSON(400, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, uint(ui64))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	session, err := s.billingClient.NewCheckoutSession(&billing.CheckoutSessionParams{
+		PlanID:      s.cfg.Public.GuessHowManyPlanID,
+		SuccessUrl:  s.cfg.Public.GuessHowManySubscribeSuccessUrl,
+		CancelUrl:   s.cfg.Public.GuessHowManySubscribeCancelUrl,
+		CallbackUrl: "http://localhost:8082/trivai/finish-checkout",
+		Metadata: map[string]string{
+			"user_id": strconv.FormatUint(uint64(user.ID), 10),
+		},
+	})
+	if err != nil {
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.Redirect(http.StatusSeeOther, session.URL)
 }
 
 func (s *Server) receiveSms(ctx *gin.Context) {
@@ -121,7 +302,7 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 func (s *Server) getUser(c *gin.Context) {
 	userId := c.Param("userId")
 
-	uint64Val, err := strconv.ParseUint(userId, 10, 64) // Base 10, BitSize 64
+	uint64Val, err := strconv.ParseUint(userId, 10, 64)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"error": err.Error(),

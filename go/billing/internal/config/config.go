@@ -8,10 +8,8 @@ import (
 )
 
 type SecretConfig struct {
-	TwilioAccountSid        string
-	TwilioAuthToken         string
-	GuessHowManyPhoneNumber string
-	DbPassword              string
+	DbPassword      string
+	StripeSecretKey string
 }
 
 type PublicConfig struct {
@@ -22,8 +20,8 @@ type PublicConfig struct {
 }
 
 type Config struct {
-	Secret SecretConfig
 	Public PublicConfig
+	Secret SecretConfig
 }
 
 type loadConfigParams struct {
@@ -56,12 +54,10 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 	}
 
 	return &Config{
-		Public: publicCfg,
 		Secret: SecretConfig{
-			TwilioAccountSid:        os.Getenv("TWILIO_ACCOUNT_SID"),
-			TwilioAuthToken:         os.Getenv("TWILIO_AUTH_TOKEN"),
-			GuessHowManyPhoneNumber: os.Getenv("GUESS_HOW_MANY_PHONE_NUMBER"),
-			DbPassword:              os.Getenv("DB_PASSWORD"),
+			DbPassword:      os.Getenv("DB_PASSWORD"),
+			StripeSecretKey: os.Getenv("STRIPE_SECRET_KEY"),
 		},
+		Public: publicCfg,
 	}, nil
 }

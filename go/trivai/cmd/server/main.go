@@ -6,6 +6,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
@@ -35,7 +37,7 @@ func main() {
 		panic(err)
 	}
 
-	dbClient.Migrate(ctx, &models.HowManyQuestion{}, &models.HowManyAnswer{})
+	dbClient.Migrate(ctx, &models.HowManyQuestion{}, &models.HowManyAnswer{}, &models.GuessHowManySubscription{})
 
 	deepPriest := deep_priest.SummonDeepPriest()
 	texterClient := texter.NewTexterClient()
@@ -46,8 +48,10 @@ func main() {
 	})
 
 	trivaiClient := trivai.NewClient(deepPriest)
+	billingClient := billing.NewClient()
+	authClient := auth.NewAuthClient()
 
-	go server.NewServer(dbClient, emailClient, trivaiClient, texterClient)
+	go server.NewServer(dbClient, emailClient, trivaiClient, texterClient, billingClient, *cfg, authClient)
 
 	// poll for new questions
 	loc, _ := time.LoadLocation("America/New_York")
@@ -82,6 +86,42 @@ func main() {
 		if err != nil {
 			fmt.Println("fetch current question error")
 			fmt.Println(err)
+		}
+
+		subscriptions, err := dbClient.GuessHowManySubscription().FindAll(ctx)
+		if err != nil {
+			fmt.Println("fetch subscriptions error")
+			fmt.Println(err)
+		}
+
+		for _, subscription := range subscriptions {
+			var shouldSend bool = false
+			if subscription.Subscribed {
+				shouldSend = true
+			}
+
+			if subscription.NumFreeQuestions < 7 {
+				shouldSend = true
+			}
+
+			if shouldSend {
+				if err := texterClient.Text(&texter.Text{
+					Body:     currentQuestion.Text,
+					To:       subscription.User.PhoneNumber,
+					From:     cfg.Secret.GuessHowManyPhoneNumber,
+					TextType: "guess-how-many-question",
+				}); err != nil {
+					fmt.Println("error sending text")
+					fmt.Println(subscription.User.PhoneNumber)
+				}
+			}
+
+			if shouldSend && !subscription.Subscribed {
+				if err := dbClient.GuessHowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
+					fmt.Println("error incrementing user id")
+					fmt.Println(subscription.UserID)
+				}
+			}
 		}
 	}
 }

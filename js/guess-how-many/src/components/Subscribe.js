@@ -14,11 +14,13 @@ function Subscribe() {
   const [waitingOnVerificationCode, setWaitingOnVerificationCode] =
     React.useState(false);
   const [code, setCode] = React.useState('');
+  const [subscription, setSubscription] = React.useState({});
 
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
   const buttonClasses = ['Subscribe__button'];
   const { userId } = getUserID();
+  const { subscribed, numFreeQuestions } = subscription;
 
   const fetchUser = async () => {
     if (userId) {
@@ -32,8 +34,19 @@ function Subscribe() {
     }
   };
 
+  const fetchSubscription = async () => {
+    if (userId) {
+      const res = await axios.get(
+        `${process.env.REACT_APP_API_URL}/trivai/subscriptions/${userId}`,
+      );
+      const { data } = res;
+      setSubscription(data);
+    }
+  };
+
   React.useEffect(() => {
     fetchUser();
+    fetchSubscription();
   }, []);
 
   if (validPhoneNumber) {
@@ -77,7 +90,7 @@ function Subscribe() {
         const {
           data: { ID: id },
         } = await axios.post(
-          `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
+          `${process.env.REACT_APP_API_URL}/trivai/register`,
           { phoneNumber, code, name: '' },
         );
         setExistingPhoneNumber(phoneNumber);
@@ -144,15 +157,33 @@ function Subscribe() {
       ) : (
         <div>
           <p className="Subscribe__Script">
-            You are subscribed to receive daily questions at:{' '}
-            {existingPhoneNumber}
+            You are {subscribed ? 'subscribed to receive' : 'receiving trial'}{' '}
+            daily questions at: {existingPhoneNumber}
           </p>
-          <button
-            className="Subscribe__button Button__enabled"
-            onClick={() => toast("Ha! You're stuck with us.")}
-          >
-            Unsubscribe
-          </button>
+          {subscribed ? (
+            <button
+              className="Subscribe__button Button__enabled"
+              onClick={() => toast("Ha! You're stuck with us.")}
+            >
+              Unsubscribe
+            </button>
+          ) : (
+            <div className="Subscribe__upgradeSubscription">
+              <form
+                action={`${process.env.REACT_APP_API_URL}/trivai/begin-checkout`}
+                method="POST"
+              >
+                <input type="hidden" name="userId" value={userId} />
+                <button
+                  className="Subscribe__button Button__enabled"
+                  type="submit"
+                >
+                  Upgrade subscription
+                </button>
+              </form>
+              <p>You have {7 - numFreeQuestions} free questions left.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

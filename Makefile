@@ -80,3 +80,15 @@ admin/ecr-push:
 	make admin/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/admin:latest
+
+PHONY: billing/build
+billing/build:
+	docker build -f ./deploy/services/billing/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/billing:latest .
+
+PHONY: billing/ecr-push
+billing/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	make billing/build
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/billing:latest

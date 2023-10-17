@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -83,9 +84,10 @@ func main() {
 		}
 
 		if err := texterClient.Text(&texter.Text{
-			Body: fmt.Sprintf("%s is your %s verification code", code.Code, requestBody.AppName),
-			To:   requestBody.PhoneNumber,
-			From: cfg.Public.PhoneNumber,
+			Body:     fmt.Sprintf("%s is your %s verification code", code.Code, requestBody.AppName),
+			To:       requestBody.PhoneNumber,
+			From:     cfg.Public.PhoneNumber,
+			TextType: "verification-code",
 		}); err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
@@ -174,11 +176,7 @@ func main() {
 	})
 
 	r.POST("/authenticator/text/register", func(c *gin.Context) {
-		var requestBody struct {
-			PhoneNumber string `json:"phoneNumber" binding:"required"`
-			Code        string `json:"code" binding:"required"`
-			Name        string `json:"name"`
-		}
+		var requestBody auth.RegisterByTextRequest
 
 		if err := c.Bind(&requestBody); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
