@@ -15,6 +15,7 @@ function Subscribe() {
     React.useState(false);
   const [code, setCode] = React.useState('');
   const [subscription, setSubscription] = React.useState({});
+  const [hasSubscription, setHasSubscription] = React.useState(false);
 
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
@@ -36,11 +37,14 @@ function Subscribe() {
 
   const fetchSubscription = async () => {
     if (userId) {
-      const res = await axios.get(
-        `${process.env.REACT_APP_API_URL}/trivai/subscriptions/${userId}`,
-      );
-      const { data } = res;
-      setSubscription(data);
+      try {
+        const res = await axios.get(
+          `${process.env.REACT_APP_API_URL}/trivai/subscriptions/${userId}`,
+        );
+        const { data } = res;
+        setSubscription(data || {});
+        setHasSubscription(true);
+      } catch (e) {}
     }
   };
 
@@ -70,31 +74,36 @@ function Subscribe() {
 
   const logister = React.useCallback(async () => {
     try {
-      // get the user
-      await axios.get(
-        `${process.env.REACT_APP_API_URL}/authenticator/users?phoneNumber=` +
-          encodeURIComponent(phoneNumber),
-      );
       const {
-        data: { ID: id },
-      } = await axios.post(
-        `${process.env.REACT_APP_API_URL}/authenticator/text/login`,
-        { phoneNumber, code },
-      );
+        data: {
+          user: { ID: id },
+          subscription,
+        },
+      } = await axios.post(`${process.env.REACT_APP_API_URL}/trivai/login`, {
+        phoneNumber,
+        code,
+      });
       setExistingPhoneNumber(phoneNumber);
       setWaitingOnVerificationCode(false);
       localStorage.setItem('user-id', id);
+      setSubscription(subscription || {});
+      setHasSubscription(!!subscription);
       toast('Successfully logged in!');
     } catch (e) {
       try {
         const {
-          data: { ID: id },
+          data: {
+            user: { ID: id },
+            subscription,
+          },
         } = await axios.post(
           `${process.env.REACT_APP_API_URL}/trivai/register`,
           { phoneNumber, code, name: '' },
         );
         setExistingPhoneNumber(phoneNumber);
         setWaitingOnVerificationCode(false);
+        setSubscription(subscription || {});
+        setHasSubscription(!!subscription);
         localStorage.setItem('user-id', id);
         toast('Successfully registered!');
       } catch (e) {
@@ -105,7 +114,7 @@ function Subscribe() {
 
   return (
     <div className="Subscribe">
-      {!existingPhoneNumber ? (
+      {!hasSubscription ? (
         <div>
           <p className="Subscribe__Script">
             Want questions texted to you daily?

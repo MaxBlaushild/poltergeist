@@ -66,6 +66,7 @@ type HowManyQuestionHandle interface {
 	MarkDone(ctx context.Context, howManyQuestionID uint) error
 	FindTodaysQuestion(ctx context.Context) (*models.HowManyQuestion, error)
 	FindById(ctx context.Context, id uint) (*models.HowManyQuestion, error)
+	ValidQuestionsRemaining(ctx context.Context) (int64, error)
 }
 
 type UserHandle interface {
@@ -126,7 +127,7 @@ type SentTextHandle interface {
 }
 
 type GuessHowManySubscriptionHandle interface {
-	Insert(ctx context.Context, userID uint) error
+	Insert(ctx context.Context, userID uint) (*models.GuessHowManySubscription, error)
 	FindAll(ctx context.Context) ([]models.GuessHowManySubscription, error)
 	IncrementNumFreeQuestions(ctx context.Context, userID uint) error
 	FindByUserID(ctx context.Context, userID uint) (*models.GuessHowManySubscription, error)

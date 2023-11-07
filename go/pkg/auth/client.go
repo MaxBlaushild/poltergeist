@@ -20,6 +20,11 @@ type RegisterByTextRequest struct {
 	Name        string `json:"name"`
 }
 
+type LoginByTextRequest struct {
+	PhoneNumber string `json:"phoneNumber" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+}
+
 type User struct {
 	gorm.Model
 	Name        string `json:"name"`
@@ -31,6 +36,7 @@ type authClient struct{}
 type AuthClient interface {
 	GetUsers(userIDs []uint) ([]User, error)
 	RegisterByText(request *RegisterByTextRequest) (*models.User, error)
+	LoginByText(request *LoginByTextRequest) (*models.User, error)
 }
 
 const (
@@ -95,3 +101,30 @@ func (d *authClient) RegisterByText(request *RegisterByTextRequest) (*models.Use
 
 	return &user, nil
 }
+
+func (d *authClient) LoginByText(request *LoginByTextRequest) (*models.User, error) {
+	jsonBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(baseUrl+"/authenticator/text/login", "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var user models.User
+	err = json.Unmarshal(body, &user)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+

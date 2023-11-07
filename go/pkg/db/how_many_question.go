@@ -45,6 +45,19 @@ func (h *howManyQuestionHandle) FindById(ctx context.Context, id uint) (*models.
 	return &howManyQuestion, nil
 }
 
+func (h *howManyQuestionHandle) ValidQuestionsRemaining(ctx context.Context) (int64, error) {
+	var count int64
+
+	if err := h.db.WithContext(ctx).Where(&models.HowManyQuestion{
+		Valid: true,
+		Done:  false,
+	}).Count(&count).Error; err != nil {
+		return count, err
+	}
+
+	return count, nil
+}
+
 func (h *howManyQuestionHandle) MarkValid(ctx context.Context, howManyQuestionID string) error {
 	return h.db.WithContext(ctx).Model(&models.HowManyQuestion{}).Where("id = ?", howManyQuestionID).Update("valid", true).Error
 }

@@ -137,10 +137,7 @@ func main() {
 	})
 
 	r.POST("/authenticator/text/login", func(c *gin.Context) {
-		var requestBody struct {
-			PhoneNumber string `json:"phoneNumber" binding:"required"`
-			Code        string `json:"code" binding:"required"`
-		}
+		var requestBody auth.LoginByTextRequest
 
 		if err := c.Bind(&requestBody); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{

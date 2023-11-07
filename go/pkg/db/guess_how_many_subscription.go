@@ -11,10 +11,16 @@ type guessHowManySubscriptionHandle struct {
 	db *gorm.DB
 }
 
-func (h *guessHowManySubscriptionHandle) Insert(ctx context.Context, userID uint) error {
-	return h.db.WithContext(ctx).Model(&models.GuessHowManySubscription{}).Create(&models.GuessHowManySubscription{
+func (h *guessHowManySubscriptionHandle) Insert(ctx context.Context, userID uint) (*models.GuessHowManySubscription, error) {
+	subscription := models.GuessHowManySubscription{
 		UserID: userID,
-	}).Error
+	}
+
+	if err := h.db.WithContext(ctx).Model(&models.GuessHowManySubscription{}).Create(&subscription).Error; err != nil {
+		return nil, err
+	}
+
+	return &subscription, nil
 }
 
 func (h *guessHowManySubscriptionHandle) FindByUserID(ctx context.Context, userID uint) (*models.GuessHowManySubscription, error) {
@@ -35,7 +41,7 @@ func (h *guessHowManySubscriptionHandle) IncrementNumFreeQuestions(ctx context.C
 		return err
 	}
 
-	return h.db.WithContext(ctx).Where("id = ?", userID).Updates(&models.GuessHowManySubscription{
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Updates(&models.GuessHowManySubscription{
 		NumFreeQuestions: guessHowManySubscription.NumFreeQuestions + 1,
 	}).Error
 }

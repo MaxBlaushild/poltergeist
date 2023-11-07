@@ -68,6 +68,7 @@ func NewServer(
 	r.POST("/trivai/begin-checkout", s.beginCheckout)
 	r.POST("/trivai/finish-checkout", s.finishCheckout)
 	r.POST("/trivai/register", s.register)
+	r.POST("/trivai/login", s.login)
 
 	r.Run(":8082")
 
@@ -118,6 +119,7 @@ func (s *Server) getSubscription(ctx *gin.Context) {
 		ctx.JSON(404, gin.H{
 			"error": err.Error(),
 		})
+		return
 	}
 
 	ctx.JSON(200, subscription)
@@ -141,14 +143,53 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID); err != nil {
+	subscription, err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID)
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	ctx.JSON(200, user)
+	ctx.JSON(200, gin.H{
+		"user": user,
+		"subscription": subscription,
+	})
+}
+
+func (s *Server) login(ctx *gin.Context) {
+	var requestBody auth.LoginByTextRequest
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.authClient.LoginByText(&requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	subscription, err := s.dbClient.GuessHowManySubscription().FindByUserID(ctx, user.ID)
+
+	payload := gin.H{
+		"user": user,
+	}
+	if err == nil{
+		payload["subscription"] = subscription
+	} else {
+		subscription, err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID)
+		if err == nil {
+			payload["subscription"] = subscription
+		}
+	}
+
+	ctx.JSON(200, payload)
 }
 
 func (s *Server) finishCheckout(ctx *gin.Context) {
