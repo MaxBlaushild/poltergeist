@@ -15,7 +15,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/config"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/server"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/trivai"
-	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
@@ -103,9 +102,6 @@ func main() {
 
 			if newQuestion != nil {
 				for _, subscription := range subscriptions {
-					fmt.Println("sending question to: ")
-					spew.Dump(subscription)
-
 					var shouldSend bool = false
 					if subscription.Subscribed {
 						shouldSend = true
