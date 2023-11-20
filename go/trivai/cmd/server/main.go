@@ -11,7 +11,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/email"
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/config"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/server"
@@ -37,8 +36,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	dbClient.Migrate(ctx, &models.HowManyQuestion{}, &models.HowManyAnswer{}, &models.GuessHowManySubscription{})
 
 	deepPriest := deep_priest.SummonDeepPriest()
 	texterClient := texter.NewTexterClient()
@@ -96,7 +93,7 @@ func main() {
 
 			fmt.Println("fetched the new question")
 
-			subscriptions, err := dbClient.GuessHowManySubscription().FindAll(ctx)
+			subscriptions, err := dbClient.HowManySubscription().FindAll(ctx)
 			if err != nil {
 				fmt.Println("fetch subscriptions error")
 				fmt.Println(err)
@@ -134,7 +131,7 @@ func main() {
 					fmt.Println(subscription.User.PhoneNumber)
 
 					if shouldSend && !subscription.Subscribed {
-						if err := dbClient.GuessHowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
+						if err := dbClient.HowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
 							fmt.Println("error incrementing user id")
 							fmt.Println(subscription.UserID)
 						}
@@ -144,8 +141,7 @@ func main() {
 
 		}
 
-		countLeft, err := dbClient.HowManyQuestion().ValidQuestionsRemaining(ctx)
-		if err != nil {
+		if countLeft, err := dbClient.HowManyQuestion().ValidQuestionsRemaining(ctx); err != nil {
 			fmt.Println("error getting num valid subscriptions left")
 			fmt.Println(err.Error())
 		} else {

@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS how_many_answers;

@@ -28,19 +28,19 @@ func (r *renderer) GetUserTeams(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
-	info.AddField("User ID", "user_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		userID := model.Row["user_id"].(int64)
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
+	info.AddField("User ID", "user_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		userID := model.Row["user_id"].(string)
 		return templates.Link(
 			fmt.Sprint(userID),
-			fmt.Sprintf("/info/users/detail?__goadmin_detail_pk=%d", userID),
+			fmt.Sprintf("/info/users/detail?__goadmin_detail_pk=%s", userID),
 		)
 	}).FieldFilterable()
-	info.AddField("Team ID", "team_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		teamID := model.Row["team_id"].(int64)
+	info.AddField("Team ID", "team_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		teamID := model.Row["team_id"].(string)
 		return templates.Link(
 			fmt.Sprint(teamID),
-			fmt.Sprintf("/info/teams/detail?__goadmin_detail_pk=%d", teamID),
+			fmt.Sprintf("/info/teams/detail?__goadmin_detail_pk=%s", teamID),
 		)
 	}).FieldFilterable()
 

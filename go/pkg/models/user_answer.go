@@ -1,16 +1,22 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type UserAnswer struct {
-	gorm.Model
+	ID               uuid.UUID      `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt        time.Time      `db:"created_at"`
+	UpdatedAt        time.Time      `db:"updated_at"`
 	User             User           `json:"user"`
-	UserID           uint           `json:"userId"`
+	UserID           uuid.UUID      `json:"userId"`
 	Question         Question       `json:"question"`
-	QuestionID       uint           `json:"questionId"`
+	QuestionID       uuid.UUID      `json:"questionId"`
 	Answer           string         `json:"answer"`
 	Correct          bool           `json:"correct"`
 	UserSubmission   UserSubmission `json:"userSubmission"`
-	UserSubmissionID uint           `json:"userSubmissionId"`
+	UserSubmissionID uuid.UUID      `json:"userSubmissionId"`
 	Points           uint           `json:"points"`
 }

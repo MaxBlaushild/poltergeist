@@ -20,7 +20,7 @@ function Subscribe() {
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
   const buttonClasses = ['Subscribe__button'];
-  const { userId } = getUserID();
+  const { userId, ephemeralUserId } = getUserID();
   const { subscribed, numFreeQuestions } = subscription;
 
   const fetchUser = async () => {
@@ -86,6 +86,7 @@ function Subscribe() {
       setExistingPhoneNumber(phoneNumber);
       setWaitingOnVerificationCode(false);
       localStorage.setItem('user-id', id);
+      localStorage.removeItem('ephemeral-user-id');
       setSubscription(subscription || {});
       setHasSubscription(!!subscription);
       toast('Successfully logged in!');
@@ -98,13 +99,14 @@ function Subscribe() {
           },
         } = await axios.post(
           `${process.env.REACT_APP_API_URL}/trivai/register`,
-          { phoneNumber, code, name: '' },
+          { phoneNumber, code, name: '', userId: ephemeralUserId  },
         );
         setExistingPhoneNumber(phoneNumber);
         setWaitingOnVerificationCode(false);
         setSubscription(subscription || {});
         setHasSubscription(!!subscription);
         localStorage.setItem('user-id', id);
+        localStorage.removeItem('ephemeral-user-id');
         toast('Successfully registered!');
       } catch (e) {
         toast('Something went wrong!');

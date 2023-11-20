@@ -1,15 +1,17 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Neighbor struct {
-	gorm.Model
-	CrystalOneID uint    `json:"crystalOneId" binding:"required"`
-	CrystalOne   Crystal `json:"crystalOne"`
-	CrystalTwoID uint    `json:"crystalTwoId" binding:"required"`
-	CrystalTwo   Crystal `json:"crystalTwo"`
-}
-
-func (u *Neighbor) TableName() string {
-	return "crystal_neighbors"
+	ID           uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
+	CrystalOneID uuid.UUID `json:"crystalOneId" binding:"required"`
+	CrystalOne   Crystal   `json:"crystalOne"`
+	CrystalTwoID uuid.UUID `json:"crystalTwoId" binding:"required"`
+	CrystalTwo   Crystal   `json:"crystalTwo"`
 }

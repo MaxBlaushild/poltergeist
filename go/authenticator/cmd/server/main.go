@@ -4,17 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
@@ -36,16 +35,6 @@ func main() {
 		Password: cfg.Secret.DbPassword,
 	})
 	if err != nil {
-		panic(err)
-	}
-
-	if err := dbClient.Migrate(
-		ctx,
-		&models.User{},
-		&models.Credential{},
-		&models.Challenge{},
-		&models.TextVerificationCode{},
-	); err != nil {
 		panic(err)
 	}
 
@@ -102,10 +91,10 @@ func main() {
 
 	r.GET("/authenticator/users", func(c *gin.Context) {
 		phoneNumber := c.Query("phoneNumber")
-		id := c.Query("id")
+		stringID := c.Query("id")
 
-		if len(id) != 0 {
-			uint64Val, err := strconv.ParseUint(id, 10, 64)
+		if len(stringID) != 0 {
+			id, err := uuid.Parse(stringID)
 			if err != nil {
 				c.JSON(400, gin.H{
 					"error": "bad id",
@@ -113,7 +102,7 @@ func main() {
 				return
 			}
 
-			user, err := dbClient.User().FindByID(c, uint(uint64Val))
+			user, err := dbClient.User().FindByID(c, id)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"error": err.Error(),
@@ -163,7 +152,7 @@ func main() {
 
 		user, err := dbClient.User().FindByPhoneNumber(ctx, requestBody.PhoneNumber)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
+			c.JSON(http.StatusNotFound, gin.H{
 				"error": err.Error(),
 			})
 			return
@@ -197,7 +186,20 @@ func main() {
 			return
 		}
 
-		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber)
+		var userId *uuid.UUID
+		if requestBody.UserID != nil {
+			id, err := uuid.Parse(*requestBody.UserID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": errors.Wrap(err, "shit user id").Error(),
+				})
+				return
+			}
+
+			userId = &id
+		}
+
+		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": errors.Wrap(err, "inserting user error").Error(),
@@ -227,9 +229,9 @@ func main() {
 	})
 
 	r.DELETE("/authenticator/users/:userID", func(c *gin.Context) {
-		userID := c.Param("userID")
+		stringUserID := c.Param("userID")
 
-		uint64Val, err := strconv.ParseUint(userID, 10, 64) // Base 10, BitSize 64
+		userID, err := uuid.Parse(stringUserID)
 		if err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
@@ -237,7 +239,7 @@ func main() {
 			return
 		}
 
-		if err := dbClient.User().Delete(c, uint(uint64Val)); err != nil {
+		if err := dbClient.User().Delete(c, userID); err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
 			})
@@ -248,9 +250,9 @@ func main() {
 	})
 
 	r.DELETE("/authenticator/credentials/:credentialID", func(c *gin.Context) {
-		credentialID := c.Param("credentialID")
+		stringCredentialID := c.Param("credentialID")
 
-		uint64Val, err := strconv.ParseUint(credentialID, 10, 64) // Base 10, BitSize 64
+		credentialID, err := uuid.Parse(stringCredentialID)
 		if err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
@@ -258,7 +260,7 @@ func main() {
 			return
 		}
 
-		if err := dbClient.Credential().Delete(c, uint(uint64Val)); err != nil {
+		if err := dbClient.Credential().Delete(c, credentialID); err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
 			})
@@ -294,7 +296,7 @@ func main() {
 
 	r.POST("/authenticator/get-users", func(c *gin.Context) {
 		var getUsersRequest struct {
-			UserIDs []uint `json:"userIds" binding:"required"`
+			UserIDs []string `json:"userIds" binding:"required"`
 		}
 
 		if err := c.Bind(&getUsersRequest); err != nil {
@@ -304,7 +306,19 @@ func main() {
 			return
 		}
 
-		users, err := dbClient.User().FindUsersByIDs(c, getUsersRequest.UserIDs)
+		var userIDs []uuid.UUID
+		for _, id := range getUsersRequest.UserIDs {
+			userID, err := uuid.Parse(id)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"message": "shit user id",
+				})
+				return
+			}
+			userIDs = append(userIDs, userID)
+		}
+
+		users, err := dbClient.User().FindUsersByIDs(c, userIDs)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -325,7 +339,7 @@ func main() {
 			})
 			return
 		}
-		user, err := dbClient.User().Insert(ctx, registerOptionsRequest.Name, registerOptionsRequest.PhoneNumber)
+		user, err := dbClient.User().Insert(ctx, registerOptionsRequest.Name, registerOptionsRequest.PhoneNumber, nil)
 		if err != nil {
 			ctx.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -372,7 +386,7 @@ func main() {
 			return
 		}
 
-		user, err := dbClient.User().FindByID(c, challenge.AuthUserID)
+		user, err := dbClient.User().FindByID(c, challenge.UserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -457,7 +471,7 @@ func main() {
 			return
 		}
 
-		user, err := dbClient.User().FindByID(c, challenge.AuthUserID)
+		user, err := dbClient.User().FindByID(c, challenge.UserID)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return

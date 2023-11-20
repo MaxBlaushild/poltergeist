@@ -1,15 +1,21 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type Match struct {
-	gorm.Model
+	ID            uuid.UUID   `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt     time.Time   `db:"created_at"`
+	UpdatedAt     time.Time   `db:"updated_at"`
 	QuestionSetID uint        `json:"questionSetId"`
 	QuestionSet   QuestionSet `json:"questionSet"`
-	HomeID        uint        `json:"homeId"`
+	HomeID        uuid.UUID   `json:"homeId"`
 	Home          User        `json:"home"`
-	AwayID        uint        `json:"awayId"`
+	AwayID        uuid.UUID   `json:"awayId"`
 	Away          User        `json:"away"`
-	WinnerID      *uint       `json:"winnerId"`
+	WinnerID      *uuid.UUID  `json:"winnerId"`
 	Winner        User        `json:"winner"`
 }

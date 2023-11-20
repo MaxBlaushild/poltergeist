@@ -121,7 +121,7 @@ resource "aws_secretsmanager_secret_version" "open_ai_key" {
 }
 
 resource "aws_ecr_repository" "core" {
-  name                 = "core"  
+  name                 = "core"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -130,7 +130,7 @@ resource "aws_ecr_repository" "core" {
 }
 
 resource "aws_ecr_repository" "authenticator" {
-  name                 = "authenticator"  
+  name                 = "authenticator"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -139,7 +139,7 @@ resource "aws_ecr_repository" "authenticator" {
 }
 
 resource "aws_ecr_repository" "admin" {
-  name                 = "admin"  
+  name                 = "admin"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -148,7 +148,7 @@ resource "aws_ecr_repository" "admin" {
 }
 
 resource "aws_ecr_repository" "billing" {
-  name                 = "billing"  
+  name                 = "billing"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -157,7 +157,7 @@ resource "aws_ecr_repository" "billing" {
 }
 
 resource "aws_ecr_repository" "texter" {
-  name                 = "texter"  
+  name                 = "texter"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -166,7 +166,7 @@ resource "aws_ecr_repository" "texter" {
 }
 
 resource "aws_ecr_repository" "scorekeeper" {
-  name                 = "scorekeeper"  
+  name                 = "scorekeeper"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -175,7 +175,7 @@ resource "aws_ecr_repository" "scorekeeper" {
 }
 
 resource "aws_ecr_repository" "fount_of_erebos" {
-  name                 = "fount-of-erebos"  
+  name                 = "fount-of-erebos"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -184,7 +184,7 @@ resource "aws_ecr_repository" "fount_of_erebos" {
 }
 
 resource "aws_ecr_repository" "crystal_crisis" {
-  name                 = "crystal-crisis"  
+  name                 = "crystal-crisis"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -193,7 +193,7 @@ resource "aws_ecr_repository" "crystal_crisis" {
 }
 
 resource "aws_ecr_repository" "ear" {
-  name                 = "ear"  
+  name                 = "ear"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -202,7 +202,7 @@ resource "aws_ecr_repository" "ear" {
 }
 
 resource "aws_ecr_repository" "trivai" {
-  name                 = "trivai"  
+  name                 = "trivai"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -257,10 +257,10 @@ module "ecs" {
           memory    = 1024
           essential = true
           secrets = [{
-            name = "OPEN_AI_KEY",
+            name      = "OPEN_AI_KEY",
             valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
           }]
-          image     = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
+          image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
           port_mappings = [
             {
               name          = "fount-of-erebos"
@@ -276,19 +276,19 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name = "TWILIO_AUTH_TOKEN",
+            name      = "TWILIO_AUTH_TOKEN",
             valueFrom = "${aws_secretsmanager_secret.twilio_auth_token.arn}"
-          }, {
-            name = "TWILIO_ACCOUNT_SID",
+            }, {
+            name      = "TWILIO_ACCOUNT_SID",
             valueFrom = "${aws_secretsmanager_secret.twilio_account_sid.arn}"
-          }, {
-            name = "GUESS_HOW_MANY_PHONE_NUMBER",
+            }, {
+            name      = "GUESS_HOW_MANY_PHONE_NUMBER",
             valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
-          }, {
-            name = "DB_PASSWORD",
+            }, {
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
-          image     = "${aws_ecr_repository.texter.repository_url}:latest"
+          image = "${aws_ecr_repository.texter.repository_url}:latest"
           port_mappings = [
             {
               name          = "texter"
@@ -304,16 +304,16 @@ module "ecs" {
           memory    = 1024
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name = "SENDGRID_API_KEY",
+            }, {
+            name      = "SENDGRID_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.sendgrid_api_key.arn}"
-          }, {
-            name = "GUESS_HOW_MANY_PHONE_NUMBER",
+            }, {
+            name      = "GUESS_HOW_MANY_PHONE_NUMBER",
             valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
           }]
-          image     = "${aws_ecr_repository.trivai.repository_url}:latest"
+          image = "${aws_ecr_repository.trivai.repository_url}:latest"
           port_mappings = [
             {
               name          = "trivai"
@@ -329,10 +329,10 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
-          image     = "${aws_ecr_repository.authenticator.repository_url}:latest"
+          image = "${aws_ecr_repository.authenticator.repository_url}:latest"
           port_mappings = [
             {
               name          = "authenticator"
@@ -348,10 +348,10 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
-          image     = "${aws_ecr_repository.admin.repository_url}:latest"
+          image = "${aws_ecr_repository.admin.repository_url}:latest"
           port_mappings = [
             {
               name          = "admin"
@@ -367,13 +367,13 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name = "STRIPE_SECRET_KEY",
+            }, {
+            name      = "STRIPE_SECRET_KEY",
             valueFrom = "${aws_secretsmanager_secret.stripe_secret_key.arn}"
           }]
-          image     = "${aws_ecr_repository.billing.repository_url}:latest"
+          image = "${aws_ecr_repository.billing.repository_url}:latest"
           port_mappings = [
             {
               name          = "billing"
@@ -389,13 +389,13 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name = "SLACK_SCOREKEEPER_WEBHOOK_URL",
+            }, {
+            name      = "SLACK_SCOREKEEPER_WEBHOOK_URL",
             valueFrom = "${aws_secretsmanager_secret.slack_scorekeeper_webhook_url.arn}"
           }]
-          image     = "${aws_ecr_repository.scorekeeper.repository_url}:latest"
+          image = "${aws_ecr_repository.scorekeeper.repository_url}:latest"
           port_mappings = [
             {
               name          = "scorekeeper"
@@ -411,10 +411,10 @@ module "ecs" {
           memory    = 1024
           essential = true
           secrets = [{
-            name = "DB_PASSWORD",
+            name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
-          image     = "${aws_ecr_repository.crystal_crisis.repository_url}:latest"
+          image = "${aws_ecr_repository.crystal_crisis.repository_url}:latest"
           port_mappings = [
             {
               name          = "crystal-crisis"
@@ -482,8 +482,8 @@ resource "aws_service_discovery_http_namespace" "this" {
 }
 
 data "aws_acm_certificate" "cert" {
-  domain = "digigeist.com"
-  statuses = ["ISSUED"]
+  domain      = "digigeist.com"
+  statuses    = ["ISSUED"]
   most_recent = true
 }
 
@@ -538,11 +538,11 @@ module "alb" {
   ]
 
   https_listeners = [
-        {
-      port = 443
-      protocol = "HTTPS",
-      ssl_policy   = "ELBSecurityPolicy-2016-08"
-      certificate_arn   = data.aws_acm_certificate.cert.arn
+    {
+      port               = 443
+      protocol           = "HTTPS",
+      ssl_policy         = "ELBSecurityPolicy-2016-08"
+      certificate_arn    = data.aws_acm_certificate.cert.arn
       target_group_index = 0
     }
   ]
@@ -605,14 +605,14 @@ resource "aws_secretsmanager_secret_version" "sendgrid_api_key" {
 }
 
 resource "aws_subnet" "main" {
-  vpc_id     = module.vpc.vpc_id
-  cidr_block = "10.0.92.0/28"
+  vpc_id            = module.vpc.vpc_id
+  cidr_block        = "10.0.92.0/28"
   availability_zone = "us-east-1a"
 }
 
 resource "aws_subnet" "secondary" {
-  vpc_id     = module.vpc.vpc_id
-  cidr_block = "10.0.184.0/28"
+  vpc_id            = module.vpc.vpc_id
+  cidr_block        = "10.0.184.0/28"
   availability_zone = "us-east-1b"
 }
 
@@ -647,18 +647,57 @@ resource "aws_security_group" "db_sg" {
 }
 
 resource "aws_db_instance" "poltergeist-db" {
-  identifier        = "poltergeist"
-  engine            = "postgres"
-  engine_version    = "15.2"
-  instance_class    = "db.t3.micro"
-  allocated_storage = 20
-  db_name           = "poltergeist"
-  username          = "db_user"
-  password          = var.db_password
-  skip_final_snapshot = true
-  db_subnet_group_name = aws_db_subnet_group.main.name
+  identifier             = "poltergeist"
+  engine                 = "postgres"
+  engine_version         = "15.2"
+  instance_class         = "db.t3.micro"
+  allocated_storage      = 20
+  db_name                = "poltergeist"
+  username               = "db_user"
+  password               = var.db_password
+  skip_final_snapshot    = true
+  db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.db_sg.id]
 
-  parameter_group_name = "default.postgres15"
+  parameter_group_name    = "default.postgres15"
   backup_retention_period = 1
 }
+
+resource "aws_key_pair" "lappentoppen" {
+  key_name   = "lappentoppen"
+  public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR4WRxoB3jd6Q/qFXBIgKqkPwo9gXyzUHctXpZgeMx0"
+}
+
+resource "aws_security_group" "allow_ssh" {
+  name        = "allow_ssh"
+  description = "Allow SSH inbound traffic"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_instance" "ssh_box" {
+  ami                    = "ami-05c13eab67c5d8861" // free cheap linux box
+  instance_type          = "t2.nano"
+  key_name               = aws_key_pair.lappentoppen.key_name
+  subnet_id              = module.vpc.public_subnets[0]
+  vpc_security_group_ids = [aws_security_group.allow_ssh.id, aws_security_group.db_sg.id]
+  associate_public_ip_address = true
+
+  tags = {
+    Name = "SshBox"
+  }
+}
+

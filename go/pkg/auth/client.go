@@ -3,21 +3,24 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"errors"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type GetUsersRequest struct {
-	UserIDs []uint `json:"userIds" binding:"required"`
+	UserIDs []uuid.UUID `json:"userIds" binding:"required"`
 }
 
 type RegisterByTextRequest struct {
-	PhoneNumber string `json:"phoneNumber" binding:"required"`
-	Code        string `json:"code" binding:"required"`
-	Name        string `json:"name"`
+	PhoneNumber string  `json:"phoneNumber" binding:"required"`
+	Code        string  `json:"code" binding:"required"`
+	Name        string  `json:"name"`
+	UserID      *string `json:"userId"`
 }
 
 type LoginByTextRequest struct {
@@ -26,15 +29,17 @@ type LoginByTextRequest struct {
 }
 
 type User struct {
-	gorm.Model
-	Name        string `json:"name"`
-	PhoneNumber string `json:"phoneNumber"`
+	ID          uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt   time.Time `db:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at"`
+	Name        string    `json:"name"`
+	PhoneNumber string    `json:"phoneNumber"`
 }
 
 type authClient struct{}
 
 type AuthClient interface {
-	GetUsers(userIDs []uint) ([]User, error)
+	GetUsers(userIDs []uuid.UUID) ([]User, error)
 	RegisterByText(request *RegisterByTextRequest) (*models.User, error)
 	LoginByText(request *LoginByTextRequest) (*models.User, error)
 }
@@ -47,7 +52,7 @@ func NewAuthClient() AuthClient {
 	return &authClient{}
 }
 
-func (d *authClient) GetUsers(userIDs []uint) ([]User, error) {
+func (d *authClient) GetUsers(userIDs []uuid.UUID) ([]User, error) {
 	request := GetUsersRequest{
 		UserIDs: userIDs,
 	}
@@ -62,9 +67,13 @@ func (d *authClient) GetUsers(userIDs []uint) ([]User, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, errors.New("error making request to authenticator")
 	}
 
 	var users []User
@@ -88,9 +97,13 @@ func (d *authClient) RegisterByText(request *RegisterByTextRequest) (*models.Use
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, errors.New("error making request to authenticator")
 	}
 
 	var user models.User
@@ -114,9 +127,13 @@ func (d *authClient) LoginByText(request *LoginByTextRequest) (*models.User, err
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, errors.New("error making request to authenticator")
 	}
 
 	var user models.User
@@ -127,4 +144,3 @@ func (d *authClient) LoginByText(request *LoginByTextRequest) (*models.User, err
 
 	return &user, nil
 }
-

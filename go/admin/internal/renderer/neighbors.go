@@ -28,19 +28,19 @@ func (r *renderer) GetNeighbors(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
-	info.AddField("Crystal One ID", "crystal_one_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		crystalID := model.Row["crystal_one_id"].(int64)
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
+	info.AddField("Crystal One ID", "crystal_one_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		crystalID := model.Row["crystal_one_id"].(string)
 		return templates.Link(
 			fmt.Sprint(crystalID),
-			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%d", crystalID),
+			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%s", crystalID),
 		)
 	}).FieldFilterable()
-	info.AddField("Crystal Two ID", "crystal_two_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		crystalID := model.Row["crystal_two_id"].(int64)
+	info.AddField("Crystal Two ID", "crystal_two_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		crystalID := model.Row["crystal_two_id"].(string)
 		return templates.Link(
 			fmt.Sprint(crystalID),
-			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%d", crystalID),
+			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%s", crystalID),
 		)
 	}).FieldFilterable()
 

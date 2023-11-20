@@ -24,7 +24,7 @@ func (r *renderer) GetTeams(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
 	info.AddField("Name", "name", db.Varchar)
 	info.
 		SetTable("teams").

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -21,7 +22,7 @@ func (c *crystalHandle) FindAll(ctx context.Context) ([]models.Crystal, error) {
 	return crystals, nil
 }
 
-func (c *crystalHandle) FindByID(ctx context.Context, id uint) (*models.Crystal, error) {
+func (c *crystalHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Crystal, error) {
 	var crystal models.Crystal
 
 	if err := c.db.WithContext(ctx).First(&crystal, id).Error; err != nil {
@@ -31,7 +32,7 @@ func (c *crystalHandle) FindByID(ctx context.Context, id uint) (*models.Crystal,
 	return &crystal, nil
 }
 
-func (c *crystalHandle) Capture(ctx context.Context, crystalID uint, teamID uint, attune bool) error {
+func (c *crystalHandle) Capture(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID, attune bool) error {
 	updates := models.Crystal{
 		Attuned:       attune,
 		Captured:      !attune,
@@ -41,7 +42,7 @@ func (c *crystalHandle) Capture(ctx context.Context, crystalID uint, teamID uint
 	return c.db.WithContext(ctx).Model(&models.Crystal{}).Where("id = ?", crystalID).Updates(&updates).Error
 }
 
-func (c *crystalHandle) Unlock(ctx context.Context, crystalID uint, teamID uint) error {
+func (c *crystalHandle) Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error {
 	unlock := models.CrystalUnlocking{
 		TeamID:    teamID,
 		CrystalID: crystalID,

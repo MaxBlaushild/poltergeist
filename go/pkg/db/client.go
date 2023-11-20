@@ -11,25 +11,25 @@ import (
 )
 
 type client struct {
-	db                             *gorm.DB
-	scoreHandle                    *scoreHandler
-	userHandle                     *userHandle
-	questionSetHandle              *questionSetHandle
-	matchHandle                    *matchHandle
-	userSubmissionHandle           *userSubmissionHandle
-	questionHandle                 *questionHandle
-	howManyQuestionHandle          *howManyQuestionHandle
-	howManyAnswerHandle            *howManyAnswerHandle
-	challengeHandle                *challengeHandle
-	credentialHandle               *credentialHandle
-	teamHandle                     *teamHandle
-	userTeamHandle                 *userTeamHandle
-	crystalHandle                  *crystalHandle
-	crystalUnlockingHandle         *crystalUnlockingHandle
-	neighborHandle                 *neighborHandle
-	textVerificationCodeHandle     *textVerificationCodeHandle
-	sentTextHandle                 *sentTextHandle
-	guessHowManuSubscriptionHandle *guessHowManySubscriptionHandle
+	db                         *gorm.DB
+	scoreHandle                *scoreHandler
+	userHandle                 *userHandle
+	questionSetHandle          *questionSetHandle
+	matchHandle                *matchHandle
+	userSubmissionHandle       *userSubmissionHandle
+	questionHandle             *questionHandle
+	howManyQuestionHandle      *howManyQuestionHandle
+	howManyAnswerHandle        *howManyAnswerHandle
+	challengeHandle            *challengeHandle
+	credentialHandle           *credentialHandle
+	teamHandle                 *teamHandle
+	userTeamHandle             *userTeamHandle
+	crystalHandle              *crystalHandle
+	crystalUnlockingHandle     *crystalUnlockingHandle
+	neighborHandle             *neighborHandle
+	textVerificationCodeHandle *textVerificationCodeHandle
+	sentTextHandle             *sentTextHandle
+	howManySubscriptionHandle  *howManySubscriptionHandle
 }
 
 type ClientConfig struct {
@@ -58,25 +58,25 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	}
 
 	return &client{
-		db:                             db,
-		scoreHandle:                    &scoreHandler{db: db},
-		userHandle:                     &userHandle{db: db},
-		questionSetHandle:              &questionSetHandle{db: db},
-		matchHandle:                    &matchHandle{db: db},
-		userSubmissionHandle:           &userSubmissionHandle{db: db},
-		questionHandle:                 &questionHandle{db: db},
-		howManyQuestionHandle:          &howManyQuestionHandle{db: db},
-		howManyAnswerHandle:            &howManyAnswerHandle{db: db},
-		challengeHandle:                &challengeHandle{db: db},
-		credentialHandle:               &credentialHandle{db: db},
-		teamHandle:                     &teamHandle{db: db},
-		userTeamHandle:                 &userTeamHandle{db: db},
-		crystalHandle:                  &crystalHandle{db: db},
-		crystalUnlockingHandle:         &crystalUnlockingHandle{db: db},
-		neighborHandle:                 &neighborHandle{db: db},
-		textVerificationCodeHandle:     &textVerificationCodeHandle{db: db},
-		sentTextHandle:                 &sentTextHandle{db: db},
-		guessHowManuSubscriptionHandle: &guessHowManySubscriptionHandle{db: db},
+		db:                         db,
+		scoreHandle:                &scoreHandler{db: db},
+		userHandle:                 &userHandle{db: db},
+		questionSetHandle:          &questionSetHandle{db: db},
+		matchHandle:                &matchHandle{db: db},
+		userSubmissionHandle:       &userSubmissionHandle{db: db},
+		questionHandle:             &questionHandle{db: db},
+		howManyQuestionHandle:      &howManyQuestionHandle{db: db},
+		howManyAnswerHandle:        &howManyAnswerHandle{db: db},
+		challengeHandle:            &challengeHandle{db: db},
+		credentialHandle:           &credentialHandle{db: db},
+		teamHandle:                 &teamHandle{db: db},
+		userTeamHandle:             &userTeamHandle{db: db},
+		crystalHandle:              &crystalHandle{db: db},
+		crystalUnlockingHandle:     &crystalUnlockingHandle{db: db},
+		neighborHandle:             &neighborHandle{db: db},
+		textVerificationCodeHandle: &textVerificationCodeHandle{db: db},
+		sentTextHandle:             &sentTextHandle{db: db},
+		howManySubscriptionHandle:  &howManySubscriptionHandle{db: db},
 	}, err
 }
 
@@ -86,10 +86,6 @@ func (c *client) Score() ScoreHandle {
 
 func (c *client) Exec(ctx context.Context, q string) error {
 	return c.db.WithContext(ctx).Exec(q).Error
-}
-
-func (c *client) Migrate(ctx context.Context, m ...interface{}) error {
-	return c.db.WithContext(ctx).AutoMigrate(m...)
 }
 
 func (c *client) QuestionSet() QuestionSetHandle {
@@ -155,6 +151,6 @@ func (c *client) SentText() SentTextHandle {
 	return c.sentTextHandle
 }
 
-func (c *client) GuessHowManySubscription() GuessHowManySubscriptionHandle {
-	return c.guessHowManuSubscriptionHandle
+func (c *client) HowManySubscription() HowManySubscriptionHandle {
+	return c.howManySubscriptionHandle
 }

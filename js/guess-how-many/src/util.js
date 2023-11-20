@@ -4,9 +4,8 @@ export const getUserID = () => {
   const id = localStorage.getItem('user-id');
   if (id) {
     try {
-      const intId = parseInt(id);
       return {
-        userId: intId,
+        userId: id,
       };
     } catch (e) {
       localStorage.removeItem('user-id');

@@ -24,12 +24,12 @@ func (r *renderer) GetUsers(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
 	info.AddField("Name", "name", db.Varchar)
 	info.AddField("Phone Number", "phone_number", db.Varchar)
 
 	info.
-		SetTable("geist_users").
+		SetTable("users").
 		SetTitle("Users").
 		SetDescription("Yep. They're users.")
 

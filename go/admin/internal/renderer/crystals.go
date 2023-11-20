@@ -24,7 +24,7 @@ func (r *renderer) GetCrystals(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
 	info.AddField("Clue", "clue", db.Varchar)
 	info.AddField("Capture Challenge", "capture_challenge", db.Varchar)
 	info.AddField("Attune Challenge", "attune_challenge", db.Varchar)
@@ -35,7 +35,7 @@ func (r *renderer) GetCrystals(ctx *context.Context) table.Table {
 	info.AddField("Lng", "lng", db.Varchar)
 
 	info.
-		SetTable("crisis_crystals").
+		SetTable("crystals").
 		SetTitle("Crystals").
 		SetDescription("The points of interest on the map")
 

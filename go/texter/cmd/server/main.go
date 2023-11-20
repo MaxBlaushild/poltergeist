@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"net/http"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/twilio"
 	"github.com/MaxBlaushild/poltergeist/texter/internal/config"
 	"github.com/gin-gonic/gin"
@@ -66,9 +64,6 @@ func forwardText(ctx *gin.Context, url string, text *Text) (*Text, error) {
 
 func main() {
 	router := gin.Default()
-	ctx := context.Background()
-
-	fmt.Println("IN THE TEXTER")
 
 	cfg, err := config.ParseFlagsAndGetConfig()
 	if err != nil {
@@ -85,10 +80,6 @@ func main() {
 		Password: cfg.Secret.DbPassword,
 	})
 	if err != nil {
-		panic(err)
-	}
-
-	if err := dbClient.Migrate(ctx, &models.SentText{}); err != nil {
 		panic(err)
 	}
 

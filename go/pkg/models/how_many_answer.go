@@ -1,20 +1,21 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type HowManyAnswer struct {
-	gorm.Model
+	ID                uuid.UUID       `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt         time.Time       `db:"created_at"`
+	UpdatedAt         time.Time       `db:"updated_at"`
 	HowManyQuestion   HowManyQuestion `json:"howManyQuestion"`
-	HowManyQuestionID uint            `json:"howManyQuestionId"`
+	HowManyQuestionID uuid.UUID       `json:"howManyQuestionId"`
 	Answer            int             `json:"answer"`
 	Guess             int             `json:"guess"`
 	OffBy             int             `json:"offBy"`
 	Correctness       float64         `json:"correctness"`
 	User              User            `json:"user"`
-	UserID            *uint           `json:"userId"`
-	EphemeralUserID   *string         `json:"ephemeralUserId"`
-}
-
-func (h *HowManyAnswer) TableName() string {
-	return "how_many_as"
+	UserID            uuid.UUID       `json:"userId"`
 }

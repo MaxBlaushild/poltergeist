@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -21,7 +22,7 @@ func (h *teamHandle) GetAll(ctx context.Context) ([]models.Team, error) {
 	return teams, nil
 }
 
-func (h *teamHandle) Create(ctx context.Context, userIDs []uint, teamName string) error {
+func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName string) error {
 	team := models.Team{Name: teamName}
 
 	if err := h.db.WithContext(ctx).Create(&team).Error; err != nil {

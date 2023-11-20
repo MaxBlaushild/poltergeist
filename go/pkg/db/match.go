@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -16,7 +17,7 @@ func (m *matchHandle) Insert(ctx context.Context, match *models.Match) error {
 	return m.db.WithContext(ctx).Create(match).Error
 }
 
-func (m *matchHandle) GetCurrentMatchForUser(ctx context.Context, userID uint) (*models.Match, error) {
+func (m *matchHandle) GetCurrentMatchForUser(ctx context.Context, userID uuid.UUID) (*models.Match, error) {
 	match := models.Match{}
 
 	if err := m.db.

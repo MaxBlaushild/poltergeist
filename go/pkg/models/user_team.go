@@ -1,10 +1,16 @@
 package models
 
-import "gorm.io/gorm"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type UserTeam struct {
-	gorm.Model
-	TeamID uint
-	Team   Team
-	UserID uint
+	ID        uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
+	TeamID    uuid.UUID
+	Team      Team
+	UserID    uuid.UUID
 }

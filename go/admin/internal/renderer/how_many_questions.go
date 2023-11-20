@@ -24,7 +24,7 @@ func (r *renderer) GetHowManyQuestions(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
 	info.AddField("Text", "text", db.Varchar)
 	info.AddField("Explanation", "explanation", db.Varchar)
 	info.AddField("How Many", "how_many", db.Int)
@@ -32,12 +32,12 @@ func (r *renderer) GetHowManyQuestions(ctx *context.Context) table.Table {
 	info.AddField("Done", "done", db.Bool)
 
 	info.
-		SetTable("how_many_qs").
+		SetTable("how_many_questions").
 		SetTitle("How Many Questions").
 		SetDescription("The questions we ask in guess with us")
 
-	questionsTable.GetNewForm().SetTable("how_many_qs")
-	questionsTable.GetActualNewForm().SetTable("how_many_qs")
+	questionsTable.GetNewForm().SetTable("how_many_questions")
+	questionsTable.GetActualNewForm().SetTable("how_many_questions")
 
 	return questionsTable
 }

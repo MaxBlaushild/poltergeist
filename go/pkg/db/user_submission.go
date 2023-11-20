@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -13,8 +14,8 @@ type userSubmissionHandle struct {
 
 func (u *userSubmissionHandle) Insert(
 	ctx context.Context,
-	questionSetID uint,
-	userID uint,
+	questionSetID uuid.UUID,
+	userID uuid.UUID,
 	userAnswers []models.UserAnswer,
 ) (*models.UserSubmission, error) {
 
@@ -31,7 +32,7 @@ func (u *userSubmissionHandle) Insert(
 	return &submission, nil
 }
 
-func (m *userSubmissionHandle) FindByUserAndQuestionSetID(ctx context.Context, userID uint, questionSetID uint) (*models.UserSubmission, error) {
+func (m *userSubmissionHandle) FindByUserAndQuestionSetID(ctx context.Context, userID uuid.UUID, questionSetID uuid.UUID) (*models.UserSubmission, error) {
 	submission := models.UserSubmission{
 		QuestionSetID: questionSetID,
 		UserID:        userID,

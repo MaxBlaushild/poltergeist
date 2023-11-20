@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/slack"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/MaxBlaushild/poltergeist/scorekeeper/internal/config"
@@ -50,13 +49,6 @@ func main() {
 		Password: cfg.Secret.DbPassword,
 	})
 	if err != nil {
-		panic(err)
-	}
-
-	if err := dbClient.Migrate(
-		ctx,
-		&models.Score{},
-	); err != nil {
 		panic(err)
 	}
 

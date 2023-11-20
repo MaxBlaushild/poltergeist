@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -11,7 +12,7 @@ type credentialHandle struct {
 	db *gorm.DB
 }
 
-func (h *credentialHandle) Insert(ctx context.Context, credentialID string, publicKey string, userID uint) (*models.Credential, error) {
+func (h *credentialHandle) Insert(ctx context.Context, credentialID string, publicKey string, userID uuid.UUID) (*models.Credential, error) {
 	credential := models.Credential{
 		CredentialID: credentialID,
 		PublicKey:    publicKey,
@@ -35,7 +36,7 @@ func (h *credentialHandle) FindAll(ctx context.Context) ([]models.Credential, er
 	return credentials, nil
 }
 
-func (h *credentialHandle) Delete(ctx context.Context, credentialID uint) error {
+func (h *credentialHandle) Delete(ctx context.Context, credentialID uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Credential{}, credentialID).Error
 }
 

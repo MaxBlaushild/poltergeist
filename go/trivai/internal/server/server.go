@@ -2,9 +2,7 @@ package server
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
@@ -17,6 +15,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/config"
 	"github.com/MaxBlaushild/poltergeist/trivai/internal/trivai"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type Server struct {
@@ -50,8 +49,6 @@ func NewServer(
 		authClient:    authClient,
 	}
 
-	r.POST("/trivai/matches", s.createMatch)
-	r.POST("/trivai/question_sets/:questionSetID/answer", s.submitAnswers)
 	r.GET("/trivai/questions", s.getQuestions)
 	r.GET("/trivai/subscriptions/:userID", s.getSubscription)
 	r.GET("/trivai/users/:userId", s.getUser)
@@ -75,38 +72,29 @@ func NewServer(
 	return s
 }
 
-func getToken(ctx *gin.Context) (string, error) {
+func getUserID(ctx *gin.Context) (uuid.UUID, error) {
 	authHeader := ctx.GetHeader("Authorization")
 	if authHeader == "" {
-		return "", errors.New("missing authorization header")
+		return uuid.Nil, errors.New("missing authorization header")
 	}
 
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		return "", errors.New("invalid authorization header")
+		return uuid.Nil, errors.New("invalid authorization header")
 	}
 
-	return parts[1], nil
-}
-
-func getUserID(ctx *gin.Context) (uint, error) {
-	userID, err := getToken(ctx)
+	id, err := uuid.Parse(parts[1])
 	if err != nil {
-		return 0, err
+		return uuid.Nil, err
 	}
 
-	ui64, err := strconv.ParseUint(userID, 10, 64)
-	if err != nil {
-		return 0, errors.New("invalid user id format")
-	}
-
-	return uint(ui64), nil
+	return id, nil
 }
 
 func (s *Server) getSubscription(ctx *gin.Context) {
-	userId := ctx.Param("userID")
+	userID := ctx.Param("userID")
 
-	uint64Val, err := strconv.ParseUint(userId, 10, 64)
+	uuidUserID, err := uuid.Parse(userID)
 	if err != nil {
 		ctx.JSON(500, gin.H{
 			"error": err.Error(),
@@ -114,7 +102,7 @@ func (s *Server) getSubscription(ctx *gin.Context) {
 		return
 	}
 
-	subscription, err := s.dbClient.GuessHowManySubscription().FindByUserID(ctx, uint(uint64Val))
+	subscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, uuidUserID)
 	if err != nil {
 		ctx.JSON(404, gin.H{
 			"error": err.Error(),
@@ -143,7 +131,7 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
-	subscription, err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID)
+	subscription, err := s.dbClient.HowManySubscription().Insert(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -152,7 +140,7 @@ func (s *Server) register(ctx *gin.Context) {
 	}
 
 	ctx.JSON(200, gin.H{
-		"user": user,
+		"user":         user,
 		"subscription": subscription,
 	})
 }
@@ -175,15 +163,15 @@ func (s *Server) login(ctx *gin.Context) {
 		return
 	}
 
-	subscription, err := s.dbClient.GuessHowManySubscription().FindByUserID(ctx, user.ID)
-
 	payload := gin.H{
 		"user": user,
 	}
-	if err == nil{
+
+	subscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, user.ID)
+	if err == nil {
 		payload["subscription"] = subscription
 	} else {
-		subscription, err := s.dbClient.GuessHowManySubscription().Insert(ctx, user.ID)
+		subscription, err := s.dbClient.HowManySubscription().Insert(ctx, user.ID)
 		if err == nil {
 			payload["subscription"] = subscription
 		}
@@ -196,16 +184,13 @@ func (s *Server) finishCheckout(ctx *gin.Context) {
 	var onSubscribe billing.OnSubscribe
 
 	if err := ctx.Bind(&onSubscribe); err != nil {
-		fmt.Println("marshal error")
-		fmt.Println(err)
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	userId, ok := onSubscribe.Metadata["user_id"]
-	fmt.Println(onSubscribe)
+	userID, ok := onSubscribe.Metadata["user_id"]
 	if !ok {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "user id is required to subscribe",
@@ -213,15 +198,15 @@ func (s *Server) finishCheckout(ctx *gin.Context) {
 		return
 	}
 
-	uint64Val, err := strconv.ParseUint(userId, 10, 64)
+	uuidUserID, err := uuid.Parse(userID)
 	if err != nil {
-		ctx.JSON(400, gin.H{
-			"error": "bad user id provided",
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	if err := s.dbClient.GuessHowManySubscription().SetSubscribed(ctx, uint(uint64Val), true); err != nil {
+	if err := s.dbClient.HowManySubscription().SetSubscribed(ctx, uuidUserID, true); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -234,24 +219,24 @@ func (s *Server) finishCheckout(ctx *gin.Context) {
 }
 
 func (s *Server) beginCheckout(ctx *gin.Context) {
-	userId := ctx.PostForm("userId")
+	userID := ctx.PostForm("userId")
 
-	if len(userId) == 0 {
+	if len(userID) == 0 {
 		ctx.JSON(400, gin.H{
 			"error": "user id required",
 		})
 		return
 	}
 
-	ui64, err := strconv.ParseUint(userId, 10, 64)
+	uuidUserID, err := uuid.Parse(userID)
 	if err != nil {
-		ctx.JSON(400, gin.H{
-			"error": "invalid user id",
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	user, err := s.dbClient.User().FindByID(ctx, uint(ui64))
+	user, err := s.dbClient.User().FindByID(ctx, uuidUserID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -265,7 +250,7 @@ func (s *Server) beginCheckout(ctx *gin.Context) {
 		CancelUrl:   s.cfg.Public.GuessHowManySubscribeCancelUrl,
 		CallbackUrl: "http://localhost:8082/trivai/finish-checkout",
 		Metadata: map[string]string{
-			"user_id": strconv.FormatUint(uint64(user.ID), 10),
+			"user_id": user.ID.String(),
 		},
 	})
 	if err != nil {
@@ -319,7 +304,7 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 	correctness, offBy := s.triviaClient.GradeHowManyQuestion(ctx, guess, question.HowMany)
 
 	answer := models.HowManyAnswer{
-		UserID:            &user.ID,
+		UserID:            user.ID,
 		HowManyQuestionID: question.ID,
 		Correctness:       correctness,
 		OffBy:             offBy,
@@ -341,9 +326,9 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 }
 
 func (s *Server) getUser(c *gin.Context) {
-	userId := c.Param("userId")
+	userID := c.Param("userId")
 
-	uint64Val, err := strconv.ParseUint(userId, 10, 64)
+	uuidUserID, err := uuid.Parse(userID)
 	if err != nil {
 		c.JSON(500, gin.H{
 			"error": err.Error(),
@@ -351,7 +336,7 @@ func (s *Server) getUser(c *gin.Context) {
 		return
 	}
 
-	user, err := s.dbClient.User().FindByID(c, uint(uint64Val))
+	user, err := s.dbClient.User().FindByID(c, uuidUserID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": "no user found",
@@ -364,7 +349,7 @@ func (s *Server) getUser(c *gin.Context) {
 
 func (s *Server) subscribeToHowManyQuestions(ctx *gin.Context) {
 	var subscribeRequest struct {
-		UserId      string `json:"userId" binding:"required"`
+		UserID      string `json:"userId" binding:"required"`
 		PhoneNumber string `json:"phoneNumber" binding:"required"`
 	}
 
@@ -375,7 +360,7 @@ func (s *Server) subscribeToHowManyQuestions(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.dbClient.User().Insert(ctx, subscribeRequest.UserId, subscribeRequest.PhoneNumber)
+	user, err := s.dbClient.User().Insert(ctx, subscribeRequest.UserID, subscribeRequest.PhoneNumber, nil)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -389,16 +374,8 @@ func (s *Server) subscribeToHowManyQuestions(ctx *gin.Context) {
 func (s *Server) getHowManyQuestionAnswer(c *gin.Context) {
 	stringQuestionID := c.Query("questionId")
 	stringUserID := c.Query("userId")
-	ephemeralUserID := c.Query("ephemeralUserId")
 
-	if len(stringQuestionID) == 0 {
-		c.JSON(400, gin.H{
-			"error": "question id is required",
-		})
-		return
-	}
-
-	questionId64, err := strconv.ParseUint(stringQuestionID, 10, 32)
+	questionID, err := uuid.Parse(stringQuestionID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid question id",
@@ -406,44 +383,17 @@ func (s *Server) getHowManyQuestionAnswer(c *gin.Context) {
 		return
 	}
 
-	if len(stringUserID) != 0 && len(ephemeralUserID) != 0 {
-		c.JSON(400, gin.H{
-			"error": "only allowed one of user id and emphemeral user id",
-		})
-		return
-	}
-
-	if len(stringUserID) == 0 && len(ephemeralUserID) == 0 {
-		c.JSON(400, gin.H{
-			"error": "one of user id and emphemeral user id required",
-		})
-		return
-	}
-
-	if len(stringUserID) != 0 {
-		userId64, err := strconv.ParseUint(stringUserID, 10, 32)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"message": "invalid id",
-			})
-			return
-		}
-
-		answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndUserID(c, uint(questionId64), uint(userId64))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"message": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, answer)
-		return
-	}
-
-	answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndEphemeralUserID(c, uint(questionId64), ephemeralUserID)
+	userID, err := uuid.Parse(stringUserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid question id",
+		})
+		return
+	}
+
+	answer, err := s.dbClient.HowManyAnswer().FindByQuestionIDAndUserID(c, questionID, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
 			"message": err.Error(),
 		})
 		return
@@ -454,10 +404,9 @@ func (s *Server) getHowManyQuestionAnswer(c *gin.Context) {
 
 func (s *Server) gradeQuestion(ctx *gin.Context) {
 	var gradeRequest struct {
-		Guess           int     `json:"guess" binding:"required"`
-		Id              uint    `json:"id" binding:"required"`
-		UserId          *uint   `json:"userId"`
-		EphemeralUserId *string `json:"ephemeralUserId"`
+		Guess  int    `json:"guess" binding:"required"`
+		Id     string `json:"id" binding:"required"`
+		UserID string `json:"userId"`
 	}
 
 	if err := ctx.Bind(&gradeRequest); err != nil {
@@ -467,7 +416,23 @@ func (s *Server) gradeQuestion(ctx *gin.Context) {
 		return
 	}
 
-	question, err := s.dbClient.HowManyQuestion().FindById(ctx, gradeRequest.Id)
+	userID, err := uuid.Parse(gradeRequest.UserID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit user id",
+		})
+		return
+	}
+
+	id, err := uuid.Parse(gradeRequest.Id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit id",
+		})
+		return
+	}
+
+	question, err := s.dbClient.HowManyQuestion().FindById(ctx, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -478,13 +443,12 @@ func (s *Server) gradeQuestion(ctx *gin.Context) {
 	correctness, offBy := s.triviaClient.GradeHowManyQuestion(ctx, gradeRequest.Guess, question.HowMany)
 
 	answer := models.HowManyAnswer{
-		UserID:            gradeRequest.UserId,
-		HowManyQuestionID: gradeRequest.Id,
+		UserID:            userID,
+		HowManyQuestionID: id,
 		Correctness:       correctness,
 		OffBy:             offBy,
 		Answer:            question.HowMany,
 		Guess:             gradeRequest.Guess,
-		EphemeralUserID:   gradeRequest.EphemeralUserId,
 	}
 
 	if _, err := s.dbClient.HowManyAnswer().Insert(ctx, &answer); err != nil {
@@ -514,7 +478,15 @@ func (s *Server) getCurrentQuestion(ctx *gin.Context) {
 func (s *Server) markHowManyQuestionValid(ctx *gin.Context) {
 	id := ctx.Param("id")
 
-	if err := s.dbClient.HowManyQuestion().MarkValid(ctx, id); err != nil {
+	questionID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit user id",
+		})
+		return
+	}
+
+	if err := s.dbClient.HowManyQuestion().MarkValid(ctx, questionID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
 		})
@@ -558,8 +530,6 @@ func (s *Server) generateNewHowManyQuestion(ctx *gin.Context) {
 		return
 	}
 
-	fmt.Println(howManyQuestion.Explanation)
-
 	question, err := s.dbClient.HowManyQuestion().Insert(ctx, howManyQuestion.Text, howManyQuestion.Explanation, howManyQuestion.HowMany)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -584,8 +554,9 @@ func (s *Server) getQuestions(ctx *gin.Context) {
 }
 
 func (s *Server) getUserSubmissionForQuestionSet(c *gin.Context) {
-	userID := c.Param("userID")
-	intUserID, err := strconv.Atoi(userID)
+	stringUserID := c.Param("userID")
+
+	userID, err := uuid.Parse(stringUserID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "invalid user id",
@@ -593,8 +564,8 @@ func (s *Server) getUserSubmissionForQuestionSet(c *gin.Context) {
 		return
 	}
 
-	questionSetID := c.Param("questionSetID")
-	intQuestionSetID, err := strconv.Atoi(questionSetID)
+	stringQuestionSetID := c.Param("questionSetID")
+	questionSetID, err := uuid.Parse(stringQuestionSetID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "invalid question set id",
@@ -602,7 +573,7 @@ func (s *Server) getUserSubmissionForQuestionSet(c *gin.Context) {
 		return
 	}
 
-	userSubmission, err := s.dbClient.UserSubmission().FindByUserAndQuestionSetID(c, uint(intUserID), uint(intQuestionSetID))
+	userSubmission, err := s.dbClient.UserSubmission().FindByUserAndQuestionSetID(c, userID, questionSetID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"message": "no submission for user yet",
@@ -611,180 +582,4 @@ func (s *Server) getUserSubmissionForQuestionSet(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, userSubmission)
-}
-
-func (s *Server) getCurrentMatch(c *gin.Context) {
-	userID := c.Param("userID")
-	intUserID, err := strconv.Atoi(userID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid user id",
-		})
-		return
-	}
-	match, err := s.dbClient.Match().GetCurrentMatchForUser(c, uint(intUserID))
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "no current match for user",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, match)
-}
-
-func (s *Server) createMatch(c *gin.Context) {
-	var createMatchRequest struct {
-		HomeUserID uint `json:"home_user_id" binding:"required"`
-		AwayUserID uint `json:"away_user_id" binding:"required"`
-	}
-
-	if err := c.Bind(&createMatchRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "your request sucks ass",
-		})
-		return
-	}
-
-	questions, err := s.triviaClient.GenerateQuestions(c)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "trivai shit the bed",
-		})
-		return
-	}
-
-	var qs []models.Question
-	for _, q := range questions {
-		qs = append(qs, models.Question{
-			Prompt: q.Prompt,
-			Category: models.Category{
-				Title: q.Category,
-			},
-			Answer: q.Answer,
-		})
-	}
-
-	questionSet, err := s.dbClient.QuestionSet().Insert(c, qs)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	homeUser, err := s.dbClient.User().FindByID(c, createMatchRequest.HomeUserID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "home user not found",
-		})
-		return
-	}
-
-	awayUser, err := s.dbClient.User().FindByID(c, createMatchRequest.AwayUserID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "away user not found",
-		})
-		return
-	}
-
-	match := models.Match{
-		Home:        *homeUser,
-		Away:        *awayUser,
-		QuestionSet: *questionSet,
-	}
-
-	if err := s.dbClient.Match().Insert(c, &match); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"match_id": match.ID})
-}
-
-func (s *Server) submitAnswers(c *gin.Context) {
-	var submitAnswersRequest struct {
-		UserID  uint                `json:"userId" binding:"required"`
-		Answers []models.UserAnswer `json:"answers" binding:"required"`
-	}
-
-	questionSetID := c.Param("questionSetID")
-	intQuestionSetID, err := strconv.Atoi(questionSetID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid question set id",
-		})
-		return
-	}
-
-	if err := c.Bind(&submitAnswersRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	questions, err := s.dbClient.Question().FindByQuestionSetID(c, uint(intQuestionSetID))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	var trivaiQuestions []trivai.Question
-	var answers []string
-
-	for _, userAnswer := range submitAnswersRequest.Answers {
-		answers = append(answers, userAnswer.Answer)
-
-		var question *models.Question
-		for i, q := range questions {
-			if q.ID == userAnswer.QuestionID {
-				question = &questions[i]
-			}
-		}
-
-		if question == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"message": "submitted answer for ineligible question",
-			})
-			return
-		}
-
-		trivaiQuestions = append(trivaiQuestions, trivai.Question{
-			Prompt: question.Prompt,
-		})
-	}
-
-	grades, err := s.triviaClient.GradeUserSubmission(c, trivaiQuestions, answers)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	for i := range submitAnswersRequest.Answers {
-		submitAnswersRequest.Answers[i].Correct = grades[i]
-		submitAnswersRequest.Answers[i].UserID = submitAnswersRequest.UserID
-	}
-
-	submission, err := s.dbClient.UserSubmission().Insert(
-		c,
-		uint(intQuestionSetID),
-		submitAnswersRequest.UserID,
-		submitAnswersRequest.Answers,
-	)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, submission)
 }

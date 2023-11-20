@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -53,6 +54,6 @@ func (c *textVerificationCodeHandle) Find(ctx context.Context, phoneNumber strin
 	return &textVerificationCode, nil
 }
 
-func (c *textVerificationCodeHandle) MarkUsed(ctx context.Context, id uint) error {
+func (c *textVerificationCodeHandle) MarkUsed(ctx context.Context, id uuid.UUID) error {
 	return c.db.WithContext(ctx).Model(&models.TextVerificationCode{}).Where("id = ?", id).Update("used", true).Error
 }

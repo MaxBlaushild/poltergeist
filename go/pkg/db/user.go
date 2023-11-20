@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -11,10 +12,14 @@ type userHandle struct {
 	db *gorm.DB
 }
 
-func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string) (*models.User, error) {
+func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID) (*models.User, error) {
 	user := models.User{
 		Name:        name,
 		PhoneNumber: phoneNumber,
+	}
+
+	if id != nil {
+		user.ID = *id
 	}
 
 	if err := h.db.WithContext(ctx).Model(&models.User{}).Create(&user).Error; err != nil {
@@ -24,7 +29,7 @@ func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string
 	return &user, nil
 }
 
-func (h *userHandle) FindByID(ctx context.Context, id uint) (*models.User, error) {
+func (h *userHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var user models.User
 	if err := h.db.WithContext(ctx).Preload("Credentials").First(&user, id).Error; err != nil {
 		return nil, err
@@ -39,10 +44,14 @@ func (h *userHandle) FindByPhoneNumber(ctx context.Context, phoneNumber string) 
 		return nil, err
 	}
 
+	if uuid.Nil == user.ID {
+		return nil, gorm.ErrRecordNotFound
+	}
+
 	return &user, nil
 }
 
-func (h *userHandle) FindUsersByIDs(ctx context.Context, userIDs []uint) ([]models.User, error) {
+func (h *userHandle) FindUsersByIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.User, error) {
 	var users []models.User
 
 	if err := h.db.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
@@ -62,7 +71,7 @@ func (h *userHandle) FindAll(ctx context.Context) ([]models.User, error) {
 	return users, nil
 }
 
-func (h *userHandle) Delete(ctx context.Context, userID uint) error {
+func (h *userHandle) Delete(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.User{}, userID).Error
 }
 

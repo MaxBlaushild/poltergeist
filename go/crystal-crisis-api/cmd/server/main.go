@@ -11,6 +11,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -32,17 +33,6 @@ func main() {
 		Password: cfg.Secret.DbPassword,
 	})
 	if err != nil {
-		panic(err)
-	}
-
-	if err := dbClient.Migrate(
-		ctx,
-		&models.Team{},
-		&models.UserTeam{},
-		&models.Crystal{},
-		&models.CrystalUnlocking{},
-		&models.Neighbor{},
-	); err != nil {
 		panic(err)
 	}
 
@@ -80,8 +70,8 @@ func main() {
 
 	router.POST("/crystal-crisis/teams", func(c *gin.Context) {
 		var createTeamsRequest struct {
-			UserIDs []uint `json:"userIds" binding:"required"`
-			Name    string `json:"name" binding:"required"`
+			UserIDs []string `json:"userIds" binding:"required"`
+			Name    string   `json:"name" binding:"required"`
 		}
 
 		if err := c.Bind(&createTeamsRequest); err != nil {
@@ -91,7 +81,19 @@ func main() {
 			return
 		}
 
-		if err := dbClient.Team().Create(c, createTeamsRequest.UserIDs, createTeamsRequest.Name); err != nil {
+		var userIDs []uuid.UUID
+		for _, id := range createTeamsRequest.UserIDs {
+			userID, err := uuid.Parse(id)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"message": err.Error(),
+				})
+				return
+			}
+			userIDs = append(userIDs, userID)
+		}
+
+		if err := dbClient.Team().Create(c, userIDs, createTeamsRequest.Name); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"message": err.Error(),
 			})
@@ -104,12 +106,11 @@ func main() {
 	router.GET("/crystal-crisis/teams", func(c *gin.Context) {
 		teams, err := dbClient.Team().GetAll(c)
 		if err != nil {
-			fmt.Println("shit")
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
 
-		var userIDs []uint
+		var userIDs []uuid.UUID
 		for _, team := range teams {
 			for _, userTeam := range team.UserTeams {
 				userIDs = append(userIDs, userTeam.UserID)
@@ -123,7 +124,6 @@ func main() {
 		if len(teams) > 0 {
 			users, err := authClient.GetUsers(userIDs)
 			if err != nil {
-				fmt.Println("ass")
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
 			}
@@ -135,10 +135,16 @@ func main() {
 	})
 
 	router.GET("/crystal-crisis/crystals/:teamID", func(c *gin.Context) {
-		teamID := c.Param("teamID")
+		stringTeamID := c.Param("teamID")
 		crystals, err := dbClient.Crystal().FindAll(c)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		teamID, err := uuid.Parse(stringTeamID)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -203,8 +209,8 @@ func main() {
 
 	router.POST("/crystal-crisis/crystals/unlock", func(c *gin.Context) {
 		var crystalUnlockRequest struct {
-			TeamID    uint `json:"teamId" binding:"required"`
-			CrystalID uint `json:"crystalId" binding:"required"`
+			TeamID    string `json:"teamId" binding:"required"`
+			CrystalID string `json:"crystalId" binding:"required"`
 		}
 
 		if err := c.Bind(&crystalUnlockRequest); err != nil {
@@ -214,7 +220,23 @@ func main() {
 			return
 		}
 
-		if err := dbClient.Crystal().Unlock(c, crystalUnlockRequest.CrystalID, crystalUnlockRequest.TeamID); err != nil {
+		crystalID, err := uuid.Parse(crystalUnlockRequest.CrystalID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "shit crystal id",
+			})
+			return
+		}
+
+		teamID, err := uuid.Parse(crystalUnlockRequest.TeamID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "shit team id",
+			})
+			return
+		}
+
+		if err := dbClient.Crystal().Unlock(c, crystalID, teamID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
@@ -228,9 +250,9 @@ func main() {
 
 	router.POST("/crystal-crisis/crystals/capture", func(c *gin.Context) {
 		var captureCrystalRequest struct {
-			CrystalID uint `json:"crystalId" binding:"required"`
-			TeamID    uint `json:"teamId" binding:"required"`
-			Attune    bool `json:"attune"`
+			CrystalID string `json:"crystalId" binding:"required"`
+			TeamID    string `json:"teamId" binding:"required"`
+			Attune    bool   `json:"attune"`
 		}
 
 		if err := c.Bind(&captureCrystalRequest); err != nil {
@@ -240,7 +262,23 @@ func main() {
 			return
 		}
 
-		if err := dbClient.Crystal().Capture(c, captureCrystalRequest.CrystalID, captureCrystalRequest.TeamID, captureCrystalRequest.Attune); err != nil {
+		crystalID, err := uuid.Parse(captureCrystalRequest.CrystalID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "shit crystal id",
+			})
+			return
+		}
+
+		teamID, err := uuid.Parse(captureCrystalRequest.TeamID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": "shit team id",
+			})
+			return
+		}
+
+		if err := dbClient.Crystal().Capture(ctx, crystalID, teamID, captureCrystalRequest.Attune); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
@@ -255,7 +293,7 @@ func main() {
 			return
 		}
 
-		var userIDs []uint
+		var userIDs []uuid.UUID
 		for _, team := range teams {
 			for _, userTeam := range team.UserTeams {
 				userIDs = append(userIDs, userTeam.UserID)
@@ -277,12 +315,12 @@ func main() {
 
 		var capturingTeam models.Team
 		for _, team := range teams {
-			if team.ID == captureCrystalRequest.TeamID {
+			if team.ID == teamID {
 				capturingTeam = team
 			}
 		}
 
-		crystal, err := dbClient.Crystal().FindByID(c, captureCrystalRequest.CrystalID)
+		crystal, err := dbClient.Crystal().FindByID(c, crystalID)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
 			return

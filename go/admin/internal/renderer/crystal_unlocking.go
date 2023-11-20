@@ -28,24 +28,24 @@ func (r *renderer) GetCrystalUnlockings(ctx *context.Context) table.Table {
 
 	info.SetSortDesc()
 
-	info.AddField("ID", "id", db.Int).FieldFilterable()
-	info.AddField("Crystal ID", "crystal_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		crystalID := model.Row["crystal_id"].(int64)
+	info.AddField("ID", "id", db.Varchar).FieldFilterable()
+	info.AddField("Crystal ID", "crystal_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		crystalID := model.Row["crystal_id"].(string)
 		return templates.Link(
 			fmt.Sprint(crystalID),
-			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%d", crystalID),
+			fmt.Sprintf("/info/crystals/detail?__goadmin_detail_pk=%s", crystalID),
 		)
 	}).FieldFilterable()
-	info.AddField("Team ID", "team_id", db.Int).FieldDisplay(func(model types.FieldModel) interface{} {
-		teamID := model.Row["team_id"].(int64)
+	info.AddField("Team ID", "team_id", db.Varchar).FieldDisplay(func(model types.FieldModel) interface{} {
+		teamID := model.Row["team_id"].(string)
 		return templates.Link(
 			fmt.Sprint(teamID),
-			fmt.Sprintf("/info/teams/detail?__goadmin_detail_pk=%d", teamID),
+			fmt.Sprintf("/info/teams/detail?__goadmin_detail_pk=%s", teamID),
 		)
 	}).FieldFilterable()
 
 	info.
-		SetTable("crisis_crystal_unlockings").
+		SetTable("crystal_unlockings").
 		SetTitle("Crystal Unlockings").
 		SetDescription("A team unlocks the challenges of a crystal")
 

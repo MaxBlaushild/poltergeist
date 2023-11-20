@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -11,10 +12,10 @@ type challengeHandle struct {
 	db *gorm.DB
 }
 
-func (h *challengeHandle) Insert(ctx context.Context, challenge string, userID uint) error {
+func (h *challengeHandle) Insert(ctx context.Context, challenge string, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Create(&models.Challenge{
-		AuthUserID: userID,
-		Challenge:  challenge,
+		UserID:    userID,
+		Challenge: challenge,
 	}).Error
 }
 

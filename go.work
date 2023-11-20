@@ -24,4 +24,5 @@ use (
 	./go/scorekeeper
 	./go/texter
 	./go/trivai
+	./go/migrate
 )

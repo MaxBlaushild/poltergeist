@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -35,7 +36,7 @@ func (h *howManyQuestionHandle) FindAll(ctx context.Context) ([]*models.HowManyQ
 	return howManyQuestions, nil
 }
 
-func (h *howManyQuestionHandle) FindById(ctx context.Context, id uint) (*models.HowManyQuestion, error) {
+func (h *howManyQuestionHandle) FindById(ctx context.Context, id uuid.UUID) (*models.HowManyQuestion, error) {
 	howManyQuestion := models.HowManyQuestion{}
 
 	if err := h.db.WithContext(ctx).First(&howManyQuestion, id).Error; err != nil {
@@ -48,21 +49,18 @@ func (h *howManyQuestionHandle) FindById(ctx context.Context, id uint) (*models.
 func (h *howManyQuestionHandle) ValidQuestionsRemaining(ctx context.Context) (int64, error) {
 	var count int64
 
-	if err := h.db.WithContext(ctx).Where(&models.HowManyQuestion{
-		Valid: true,
-		Done:  false,
-	}).Count(&count).Error; err != nil {
+	if err := h.db.WithContext(ctx).Model(&models.HowManyQuestion{}).Where("valid = true AND done = false").Count(&count).Error; err != nil {
 		return count, err
 	}
 
 	return count, nil
 }
 
-func (h *howManyQuestionHandle) MarkValid(ctx context.Context, howManyQuestionID string) error {
+func (h *howManyQuestionHandle) MarkValid(ctx context.Context, howManyQuestionID uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.HowManyQuestion{}).Where("id = ?", howManyQuestionID).Update("valid", true).Error
 }
 
-func (h *howManyQuestionHandle) MarkDone(ctx context.Context, howManyQuestionID uint) error {
+func (h *howManyQuestionHandle) MarkDone(ctx context.Context, howManyQuestionID uuid.UUID) error {
 	return h.db.WithContext(ctx).Model(&models.HowManyQuestion{}).Where("id = ?", howManyQuestionID).Update("done", true).Error
 }
 

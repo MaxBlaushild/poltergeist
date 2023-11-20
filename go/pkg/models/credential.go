@@ -2,19 +2,22 @@ package models
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type Credential struct {
-	gorm.Model
-	CredentialID string // base64url
-	PublicKey    string // base64url
+	ID           uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt    time.Time `db:"created_at"`
+	UpdatedAt    time.Time `db:"updated_at"`
+	CredentialID string    // base64url
+	PublicKey    string    // base64url
 	User         User
-	UserID       uint
+	UserID       uuid.UUID
 }
 
 func (c *Credential) ToWebauthnCredential() (*webauthn.Credential, error) {

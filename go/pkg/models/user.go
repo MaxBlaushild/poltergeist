@@ -1,16 +1,18 @@
 package models
 
 import (
-	"encoding/binary"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/go-webauthn/webauthn/webauthn"
-	"gorm.io/gorm"
+	"github.com/google/uuid"
 )
 
 type User struct {
-	gorm.Model
+	ID          uuid.UUID    `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt   time.Time    `db:"created_at"`
+	UpdatedAt   time.Time    `db:"updated_at"`
 	Name        string       `json:"name"`
 	PhoneNumber string       `json:"phoneNumber" gorm:"unique"`
 	Credentials []Credential `json:"credentials"`
@@ -18,9 +20,7 @@ type User struct {
 }
 
 func (user *User) WebAuthnID() []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(user.ID))
-	return buf
+	return []byte(user.ID.String())
 }
 
 func (user *User) WebAuthnName() string {
@@ -56,8 +56,4 @@ func (user *User) WebAuthnCredentials() []webauthn.Credential {
 	}
 
 	return credentials
-}
-
-func (u *User) TableName() string {
-	return "geist_users"
 }
