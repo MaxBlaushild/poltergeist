@@ -30,12 +30,13 @@ func (vl *verboseLogger) Verbose() bool {
 
 func makeDsn(cfg *config.Config) string {
 	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		"postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		cfg.Public.DbUser,
 		cfg.Secret.DbPassword,
 		cfg.Public.DbHost,
 		cfg.Public.DbPort,
 		cfg.Public.DbName,
+		cfg.Public.DbSslMode,
 	)
 }
 

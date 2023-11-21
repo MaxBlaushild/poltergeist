@@ -12,10 +12,11 @@ type SecretConfig struct {
 }
 
 type PublicConfig struct {
-	DbHost string `mapstructure:"DB_HOST"`
-	DbUser string `mapstructure:"DB_USER"`
-	DbPort string `mapstructure:"DB_PORT"`
-	DbName string `mapstructure:"DB_NAME"`
+	DbHost    string `mapstructure:"DB_HOST"`
+	DbUser    string `mapstructure:"DB_USER"`
+	DbPort    string `mapstructure:"DB_PORT"`
+	DbName    string `mapstructure:"DB_NAME"`
+	DbSslMode string `mapstructure:"DB_SSL_MODE"`
 }
 
 type Config struct {
