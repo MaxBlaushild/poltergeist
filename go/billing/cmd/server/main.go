@@ -9,7 +9,6 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/billing/internal/config"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stripe/stripe-go/v75/checkout/session"
 
 	"github.com/gin-gonic/gin"
@@ -48,6 +47,10 @@ func main() {
 
 	stripe.Key = cfg.Secret.StripeSecretKey
 
+	router.POST("/billing/subscriptions/cancel", func(ctx *gin.Context) {
+
+	})
+
 	router.POST("/billing/checkout-session", func(ctx *gin.Context) {
 		var params billing.CheckoutSessionParams
 
@@ -78,8 +81,6 @@ func main() {
 			})
 			return
 		}
-
-		spew.Dump(session)
 
 		ctx.JSON(200, billing.CheckoutSessionResponse{
 			URL: session.URL,

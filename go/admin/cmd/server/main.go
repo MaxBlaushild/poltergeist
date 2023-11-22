@@ -29,6 +29,7 @@ func main() {
 	gin.DefaultWriter = io.Discard
 
 	if err := migrate.Migrate(ctx, cfg); err != nil {
+		fmt.Println("HSAKJHSJKHAJKS")
 		fmt.Println(err.Error())
 	}
 

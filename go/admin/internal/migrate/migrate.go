@@ -19,9 +19,12 @@ func Migrate(ctx context.Context, cfg *config.Config) error {
 	cmd.Env = append(cmd.Env, fmt.Sprintf("PGPASSWORD=%s", cfg.Secret.DbPassword))
 	cmd.Stderr = errText
 	if err := cmd.Run(); err != nil {
+		fmt.Println("THIS DONT WORK")
 		fmt.Println(err)
 		return errors.Wrap(err, errText.String())
 	}
+
+	fmt.Println("YARP")
 
 	return nil
 }

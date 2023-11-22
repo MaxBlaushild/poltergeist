@@ -1,46 +1,37 @@
 package texter
 
 import (
-	"bytes"
-	"encoding/json"
-	"io/ioutil"
-	"net/http"
+	"context"
+
+	"github.com/MaxBlaushild/poltergeist/pkg/http"
 )
 
 type Text struct {
 	Body     string `json:"body" binding:"required"`
 	To       string `json:"to" binding:"required"`
 	From     string `json:"from" binding:"required"`
-	TextType string `json:"textType" binding:reuqired`
+	TextType string `json:"textType" binding:"required"`
 }
 
-type texterClient struct{}
+type client struct {
+	httpClient http.Client
+}
 
-type TexterClient interface {
-	Text(*Text) error
+type Client interface {
+	Text(context.Context, *Text) error
 }
 
 const (
 	baseUrl = "http://localhost:8084"
 )
 
-func NewTexterClient() TexterClient {
-	return &texterClient{}
+func NewClient() Client {
+	httpClient := http.NewClient(baseUrl, http.ApplicationJson)
+	return &client{httpClient: httpClient}
 }
 
-func (d *texterClient) Text(text *Text) error {
-	jsonBody, err := json.Marshal(text)
-	if err != nil {
-		return err
-	}
-
-	resp, err := http.Post(baseUrl+"/texter/send-sms", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	_, err = ioutil.ReadAll(resp.Body)
+func (c *client) Text(ctx context.Context, text *Text) error {
+	_, err := c.httpClient.Post(ctx, "/texter/send-sms", text)
 	if err != nil {
 		return err
 	}

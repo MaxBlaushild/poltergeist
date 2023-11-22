@@ -1,25 +1,23 @@
 package billing
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"io/ioutil"
-	"net/http"
+
+	"github.com/MaxBlaushild/poltergeist/pkg/http"
 )
 
-type client struct{}
+type client struct {
+	httpClient http.Client
+}
 
 type Client interface {
-	NewCheckoutSession(params *CheckoutSessionParams) (*CheckoutSessionResponse, error)
+	NewCheckoutSession(ctx context.Context, params *CheckoutSessionParams) (*CheckoutSessionResponse, error)
 }
 
 const (
-	baseUrl = "http://localhost:8022/billing"
+	baseUrl = "http://localhost:8022"
 )
-
-func NewClient() Client {
-	return &client{}
-}
 
 type CheckoutSessionParams struct {
 	SuccessUrl  string            `json:"successUrl" binding:"required"`
@@ -37,25 +35,19 @@ type CheckoutSessionResponse struct {
 	URL string `json:"url" binding:"required"`
 }
 
-func (c *client) NewCheckoutSession(params *CheckoutSessionParams) (*CheckoutSessionResponse, error) {
-	jsonBody, err := json.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
+func NewClient() Client {
+	httpClient := http.NewClient(baseUrl, http.ApplicationJson)
+	return &client{httpClient: httpClient}
+}
 
-	resp, err := http.Post(baseUrl+"/checkout-session", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
+func (c *client) NewCheckoutSession(ctx context.Context, params *CheckoutSessionParams) (*CheckoutSessionResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/billing/checkout-session", params)
 	if err != nil {
 		return nil, err
 	}
 
 	var res CheckoutSessionResponse
-	err = json.Unmarshal(body, &res)
+	err = json.Unmarshal(respBytes, &res)
 	if err != nil {
 		return nil, err
 	}

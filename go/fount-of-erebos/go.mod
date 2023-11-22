@@ -8,6 +8,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter

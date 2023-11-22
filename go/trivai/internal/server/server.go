@@ -1,9 +1,7 @@
 package server
 
 import (
-	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
@@ -22,20 +20,20 @@ type Server struct {
 	dbClient      db.DbClient
 	emailClient   email.EmailClient
 	triviaClient  trivai.TrivaiClient
-	texterClient  texter.TexterClient
+	texterClient  texter.Client
 	billingClient billing.Client
 	cfg           config.Config
-	authClient    auth.AuthClient
+	authClient    auth.Client
 }
 
 func NewServer(
 	dbClient db.DbClient,
 	emailClient email.EmailClient,
 	trivaiClient trivai.TrivaiClient,
-	texterClient texter.TexterClient,
+	texterClient texter.Client,
 	billingClient billing.Client,
 	cfg config.Config,
-	authClient auth.AuthClient,
+	authClient auth.Client,
 ) Server {
 	r := gin.Default()
 
@@ -72,25 +70,6 @@ func NewServer(
 	return s
 }
 
-func getUserID(ctx *gin.Context) (uuid.UUID, error) {
-	authHeader := ctx.GetHeader("Authorization")
-	if authHeader == "" {
-		return uuid.Nil, errors.New("missing authorization header")
-	}
-
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || parts[0] != "Bearer" {
-		return uuid.Nil, errors.New("invalid authorization header")
-	}
-
-	id, err := uuid.Parse(parts[1])
-	if err != nil {
-		return uuid.Nil, err
-	}
-
-	return id, nil
-}
-
 func (s *Server) getSubscription(ctx *gin.Context) {
 	userID := ctx.Param("userID")
 
@@ -123,7 +102,7 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.authClient.RegisterByText(&requestBody)
+	user, err := s.authClient.RegisterByText(ctx, &requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -155,7 +134,7 @@ func (s *Server) login(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.authClient.LoginByText(&requestBody)
+	user, err := s.authClient.LoginByText(ctx, &requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -244,7 +223,7 @@ func (s *Server) beginCheckout(ctx *gin.Context) {
 		return
 	}
 
-	session, err := s.billingClient.NewCheckoutSession(&billing.CheckoutSessionParams{
+	session, err := s.billingClient.NewCheckoutSession(ctx, &billing.CheckoutSessionParams{
 		PlanID:      s.cfg.Public.GuessHowManyPlanID,
 		SuccessUrl:  s.cfg.Public.GuessHowManySubscribeSuccessUrl,
 		CancelUrl:   s.cfg.Public.GuessHowManySubscribeCancelUrl,
@@ -551,35 +530,4 @@ func (s *Server) getQuestions(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, questions)
-}
-
-func (s *Server) getUserSubmissionForQuestionSet(c *gin.Context) {
-	stringUserID := c.Param("userID")
-
-	userID, err := uuid.Parse(stringUserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid user id",
-		})
-		return
-	}
-
-	stringQuestionSetID := c.Param("questionSetID")
-	questionSetID, err := uuid.Parse(stringQuestionSetID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid question set id",
-		})
-		return
-	}
-
-	userSubmission, err := s.dbClient.UserSubmission().FindByUserAndQuestionSetID(c, userID, questionSetID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "no submission for user yet",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, userSubmission)
 }

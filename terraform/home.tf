@@ -343,24 +343,24 @@ module "ecs" {
           ]
         }
 
-        "admin" = {
-          cpu       = 256
-          memory    = 512
-          essential = true
-          secrets = [{
-            name      = "DB_PASSWORD",
-            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }]
-          image = "${aws_ecr_repository.admin.repository_url}:latest"
-          port_mappings = [
-            {
-              name          = "admin"
-              containerPort = 9093
-              hostPort      = 9093
-              protocol      = "tcp"
-            }
-          ]
-        }
+        # "admin" = {
+        #   cpu       = 256
+        #   memory    = 512
+        #   essential = true
+        #   secrets = [{
+        #     name      = "DB_PASSWORD",
+        #     valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+        #   }]
+        #   image = "${aws_ecr_repository.admin.repository_url}:latest"
+        #   port_mappings = [
+        #     {
+        #       name          = "admin"
+        #       containerPort = 9093
+        #       hostPort      = 9093
+        #       protocol      = "tcp"
+        #     }
+        #   ]
+        # }
 
         "billing" = {
           cpu       = 256

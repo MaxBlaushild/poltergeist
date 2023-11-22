@@ -1,13 +1,11 @@
 package auth
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/http"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 )
@@ -36,48 +34,37 @@ type User struct {
 	PhoneNumber string    `json:"phoneNumber"`
 }
 
-type authClient struct{}
+type client struct {
+	httpClient http.Client
+}
 
-type AuthClient interface {
-	GetUsers(userIDs []uuid.UUID) ([]User, error)
-	RegisterByText(request *RegisterByTextRequest) (*models.User, error)
-	LoginByText(request *LoginByTextRequest) (*models.User, error)
+type Client interface {
+	GetUsers(ctx context.Context, userIDs []uuid.UUID) ([]User, error)
+	RegisterByText(ctx context.Context, request *RegisterByTextRequest) (*models.User, error)
+	LoginByText(ctx context.Context, request *LoginByTextRequest) (*models.User, error)
 }
 
 const (
 	baseUrl = "http://localhost:8089"
 )
 
-func NewAuthClient() AuthClient {
-	return &authClient{}
+func NewClient() Client {
+	httpClient := http.NewClient(baseUrl, http.ApplicationJson)
+	return &client{httpClient: httpClient}
 }
 
-func (d *authClient) GetUsers(userIDs []uuid.UUID) ([]User, error) {
+func (c *client) GetUsers(ctx context.Context, userIDs []uuid.UUID) ([]User, error) {
 	request := GetUsersRequest{
 		UserIDs: userIDs,
 	}
-	jsonBody, err := json.Marshal(request)
+
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/get-users", &request)
 	if err != nil {
 		return nil, err
-	}
-
-	resp, err := http.Post(baseUrl+"/authenticator/get-users", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, errors.New("error making request to authenticator")
 	}
 
 	var users []User
-	err = json.Unmarshal(body, &users)
+	err = json.Unmarshal(respBytes, &users)
 	if err != nil {
 		return nil, err
 	}
@@ -85,29 +72,14 @@ func (d *authClient) GetUsers(userIDs []uuid.UUID) ([]User, error) {
 	return users, nil
 }
 
-func (d *authClient) RegisterByText(request *RegisterByTextRequest) (*models.User, error) {
-	jsonBody, err := json.Marshal(request)
+func (c *client) RegisterByText(ctx context.Context, request *RegisterByTextRequest) (*models.User, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/text/register", request)
 	if err != nil {
 		return nil, err
-	}
-
-	resp, err := http.Post(baseUrl+"/authenticator/text/register", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, errors.New("error making request to authenticator")
 	}
 
 	var user models.User
-	err = json.Unmarshal(body, &user)
+	err = json.Unmarshal(respBytes, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -115,29 +87,14 @@ func (d *authClient) RegisterByText(request *RegisterByTextRequest) (*models.Use
 	return &user, nil
 }
 
-func (d *authClient) LoginByText(request *LoginByTextRequest) (*models.User, error) {
-	jsonBody, err := json.Marshal(request)
+func (c *client) LoginByText(ctx context.Context, request *LoginByTextRequest) (*models.User, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/authenticator/text/login", request)
 	if err != nil {
 		return nil, err
-	}
-
-	resp, err := http.Post(baseUrl+"/authenticator/text/login", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, errors.New("error making request to authenticator")
 	}
 
 	var user models.User
-	err = json.Unmarshal(body, &user)
+	err = json.Unmarshal(respBytes, &user)
 	if err != nil {
 		return nil, err
 	}

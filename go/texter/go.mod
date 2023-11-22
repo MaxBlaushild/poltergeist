@@ -9,6 +9,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter
@@ -18,7 +19,6 @@ replace (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-20230915032001-394ea26a68dd
-	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-20230915032001-394ea26a68dd
 	github.com/MaxBlaushild/poltergeist/pkg/twilio v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.9.1
 	github.com/spf13/viper v1.16.0
@@ -26,6 +26,7 @@ require (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/encoding v0.0.0-20230915032001-394ea26a68dd // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-20230915032001-394ea26a68dd // indirect
 	github.com/bytedance/sonic v1.9.1 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect

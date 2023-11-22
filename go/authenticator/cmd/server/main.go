@@ -49,7 +49,7 @@ func main() {
 		panic(err)
 	}
 
-	texterClient := texter.NewTexterClient()
+	texterClient := texter.NewClient()
 
 	r.POST("/authenticator/text/verification-code", func(c *gin.Context) {
 		var requestBody struct {
@@ -72,7 +72,7 @@ func main() {
 			return
 		}
 
-		if err := texterClient.Text(&texter.Text{
+		if err := texterClient.Text(ctx, &texter.Text{
 			Body:     fmt.Sprintf("%s is your %s verification code", code.Code, requestBody.AppName),
 			To:       requestBody.PhoneNumber,
 			From:     cfg.Public.PhoneNumber,

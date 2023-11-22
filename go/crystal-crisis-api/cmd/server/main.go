@@ -22,8 +22,8 @@ func main() {
 		panic(err)
 	}
 
-	texterClient := texter.NewTexterClient()
-	authClient := auth.NewAuthClient()
+	texterClient := texter.NewClient()
+	authClient := auth.NewClient()
 
 	dbClient, err := db.NewClient(db.ClientConfig{
 		Name:     cfg.Public.DbName,
@@ -122,7 +122,7 @@ func main() {
 		}
 
 		if len(teams) > 0 {
-			users, err := authClient.GetUsers(userIDs)
+			users, err := authClient.GetUsers(ctx, userIDs)
 			if err != nil {
 				c.JSON(500, gin.H{"error": err.Error()})
 				return
@@ -300,7 +300,7 @@ func main() {
 			}
 		}
 
-		users, err := authClient.GetUsers(userIDs)
+		users, err := authClient.GetUsers(ctx, userIDs)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -327,7 +327,7 @@ func main() {
 		}
 
 		for _, user := range users {
-			texterClient.Text(&texter.Text{
+			texterClient.Text(ctx, &texter.Text{
 				To:   user.PhoneNumber,
 				From: cfg.Public.CrystalCrisisPhoneNumber,
 				Body: fmt.Sprintf("%s team has %s %s.", capturingTeam.Name, capturedOrAttuned, crystal.Name),

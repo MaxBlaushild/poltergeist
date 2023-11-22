@@ -37,7 +37,7 @@ func main() {
 	}
 
 	deepPriest := deep_priest.SummonDeepPriest()
-	texterClient := texter.NewTexterClient()
+	texterClient := texter.NewClient()
 	emailClient := email.NewClient(email.ClientConfig{
 		ApiKey:      cfg.Secret.SendgridApiKey,
 		FromAddress: cfg.Public.EmailFromAddress,
@@ -46,7 +46,7 @@ func main() {
 
 	trivaiClient := trivai.NewClient(deepPriest)
 	billingClient := billing.NewClient()
-	authClient := auth.NewAuthClient()
+	authClient := auth.NewClient()
 
 	go server.NewServer(dbClient, emailClient, trivaiClient, texterClient, billingClient, *cfg, authClient)
 
@@ -112,7 +112,7 @@ func main() {
 					}
 
 					if shouldSend {
-						if err := texterClient.Text(&texter.Text{
+						if err := texterClient.Text(ctx, &texter.Text{
 							Body:     newQuestion.Text,
 							To:       subscription.User.PhoneNumber,
 							From:     cfg.Secret.GuessHowManyPhoneNumber,
@@ -142,7 +142,7 @@ func main() {
 			fmt.Println(err.Error())
 		} else {
 			if countLeft < 3 {
-				if err := texterClient.Text(&texter.Text{
+				if err := texterClient.Text(ctx, &texter.Text{
 					Body:     fmt.Sprintf("Hey dumbass! You only have %d questions left. Make some new ones.", countLeft),
 					To:       "+14407858475",
 					From:     cfg.Secret.GuessHowManyPhoneNumber,

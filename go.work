@@ -19,6 +19,7 @@ use (
 	./go/pkg/slack
 	./go/pkg/texter
 	./go/pkg/twilio
+	./go/pkg/http
 	./go/pkg/util
 	./go/proteus
 	./go/scorekeeper
