@@ -89,7 +89,7 @@ func main() {
 				panic(err)
 			}
 		} else {
-			if err := m.Steps(*steps); err != nil {
+			if err := m.Steps(*steps * -1); err != nil {
 				panic(err)
 			}
 		}

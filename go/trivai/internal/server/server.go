@@ -62,12 +62,61 @@ func NewServer(
 	r.POST("/trivai/how_many_questions/:id/validate", s.markHowManyQuestionValid)
 	r.POST("/trivai/begin-checkout", s.beginCheckout)
 	r.POST("/trivai/finish-checkout", s.finishCheckout)
+	r.POST("/trivai/subscriptions/cancel", s.cancelSubscription)
+	r.POST("/trivai/subscriptions/delete", s.deleteSubscription)
 	r.POST("/trivai/register", s.register)
 	r.POST("/trivai/login", s.login)
 
 	r.Run(":8082")
 
 	return s
+}
+
+func (s *Server) cancelSubscription(ctx *gin.Context) {
+	userID := ctx.Param("userID")
+
+	_, err := uuid.Parse(userID)
+	if err != nil {
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if _, err := s.billingClient.CancelSubscription(ctx, &billing.CancelSubscriptionParams{
+		UserID: userID,
+	}); err != nil {
+		ctx.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(200, gin.H{
+		"message": "subscription cancellation in progress",
+	})
+}
+
+func (s *Server) deleteSubscription(ctx *gin.Context) {
+	var onUnsubscribe billing.OnSubscriptionDelete
+
+	if err := ctx.Bind(&onUnsubscribe); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.HowManySubscription().DeleteByStripeID(ctx, onUnsubscribe.SubscriptionID); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(200, gin.H{
+		"message": "cool beans!",
+	})
 }
 
 func (s *Server) getSubscription(ctx *gin.Context) {
@@ -185,7 +234,7 @@ func (s *Server) finishCheckout(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.HowManySubscription().SetSubscribed(ctx, uuidUserID, true); err != nil {
+	if err := s.dbClient.HowManySubscription().SetSubscribed(ctx, uuidUserID, onSubscribe.SubscriptionID); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -224,10 +273,11 @@ func (s *Server) beginCheckout(ctx *gin.Context) {
 	}
 
 	session, err := s.billingClient.NewCheckoutSession(ctx, &billing.CheckoutSessionParams{
-		PlanID:      s.cfg.Public.GuessHowManyPlanID,
-		SuccessUrl:  s.cfg.Public.GuessHowManySubscribeSuccessUrl,
-		CancelUrl:   s.cfg.Public.GuessHowManySubscribeCancelUrl,
-		CallbackUrl: "http://localhost:8082/trivai/finish-checkout",
+		PlanID:                        s.cfg.Public.GuessHowManyPlanID,
+		SessionSuccessRedirectUrl:     s.cfg.Public.GuessHowManySubscribeSuccessUrl,
+		SessionCancelRedirectUrl:      s.cfg.Public.GuessHowManySubscribeCancelUrl,
+		SubscriptionCreateCallbackUrl: "http://localhost:8082/trivai/finish-checkout",
+		SubscriptionCancelCallbackUrl: "http://localhost:8082/trivai/subscriptions/delete",
 		Metadata: map[string]string{
 			"user_id": user.ID.String(),
 		},

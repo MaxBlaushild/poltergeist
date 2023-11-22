@@ -92,8 +92,5 @@ input:focus {
 .Subscribe__upgradeSubscription {
   display: flex;
   gap: 12px;
-
-  @media screen and (max-width: 760px) {
-    flex-direction: column;
-  }
+  flex-direction: column;
 }

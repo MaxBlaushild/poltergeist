@@ -16,11 +16,39 @@ import (
 	"github.com/stripe/stripe-go/v75"
 )
 
-func forwardSubscription(ctx *gin.Context, url string, metadata map[string]string) error {
+const (
+	sessionCompletedEventType    = "checkout.session.completed"
+	subscriptionDeletedEventType = "customer.subscription.deleted"
+)
+
+func forwardCreateSubscription(ctx *gin.Context, session *stripe.CheckoutSession, url string) error {
 	onSubscribe := billing.OnSubscribe{
-		Metadata: metadata,
+		Metadata:       session.Metadata,
+		SubscriptionID: session.Subscription.ID,
 	}
 	jsonBody, err := json.Marshal(onSubscribe)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("received non-OK response from server")
+	}
+	return nil
+}
+
+func forwardCancelSubscription(ctx *gin.Context, subscription *stripe.Subscription, url string) error {
+	onUnsubscribe := billing.OnSubscriptionDelete{
+		Metadata:       subscription.Metadata,
+		SubscriptionID: subscription.ID,
+	}
+	jsonBody, err := json.Marshal(onUnsubscribe)
 	if err != nil {
 		return err
 	}
@@ -48,7 +76,7 @@ func main() {
 	stripe.Key = cfg.Secret.StripeSecretKey
 
 	router.POST("/billing/subscriptions/cancel", func(ctx *gin.Context) {
-
+		params := &stripe.SubscriptionListParams{}
 	})
 
 	router.POST("/billing/checkout-session", func(ctx *gin.Context) {
@@ -61,11 +89,12 @@ func main() {
 			return
 		}
 
-		params.Metadata["callback_url"] = params.CallbackUrl
+		params.Metadata["create_callback_url"] = params.SubscriptionCreateCallbackUrl
+		params.Metadata["cancel_callback_url"] = params.SubscriptionCancelCallbackUrl
 
 		session, err := session.New(&stripe.CheckoutSessionParams{
-			SuccessURL: &params.SuccessUrl,
-			CancelURL:  &params.CancelUrl,
+			SuccessURL: &params.SessionSuccessRedirectUrl,
+			CancelURL:  &params.SessionCancelRedirectUrl,
 			Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
 			LineItems: []*stripe.CheckoutSessionLineItemParams{
 				{
@@ -74,6 +103,9 @@ func main() {
 				},
 			},
 			Metadata: params.Metadata,
+			SubscriptionData: &stripe.CheckoutSessionSubscriptionDataParams{
+				Metadata: params.Metadata,
+			},
 		})
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{
@@ -95,19 +127,36 @@ func main() {
 			return
 		}
 
-		if event.Type == "checkout.session.completed" {
-			session := &stripe.CheckoutSession{}
-			if err := json.Unmarshal(event.Data.Raw, session); err != nil {
-				fmt.Println("garbage from stripe")
+		if event.Type == sessionCompletedEventType {
+			session := stripe.CheckoutSession{}
+			if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
+				fmt.Println("garbage checkout session from stripe")
 				fmt.Println(string(event.Data.Raw))
 			}
 
-			callbackUrl, ok := session.Metadata["callback_url"]
+			createCallbackUrl, ok := session.Metadata["create_callback_url"]
 			if ok {
-				fmt.Println(callbackUrl)
-				if err := forwardSubscription(ctx, callbackUrl, session.Metadata); err != nil {
-					// (TODO): Cancel subscription
-					fmt.Println(err)
+				if err := forwardCreateSubscription(ctx, &session, createCallbackUrl); err != nil {
+					fmt.Println(err.Error())
+					ctx.JSON(500, gin.H{
+						"message": err.Error(),
+					})
+				}
+				return
+			}
+		}
+
+		if event.Type == subscriptionDeletedEventType {
+			subscription := stripe.Subscription{}
+			if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
+				fmt.Println("garbage subscription from stripe")
+				fmt.Println(string(event.Data.Raw))
+			}
+
+			cancelCallbackUrl, ok := subscription.Metadata["cancel_callback_url"]
+			if ok {
+				if err := forwardCancelSubscription(ctx, &subscription, cancelCallbackUrl); err != nil {
+					fmt.Println(err.Error())
 					ctx.JSON(500, gin.H{
 						"message": err.Error(),
 					})

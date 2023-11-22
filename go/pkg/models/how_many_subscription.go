@@ -14,4 +14,5 @@ type HowManySubscription struct {
 	UserID           uuid.UUID `json:"userId"`
 	Subscribed       bool      `gorm:"default:false" json:"subscribed"`
 	NumFreeQuestions uint      `gorm:"default:0" json:"numFreeQuestions"`
+	StripeID         *string   `json:"-"` // private
 }

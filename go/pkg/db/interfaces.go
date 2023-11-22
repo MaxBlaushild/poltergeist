@@ -130,5 +130,6 @@ type HowManySubscriptionHandle interface {
 	FindAll(ctx context.Context) ([]models.HowManySubscription, error)
 	IncrementNumFreeQuestions(ctx context.Context, userID uuid.UUID) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.HowManySubscription, error)
-	SetSubscribed(ctx context.Context, userID uuid.UUID, subscribed bool) error
+	SetSubscribed(ctx context.Context, userID uuid.UUID, stripeID string) error
+	DeleteByStripeID(ctx context.Context, stripeID string) error
 }

@@ -13,6 +13,7 @@ type client struct {
 
 type Client interface {
 	NewCheckoutSession(ctx context.Context, params *CheckoutSessionParams) (*CheckoutSessionResponse, error)
+	CancelSubscription(ctx context.Context, params *CancelSubscriptionParams) (*CancelSubscriptionResponse, error)
 }
 
 const (
@@ -20,19 +21,33 @@ const (
 )
 
 type CheckoutSessionParams struct {
-	SuccessUrl  string            `json:"successUrl" binding:"required"`
-	CancelUrl   string            `json:"cancelUrl" binding:"required"`
-	PlanID      string            `json:"planId" binding:"required"`
-	CallbackUrl string            `json:"callbackUrl" binding:"required"`
-	Metadata    map[string]string `json:"metadata"`
+	SessionSuccessRedirectUrl     string            `json:"successUrl" binding:"required"`
+	SessionCancelRedirectUrl      string            `json:"cancelUrl" binding:"required"`
+	PlanID                        string            `json:"planId" binding:"required"`
+	SubscriptionCreateCallbackUrl string            `json:"subscriptionCreateCallbackUrl" binding:"required"`
+	SubscriptionCancelCallbackUrl string            `json:"subscriptionCancelCallbackUrl" binding:"required"`
+	Metadata                      map[string]string `json:"metadata"`
+}
+
+type CancelSubscriptionParams struct {
+	UserID string `json:"userId" binding:"required"`
 }
 
 type OnSubscribe struct {
-	Metadata map[string]string `json:"metadata"`
+	Metadata       map[string]string `json:"metadata"`
+	SubscriptionID string            `json:"subscriptionId"`
+}
+
+type OnSubscriptionDelete struct {
+	Metadata       map[string]string `json:"metadata"`
+	SubscriptionID string            `json:"subscriptionId"`
 }
 
 type CheckoutSessionResponse struct {
 	URL string `json:"url" binding:"required"`
+}
+
+type CancelSubscriptionResponse struct {
 }
 
 func NewClient() Client {
@@ -47,6 +62,21 @@ func (c *client) NewCheckoutSession(ctx context.Context, params *CheckoutSession
 	}
 
 	var res CheckoutSessionResponse
+	err = json.Unmarshal(respBytes, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (c *client) CancelSubscription(ctx context.Context, params *CancelSubscriptionParams) (*CancelSubscriptionResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "//billing/subscriptions/cancel", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var res CancelSubscriptionResponse
 	err = json.Unmarshal(respBytes, &res)
 	if err != nil {
 		return nil, err
