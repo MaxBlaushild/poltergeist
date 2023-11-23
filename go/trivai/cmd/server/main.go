@@ -132,6 +132,38 @@ func main() {
 							fmt.Println(subscription.UserID)
 						}
 					}
+
+					if !subscription.Subscribed && subscription.NumFreeQuestions == 7 {
+						session, err := billingClient.NewCheckoutSession(ctx, &billing.CheckoutSessionParams{
+							PlanID:                        cfg.Public.GuessHowManyPlanID,
+							SessionSuccessRedirectUrl:     cfg.Public.GuessHowManySubscribeSuccessUrl,
+							SessionCancelRedirectUrl:      cfg.Public.GuessHowManySubscribeCancelUrl,
+							SubscriptionCreateCallbackUrl: "http://localhost:8082/trivai/finish-checkout",
+							SubscriptionCancelCallbackUrl: "http://localhost:8082/trivai/subscriptions/delete",
+							Metadata: map[string]string{
+								"user_id": subscription.UserID.String(),
+							},
+						})
+						if err != nil {
+							fmt.Println("error generating checkout link for user id")
+							fmt.Println(subscription.UserID)
+						}
+
+						if err := texterClient.Text(ctx, &texter.Text{
+							Body:     fmt.Sprintf("You are all out of free questions. But fear not, you can keep the gravy train rolling by subscribing for the low price of $1.99 a month at the link below:\n\n%s", session.URL),
+							To:       subscription.User.PhoneNumber,
+							From:     cfg.Secret.GuessHowManyPhoneNumber,
+							TextType: "guess-how-many-out-of-free-questions",
+						}); err != nil {
+							fmt.Println("error sending text")
+							fmt.Println(subscription.User.PhoneNumber)
+						}
+
+						if err := dbClient.HowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
+							fmt.Println("error incrementing user id after sending last free text")
+							fmt.Println(subscription.UserID)
+						}
+					}
 				}
 			}
 
