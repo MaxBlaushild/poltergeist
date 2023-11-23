@@ -30,7 +30,7 @@ type CheckoutSessionParams struct {
 }
 
 type CancelSubscriptionParams struct {
-	UserID string `json:"userId" binding:"required"`
+	StripeID string `json:"stripeId" binding:"required"`
 }
 
 type OnSubscribe struct {
@@ -71,7 +71,7 @@ func (c *client) NewCheckoutSession(ctx context.Context, params *CheckoutSession
 }
 
 func (c *client) CancelSubscription(ctx context.Context, params *CancelSubscriptionParams) (*CancelSubscriptionResponse, error) {
-	respBytes, err := c.httpClient.Post(ctx, "//billing/subscriptions/cancel", params)
+	respBytes, err := c.httpClient.Post(ctx, "/billing/subscriptions/cancel", params)
 	if err != nil {
 		return nil, err
 	}

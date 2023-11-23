@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/stripe/stripe-go/v75"
+	"github.com/stripe/stripe-go/v75/subscription"
 )
 
 const (
@@ -76,7 +77,23 @@ func main() {
 	stripe.Key = cfg.Secret.StripeSecretKey
 
 	router.POST("/billing/subscriptions/cancel", func(ctx *gin.Context) {
-		params := &stripe.SubscriptionListParams{}
+		var params billing.CancelSubscriptionParams
+
+		if err := ctx.Bind(&params); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if _, err := subscription.Cancel(params.StripeID, &stripe.SubscriptionCancelParams{}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(200, billing.CancelSubscriptionResponse{})
 	})
 
 	router.POST("/billing/checkout-session", func(ctx *gin.Context) {

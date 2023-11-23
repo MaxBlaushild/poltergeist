@@ -72,6 +72,20 @@ function Subscribe() {
     }
   });
 
+  const unsubscribe = React.useCallback(async () => {
+    try {
+      await axios.post(
+        `${process.env.REACT_APP_API_URL}/trivai/subscriptions/cancel`,
+        { userId },
+      );
+
+      localStorage.removeItem('user-id');
+      window.location.reload();
+    } catch (e) {
+      toast('Something went wrong. Please try again later.');
+    }
+  }, []);
+
   const logister = React.useCallback(async () => {
     try {
       const {
@@ -174,7 +188,7 @@ function Subscribe() {
           {subscribed ? (
             <button
               className="Subscribe__button Button__enabled"
-              onClick={() => toast("Ha! You're stuck with us.")}
+              onClick={unsubscribe}
             >
               Unsubscribe
             </button>

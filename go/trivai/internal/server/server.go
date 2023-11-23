@@ -73,9 +73,18 @@ func NewServer(
 }
 
 func (s *Server) cancelSubscription(ctx *gin.Context) {
-	userID := ctx.Param("userID")
+	var cancelSubscriptionRequest struct {
+		UserID string `json:"userId" binding:"required"`
+	}
 
-	_, err := uuid.Parse(userID)
+	if err := ctx.Bind(&cancelSubscriptionRequest); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	userID, err := uuid.Parse(cancelSubscriptionRequest.UserID)
 	if err != nil {
 		ctx.JSON(500, gin.H{
 			"error": err.Error(),
@@ -83,8 +92,23 @@ func (s *Server) cancelSubscription(ctx *gin.Context) {
 		return
 	}
 
+	howManySubscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "no subscription found for user id",
+		})
+		return
+	}
+
+	if howManySubscription.StripeID == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "subscription still in trial mode",
+		})
+		return
+	}
+
 	if _, err := s.billingClient.CancelSubscription(ctx, &billing.CancelSubscriptionParams{
-		UserID: userID,
+		StripeID: *howManySubscription.StripeID,
 	}); err != nil {
 		ctx.JSON(500, gin.H{
 			"error": err.Error(),
