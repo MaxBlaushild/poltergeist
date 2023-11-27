@@ -150,7 +150,7 @@ func main() {
 						}
 
 						if err := texterClient.Text(ctx, &texter.Text{
-							Body:     fmt.Sprintf("You are all out of free questions. But fear not, you can keep the gravy train rolling by subscribing for the low price of $1.99 a month at the link below:\n\n%s", session.URL),
+							Body:     fmt.Sprintf("You are all out of free questions. But fear not, you can keep the gravy train rolling by subscribing for the low price of $0.99 a month at the link below:\n\n%s", session.URL),
 							To:       subscription.User.PhoneNumber,
 							From:     cfg.Secret.GuessHowManyPhoneNumber,
 							TextType: "guess-how-many-out-of-free-questions",

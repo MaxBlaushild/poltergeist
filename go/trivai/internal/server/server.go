@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
@@ -191,6 +192,17 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
+	if err := s.texterClient.Text(ctx, &texter.Text{
+		Body:     "Welcome to Guess How Many! New question every day at noon EST. Text CANCEL at any point to cancel your subscription.",
+		From:     s.cfg.Secret.GuessHowManyPhoneNumber,
+		To:       user.PhoneNumber,
+		TextType: "guess-how-many-welcome-email",
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+	}
+
 	ctx.JSON(200, gin.H{
 		"user":         user,
 		"subscription": subscription,
@@ -341,6 +353,33 @@ func (s *Server) receiveSms(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{
 			"message": "no user found for that phone number: " + smsRequest.From,
+		})
+		return
+	}
+
+	if strings.Contains(strings.ToLower(smsRequest.Body), "cancel") {
+		howManySubscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusNotFound, gin.H{
+				"message": "no subscription found for that user id: " + user.ID.String(),
+			})
+			return
+		}
+
+		if howManySubscription.StripeID != nil && howManySubscription.Subscribed {
+			if _, err := s.billingClient.CancelSubscription(ctx, &billing.CancelSubscriptionParams{
+				StripeID: *howManySubscription.StripeID,
+			}); err != nil {
+				ctx.JSON(500, gin.H{
+					"error": err.Error(),
+				})
+				return
+			}
+		}
+
+		ctx.JSON(200, gin.H{
+			"body": "You have been sucessfully unsubscribed. Cya later!",
+			"to":   user.PhoneNumber,
 		})
 		return
 	}
