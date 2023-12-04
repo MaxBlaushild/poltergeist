@@ -48,9 +48,9 @@ func NewServer(
 		authClient:    authClient,
 	}
 
-	r.GET("/trivai/questions", s.getQuestions)
 	r.GET("/trivai/subscriptions/:userID", s.getSubscription)
 	r.GET("/trivai/users/:userId", s.getUser)
+	r.GET("/trivai/users/:userId/subscribe", s.getSubscriptionLink)
 
 	r.POST("/")
 	r.POST("/trivai/receive-sms", s.receiveSms)
@@ -176,7 +176,7 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.authClient.RegisterByText(ctx, &requestBody)
+	authenticateResponse, err := s.authClient.RegisterByText(ctx, &requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -184,7 +184,7 @@ func (s *Server) register(ctx *gin.Context) {
 		return
 	}
 
-	subscription, err := s.dbClient.HowManySubscription().Insert(ctx, user.ID)
+	subscription, err := s.dbClient.HowManySubscription().Insert(ctx, authenticateResponse.User.ID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -195,7 +195,7 @@ func (s *Server) register(ctx *gin.Context) {
 	if err := s.texterClient.Text(ctx, &texter.Text{
 		Body:     "Welcome to Guess How Many! New question every day at noon EST. Text CANCEL at any point to cancel your subscription.",
 		From:     s.cfg.Secret.GuessHowManyPhoneNumber,
-		To:       user.PhoneNumber,
+		To:       authenticateResponse.User.PhoneNumber,
 		TextType: "guess-how-many-welcome-email",
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -204,8 +204,9 @@ func (s *Server) register(ctx *gin.Context) {
 	}
 
 	ctx.JSON(200, gin.H{
-		"user":         user,
+		"user":         authenticateResponse.User,
 		"subscription": subscription,
+		"token":        authenticateResponse.Token,
 	})
 }
 
@@ -219,7 +220,7 @@ func (s *Server) login(ctx *gin.Context) {
 		return
 	}
 
-	user, err := s.authClient.LoginByText(ctx, &requestBody)
+	authenticateResponse, err := s.authClient.LoginByText(ctx, &requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -228,14 +229,15 @@ func (s *Server) login(ctx *gin.Context) {
 	}
 
 	payload := gin.H{
-		"user": user,
+		"user":  authenticateResponse.User,
+		"token": authenticateResponse.Token,
 	}
 
-	subscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, user.ID)
+	subscription, err := s.dbClient.HowManySubscription().FindByUserID(ctx, authenticateResponse.User.ID)
 	if err == nil {
 		payload["subscription"] = subscription
 	} else {
-		subscription, err := s.dbClient.HowManySubscription().Insert(ctx, user.ID)
+		subscription, err := s.dbClient.HowManySubscription().Insert(ctx, authenticateResponse.User.ID)
 		if err == nil {
 			payload["subscription"] = subscription
 		}
@@ -282,9 +284,7 @@ func (s *Server) finishCheckout(ctx *gin.Context) {
 	})
 }
 
-func (s *Server) beginCheckout(ctx *gin.Context) {
-	userID := ctx.PostForm("userId")
-
+func (s *Server) handleSubscriptionLinkRedirect(ctx *gin.Context, userID string) {
 	if len(userID) == 0 {
 		ctx.JSON(400, gin.H{
 			"error": "user id required",
@@ -326,6 +326,19 @@ func (s *Server) beginCheckout(ctx *gin.Context) {
 	}
 
 	ctx.Redirect(http.StatusSeeOther, session.URL)
+}
+
+func (s *Server) getSubscriptionLink(ctx *gin.Context) {
+	userID := ctx.Param("userId")
+
+	s.handleSubscriptionLinkRedirect(ctx, userID)
+
+}
+
+func (s *Server) beginCheckout(ctx *gin.Context) {
+	userID := ctx.PostForm("userId")
+
+	s.handleSubscriptionLinkRedirect(ctx, userID)
 }
 
 func (s *Server) receiveSms(ctx *gin.Context) {
@@ -631,16 +644,4 @@ func (s *Server) generateNewHowManyQuestion(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, question)
-}
-
-func (s *Server) getQuestions(ctx *gin.Context) {
-	questions, err := s.dbClient.Question().GetAllQuestions(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"message": "something went wrong",
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, questions)
 }

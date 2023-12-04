@@ -14,10 +14,6 @@ type client struct {
 	db                         *gorm.DB
 	scoreHandle                *scoreHandler
 	userHandle                 *userHandle
-	questionSetHandle          *questionSetHandle
-	matchHandle                *matchHandle
-	userSubmissionHandle       *userSubmissionHandle
-	questionHandle             *questionHandle
 	howManyQuestionHandle      *howManyQuestionHandle
 	howManyAnswerHandle        *howManyAnswerHandle
 	challengeHandle            *challengeHandle
@@ -61,10 +57,6 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		db:                         db,
 		scoreHandle:                &scoreHandler{db: db},
 		userHandle:                 &userHandle{db: db},
-		questionSetHandle:          &questionSetHandle{db: db},
-		matchHandle:                &matchHandle{db: db},
-		userSubmissionHandle:       &userSubmissionHandle{db: db},
-		questionHandle:             &questionHandle{db: db},
 		howManyQuestionHandle:      &howManyQuestionHandle{db: db},
 		howManyAnswerHandle:        &howManyAnswerHandle{db: db},
 		challengeHandle:            &challengeHandle{db: db},
@@ -86,22 +78,6 @@ func (c *client) Score() ScoreHandle {
 
 func (c *client) Exec(ctx context.Context, q string) error {
 	return c.db.WithContext(ctx).Exec(q).Error
-}
-
-func (c *client) QuestionSet() QuestionSetHandle {
-	return c.questionSetHandle
-}
-
-func (c *client) Match() MatchHandle {
-	return c.matchHandle
-}
-
-func (c *client) UserSubmission() UserSubmissionHandle {
-	return c.userSubmissionHandle
-}
-
-func (c *client) Question() QuestionHandle {
-	return c.questionHandle
 }
 
 func (c *client) HowManyAnswer() HowManyAnswerHandle {

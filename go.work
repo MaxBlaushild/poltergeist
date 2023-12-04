@@ -3,7 +3,6 @@ go 1.21
 toolchain go1.21.3
 
 use (
-	./go/admin
 	./go/authenticator
 	./go/billing
 	./go/core
@@ -21,9 +20,11 @@ use (
 	./go/pkg/twilio
 	./go/pkg/http
 	./go/pkg/util
+	./go/pkg/middleware
 	./go/proteus
 	./go/scorekeeper
 	./go/texter
 	./go/trivai
 	./go/migrate
+	./go/sonar
 )

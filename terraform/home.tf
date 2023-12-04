@@ -21,6 +21,20 @@ locals {
   }
 }
 
+resource "aws_secretsmanager_secret" "auth_private_key" {
+  name = "AUTH_PRIVATE_KEY"
+}
+
+variable "auth_private_key" {
+  description = "Auth private key"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "auth_private_key" {
+  secret_id     = aws_secretsmanager_secret.auth_private_key.id
+  secret_string = var.auth_private_key
+}
+
 resource "aws_secretsmanager_secret" "open_ai_key" {
   name = "OPEN_AI_KEY"
 }
@@ -331,6 +345,9 @@ module "ecs" {
           secrets = [{
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "AUTH_PRIVATE_KEY",
+            valueFrom = "${aws_secretsmanager_secret.auth_private_key.arn}"
           }]
           image = "${aws_ecr_repository.authenticator.repository_url}:latest"
           port_mappings = [
@@ -342,25 +359,6 @@ module "ecs" {
             }
           ]
         }
-
-        # "admin" = {
-        #   cpu       = 256
-        #   memory    = 512
-        #   essential = true
-        #   secrets = [{
-        #     name      = "DB_PASSWORD",
-        #     valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-        #   }]
-        #   image = "${aws_ecr_repository.admin.repository_url}:latest"
-        #   port_mappings = [
-        #     {
-        #       name          = "admin"
-        #       containerPort = 9093
-        #       hostPort      = 9093
-        #       protocol      = "tcp"
-        #     }
-        #   ]
-        # }
 
         "billing" = {
           cpu       = 256
@@ -487,6 +485,11 @@ data "aws_acm_certificate" "cert" {
   most_recent = true
 }
 
+data "aws_acm_certificate" "guesswith_us_cert" {
+  domain      = "*.guesswith.us"
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
 
 module "alb_sg" {
   source  = "terraform-aws-modules/security-group/aws"
@@ -508,6 +511,18 @@ module "alb_sg" {
 resource "aws_route53_record" "record" {
   zone_id = "Z0649695PXJXXKD92YP0"
   name    = "digigeist.com"
+  type    = "A"
+
+  alias {
+    name                   = module.alb.lb_dns_name
+    zone_id                = module.alb.lb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "api_guesswith_us_record" {
+  zone_id = "Z02223351NOY9TTILWBS2"
+  name    = "api.guesswith.us"
   type    = "A"
 
   alias {
@@ -542,7 +557,7 @@ module "alb" {
       port               = 443
       protocol           = "HTTPS",
       ssl_policy         = "ELBSecurityPolicy-2016-08"
-      certificate_arn    = data.aws_acm_certificate.cert.arn
+      certificate_arn    = data.aws_acm_certificate.guesswith_us_cert.arn
       target_group_index = 0
     }
   ]

@@ -8,7 +8,8 @@ import (
 )
 
 type SecretConfig struct {
-	DbPassword string
+	DbPassword     string
+	AuthPrivateKey string
 }
 
 type PublicConfig struct {
@@ -58,7 +59,8 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword: os.Getenv("DB_PASSWORD"),
+			DbPassword:     os.Getenv("DB_PASSWORD"),
+			AuthPrivateKey: os.Getenv("AUTH_PRIVATE_KEY"),
 		},
 		Public: publicCfg,
 	}, nil

@@ -58,7 +58,7 @@ func main() {
 		now := time.Now().In(loc)
 
 		// Calculate the next time the task should run
-		next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, loc)
+		next := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, loc)
 		if now.After(next) {
 			next = next.Add(24 * time.Hour)
 		}
@@ -134,23 +134,8 @@ func main() {
 					}
 
 					if !subscription.Subscribed && subscription.NumFreeQuestions == 7 {
-						session, err := billingClient.NewCheckoutSession(ctx, &billing.CheckoutSessionParams{
-							PlanID:                        cfg.Public.GuessHowManyPlanID,
-							SessionSuccessRedirectUrl:     cfg.Public.GuessHowManySubscribeSuccessUrl,
-							SessionCancelRedirectUrl:      cfg.Public.GuessHowManySubscribeCancelUrl,
-							SubscriptionCreateCallbackUrl: "http://localhost:8082/trivai/finish-checkout",
-							SubscriptionCancelCallbackUrl: "http://localhost:8082/trivai/subscriptions/delete",
-							Metadata: map[string]string{
-								"user_id": subscription.UserID.String(),
-							},
-						})
-						if err != nil {
-							fmt.Println("error generating checkout link for user id")
-							fmt.Println(subscription.UserID)
-						}
-
 						if err := texterClient.Text(ctx, &texter.Text{
-							Body:     fmt.Sprintf("You are all out of free questions. But fear not, you can keep the gravy train rolling by subscribing for the low price of $0.99 a month at the link below:\n\n%s", session.URL),
+							Body:     fmt.Sprintf("Sorry, you're all out of free questions! Keep the daily questions coming by subscribing:\n\nhttps://api.guesswith.us/trivai/users/%s/subscribe", subscription.UserID.String()),
 							To:       subscription.User.PhoneNumber,
 							From:     cfg.Secret.GuessHowManyPhoneNumber,
 							TextType: "guess-how-many-out-of-free-questions",

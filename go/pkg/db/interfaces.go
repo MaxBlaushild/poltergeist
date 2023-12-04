@@ -10,10 +10,6 @@ import (
 type DbClient interface {
 	Score() ScoreHandle
 	User() UserHandle
-	QuestionSet() QuestionSetHandle
-	Match() MatchHandle
-	UserSubmission() UserSubmissionHandle
-	Question() QuestionHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
 	Challenge() ChallengeHandle
@@ -32,25 +28,6 @@ type DbClient interface {
 type ScoreHandle interface {
 	Upsert(ctx context.Context, username string) (*models.Score, error)
 	FindAll(ctx context.Context) ([]models.Score, error)
-}
-
-type QuestionHandle interface {
-	FindByQuestionSetID(ctx context.Context, questionSetID uuid.UUID) ([]models.Question, error)
-	GetAllQuestions(ctx context.Context) ([]models.Question, error)
-}
-
-type QuestionSetHandle interface {
-	Insert(ctx context.Context, questions []models.Question) (*models.QuestionSet, error)
-}
-
-type MatchHandle interface {
-	Insert(ctx context.Context, match *models.Match) error
-	GetCurrentMatchForUser(ctx context.Context, userID uuid.UUID) (*models.Match, error)
-}
-
-type UserSubmissionHandle interface {
-	Insert(ctx context.Context, questionSetID uuid.UUID, userID uuid.UUID, userAnswers []models.UserAnswer) (*models.UserSubmission, error)
-	FindByUserAndQuestionSetID(ctx context.Context, userID uuid.UUID, questionSetID uuid.UUID) (*models.UserSubmission, error)
 }
 
 type HowManyAnswerHandle interface {

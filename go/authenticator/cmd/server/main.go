@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
+	"github.com/MaxBlaushild/authenticator/internal/token"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
@@ -49,7 +50,41 @@ func main() {
 		panic(err)
 	}
 
+	tokenClient, err := token.NewClient(cfg.Secret.AuthPrivateKey)
+	if err != nil {
+		panic(err)
+	}
+
 	texterClient := texter.NewClient()
+
+	r.POST("/authenticator/token/verify", func(c *gin.Context) {
+		var requestBody auth.VerifyTokenRequest
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		userID, err := tokenClient.Verify(requestBody.Token)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		user, err := dbClient.User().FindByID(c, *userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, user)
+	})
 
 	r.POST("/authenticator/text/verification-code", func(c *gin.Context) {
 		var requestBody struct {
@@ -158,7 +193,18 @@ func main() {
 			return
 		}
 
-		c.JSON(200, user)
+		token, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": token,
+		})
 	})
 
 	r.POST("/authenticator/text/register", func(c *gin.Context) {
@@ -207,25 +253,18 @@ func main() {
 			return
 		}
 
-		c.JSON(200, user)
-	})
-
-	r.POST("/authenticator/nuke", func(c *gin.Context) {
-		if err := dbClient.Credential().DeleteAll(c); err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
+		token, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
 			})
 			return
 		}
 
-		if err := dbClient.User().DeleteAll(c); err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(200, gin.H{"message": "nuked"})
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": token,
+		})
 	})
 
 	r.DELETE("/authenticator/users/:userID", func(c *gin.Context) {
@@ -240,27 +279,6 @@ func main() {
 		}
 
 		if err := dbClient.User().Delete(c, userID); err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(200, gin.H{"message": "everything ok"})
-	})
-
-	r.DELETE("/authenticator/credentials/:credentialID", func(c *gin.Context) {
-		stringCredentialID := c.Param("credentialID")
-
-		credentialID, err := uuid.Parse(stringCredentialID)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		if err := dbClient.Credential().Delete(c, credentialID); err != nil {
 			c.JSON(500, gin.H{
 				"error": err.Error(),
 			})
@@ -413,7 +431,18 @@ func main() {
 			return
 		}
 
-		c.JSON(200, user)
+		token, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": token,
+		})
 	})
 
 	r.POST("/authenticator/webauthn/login-options", func(c *gin.Context) {
@@ -486,7 +515,18 @@ func main() {
 			return
 		}
 
-		c.JSON(200, user)
+		token, err := tokenClient.New(user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "jwt creation error").Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"user":  user,
+			"token": token,
+		})
 	})
 
 	r.Run(":8089")
