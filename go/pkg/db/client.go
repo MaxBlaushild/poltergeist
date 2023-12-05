@@ -26,6 +26,7 @@ type client struct {
 	textVerificationCodeHandle *textVerificationCodeHandle
 	sentTextHandle             *sentTextHandle
 	howManySubscriptionHandle  *howManySubscriptionHandle
+	sonarSurveyHandle          *sonarSurveyHandle
 }
 
 type ClientConfig struct {
@@ -69,6 +70,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		textVerificationCodeHandle: &textVerificationCodeHandle{db: db},
 		sentTextHandle:             &sentTextHandle{db: db},
 		howManySubscriptionHandle:  &howManySubscriptionHandle{db: db},
+		sonarSurveyHandle:          &sonarSurveyHandle{db: db},
 	}, err
 }
 
@@ -129,4 +131,8 @@ func (c *client) SentText() SentTextHandle {
 
 func (c *client) HowManySubscription() HowManySubscriptionHandle {
 	return c.howManySubscriptionHandle
+}
+
+func (c *client) SonarSurvey() SonarySurveyHandle {
+	return c.sonarSurveyHandle
 }

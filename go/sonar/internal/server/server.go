@@ -5,8 +5,11 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
+	"github.com/pkg/errors"
 )
 
 type server struct {
@@ -26,10 +29,32 @@ func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.D
 func (s *server) ListenAndServe(port string) {
 	r := gin.Default()
 
-	r.POST("/trivai/register", s.register)
-	r.POST("/trivai/login", s.login)
+	r.POST("/sonar/register", s.register)
+	r.POST("/sonar/login", s.login)
+	r.GET("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.getSurverys))
 
 	r.Run(":8042")
+}
+
+func (s *server) getSurverys(ctx *gin.Context) {
+	user, ok := ctx.Get("user")
+
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": "no user found in request",
+		})
+		return
+	}
+
+	surveys, err := s.dbClient.SonarSurvey().GetSurveys(ctx, user.(*models.User).ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": errors.Wrap(err, "survey fetch error").Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, surveys)
 }
 
 func (s *server) login(ctx *gin.Context) {
@@ -77,7 +102,7 @@ func (s *server) register(ctx *gin.Context) {
 	}
 
 	// if err := s.texterClient.Text(ctx, &texter.Text{
-	// 	Body:     "Welcome to Guess How Many! New question every day at noon EST. Text CANCEL at any point to cancel your subscription.",
+	// 	Body:     "Welcome to Guess How Many! New question every day at noon EST.",
 	// 	From:     s.cfg.Secret.GuessHowManyPhoneNumber,
 	// 	To:       authenticateResponse.User.PhoneNumber,
 	// 	TextType: "guess-how-many-welcome-email",

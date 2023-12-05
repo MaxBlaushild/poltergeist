@@ -22,6 +22,7 @@ type DbClient interface {
 	TextVerificationCode() TextVerificationCodeHandle
 	SentText() SentTextHandle
 	HowManySubscription() HowManySubscriptionHandle
+	SonarSurvey() SonarySurveyHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -109,4 +110,8 @@ type HowManySubscriptionHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.HowManySubscription, error)
 	SetSubscribed(ctx context.Context, userID uuid.UUID, stripeID string) error
 	DeleteByStripeID(ctx context.Context, stripeID string) error
+}
+
+type SonarySurveyHandle interface {
+	GetSurveys(ctx context.Context, userID uuid.UUID) ([]models.SonarSurvey, error)
 }
