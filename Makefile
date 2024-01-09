@@ -92,3 +92,15 @@ billing/ecr-push:
 	make billing/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/billing:latest
+
+PHONY: sonar/build
+sonar/build:
+	docker build -f ./deploy/services/sonar/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest .
+
+PHONY: sonar/ecr-push
+sonar/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	make sonar/build
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest

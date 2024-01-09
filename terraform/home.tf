@@ -224,6 +224,15 @@ resource "aws_ecr_repository" "trivai" {
   }
 }
 
+resource "aws_ecr_repository" "sonar" {
+  name                 = "sonar"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 module "ecs" {
   source = "terraform-aws-modules/ecs/aws"
 
@@ -245,6 +254,107 @@ module "ecs" {
   }
 
   services = {
+    sonar_core = {
+      cpu = 1024
+      memory = 2048
+
+      container_definitions = {
+        "core" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          image     = "${aws_ecr_repository.core.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = local.core_container_name
+              containerPort = local.core_container_port
+              hostPort      = local.core_container_port
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "authenticator" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "AUTH_PRIVATE_KEY",
+            valueFrom = "${aws_secretsmanager_secret.auth_private_key.arn}"
+          }]
+          image = "${aws_ecr_repository.authenticator.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "authenticator"
+              containerPort = 8089
+              hostPort      = 8089
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "sonar" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          image = "${aws_ecr_repository.sonar.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "sonar"
+              containerPort = 8042
+              hostPort      = 8042
+              protocol      = "tcp"
+            }
+          ]
+        }
+      }
+
+      service_connect_configuration = {
+          namespace = aws_service_discovery_http_namespace.sonar_namespace.arn
+          service = {
+            client_alias = {
+              port     = local.core_container_port
+              dns_name = local.core_container_name
+            }
+            port_name      = local.core_container_name
+            discovery_name = local.core_container_name
+          }
+        }
+
+        load_balancer = {
+          service = {
+            target_group_arn = element(module.sonar_alb.target_group_arns, 0)
+            container_name   = local.core_container_name
+            container_port   = local.core_container_port
+          }
+        }
+
+        subnet_ids = module.vpc.private_subnets
+        security_group_rules = {
+          alb_ingress_8080 = {
+            type                     = "ingress"
+            from_port                = 0
+            to_port                  = local.core_container_port
+            protocol                 = "tcp"
+            description              = "Service port"
+            source_security_group_id = module.sonar_alb_sg.security_group_id
+          }
+          egress_all = {
+            type        = "egress"
+            from_port   = 0
+            to_port     = 0
+            protocol    = "-1"
+            cidr_blocks = ["0.0.0.0/0"]
+          }
+        }
+    }
     poltergeist_core = {
       cpu    = 4096
       memory = 8192
@@ -479,6 +589,12 @@ resource "aws_service_discovery_http_namespace" "this" {
   tags        = local.tags
 }
 
+resource "aws_service_discovery_http_namespace" "sonar_namespace" {
+  name        = "Sonar"
+  description = "CloudMap namespace for sonar"
+  tags        = local.tags
+}
+
 data "aws_acm_certificate" "cert" {
   domain      = "digigeist.com"
   statuses    = ["ISSUED"]
@@ -491,11 +607,35 @@ data "aws_acm_certificate" "guesswith_us_cert" {
   most_recent = true
 }
 
+
+data "aws_acm_certificate" "sonar_cert" {
+  domain      = "*.eeee.rsvp"
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
 module "alb_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 4.0"
 
   name        = "${local.name}-service"
+  description = "Service security group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress_rules       = ["http-80-tcp", "https-443-tcp"]
+  ingress_cidr_blocks = ["0.0.0.0/0"]
+
+  egress_rules       = ["all-all"]
+  egress_cidr_blocks = module.vpc.private_subnets_cidr_blocks
+
+  tags = local.tags
+}
+
+module "sonar_alb_sg" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 4.0"
+
+  name        = "sonar-service"
   description = "Service security group"
   vpc_id      = module.vpc.vpc_id
 
@@ -520,6 +660,9 @@ resource "aws_route53_record" "record" {
   }
 }
 
+# Z03463592IC0THZ8KS8VR
+
+
 resource "aws_route53_record" "api_guesswith_us_record" {
   zone_id = "Z02223351NOY9TTILWBS2"
   name    = "api.guesswith.us"
@@ -528,6 +671,21 @@ resource "aws_route53_record" "api_guesswith_us_record" {
   alias {
     name                   = module.alb.lb_dns_name
     zone_id                = module.alb.lb_zone_id
+    evaluate_target_health = true
+  }
+}
+
+
+
+
+resource "aws_route53_record" "sonar_route_53_record" {
+  zone_id = "Z03197012NLXJ6B0OCCFX"
+  name    = "api.eeee.rsvp"
+  type    = "A"
+
+  alias {
+    name                   = module.sonar_alb.lb_dns_name
+    zone_id                = module.sonar_alb.lb_zone_id
     evaluate_target_health = true
   }
 }
@@ -573,6 +731,49 @@ module "alb" {
 
   tags = local.tags
 }
+
+module "sonar_alb" {
+  source  = "terraform-aws-modules/alb/aws"
+  version = "~> 8.0"
+
+  name = "sonar"
+
+  load_balancer_type = "application"
+
+  vpc_id          = module.vpc.vpc_id
+  subnets         = module.vpc.public_subnets
+  security_groups = [module.sonar_alb_sg.security_group_id]
+
+  http_tcp_listeners = [
+    {
+      port               = 80
+      protocol           = "HTTP"
+      target_group_index = 0
+    },
+  ]
+
+  https_listeners = [
+    {
+      port               = 443
+      protocol           = "HTTPS",
+      ssl_policy         = "ELBSecurityPolicy-2016-08"
+      certificate_arn    = data.aws_acm_certificate.sonar_cert.arn
+      target_group_index = 0
+    }
+  ]
+
+  target_groups = [
+    {
+      name             = "sonar-${local.core_container_name}"
+      backend_protocol = "HTTP"
+      backend_port     = local.core_container_port
+      target_type      = "ip"
+    },
+  ]
+
+  tags = local.tags
+}
+
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"

@@ -5,5 +5,5 @@ CREATE TABLE sonar_survey_activities (
     sonar_survey_id UUID NOT NULL,
     sonar_activity_id UUID NOT NULL,
     FOREIGN KEY (sonar_survey_id) REFERENCES sonar_surveys(id),
-    FOREIGN KEY (sonart_activity_id) REFERENCES sonar_activities(id)
+    FOREIGN KEY (sonar_activity_id) REFERENCES sonar_activities(id)
 );

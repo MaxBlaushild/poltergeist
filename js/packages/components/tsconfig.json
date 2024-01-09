@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "lib": ["dom", "esnext", "es5", "dom.iterable"],
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "paths": {
+      "@poltergeist/*": ["./../packages/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["dist"]
+}
