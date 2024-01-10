@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS credentials;
+DROP TABLE IF EXISTS how_many_questions;
