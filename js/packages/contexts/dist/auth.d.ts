@@ -5,8 +5,9 @@ type AuthContextType = {
     isWaitingForVerificationCode: boolean;
     error: unknown;
     getVerificationCode: (phoneNumber: string) => void;
-    logister: (phoneNumber: string, verificationCode: string) => void;
+    logister: (phoneNumber: string, verificationCode: string, name: string) => void;
     logout: () => void;
+    isRegister: boolean;
 };
 type AuthProviderProps = {
     children: ReactNode;

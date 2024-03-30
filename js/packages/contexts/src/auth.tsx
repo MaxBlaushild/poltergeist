@@ -9,8 +9,9 @@ type AuthContextType = {
     isWaitingForVerificationCode: boolean;
     error: unknown;
     getVerificationCode: (phoneNumber: string) => void;
-    logister: (phoneNumber: string, verificationCode: string) => void;
+    logister: (phoneNumber: string, verificationCode: string, name: string) => void;
     logout: () => void;
+    isRegister: boolean;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
     error: null,
     getVerificationCode: () => {},
     logister: () => {},
+    isRegister: false,
     logout: () => {}
 });
 
@@ -31,22 +33,24 @@ type AuthProviderProps = {
 export const AuthProvider = ({ children, appName, uriPrefix }: AuthProviderProps) => {
     const [user, setUser] = useState<User | null>(null);
     const [error, setError] = useState<unknown>(null);
+    const [isRegister, setIsRegister] = useState<boolean>(false);
     const [isWaitingForVerificationCode, setIsWaitingOnVerificationCode] = useState<boolean>(false);
 
     const getVerificationCode = async (phoneNumber: string) => {
         try {
-            await axios.post(
+            const { data } = await axios.post(
               `${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`,
               { phoneNumber, appName, }
             );
             setIsWaitingOnVerificationCode(true);
+            setIsRegister(!data)
           } catch (e) {
             setError(e);
             setIsWaitingOnVerificationCode(false);
           }
     };
 
-    const logister = async (phoneNumber: string, verificationCode: string) => {
+    const logister = async (phoneNumber: string, verificationCode: string, name: string) => {
       try {
           const response = await axios.post(
             `${process.env.REACT_APP_API_URL}${uriPrefix}/login`,
@@ -61,7 +65,7 @@ export const AuthProvider = ({ children, appName, uriPrefix }: AuthProviderProps
           try {
             const response = await axios.post(
               `${process.env.REACT_APP_API_URL}${uriPrefix}/register`,
-              { phoneNumber, code: verificationCode, name: '' }
+              { phoneNumber, code: verificationCode, name }
             );
             const { user, token } = response.data;
     
@@ -87,7 +91,8 @@ export const AuthProvider = ({ children, appName, uriPrefix }: AuthProviderProps
             logister, 
             logout, 
             isWaitingForVerificationCode, 
-            getVerificationCode
+            getVerificationCode,
+            isRegister,
           }}>
             {children}
         </AuthContext.Provider>

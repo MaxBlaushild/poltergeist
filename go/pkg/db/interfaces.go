@@ -22,7 +22,10 @@ type DbClient interface {
 	TextVerificationCode() TextVerificationCodeHandle
 	SentText() SentTextHandle
 	HowManySubscription() HowManySubscriptionHandle
-	SonarSurvey() SonarySurveyHandle
+	SonarSurvey() SonarSurveyHandle
+	SonarSurveySubmission() SonarSurveySubmissionHandle
+	SonarActivity() SonarActivityHandle
+	SonarCategory() SonarCategoryHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -37,7 +40,7 @@ type HowManyAnswerHandle interface {
 }
 
 type HowManyQuestionHandle interface {
-	Insert(ctx context.Context, text string, explanation string, howMany int) (*models.HowManyQuestion, error)
+	Insert(ctx context.Context, text string, explanation string, howMany int, promptSeedIndex int, prompt string) (*models.HowManyQuestion, error)
 	FindAll(ctx context.Context) ([]*models.HowManyQuestion, error)
 	MarkValid(ctx context.Context, howManyQuestionID uuid.UUID) error
 	MarkDone(ctx context.Context, howManyQuestionID uuid.UUID) error
@@ -112,6 +115,22 @@ type HowManySubscriptionHandle interface {
 	DeleteByStripeID(ctx context.Context, stripeID string) error
 }
 
-type SonarySurveyHandle interface {
+type SonarSurveyHandle interface {
 	GetSurveys(ctx context.Context, userID uuid.UUID) ([]models.SonarSurvey, error)
+	CreateSurvey(ctx context.Context, userID uuid.UUID, title string, activityIDs []uuid.UUID) (*models.SonarSurvey, error)
+	GetSurveyByID(ctx context.Context, surveyID uuid.UUID) (*models.SonarSurvey, error)
+}
+
+type SonarSurveySubmissionHandle interface {
+	CreateSubmission(ctx context.Context, surveryID uuid.UUID, userID uuid.UUID, activityIDS []uuid.UUID, downs []bool) (*models.SonarSurveySubmission, error)
+	GetUserSubmissionForSurvey(ctx context.Context, userID uuid.UUID, surveyID uuid.UUID) (*models.SonarSurveySubmission, error)
+	GetAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.SonarSurveySubmission, error)
+}
+
+type SonarActivityHandle interface {
+	GetAllActivities(ctx context.Context) ([]models.SonarActivity, error)
+}
+
+type SonarCategoryHandle interface {
+	GetAllCategoriesWithActivities(ctx context.Context) ([]models.SonarCategory, error)
 }

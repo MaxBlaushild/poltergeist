@@ -635,7 +635,7 @@ func (s *Server) generateNewHowManyQuestion(ctx *gin.Context) {
 		return
 	}
 
-	question, err := s.dbClient.HowManyQuestion().Insert(ctx, howManyQuestion.Text, howManyQuestion.Explanation, howManyQuestion.HowMany)
+	question, err := s.dbClient.HowManyQuestion().Insert(ctx, howManyQuestion.Text, howManyQuestion.Explanation, howManyQuestion.HowMany, 0, "")
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),

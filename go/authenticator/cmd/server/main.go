@@ -16,6 +16,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -99,6 +100,14 @@ func main() {
 			return
 		}
 
+		user, err := dbClient.User().FindByPhoneNumber(c, requestBody.PhoneNumber)
+		if err != nil && err != gorm.ErrRecordNotFound {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
 		code, err := dbClient.TextVerificationCode().Insert(c, requestBody.PhoneNumber)
 		if err != nil {
 			c.JSON(500, gin.H{
@@ -119,9 +128,7 @@ func main() {
 			return
 		}
 
-		c.JSON(200, gin.H{
-			"message": "all goody",
-		})
+		c.JSON(200, user)
 	})
 
 	r.GET("/authenticator/users", func(c *gin.Context) {

@@ -5,18 +5,21 @@ import { useNavigate } from 'react-router-dom';
 
 export const Login = () => {
     const navigate = useNavigate();
-    const { user, logister, getVerificationCode, isWaitingForVerificationCode } = useAuth();
+    const { user, logister, getVerificationCode, isWaitingForVerificationCode, isRegister } = useAuth();
 
     useEffect(() => {
         if (user) {
             navigate('/surveys');
         }
     }, [user])
+
+    console.log(isRegister)
     
     return <div>
         <Logister 
             logister={logister} 
-            getVerificationCode={getVerificationCode} 
+            getVerificationCode={getVerificationCode}
+            isRegister={isRegister}
             isWaitingOnVerificationCode={isWaitingForVerificationCode}
         />
     </div>

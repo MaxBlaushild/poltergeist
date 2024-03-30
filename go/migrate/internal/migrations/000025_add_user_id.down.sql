@@ -1,0 +1,1 @@
+ALTER TABLE sonar_surveys DROP COLUMN user_id;

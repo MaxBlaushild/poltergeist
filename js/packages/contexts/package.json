@@ -12,7 +12,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@poltergeist/types": "*"
+    "@poltergeist/types": "*",
+    "@poltergeist/api-client": "*"
   },
   "peerDependencies": {
     "react": "18.2.0",

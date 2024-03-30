@@ -5,6 +5,11 @@ import { Login } from "./components/Login.tsx";
 import { redirect } from "react-router-dom";
 import { Surveys } from "./components/Surveys.tsx";
 import { Error } from "./components/Error.tsx";
+import { NewSurvey } from "./components/NewSurvey.tsx";
+import { AnswerSurvey } from "./components/AnswerSurvey.tsx";
+import { Survey } from "./components/Survey.tsx";
+import { Thanks } from "./components/Thanks.tsx";
+import { Answers } from "./components/Answers.tsx";
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
     if (!localStorage.getItem('token')) {
@@ -41,6 +46,31 @@ export const router = createBrowserRouter([
           path: "surveys",
           loader: onlyAuthenticated,
           Component: Surveys,
+        },
+        {
+          path: "new-survey",
+          loader: onlyAuthenticated,
+          Component: NewSurvey
+        },
+        {
+          path: "submit-answer/:id",
+          loader: onlyAuthenticated,
+          Component: AnswerSurvey,
+        },
+        {
+          path: "surveys/:id",
+          loader: onlyAuthenticated,
+          Component: Survey,
+        },
+        {
+          path: "thanks",
+          loader: onlyAuthenticated,
+          Component: Thanks,
+        },
+        {
+          path: "answers",
+          loader: onlyAuthenticated,
+          Component: Answers,
         },
       ],
     },

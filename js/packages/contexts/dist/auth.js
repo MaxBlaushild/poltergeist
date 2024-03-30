@@ -17,23 +17,26 @@ const AuthContext = createContext({
     error: null,
     getVerificationCode: () => { },
     logister: () => { },
+    isRegister: false,
     logout: () => { }
 });
 export const AuthProvider = ({ children, appName, uriPrefix }) => {
     const [user, setUser] = useState(null);
     const [error, setError] = useState(null);
+    const [isRegister, setIsRegister] = useState(false);
     const [isWaitingForVerificationCode, setIsWaitingOnVerificationCode] = useState(false);
     const getVerificationCode = (phoneNumber) => __awaiter(void 0, void 0, void 0, function* () {
         try {
-            yield axios.post(`${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`, { phoneNumber, appName, });
+            const { data } = yield axios.post(`${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`, { phoneNumber, appName, });
             setIsWaitingOnVerificationCode(true);
+            setIsRegister(!data);
         }
         catch (e) {
             setError(e);
             setIsWaitingOnVerificationCode(false);
         }
     });
-    const logister = (phoneNumber, verificationCode) => __awaiter(void 0, void 0, void 0, function* () {
+    const logister = (phoneNumber, verificationCode, name) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/login`, { phoneNumber, code: verificationCode });
             const { user, token } = response.data;
@@ -42,7 +45,7 @@ export const AuthProvider = ({ children, appName, uriPrefix }) => {
         }
         catch (e) {
             try {
-                const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/register`, { phoneNumber, code: verificationCode, name: '' });
+                const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/register`, { phoneNumber, code: verificationCode, name });
                 const { user, token } = response.data;
                 localStorage.setItem(tokenKey, token);
                 setUser(user);
@@ -62,7 +65,8 @@ export const AuthProvider = ({ children, appName, uriPrefix }) => {
             logister,
             logout,
             isWaitingForVerificationCode,
-            getVerificationCode
+            getVerificationCode,
+            isRegister,
         } }, { children: children })));
 };
 export const useAuth = () => {

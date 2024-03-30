@@ -12,11 +12,14 @@ type howManyQuestionHandle struct {
 	db *gorm.DB
 }
 
-func (h *howManyQuestionHandle) Insert(ctx context.Context, text string, explanation string, howMany int) (*models.HowManyQuestion, error) {
+func (h *howManyQuestionHandle) Insert(ctx context.Context, text string, explanation string, howMany int, promptSeedIndex int, prompt string) (*models.HowManyQuestion, error) {
 	howManyQuestion := models.HowManyQuestion{
-		Text:        text,
-		Explanation: explanation,
-		HowMany:     howMany,
+		Text:            text,
+		Explanation:     explanation,
+		HowMany:         howMany,
+		PromptSeedIndex: promptSeedIndex,
+		Prompt:          prompt,
+		Valid:           true,
 	}
 
 	if err := h.db.WithContext(ctx).Create(&howManyQuestion).Error; err != nil {

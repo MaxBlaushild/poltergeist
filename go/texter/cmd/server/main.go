@@ -70,8 +70,6 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(cfg)
-
 	dbClient, err := db.NewClient(db.ClientConfig{
 		Name:     "poltergeist",
 		Host:     cfg.Public.DbHost,

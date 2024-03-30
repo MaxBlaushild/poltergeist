@@ -2,6 +2,7 @@ package open_ai
 
 import (
 	"context"
+	"fmt"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -35,6 +36,9 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 			},
 		},
 	)
+
+	fmt.Println(resp)
+	fmt.Println(err)
 
 	if err != nil {
 		return "", err

@@ -3,12 +3,12 @@
 import React from 'react';
 import './Subscribe.css';
 import 'react-phone-number-input/style.css';
-import PhoneInput from 'react-phone-number-input/input';
+import * as PhoneInput from 'react-phone-number-input/input';
 import { isValidPhoneNumber } from 'react-phone-number-input';
 import cx from 'classnames';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { getUserID } from '../util';
+import { getUserID } from '../util.ts';
 
 type Subscription = {
   subscribed: boolean;
@@ -27,8 +27,7 @@ function Subscribe() {
   });
   const [hasSubscription, setHasSubscription] = React.useState(false);
 
-  const validPhoneNumber =
-    typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
+  const validPhoneNumber = false;
   const buttonClasses = ['Subscribe__button'];
   const { userId, ephemeralUserId } = getUserID();
   const { subscribed, numFreeQuestions } = subscription;
@@ -126,7 +125,6 @@ function Subscribe() {
           { phoneNumber, code, name: '', userId: ephemeralUserId }
         );
         setExistingPhoneNumber(phoneNumber);
-        false;
         setSubscription(subscription || {});
         setHasSubscription(!!subscription);
         localStorage.setItem('user-id', id);
@@ -152,11 +150,25 @@ function Subscribe() {
           </p>
           <div className="Subscribe__form">
             <div className="Subscribe__inputGroup">
-              <PhoneInput
-                value={phoneNumber}
+              {/* <PhoneInput
+                value={""}
                 placeholder="+1 234 567 8900"
-                onChange={setValue}
-              />
+                onChange={() => {}}
+              /> */}
+                             <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={code}
+                  autoComplete="one-time-code"
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+
+                    if (/^\d*$/.test(inputValue) && inputValue.length <= 6) {
+                      setCode(inputValue);
+                    }
+                  }}
+                />
               {!waitingOnVerificationCode && (
                 <button
                   className={cx(buttonClasses)}

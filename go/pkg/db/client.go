@@ -11,22 +11,25 @@ import (
 )
 
 type client struct {
-	db                         *gorm.DB
-	scoreHandle                *scoreHandler
-	userHandle                 *userHandle
-	howManyQuestionHandle      *howManyQuestionHandle
-	howManyAnswerHandle        *howManyAnswerHandle
-	challengeHandle            *challengeHandle
-	credentialHandle           *credentialHandle
-	teamHandle                 *teamHandle
-	userTeamHandle             *userTeamHandle
-	crystalHandle              *crystalHandle
-	crystalUnlockingHandle     *crystalUnlockingHandle
-	neighborHandle             *neighborHandle
-	textVerificationCodeHandle *textVerificationCodeHandle
-	sentTextHandle             *sentTextHandle
-	howManySubscriptionHandle  *howManySubscriptionHandle
-	sonarSurveyHandle          *sonarSurveyHandle
+	db                          *gorm.DB
+	scoreHandle                 *scoreHandler
+	userHandle                  *userHandle
+	howManyQuestionHandle       *howManyQuestionHandle
+	howManyAnswerHandle         *howManyAnswerHandle
+	challengeHandle             *challengeHandle
+	credentialHandle            *credentialHandle
+	teamHandle                  *teamHandle
+	userTeamHandle              *userTeamHandle
+	crystalHandle               *crystalHandle
+	crystalUnlockingHandle      *crystalUnlockingHandle
+	neighborHandle              *neighborHandle
+	textVerificationCodeHandle  *textVerificationCodeHandle
+	sentTextHandle              *sentTextHandle
+	howManySubscriptionHandle   *howManySubscriptionHandle
+	sonarSurveyHandle           *sonarSurveyHandle
+	sonarSurveySubmissionHandle *sonarSurveySubmissionHandle
+	sonarActivityHandle         *sonarActivityHandle
+	sonarCategoryHandle         *sonarCategoryHandle
 }
 
 type ClientConfig struct {
@@ -55,22 +58,25 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	}
 
 	return &client{
-		db:                         db,
-		scoreHandle:                &scoreHandler{db: db},
-		userHandle:                 &userHandle{db: db},
-		howManyQuestionHandle:      &howManyQuestionHandle{db: db},
-		howManyAnswerHandle:        &howManyAnswerHandle{db: db},
-		challengeHandle:            &challengeHandle{db: db},
-		credentialHandle:           &credentialHandle{db: db},
-		teamHandle:                 &teamHandle{db: db},
-		userTeamHandle:             &userTeamHandle{db: db},
-		crystalHandle:              &crystalHandle{db: db},
-		crystalUnlockingHandle:     &crystalUnlockingHandle{db: db},
-		neighborHandle:             &neighborHandle{db: db},
-		textVerificationCodeHandle: &textVerificationCodeHandle{db: db},
-		sentTextHandle:             &sentTextHandle{db: db},
-		howManySubscriptionHandle:  &howManySubscriptionHandle{db: db},
-		sonarSurveyHandle:          &sonarSurveyHandle{db: db},
+		db:                          db,
+		scoreHandle:                 &scoreHandler{db: db},
+		userHandle:                  &userHandle{db: db},
+		howManyQuestionHandle:       &howManyQuestionHandle{db: db},
+		howManyAnswerHandle:         &howManyAnswerHandle{db: db},
+		challengeHandle:             &challengeHandle{db: db},
+		credentialHandle:            &credentialHandle{db: db},
+		teamHandle:                  &teamHandle{db: db},
+		userTeamHandle:              &userTeamHandle{db: db},
+		crystalHandle:               &crystalHandle{db: db},
+		crystalUnlockingHandle:      &crystalUnlockingHandle{db: db},
+		neighborHandle:              &neighborHandle{db: db},
+		textVerificationCodeHandle:  &textVerificationCodeHandle{db: db},
+		sentTextHandle:              &sentTextHandle{db: db},
+		howManySubscriptionHandle:   &howManySubscriptionHandle{db: db},
+		sonarSurveyHandle:           &sonarSurveyHandle{db: db},
+		sonarSurveySubmissionHandle: &sonarSurveySubmissionHandle{db: db},
+		sonarActivityHandle:         &sonarActivityHandle{db: db},
+		sonarCategoryHandle:         &sonarCategoryHandle{db: db},
 	}, err
 }
 
@@ -133,6 +139,18 @@ func (c *client) HowManySubscription() HowManySubscriptionHandle {
 	return c.howManySubscriptionHandle
 }
 
-func (c *client) SonarSurvey() SonarySurveyHandle {
+func (c *client) SonarSurvey() SonarSurveyHandle {
 	return c.sonarSurveyHandle
+}
+
+func (c *client) SonarSurveySubmission() SonarSurveySubmissionHandle {
+	return c.sonarSurveySubmissionHandle
+}
+
+func (c *client) SonarActivity() SonarActivityHandle {
+	return c.sonarActivityHandle
+}
+
+func (c *client) SonarCategory() SonarCategoryHandle {
+	return c.sonarCategoryHandle
 }

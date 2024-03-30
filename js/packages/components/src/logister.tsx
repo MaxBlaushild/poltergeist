@@ -5,14 +5,17 @@ import { isValidPhoneNumber } from 'react-phone-number-input';
 import { User } from '@poltergeist/types';
 
 export type LogisterProps = {
-  logister: (phoneNumber: string, verificationCode: string) => void
+  logister: (phoneNumber: string, verificationCode: string, name: string) => void
   getVerificationCode: (phoneNumber: string) => void
+  isRegister: boolean
   isWaitingOnVerificationCode: boolean
 };
 export function Logister(props: LogisterProps) {
-  const { logister, getVerificationCode, isWaitingOnVerificationCode } = props;
+  const { logister, getVerificationCode, isWaitingOnVerificationCode, isRegister } = props;
   const [code, setCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState<string | undefined>(undefined);
+  const [name, setName] = useState<string>('');
+
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
 
@@ -36,6 +39,19 @@ export function Logister(props: LogisterProps) {
               </button>
             )}
           </div>
+          {isRegister && isWaitingOnVerificationCode && (
+            <div>
+              <input
+                placeholder='Lebron James'
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  const inputValue = e.target.value;
+                  setName(inputValue);
+                }}
+              />
+            </div>
+          )}
           {isWaitingOnVerificationCode && (
             <div>
               <input
@@ -52,8 +68,8 @@ export function Logister(props: LogisterProps) {
                   }
                 }}
               />
-              <button onClick={() => logister(phoneNumber!, code)} disabled={code.length !== 6}>
-                Enter code
+              <button onClick={() => logister(phoneNumber!, code, name)} disabled={code.length !== 6}>
+                {isRegister ? 'Register' : 'Enter code'}
               </button>
             </div>
           )}

@@ -1,14 +1,13 @@
 import './App.css';
 import React, { useState, useEffect, useCallback } from 'react';
-import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
-import Guess from './components/Guess';
-import Grade from './components/Grade';
-import Correctness from './components/Correctness';
-import Stats from './components/Stats';
-import Explanation from './components/Explanation';
-import Subscribe from './components/Subscribe';
-import { getUserID } from './util';
+import Guess from './components/Guess.tsx';
+import Grade from './components/Grade.tsx';
+import Correctness from './components/Correctness.tsx';
+import Stats from './components/Stats.tsx';
+import Explanation from './components/Explanation.tsx';
+import Subscribe from './components/Subscribe.tsx';
+import { getUserID } from './util.ts';
 
 const noGrade = {
   correctness: 0,
@@ -25,6 +24,7 @@ function App() {
   const [questionId, setQuestionId] = useState(0);
   const [explanation, setExplanation] = useState('');
   const userId = getUserID();
+
 
   const fetchText = async () => {
     const res = await axios.get(
@@ -91,10 +91,9 @@ function App() {
           )}
 
           {grade.correctness ? <Explanation explanation={explanation} /> : null}
-          <Subscribe />
+          {/* <Subscribe /> */}
         </div>
       </div>
-      <Toaster />
     </div>
   );
 }

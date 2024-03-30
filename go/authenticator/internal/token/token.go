@@ -47,9 +47,13 @@ func hexToECDSAPrivateKey(hexKey string) (*ecdsa.PrivateKey, error) {
 	}
 
 	privateKeyInt := new(big.Int).SetBytes(keyBytes)
+	curve := elliptic.P256()
+	x, y := curve.ScalarBaseMult(keyBytes)
 	privateKey := &ecdsa.PrivateKey{
 		PublicKey: ecdsa.PublicKey{
-			Curve: elliptic.P256(),
+			Curve: curve,
+			X:     x,
+			Y:     y,
 		},
 		D: privateKeyInt,
 	}
@@ -72,7 +76,7 @@ func (c *client) New(userID uuid.UUID) (string, error) {
 
 func (c *client) Verify(tokenString string) (*uuid.UUID, error) {
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-		return c.privateKey, nil
+		return &c.privateKey.PublicKey, nil
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "jwt parse error")

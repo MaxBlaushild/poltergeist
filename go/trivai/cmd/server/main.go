@@ -74,6 +74,26 @@ func main() {
 		}
 
 		if currentQuestion != nil {
+			var newQuestion *trivai.HowManyQuestion = nil
+			var promptIndex int = currentQuestion.PromptSeedIndex + 1
+			var prompt string = ""
+			var err error
+			for newQuestion == nil {
+				prompt = trivai.PromptSeeds[promptIndex]
+				newQuestion, err = trivaiClient.GenerateNewHowManyQuestion(ctx, prompt)
+				if err != nil {
+					fmt.Println("error generating new question")
+					fmt.Println(err.Error())
+				}
+				promptIndex++
+			}
+
+			_, err = dbClient.HowManyQuestion().Insert(ctx, newQuestion.Text, newQuestion.Explanation, newQuestion.HowMany, promptIndex, prompt)
+			if err != nil {
+				fmt.Println("error inserting new question")
+				fmt.Println(err.Error())
+			}
+
 			fmt.Println("going to mark the last question as done")
 
 			if err := dbClient.HowManyQuestion().MarkDone(ctx, currentQuestion.ID); err != nil {
@@ -82,93 +102,6 @@ func main() {
 			}
 
 			fmt.Println("successfully marked the question as done")
-
-			// Get new question
-			newQuestion, err := dbClient.HowManyQuestion().FindTodaysQuestion(ctx)
-			if err != nil {
-				fmt.Println("fetch current question error")
-				fmt.Println(err)
-			}
-
-			fmt.Println("fetched the new question")
-
-			subscriptions, err := dbClient.HowManySubscription().FindAll(ctx)
-			if err != nil {
-				fmt.Println("fetch subscriptions error")
-				fmt.Println(err)
-			}
-
-			fmt.Println("fetched all them subscriptions")
-
-			if newQuestion != nil {
-				for _, subscription := range subscriptions {
-					var shouldSend bool = false
-					if subscription.Subscribed {
-						shouldSend = true
-					}
-
-					if subscription.NumFreeQuestions < 7 {
-						shouldSend = true
-					}
-
-					if shouldSend {
-						if err := texterClient.Text(ctx, &texter.Text{
-							Body:     newQuestion.Text,
-							To:       subscription.User.PhoneNumber,
-							From:     cfg.Secret.GuessHowManyPhoneNumber,
-							TextType: "guess-how-many-question",
-						}); err != nil {
-							fmt.Println("error sending text")
-							fmt.Println(subscription.User.PhoneNumber)
-						}
-					}
-
-					fmt.Println("sent message to: ")
-					fmt.Println(subscription.User.PhoneNumber)
-
-					if shouldSend && !subscription.Subscribed {
-						if err := dbClient.HowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
-							fmt.Println("error incrementing user id")
-							fmt.Println(subscription.UserID)
-						}
-					}
-
-					if !subscription.Subscribed && subscription.NumFreeQuestions == 7 {
-						if err := texterClient.Text(ctx, &texter.Text{
-							Body:     fmt.Sprintf("Sorry, you're all out of free questions! Keep the daily questions coming by subscribing:\n\nhttps://api.guesswith.us/trivai/users/%s/subscribe", subscription.UserID.String()),
-							To:       subscription.User.PhoneNumber,
-							From:     cfg.Secret.GuessHowManyPhoneNumber,
-							TextType: "guess-how-many-out-of-free-questions",
-						}); err != nil {
-							fmt.Println("error sending text")
-							fmt.Println(subscription.User.PhoneNumber)
-						}
-
-						if err := dbClient.HowManySubscription().IncrementNumFreeQuestions(ctx, subscription.UserID); err != nil {
-							fmt.Println("error incrementing user id after sending last free text")
-							fmt.Println(subscription.UserID)
-						}
-					}
-				}
-			}
-
-		}
-
-		if countLeft, err := dbClient.HowManyQuestion().ValidQuestionsRemaining(ctx); err != nil {
-			fmt.Println("error getting num valid subscriptions left")
-			fmt.Println(err.Error())
-		} else {
-			if countLeft < 3 {
-				if err := texterClient.Text(ctx, &texter.Text{
-					Body:     fmt.Sprintf("Hey dumbass! You only have %d questions left. Make some new ones.", countLeft),
-					To:       "+14407858475",
-					From:     cfg.Secret.GuessHowManyPhoneNumber,
-					TextType: "idiot-reminded",
-				}); err != nil {
-					fmt.Println("error sending text")
-					fmt.Println(err.Error())
-				}
-			}
 		}
 	}
 }

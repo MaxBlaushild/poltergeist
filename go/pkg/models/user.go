@@ -10,9 +10,9 @@ import (
 )
 
 type User struct {
-	ID          uuid.UUID    `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt   time.Time    `db:"created_at"`
-	UpdatedAt   time.Time    `db:"updated_at"`
+	ID          uuid.UUID    `db:"id" gorm:"type:uuid;default:uuid_generate_v4()" json:"id"`
+	CreatedAt   time.Time    `db:"created_at" json:"createdAt"`
+	UpdatedAt   time.Time    `db:"updated_at" json:"updatedAt"`
 	Name        string       `json:"name"`
 	PhoneNumber string       `json:"phoneNumber" gorm:"unique"`
 	Credentials []Credential `json:"credentials"`
