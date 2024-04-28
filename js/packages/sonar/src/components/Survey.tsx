@@ -43,9 +43,15 @@ export const Survey: React.FC = () => {
           <li key={activity.id}>{activity.title}</li>
         ))}
       </ul>
-        <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/submit-answer/${id}`)}>
+      <button
+        onClick={() =>
+          navigator.clipboard.writeText(
+            `${window.location.origin}/submit-answer/${id}`
+          )
+        }
+      >
         Copy Share Link
-        </button>
+      </button>
     </div>
   );
 };

@@ -62,7 +62,7 @@ func (h *sonarSurveySubmissionHandle) GetAllSubmissionsForUser(ctx context.Conte
 
 func (h *sonarSurveySubmissionHandle) GetUserSubmissionForSurvey(ctx context.Context, userID uuid.UUID, surveyID uuid.UUID) (*models.SonarSurveySubmission, error) {
 	var submission models.SonarSurveySubmission
-	if err := h.db.WithContext(ctx).Preload("SonarSurveySubmissionAnswers").Where("user_id = ? AND sonar_survey_id = ?", userID, surveyID).First(&submission).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("SonarSurveySubmissionAnswers").Where("user_id = ? AND sonar_survey_id = ?", userID, surveyID).Order("created_at DESC").Order("created_at DESC").First(&submission).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil // No submission found is not an error
 		}

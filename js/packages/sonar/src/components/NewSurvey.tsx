@@ -10,18 +10,23 @@ interface ActivitySelection {
 export const NewSurvey: React.FC = () => {
   const { apiClient } = useAPI();
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedActivities, setSelectedActivities] = useState<ActivitySelection>({});
+  const [selectedActivities, setSelectedActivities] =
+    useState<ActivitySelection>({});
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const fetchedCategories = await apiClient.get<Category[]>('/sonar/categories');
-        const initialSelectedActivities = fetchedCategories.reduce((acc, category) => {
-          category.activities.forEach((activity: Activity) => {
-            acc[activity.id] = true; // Set all activities within each category as selected by default
-          });
-          return acc;
-        }, {});
+        const fetchedCategories =
+          await apiClient.get<Category[]>('/sonar/categories');
+        const initialSelectedActivities = fetchedCategories.reduce(
+          (acc, category) => {
+            category.activities.forEach((activity: Activity) => {
+              acc[activity.id] = true; // Set all activities within each category as selected by default
+            });
+            return acc;
+          },
+          {}
+        );
         setCategories(fetchedCategories);
         setSelectedActivities(initialSelectedActivities);
       } catch (error) {
@@ -40,7 +45,7 @@ export const NewSurvey: React.FC = () => {
   };
 
   const handleCategoryChange = (categoryId: string) => {
-    const category = categories.find(category => category.id === categoryId);
+    const category = categories.find((category) => category.id === categoryId);
     if (category) {
       const newSelectedActivities = { ...selectedActivities };
       let allSelected = true;
@@ -51,7 +56,7 @@ export const NewSurvey: React.FC = () => {
       });
       category.activities.forEach((activity) => {
         newSelectedActivities[activity.id] = !allSelected;
-      })
+      });
       setSelectedActivities(newSelectedActivities);
     }
   };
@@ -59,10 +64,14 @@ export const NewSurvey: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      const activityIds = Object.keys(selectedActivities).filter(key => selectedActivities[key]);
-      const newSurvey = await apiClient.post<Survey>('/sonar/surveys', { activityIds });
+      const activityIds = Object.keys(selectedActivities).filter(
+        (key) => selectedActivities[key]
+      );
+      const newSurvey = await apiClient.post<Survey>('/sonar/surveys', {
+        activityIds,
+      });
       alert('Activities submitted successfully');
-     window.location.href = `/surveys/${newSurvey.id}`;
+      window.location.href = `/surveys/${newSurvey.id}`;
     } catch (error) {
       console.error('Failed to submit activities', error);
     }
@@ -78,7 +87,9 @@ export const NewSurvey: React.FC = () => {
               type="checkbox"
               name="category"
               value={category.id}
-              checked={category.activities.every(activity => !!selectedActivities[activity.id])}
+              checked={category.activities.every(
+                (activity) => !!selectedActivities[activity.id]
+              )}
               onChange={() => handleCategoryChange(category.id)}
             />
           </label>
@@ -103,5 +114,3 @@ export const NewSurvey: React.FC = () => {
     </form>
   );
 };
-
-

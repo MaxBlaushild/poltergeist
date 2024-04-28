@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from 'react';
 import APIClient from '@poltergeist/api-client';
 
 interface APIContextType {
@@ -12,13 +18,11 @@ interface APIProviderProps {
 }
 
 export const APIProvider: React.FC<APIProviderProps> = ({ children }) => {
-    const baseURL = process.env.REACT_APP_API_URL || '';
-    const apiClient = new APIClient(baseURL);
+  const baseURL = process.env.REACT_APP_API_URL || '';
+  const apiClient = new APIClient(baseURL);
 
   return (
-    <APIContext.Provider value={{ apiClient }}>
-      {children}
-    </APIContext.Provider>
+    <APIContext.Provider value={{ apiClient }}>{children}</APIContext.Provider>
   );
 };
 
@@ -29,5 +33,3 @@ export const useAPI = (): APIContextType => {
   }
   return context;
 };
-
-

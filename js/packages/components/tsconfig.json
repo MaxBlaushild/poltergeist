@@ -15,6 +15,6 @@
       "@poltergeist/*": ["./../packages/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "src/**/*.css"],
   "exclude": ["dist"]
 }

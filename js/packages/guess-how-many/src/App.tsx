@@ -1,4 +1,5 @@
 import './App.css';
+import 'react-toastify/dist/ReactToastify.css';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import Guess from './components/Guess.tsx';
@@ -8,6 +9,7 @@ import Stats from './components/Stats.tsx';
 import Explanation from './components/Explanation.tsx';
 import Subscribe from './components/Subscribe.tsx';
 import { getUserID } from './util.ts';
+import { ToastContainer } from 'react-toastify';
 
 const noGrade = {
   correctness: 0,
@@ -21,10 +23,9 @@ function App() {
   const [text, setText] = useState('');
   const [grade, setGrade] = useState(noGrade);
   const [guess, setGuess] = useState(0);
-  const [questionId, setQuestionId] = useState(0);
+  const [questionId, setQuestionId] = useState('');
   const [explanation, setExplanation] = useState('');
   const userId = getUserID();
-
 
   const fetchText = async () => {
     const res = await axios.get(
@@ -61,7 +62,7 @@ function App() {
       setGrade(data);
       setGuess(_guess);
     },
-    [setGrade, setGuess]
+    [setGrade, setGuess, questionId]
   );
 
   useEffect(() => {
@@ -94,6 +95,7 @@ function App() {
           {/* <Subscribe /> */}
         </div>
       </div>
+      <ToastContainer />
     </div>
   );
 }

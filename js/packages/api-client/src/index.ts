@@ -10,7 +10,7 @@ export class APIClient {
 
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('token')
+        const token = localStorage.getItem('token');
         if (token) {
           config.headers['Authorization'] = `Bearer ${token}`;
         }
@@ -20,9 +20,8 @@ export class APIClient {
     );
   }
 
-
   async get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-    console.log(url)
+    console.log(url);
     const response = await this.client.get<T>(url, { params });
     return response.data;
   }

@@ -155,20 +155,20 @@ function Subscribe() {
                 placeholder="+1 234 567 8900"
                 onChange={() => {}}
               /> */}
-                             <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={code}
-                  autoComplete="one-time-code"
-                  onChange={(e) => {
-                    const inputValue = e.target.value;
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={code}
+                autoComplete="one-time-code"
+                onChange={(e) => {
+                  const inputValue = e.target.value;
 
-                    if (/^\d*$/.test(inputValue) && inputValue.length <= 6) {
-                      setCode(inputValue);
-                    }
-                  }}
-                />
+                  if (/^\d*$/.test(inputValue) && inputValue.length <= 6) {
+                    setCode(inputValue);
+                  }
+                }}
+              />
               {!waitingOnVerificationCode && (
                 <button
                   className={cx(buttonClasses)}

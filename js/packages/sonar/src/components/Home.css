@@ -1,0 +1,142 @@
+.Home__splash {
+  position: fixed;
+  top: 0;
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+  /* background-color: rgba(128, 128, 128, 0.3); */
+}
+
+.Home__logisterModal {
+  padding: 16px;
+  position: fixed;
+  top: 32px;
+  left: 32px;
+  right: 32px;
+  background-color: white;
+  margin: 0 auto;
+  width: calc(100% - 64px);
+  border: 3px solid black;
+  height: calc(100% - 64px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-radius: 8px;
+}
+
+.Home__splashContent {
+  font-family: 'pixelify';
+  font-weight: 500;
+  font-size: 32px;
+  text-align: center;
+  color: white;
+  background-color: #fa9eb5;
+  border: 3px solid white;
+  margin: 32px;
+  /* @media (min-width: 1024px) { */
+  display: none;
+  /* } */
+}
+
+.Home__background {
+  background-image: url('/public/dolphin-background.png');
+  background-size: cover;
+  background-position: bottom;
+  width: 100vw;
+  height: 100%;
+}
+
+.Home__footer {
+  position: fixed;
+  bottom: 0;
+  width: 100vw;
+  display: flex;
+  justify-content: center;
+}
+
+.Home__buttonBar {
+  padding: 32px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.Home__buttonWrapper {
+  width: 320px;
+
+  @media (max-width: 600px) {
+    width: 100%;
+  }
+}
+
+.Login__title {
+  font-size: 24px;
+
+  @media (min-width: 1024px) {
+    font-size: 45px;
+  }
+
+  font-weight: bold;
+}
+
+.Logister__container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  height: 100%;
+  width: 220px;
+  box-sizing: border-box;
+
+  @media (min-width: 1024px) {
+    width: 320px;
+  }
+
+  input {
+    font-family: 'pixelify';
+    height: 52px;
+    font-size: 24px;
+    border: none;
+    box-sizing: border-box;
+    border-bottom: 3px solid #fa9eb5;
+    width: 100%;
+
+    @media (min-width: 1024px) {
+      height: 59px;
+      font-size: 32px;
+    }
+  }
+
+  /* #b8dbf9 */
+
+  input:focus {
+    background-image: linear-gradient(
+      to right,
+      #ffceb6,
+      #b8dbf9
+    ); /* Grey gradient on focus */
+    outline: none;
+  }
+}
+
+.Logister__button {
+  background: #fa9eb5;
+  color: white;
+  font-family: 'pixelify';
+  font-weight: bold;
+  border: none;
+  width: 100%;
+  padding: 16px 32px;
+  font-size: 20px;
+}
+
+.Logister__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.Logister__error {
+  color: red;
+}

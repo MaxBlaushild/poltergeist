@@ -1,0 +1,23 @@
+.Button__button {
+  background: #fa9eb5;
+  font-family: 'pixelify';
+  font-weight: bold;
+  color: white;
+  border: none;
+  width: 100%;
+}
+
+.Button__button--small {
+  padding: 8px 16px;
+  font-size: 12px;
+}
+
+.Button__button--medium {
+  padding: 12px 24px;
+  font-size: 16px;
+}
+
+.Button__button--large {
+  padding: 16px 32px;
+  font-size: 20px;
+}
