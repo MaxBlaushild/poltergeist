@@ -13,8 +13,8 @@ export const useActivities = () => {
     const fetchActivities = async () => {
       try {
         const response = await apiClient.get<Activity[]>('/sonar/activities');
-        // setActivities(response);
-        setActivities([response[0], response[1], response[2]]);
+        setActivities(response);
+        // setActivities([response[0], response[1], response[2]]);
         setLoading(false);
       } catch (err) {
         setError(err);

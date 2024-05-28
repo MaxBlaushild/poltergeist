@@ -8,22 +8,22 @@ import { NewSurvey } from './components/NewSurvey.tsx';
 import { AnswerSurvey } from './components/AnswerSurvey.tsx';
 import { Survey } from './components/Survey.tsx';
 import { Thanks } from './components/Thanks.tsx';
-import { Answers } from './components/Answers.tsx';
+import { AssembleCrew } from './components/AssembleCrew.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
+import { Submission } from './components/Submission.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
     let params = new URLSearchParams();
     params.set('from', new URL(request.url).pathname);
-    return redirect('/login?' + params.toString());
+    return redirect('/?' + params.toString());
   }
   return null;
 }
 
 function onlyUnauthenticated({ request }: LoaderFunctionArgs) {
-  console.log(localStorage.getItem('token'));
   if (localStorage.getItem('token')) {
-    return redirect('/');
+    return redirect('/dashboard');
   }
   return null;
 }
@@ -37,6 +37,7 @@ export const router = createBrowserRouter([
       {
         index: true,
         Component: Home,
+        loader: onlyUnauthenticated,
       },
       {
         path: 'surveys',
@@ -64,14 +65,19 @@ export const router = createBrowserRouter([
         Component: Survey,
       },
       {
+        path: 'submissions/:id',
+        loader: onlyAuthenticated,
+        Component: Submission,
+      },
+      {
         path: 'thanks',
         loader: onlyAuthenticated,
         Component: Thanks,
       },
       {
-        path: 'answers',
+        path: 'assemble-crew',
         loader: onlyAuthenticated,
-        Component: Answers,
+        Component: AssembleCrew,
       },
     ],
   },

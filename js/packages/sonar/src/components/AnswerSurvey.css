@@ -28,7 +28,6 @@
 }
 
 .AnswerSurvey__background {
-  background-image: url('/public/adventure-background.png');
   background-size: cover;
   background-position: bottom;
   width: 100vw;
@@ -85,11 +84,11 @@
 }
 
 .AnswerSurvey__scrollText {
-  font-size: 12px;
+  margin: 0px;
 }
 
 .AnswerSurvey__title {
-  margin-bottom: 12px;
+  margin-bottom: 0px;
 }
 
 .animate-out {
@@ -99,4 +98,11 @@
 
 .animate-out-end {
   display: none;
+}
+
+.AnswerSurvey__scrollContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }

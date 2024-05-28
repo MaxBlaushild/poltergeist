@@ -1,0 +1,30 @@
+.ActivityCloud__activityListItems {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 12px 0px 24px 0px;
+}
+
+.ActivityCloud__activity {
+  padding: 16px;
+  background-color: white;
+  margin: 0 auto;
+  border: 3px solid black;
+  border-radius: 8px;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.ActivityCloud__activity--selected {
+  padding: 16px;
+  background: #fa9eb5;
+  color: black;
+  margin: 0 auto;
+  border: 3px solid black;
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: inline;
+  text-align: center;
+}

@@ -28,22 +28,34 @@ type ButtonProps = {
   className?: string;
   onClick?: () => void;
   buttonSize?: ButtonSize;
+  disabled?: boolean;
 };
 
 export const Button = ({
   title,
   onClick,
   className,
+  disabled = false,
   buttonSize = ButtonSize.MEDIUM,
 }: ButtonProps) => {
-  const buttonClasses = ['Button__button'];
+  const buttonClasses: string[] = [];
 
   if (buttonSize) {
     buttonClasses.push(`Button__button--${buttonSize}`);
   }
 
+  if (disabled) {
+    buttonClasses.push('Button__button--disabled');
+  } else {
+    buttonClasses.push('Button__button');
+  }
+
   return (
-    <button className={classNames(buttonClasses)} onClick={onClick}>
+    <button
+      className={classNames(buttonClasses)}
+      onClick={onClick}
+      disabled={disabled}
+    >
       {title}
     </button>
   );

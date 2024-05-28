@@ -16,7 +16,7 @@ type sonarSurveyHandle struct {
 func (h *sonarSurveyHandle) GetSurveys(ctx context.Context, userID uuid.UUID) ([]models.SonarSurvey, error) {
 	var surveys []models.SonarSurvey
 
-	if err := h.db.WithContext(ctx).Preload("SonarActivities").Where("user_id = ?", userID.String()).Find(&surveys).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("SonarActivities").Preload("SonarSurveySubmissions").Where("user_id = ?", userID.String()).Find(&surveys).Error; err != nil {
 		return nil, err
 	}
 
@@ -26,7 +26,7 @@ func (h *sonarSurveyHandle) GetSurveys(ctx context.Context, userID uuid.UUID) ([
 func (h *sonarSurveyHandle) GetSurveyByID(ctx context.Context, surveyID uuid.UUID) (*models.SonarSurvey, error) {
 	var survey models.SonarSurvey
 
-	if err := h.db.WithContext(ctx).Preload("SonarActivities").Preload("User").Where("id = ?", surveyID).First(&survey).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("SonarActivities").Preload("SonarSurveySubmissions.SonarSurveySubmissionAnswers").Preload("SonarSurveySubmissions.User").Preload("User").Where("id = ?", surveyID).First(&survey).Error; err != nil {
 		return nil, err
 	}
 

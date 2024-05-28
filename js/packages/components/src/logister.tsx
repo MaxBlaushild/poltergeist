@@ -50,7 +50,7 @@ export function Logister(props: LogisterProps) {
         {isRegister && isWaitingOnVerificationCode && (
           <div>
             <input
-              placeholder="Lebron James"
+              placeholder="Name"
               type="text"
               value={name}
               onChange={(e) => {
@@ -93,7 +93,7 @@ export function Logister(props: LogisterProps) {
         {isWaitingOnVerificationCode ? (
           <button
             onClick={() => logister(phoneNumber!, code, name)}
-            disabled={code.length !== 6}
+            disabled={code.length !== 6 || (isRegister && name.length === 0)}
             className="Logister__button"
           >
             {isRegister ? 'Register' : 'Login'}

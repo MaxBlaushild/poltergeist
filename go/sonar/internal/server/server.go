@@ -9,7 +9,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
-	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -46,10 +45,51 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/categories", middleware.WithAuthentication(s.authClient, s.getCategories))
 	r.GET("/sonar/surveys/:id", middleware.WithAuthentication(s.authClient, s.getSurvey))
 	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.getSubmissionForSurvey))
-
+	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
+	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
 	r.POST("/sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.submitSurveyAnswer))
 
 	r.Run(":8042")
+}
+
+func (s *server) whoami(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *server) getSubmission(ctx *gin.Context) {
+	submissionID := ctx.Param("id")
+	if submissionID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "submission ID is required",
+		})
+		return
+	}
+
+	submissionUUID, err := uuid.Parse(submissionID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid survey ID",
+		})
+		return
+	}
+
+	submission, err := s.dbClient.SonarSurveySubmission().GetSubmissionByID(ctx, submissionUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to fetch submission",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, submission)
 }
 
 func (s *server) getSubmissionForSurvey(ctx *gin.Context) {
@@ -109,7 +149,7 @@ func (s *server) getSurvey(ctx *gin.Context) {
 	survey, err := s.dbClient.SonarSurvey().GetSurveyByID(ctx, surveyUUID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to fetch survey",
+			"error": err.Error(),
 		})
 		return
 	}
@@ -295,6 +335,7 @@ func (s *server) newSurvey(ctx *gin.Context) {
 
 	var newSurveyRequest struct {
 		ActivityIDs []uuid.UUID `binding:"required" json:"activityIds"`
+		Name        string      `binding:"required" json:"name"`
 	}
 
 	if err := ctx.Bind(&newSurveyRequest); err != nil {
@@ -304,7 +345,7 @@ func (s *server) newSurvey(ctx *gin.Context) {
 		return
 	}
 
-	survey, err := s.dbClient.SonarSurvey().CreateSurvey(ctx, user.ID, util.GenerateRandomName(), newSurveyRequest.ActivityIDs)
+	survey, err := s.dbClient.SonarSurvey().CreateSurvey(ctx, user.ID, newSurveyRequest.Name, newSurveyRequest.ActivityIDs)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

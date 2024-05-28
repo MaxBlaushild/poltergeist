@@ -12,4 +12,6 @@ type SonarCategory struct {
 	UpdatedAt       time.Time       `db:"updated_at" json:"updatedAt"`
 	Title           string          `gorm:"unique" json:"title"`
 	SonarActivities []SonarActivity `gorm:"foreignKey:SonarCategoryID" json:"activities"`
+	UserID          uuid.UUID       `json:"userId"`
+	User            User            `gorm:"foreignKey:UserID" json:"user"`
 }

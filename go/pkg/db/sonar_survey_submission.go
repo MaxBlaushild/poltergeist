@@ -53,7 +53,8 @@ func (h *sonarSurveySubmissionHandle) GetAllSubmissionsForUser(ctx context.Conte
 	if err := h.db.WithContext(ctx).
 		Preload("User").
 		Preload("SonarSurveySubmissionAnswers.SonarActivity").
-		Where("user_id = ?", userID).
+		Joins("JOIN sonar_surveys ON sonar_surveys.id = sonar_survey_submissions.sonar_survey_id").
+		Where("sonar_surveys.user_id = ?", userID).
 		Find(&submissions).Error; err != nil {
 		return nil, err
 	}
@@ -66,6 +67,14 @@ func (h *sonarSurveySubmissionHandle) GetUserSubmissionForSurvey(ctx context.Con
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil // No submission found is not an error
 		}
+		return nil, err
+	}
+	return &submission, nil
+}
+
+func (h *sonarSurveySubmissionHandle) GetSubmissionByID(ctx context.Context, submissionID uuid.UUID) (*models.SonarSurveySubmission, error) {
+	var submission models.SonarSurveySubmission
+	if err := h.db.WithContext(ctx).Preload("User").Preload("SonarSurveySubmissionAnswers").Where("id = ?", submissionID).First(&submission).Error; err != nil {
 		return nil, err
 	}
 	return &submission, nil

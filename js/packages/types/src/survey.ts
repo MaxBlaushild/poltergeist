@@ -1,5 +1,6 @@
 import { Activity } from './activity';
 import { User } from './user';
+import {Submission} from './submission';
 
 export type Survey = {
   id: string;
@@ -10,4 +11,5 @@ export type Survey = {
   progenitorId: string;
   activities: Activity[];
   user: User;
+  surveySubmissions: Submission[];
 };

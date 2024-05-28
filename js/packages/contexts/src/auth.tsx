@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User } from '@poltergeist/types';
 import axios from 'axios';
 
@@ -8,6 +8,7 @@ type AuthContextType = {
   user: User | null;
   isWaitingForVerificationCode: boolean;
   error: unknown;
+  loading: boolean;
   getVerificationCode: (phoneNumber: string) => void;
   logister: (
     phoneNumber: string,
@@ -26,6 +27,7 @@ const AuthContext = createContext<AuthContextType>({
   logister: () => {},
   isRegister: false,
   logout: () => {},
+  loading: false,
 });
 
 type AuthProviderProps = {
@@ -39,11 +41,38 @@ export const AuthProvider = ({
   appName,
   uriPrefix,
 }: AuthProviderProps) => {
+  const token = localStorage.getItem(tokenKey);
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<unknown>(null);
   const [isRegister, setIsRegister] = useState<boolean>(false);
+  
   const [isWaitingForVerificationCode, setIsWaitingOnVerificationCode] =
     useState<boolean>(false);
+
+  useEffect(() => {
+    if (token) {
+      setLoading(true);
+      const verifyToken = async () => {
+        try {
+          const response = await axios.post(
+            `${process.env.REACT_APP_API_URL}/authenticator/token/verify`,
+            { token },
+          );
+          console.log(response.data);
+          setUser(response.data);
+        } catch (e) {
+          setError(e);
+          setUser(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+      verifyToken();
+    } else {
+      setLoading(false);
+    }
+  }, [token]);
 
   const getVerificationCode = async (phoneNumber: string) => {
     try {
@@ -106,6 +135,7 @@ export const AuthProvider = ({
         isWaitingForVerificationCode,
         getVerificationCode,
         isRegister,
+        loading,
       }}
     >
       {children}

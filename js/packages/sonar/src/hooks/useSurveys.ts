@@ -1,58 +1,28 @@
 import { useState, useEffect } from 'react';
 import { useAPI } from '@poltergeist/contexts';
-import { Survey, Submission } from '@poltergeist/types';
+import { Survey } from '@poltergeist/types';
 
-export interface UseSurveysResult {
-  survey: Survey | null;
-  submission: Submission | null;
-  surveyLoading: boolean;
-  surveyError: Error | null;
-  submissionLoading: boolean;
-  submissionError: Error | null;
-}
-
-export const useSurveys = (id: string): UseSurveysResult => {
+export const useSurveys = () => {
+  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<Error | null>(null);
   const { apiClient } = useAPI();
-  const [survey, setSurvey] = useState<Survey | null>(null);
-  const [submission, setSubmission] = useState<Submission | null>(null);
-  const [surveyLoading, setSurveyLoading] = useState<boolean>(true);
-  const [surveyError, setSurveyError] = useState<Error | null>(null);
-  const [submissionLoading, setSubmissionLoading] = useState<boolean>(true);
-  const [submissionError, setSubmissionError] = useState<Error | null>(null);
 
   useEffect(() => {
-    const fetchSurvey = async () => {
+    const fetchSurveys = async () => {
       try {
-        const fetchedSurvey = await apiClient.get<Survey>(`/sonar/surveys/${id}`);
-        setSurvey(fetchedSurvey);
-      } catch (error) {
-        setSurveyError(error);
+        const response = await apiClient.get<Survey[]>('/sonar/surveys');
+        setSurveys(response);
+      } catch (err) {
+        setError(err);
+        console.error('Failed to fetch surveys:', err);
       } finally {
-        setSurveyLoading(false);
+        setIsLoading(false);
       }
     };
 
-    const fetchSubmission = async () => {
-      try {
-        const fetchedSubmission = await apiClient.get<Submission>(`/sonar/surveys/${id}/submissions`);
-        setSubmission(fetchedSubmission);
-      } catch (error) {
-        setSubmissionError(error);
-      } finally {
-        setSubmissionLoading(false);
-      }
-    };
+    fetchSurveys();
+  }, [apiClient]);
 
-    fetchSurvey();
-    fetchSubmission();
-  }, [id, apiClient]);
-
-  return {
-    survey,
-    submission,
-    surveyLoading,
-    surveyError,
-    submissionLoading,
-    submissionError,
-  };
+  return { surveys, isLoading, error };
 };
