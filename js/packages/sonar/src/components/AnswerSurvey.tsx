@@ -4,7 +4,6 @@ import { Survey, Submission, SubmissionAnswer } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from './shared/Button.tsx';
-import useActivities from '../hooks/useActivities.ts';
 import { useSurvey } from '../hooks/useSurvey.ts';
 import { FunActivitySelector } from './shared/FunActivitySelector.tsx';
 

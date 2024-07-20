@@ -5,25 +5,23 @@ import { Category, Activity, Survey } from '@poltergeist/types';
 import { redirect, useNavigate } from 'react-router-dom';
 import { Button } from './shared/Button.tsx';
 import { LameActivitySelector } from './shared/LameActivitySelector.tsx';
-import useActivities from '../hooks/useActivities.ts';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import TextInput from './shared/TextInput.tsx';
 import { generateRandomName } from '../utils/generateName.ts';
 import ActivityCloud from './shared/ActivityCloud.tsx';
-import useCategories from '../hooks/useCategories.ts';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
 import Divider from './shared/Divider.tsx';
 import { Scroll, ScrollAwayTime } from './shared/Scroll.tsx';
 import { useSurveys } from '../hooks/useSurveys.ts';
+import { useActivityContext } from '../contexts/ActivityContext.tsx';
 
 const ConfirmationContent: React.FC = () => {
   return <div>Thank you for your service</div>;
 };
 
 export const NewSurvey: React.FC = () => {
-  const { loading, activities, error } = useActivities();
+  const { activities, categories, createCategory, createActivity } = useActivityContext();
   const { surveys, isLoading: surveysLoading } = useSurveys();
-  const { categories } = useCategories();
   const { apiClient } = useAPI();
   const [name, setName] = useState('Untitled survey');
   const navigate = useNavigate();
@@ -31,6 +29,7 @@ export const NewSurvey: React.FC = () => {
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [shouldStartSurvey, setShouldStartSurvey] = useState<boolean>(false);
   const [shouldShowForm, setShouldShowForm] = useState<boolean>(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   const handleCategorySelect = (categoryId: string) => {
     setSelectedCategoryIds((prevIds) => {
@@ -92,6 +91,20 @@ export const NewSurvey: React.FC = () => {
             Select the activities you'd like to see if you're friends are
             interested in
           </p>
+          <Divider />
+          <div className="flex flex-col items-start w-full gap-4">
+            <TextInput
+              value={newCategoryName}
+              onChange={setNewCategoryName}
+              placeholder="New category name"
+            />
+            <Button
+              disabled={!newCategoryName}
+              title="Add New Category"
+              onClick={() => createCategory({ title: newCategoryName })}
+            />
+          </div>
+          <Divider />
           <LameActivitySelector
             selectedActivityIds={selectedActivityIds}
             onSelect={handleActivitySelect}

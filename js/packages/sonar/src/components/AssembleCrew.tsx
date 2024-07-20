@@ -28,8 +28,8 @@ import { CheckIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
 import clsx from 'clsx';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import { Chip, ChipType } from './shared/Chip.tsx';
-import useCategories from '../hooks/useCategories.ts';
 import { Button } from './shared/Button.tsx';
+import { useActivityContext } from '../contexts/ActivityContext.tsx';
 
 type SelectedAnswer = {
   id: string;
@@ -39,6 +39,7 @@ type SelectedAnswer = {
 
 export const AssembleCrew: React.FC = () => {
   const { apiClient } = useAPI();
+  const { categories } = useActivityContext();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [nameFilters, setNameFilters] = useState<string[]>([]);
   const [activityFilters, setActivityFilters] = useState<string[]>([]);
@@ -46,7 +47,6 @@ export const AssembleCrew: React.FC = () => {
   const [tempActivityFilter, setTempActivityFilter] = useState<string>('');
   const [activityComboboxQuery, setActivityComboboxQuery] = useState('');
   const [nameComboboxQuery, setNameComboboxQuery] = useState('');
-  const { categories, loading, error } = useCategories();
   const [notSelectedUsers, setNotSelectedUsers] = useState<User[]>([]);
   const [showCrewModal, setShowCrewModal] = useState(false);
 

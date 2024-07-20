@@ -13,6 +13,6 @@ type SonarActivity struct {
 	Title           string        `gorm:"unique" json:"title"`
 	SonarCategoryID uuid.UUID     `gorm:"type:uuid" json:"categoryId"`
 	SonarCategory   SonarCategory `gorm:"foreignKey:SonarCategoryID" json:"category"`
-	UserID          uuid.UUID     `json:"userId"`
-	User            User          `gorm:"foreignKey:UserID" json:"user"`
+	UserID          *uuid.UUID    `json:"userId"`
+	User            *User         `gorm:"foreignKey:UserID" json:"user"`
 }

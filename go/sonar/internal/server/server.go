@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -48,8 +49,129 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
 	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
 	r.POST("/sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.submitSurveyAnswer))
+	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.createCategory))
+	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
+	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
+	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.deleteActivity))
 
 	r.Run(":8042")
+}
+
+func (s *server) deleteCategory(ctx *gin.Context) {
+	categoryID := ctx.Param("id")
+	if categoryID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "category ID is required",
+		})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	categoryUUID, err := uuid.Parse(categoryID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid category ID",
+		})
+		return
+	}
+
+	if err := s.dbClient.SonarCategory().DeleteCategory(ctx, categoryUUID, user.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "category deleted successfully",
+	})
+}
+
+func (s *server) deleteActivity(ctx *gin.Context) {
+	activityID := ctx.Param("id")
+	if activityID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "activity ID is required",
+		})
+		return
+	}
+}
+
+func (s *server) createCategory(ctx *gin.Context) {
+	var requestBody struct {
+		Title string `binding:"required" json:"name"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	category, err := s.dbClient.SonarCategory().CreateCategory(ctx, models.SonarCategory{
+		Title:  requestBody.Title,
+		UserID: &user.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, category)
+}
+
+func (s *server) createActivity(ctx *gin.Context) {
+	var requestBody struct {
+		Title      string    `binding:"required" json:"title"`
+		CategoryID uuid.UUID `binding:"required" json:"categoryId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	activity, err := s.dbClient.SonarActivity().CreateActivity(ctx, models.SonarActivity{
+		Title:           requestBody.Title,
+		SonarCategoryID: requestBody.CategoryID,
+		UserID:          &user.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, activity)
 }
 
 func (s *server) whoami(ctx *gin.Context) {
@@ -158,22 +280,43 @@ func (s *server) getSurvey(ctx *gin.Context) {
 }
 
 func (s *server) getCategories(ctx *gin.Context) {
-	categories, err := s.dbClient.SonarCategory().GetAllCategoriesWithActivities(ctx)
+	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to fetch categories",
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, categories)
+	categories, err := s.dbClient.SonarCategory().GetAllCategoriesWithActivities(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	userSpecificCategories, err := s.dbClient.SonarCategory().GetCategoriesByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	allCategories := append(categories, userSpecificCategories...)
+	sort.Slice(allCategories, func(i, j int) bool {
+		return allCategories[i].Title < allCategories[j].Title
+	})
+
+	ctx.JSON(http.StatusOK, allCategories)
 }
 
 func (s *server) getActivities(ctx *gin.Context) {
 	activities, err := s.dbClient.SonarActivity().GetAllActivities(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to fetch activities",
+			"error": err.Error(),
 		})
 		return
 	}
@@ -252,7 +395,7 @@ func (s *server) submitSurveyAnswer(ctx *gin.Context) {
 	submission, err := s.dbClient.SonarSurveySubmission().CreateSubmission(ctx, surveyID, user.ID, activityUUIDs, requestBody.Downs)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to create survey submission",
+			"error": err.Error(),
 		})
 		return
 	}

@@ -26,6 +26,7 @@ type DbClient interface {
 	SonarSurveySubmission() SonarSurveySubmissionHandle
 	SonarActivity() SonarActivityHandle
 	SonarCategory() SonarCategoryHandle
+	SonarUser() SonarUserHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -130,8 +131,24 @@ type SonarSurveySubmissionHandle interface {
 
 type SonarActivityHandle interface {
 	GetAllActivities(ctx context.Context) ([]models.SonarActivity, error)
+	CreateActivity(ctx context.Context, activity models.SonarActivity) (models.SonarActivity, error)
+	UpdateActivity(ctx context.Context, activity models.SonarActivity) (models.SonarActivity, error)
+	DeleteActivity(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
+	GetActivityByID(ctx context.Context, id uuid.UUID) (models.SonarActivity, error)
 }
 
 type SonarCategoryHandle interface {
+	GetCategoriesByUserID(ctx context.Context, userID uuid.UUID) ([]models.SonarCategory, error)
 	GetAllCategoriesWithActivities(ctx context.Context) ([]models.SonarCategory, error)
+	CreateCategory(ctx context.Context, category models.SonarCategory) (models.SonarCategory, error)
+	UpdateCategory(ctx context.Context, category models.SonarCategory) (models.SonarCategory, error)
+	DeleteCategory(ctx context.Context, id uuid.UUID, userID uuid.UUID) error
+	GetCategoryByID(ctx context.Context, id uuid.UUID) (models.SonarCategory, error)
+}
+
+type SonarUserHandle interface {
+	FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) error
+	GetSonarUserCount(ctx context.Context, viewerID uuid.UUID) (int64, error)
+	FindUserByViewerAndViewee(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error)
+	GetSonarUserProfileIcon(ctx context.Context, viewerID uuid.UUID) (string, error)
 }

@@ -30,6 +30,7 @@ type client struct {
 	sonarSurveySubmissionHandle *sonarSurveySubmissionHandle
 	sonarActivityHandle         *sonarActivityHandle
 	sonarCategoryHandle         *sonarCategoryHandle
+	sonarUserHandle             *sonarUserHandle
 }
 
 type ClientConfig struct {
@@ -77,6 +78,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		sonarSurveySubmissionHandle: &sonarSurveySubmissionHandle{db: db},
 		sonarActivityHandle:         &sonarActivityHandle{db: db},
 		sonarCategoryHandle:         &sonarCategoryHandle{db: db},
+		sonarUserHandle:             &sonarUserHandle{db: db},
 	}, err
 }
 
@@ -153,4 +155,8 @@ func (c *client) SonarActivity() SonarActivityHandle {
 
 func (c *client) SonarCategory() SonarCategoryHandle {
 	return c.sonarCategoryHandle
+}
+
+func (c *client) SonarUser() SonarUserHandle {
+	return c.sonarUserHandle
 }

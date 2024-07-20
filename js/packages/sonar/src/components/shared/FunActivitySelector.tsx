@@ -4,7 +4,6 @@ import { Activity, Survey } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from './Button.tsx';
-import useActivities from '../../hooks/useActivities.ts';
 import { Modal, ModalSize } from './Modal.tsx';
 import { useSurvey } from '../../hooks/useSurvey.ts';
 import ActivityCloud from './ActivityCloud.tsx';
