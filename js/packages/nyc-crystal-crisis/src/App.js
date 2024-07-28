@@ -117,87 +117,6 @@ function App() {
   const [waitingOnVerificationCode, setWaitingOnVerificationCode] =
     useState(false);
 
-  const getVerificationCode = React.useCallback(async () => {
-    try {
-      // get the user
-      await axios.get(
-        `${process.env.REACT_APP_API_URL}/authenticator/users?phoneNumber=` +
-          encodeURIComponent(phoneNumber.replace(/ /g, ''))
-      );
-    } catch (e) {
-      setShouldRegister(true);
-    }
-
-    try {
-      await axios.post(
-        `${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`,
-        {
-          phoneNumber: phoneNumber.replace(/ /g, ''),
-          appName: 'Crystal Crisis',
-        }
-      );
-      toast('Verification code sent!');
-      setWaitingOnVerificationCode(true);
-    } catch (e) {
-      toast('Something went wrong!');
-    }
-  });
-
-  const login = React.useCallback(async () => {
-    try {
-      const {
-        data: { ID: id },
-      } = await axios.post(
-        `${process.env.REACT_APP_API_URL}/authenticator/text/login`,
-        { phoneNumber: phoneNumber.replace(/ /g, ''), code }
-      );
-      setUserID(id);
-      setWaitingOnVerificationCode(false);
-      localStorage.setItem('user-id', id);
-      setIsLoggingIn(false);
-      toast('Successfully logged in!');
-    } catch (e) {
-      try {
-        const {
-          data: { ID: id },
-        } = await axios.post(
-          `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
-          { phoneNumber: phoneNumber.replace(/ /g, ''), code, name: '' }
-        );
-        setUserID(id);
-        setWaitingOnVerificationCode(false);
-        setIsLoggingIn(false);
-        localStorage.setItem('user-id', id);
-        toast('Successfully logged in!');
-      } catch (e) {
-        toast('Something went wrong!');
-      }
-    }
-  });
-
-  const register = React.useCallback(async () => {
-    try {
-      const {
-        data: { ID: id },
-      } = await axios.post(
-        `${process.env.REACT_APP_API_URL}/authenticator/text/register`,
-        { phoneNumber: phoneNumber.replace(/ /g, ''), code, name }
-      );
-      setUserID(id);
-      setWaitingOnVerificationCode(false);
-      setIsLoggingIn(false);
-      localStorage.setItem('user-id', id);
-      toast('Successfully registered!');
-    } catch (e) {
-      toast('Something went wrong!');
-    }
-  });
-
-  const logout = useCallback(async () => {
-    localStorage.removeItem('user-id');
-    setUserID(null);
-  }, [setUserID]);
-
   const onGoogleApiLoaded = async ({ map, maps }) => {
     mapRef.current = map;
     setMapReady(true);
@@ -268,44 +187,6 @@ function App() {
 
   return (
     <>
-      <Box sx={{ flexGrow: 1 }}>
-        <AppBar
-          className={
-            teams?.find((team) =>
-              team.UserTeams.find((userTeam) => userTeam.UserID == userID)
-            )?.Name
-          }
-          position="static"
-        >
-          <Toolbar>
-            <IconButton
-              size="large"
-              edge="start"
-              color="inherit"
-              aria-label="menu"
-              sx={{ mr: 2 }}
-            >
-              <img alt="logo" className="MenuIcon" src={markerPin} />
-            </IconButton>
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{ flexGrow: 1 }}
-              style={{ fontFamily: 'Poppins' }}
-              onClick={() => setRulesOpen(true)}
-            >
-              Rules
-            </Typography>
-            <Button
-              style={{ fontFamily: 'Poppins' }}
-              onClick={userID ? logout : () => setIsLoggingIn(true)}
-              color="inherit"
-            >
-              {userID ? 'LOGOUT' : 'LOGIN'}
-            </Button>
-          </Toolbar>
-        </AppBar>
-      </Box>
       <GoogleMap
         apiKey="AIzaSyDff3XqCOiu01dgC46rS2mIGk92rx6-d0Q"
         defaultCenter={{ lat: 40.71762378744178, lng: -73.99844795603595 }}

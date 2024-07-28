@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type Crystal struct {
+type PointOfInterest struct {
 	ID               uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt        time.Time `db:"created_at"`
 	UpdatedAt        time.Time `db:"updated_at"`
@@ -14,9 +14,7 @@ type Crystal struct {
 	Clue             string    `json:"clue"`
 	CaptureChallenge string    `json:"captureChallenge"`
 	AttuneChallenge  string    `json:"attuneChallenge"`
-	Captured         bool      `json:"captured"`
-	Attuned          bool      `json:"attuned"`
 	Lat              string    `json:"lat"`
 	Lng              string    `json:"lng"`
-	CaptureTeamID    uuid.UUID `json:"captureTeamId"`
+	ImageUrl         string    `json:"imageURL"`
 }

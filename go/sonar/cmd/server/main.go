@@ -28,7 +28,7 @@ func main() {
 	texterClient := texter.NewClient()
 	authClient := auth.NewClient()
 
-	s := server.NewServer(authClient, texterClient, dbClient)
+	s := server.NewServer(authClient, texterClient, dbClient, cfg)
 
 	s.ListenAndServe("8042")
 }

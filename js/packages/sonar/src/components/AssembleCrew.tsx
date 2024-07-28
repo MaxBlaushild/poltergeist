@@ -30,6 +30,7 @@ import { Modal, ModalSize } from './shared/Modal.tsx';
 import { Chip, ChipType } from './shared/Chip.tsx';
 import { Button } from './shared/Button.tsx';
 import { useActivityContext } from '../contexts/ActivityContext.tsx';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 type SelectedAnswer = {
   id: string;
@@ -49,6 +50,7 @@ export const AssembleCrew: React.FC = () => {
   const [nameComboboxQuery, setNameComboboxQuery] = useState('');
   const [notSelectedUsers, setNotSelectedUsers] = useState<User[]>([]);
   const [showCrewModal, setShowCrewModal] = useState(false);
+  const { userProfiles, loading, error } = useUserProfiles();
 
   useEffect(() => {
     const fetchSurveysAndAnswers = async () => {
@@ -362,10 +364,17 @@ export const AssembleCrew: React.FC = () => {
                         }}
                       >
                         <div className="flex-grow flex flex-col">
-                          <a href="#" className="font-semibold text-black">
-                            <span className="absolute inset-0" />
-                            {user.name}
-                          </a>
+                          <div className="flex items-center space-x-3">
+                            <img
+                              src={userProfiles?.find(profile => profile.vieweeId === user.id)?.profilePictureUrl || 'default-profile.png'}
+                              alt={`${user.name}'s profile`}
+                              className="h-9 w-9 rounded-full"
+                            />
+                            <a href="#" className="font-semibold text-black">
+                              <span className="absolute inset-0" />
+                              {user.name}
+                            </a>
+                          </div>
                           <ul
                             className="flex gap-2 text-black/50"
                             aria-hidden="true"

@@ -4,3 +4,4 @@ export * from './activity';
 export * from './category';
 export * from './submission';
 export * from './submissionAnswer';
+export * from './userProfile';

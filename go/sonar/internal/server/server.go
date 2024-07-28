@@ -10,6 +10,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -23,14 +24,15 @@ type server struct {
 	authClient   auth.Client
 	texterClient texter.Client
 	dbClient     db.DbClient
+	config       *config.Config
 }
 
 type Server interface {
 	ListenAndServe(port string)
 }
 
-func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.DbClient) Server {
-	return &server{authClient: authClient, texterClient: texterClient, dbClient: dbClient}
+func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.DbClient, config *config.Config) Server {
+	return &server{authClient: authClient, texterClient: texterClient, dbClient: dbClient, config: config}
 }
 
 func (s *server) ListenAndServe(port string) {
@@ -48,13 +50,54 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.getSubmissionForSurvey))
 	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
 	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
+	r.GET("/sonar/userProfiles", middleware.WithAuthentication(s.authClient, s.getUserProfiles))
 	r.POST("/sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.submitSurveyAnswer))
 	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.createCategory))
 	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
 	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
 	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.deleteActivity))
+	r.POST("/sonar/teams", middleware.WithAuthentication(s.authClient, s.createTeam))
+	r.GET("/sonar/teams", middleware.WithAuthentication(s.authClient, s.getTeams))
+	r.POST("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
+	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
+	r.POST("/sonar/crystal/unlock", middleware.WithAuthentication(s.authClient, s.createCrystalUnlock))
+	r.POST("/sonar/crystal/capture", middleware.WithAuthentication(s.authClient, s.createCrystalCapture))
+	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
+	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.getNeighbors))
 
 	r.Run(":8042")
+}
+
+func (s *server) getUserProfiles(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	submissions, err := s.dbClient.SonarSurveySubmission().GetAllSubmissionsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var sonarUsers []*models.SonarUser
+	for _, submission := range submissions {
+		sonarUser, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		sonarUsers = append(sonarUsers, sonarUser)
+	}
+
+	ctx.JSON(http.StatusOK, sonarUsers)
 }
 
 func (s *server) deleteCategory(ctx *gin.Context) {
@@ -517,19 +560,307 @@ func (s *server) register(ctx *gin.Context) {
 		return
 	}
 
-	// if err := s.texterClient.Text(ctx, &texter.Text{
-	// 	Body:     "Welcome to Guess How Many! New question every day at noon EST.",
-	// 	From:     s.cfg.Secret.GuessHowManyPhoneNumber,
-	// 	To:       authenticateResponse.User.PhoneNumber,
-	// 	TextType: "guess-how-many-welcome-email",
-	// }); err != nil {
-	// 	ctx.JSON(http.StatusInternalServerError, gin.H{
-	// 		"error": err.Error(),
-	// 	})
-	// }
-
 	ctx.JSON(200, gin.H{
 		"user":  authenticateResponse.User,
 		"token": authenticateResponse.Token,
 	})
+}
+
+func (s *server) createNeighbor(c *gin.Context) {
+	var neighbor models.NeighboringPointsOfInterest
+
+	if err := c.Bind(&neighbor); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit neighbor create request",
+		})
+		return
+	}
+
+	if err := s.dbClient.NeighboringPointsOfInterest().Create(c, neighbor.PointOfInterestOneID, neighbor.PointOfInterestTwoID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "everythings ok",
+	})
+}
+
+func (s *server) getNeighbors(c *gin.Context) {
+	neighbors, err := s.dbClient.NeighboringPointsOfInterest().FindAll(c)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, neighbors)
+}
+
+func (s *server) createTeam(c *gin.Context) {
+	var createTeamsRequest struct {
+		UserIDs []string `json:"userIds" binding:"required"`
+		Name    string   `json:"name" binding:"required"`
+	}
+
+	if err := c.Bind(&createTeamsRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	var userIDs []uuid.UUID
+	for _, id := range createTeamsRequest.UserIDs {
+		userID, err := uuid.Parse(id)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"message": err.Error(),
+			})
+			return
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	if err := s.dbClient.Team().Create(c, userIDs, createTeamsRequest.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "done"})
+}
+
+func (s *server) getTeams(c *gin.Context) {
+	teams, err := s.dbClient.Team().GetAll(c)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	var userIDs []uuid.UUID
+	for _, team := range teams {
+		for _, userTeam := range team.UserTeams {
+			userIDs = append(userIDs, userTeam.UserID)
+		}
+	}
+
+	payload := gin.H{
+		"teams": teams,
+	}
+
+	if len(teams) > 0 {
+		users, err := s.authClient.GetUsers(c, userIDs)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		payload["users"] = users
+	}
+
+	c.JSON(200, payload)
+}
+
+func (s *server) getPointsOfInterest(c *gin.Context) {
+	stringTeamID := c.Param("teamID")
+	pointOfInterests, err := s.dbClient.PointOfInterest().FindAll(c)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	teamID, err := uuid.Parse(stringTeamID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	pointOfInterestTeams, err := s.dbClient.PointOfInterestTeam().FindByTeamID(c, teamID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	for i, pointOfInterest := range pointOfInterests {
+		found := false
+		for _, pointOfInterestTeam := range pointOfInterestTeams {
+			if pointOfInterestTeam.PointOfInterestID == pointOfInterest.ID {
+				found = true
+			}
+		}
+
+		if !found {
+			pointOfInterests[i].AttuneChallenge = ""
+			pointOfInterests[i].CaptureChallenge = ""
+		} else {
+			pointOfInterests[i].Clue = ""
+		}
+	}
+
+	c.JSON(200, pointOfInterests)
+}
+
+func (s *server) createPointOfInterest(c *gin.Context) {
+	var createPointOfInterestRequest struct {
+		Name             string `json:"name" binding:"required"`
+		Clue             string `json:"clue" binding:"required"`
+		CaptureChallenge string `json:"captureChallenge" binding:"required"`
+		AttuneChallenge  string `json:"attuneChallenge" binding:"required"`
+		Lat              string `json:"lat" binding:"required"`
+		Lng              string `json:"lng" binding:"required"`
+	}
+
+	if err := c.Bind(&createPointOfInterestRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Create(c, models.PointOfInterest{
+		Name:             createPointOfInterestRequest.Name,
+		Clue:             createPointOfInterestRequest.Clue,
+		AttuneChallenge:  createPointOfInterestRequest.AttuneChallenge,
+		CaptureChallenge: createPointOfInterestRequest.CaptureChallenge,
+		Lat:              createPointOfInterestRequest.Lat,
+		Lng:              createPointOfInterestRequest.Lng,
+	}); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "everything cool",
+	})
+}
+
+func (s *server) createCrystalUnlock(c *gin.Context) {
+	var crystalUnlockRequest struct {
+		TeamID    string `json:"teamId" binding:"required"`
+		CrystalID string `json:"crystalId" binding:"required"`
+	}
+
+	if err := c.Bind(&crystalUnlockRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit crystal unlock request",
+		})
+		return
+	}
+
+	crystalID, err := uuid.Parse(crystalUnlockRequest.CrystalID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit crystal id",
+		})
+		return
+	}
+
+	teamID, err := uuid.Parse(crystalUnlockRequest.TeamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit team id",
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Unlock(c, crystalID, teamID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"message": "everything cool",
+	})
+}
+
+func (s *server) createCrystalCapture(c *gin.Context) {
+	var captureCrystalRequest struct {
+		PointOfInterestID string `json:"pointOfInterestId" binding:"required"`
+		TeamID            string `json:"teamId" binding:"required"`
+		Attune            bool   `json:"attune"`
+	}
+
+	if err := c.Bind(&captureCrystalRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(captureCrystalRequest.PointOfInterestID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit crystal id",
+		})
+		return
+	}
+
+	teamID, err := uuid.Parse(captureCrystalRequest.TeamID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "shit team id",
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Capture(c, pointOfInterestID, teamID, captureCrystalRequest.Attune); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	/// TEXT EVERYBODY!!!!!!!!!!!
+
+	teams, err := s.dbClient.Team().GetAll(c)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	var userIDs []uuid.UUID
+	for _, team := range teams {
+		for _, userTeam := range team.UserTeams {
+			userIDs = append(userIDs, userTeam.UserID)
+		}
+	}
+
+	users, err := s.authClient.GetUsers(c, userIDs)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	var capturedOrAttuned string
+	if captureCrystalRequest.Attune {
+		capturedOrAttuned = "attuned"
+	} else {
+		capturedOrAttuned = "captured"
+	}
+
+	var capturingTeam models.Team
+	for _, team := range teams {
+		if team.ID == teamID {
+			capturingTeam = team
+		}
+	}
+
+	pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(c, pointOfInterestID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, user := range users {
+		s.texterClient.Text(c, &texter.Text{
+			To:   user.PhoneNumber,
+			From: s.config.Public.SonarPhoneNumber,
+			Body: fmt.Sprintf("%s team has %s %s.", capturingTeam.Name, capturedOrAttuned, pointOfInterest.Name),
+		})
+	}
+
+	c.JSON(200, gin.H{"messgae": "done!"})
 }

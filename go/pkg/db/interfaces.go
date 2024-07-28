@@ -12,13 +12,11 @@ type DbClient interface {
 	User() UserHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
-	Challenge() ChallengeHandle
-	Credential() CredentialHandle
 	Team() TeamHandle
 	UserTeam() UserTeamHandle
-	Crystal() CrystalHandle
-	CrystalUnlocking() CrystalUnlockingHandle
-	Neighbor() NeighborHandle
+	PointOfInterest() PointOfInterestHandle
+	PointOfInterestTeam() PointOfInterestTeamHandle
+	NeighboringPointsOfInterest() NeighboringPointsOfInterestHandle
 	TextVerificationCode() TextVerificationCodeHandle
 	SentText() SentTextHandle
 	HowManySubscription() HowManySubscriptionHandle
@@ -27,6 +25,7 @@ type DbClient interface {
 	SonarActivity() SonarActivityHandle
 	SonarCategory() SonarCategoryHandle
 	SonarUser() SonarUserHandle
+	Match() MatchHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -60,18 +59,6 @@ type UserHandle interface {
 	DeleteAll(ctx context.Context) error
 }
 
-type ChallengeHandle interface {
-	Insert(ctx context.Context, challenge string, userID uuid.UUID) error
-	Find(ctx context.Context, challenge string) (*models.Challenge, error)
-}
-
-type CredentialHandle interface {
-	Insert(ctx context.Context, credentialID string, publicKey string, userID uuid.UUID) (*models.Credential, error)
-	FindAll(ctx context.Context) ([]models.Credential, error)
-	Delete(ctx context.Context, credentialID uuid.UUID) error
-	DeleteAll(ctx context.Context) error
-}
-
 type TeamHandle interface {
 	GetAll(ctx context.Context) ([]models.Team, error)
 	Create(ctx context.Context, userIDs []uuid.UUID, teamName string) error
@@ -79,21 +66,21 @@ type TeamHandle interface {
 
 type UserTeamHandle interface{}
 
-type CrystalHandle interface {
-	FindAll(ctx context.Context) ([]models.Crystal, error)
+type PointOfInterestHandle interface {
+	FindAll(ctx context.Context) ([]models.PointOfInterest, error)
 	Capture(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID, attune bool) error
-	FindByID(ctx context.Context, id uuid.UUID) (*models.Crystal, error)
-	Create(ctx context.Context, crystal models.Crystal) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error)
+	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error
 }
 
-type CrystalUnlockingHandle interface {
-	FindByTeamID(ctx context.Context, teamID uuid.UUID) ([]models.CrystalUnlocking, error)
+type PointOfInterestTeamHandle interface {
+	FindByTeamID(ctx context.Context, teamID uuid.UUID) ([]models.PointOfInterestTeam, error)
 }
 
-type NeighborHandle interface {
+type NeighboringPointsOfInterestHandle interface {
 	Create(ctx context.Context, crystalOneID uuid.UUID, crystalTwoID uuid.UUID) error
-	FindAll(ctx context.Context) ([]models.Neighbor, error)
+	FindAll(ctx context.Context) ([]models.NeighboringPointsOfInterest, error)
 }
 
 type TextVerificationCodeHandle interface {
@@ -147,8 +134,12 @@ type SonarCategoryHandle interface {
 }
 
 type SonarUserHandle interface {
-	FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) error
+	FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error)
 	GetSonarUserCount(ctx context.Context, viewerID uuid.UUID) (int64, error)
 	FindUserByViewerAndViewee(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error)
 	GetSonarUserProfileIcon(ctx context.Context, viewerID uuid.UUID) (string, error)
+}
+
+type MatchHandle interface {
+	Create(ctx context.Context, match models.Match) error
 }

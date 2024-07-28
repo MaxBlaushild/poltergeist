@@ -18,28 +18,40 @@ const (
 	totalNumberOfProfileIcons = 29
 )
 
-func (h *sonarUserHandle) FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) error {
+func (h *sonarUserHandle) FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error) {
 	sonarUser, err := h.FindUserByViewerAndViewee(ctx, viewerID, vieweeID)
-	if err == gorm.ErrRecordNotFound {
-		profileIcon, err := h.GetSonarUserProfileIcon(ctx, viewerID)
-		if err != nil {
-			return err
-		}
-
-		sonarUser = &models.SonarUser{
-			ViewerID:          viewerID,
-			VieweeID:          vieweeID,
-			ProfilePictureUrl: profileIcon,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-			ID:                uuid.New(),
-		}
+	if sonarUser != nil {
+		return sonarUser, nil
 	}
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+
+	profileIcon, err := h.GetSonarUserProfileIcon(ctx, viewerID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return h.db.WithContext(ctx).Create(sonarUser).Error
+	sonarUser = &models.SonarUser{
+		ViewerID:          viewerID,
+		VieweeID:          vieweeID,
+		ProfilePictureUrl: profileIcon,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+		ID:                uuid.New(),
+	}
+
+	err = h.db.WithContext(ctx).Create(sonarUser).Error
+	return sonarUser, err
+}
+
+func (h *sonarUserHandle) GetSonarUserProfiles(ctx context.Context, viewerID uuid.UUID) ([]*models.SonarUser, error) {
+	sonarUsers := []*models.SonarUser{}
+	if err := h.db.WithContext(ctx).Where("viewer_id = ?", viewerID).Find(&sonarUsers).Error; err != nil {
+		return nil, err
+	}
+	return sonarUsers, nil
 }
 
 func (h *sonarUserHandle) GetSonarUserCount(ctx context.Context, viewerID uuid.UUID) (int64, error) {

@@ -6,11 +6,12 @@ import (
 	"github.com/google/uuid"
 )
 
-type Challenge struct {
+type TeamMatch struct {
 	ID        uuid.UUID `db:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
-	User      User
-	UserID    uuid.UUID
-	Challenge string
+	TeamID    uuid.UUID
+	Team      Team
+	MatchID   uuid.UUID
+	Match     Match
 }

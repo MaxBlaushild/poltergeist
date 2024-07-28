@@ -4,6 +4,7 @@ CREATE TABLE sonar_users (
     updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     viewer_id UUID NOT NULL,
     viewee_id UUID NOT NULL,
+    profile_picture_url TEXT,
     FOREIGN KEY (viewer_id) REFERENCES users(id),
     FOREIGN KEY (viewee_id) REFERENCES users(id)
 );

@@ -11,26 +11,25 @@ import (
 )
 
 type client struct {
-	db                          *gorm.DB
-	scoreHandle                 *scoreHandler
-	userHandle                  *userHandle
-	howManyQuestionHandle       *howManyQuestionHandle
-	howManyAnswerHandle         *howManyAnswerHandle
-	challengeHandle             *challengeHandle
-	credentialHandle            *credentialHandle
-	teamHandle                  *teamHandle
-	userTeamHandle              *userTeamHandle
-	crystalHandle               *crystalHandle
-	crystalUnlockingHandle      *crystalUnlockingHandle
-	neighborHandle              *neighborHandle
-	textVerificationCodeHandle  *textVerificationCodeHandle
-	sentTextHandle              *sentTextHandle
-	howManySubscriptionHandle   *howManySubscriptionHandle
-	sonarSurveyHandle           *sonarSurveyHandle
-	sonarSurveySubmissionHandle *sonarSurveySubmissionHandle
-	sonarActivityHandle         *sonarActivityHandle
-	sonarCategoryHandle         *sonarCategoryHandle
-	sonarUserHandle             *sonarUserHandle
+	db                                *gorm.DB
+	scoreHandle                       *scoreHandler
+	userHandle                        *userHandle
+	howManyQuestionHandle             *howManyQuestionHandle
+	howManyAnswerHandle               *howManyAnswerHandle
+	teamHandle                        *teamHandle
+	userTeamHandle                    *userTeamHandle
+	pointOfInterestHandle             *pointOfInterestHandle
+	pointOfInterestTeamHandle         *pointOfInterestTeamHandle
+	neighboringPointsOfInterestHandle *neighboringPointsOfInterestHandle
+	textVerificationCodeHandle        *textVerificationCodeHandle
+	sentTextHandle                    *sentTextHandle
+	howManySubscriptionHandle         *howManySubscriptionHandle
+	sonarSurveyHandle                 *sonarSurveyHandle
+	sonarSurveySubmissionHandle       *sonarSurveySubmissionHandle
+	sonarActivityHandle               *sonarActivityHandle
+	sonarCategoryHandle               *sonarCategoryHandle
+	sonarUserHandle                   *sonarUserHandle
+	matchHandle                       *matchHandle
 }
 
 type ClientConfig struct {
@@ -59,27 +58,30 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 	}
 
 	return &client{
-		db:                          db,
-		scoreHandle:                 &scoreHandler{db: db},
-		userHandle:                  &userHandle{db: db},
-		howManyQuestionHandle:       &howManyQuestionHandle{db: db},
-		howManyAnswerHandle:         &howManyAnswerHandle{db: db},
-		challengeHandle:             &challengeHandle{db: db},
-		credentialHandle:            &credentialHandle{db: db},
-		teamHandle:                  &teamHandle{db: db},
-		userTeamHandle:              &userTeamHandle{db: db},
-		crystalHandle:               &crystalHandle{db: db},
-		crystalUnlockingHandle:      &crystalUnlockingHandle{db: db},
-		neighborHandle:              &neighborHandle{db: db},
-		textVerificationCodeHandle:  &textVerificationCodeHandle{db: db},
-		sentTextHandle:              &sentTextHandle{db: db},
-		howManySubscriptionHandle:   &howManySubscriptionHandle{db: db},
-		sonarSurveyHandle:           &sonarSurveyHandle{db: db},
-		sonarSurveySubmissionHandle: &sonarSurveySubmissionHandle{db: db},
-		sonarActivityHandle:         &sonarActivityHandle{db: db},
-		sonarCategoryHandle:         &sonarCategoryHandle{db: db},
-		sonarUserHandle:             &sonarUserHandle{db: db},
+		db:                                db,
+		scoreHandle:                       &scoreHandler{db: db},
+		userHandle:                        &userHandle{db: db},
+		howManyQuestionHandle:             &howManyQuestionHandle{db: db},
+		howManyAnswerHandle:               &howManyAnswerHandle{db: db},
+		teamHandle:                        &teamHandle{db: db},
+		userTeamHandle:                    &userTeamHandle{db: db},
+		pointOfInterestHandle:             &pointOfInterestHandle{db: db},
+		pointOfInterestTeamHandle:         &pointOfInterestTeamHandle{db: db},
+		neighboringPointsOfInterestHandle: &neighboringPointsOfInterestHandle{db: db},
+		textVerificationCodeHandle:        &textVerificationCodeHandle{db: db},
+		sentTextHandle:                    &sentTextHandle{db: db},
+		howManySubscriptionHandle:         &howManySubscriptionHandle{db: db},
+		sonarSurveyHandle:                 &sonarSurveyHandle{db: db},
+		sonarSurveySubmissionHandle:       &sonarSurveySubmissionHandle{db: db},
+		sonarActivityHandle:               &sonarActivityHandle{db: db},
+		sonarCategoryHandle:               &sonarCategoryHandle{db: db},
+		sonarUserHandle:                   &sonarUserHandle{db: db},
+		matchHandle:                       &matchHandle{db: db},
 	}, err
+}
+
+func (c *client) Match() MatchHandle {
+	return c.matchHandle
 }
 
 func (c *client) Score() ScoreHandle {
@@ -101,20 +103,13 @@ func (c *client) HowManyQuestion() HowManyQuestionHandle {
 func (c *client) User() UserHandle {
 	return c.userHandle
 }
-func (c *client) Challenge() ChallengeHandle {
-	return c.challengeHandle
+
+func (c *client) PointOfInterest() PointOfInterestHandle {
+	return c.pointOfInterestHandle
 }
 
-func (c *client) Credential() CredentialHandle {
-	return c.credentialHandle
-}
-
-func (c *client) Crystal() CrystalHandle {
-	return c.crystalHandle
-}
-
-func (c *client) Neighbor() NeighborHandle {
-	return c.neighborHandle
+func (c *client) NeighboringPointsOfInterest() NeighboringPointsOfInterestHandle {
+	return c.neighboringPointsOfInterestHandle
 }
 
 func (c *client) Team() TeamHandle {
@@ -125,8 +120,8 @@ func (c *client) UserTeam() UserTeamHandle {
 	return c.userTeamHandle
 }
 
-func (c *client) CrystalUnlocking() CrystalUnlockingHandle {
-	return c.crystalUnlockingHandle
+func (c *client) PointOfInterestTeam() PointOfInterestTeamHandle {
+	return c.pointOfInterestTeamHandle
 }
 
 func (c *client) TextVerificationCode() TextVerificationCodeHandle {
