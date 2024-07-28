@@ -26,6 +26,7 @@ type DbClient interface {
 	SonarCategory() SonarCategoryHandle
 	SonarUser() SonarUserHandle
 	Match() MatchHandle
+	VerificationCode() VerificationCodeHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -61,7 +62,8 @@ type UserHandle interface {
 
 type TeamHandle interface {
 	GetAll(ctx context.Context) ([]models.Team, error)
-	Create(ctx context.Context, userIDs []uuid.UUID, teamName string) error
+	Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error)
+	AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error
 }
 
 type UserTeamHandle interface{}
@@ -72,6 +74,7 @@ type PointOfInterestHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error)
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error
+	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
 }
 
 type PointOfInterestTeamHandle interface {
@@ -141,5 +144,12 @@ type SonarUserHandle interface {
 }
 
 type MatchHandle interface {
-	Create(ctx context.Context, match models.Match) error
+	Create(ctx context.Context, creatorID uuid.UUID) (*models.Match, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error)
+	StartMatch(ctx context.Context, matchID uuid.UUID) error
+	EndMatch(ctx context.Context, matchID uuid.UUID) error
+}
+
+type VerificationCodeHandle interface {
+	Create(ctx context.Context) (*models.VerificationCode, error)
 }

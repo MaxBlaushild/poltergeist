@@ -12,4 +12,5 @@ type Team struct {
 	UpdatedAt time.Time `db:"updated_at"`
 	Name      string
 	UserTeams []UserTeam
+	Users     []User `gorm:"many2many:user_teams;"`
 }

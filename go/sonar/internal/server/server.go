@@ -64,8 +64,42 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/crystal/capture", middleware.WithAuthentication(s.authClient, s.createCrystalCapture))
 	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
 	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.getNeighbors))
+	r.POST("/sonar/matches/:id/start", middleware.WithAuthentication(s.authClient, s.startMatch))
+	r.POST("/sonar/matches/:id/end", middleware.WithAuthentication(s.authClient, s.endMatch))
+	r.POST("/sonar/matches", middleware.WithAuthentication(s.authClient, s.createMatch))
+	r.GET("/sonar/matches/:id", middleware.WithAuthentication(s.authClient, s.getMatch))
+	r.POST("/sonar/matches/teams/newTeam", middleware.WithAuthentication(s.authClient, s.createTeamForMatch))
+	r.POST("/sonar/matches/teams/addUser", middleware.WithAuthentication(s.authClient, s.addUserToTeam))
 
 	r.Run(":8042")
+}
+
+func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
+	groupID := ctx.Param("id")
+	if groupID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "group ID is required",
+		})
+		return
+	}
+
+	uuidGroupID, err := uuid.Parse(groupID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid group ID",
+		})
+		return
+	}
+
+	pointsOfInterest, err := s.dbClient.PointOfInterest().FindByGroupID(ctx, uuidGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, pointsOfInterest)
 }
 
 func (s *server) getUserProfiles(ctx *gin.Context) {
@@ -701,6 +735,136 @@ func (s *server) getPointsOfInterest(c *gin.Context) {
 	c.JSON(200, pointOfInterests)
 }
 
+func (s *server) createMatch(c *gin.Context) {
+	user, err := s.getAuthenticatedUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	match, err := s.dbClient.Match().Create(c, user.ID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, match)
+}
+
+func (s *server) createTeamForMatch(c *gin.Context) {
+	var createTeamForMatchRequest struct {
+		UserID  string `json:"userIds" binding:"required"`
+		Name    string `json:"name" binding:"required"`
+		MatchID string `json:"matchId" binding:"required"`
+	}
+
+	matchID, err := uuid.Parse(createTeamForMatchRequest.MatchID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(createTeamForMatchRequest.UserID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	team, err := s.dbClient.Team().Create(c, []uuid.UUID{userID}, createTeamForMatchRequest.Name, matchID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, team)
+}
+
+func (s *server) addUserToTeam(c *gin.Context) {
+	var addUserToTeamRequest struct {
+		UserID string `json:"userId" binding:"required"`
+		TeamID string `json:"teamId" binding:"required"`
+	}
+
+	if err := c.Bind(&addUserToTeamRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	userID, err := uuid.Parse(addUserToTeamRequest.UserID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	teamID, err := uuid.Parse(addUserToTeamRequest.TeamID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Team().AddUserToTeam(c, teamID, userID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "done"})
+}
+
+func (s *server) getMatch(c *gin.Context) {
+	matchID := c.Param("id")
+
+	uuidMatchID, err := uuid.Parse(matchID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	match, err := s.dbClient.Match().FindByID(c, uuidMatchID)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, match)
+}
+
+func (s *server) startMatch(c *gin.Context) {
+	matchID := c.Param("id")
+
+	uuidMatchID, err := uuid.Parse(matchID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Match().StartMatch(c, uuidMatchID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "done"})
+}
+
+func (s *server) endMatch(c *gin.Context) {
+	matchID := c.Param("id")
+
+	uuidMatchID, err := uuid.Parse(matchID)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Match().EndMatch(c, uuidMatchID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "done"})
+}
+
 func (s *server) createPointOfInterest(c *gin.Context) {
 	var createPointOfInterestRequest struct {
 		Name             string `json:"name" binding:"required"`
@@ -857,7 +1021,7 @@ func (s *server) createCrystalCapture(c *gin.Context) {
 	for _, user := range users {
 		s.texterClient.Text(c, &texter.Text{
 			To:   user.PhoneNumber,
-			From: s.config.Public.SonarPhoneNumber,
+			From: s.config.Public.PhoneNumber,
 			Body: fmt.Sprintf("%s team has %s %s.", capturingTeam.Name, capturedOrAttuned, pointOfInterest.Name),
 		})
 	}

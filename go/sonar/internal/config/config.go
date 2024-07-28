@@ -12,11 +12,11 @@ type SecretConfig struct {
 }
 
 type PublicConfig struct {
-	DbHost           string `mapstructure:"DB_HOST"`
-	DbUser           string `mapstructure:"DB_USER"`
-	DbPort           string `mapstructure:"DB_PORT"`
-	DbName           string `mapstructure:"DB_NAME"`
-	SonarPhoneNumber string `mapstructure:"SONAR_PHONE_NUMBER"`
+	DbHost      string `mapstructure:"DB_HOST"`
+	DbUser      string `mapstructure:"DB_USER"`
+	DbPort      string `mapstructure:"DB_PORT"`
+	DbName      string `mapstructure:"DB_NAME"`
+	PhoneNumber string `mapstructure:"PHONE_NUMBER"`
 }
 
 type Config struct {
