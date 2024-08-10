@@ -31,6 +31,7 @@ type client struct {
 	sonarUserHandle                   *sonarUserHandle
 	matchHandle                       *matchHandle
 	verificationCodeHandle            *verificationCodeHandler
+	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 }
 
 type ClientConfig struct {
@@ -79,7 +80,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		sonarUserHandle:                   &sonarUserHandle{db: db},
 		matchHandle:                       &matchHandle{db: db},
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
+		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 	}, err
+}
+
+func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {
+	return c.pointOfInterestGroupHandle
 }
 
 func (c *client) VerificationCode() VerificationCodeHandle {

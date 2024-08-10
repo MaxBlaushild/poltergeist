@@ -27,6 +27,7 @@ type DbClient interface {
 	SonarUser() SonarUserHandle
 	Match() MatchHandle
 	VerificationCode() VerificationCodeHandle
+	PointOfInterestGroup() PointOfInterestGroupHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -152,4 +153,10 @@ type MatchHandle interface {
 
 type VerificationCodeHandle interface {
 	Create(ctx context.Context) (*models.VerificationCode, error)
+}
+
+type PointOfInterestGroupHandle interface {
+	Create(ctx context.Context, pointOfInterestIDs []uuid.UUID, name string) (*models.PointOfInterestGroup, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error)
+	FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error)
 }

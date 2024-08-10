@@ -56,7 +56,6 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
 	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
 	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.deleteActivity))
-	r.POST("/sonar/teams", middleware.WithAuthentication(s.authClient, s.createTeam))
 	r.GET("/sonar/teams", middleware.WithAuthentication(s.authClient, s.getTeams))
 	r.POST("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
 	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
@@ -70,8 +69,47 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/matches/:id", middleware.WithAuthentication(s.authClient, s.getMatch))
 	r.POST("/sonar/matches/teams/newTeam", middleware.WithAuthentication(s.authClient, s.createTeamForMatch))
 	r.POST("/sonar/matches/teams/addUser", middleware.WithAuthentication(s.authClient, s.addUserToTeam))
+	r.GET("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestByGroup))
+	r.POST("/sonar/pointsOfInterest/group", middleware.WithAuthentication(s.authClient, s.createPointOfInterestGroup))
+	r.GET("/sonar/pointsOfInterest/groups", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestGroups))
 
 	r.Run(":8042")
+}
+
+func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
+	groups, err := s.dbClient.PointOfInterestGroup().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, groups)
+}
+
+func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
+	var requestBody struct {
+		PointOfInterestIDs []uuid.UUID `binding:"required" json:"pointOfInterestIDs"`
+		Name               string      `binding:"required" json:"name"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	group, err := s.dbClient.PointOfInterestGroup().Create(ctx, requestBody.PointOfInterestIDs, requestBody.Name)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, group)
 }
 
 func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
@@ -628,41 +666,6 @@ func (s *server) getNeighbors(c *gin.Context) {
 	}
 
 	c.JSON(200, neighbors)
-}
-
-func (s *server) createTeam(c *gin.Context) {
-	var createTeamsRequest struct {
-		UserIDs []string `json:"userIds" binding:"required"`
-		Name    string   `json:"name" binding:"required"`
-	}
-
-	if err := c.Bind(&createTeamsRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	var userIDs []uuid.UUID
-	for _, id := range createTeamsRequest.UserIDs {
-		userID, err := uuid.Parse(id)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"message": err.Error(),
-			})
-			return
-		}
-		userIDs = append(userIDs, userID)
-	}
-
-	if err := s.dbClient.Team().Create(c, userIDs, createTeamsRequest.Name); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(200, gin.H{"message": "done"})
 }
 
 func (s *server) getTeams(c *gin.Context) {
