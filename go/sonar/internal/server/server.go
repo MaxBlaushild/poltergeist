@@ -69,9 +69,9 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/matches/:id", middleware.WithAuthentication(s.authClient, s.getMatch))
 	r.POST("/sonar/matches/teams/newTeam", middleware.WithAuthentication(s.authClient, s.createTeamForMatch))
 	r.POST("/sonar/matches/teams/addUser", middleware.WithAuthentication(s.authClient, s.addUserToTeam))
-	r.GET("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestByGroup))
+	r.GET("/sonar/pointsOfInterest/group/:id", s.getPointsOfInterestByGroup)
 	r.POST("/sonar/pointsOfInterest/group", middleware.WithAuthentication(s.authClient, s.createPointOfInterestGroup))
-	r.GET("/sonar/pointsOfInterest/groups", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestGroups))
+	r.GET("/sonar/pointsOfInterest/groups", s.getPointsOfInterestGroups)
 
 	r.Run(":8042")
 }

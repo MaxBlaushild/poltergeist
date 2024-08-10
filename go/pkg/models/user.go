@@ -13,5 +13,5 @@ type User struct {
 	Name        string     `json:"name"`
 	PhoneNumber string     `json:"phoneNumber" gorm:"unique"`
 	Active      bool       `json:"active"`
-	Profile     *SonarUser `json:"profile" gorm:"foreignKey:UserID"`
+	Profile     *SonarUser `json:"profile" gorm:"foreignKey:ID"`
 }
