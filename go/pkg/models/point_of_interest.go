@@ -18,3 +18,7 @@ type PointOfInterest struct {
 	Lng              string    `json:"lng"`
 	ImageUrl         string    `json:"imageURL"`
 }
+
+func (p *PointOfInterest) TableName() string {
+	return "points_of_interest"
+}

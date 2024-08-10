@@ -72,8 +72,36 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/pointsOfInterest/group/:id", s.getPointsOfInterestByGroup)
 	r.POST("/sonar/pointsOfInterest/group", middleware.WithAuthentication(s.authClient, s.createPointOfInterestGroup))
 	r.GET("/sonar/pointsOfInterest/groups", s.getPointsOfInterestGroups)
+	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.getCurrentMatch))
 
 	r.Run(":8042")
+}
+
+func (s *server) getCurrentMatch(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	match, err := s.dbClient.Match().FindCurrentMatchForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if match == nil || match.EndedAt != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"message": "no current match",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, match)
 }
 
 func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
@@ -739,6 +767,17 @@ func (s *server) getPointsOfInterest(c *gin.Context) {
 }
 
 func (s *server) createMatch(c *gin.Context) {
+	var createMatchRequest struct {
+		PointsOfInterestIDs []uuid.UUID `json:"pointsOfInterestIds" binding:"required"`
+	}
+
+	if err := c.Bind(&createMatchRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	user, err := s.getAuthenticatedUser(c)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -747,7 +786,7 @@ func (s *server) createMatch(c *gin.Context) {
 		return
 	}
 
-	match, err := s.dbClient.Match().Create(c, user.ID)
+	match, err := s.dbClient.Match().Create(c, user.ID, createMatchRequest.PointsOfInterestIDs)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return

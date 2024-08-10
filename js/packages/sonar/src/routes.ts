@@ -11,6 +11,8 @@ import { Thanks } from './components/Thanks.tsx';
 import { AssembleCrew } from './components/AssembleCrew.tsx';
 import { Dashboard } from './components/Dashboard.tsx';
 import { Submission } from './components/Submission.tsx';
+import { SelectBattleArena } from './components/SelectBattleArena.tsx';
+import { Match } from './components/Match.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -78,6 +80,16 @@ export const router = createBrowserRouter([
         path: 'assemble-crew',
         loader: onlyAuthenticated,
         Component: AssembleCrew,
+      },
+      {
+        path: 'select-battle-arena',
+        loader: onlyAuthenticated,
+        Component: SelectBattleArena,
+      },
+      {
+        path: 'match',
+        loader: onlyAuthenticated,
+        Component: Match,
       },
     ],
   },

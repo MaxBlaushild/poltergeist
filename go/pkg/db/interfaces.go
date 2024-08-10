@@ -145,10 +145,11 @@ type SonarUserHandle interface {
 }
 
 type MatchHandle interface {
-	Create(ctx context.Context, creatorID uuid.UUID) (*models.Match, error)
+	Create(ctx context.Context, creatorID uuid.UUID, pointsOfInterestIDs []uuid.UUID) (*models.Match, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error)
 	StartMatch(ctx context.Context, matchID uuid.UUID) error
 	EndMatch(ctx context.Context, matchID uuid.UUID) error
+	FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error)
 }
 
 type VerificationCodeHandle interface {

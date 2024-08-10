@@ -16,7 +16,7 @@ type matchHandle struct {
 
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
-	if err := h.db.WithContext(ctx).Preload("VerificationCodes").Where("id = ?", id).First(&match).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("VerificationCodes").Preload("Teams.Users.UserProfile").Preload("Teams.PointOfInterestTeams").Where("id = ?", id).First(&match).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -25,7 +25,26 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 	return &match, nil
 }
 
-func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID) (*models.Match, error) {
+func (h *matchHandle) FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error) {
+	var match models.Match
+	if err := h.db.WithContext(ctx).
+		Preload("VerificationCodes").
+		Preload("Teams.Users.UserProfile").
+		Preload("Teams.PointOfInterestTeams").
+		Joins("JOIN team_users ON team_users.team_id = teams.id").
+		Where("creator_id = ? OR team_users.user_id = ?", userId, userId).
+		Where("ended_at IS NULL").
+		Order("created_at DESC").
+		First(&match).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, err
+	}
+	return &match, nil
+}
+
+func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfInterestIDs []uuid.UUID) (*models.Match, error) {
 	tx := h.db.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -82,6 +101,20 @@ func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID) (*models.
 	}
 
 	if err := tx.Create(&verificationCodeMatch).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	var matchPointOfInterest []*models.MatchPointOfInterest
+	for _, pointOfInterestID := range pointsOfInterestIDs {
+		matchPointOfInterest = append(matchPointOfInterest, &models.MatchPointOfInterest{
+			ID:                uuid.New(),
+			MatchID:           match.ID,
+			PointOfInterestID: pointOfInterestID,
+		})
+	}
+
+	if err := tx.Create(&matchPointOfInterest).Error; err != nil {
 		tx.Rollback()
 		return nil, err
 	}

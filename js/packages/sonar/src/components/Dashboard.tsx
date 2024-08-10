@@ -16,11 +16,20 @@ export function Dashboard(props: DashboardProps) {
       <div className="Dashboard__modal">
         <h3>Welcome back! Choose your adventure:</h3>
         <Button
-          title="Summon adventurers"
+          title="Explore"
+          disabled={true}
           onClick={() => navigate('/new-survey')}
         />
         <Button
-          title="Assemble crew"
+          title="Battle mode"
+          onClick={() => navigate('/select-battle-arena')}
+        />
+        <Button
+          title="Invite new crew members"
+          onClick={() => navigate('/new-survey')}
+        />
+        <Button
+          title="View crew manifest"
           disabled={isLoading || surveys.length === 0}
           onClick={() => navigate('/assemble-crew')}
         />
