@@ -894,8 +894,9 @@ func (s *server) getPointsOfInterest(c *gin.Context) {
 		}
 
 		if !found {
-			pointOfInterests[i].AttuneChallenge = ""
-			pointOfInterests[i].CaptureChallenge = ""
+			pointOfInterests[i].TierOneChallenge = ""
+			pointOfInterests[i].TierTwoChallenge = ""
+			pointOfInterests[i].TierThreeChallenge = ""
 		} else {
 			pointOfInterests[i].Clue = ""
 		}
@@ -1092,12 +1093,13 @@ func (s *server) endMatch(c *gin.Context) {
 
 func (s *server) createPointOfInterest(c *gin.Context) {
 	var createPointOfInterestRequest struct {
-		Name             string `json:"name" binding:"required"`
-		Clue             string `json:"clue" binding:"required"`
-		CaptureChallenge string `json:"captureChallenge" binding:"required"`
-		AttuneChallenge  string `json:"attuneChallenge" binding:"required"`
-		Lat              string `json:"lat" binding:"required"`
-		Lng              string `json:"lng" binding:"required"`
+		Name               string `json:"name" binding:"required"`
+		Clue               string `json:"clue" binding:"required"`
+		TierOneChallenge   string `json:"tierOneChallenge" binding:"required"`
+		TierTwoChallenge   string `json:"tierTwoChallenge" binding:"required"`
+		TierThreeChallenge string `json:"tierThreeChallenge" binding:"required"`
+		Lat                string `json:"lat" binding:"required"`
+		Lng                string `json:"lng" binding:"required"`
 	}
 
 	if err := c.Bind(&createPointOfInterestRequest); err != nil {
@@ -1108,12 +1110,13 @@ func (s *server) createPointOfInterest(c *gin.Context) {
 	}
 
 	if err := s.dbClient.PointOfInterest().Create(c, models.PointOfInterest{
-		Name:             createPointOfInterestRequest.Name,
-		Clue:             createPointOfInterestRequest.Clue,
-		AttuneChallenge:  createPointOfInterestRequest.AttuneChallenge,
-		CaptureChallenge: createPointOfInterestRequest.CaptureChallenge,
-		Lat:              createPointOfInterestRequest.Lat,
-		Lng:              createPointOfInterestRequest.Lng,
+		Name:               createPointOfInterestRequest.Name,
+		Clue:               createPointOfInterestRequest.Clue,
+		TierOneChallenge:   createPointOfInterestRequest.TierOneChallenge,
+		TierTwoChallenge:   createPointOfInterestRequest.TierTwoChallenge,
+		TierThreeChallenge: createPointOfInterestRequest.TierThreeChallenge,
+		Lat:                createPointOfInterestRequest.Lat,
+		Lng:                createPointOfInterestRequest.Lng,
 	}); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
