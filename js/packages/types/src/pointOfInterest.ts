@@ -1,11 +1,12 @@
 export interface PointOfInterest {
-    ID: string;
+    id: string;
     createdAt: Date;
     updatedAt: Date;
     name: string;
     clue: string;
-    captureChallenge: string;
-    attuneChallenge: string;
+    tierOneChallenge: string;
+    tierTwoChallenge: string;
+    tierThreeChallenge: string;
     lat: string;
     lng: string;
     imageURL: string;

@@ -149,10 +149,11 @@ export const MatchInProgress = () => {
           bottom: 0,
           left: 0,
           width: '100%',
-          height: '70vh',
+          height: '80vh',
           transition: 'transform 0.3s ease-in-out',
           transform: isPanelVisible ? 'translateY(0)' : 'translateY(100%)',
           zIndex: 2,
+          overflowY: 'scroll',
         }}
       >
         {selectedPointOfInterest && usersTeam && (
@@ -176,12 +177,13 @@ const PointOfInterestPanel = ({
     <div className="flex flex-col items-center gap-4">
       <h3 className="text-2xl font-bold">{hasDiscovered ? pointOfInterest.name : 'Uncharted Waters'}</h3>
       <img src={hasDiscovered ? pointOfInterest.imageURL : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`} alt={pointOfInterest.name}/>
-      {!hasDiscovered && <p className="text-xl"><span className="font-bold">Clue:</span> {pointOfInterest.clue}</p>}
-      {hasDiscovered && <p className="text-xl"><span className="font-bold">Capture Challenge:</span> {pointOfInterest.captureChallenge}</p>}
-      {hasDiscovered && <p className="text-xl"><span className="font-bold">Attune Challenge:</span> {pointOfInterest.attuneChallenge}</p>}
+      {!hasDiscovered && <p className="text-xl text-left"><span className="font-bold">Clue:</span> {pointOfInterest.clue}</p>}
+      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">I:</span> {pointOfInterest.tierOneChallenge}</p>}
+      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">II:</span> {pointOfInterest.tierTwoChallenge}</p>}
+      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">III:</span> {pointOfInterest.tierThreeChallenge}</p>}
       {!hasDiscovered && <Button onClick={() => {
         navigator.geolocation.getCurrentPosition((position) => {
-          unlockPointOfInterest(pointOfInterest.ID, usersTeam.id, pointOfInterest.lat, pointOfInterest.lng);
+          unlockPointOfInterest(pointOfInterest.id, usersTeam.id, pointOfInterest.lat, pointOfInterest.lng);
         });
       }} title="I'm here!" />}
     </div>
