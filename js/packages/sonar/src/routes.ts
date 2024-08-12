@@ -13,6 +13,9 @@ import { Dashboard } from './components/Dashboard.tsx';
 import { Submission } from './components/Submission.tsx';
 import { SelectBattleArena } from './components/SelectBattleArena.tsx';
 import { Match } from './components/Match.tsx';
+import { useMatchContext } from './contexts/MatchContext.tsx';
+import { CurrentMatch } from './components/CurrentMatch.tsx';
+import { MatchById } from './components/MatchById.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -87,9 +90,14 @@ export const router = createBrowserRouter([
         Component: SelectBattleArena,
       },
       {
+        path: 'match/:id',
+        Component: MatchById,
+        loader: onlyAuthenticated,
+      },
+      {
         path: 'match',
         loader: onlyAuthenticated,
-        Component: Match,
+        Component: CurrentMatch,
       },
     ],
   },

@@ -7,8 +7,8 @@ import (
 )
 
 type VerificationCode struct {
-	ID        uuid.UUID `db:"id"`
-	Code      string    `db:"code"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	ID        uuid.UUID `json:"id" db:"id"`
+	Code      string    `json:"code" db:"code"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }

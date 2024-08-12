@@ -30,7 +30,7 @@ import { Modal, ModalSize } from './shared/Modal.tsx';
 import { Chip, ChipType } from './shared/Chip.tsx';
 import { Button } from './shared/Button.tsx';
 import { useActivityContext } from '../contexts/ActivityContext.tsx';
-import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
+import PersonListItem from './shared/PersonListItem.tsx';
 
 type SelectedAnswer = {
   id: string;
@@ -50,7 +50,6 @@ export const AssembleCrew: React.FC = () => {
   const [nameComboboxQuery, setNameComboboxQuery] = useState('');
   const [notSelectedUsers, setNotSelectedUsers] = useState<User[]>([]);
   const [showCrewModal, setShowCrewModal] = useState(false);
-  const { userProfiles, loading, error } = useUserProfiles();
 
   useEffect(() => {
     const fetchSurveysAndAnswers = async () => {
@@ -344,47 +343,25 @@ export const AssembleCrew: React.FC = () => {
                 <TabPanel key="people" className="rounded-xl bg-black/5 p-3">
                   <ul>
                     {uniqueUserArray.map((user) => (
-                      <li
+                      <PersonListItem
                         key={user.id}
-                        className="relative rounded-md p-3 text-sm/6 transition hover:bg-black/5 text-left flex items-center justify-between"
-                        onClick={(e) => {
+                        user={user}
+                        onClick={(u) => {
                           if (
                             !notSelectedUsers.some(
-                              (selectedUser) => selectedUser.id === user.id
+                              (selectedUser) => selectedUser.id === u.id
                             )
                           ) {
-                            setNotSelectedUsers([...notSelectedUsers, user]);
+                            setNotSelectedUsers([...notSelectedUsers, u]);
                           } else {
                             setNotSelectedUsers(
                               notSelectedUsers.filter(
-                                (selectedUser) => selectedUser.id !== user.id
+                                (selectedUser) => selectedUser.id !== u.id
                               )
                             );
                           }
                         }}
-                      >
-                        <div className="flex-grow flex flex-col">
-                          <div className="flex items-center space-x-3">
-                            <img
-                              src={userProfiles?.find(profile => profile.vieweeId === user.id)?.profilePictureUrl || 'default-profile.png'}
-                              alt={`${user.name}'s profile`}
-                              className="h-9 w-9 rounded-full"
-                            />
-                            <a href="#" className="font-semibold text-black">
-                              <span className="absolute inset-0" />
-                              {user.name}
-                            </a>
-                          </div>
-                          <ul
-                            className="flex gap-2 text-black/50"
-                            aria-hidden="true"
-                          >
-                            <li>{user.phoneNumber}</li>
-                            <li aria-hidden="true">&middot;</li>
-                            {/* <li>{activitiesPerUserCounter[user.id]} activities</li> */}
-                          </ul>
-                        </div>
-                        <input
+                        actionArea={() => <input
                           type="checkbox"
                           className="ml-2 h-4 w-4 align-middle"
                           readOnly
@@ -393,8 +370,8 @@ export const AssembleCrew: React.FC = () => {
                               (selectedUser) => selectedUser.id === user.id
                             )
                           }
-                        />
-                      </li>
+                        />}
+                      />
                     ))}
                     {uniqueUserArray.length === 0 && (
                       <li className="relative rounded-md p-3 text-sm/6 transition hover:bg-black/5 text-left flex items-center justify-between">

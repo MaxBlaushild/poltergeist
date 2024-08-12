@@ -15,6 +15,6 @@ type Match struct {
 	VerificationCodes []VerificationCode `json:"verificationCodes" gorm:"many2many:match_verification_codes;"`
 	StartedAt         *time.Time         `json:"startedAt" db:"started_at"`
 	EndedAt           *time.Time         `json:"endedAt" db:"ended_at"`
-	PointsOfInterest  []PointOfInterest  `json:"pointsOfInterest" gorm:"many2many:match_point_of_interest;"`
-	Teams             []Team             `json:"teams" gorm:"many2many:team_match;"`
+	PointsOfInterest  []PointOfInterest  `json:"pointsOfInterest" gorm:"many2many:match_points_of_interest;"`
+	Teams             []Team             `json:"teams" gorm:"many2many:team_matches;"`
 }

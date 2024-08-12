@@ -21,7 +21,6 @@ export const Submission: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { submission, loading, error } = useSubmission(id!);
   const navigate = useNavigate();
-  const { userProfiles } = useUserProfiles();
 
   return (
     <div className="Survey__background">
@@ -31,9 +30,7 @@ export const Submission: React.FC = () => {
             <div className="flex flex-col gap-2">
 
               <img
-                src={userProfiles?.find(
-                  (profile) => profile.vieweeId === submission.user.id
-                )?.profilePictureUrl || 'default-profile.png'}
+                src={submission.user.profile.profilePictureUrl || 'default-profile.png'}
                 alt={`${submission.user.name}'s profile`}
                 className="h-20 w-20 rounded-full self-center"
               />

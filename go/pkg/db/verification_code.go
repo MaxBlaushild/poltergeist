@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -31,6 +32,7 @@ func (h *verificationCodeHandler) Create(ctx context.Context) (*models.Verificat
 
 		// Create a new verification code instance
 		verificationCode = models.VerificationCode{
+			ID:        uuid.New(),
 			Code:      code,
 			CreatedAt: time.Now(),
 		}

@@ -65,6 +65,7 @@ type TeamHandle interface {
 	GetAll(ctx context.Context) ([]models.Team, error)
 	Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error)
 	AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error
+	RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error
 }
 
 type UserTeamHandle interface{}

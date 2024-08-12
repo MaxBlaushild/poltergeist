@@ -15,3 +15,7 @@ type MatchPointOfInterest struct {
 	PointOfInterestID uuid.UUID       `json:"pointOfInterestId"`
 	PointOfInterest   PointOfInterest `json:"pointOfInterest"`
 }
+
+func (m *MatchPointOfInterest) TableName() string {
+	return "match_points_of_interest"
+}

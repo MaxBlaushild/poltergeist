@@ -1,0 +1,1 @@
+ALTER TABLE points_of_interest ADD COLUMN description TEXT;

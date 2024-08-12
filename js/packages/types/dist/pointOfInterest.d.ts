@@ -1,5 +1,5 @@
 export interface PointOfInterest {
-    id: string;
+    ID: string;
     createdAt: Date;
     updatedAt: Date;
     name: string;
@@ -8,5 +8,5 @@ export interface PointOfInterest {
     attuneChallenge: string;
     lat: string;
     lng: string;
-    imageUrl: string;
+    imageURL: string;
 }

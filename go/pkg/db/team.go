@@ -33,6 +33,12 @@ func (h *teamHandle) GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]mod
 }
 
 func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error) {
+	for _, userID := range userIDs {
+		if err := h.RemoveUserFromMatch(ctx, matchID, userID); err != nil {
+			return nil, err
+		}
+	}
+
 	team := models.Team{Name: teamName}
 
 	if err := h.db.WithContext(ctx).Create(&team).Error; err != nil {
@@ -64,10 +70,33 @@ func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName s
 }
 
 func (h *teamHandle) AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error {
+	var stringMatchID string
+	if err := h.db.WithContext(ctx).Model(&models.TeamMatch{}).Select("match_id").Where("team_id = ?", teamID).Scan(&stringMatchID).Error; err == nil {
+		matchID, err := uuid.Parse(stringMatchID)
+		if err != nil {
+			return err
+		}
+		if err := h.RemoveUserFromMatch(ctx, matchID, userID); err != nil {
+			return err
+		}
+	}
+
 	userTeam := models.UserTeam{
 		UserID: userID,
 		TeamID: teamID,
 	}
 
 	return h.db.WithContext(ctx).Create(&userTeam).Error
+}
+
+func (h *teamHandle) RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error {
+	sqlStatement := `
+			DELETE FROM user_teams
+				USING team_matches
+				WHERE user_teams.team_id = team_matches.team_id
+		  			AND user_teams.user_id = ?
+		  			AND team_matches.match_id = ?;
+		`
+
+	return h.db.WithContext(ctx).Exec(sqlStatement, userID, matchID).Error
 }
