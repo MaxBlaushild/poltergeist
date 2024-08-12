@@ -12,14 +12,14 @@ export type Team = {
 };
 
 export const hasTeamDiscoveredPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.ID);
+  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id);
 };
 
 export const hasTeamCapturedPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.ID && pointOfInterestTeam.captured);
+  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id && pointOfInterestTeam.captured);
 };
 
 export const hasTeamAttunedPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.ID && pointOfInterestTeam.attuned);
+  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id && pointOfInterestTeam.attuned);
 };
 
