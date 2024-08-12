@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -16,9 +17,13 @@ type matchHandle struct {
 
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
-	if err := h.db.WithContext(ctx).Preload("VerificationCodes").Preload("Teams.Users.UserProfile").Preload("Teams.PointOfInterestTeams").Where("id = ?", id).First(&match).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("PointsOfInterest").
+		Preload("Teams.Users").
+		Preload("Teams.PointOfInterestTeams").
+		Where("id = ?", id).First(&match).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -26,22 +31,34 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 }
 
 func (h *matchHandle) FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error) {
-	var match models.Match
-	if err := h.db.WithContext(ctx).
-		Preload("VerificationCodes").
-		Preload("Teams.Users.UserProfile").
-		Preload("Teams.PointOfInterestTeams").
-		Joins("JOIN team_users ON team_users.team_id = teams.id").
-		Where("creator_id = ? OR team_users.user_id = ?", userId, userId).
-		Where("ended_at IS NULL").
-		Order("created_at DESC").
-		First(&match).Error; err != nil {
+	var stringMatchId string
+	sql := `
+		SELECT m.id FROM matches m
+		JOIN team_matches ON team_matches.match_id = m.id
+		JOIN teams ON teams.id = team_matches.team_id
+		JOIN user_teams ON user_teams.team_id = teams.id
+		WHERE user_teams.user_id = ? AND m.ended_at IS NULL
+		ORDER BY m.created_at DESC
+		LIMIT 1
+	`
+	if err := h.db.WithContext(ctx).Raw(sql, userId).Scan(&stringMatchId).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return nil, nil
 		}
 		return nil, err
 	}
-	return &match, nil
+
+	matchID, err := uuid.Parse(stringMatchId)
+	if err != nil {
+		return nil, nil
+	}
+
+	match, err := h.FindByID(ctx, matchID)
+	if err != nil {
+		return nil, err
+	}
+
+	return match, nil
 }
 
 func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfInterestIDs []uuid.UUID) (*models.Match, error) {
@@ -67,7 +84,7 @@ func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfI
 	}
 
 	team := models.Team{
-		Name: "Team " + verificationCode.Code,
+		Name: util.GenerateTeamName(),
 	}
 
 	if err := tx.Create(&team).Error; err != nil {
@@ -96,6 +113,7 @@ func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfI
 	}
 
 	verificationCodeMatch := models.MatchVerificationCode{
+		ID:                 uuid.New(),
 		MatchID:            match.ID,
 		VerificationCodeID: verificationCode.ID,
 	}
@@ -120,6 +138,7 @@ func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfI
 	}
 
 	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
 		return nil, err
 	}
 
@@ -138,7 +157,7 @@ func (h *matchHandle) EndMatch(ctx context.Context, matchID uuid.UUID) error {
 
 func (h *matchHandle) FindUsersMatches(ctx context.Context, userID uuid.UUID) ([]*models.Match, error) {
 	var matches []*models.Match
-	if err := h.db.WithContext(ctx).Preload("VerificationCodes").Joins("JOIN team_users ON team_users.user_id = ?", userID).Where("matches.creator_id = team_users.creator_id").Find(&matches).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("VerificationCodes").Joins("JOIN user_teams ON user_teams.user_id = ?", userID).Where("matches.creator_id = user_teams.creator_id").Find(&matches).Error; err != nil {
 		return nil, err
 	}
 	return matches, nil

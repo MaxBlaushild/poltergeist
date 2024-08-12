@@ -6,4 +6,5 @@ export type PointOfInterestGroup = {
     name: string;
     pointsOfInterest: PointOfInterest[];
     description: string;
+    imageUrl: string;
 };

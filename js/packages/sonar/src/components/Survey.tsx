@@ -10,7 +10,6 @@ import { Button } from './shared/Button.tsx';
 import ActivityCloud from './shared/ActivityCloud.tsx';
 import { LameActivitySelector } from './shared/LameActivitySelector.tsx';
 import Divider from './shared/Divider.tsx';
-import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 interface SurveyParams {
   id: string;
@@ -21,7 +20,6 @@ export const Survey: React.FC = () => {
   const { survey } = useSurvey(id!);
   const [toastText, setToastText] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { userProfiles } = useUserProfiles();
 
   return (
     <div className="Survey__background">
@@ -64,7 +62,7 @@ export const Survey: React.FC = () => {
                       className="relative rounded-md p-3 text-sm/6 transition hover:bg-black/5 flex items-center"
                     >
                       <img
-                        src={userProfiles?.find(profile => profile.vieweeId === submission.user.id)?.profilePictureUrl || 'default-profile.png'}
+                        src={submission.user.profile.profilePictureUrl || 'default-profile.png'}
                         alt={`${submission.user.name}'s profile`}
                         className="h-9 w-9 rounded-full mr-4"
                       />

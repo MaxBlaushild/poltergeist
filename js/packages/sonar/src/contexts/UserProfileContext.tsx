@@ -1,42 +1,43 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useAPI } from '@poltergeist/contexts';
-import { UserProfile } from '@poltergeist/types';
+import { useAPI, useAuth } from '@poltergeist/contexts';
+import { User, UserProfile } from '@poltergeist/types';
 
 export interface UserProfileContextType {
-  userProfiles: UserProfile[] | null;
-  loading: boolean;
-  error: Error | null;
+  currentUser: User | null;
+  currentUserLoading: boolean;
+  currentUserError: Error | null;
 }
 
 const UserProfileContext = createContext<UserProfileContextType>({
-  userProfiles: null,
-  loading: false,
-  error: null
+  currentUser: null,
+  currentUserLoading: true,
+  currentUserError: null
 });
 
 export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { apiClient } = useAPI();
-  const [userProfiles, setUserProfiles] = useState<UserProfile[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUserLoading, setCurrentUserLoading] = useState<boolean>(true);
+  const [currentUserError, setCurrentUserError] = useState<Error | null>(null);
+  const { user } = useAuth();
 
-  useEffect(() => {
-    const fetchUserProfiles = async () => {
+    const fetchCurrentUser = async () => {
       try {
-        const fetchedUserProfiles = await apiClient.get<UserProfile[]>('/sonar/userProfiles');
-        setUserProfiles(fetchedUserProfiles);
-      } catch (err) {
-        setError(err);
+        const fetchedUser = await apiClient.get<User>('/sonar/whoami');
+        setCurrentUser(fetchedUser);
+      } catch (error) {
+        setCurrentUserError(error);
       } finally {
-        setLoading(false);
+        setCurrentUserLoading(false);
       }
     };
 
-    fetchUserProfiles();
-  }, [apiClient]);
+  useEffect(() => {
+    fetchCurrentUser();
+  }, [apiClient, user]);
 
   return (
-    <UserProfileContext.Provider value={{ userProfiles, loading, error }}>
+    <UserProfileContext.Provider value={{ currentUser, currentUserLoading, currentUserError }}>
       {children}
     </UserProfileContext.Provider>
   );

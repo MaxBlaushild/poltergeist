@@ -3,11 +3,11 @@ package util
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -84,6 +84,29 @@ func GenerateRandomName() string {
 	adjectives := []string{"autumn", "hidden", "bitter", "misty", "silent", "empty", "dry", "dark", "summer", "icy", "delicate", "quiet", "white", "cool", "spring", "winter", "patient", "twilight", "dawn", "crimson", "wispy", "weathered", "blue", "billowing", "broken", "cold", "damp", "falling", "frosty", "green", "long", "late", "lingering", "bold", "little", "morning", "muddy", "old", "red", "rough", "still", "small", "sparkling", "throbbing", "shy", "wandering", "withered", "wild", "black", "young", "holy", "solitary", "fragrant", "aged", "snowy", "proud", "floral", "restless", "divine", "polished", "ancient", "purple", "lively", "nameless"}
 	nouns := []string{"waterfall", "river", "breeze", "moon", "rain", "wind", "sea", "morning", "snow", "lake", "sunset", "pine", "shadow", "leaf", "dawn", "glitter", "forest", "hill", "cloud", "meadow", "sun", "glade", "bird", "brook", "butterfly", "bush", "dew", "dust", "field", "fire", "flower", "firefly", "feather", "grass", "haze", "mountain", "night", "pond", "darkness", "snowflake", "silence", "sound", "sky", "shape", "surf", "thunder", "violet", "water", "wildflower", "wave", "water", "resonance", "sun", "wood", "dream", "cherry", "tree", "fog", "frost", "voice", "paper", "frog", "smoke", "star"}
 
-	rand.Seed(time.Now().UnixNano())
-	return adjectives[rand.Intn(len(adjectives))] + "-" + nouns[rand.Intn(len(nouns))]
+	return strings.Title(adjectives[rand.Intn(len(adjectives))]) + " " + strings.Title(nouns[rand.Intn(len(nouns))])
+}
+
+func GenerateTeamName() string {
+	return GenerateRandomName()
+}
+
+func ToRadians(degrees float64) float64 {
+	return degrees * math.Pi / 180
+}
+
+func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371e3 // Earth radius in meters
+
+	φ1 := ToRadians(lat1)
+	φ2 := ToRadians(lat2)
+	Δφ := ToRadians(lat2 - lat1)
+	Δλ := ToRadians(lon2 - lon1)
+
+	a := math.Sin(Δφ/2)*math.Sin(Δφ/2) +
+		math.Cos(φ1)*math.Cos(φ2)*
+			math.Sin(Δλ/2)*math.Sin(Δλ/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return R * c
 }

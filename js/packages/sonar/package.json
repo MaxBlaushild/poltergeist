@@ -8,6 +8,12 @@
     "@poltergeist/contexts": "*",
     "classnames": "^2.5.1",
     "clsx": "^2.1.1",
+    "dnd-multi-backend": "^8.0.3",
+    "mapbox-gl": "^3.5.2",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    "react-dnd-multi-backend": "^8.0.3",
+    "react-dnd-touch-backend": "^16.0.1",
     "react-phone-number-input": "^3.3.7",
     "react-router-dom": "^6.21.1",
     "web-vitals": "^2.1.4"
