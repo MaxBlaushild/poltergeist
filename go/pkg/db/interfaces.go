@@ -72,7 +72,7 @@ type UserTeamHandle interface{}
 
 type PointOfInterestHandle interface {
 	FindAll(ctx context.Context) ([]models.PointOfInterest, error)
-	Capture(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID, attune bool) error
+	Capture(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID, tier int) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error)
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error

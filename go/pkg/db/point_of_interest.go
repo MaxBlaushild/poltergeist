@@ -72,10 +72,16 @@ func (c *pointOfInterestHandle) FindByMatchID(ctx context.Context, matchID uuid.
 	return pointsOfInterest, nil
 }
 
-func (c *pointOfInterestHandle) Capture(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID, attune bool) error {
-	updates := models.PointOfInterestTeam{
-		Attuned:  attune,
-		Captured: !attune,
+func (c *pointOfInterestHandle) Capture(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID, tier int) error {
+	updates := models.PointOfInterestTeam{}
+
+	switch tier {
+	case 1:
+		updates.FirstTierCaptured = true
+	case 2:
+		updates.SecondTierCaptured = true
+	case 3:
+		updates.ThirdTierCaptured = true
 	}
 
 	return c.db.WithContext(ctx).Model(&models.PointOfInterestTeam{}).Where("team_id = ? AND point_of_interest_id = ?", teamID, pointOfInterestID).Updates(&updates).Error
@@ -86,8 +92,6 @@ func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uu
 		TeamID:            teamID,
 		PointOfInterestID: pointOfInterestID,
 		Unlocked:          true,
-		Captured:          false,
-		Attuned:           false,
 	}
 
 	return c.db.WithContext(ctx).Create(&unlock).Error
