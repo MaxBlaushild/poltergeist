@@ -6,6 +6,8 @@ import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { PointOfInterest, Team, hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { Button } from './shared/Button.tsx';
+import { TabItem, TabNav } from './shared/TabNav.tsx';
+import { generateColorFromTeamName } from '../utils/generateColor.ts';
 
 mapboxgl.accessToken =
   'REDACTED';
@@ -177,10 +179,22 @@ const PointOfInterestPanel = ({
     <div className="flex flex-col items-center gap-4">
       <h3 className="text-2xl font-bold">{hasDiscovered ? pointOfInterest.name : 'Uncharted Waters'}</h3>
       <img src={hasDiscovered ? pointOfInterest.imageURL : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`} alt={pointOfInterest.name}/>
+      <StatusIndicator tier={2} teamName={"Velvet Donkeytron"} yourTeamName={"dicks"} />
+      {hasDiscovered && <TabNav tabs={['Info', 'Tier I', 'Tier II', 'Tier III']}>
+        <TabItem key="Info">
+          <p className="text-md text-left">{pointOfInterest.description}</p>
+        </TabItem>
+        <TabItem key="Tier I">
+          <p className="text-md text-left">{pointOfInterest.tierOneChallenge}</p>
+        </TabItem>
+        <TabItem key="Tier II">
+          <p className="text-md text-left">{pointOfInterest.tierTwoChallenge}</p>
+        </TabItem>
+        <TabItem key="Tier III">
+          <p className="text-md text-left">{pointOfInterest.tierThreeChallenge}</p>
+        </TabItem>
+      </TabNav>}
       {!hasDiscovered && <p className="text-xl text-left"><span className="font-bold">Clue:</span> {pointOfInterest.clue}</p>}
-      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">I:</span> {pointOfInterest.tierOneChallenge}</p>}
-      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">II:</span> {pointOfInterest.tierTwoChallenge}</p>}
-      {hasDiscovered && <p className="text-xl text-left"><span className="font-bold">III:</span> {pointOfInterest.tierThreeChallenge}</p>}
       {!hasDiscovered && <Button onClick={() => {
         navigator.geolocation.getCurrentPosition((position) => {
           unlockPointOfInterest(pointOfInterest.id, usersTeam.id, pointOfInterest.lat, pointOfInterest.lng);
@@ -188,4 +202,51 @@ const PointOfInterestPanel = ({
       }} title="I'm here!" />}
     </div>
   );
+};
+
+type StatusCircleProps = {
+  color: string;
+}
+
+type StatusIndicatorProps = {
+  tier?: number | null;
+  teamName?: string | null;
+  yourTeamName: string;
+}
+
+const StatusCircle = ({ status }: { status: 'discovered' | 'unclaimed' | 'claimed' }) => {
+  return <div style={{ width: '25px', height: '25px', backgroundColor: 'grey', borderRadius: '50%' }}></div>;
+};
+
+const StatusIndicator = ({ tier, teamName, yourTeamName }: StatusIndicatorProps) => {
+  let color = 'grey';
+  let text = 'Unclaimed';
+
+  if (tier && teamName) {
+    color = generateColorFromTeamName(teamName);
+
+    if (teamName === yourTeamName) {
+      text = 'Owned by you';
+    } else {
+      text = `${teamName}`;
+    }
+  }
+
+  const numCircles: number[] = [];
+  if (!tier) {
+    numCircles.push(1);
+  } else {
+    for (let i = 0; i < tier; i++) {
+      numCircles.push(1);
+    }
+  }
+
+  return <div className="flex space-between justify-between items-center w-full">
+    <div className="flex space-x-2">
+      {numCircles.map((circle, index) => (
+        <div key={index} style={{ width: '25px', height: '25px', backgroundColor: color, borderRadius: '50%' }}></div>
+      ))}
+    </div>
+    <p className="text-md font-bold">{text}</p>
+  </div>;
 };

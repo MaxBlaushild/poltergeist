@@ -4,7 +4,7 @@ export interface PointOfInterestTeam {
     updatedAt: Date;
     teamId: string;
     pointOfInterestId: string;
-    unlocked: boolean;
-    captured: boolean;
-    attuned: boolean;
+    tierOneCaptured: boolean;
+    tierTwoCaptured: boolean;
+    tierThreeCaptured: boolean;
 }
