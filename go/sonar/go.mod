@@ -6,6 +6,7 @@ toolchain go1.21.3
 
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
+	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
@@ -21,6 +22,7 @@ replace (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/encoding v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
@@ -28,6 +30,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.0 // indirect
@@ -51,6 +54,7 @@ require (
 	github.com/jackc/pgx/v5 v5.3.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect

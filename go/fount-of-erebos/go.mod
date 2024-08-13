@@ -18,11 +18,12 @@ replace (
 
 require (
 	github.com/gin-gonic/gin v1.9.0
-	github.com/sashabaranov/go-openai v1.9.5
+	github.com/sashabaranov/go-openai v1.28.1
 	github.com/spf13/viper v1.16.0
 )
 
 require (
+	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000 // indirect
 	github.com/bytedance/sonic v1.8.0 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20221115062448-fe3a3abad311 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect

@@ -5,6 +5,7 @@ import (
 
 	"github.com/MaxBlaushild/fount-of-erebos/internal/config"
 	"github.com/MaxBlaushild/fount-of-erebos/internal/open_ai"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,9 +27,7 @@ func main() {
 	})
 
 	router.POST("/consult", func(ctx *gin.Context) {
-		var consultQuestion struct {
-			Question string `json:"question" binding:"required"`
-		}
+		var consultQuestion deep_priest.QuestionWithImage
 
 		if err := ctx.Bind(&consultQuestion); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{
@@ -42,6 +41,23 @@ func main() {
 			ctx.JSON(http.StatusInternalServerError, gin.H{
 				"message": "something went wrong",
 			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"answer": answer})
+	})
+
+	router.POST("/consultWithImage", func(ctx *gin.Context) {
+		var judgeSubmission deep_priest.QuestionWithImage
+
+		if err := ctx.Bind(&judgeSubmission); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "question must be included"})
+			return
+		}
+
+		answer, err := openApiClient.GetAnswerWithImage(ctx, judgeSubmission.Question, judgeSubmission.Image)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
 			return
 		}
 

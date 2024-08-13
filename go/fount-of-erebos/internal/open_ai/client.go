@@ -2,7 +2,6 @@ package open_ai
 
 import (
 	"context"
-	"fmt"
 
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -27,7 +26,7 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 	resp, err := c.ai.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo0301,
+			Model: openai.GPT4o,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
@@ -37,8 +36,38 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 		},
 	)
 
-	fmt.Println(resp)
-	fmt.Println(err)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error) {
+	resp, err := c.ai.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4o,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role: openai.ChatMessageRoleUser,
+					MultiContent: []openai.ChatMessagePart{
+						{
+							Type: openai.ChatMessagePartTypeText,
+							Text: q,
+						},
+						{
+							Type: openai.ChatMessagePartTypeImageURL,
+							ImageURL: &openai.ChatMessageImageURL{
+								URL:    imageUrl,
+								Detail: openai.ImageURLDetailAuto,
+							},
+						},
+					},
+				},
+			},
+		},
+	)
 
 	if err != nil {
 		return "", err

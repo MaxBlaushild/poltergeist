@@ -14,11 +14,16 @@ type DeepPriest interface {
 }
 
 type Question struct {
-	Question string `json:"question"`
+	Question string `json:"question" binding:"required"`
 }
 
 type Answer struct {
 	Answer string `json:"answer"`
+}
+
+type QuestionWithImage struct {
+	Question string `json:"question" binding:"required"`
+	Image    string `json:"image" binding:"required"`
 }
 
 const (
