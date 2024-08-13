@@ -62,7 +62,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
 	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
 	r.POST("/sonar/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterest))
-	r.POST("/sonar/crystal/capture", middleware.WithAuthentication(s.authClient, s.createCrystalCapture))
+	r.POST("/sonar/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterest))
 	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
 	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.getNeighbors))
 	r.POST("/sonar/matches/:id/start", middleware.WithAuthentication(s.authClient, s.startMatch))
@@ -1128,29 +1128,29 @@ func (s *server) createPointOfInterest(c *gin.Context) {
 }
 
 func (s *server) unlockPointOfInterest(c *gin.Context) {
-	var crystalUnlockRequest struct {
+	var pointOfInterestUnlockRequest struct {
 		TeamID            string `json:"teamId" binding:"required"`
 		PointOfInterestID string `json:"pointOfInterestId" binding:"required"`
 		Lat               string `json:"lat" binding:"required"`
 		Lng               string `json:"lng" binding:"required"`
 	}
 
-	if err := c.Bind(&crystalUnlockRequest); err != nil {
+	if err := c.Bind(&pointOfInterestUnlockRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit crystal unlock request",
+			"message": "shit poi unlock request",
 		})
 		return
 	}
 
-	pointOfInterestID, err := uuid.Parse(crystalUnlockRequest.PointOfInterestID)
+	pointOfInterestID, err := uuid.Parse(pointOfInterestUnlockRequest.PointOfInterestID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit crystal id",
+			"message": "shit poi id",
 		})
 		return
 	}
 
-	teamID, err := uuid.Parse(crystalUnlockRequest.TeamID)
+	teamID, err := uuid.Parse(pointOfInterestUnlockRequest.TeamID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "shit team id",
@@ -1174,12 +1174,12 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid longitude format"})
 		return
 	}
-	latReq, err := strconv.ParseFloat(crystalUnlockRequest.Lat, 64)
+	latReq, err := strconv.ParseFloat(pointOfInterestUnlockRequest.Lat, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request latitude format"})
 		return
 	}
-	lngReq, err := strconv.ParseFloat(crystalUnlockRequest.Lng, 64)
+	lngReq, err := strconv.ParseFloat(pointOfInterestUnlockRequest.Lng, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request longitude format"})
 		return
@@ -1204,29 +1204,29 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	})
 }
 
-func (s *server) createCrystalCapture(c *gin.Context) {
-	var captureCrystalRequest struct {
+func (s *server) capturePointOfInterest(c *gin.Context) {
+	var capturePointOfInterestRequest struct {
 		PointOfInterestID string `json:"pointOfInterestId" binding:"required"`
 		TeamID            string `json:"teamId" binding:"required"`
-		Attune            bool   `json:"attune"`
+		Tier              int    `json:"tier" binding:"required"`
 	}
 
-	if err := c.Bind(&captureCrystalRequest); err != nil {
+	if err := c.Bind(&capturePointOfInterestRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
 		})
 		return
 	}
 
-	pointOfInterestID, err := uuid.Parse(captureCrystalRequest.PointOfInterestID)
+	pointOfInterestID, err := uuid.Parse(capturePointOfInterestRequest.PointOfInterestID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit crystal id",
+			"message": "shit poi id",
 		})
 		return
 	}
 
-	teamID, err := uuid.Parse(captureCrystalRequest.TeamID)
+	teamID, err := uuid.Parse(capturePointOfInterestRequest.TeamID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": "shit team id",
@@ -1234,7 +1234,7 @@ func (s *server) createCrystalCapture(c *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Capture(c, pointOfInterestID, teamID, captureCrystalRequest.Attune); err != nil {
+	if err := s.dbClient.PointOfInterest().Capture(c, pointOfInterestID, teamID, capturePointOfInterestRequest.Tier); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -1262,13 +1262,6 @@ func (s *server) createCrystalCapture(c *gin.Context) {
 		return
 	}
 
-	var capturedOrAttuned string
-	if captureCrystalRequest.Attune {
-		capturedOrAttuned = "attuned"
-	} else {
-		capturedOrAttuned = "captured"
-	}
-
 	var capturingTeam models.Team
 	for _, team := range teams {
 		if team.ID == teamID {
@@ -1286,7 +1279,7 @@ func (s *server) createCrystalCapture(c *gin.Context) {
 		s.texterClient.Text(c, &texter.Text{
 			To:   user.PhoneNumber,
 			From: s.config.Public.PhoneNumber,
-			Body: fmt.Sprintf("%s team has %s %s.", capturingTeam.Name, capturedOrAttuned, pointOfInterest.Name),
+			Body: fmt.Sprintf("%s has captured %s at tier %d.", capturingTeam.Name, pointOfInterest.Name, capturePointOfInterestRequest.Tier),
 		})
 	}
 
