@@ -1,3 +1,4 @@
+import { PointOfInterestTeam } from "./pointOfInterestTeam";
 export interface PointOfInterest {
     id: string;
     createdAt: Date;
@@ -12,3 +13,4 @@ export interface PointOfInterest {
     imageURL: string;
     description: string;
 }
+export declare const getControllingTeamForPoi: (pointOfInterest: PointOfInterest, pointOfInterestTeams: PointOfInterestTeam[]) => PointOfInterestTeam | null;

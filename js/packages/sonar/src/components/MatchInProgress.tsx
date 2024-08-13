@@ -3,11 +3,12 @@ import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
 import './MatchInProgress.css';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
-import { PointOfInterest, Team, hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
+import { PointOfInterest, Team, getControllingTeamForPoi, hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { Button } from './shared/Button.tsx';
 import { TabItem, TabNav } from './shared/TabNav.tsx';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
+import Divider from './shared/Divider.tsx';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -143,7 +144,7 @@ export const MatchInProgress = () => {
           zIndex: 1,
         }}
       />
-      <div
+      {match &&<div
         onClick={handleDrawerClick}
         className="Match__bottomDrawer"
         style={{
@@ -159,9 +160,9 @@ export const MatchInProgress = () => {
         }}
       >
         {selectedPointOfInterest && usersTeam && (
-          <PointOfInterestPanel pointOfInterest={selectedPointOfInterest} usersTeam={usersTeam} />
+          <PointOfInterestPanel pointOfInterest={selectedPointOfInterest} usersTeam={usersTeam} allTeams={match.teams} />
         )}
-      </div>
+      </div>}
     </div>
   );
 };
@@ -169,17 +170,22 @@ export const MatchInProgress = () => {
 const PointOfInterestPanel = ({
   pointOfInterest,
   usersTeam,
+  allTeams,
 }: {
   pointOfInterest: PointOfInterest;
   usersTeam: Team;
+  allTeams: Team[];
 }) => {
   const { unlockPointOfInterest } = useMatchContext();
   const hasDiscovered = hasTeamDiscoveredPointOfInterest(usersTeam, pointOfInterest);
+  const controllingTeamCapture = getControllingTeamForPoi(pointOfInterest, allTeams.map((team) => team.pointOfInterestTeams).flat());
+  const controllingTeam = allTeams.find((team) => team.id === controllingTeamCapture?.teamId);
+
   return (
     <div className="flex flex-col items-center gap-4">
       <h3 className="text-2xl font-bold">{hasDiscovered ? pointOfInterest.name : 'Uncharted Waters'}</h3>
       <img src={hasDiscovered ? pointOfInterest.imageURL : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`} alt={pointOfInterest.name}/>
-      <StatusIndicator tier={2} teamName={"Velvet Donkeytron"} yourTeamName={"dicks"} />
+      <StatusIndicator tier={controllingTeamCapture?.captureTier} teamName={controllingTeam?.name} yourTeamName={usersTeam.name} />
       {hasDiscovered && <TabNav tabs={['Info', 'Tier I', 'Tier II', 'Tier III']}>
         <TabItem key="Info">
           <p className="text-md text-left">{pointOfInterest.description}</p>
