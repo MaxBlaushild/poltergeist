@@ -25,7 +25,7 @@ export const SelectBattleArena = () => {
                   title="Choose"
                   disabled={loading}
                   onClick={() => {
-                    createMatch(poiGroup.pointsOfInterest.map((poi) => poi.ID));
+                    createMatch(poiGroup.pointsOfInterest.map((poi) => poi.id));
                     navigate('/match');
                   }}
                 />

@@ -7,6 +7,14 @@
   width: 100%;
 }
 
+.Button__button--primary {
+  background: #fa9eb5;
+}
+
+.Button__button--secondary {
+  background: #b8dbf9;
+}
+
 .Button__button--disabled {
   background: #e0e0e0;
   cursor: not-allowed;

@@ -1,8 +1,12 @@
 import './Divider.css';
 import React from 'react';
 
-const Divider = () => {
-  return <div className="Divider__divider" />;
+type Props = {
+  color?: string;
+};
+
+const Divider = ({ color }: Props) => {
+  return <div className="Divider__divider" style={color ? { backgroundColor: color } : {}} />;
 };
 
 export default Divider;

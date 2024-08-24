@@ -1,14 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
+import polyline from '@mapbox/polyline';
 import { createRoot } from 'react-dom/client';
 import './MatchInProgress.css';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
-import { PointOfInterest, Team, getControllingTeamForPoi, hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
+import {
+  PointOfInterest,
+  Team,
+  getControllingTeamForPoi,
+  hasTeamDiscoveredPointOfInterest,
+} from '@poltergeist/types';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
-import { Button } from './shared/Button.tsx';
+import { Button, ButtonSize } from './shared/Button.tsx';
 import { TabItem, TabNav } from './shared/TabNav.tsx';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import Divider from './shared/Divider.tsx';
+import { useSwipeable } from 'react-swipeable';
+import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
+import { SubmitAnswerForChallenge } from './SubmitAnswerForChallenge.tsx';
+import {
+  XMarkIcon,
+  LockClosedIcon,
+  LockOpenIcon,
+} from '@heroicons/react/20/solid';
+import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
+import { Drawer } from './Drawer.tsx';
+import { Scoreboard } from './Scoreboard.tsx';
+import { Inventory } from './Inventory.tsx';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -16,22 +34,98 @@ mapboxgl.accessToken =
 const Marker = ({
   pointOfInterest,
   index,
-  onClick,
+  zoom,
   usersTeam,
+  onClick,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
+  zoom: number;
+  usersTeam: Team | null;
   onClick: (e: React.MouseEvent) => void;
-  usersTeam: Team;
 }) => {
-  const hasDiscovered = hasTeamDiscoveredPointOfInterest(usersTeam, pointOfInterest);
-  const imageUrl = hasDiscovered ? pointOfInterest.imageURL : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index + 1) % 6}.png`;
+  const hasDiscovered = hasTeamDiscoveredPointOfInterest(
+    usersTeam!,
+    pointOfInterest
+  );
+  const imageUrl = hasDiscovered
+    ? pointOfInterest.imageURL
+    : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index + 1) % 6}.png`;
+
+  let pinSize = 2;
+  console.log(zoom);
+  switch (Math.floor(zoom)) {
+    case 0:
+      pinSize = 4;
+      break;
+    case 1:
+      pinSize = 4;
+      break;
+    case 2:
+      pinSize = 4;
+      break;
+    case 3:
+      pinSize = 4;
+      break;
+    case 4:
+      pinSize = 4;
+      break;
+    case 5:
+      pinSize = 4;
+      break;
+    case 6:
+      pinSize = 4;
+      break;
+    case 7:
+      pinSize = 4;
+      break;
+    case 8:
+      pinSize = 4;
+      break;
+    case 9:
+      pinSize = 5;
+      break;
+    case 10:
+      pinSize = 5;
+      break;
+    case 11:
+      pinSize = 6;
+      break;
+    case 12:
+      pinSize = 8;
+      break;
+    case 13:
+      pinSize = 8;
+      break;
+    case 14:
+      pinSize = 16;
+      break;
+    case 15:
+      pinSize = 16;
+      break;
+    case 16:
+      pinSize = 24;
+      break;
+    case 17:
+      pinSize = 40;
+      break;
+    case 18:
+      pinSize = 40;
+      break;
+    case 19:
+      pinSize = 40;
+      break;
+
+    default:
+      pinSize = 40;
+      break;
+  }
   return (
     <button onClick={onClick} className="marker">
       <img
         src={imageUrl}
         alt={hasDiscovered ? pointOfInterest.name : 'Mystery fortress'}
-        className="w-24 h-24 rounded-lg border-2 border-black"
+        className={`w-${pinSize} h-${pinSize} rounded-lg border-2 border-black`}
       />
     </button>
   );
@@ -48,6 +142,10 @@ export const MatchInProgress = () => {
   const [selectedPointOfInterest, setSelectedPointOfInterest] =
     useState<PointOfInterest | null>(null);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
+  const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
+  const [isInventoryVisible, setIsInventoryVisible] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
   const usersTeam = match?.teams.find((team) =>
     team.users.some((user) => user.id === currentUser?.id)
   );
@@ -60,6 +158,12 @@ export const MatchInProgress = () => {
       setIsPanelVisible(false);
     }
   }, [selectedPointOfInterest]);
+
+  const closePanel = () => {
+    if (isPanelVisible) {
+      setIsPanelVisible(false);
+    }
+  };
 
   useEffect(() => {
     map.current = new mapboxgl.Map({
@@ -88,6 +192,10 @@ export const MatchInProgress = () => {
       setZoom(map.current?.getZoom() ?? 0);
     });
 
+    map.current?.on('zoom', () => {
+      setZoom(map.current?.getZoom() ?? 0);
+    });
+
     return () => map.current?.remove();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -102,18 +210,80 @@ export const MatchInProgress = () => {
     event.stopPropagation();
   };
 
+  console.log(isLeaderboardVisible);
+
   useEffect(() => {
-    if (match && map.current && usersTeam) {
-      console.log(usersTeam);
-      match.pointsOfInterest.forEach((pointOfInterest, i) => {
-        console.log(pointOfInterest);
+    if ((match && map.current && usersTeam, map.current?.isStyleLoaded())) {
+      markers.forEach((marker) => marker.remove());
+      setMarkers([]);
+
+      const poiPairs = match!.pointsOfInterest.flatMap((poi, index, array) =>
+        array.slice(index + 1).map((otherPoi) => [poi, otherPoi])
+      );
+
+      poiPairs.forEach(([prevPoint, pointOfInterest]) => {
+        if (!map.current?.getSource(`${prevPoint.id}-${pointOfInterest.id}`)) {
+          map.current?.addSource(`${prevPoint.id}-${pointOfInterest.id}`, {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: [
+                  [parseFloat(prevPoint.lng) * -1, parseFloat(prevPoint.lat)],
+                  [
+                    parseFloat(pointOfInterest.lng) * -1,
+                    parseFloat(pointOfInterest.lat),
+                  ],
+                ],
+              },
+            },
+          });
+
+          const pointOneControllingInterest =
+            getControllingTeamForPoi(prevPoint);
+          const pointTwoControllingInterest =
+            getControllingTeamForPoi(pointOfInterest);
+
+          let color = 'grey';
+          let opacity = 0.5;
+          if (
+            pointOneControllingInterest?.submission?.teamId ===
+              pointTwoControllingInterest?.submission?.teamId &&
+            pointOneControllingInterest?.submission?.teamId
+          ) {
+            const controllerTeam = match?.teams.find(
+              (team) =>
+                team.id === pointOneControllingInterest?.submission?.teamId
+            );
+            color = generateColorFromTeamName(controllerTeam?.name ?? '');
+            opacity = 1;
+          }
+
+          map.current?.addLayer({
+            id: `${prevPoint.id}-${pointOfInterest.id}`,
+            type: 'line',
+            source: `${prevPoint.id}-${pointOfInterest.id}`,
+            layout: {},
+            paint: {
+              'line-color': color,
+              'line-width': 5,
+              'line-opacity': opacity,
+            },
+          });
+        }
+      });
+
+      match!.pointsOfInterest.forEach((pointOfInterest, i) => {
         const markerDiv = document.createElement('div');
 
         createRoot(markerDiv).render(
           <Marker
             pointOfInterest={pointOfInterest}
             index={i}
-            usersTeam={usersTeam}
+            zoom={zoom}
+            usersTeam={usersTeam ?? null}
             onClick={(e) => {
               e.stopPropagation();
               setSelectedPointOfInterest(pointOfInterest);
@@ -121,15 +291,17 @@ export const MatchInProgress = () => {
           />
         );
 
-        new mapboxgl.Marker(markerDiv)
+        const marker = new mapboxgl.Marker(markerDiv)
           .setLngLat([
             parseFloat(pointOfInterest.lng) * -1,
             parseFloat(pointOfInterest.lat),
           ])
           .addTo(map.current!);
+
+        setMarkers((prevMarkers) => [...prevMarkers, marker]);
       });
     }
-  }, [match, map]);
+  }, [match, map, zoom, usersTeam]);
 
   return (
     <div className="">
@@ -144,115 +316,33 @@ export const MatchInProgress = () => {
           zIndex: 1,
         }}
       />
-      {match &&<div
-        onClick={handleDrawerClick}
-        className="Match__bottomDrawer"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          height: '80vh',
-          transition: 'transform 0.3s ease-in-out',
-          transform: isPanelVisible ? 'translateY(0)' : 'translateY(100%)',
-          zIndex: 2,
-          overflowY: 'scroll',
-        }}
-      >
-        {selectedPointOfInterest && usersTeam && (
-          <PointOfInterestPanel pointOfInterest={selectedPointOfInterest} usersTeam={usersTeam} allTeams={match.teams} />
-        )}
-      </div>}
+      {match && (
+        <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
+          {selectedPointOfInterest && (
+            <PointOfInterestPanel
+              pointOfInterest={selectedPointOfInterest}
+              allTeams={match.teams}
+            />
+          )}
+        </Drawer>
+      )}
+      {match && (
+        <Drawer
+          isVisible={isLeaderboardVisible || isInventoryVisible}
+          onClose={() => {
+            setIsLeaderboardVisible(false);
+            setIsInventoryVisible(false);
+          }}
+          peekHeight={isPanelVisible ? 0 : 80}
+        >
+          <div className="flex justify-between w-full gap-4">
+          {!isLeaderboardVisible && !isInventoryVisible && <Button onClick={() => setIsLeaderboardVisible(true)} title="Leaderboard"></Button>}
+          {!isLeaderboardVisible && !isInventoryVisible && <Button onClick={() => setIsInventoryVisible(true)} title="Inventory"></Button>}
+          </div>
+          {isLeaderboardVisible && <Scoreboard />}
+          {isInventoryVisible && <Inventory />}
+        </Drawer>
+      )}
     </div>
   );
-};
-
-const PointOfInterestPanel = ({
-  pointOfInterest,
-  usersTeam,
-  allTeams,
-}: {
-  pointOfInterest: PointOfInterest;
-  usersTeam: Team;
-  allTeams: Team[];
-}) => {
-  const { unlockPointOfInterest } = useMatchContext();
-  const hasDiscovered = hasTeamDiscoveredPointOfInterest(usersTeam, pointOfInterest);
-  const controllingTeamCapture = getControllingTeamForPoi(pointOfInterest, allTeams.map((team) => team.pointOfInterestTeams).flat());
-  const controllingTeam = allTeams.find((team) => team.id === controllingTeamCapture?.teamId);
-
-  return (
-    <div className="flex flex-col items-center gap-4">
-      <h3 className="text-2xl font-bold">{hasDiscovered ? pointOfInterest.name : 'Uncharted Waters'}</h3>
-      <img src={hasDiscovered ? pointOfInterest.imageURL : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`} alt={pointOfInterest.name}/>
-      <StatusIndicator tier={controllingTeamCapture?.captureTier} teamName={controllingTeam?.name} yourTeamName={usersTeam.name} />
-      {hasDiscovered && <TabNav tabs={['Info', 'Tier I', 'Tier II', 'Tier III']}>
-        <TabItem key="Info">
-          <p className="text-md text-left">{pointOfInterest.description}</p>
-        </TabItem>
-        <TabItem key="Tier I">
-          <p className="text-md text-left">{pointOfInterest.tierOneChallenge}</p>
-        </TabItem>
-        <TabItem key="Tier II">
-          <p className="text-md text-left">{pointOfInterest.tierTwoChallenge}</p>
-        </TabItem>
-        <TabItem key="Tier III">
-          <p className="text-md text-left">{pointOfInterest.tierThreeChallenge}</p>
-        </TabItem>
-      </TabNav>}
-      {!hasDiscovered && <p className="text-xl text-left"><span className="font-bold">Clue:</span> {pointOfInterest.clue}</p>}
-      {!hasDiscovered && <Button onClick={() => {
-        navigator.geolocation.getCurrentPosition((position) => {
-          unlockPointOfInterest(pointOfInterest.id, usersTeam.id, pointOfInterest.lat, pointOfInterest.lng);
-        });
-      }} title="I'm here!" />}
-    </div>
-  );
-};
-
-type StatusCircleProps = {
-  color: string;
-}
-
-type StatusIndicatorProps = {
-  tier?: number | null;
-  teamName?: string | null;
-  yourTeamName: string;
-}
-
-const StatusCircle = ({ status }: { status: 'discovered' | 'unclaimed' | 'claimed' }) => {
-  return <div style={{ width: '25px', height: '25px', backgroundColor: 'grey', borderRadius: '50%' }}></div>;
-};
-
-const StatusIndicator = ({ tier, teamName, yourTeamName }: StatusIndicatorProps) => {
-  let color = 'grey';
-  let text = 'Unclaimed';
-
-  if (tier && teamName) {
-    color = generateColorFromTeamName(teamName);
-
-    if (teamName === yourTeamName) {
-      text = 'Owned by you';
-    } else {
-      text = `${teamName}`;
-    }
-  }
-
-  const numCircles: number[] = [];
-  if (!tier) {
-    numCircles.push(1);
-  } else {
-    for (let i = 0; i < tier; i++) {
-      numCircles.push(1);
-    }
-  }
-
-  return <div className="flex space-between justify-between items-center w-full">
-    <div className="flex space-x-2">
-      {numCircles.map((circle, index) => (
-        <div key={index} style={{ width: '25px', height: '25px', backgroundColor: color, borderRadius: '50%' }}></div>
-      ))}
-    </div>
-    <p className="text-md font-bold">{text}</p>
-  </div>;
 };

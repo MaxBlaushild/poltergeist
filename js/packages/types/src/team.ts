@@ -11,15 +11,6 @@ export type Team = {
   pointOfInterestTeams: PointOfInterestTeam[];
 };
 
-export const hasTeamDiscoveredPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id);
+export const hasTeamDiscoveredPointOfInterest = (team: Team | undefined, pointOfInterest: PointOfInterest) => {
+  return team?.pointOfInterestTeams?.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id);
 };
-
-export const hasTeamCapturedPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id && pointOfInterestTeam.captured);
-};
-
-export const hasTeamAttunedPointOfInterest = (team: Team, pointOfInterest: PointOfInterest) => {
-  return team?.pointOfInterestTeams.some((pointOfInterestTeam) => pointOfInterestTeam.pointOfInterestId === pointOfInterest.id && pointOfInterestTeam.attuned);
-};
-

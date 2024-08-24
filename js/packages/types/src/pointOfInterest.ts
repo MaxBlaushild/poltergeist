@@ -1,3 +1,5 @@
+import { PointOfInterestChallenge } from "./pointOfInterestChallenge";
+import { PointOfInterestChallengeSubmission } from "./pointOfInterestChallengeSubmission";
 import { PointOfInterestTeam } from "./pointOfInterestTeam";
 
 export interface PointOfInterest {
@@ -6,23 +8,27 @@ export interface PointOfInterest {
     updatedAt: Date;
     name: string;
     clue: string;
-    tierOneChallenge: string;
-    tierTwoChallenge: string;
-    tierThreeChallenge: string;
     lat: string;
     lng: string;
     imageURL: string;
     description: string;
+	pointOfInterestChallenges: PointOfInterestChallenge[];
 }
 
-export const getControllingTeamForPoi = (pointOfInterest: PointOfInterest, pointOfInterestTeams: PointOfInterestTeam[]) => {
-	const teams = pointOfInterestTeams.filter(team => team.pointOfInterestId === pointOfInterest.id);
-	if (!teams.length) {
-		return null;
+export const getControllingTeamForPoi = (pointOfInterest: PointOfInterest): { submission: PointOfInterestChallengeSubmission | null, challenge: PointOfInterestChallenge | null } => {
+	const sortedChallenges = pointOfInterest.pointOfInterestChallenges.sort((a, b) => b.tier - a.tier);
+	let firstCorrectSubmission = null;
+	let associatedChallenge = null;
+
+	for (const challenge of sortedChallenges) {
+		const correctSubmissions = challenge.pointOfInterestChallengeSubmissions?.filter(submission => submission.isCorrect);
+
+		if (correctSubmissions?.length > 0) {
+			firstCorrectSubmission = correctSubmissions[0];
+			associatedChallenge = challenge;
+			break;
+		}
 	}
-	const highestTierTeam = teams.reduce((prev, current) => {
-		return (current.captureTier > prev.captureTier) ? current : prev;
-	});
-	return highestTierTeam;
-}
 
+	return { submission: firstCorrectSubmission, challenge: associatedChallenge };
+};

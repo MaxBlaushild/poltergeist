@@ -4,5 +4,4 @@ export interface PointOfInterestTeam {
     updatedAt: Date;
     teamId: string;
     pointOfInterestId: string;
-    captureTier: number;
 }

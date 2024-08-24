@@ -27,7 +27,7 @@ func main() {
 	})
 
 	router.POST("/consult", func(ctx *gin.Context) {
-		var consultQuestion deep_priest.QuestionWithImage
+		var consultQuestion deep_priest.Question
 
 		if err := ctx.Bind(&consultQuestion); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{

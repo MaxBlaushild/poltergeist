@@ -28,6 +28,7 @@ type DbClient interface {
 	Match() MatchHandle
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
+	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -66,6 +67,7 @@ type TeamHandle interface {
 	Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error)
 	AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error
 	RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error
+	UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) (*models.Team, error)
 }
 
 type UserTeamHandle interface{}
@@ -161,4 +163,9 @@ type PointOfInterestGroupHandle interface {
 	Create(ctx context.Context, pointOfInterestIDs []uuid.UUID, name string) (*models.PointOfInterestGroup, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error)
 	FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error)
+}
+
+type PointOfInterestChallengeHandle interface {
+	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
 }

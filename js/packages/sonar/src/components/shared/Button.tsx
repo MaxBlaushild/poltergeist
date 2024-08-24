@@ -8,6 +8,12 @@ export enum ButtonSize {
   LARGE = 'large',
 }
 
+export enum ButtonColor {
+  PRIMARY = 'primary',
+  SECONDARY = 'secondary',
+  TERTIARY = 'tertiary',
+}
+
 // .Button__button--small {
 //   padding: 8px 16px;
 //   font-size: 12px;
@@ -28,6 +34,7 @@ type ButtonProps = {
   className?: string;
   onClick?: () => void;
   buttonSize?: ButtonSize;
+  buttonColor?: ButtonColor;
   disabled?: boolean;
 };
 
@@ -37,6 +44,7 @@ export const Button = ({
   className,
   disabled = false,
   buttonSize = ButtonSize.MEDIUM,
+  buttonColor = ButtonColor.PRIMARY,
 }: ButtonProps) => {
   const buttonClasses: string[] = [];
 
@@ -48,6 +56,14 @@ export const Button = ({
     buttonClasses.push('Button__button--disabled');
   } else {
     buttonClasses.push('Button__button');
+  }
+
+  if (className) {
+    buttonClasses.push(className);
+  }
+
+  if (buttonColor) {
+    buttonClasses.push(`Button__button--${buttonColor}`);
   }
 
   return (

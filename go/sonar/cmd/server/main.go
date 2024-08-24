@@ -2,9 +2,12 @@ package main
 
 import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/server"
 )
 
@@ -25,10 +28,13 @@ func main() {
 		panic(err)
 	}
 
+	deepPriest := deep_priest.SummonDeepPriest()
 	texterClient := texter.NewClient()
 	authClient := auth.NewClient()
+	awsClient := aws.NewAWSClient("us-east-1")
+	judgeClient := judge.NewClient(awsClient, dbClient, deepPriest)
 
-	s := server.NewServer(authClient, texterClient, dbClient, cfg)
+	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient)
 
 	s.ListenAndServe("8042")
 }

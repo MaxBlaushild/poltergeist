@@ -18,7 +18,7 @@ type matchHandle struct {
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
 	if err := h.db.WithContext(ctx).
-		Preload("PointsOfInterest").
+		Preload("PointsOfInterest.PointOfInterestChallenges.PointOfInterestChallengeSubmissions").
 		Preload("Teams.Users").
 		Preload("Teams.PointOfInterestTeams").
 		Where("id = ?", id).First(&match).Error; err != nil {
@@ -26,6 +26,23 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 			return nil, nil
 		}
 		return nil, err
+	}
+
+	teamIDs := make(map[uuid.UUID]bool)
+	for _, team := range match.Teams {
+		teamIDs[team.ID] = true
+	}
+
+	for i, poiTeam := range match.PointsOfInterest {
+		for j, poiChallenge := range poiTeam.PointOfInterestChallenges {
+			filteredSubmissions := []models.PointOfInterestChallengeSubmission{}
+			for _, submission := range poiChallenge.PointOfInterestChallengeSubmissions {
+				if teamIDs[submission.TeamID] {
+					filteredSubmissions = append(filteredSubmissions, submission)
+				}
+			}
+			match.PointsOfInterest[i].PointOfInterestChallenges[j].PointOfInterestChallengeSubmissions = filteredSubmissions
+		}
 	}
 	return &match, nil
 }

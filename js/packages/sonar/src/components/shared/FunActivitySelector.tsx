@@ -102,7 +102,6 @@ export const FunActivitySelector: React.FC<ActivitySelectorProps> = ({
 
           // Add event listener for all click-like events (click, touchend)
           const handleClickLikeEvents = (event) => {
-            console.log('Element clicked');
             newDiv.style.transform = 'scale(1.4)';
             setSelectedActivityIds((prevIds) => {
               if (!prevIds.includes(activity.id)) {

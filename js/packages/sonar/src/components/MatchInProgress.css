@@ -10,5 +10,8 @@
     align-items: center;
     text-align: center;
     border-radius: 8px;
+    overflow-y: scroll;
+    margin-top: 90px;
     gap: 8px;
   }
+

@@ -29,8 +29,7 @@ export function Dashboard(props: DashboardProps) {
         )}
         <Button
           title="Single player"
-          disabled={true}
-          onClick={() => navigate('/new-survey')}
+                onClick={() => navigate('/single-player')}
         />
         <Button
           title="Co-op"
@@ -42,7 +41,7 @@ export function Dashboard(props: DashboardProps) {
             title="Battle mode"
             onClick={() => navigate('/select-battle-arena')}
         />)}
-        <Button
+        {/* <Button
           title="Invite new crew members"
           onClick={() => navigate('/new-survey')}
         />
@@ -50,7 +49,7 @@ export function Dashboard(props: DashboardProps) {
           title="View crew manifest"
           disabled={isLoading || surveys.length === 0}
           onClick={() => navigate('/assemble-crew')}
-        />
+        /> */}
       </div>
     </div>
   );
