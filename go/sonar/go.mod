@@ -24,6 +24,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/encoding v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000 // indirect

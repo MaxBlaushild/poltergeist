@@ -255,8 +255,8 @@ module "ecs" {
 
   services = {
     sonar_core = {
-      cpu = 1024
-      memory = 2048
+      cpu = 2048
+      memory = 4096
 
       container_definitions = {
         "core" = {
@@ -291,6 +291,25 @@ module "ecs" {
               name          = "authenticator"
               containerPort = 8089
               hostPort      = 8089
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "fount-of-erebos" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name      = "OPEN_AI_KEY",
+            valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
+          }]
+          image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "fount-of-erebos"
+              containerPort = 8081
+              hostPort      = 8081
               protocol      = "tcp"
             }
           ]
@@ -506,12 +525,6 @@ resource "aws_service_discovery_http_namespace" "sonar_namespace" {
   tags        = local.tags
 }
 
-data "aws_acm_certificate" "cert" {
-  domain      = "digigeist.com"
-  statuses    = ["ISSUED"]
-  most_recent = true
-}
-
 data "aws_acm_certificate" "guesswith_us_cert" {
   domain      = "*.guesswith.us"
   statuses    = ["ISSUED"]
@@ -558,21 +571,6 @@ module "sonar_alb_sg" {
 
   tags = local.tags
 }
-
-resource "aws_route53_record" "record" {
-  zone_id = "Z0649695PXJXXKD92YP0"
-  name    = "digigeist.com"
-  type    = "A"
-
-  alias {
-    name                   = module.alb.lb_dns_name
-    zone_id                = module.alb.lb_zone_id
-    evaluate_target_health = true
-  }
-}
-
-# Z03463592IC0THZ8KS8VR
-
 
 resource "aws_route53_record" "api_guesswith_us_record" {
   zone_id = "Z02223351NOY9TTILWBS2"

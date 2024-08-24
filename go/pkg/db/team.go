@@ -22,6 +22,16 @@ func (h *teamHandle) GetAll(ctx context.Context) ([]models.Team, error) {
 	return teams, nil
 }
 
+func (h *teamHandle) UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) (*models.Team, error) {
+	var team models.Team
+
+	if err := h.db.WithContext(ctx).Model(&models.Team{}).Where("id = ?", teamID).Update("name", name).Error; err != nil {
+		return nil, err
+	}
+
+	return &team, nil
+}
+
 func (h *teamHandle) GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.Team, error) {
 	var teams []models.Team
 

@@ -8,10 +8,21 @@ import React, {
 import { useAPI, useAuth } from '@poltergeist/contexts';
 import { Match, Team } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
+import { useMediaContext } from './MediaContext.tsx';
+import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
+
+export type Judgement = {
+  judgement: boolean;
+  reason: string;
+};
+
+export type CapturePointOfInterestResponse = {
+  challenge: PointOfInterestChallengeSubmission;
+  judgement: Judgement;
+};
 
 interface MatchContextType {
   match: Match | null;
-
   createMatch: (pointsOfInterestIds: string[]) => Promise<void>;
   getMatch: (matchId: string) => Promise<void>;
   isCreatingMatch: boolean;
@@ -24,12 +35,16 @@ interface MatchContextType {
   leaveMatch: () => Promise<void>;
   isLeavingMatch: boolean;
   leaveMatchError: string | null;
+  editTeamName: (teamId: string, name: string) => Promise<void>;
+  usersTeam: Team | undefined;
+  attemptCapturePointOfInterest: (teamId: string, challengeId: string, text: string, image: File | undefined) => Promise<CapturePointOfInterestResponse | undefined>;
   unlockPointOfInterest: (
     pointOfInterestId: string,
     teamId: string,
     lat: string,
     lng: string
   ) => Promise<void>;
+  
 }
 
 export const MatchContext = createContext<MatchContextType | undefined>(
@@ -52,6 +67,7 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const { apiClient } = useAPI();
   const [match, setMatch] = useState<Match | null>(null);
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+  const { uploadMedia, getPresignedUploadURL, openCameraAndCaptureImage } = useMediaContext();
   const { currentUser } = useUserProfiles();
   const [isCurrentMatchLoading, setIsCurrentMatchLoading] = useState(true);
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
@@ -61,13 +77,19 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [joinTeamError, setJoinTeamError] = useState<string | null>(null);
   const [leaveMatchError, setLeaveMatchError] = useState<string | null>(null);
   const [isLeavingMatch, setIsLeavingMatch] = useState(false);
+  const [usersTeam, setUsersTeam] = useState<Team | undefined>(undefined);
   const userID = currentUser?.id;
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  useEffect(() => {
+    if (!match) return;
+    setUsersTeam(match.teams.find((team) => team.users.some((user) => user.id === userID)));
+  }, [match, userID]);
 
   const createTeam = useCallback(async () => {
     if (!match) return;
     try {
       setIsCreatingTeam(true);
-      console.log('userID', userID);
       const response = await apiClient.post<Team>(
         `/sonar/matches/${match?.id}/teams`,
         {
@@ -181,6 +203,32 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
     [apiClient, userID]
   );
 
+  const editTeamName = useCallback(async (teamId: string, name: string) => {
+    await apiClient.post(`/sonar/teams/${teamId}/edit`, {
+      name,
+    });
+    getCurrentMatch();
+  }, [apiClient, getCurrentMatch]);
+
+  const attemptCapturePointOfInterest = useCallback(async (teamId: string, challengeId: string, text: string, image?: File | undefined): Promise<CapturePointOfInterestResponse | undefined> => {
+    const key = `${teamId}/${challengeId}.webp`;
+    let imageUrl = '';
+
+    if (image) {
+      const presignedUrl = await getPresignedUploadURL("crew-points-of-interest", key);
+      if (!presignedUrl) return;
+      await uploadMedia(presignedUrl, image);
+      imageUrl = presignedUrl.split("?")[0];
+    }
+
+    return await apiClient.post(`/sonar/pointOfInterest/challenge`, {
+      teamId,
+      challengeId,
+      textSubmission: text,
+      imageSubmissionUrl: imageUrl,
+    });
+  }, [apiClient]);
+
   return (
     <MatchContext.Provider
       value={{
@@ -197,7 +245,10 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
         leaveMatch,
         isLeavingMatch,
         leaveMatchError,
+        usersTeam,
+        editTeamName,
         unlockPointOfInterest,
+        attemptCapturePointOfInterest,
       }}
     >
       {children}

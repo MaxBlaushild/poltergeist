@@ -9,6 +9,4 @@ export type Team = {
     users: User[];
     pointOfInterestTeams: PointOfInterestTeam[];
 };
-export declare const hasTeamDiscoveredPointOfInterest: (team: Team, pointOfInterest: PointOfInterest) => boolean;
-export declare const hasTeamCapturedPointOfInterest: (team: Team, pointOfInterest: PointOfInterest) => boolean;
-export declare const hasTeamAttunedPointOfInterest: (team: Team, pointOfInterest: PointOfInterest) => boolean;
+export declare const hasTeamDiscoveredPointOfInterest: (team: Team | undefined, pointOfInterest: PointOfInterest) => boolean | undefined;

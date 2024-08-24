@@ -5,14 +5,17 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -27,14 +30,16 @@ type server struct {
 	texterClient texter.Client
 	dbClient     db.DbClient
 	config       *config.Config
+	awsClient    aws.AWSClient
+	judgeClient  judge.Client
 }
 
 type Server interface {
 	ListenAndServe(port string)
 }
 
-func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.DbClient, config *config.Config) Server {
-	return &server{authClient: authClient, texterClient: texterClient, dbClient: dbClient, config: config}
+func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.DbClient, config *config.Config, awsClient aws.AWSClient, judgeClient judge.Client) Server {
+	return &server{authClient: authClient, texterClient: texterClient, dbClient: dbClient, config: config, awsClient: awsClient, judgeClient: judgeClient}
 }
 
 func (s *server) ListenAndServe(port string) {
@@ -76,6 +81,9 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/pointsOfInterest/group", middleware.WithAuthentication(s.authClient, s.createPointOfInterestGroup))
 	r.GET("/sonar/pointsOfInterest/groups", s.getPointsOfInterestGroups)
 	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.getCurrentMatch))
+	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.getPresignedUploadUrl))
+	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.submitAnswerPointOfInterestChallenge))
+	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.editTeamName))
 
 	r.Run(":8042")
 }
@@ -92,6 +100,110 @@ func (s *server) populateProfilesForMatch(ctx *gin.Context, userID uuid.UUID, ma
 	}
 
 	return nil
+}
+
+func (s *server) editTeamName(ctx *gin.Context) {
+	stringTeamID := ctx.Param("teamID")
+	if stringTeamID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "team ID is required",
+		})
+		return
+	}
+
+	teamID, err := uuid.Parse(stringTeamID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid team ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Name string `binding:"required" json:"name"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	team, err := s.dbClient.Team().UpdateTeamName(ctx, teamID, requestBody.Name)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, team)
+}
+
+func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var requestBody struct {
+		ChallengeID        uuid.UUID `binding:"required" json:"challengeID"`
+		TeamID             uuid.UUID `binding:"required" json:"teamID"`
+		TextSubmission     string    ` json:"textSubmission"`
+		ImageSubmissionUrl string    ` json:"imageSubmissionUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	submission, err := s.judgeClient.JudgeSubmission(ctx, judge.JudgeSubmissionRequest{
+		ChallengeID:        requestBody.ChallengeID,
+		TeamID:             requestBody.TeamID,
+		TextSubmission:     requestBody.TextSubmission,
+		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, submission)
+}
+
+func (s *server) getPresignedUploadUrl(ctx *gin.Context) {
+	var requestBody struct {
+		Bucket string `binding:"required" json:"bucket"`
+		Key    string `binding:"required" json:"key"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	url, err := s.awsClient.GeneratePresignedUploadURL(requestBody.Bucket, requestBody.Key, time.Hour)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"url": url,
+	})
 }
 
 func (s *server) leaveMatch(ctx *gin.Context) {

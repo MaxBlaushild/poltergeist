@@ -11,6 +11,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
 import { MultiBackend, TouchTransition } from 'react-dnd-multi-backend';
+import { MediaContextProvider } from './contexts/MediaContext.tsx';
 
 const HTML5toTouch = {
   backends: [
@@ -29,17 +30,26 @@ const HTML5toTouch = {
 function App() {
   return (
     <APIProvider>
+      <MediaContextProvider>
         <UserProfileProvider>
-      <MatchContextProvider>
-          <AuthProvider appName="Sonar" uriPrefix="/sonar">
-            <ActivityContextProvider>
-            <DndProvider backend={HTML5Backend}>
-              <RouterProvider router={router} />
-            </DndProvider>
-            </ActivityContextProvider>
-          </AuthProvider>
-      </MatchContextProvider>
+          <MatchContextProvider>
+            <AuthProvider appName="Sonar" uriPrefix="/sonar">
+              <ActivityContextProvider>
+                <DndProvider
+                  backend={TouchBackend}
+                  options={{
+                    enableTouchEvents: true,
+                    enableMouseEvents: true,
+                    enableHoverOutsideTarget: true,
+                  }}
+                >
+                  <RouterProvider router={router} />
+                </DndProvider>
+              </ActivityContextProvider>
+            </AuthProvider>
+          </MatchContextProvider>
         </UserProfileProvider>
+      </MediaContextProvider>
     </APIProvider>
   );
 }

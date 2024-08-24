@@ -32,6 +32,7 @@ type client struct {
 	matchHandle                       *matchHandle
 	verificationCodeHandle            *verificationCodeHandler
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
+	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
 }
 
 type ClientConfig struct {
@@ -81,7 +82,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		matchHandle:                       &matchHandle{db: db},
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
+		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
 	}, err
+}
+
+func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {
+	return c.pointOfInterestChallengeHandle
 }
 
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {
