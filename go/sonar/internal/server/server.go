@@ -313,6 +313,10 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, group)
 }
 
+func (s *server) GetPointsWithinRadius(ctx *gin.Context) {
+
+}
+
 func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
 	groupID := ctx.Param("id")
 	if groupID == "" {
@@ -978,40 +982,10 @@ func (s *server) getTeams(c *gin.Context) {
 }
 
 func (s *server) getPointsOfInterest(c *gin.Context) {
-	stringTeamID := c.Param("teamID")
 	pointOfInterests, err := s.dbClient.PointOfInterest().FindAll(c)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
-	}
-
-	teamID, err := uuid.Parse(stringTeamID)
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	pointOfInterestTeams, err := s.dbClient.PointOfInterestTeam().FindByTeamID(c, teamID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	for i, pointOfInterest := range pointOfInterests {
-		found := false
-		for _, pointOfInterestTeam := range pointOfInterestTeams {
-			if pointOfInterestTeam.PointOfInterestID == pointOfInterest.ID {
-				found = true
-			}
-		}
-
-		if !found {
-			pointOfInterests[i].TierOneChallenge = ""
-			pointOfInterests[i].TierTwoChallenge = ""
-			pointOfInterests[i].TierThreeChallenge = ""
-		} else {
-			pointOfInterests[i].Clue = ""
-		}
 	}
 
 	c.JSON(200, pointOfInterests)
@@ -1222,13 +1196,10 @@ func (s *server) createPointOfInterest(c *gin.Context) {
 	}
 
 	if err := s.dbClient.PointOfInterest().Create(c, models.PointOfInterest{
-		Name:               createPointOfInterestRequest.Name,
-		Clue:               createPointOfInterestRequest.Clue,
-		TierOneChallenge:   createPointOfInterestRequest.TierOneChallenge,
-		TierTwoChallenge:   createPointOfInterestRequest.TierTwoChallenge,
-		TierThreeChallenge: createPointOfInterestRequest.TierThreeChallenge,
-		Lat:                createPointOfInterestRequest.Lat,
-		Lng:                createPointOfInterestRequest.Lng,
+		Name: createPointOfInterestRequest.Name,
+		Clue: createPointOfInterestRequest.Clue,
+		Lat:  createPointOfInterestRequest.Lat,
+		Lng:  createPointOfInterestRequest.Lng,
 	}); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return

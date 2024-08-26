@@ -14,4 +14,5 @@ type Team struct {
 	UserTeams            []UserTeam
 	Users                []User                `json:"users" gorm:"many2many:user_teams;"`
 	PointOfInterestTeams []PointOfInterestTeam `json:"pointOfInterestTeams"`
+	TeamInventoryItems   []TeamInventoryItem   `json:"teamInventoryItems"`
 }
