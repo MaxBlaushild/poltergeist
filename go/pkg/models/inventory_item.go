@@ -10,4 +10,5 @@ type InventoryItem struct {
 	ImageURL   string    `json:"imageUrl"`
 	FlavorText string    `json:"flavorText"`
 	EffectText string    `json:"effectText"`
+	RarityTier string    `json:"rarityTier"`
 }
