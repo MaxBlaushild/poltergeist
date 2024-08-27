@@ -21,8 +21,8 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 		Preload("PointsOfInterest.PointOfInterestChallenges.PointOfInterestChallengeSubmissions").
 		Preload("Teams.Users").
 		Preload("Teams.PointOfInterestTeams.").
-		Preload("Teams.TeamInventoryItems.InventoryItem").
-		Preload("InventoryItemEffects.InventoryItem").
+		Preload("Teams.TeamInventoryItems").
+		Preload("InventoryItemEffects").
 		Where("id = ?", id).First(&match).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
