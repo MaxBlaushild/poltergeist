@@ -62,13 +62,20 @@ export const Scoreboard = () => {
     }
   });
 
+  match?.teams.forEach((team) => {
+    team.teamInventoryItems.forEach((item) => {
+      if (item.inventoryItemId === 8) {
+        scoreboard[team.id] = (scoreboard[team.id] || 0) + item.quantity;
+      }
+    });
+  });
+
   return (
     <div className="flex flex-col items-center w-full gap-4">
       {!selectedTeamID && (
         <div className="flex flex-col items-center w-full gap-4">
           <h1 className="text-2xl font-bold">Leaderboard</h1>
-          <Divider />
-          <table className="w-full">
+          <table className="w-full mt-4">
             <thead>
               <tr>
                 <th className="text-left">Team</th>

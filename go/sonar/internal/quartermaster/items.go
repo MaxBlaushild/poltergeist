@@ -18,7 +18,7 @@ const (
 	RarityMythic   Rarity = "Mythic"
 )
 
-var preDefinedItems = []InventoryItem{
+var PreDefinedItems = []InventoryItem{
 	{
 		ID:         1,
 		Name:       "Cipher of the Laughing Monkey",
@@ -32,7 +32,7 @@ var preDefinedItems = []InventoryItem{
 		Name:       "Golden Telescope",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png",
 		FlavorText: "Legend has it that a artificer parted with his sight to create this so that others might see the stars.",
-		EffectText: "Instantly reveal a hidden point on the map.",
+		EffectText: "Instantly reveals a hidden point on the map. Tap this icon next to the \"I'm here!\" button on a hidden points of interest to use it.",
 		RarityTier: "Uncommon",
 	},
 	{
@@ -40,7 +40,7 @@ var preDefinedItems = []InventoryItem{
 		Name:       "Flawed Ruby",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/flawed-ruby.png",
 		FlavorText: "This gem is chipped and disfigured, but will still fetch a decent price at market.",
-		EffectText: "Instantly capture a tier one challenge.",
+		EffectText: "Instantly captures a tier one challenge. Tap this icon next to the \"Submit Answer\" button on any unlocked tier one challenge to use it.",
 		RarityTier: "Uncommon",
 	},
 	{
@@ -48,7 +48,7 @@ var preDefinedItems = []InventoryItem{
 		Name:       "Ruby",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/ruby.png",
 		FlavorText: "A gem, sparkling more red than the blood you had to spill to procure it.",
-		EffectText: "Instantly capture a tier two challenge.",
+		EffectText: "Instantly captures a tier two challenge. Tap this icon next to the \"Submit Answer\" button on any unlocked tier two challenge to use it.",
 		RarityTier: "Epic",
 	},
 	{
@@ -56,7 +56,7 @@ var preDefinedItems = []InventoryItem{
 		Name:       "Brilliant Ruby",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/brilliant-ruby.png",
 		FlavorText: "You've hit the motherload! This gem will fetch a pirate's ransom.",
-		EffectText: "Instantly capture a tier three challenge.",
+		EffectText: "Instantly captures a tier three challenge. Tap this icon next to the \"Submit Answer\" button on any unlocked tier three challenge to use it.",
 		RarityTier: "Mythic",
 	},
 	{
@@ -64,8 +64,8 @@ var preDefinedItems = []InventoryItem{
 		Name:       "Cortez’s Cutlass",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/cortez-cutlass.png",
 		FlavorText: "A relic of the high seas, its blade still sharp enough to cut through the thickest of hides.",
-		EffectText: "Steal all of another team's items. Must be within a 100 meter radius of the target team to use.",
-		RarityTier: "Epic",
+		EffectText: "Steal all of another team's items.",
+		RarityTier: "Mythic",
 	},
 	{
 		ID:         7,

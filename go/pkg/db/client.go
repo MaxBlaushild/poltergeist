@@ -33,6 +33,7 @@ type client struct {
 	verificationCodeHandle            *verificationCodeHandler
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
+	inventoryItemHandle               *inventoryItemHandler
 }
 
 type ClientConfig struct {
@@ -83,7 +84,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
+		inventoryItemHandle:               &inventoryItemHandler{db: db},
 	}, err
+}
+
+func (c *client) InventoryItem() InventoryItemHandle {
+	return c.inventoryItemHandle
 }
 
 func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {

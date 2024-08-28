@@ -16,6 +16,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -26,20 +27,37 @@ var (
 )
 
 type server struct {
-	authClient   auth.Client
-	texterClient texter.Client
-	dbClient     db.DbClient
-	config       *config.Config
-	awsClient    aws.AWSClient
-	judgeClient  judge.Client
+	authClient    auth.Client
+	texterClient  texter.Client
+	dbClient      db.DbClient
+	config        *config.Config
+	awsClient     aws.AWSClient
+	judgeClient   judge.Client
+	quartermaster quartermaster.Quartermaster
 }
 
 type Server interface {
 	ListenAndServe(port string)
 }
 
-func NewServer(authClient auth.Client, texterClient texter.Client, dbClient db.DbClient, config *config.Config, awsClient aws.AWSClient, judgeClient judge.Client) Server {
-	return &server{authClient: authClient, texterClient: texterClient, dbClient: dbClient, config: config, awsClient: awsClient, judgeClient: judgeClient}
+func NewServer(
+	authClient auth.Client,
+	texterClient texter.Client,
+	dbClient db.DbClient,
+	config *config.Config,
+	awsClient aws.AWSClient,
+	judgeClient judge.Client,
+	quartermaster quartermaster.Quartermaster,
+) Server {
+	return &server{
+		authClient:    authClient,
+		texterClient:  texterClient,
+		dbClient:      dbClient,
+		config:        config,
+		awsClient:     awsClient,
+		judgeClient:   judgeClient,
+		quartermaster: quartermaster,
+	}
 }
 
 func (s *server) ListenAndServe(port string) {
@@ -84,6 +102,10 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.getPresignedUploadUrl))
 	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.submitAnswerPointOfInterestChallenge))
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.editTeamName))
+	r.GET("/sonar/items", s.getInventoryItems)
+	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
+	r.POST("/sonar/inventory/:teamInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
+	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 
 	r.Run(":8042")
 }
@@ -100,6 +122,104 @@ func (s *server) populateProfilesForMatch(ctx *gin.Context, userID uuid.UUID, ma
 	}
 
 	return nil
+}
+
+func (s *server) addItemToTeam(ctx *gin.Context) {
+	stringTeamID := ctx.Param("teamID")
+	if stringTeamID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "team ID is required",
+		})
+		return
+	}
+
+	teamID, err := uuid.Parse(stringTeamID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid team ID",
+		})
+		return
+	}
+
+	item, err := s.quartermaster.GetItem(ctx, teamID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, item)
+}
+
+func (s *server) useItem(ctx *gin.Context) {
+	stringTeamInventoryItemID := ctx.Param("teamInventoryItemID")
+	if stringTeamInventoryItemID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "team inventory item ID is required",
+		})
+		return
+	}
+
+	teamInventoryItemID, err := uuid.Parse(stringTeamInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid team inventory item ID",
+		})
+		return
+	}
+
+	var request quartermaster.UseItemMetadata
+	if err := ctx.Bind(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.quartermaster.UseItem(ctx, teamInventoryItemID, &request); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "item used successfully",
+	})
+}
+
+func (s *server) getTeamsInventory(ctx *gin.Context) {
+	stringTeamID := ctx.Param("teamID")
+	if stringTeamID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "team ID is required",
+		})
+		return
+	}
+
+	teamID, err := uuid.Parse(stringTeamID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid team ID",
+		})
+		return
+	}
+
+	inventory, err := s.dbClient.InventoryItem().GetTeamsItems(ctx, teamID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, inventory)
+}
+
+func (s *server) getInventoryItems(ctx *gin.Context) {
+	items := s.quartermaster.GetInventoryItems()
+	ctx.JSON(http.StatusOK, items)
 }
 
 func (s *server) editTeamName(ctx *gin.Context) {
@@ -177,7 +297,21 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, submission)
+	var item quartermaster.InventoryItem
+	if submission.Judgement.Judgement {
+		item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"judgement": submission,
+		"item":      item,
+	})
 }
 
 func (s *server) getPresignedUploadUrl(ctx *gin.Context) {

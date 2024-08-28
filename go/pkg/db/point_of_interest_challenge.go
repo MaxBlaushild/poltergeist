@@ -39,3 +39,11 @@ func (p *pointOfInterestChallengeHandle) SubmitAnswerForChallenge(ctx context.Co
 
 	return &challenge, nil
 }
+
+func (p *pointOfInterestChallengeHandle) GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error) {
+	var challenge models.PointOfInterestChallenge
+	if err := p.db.WithContext(ctx).First(&challenge, "point_of_interest_id = ? AND tier = ?", pointOfInterestID, tier).Error; err != nil {
+		return nil, err
+	}
+	return &challenge, nil
+}

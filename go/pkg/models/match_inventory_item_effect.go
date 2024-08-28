@@ -16,3 +16,7 @@ type MatchInventoryItemEffect struct {
 	ExpiresAt       time.Time `json:"expiresAt"`
 	InventoryItemID int       `json:"inventoryItemId"`
 }
+
+func (m MatchInventoryItemEffect) IsExpired() bool {
+	return m.ExpiresAt.Before(time.Now())
+}
