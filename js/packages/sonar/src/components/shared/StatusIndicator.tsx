@@ -1,5 +1,8 @@
 import React from 'react';
 import { generateColorFromTeamName } from '../../utils/generateColor.ts';
+import { useMatchContext } from '../../contexts/MatchContext.tsx';
+import { PointOfInterestEffectingItems } from '@poltergeist/types';
+import { useInventory } from '../../contexts/InventoryContext.tsx';
 
 export type StatusCircleProps = {
   color: string;
@@ -33,6 +36,14 @@ export const StatusIndicator = ({
   teamName,
   yourTeamName,
 }: StatusIndicatorProps) => {
+  const { match, usersTeam } = useMatchContext();
+  const { inventoryItems } = useInventory();
+  const effectingItems = match?.inventoryItemEffects.filter(
+    (item) =>
+      PointOfInterestEffectingItems.includes(item.inventoryItemId) &&
+      item.teamId !== usersTeam?.id &&
+      new Date(item.expiresAt) > new Date()
+  );
   let color = 'grey';
   let text = 'Unclaimed';
 
@@ -56,20 +67,38 @@ export const StatusIndicator = ({
   }
 
   return (
-    <div className="flex items-start gap-2 w-full">
-      <p className="text-md font-bold">{text}</p>
-      <div className="flex space-x-2">
-        {numCircles.map((circle, index) => (
-          <div
-            key={index}
-            style={{
-              width: '25px',
-              height: '25px',
-              backgroundColor: color,
-              borderRadius: '50%',
-            }}
-          ></div>
-        ))}
+    <div className="flex justify-between gap-2 w-full">
+      <div className="flex gap-2 items-center">
+        <p className="text-md font-bold">{text}</p>
+        <div className="flex space-x-2">
+          {numCircles.map((circle, index) => (
+            <div
+              key={index}
+              style={{
+                width: '25px',
+                height: '25px',
+                backgroundColor: color,
+                borderRadius: '50%',
+              }}
+            ></div>
+          ))}
+        </div>
+      </div>
+      <div>
+        {effectingItems?.map((item) => {
+          const inventoryItem = inventoryItems.find(
+            (i) => i.id === item.inventoryItemId
+          );
+
+          if (!inventoryItem) return null;
+          return (
+            <img
+              src={inventoryItem.imageUrl}
+              alt={inventoryItem.name}
+              className="rounded-lg w-8 h-8 border-black border-2"
+            />
+          );
+        })}
       </div>
     </div>
   );

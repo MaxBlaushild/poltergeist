@@ -1,6 +1,7 @@
 import { PointOfInterestTeam } from "./pointOfInterestTeam";
 import { PointOfInterest } from "./pointOfInterest";
 import { User } from "./user";
+import { TeamInventoryItem } from "./teamInventoryItem";
 
 export type Team = {
   id: string;
@@ -9,6 +10,7 @@ export type Team = {
   name: string;
   users: User[];
   pointOfInterestTeams: PointOfInterestTeam[];
+  teamInventoryItems: TeamInventoryItem[];
 };
 
 export const hasTeamDiscoveredPointOfInterest = (team: Team | undefined, pointOfInterest: PointOfInterest) => {

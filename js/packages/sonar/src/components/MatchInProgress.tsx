@@ -53,7 +53,6 @@ const Marker = ({
     : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index + 1) % 6}.png`;
 
   let pinSize = 2;
-  console.log(zoom);
   switch (Math.floor(zoom)) {
     case 0:
       pinSize = 4;
@@ -209,8 +208,6 @@ export const MatchInProgress = () => {
   const handleDrawerClick = (event: React.MouseEvent) => {
     event.stopPropagation();
   };
-
-  console.log(isLeaderboardVisible);
 
   useEffect(() => {
     if ((match && map.current && usersTeam, map.current?.isStyleLoaded())) {

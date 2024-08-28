@@ -12,6 +12,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
 import { MultiBackend, TouchTransition } from 'react-dnd-multi-backend';
 import { MediaContextProvider } from './contexts/MediaContext.tsx';
+import { InventoryProvider } from './contexts/InventoryContext.tsx';
 
 const HTML5toTouch = {
   backends: [
@@ -32,6 +33,7 @@ function App() {
     <APIProvider>
       <MediaContextProvider>
         <UserProfileProvider>
+          <InventoryProvider>
           <MatchContextProvider>
             <AuthProvider appName="Sonar" uriPrefix="/sonar">
               <ActivityContextProvider>
@@ -47,7 +49,8 @@ function App() {
                 </DndProvider>
               </ActivityContextProvider>
             </AuthProvider>
-          </MatchContextProvider>
+            </MatchContextProvider>
+          </InventoryProvider>
         </UserProfileProvider>
       </MediaContextProvider>
     </APIProvider>

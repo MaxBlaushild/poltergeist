@@ -96,18 +96,6 @@ export function Layout() {
             {user?.name}
           </h2>
         </div>
-        {match?.startedAt ? <Scoreboard /> : null}
-        {match ? (
-          <div className="m-4 mb-6">
-            <Button
-              title="Leaderboard"
-              onClick={() => {
-                navigate('/leaderboard');
-                setIsNavOpen(false);
-              }}
-            />
-          </div>
-        ) : null}
         {match ? (
           <div className="m-4 mb-6">
             <Button

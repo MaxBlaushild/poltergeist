@@ -15,6 +15,15 @@ type matchHandle struct {
 	db *gorm.DB
 }
 
+func (h *matchHandle) FindForTeamID(ctx context.Context, teamID uuid.UUID) (*models.TeamMatch, error) {
+	match := models.TeamMatch{}
+	if err := h.db.WithContext(ctx).Where("team_id = ?", teamID).First(&match).Error; err != nil {
+		return nil, err
+	}
+
+	return &match, nil
+}
+
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
 	if err := h.db.WithContext(ctx).

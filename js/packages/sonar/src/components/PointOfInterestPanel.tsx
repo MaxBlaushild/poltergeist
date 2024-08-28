@@ -1,4 +1,10 @@
-import { PointOfInterest, Team, getControllingTeamForPoi, hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
+import {
+  ItemType,
+  PointOfInterest,
+  Team,
+  getControllingTeamForPoi,
+  hasTeamDiscoveredPointOfInterest,
+} from '@poltergeist/types';
 import React, { useState } from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
@@ -7,6 +13,8 @@ import { SubmitAnswerForChallenge } from './SubmitAnswerForChallenge.tsx';
 import { Button } from './shared/Button.tsx';
 import { LockClosedIcon, LockOpenIcon } from '@heroicons/react/20/solid';
 import { StatusIndicator } from './shared/StatusIndicator.tsx';
+import { useInventory } from '../contexts/InventoryContext.tsx';
+import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
 
 const toRoman = (num: number): string => {
   const lookup: { [key: number]: string } = {
@@ -31,8 +39,15 @@ export const PointOfInterestPanel = ({
   pointOfInterest: PointOfInterest;
   allTeams: Team[];
 }) => {
-  const { unlockPointOfInterest, attemptCapturePointOfInterest, usersTeam, getCurrentMatch } =
-    useMatchContext();
+  const {
+    unlockPointOfInterest,
+    attemptCapturePointOfInterest,
+    usersTeam,
+    getCurrentMatch,
+    match,
+  } = useMatchContext();
+  const { consumeItem } = useInventory();
+  const [buttonText, setButtonText] = useState<string>("I'm here!");
   const hasDiscovered = hasTeamDiscoveredPointOfInterest(
     usersTeam,
     pointOfInterest
@@ -41,9 +56,22 @@ export const PointOfInterestPanel = ({
   const controllingTeam = allTeams.find(
     (team) => team.id === submission?.teamId
   );
+
   const [selectedChallenge, setSelectedChallenge] = useState<
     PointOfInterestChallenge | undefined
   >(undefined);
+
+  const goldenTelescope = usersTeam?.teamInventoryItems.find(
+    (item) =>
+      item.inventoryItemId === ItemType.GoldenTelescope && item.quantity > 0
+  );
+
+  const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
+    (item) =>
+      item.inventoryItemId === ItemType.CipherOfTheLaughingMonkey &&
+      item.teamId !== usersTeam?.id &&
+      new Date(item.expiresAt) > new Date()
+  );
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -110,24 +138,55 @@ export const PointOfInterestPanel = ({
       )}
       {!hasDiscovered && (
         <p className="text-xl text-left">
-          <span className="font-bold">Clue:</span> {pointOfInterest.clue}
+          <span className="font-bold">Clue:</span>{' '}
+          {isGoldenMonkeyActive
+            ? scrambleAndObscureWords(pointOfInterest.clue, usersTeam?.id ?? '')
+            : pointOfInterest.clue}
         </p>
       )}
       {!hasDiscovered && (
-        <Button
-          onClick={() => {
-            navigator.geolocation.getCurrentPosition((position) => {
-              unlockPointOfInterest(
-                pointOfInterest.id,
-                usersTeam?.id ?? '',
-                pointOfInterest.lat,
-                pointOfInterest.lng
-              );
-              getCurrentMatch();
-            });
-          }}
-          title="I'm here!"
-        />
+        <div className="flex gap-2 w-full">
+          <Button
+            onClick={() => {
+              navigator.geolocation.getCurrentPosition(async (position) => {
+                try {
+                  await unlockPointOfInterest(
+                    pointOfInterest.id,
+                    usersTeam?.id ?? '',
+                    position.coords.latitude.toString(),
+                    position.coords.longitude.toString()
+                  );
+                  getCurrentMatch();
+                } catch (error) {
+                  console.error(error);
+                  setButtonText('Wrong, dingus');
+                  setTimeout(() => {
+                    setButtonText("I'm here!");
+                  }, 1000);
+                }
+              });
+            }}
+            title={buttonText}
+          />
+          {!!goldenTelescope && (
+            <img
+              src={`https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png`}
+              alt="Golden Telescope"
+              className="rounded-lg border-black border-2 h-12 w-12"
+              onClick={() => {
+                unlockPointOfInterest(
+                  pointOfInterest.id,
+                  usersTeam?.id ?? '',
+                  pointOfInterest.lat,
+                  pointOfInterest.lng
+                );
+                consumeItem(goldenTelescope.id, {
+                  pointOfInterestId: pointOfInterest.id,
+                });
+              }}
+            />
+          )}
+        </div>
       )}
     </div>
   );

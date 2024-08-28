@@ -11,3 +11,6 @@ export * from './pointOfInterest';
 export * from './pointOfInterestTeam';
 export * from './verificationCode';
 export * from './pointOfInterestGroup';
+export * from './inventoryItem';
+export * from './teamInventoryItem';
+export * from './matchInventoryItemEffect';

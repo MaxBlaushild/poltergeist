@@ -8,6 +8,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/server"
 )
 
@@ -33,8 +34,9 @@ func main() {
 	authClient := auth.NewClient()
 	awsClient := aws.NewAWSClient("us-east-1")
 	judgeClient := judge.NewClient(awsClient, dbClient, deepPriest)
+	quartermaster := quartermaster.NewClient(dbClient)
 
-	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient)
+	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster)
 
 	s.ListenAndServe("8042")
 }

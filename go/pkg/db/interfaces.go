@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ type DbClient interface {
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
+	InventoryItem() InventoryItemHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -153,6 +155,7 @@ type MatchHandle interface {
 	StartMatch(ctx context.Context, matchID uuid.UUID) error
 	EndMatch(ctx context.Context, matchID uuid.UUID) error
 	FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error)
+	FindForTeamID(ctx context.Context, teamID uuid.UUID) (*models.TeamMatch, error)
 }
 
 type VerificationCodeHandle interface {
@@ -168,4 +171,15 @@ type PointOfInterestGroupHandle interface {
 type PointOfInterestChallengeHandle interface {
 	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
+	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
+}
+
+type InventoryItemHandle interface {
+	CreateOrIncrementInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int, quantity int) error
+	GetInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int) (*models.TeamInventoryItem, error)
+	UseInventoryItem(ctx context.Context, teamInventoryItemID uuid.UUID) error
+	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.TeamInventoryItem, error)
+	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
+	GetTeamsItems(ctx context.Context, teamID uuid.UUID) ([]models.TeamInventoryItem, error)
 }
