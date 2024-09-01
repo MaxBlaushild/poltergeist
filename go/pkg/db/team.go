@@ -110,3 +110,13 @@ func (h *teamHandle) RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID,
 
 	return h.db.WithContext(ctx).Exec(sqlStatement, userID, matchID).Error
 }
+
+func (h *teamHandle) GetByID(ctx context.Context, id uuid.UUID) (*models.Team, error) {
+	var team models.Team
+
+	if err := h.db.WithContext(ctx).Where("id = ?", id).First(&team).Error; err != nil {
+		return nil, err
+	}
+
+	return &team, nil
+}

@@ -2,6 +2,7 @@ package quartermaster
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -17,6 +18,7 @@ type client struct {
 type Quartermaster interface {
 	UseItem(ctx context.Context, teamInventoryItemID uuid.UUID, metadata *UseItemMetadata) error
 	GetItem(ctx context.Context, teamID uuid.UUID) (InventoryItem, error)
+	FindItemForItemID(itemID int) (InventoryItem, error)
 	GetInventoryItems() []InventoryItem
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
 }
@@ -32,6 +34,16 @@ func NewClient(db db.DbClient) Quartermaster {
 
 func (c *client) GetInventoryItems() []InventoryItem {
 	return PreDefinedItems
+}
+
+func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
+	for _, item := range PreDefinedItems {
+		if item.ID == itemID {
+			return item, nil
+		}
+	}
+
+	return InventoryItem{}, fmt.Errorf("item not found")
 }
 
 func (c *client) GetItem(ctx context.Context, teamID uuid.UUID) (InventoryItem, error) {
@@ -73,10 +85,11 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 	rand.Seed(uint64(time.Now().UnixNano()))
 
 	const (
-		weightCommon   = 50
-		weightUncommon = 30
-		weightEpic     = 15
-		weightMythic   = 5
+		weightCommon       = 50
+		weightUncommon     = 30
+		weightEpic         = 15
+		weightMythic       = 5
+		weightNotDroppable = 0
 	)
 
 	rarityWeights := map[Rarity]int{
@@ -84,6 +97,7 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 		RarityUncommon: weightUncommon,
 		RarityEpic:     weightEpic,
 		RarityMythic:   weightMythic,
+		NotDroppable:   weightNotDroppable,
 	}
 
 	totalWeight := 0

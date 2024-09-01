@@ -39,6 +39,24 @@ func (h *inventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.
 	return nil
 }
 
+func (h *inventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error {
+	items, err := h.GetTeamsItems(ctx, victimTeamID)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		if item.InventoryItemID == inventoryItemID {
+			if err := h.CreateOrIncrementInventoryItem(ctx, thiefTeamID, item.InventoryItemID, item.Quantity); err != nil {
+				return err
+			}
+			item.Quantity = 0
+			h.db.Save(&item)
+		}
+	}
+	return nil
+}
+
 func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.TeamInventoryItem, error) {
 	var item models.TeamInventoryItem
 	result := h.db.Where("id = ?", id).First(&item)

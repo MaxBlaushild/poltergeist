@@ -21,7 +21,7 @@ export const Drawer = ({ isVisible, onClose, children, peekHeight }: DrawerProps
         height: 'calc(100% - 90px)',
         transition: 'transform 0.3s ease-in-out',
         transform: isVisible ? 'translateY(0)' : `translateY(calc(100% - ${peekHeight}px))`, // Adjust transform to use peekHeight
-        zIndex: 2,
+        zIndex: 9999,
         overflowY: 'scroll',
       }}
     >

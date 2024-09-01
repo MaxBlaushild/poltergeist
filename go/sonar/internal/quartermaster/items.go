@@ -16,6 +16,7 @@ const (
 	RarityUncommon Rarity = "Uncommon"
 	RarityEpic     Rarity = "Epic"
 	RarityMythic   Rarity = "Mythic"
+	NotDroppable   Rarity = "Not Droppable"
 )
 
 var PreDefinedItems = []InventoryItem{
@@ -72,7 +73,7 @@ var PreDefinedItems = []InventoryItem{
 		Name:       "Rusted Musket",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/rusted-musket.png",
 		FlavorText: "Found in a shipwreck, its barrel rusted and its stock worn.",
-		EffectText: "Destroy one of another team's items at random. Can be used from any distance.",
+		EffectText: "Use on an opponent to lower their score by 2.",
 		RarityTier: "Uncommon",
 	},
 	{
@@ -82,5 +83,21 @@ var PreDefinedItems = []InventoryItem{
 		FlavorText: "A coin of pure gold. The currency of the high seas.",
 		EffectText: "Hold in your inventory to increase your score by 1.",
 		RarityTier: "Common",
+	},
+	{
+		ID:         9,
+		Name:       "Dagger",
+		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/dagger.png",
+		FlavorText: "A small, sharp blade. It's not much, but it's better than nothing.",
+		EffectText: "Steal one item from an opponent at random.",
+		RarityTier: "Epic",
+	},
+	{
+		ID:         10,
+		Name:       "Damage",
+		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/bullet-hole.png",
+		FlavorText: "You've been shot! Just rub some sand on it.",
+		EffectText: "Decreases score by 2 while held in inventory.",
+		RarityTier: "Not Droppable",
 	},
 }

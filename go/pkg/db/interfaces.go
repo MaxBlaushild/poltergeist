@@ -31,6 +31,7 @@ type DbClient interface {
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	InventoryItem() InventoryItemHandle
+	AuditItem() AuditItemHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -70,6 +71,7 @@ type TeamHandle interface {
 	AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error
 	RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error
 	UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) (*models.Team, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Team, error)
 }
 
 type UserTeamHandle interface{}
@@ -182,4 +184,10 @@ type InventoryItemHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.TeamInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
 	GetTeamsItems(ctx context.Context, teamID uuid.UUID) ([]models.TeamInventoryItem, error)
+	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
+}
+
+type AuditItemHandle interface {
+	Create(ctx context.Context, matchID uuid.UUID, message string) error
+	GetAuditItemsForMatch(ctx context.Context, matchID uuid.UUID) ([]*models.AuditItem, error)
 }

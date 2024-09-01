@@ -27,6 +27,10 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 		ctx,
 		openai.ChatCompletionRequest{
 			Model: openai.GPT4o,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
+			Temperature: 0.1,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
@@ -48,6 +52,10 @@ func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl stri
 		ctx,
 		openai.ChatCompletionRequest{
 			Model: openai.GPT4o,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
+			Temperature: 0.1,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role: openai.ChatMessageRoleUser,

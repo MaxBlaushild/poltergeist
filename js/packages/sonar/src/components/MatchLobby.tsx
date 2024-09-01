@@ -97,7 +97,7 @@ export const MatchLobby = () => {
         </div>
         <div className="flex flex-row gap-3">
           <Button
-            title="Get invite link"
+            title="Invite"
             onClick={() => {
               navigator.clipboard.writeText(matchLink);
               setToastText('Invite link copied to clipboard');
@@ -107,7 +107,7 @@ export const MatchLobby = () => {
             }}
           />
           <Button
-            title="Start Match"
+            title="Start"
             // disabled={!canStartMatch}
             onClick={() => setShouldCountdown(true)}
           />
@@ -193,7 +193,7 @@ const Team = ({
             </div>
           ))}
         <Button
-          title={`Get team invite link`}
+          title={`Invite to team`}
           onClick={() => {
             navigator.clipboard.writeText(`${matchLink}?teamId=${team.id}`);
             sendToast(`Invite link copied to clipboard`);

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import PersonListItem from './shared/PersonListItem.tsx';
 import { ArrowLeftCircleIcon, ArrowLeftIcon } from '@heroicons/react/20/solid';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
+import { getUniquePoiPairsWithinDistance } from '../utils/clusterPointsOfInterest.ts';
 
 const toRoman = (num: number): string => {
   const lookup: { [key: number]: string } = {
@@ -31,9 +32,7 @@ export const Scoreboard = () => {
   const [selectedTeamID, setSelectedTeamID] = useState<string | null>(null);
   const selectedTeam = match?.teams.find((team) => team.id === selectedTeamID);
 
-  const poiPairs = match?.pointsOfInterest.flatMap((poi, index, array) =>
-    array.slice(index + 1).map((otherPoi) => [poi, otherPoi])
-  );
+  const uniquePoiPairs = match ? getUniquePoiPairsWithinDistance(match!) : [];
 
   const scoreboard: { [key: string]: number } = {};
   const capturedPoints: { [key: string]: { poi: PointOfInterest, challenge: PointOfInterestChallenge }[] } = {};
@@ -48,7 +47,7 @@ export const Scoreboard = () => {
     }
   });
 
-  poiPairs?.forEach(([prevPoint, pointOfInterest]) => {
+  uniquePoiPairs?.forEach(([prevPoint, pointOfInterest]) => {
     const pointOneControllingInterest = getControllingTeamForPoi(prevPoint);
     const pointTwoControllingInterest =
       getControllingTeamForPoi(pointOfInterest);
@@ -66,6 +65,9 @@ export const Scoreboard = () => {
     team.teamInventoryItems.forEach((item) => {
       if (item.inventoryItemId === 8) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) + item.quantity;
+      }
+      if (item.inventoryItemId === 10) {
+        scoreboard[team.id] = (scoreboard[team.id] || 0) - (item.quantity * 2);
       }
     });
   });

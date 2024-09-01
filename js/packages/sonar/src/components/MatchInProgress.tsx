@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import polyline from '@mapbox/polyline';
 import { createRoot } from 'react-dom/client';
@@ -22,11 +22,17 @@ import {
   XMarkIcon,
   LockClosedIcon,
   LockOpenIcon,
+  MapIcon,
+  MapPinIcon,
 } from '@heroicons/react/20/solid';
 import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
 import { Drawer } from './Drawer.tsx';
 import { Scoreboard } from './Scoreboard.tsx';
 import { Inventory } from './Inventory.tsx';
+import { Log } from './Log.tsx';
+import NewItemModal from './NewItemModal.tsx';
+import UsedItemModal from './UsedItemModal.tsx';
+import { getUniquePoiPairsWithinDistance } from '../utils/clusterPointsOfInterest.ts';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -35,24 +41,20 @@ const Marker = ({
   pointOfInterest,
   index,
   zoom,
-  usersTeam,
+  hasDiscovered,
   onClick,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
   zoom: number;
-  usersTeam: Team | null;
+  hasDiscovered: boolean;
   onClick: (e: React.MouseEvent) => void;
 }) => {
-  const hasDiscovered = hasTeamDiscoveredPointOfInterest(
-    usersTeam!,
-    pointOfInterest
-  );
   const imageUrl = hasDiscovered
     ? pointOfInterest.imageURL
-    : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index + 1) % 6}.png`;
+    : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index % 6) + 1}.png`;
 
-  let pinSize = 2;
+  let pinSize = 4;
   switch (Math.floor(zoom)) {
     case 0:
       pinSize = 4;
@@ -106,17 +108,16 @@ const Marker = ({
       pinSize = 24;
       break;
     case 17:
-      pinSize = 40;
+      pinSize = 24;
       break;
     case 18:
-      pinSize = 40;
+      pinSize = 24;
       break;
     case 19:
-      pinSize = 40;
+      pinSize = 24;
       break;
-
     default:
-      pinSize = 40;
+      pinSize = 24;
       break;
   }
   return (
@@ -145,6 +146,7 @@ export const MatchInProgress = () => {
   const [isInventoryVisible, setIsInventoryVisible] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
+  const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
   const usersTeam = match?.teams.find((team) =>
     team.users.some((user) => user.id === currentUser?.id)
   );
@@ -163,6 +165,18 @@ export const MatchInProgress = () => {
       setIsPanelVisible(false);
     }
   };
+
+  useEffect(() => {
+    if (isLeaderboardVisible || isInventoryVisible || isPanelVisible) {
+      setAreMapOverlaysVisible(false);
+    }
+
+    if (!isLeaderboardVisible && !isInventoryVisible && !isPanelVisible) {
+      setTimeout(() => {
+        setAreMapOverlaysVisible(true);
+      }, 300);
+    }
+  }, [isLeaderboardVisible, isInventoryVisible, isPanelVisible]);
 
   useEffect(() => {
     map.current = new mapboxgl.Map({
@@ -210,15 +224,27 @@ export const MatchInProgress = () => {
   };
 
   useEffect(() => {
+    console.log(match && map.current && usersTeam, map.current?.isStyleLoaded())
     if ((match && map.current && usersTeam, map.current?.isStyleLoaded())) {
+      const uniquePairs = getUniquePoiPairsWithinDistance(match!);
       markers.forEach((marker) => marker.remove());
       setMarkers([]);
 
-      const poiPairs = match!.pointsOfInterest.flatMap((poi, index, array) =>
-        array.slice(index + 1).map((otherPoi) => [poi, otherPoi])
-      );
+      uniquePairs.forEach(([prevPoint, pointOfInterest]) => {
+        const hasDiscoveredPointOne = hasTeamDiscoveredPointOfInterest(
+          usersTeam!,
+          pointOfInterest
+        );
 
-      poiPairs.forEach(([prevPoint, pointOfInterest]) => {
+        const hasDiscoveredPointTwo = hasTeamDiscoveredPointOfInterest(
+          usersTeam!,
+          prevPoint
+        );
+
+        if (!hasDiscoveredPointOne || !hasDiscoveredPointTwo) {
+          return;
+        }
+
         if (!map.current?.getSource(`${prevPoint.id}-${pointOfInterest.id}`)) {
           map.current?.addSource(`${prevPoint.id}-${pointOfInterest.id}`, {
             type: 'geojson',
@@ -275,12 +301,17 @@ export const MatchInProgress = () => {
       match!.pointsOfInterest.forEach((pointOfInterest, i) => {
         const markerDiv = document.createElement('div');
 
+        const hasDiscovered = hasTeamDiscoveredPointOfInterest(
+          usersTeam!,
+          pointOfInterest
+        );
+
         createRoot(markerDiv).render(
           <Marker
             pointOfInterest={pointOfInterest}
             index={i}
             zoom={zoom}
-            usersTeam={usersTeam ?? null}
+            hasDiscovered={!!hasDiscovered}
             onClick={(e) => {
               e.stopPropagation();
               setSelectedPointOfInterest(pointOfInterest);
@@ -288,11 +319,22 @@ export const MatchInProgress = () => {
           />
         );
 
+        let lat = parseFloat(pointOfInterest.lat);
+        let lng = parseFloat(pointOfInterest.lng) * -1;
+
+        if (!hasDiscovered) {
+          const baseLat = parseFloat(pointOfInterest.lat);
+          const baseLng = parseFloat(pointOfInterest.lng);
+          const radius = 300 / 111000; // degrees per meter
+          const angle = ((baseLat + baseLng) * 1000) % 360; // deterministic angle based on lat and lng
+          const newLat = baseLat + radius * Math.cos((angle * Math.PI) / 180);
+          const newLng = baseLng + radius * Math.sin((angle * Math.PI) / 180);
+          lat = newLat;
+          lng = newLng * -1;
+        }
+
         const marker = new mapboxgl.Marker(markerDiv)
-          .setLngLat([
-            parseFloat(pointOfInterest.lng) * -1,
-            parseFloat(pointOfInterest.lat),
-          ])
+          .setLngLat([lng, lat])
           .addTo(map.current!);
 
         setMarkers((prevMarkers) => [...prevMarkers, marker]);
@@ -313,12 +355,44 @@ export const MatchInProgress = () => {
           zIndex: 1,
         }}
       />
+      {areMapOverlaysVisible && (
+        <div
+          className="absolute top-20 right-4 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
+          onClick={() => {
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition((position) => {
+                const newCenter = [
+                  position.coords.longitude,
+                  position.coords.latitude,
+                ];
+                map.current?.flyTo({ center: newCenter, zoom: 15 });
+              });
+            }
+          }}
+        >
+          <MapPinIcon className="w-6 h-6" />
+        </div>
+      )}
+      {match && areMapOverlaysVisible && (
+        <div className="absolute bottom-20 right-0 z-10 w-full p-2">
+          <Log />
+        </div>
+      )}
       {match && (
         <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
           {selectedPointOfInterest && (
             <PointOfInterestPanel
               pointOfInterest={selectedPointOfInterest}
               allTeams={match.teams}
+              onClose={(immediate) => {
+                if (immediate) {
+                  closePanel();
+                } else {
+                  setTimeout(() => {
+                    closePanel();
+                  }, 2000);
+                }
+              }}
             />
           )}
         </Drawer>
@@ -333,13 +407,27 @@ export const MatchInProgress = () => {
           peekHeight={isPanelVisible ? 0 : 80}
         >
           <div className="flex justify-between w-full gap-4">
-          {!isLeaderboardVisible && !isInventoryVisible && <Button onClick={() => setIsLeaderboardVisible(true)} title="Leaderboard"></Button>}
-          {!isLeaderboardVisible && !isInventoryVisible && <Button onClick={() => setIsInventoryVisible(true)} title="Inventory"></Button>}
+            {!isLeaderboardVisible && !isInventoryVisible && (
+              <Button
+                onClick={() => setIsLeaderboardVisible(true)}
+                title="Leaderboard"
+              ></Button>
+            )}
+            {!isLeaderboardVisible && !isInventoryVisible && (
+              <Button
+                onClick={() => setIsInventoryVisible(true)}
+                title="Inventory"
+              ></Button>
+            )}
           </div>
           {isLeaderboardVisible && <Scoreboard />}
-          {isInventoryVisible && <Inventory />}
+          {isInventoryVisible && (
+            <Inventory onClose={() => setIsInventoryVisible(false)} />
+          )}
         </Drawer>
       )}
+      {areMapOverlaysVisible && <NewItemModal />}
+      {areMapOverlaysVisible && <UsedItemModal />}
     </div>
   );
 };

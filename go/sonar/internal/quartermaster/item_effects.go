@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	itemDuration    = 10 * time.Minute
+	itemDuration    = 5 * time.Minute
 	challengeAnswer = "This territory was claimed with cold, hard gemstones."
 )
 
@@ -36,19 +36,31 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, teamInventoryItem *mod
 		// Steal all of another team's items. Must be within a 100 meter radius of the target team to use.
 		return q.db.InventoryItem().StealItems(ctx, teamMatch.TeamID, metadata.TargetTeamID)
 	case 7:
-		// Destroy one of another team's items at random. Can be used from any distance.
+		// Inflict a wound on another team.
+		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, metadata.TargetTeamID, 10, 1)
+	case 8:
+		// Hold in your inventory to increase your score by 1.
+		return nil
+	case 9:
+		// Steal an item from another team.
 		items, err := q.db.InventoryItem().GetTeamsItems(ctx, metadata.TargetTeamID)
 		if err != nil {
 			return err
 		}
 		if len(items) == 0 {
-			return errors.New("no items to destroy")
+			return nil
 		}
-
-		randomItem := items[rand.Intn(len(items))]
-		return q.db.InventoryItem().UseInventoryItem(ctx, randomItem.ID)
-	case 8:
-		// Hold in your inventory to increase your score by 1.
+		var randomItem models.TeamInventoryItem
+		for {
+			index := rand.Intn(len(items))
+			if index != 10 {
+				randomItem = items[index]
+				break
+			}
+		}
+		return q.db.InventoryItem().StealItem(ctx, teamMatch.TeamID, metadata.TargetTeamID, randomItem.InventoryItemID)
+	case 10:
+		// Steal an item from another team.
 		return nil
 	default:
 		return errors.New("no effect found for this item")

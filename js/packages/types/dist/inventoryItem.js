@@ -16,12 +16,15 @@ export var ItemType;
     ItemType[ItemType["CortezsCutlass"] = 6] = "CortezsCutlass";
     ItemType[ItemType["RustedMusket"] = 7] = "RustedMusket";
     ItemType[ItemType["GoldCoin"] = 8] = "GoldCoin";
+    ItemType[ItemType["Dagger"] = 9] = "Dagger";
+    ItemType[ItemType["Damage"] = 10] = "Damage";
 })(ItemType || (ItemType = {}));
 ;
 export const ItemsUsabledInMenu = [
     ItemType.CipherOfTheLaughingMonkey,
     ItemType.CortezsCutlass,
     ItemType.RustedMusket,
+    ItemType.Dagger,
 ];
 export const PointOfInterestEffectingItems = [
     ItemType.CipherOfTheLaughingMonkey,
@@ -32,4 +35,5 @@ export const ItemsUsabledOnPointOfInterest = [
 export const ItemsRequiringTeamId = [
     ItemType.CortezsCutlass,
     ItemType.RustedMusket,
+    ItemType.Dagger,
 ];

@@ -6,7 +6,7 @@ import React, {
   useEffect,
 } from 'react';
 import { useAPI, useAuth } from '@poltergeist/contexts';
-import { Match, Team } from '@poltergeist/types';
+import { AuditItem, InventoryItem, Match, Team } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useMediaContext } from './MediaContext.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
@@ -17,7 +17,7 @@ export type Judgement = {
 };
 
 export type CapturePointOfInterestResponse = {
-  challenge: PointOfInterestChallengeSubmission;
+  item: InventoryItem;
   judgement: Judgement;
 };
 
@@ -44,7 +44,8 @@ interface MatchContextType {
     lat: string,
     lng: string
   ) => Promise<void>;
-  
+  auditItems: AuditItem[];
+  fetchAuditItems: () => Promise<void>;
 }
 
 export const MatchContext = createContext<MatchContextType | undefined>(
@@ -80,6 +81,13 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [usersTeam, setUsersTeam] = useState<Team | undefined>(undefined);
   const userID = currentUser?.id;
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
+
+  const fetchAuditItems = useCallback(async () => {
+    if (!match) return;
+    const response = await apiClient.get<AuditItem[]>(`/sonar/matches/${match.id}/chat`);
+    setAuditItems(response);
+  }, [apiClient, match?.id]);
 
   useEffect(() => {
     if (!match) return;
@@ -221,12 +229,16 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
       imageUrl = presignedUrl.split("?")[0];
     }
 
-    return await apiClient.post(`/sonar/pointOfInterest/challenge`, {
+    var response = await apiClient.post<CapturePointOfInterestResponse>(`/sonar/pointOfInterest/challenge`, {
       teamId,
       challengeId,
       textSubmission: text,
       imageSubmissionUrl: imageUrl,
     });
+
+    getCurrentMatch();
+
+    return response;
   }, [apiClient]);
 
   return (
@@ -249,6 +261,8 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
         editTeamName,
         unlockPointOfInterest,
         attemptCapturePointOfInterest,
+        auditItems,
+        fetchAuditItems,
       }}
     >
       {children}
