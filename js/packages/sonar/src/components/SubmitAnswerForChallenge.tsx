@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './SubmitAnswerForChallenge.css';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
 import { Button } from './shared/Button.tsx';
@@ -20,7 +20,7 @@ import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
 
 type SubmitAnswerForChallengeProps = {
   challenge: PointOfInterestChallenge;
-  onSubmit: () => void;
+  onSubmit: (immediate: boolean) => void;
 };
 
 export const SubmitAnswerForChallenge = (
@@ -28,7 +28,7 @@ export const SubmitAnswerForChallenge = (
 ) => {
   const { usersTeam, attemptCapturePointOfInterest, getCurrentMatch, match } =
     useMatchContext();
-  const { inventoryItems, consumeItem } = useInventory();
+  const { inventoryItems, consumeItem, setPresentedInventoryItem, setUsedItem } = useInventory();
   const [textSubmission, setTextSubmission] = useState<string | undefined>(
     undefined
   );
@@ -75,6 +75,14 @@ export const SubmitAnswerForChallenge = (
       new Date(item.expiresAt) > new Date()
   );
 
+  useEffect(() => {
+    if (judgement) {
+      if (judgement.judgement.judgement.judgement) {
+        setPresentedInventoryItem(judgement.item);
+      }
+    }
+  }, [judgement]);
+
   return (
     <div className="w-full rounded-xl flex flex-col gap-3">
       {!judgement && !isLoading && (
@@ -120,7 +128,10 @@ export const SubmitAnswerForChallenge = (
                         imageSubmission
                       );
                       setJudgement(judgement);
-                      getCurrentMatch();
+                      props.onSubmit(false);
+                      setTimeout(() => {
+                        setJudgement(undefined);
+                      }, 3000);
                     } catch (e) {
                       console.log(e);
                     } finally {
@@ -137,10 +148,13 @@ export const SubmitAnswerForChallenge = (
                 src={matchingRubyForChallenge?.imageUrl}
                 alt={matchingRubyForChallenge?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
-                onClick={() =>
+                onClick={() => {
                   consumeItem(matchingInventoryItem?.id, {
                     pointOfInterestId: props.challenge.pointOfInterestId,
-                  })
+                  });
+                  setUsedItem(matchingRubyForChallenge!);
+                  props.onSubmit(true);
+                }
                 }
               />
             )}
@@ -166,7 +180,7 @@ export const SubmitAnswerForChallenge = (
             className="h-6 w-6"
             onClick={() => setJudgement(undefined)}
           />
-          {judgement.judgement.judgement ? (
+          {judgement.judgement.judgement.judgement ? (
             <div className="flex flex-col items-center gap-3 mt-4 mb-4">
               <CheckBadgeIcon className="h-20 w-20 text-green-500" />
               <p>Correct</p>
@@ -174,7 +188,7 @@ export const SubmitAnswerForChallenge = (
           ) : (
             <div className="flex flex-col items-center gap-3 mt-4 mb-4">
               <XCircleIcon className="h-20 w-20 text-red-500" />
-              <p>{judgement.judgement.reason}</p>
+              <p>{judgement.judgement.judgement.reason}</p>
             </div>
           )}
         </>

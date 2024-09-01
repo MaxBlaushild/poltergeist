@@ -35,9 +35,11 @@ const toRoman = (num: number): string => {
 export const PointOfInterestPanel = ({
   pointOfInterest,
   allTeams,
+  onClose
 }: {
   pointOfInterest: PointOfInterest;
   allTeams: Team[];
+  onClose: (immediate: boolean) => void;
 }) => {
   const {
     unlockPointOfInterest,
@@ -46,7 +48,7 @@ export const PointOfInterestPanel = ({
     getCurrentMatch,
     match,
   } = useMatchContext();
-  const { consumeItem } = useInventory();
+  const { consumeItem, setUsedItem, inventoryItems } = useInventory();
   const [buttonText, setButtonText] = useState<string>("I'm here!");
   const hasDiscovered = hasTeamDiscoveredPointOfInterest(
     usersTeam,
@@ -56,10 +58,6 @@ export const PointOfInterestPanel = ({
   const controllingTeam = allTeams.find(
     (team) => team.id === submission?.teamId
   );
-
-  const [selectedChallenge, setSelectedChallenge] = useState<
-    PointOfInterestChallenge | undefined
-  >(undefined);
 
   const goldenTelescope = usersTeam?.teamInventoryItems.find(
     (item) =>
@@ -86,14 +84,12 @@ export const PointOfInterestPanel = ({
         }
         alt={pointOfInterest.name}
       />
-      {!selectedChallenge && (
         <StatusIndicator
           tier={challenge?.tier}
           teamName={controllingTeam?.name}
           yourTeamName={usersTeam?.name ?? ''}
         />
-      )}
-      {hasDiscovered && !selectedChallenge && (
+        {hasDiscovered && (
         <TabNav
           tabs={[
             'Info',
@@ -123,18 +119,14 @@ export const PointOfInterestPanel = ({
               <TabItem key={`Tier ${toRoman(challenge.tier)}`}>
                 <SubmitAnswerForChallenge
                   challenge={challenge}
-                  onSubmit={() => setSelectedChallenge(undefined)}
+                  onSubmit={(immediate) => {
+                    onClose(immediate);
+                  }}
                 />
               </TabItem>
             );
           })}
         </TabNav>
-      )}
-      {hasDiscovered && selectedChallenge && (
-        <SubmitAnswerForChallenge
-          challenge={selectedChallenge}
-          onSubmit={() => setSelectedChallenge(undefined)}
-        />
       )}
       {!hasDiscovered && (
         <p className="text-xl text-left">
@@ -150,15 +142,15 @@ export const PointOfInterestPanel = ({
             onClick={() => {
               navigator.geolocation.getCurrentPosition(async (position) => {
                 try {
+                  console.log('position', position);
                   await unlockPointOfInterest(
                     pointOfInterest.id,
                     usersTeam?.id ?? '',
                     position.coords.latitude.toString(),
-                    position.coords.longitude.toString()
+                    (position.coords.longitude * -1).toString()
                   );
                   getCurrentMatch();
                 } catch (error) {
-                  console.error(error);
                   setButtonText('Wrong, dingus');
                   setTimeout(() => {
                     setButtonText("I'm here!");
@@ -174,15 +166,11 @@ export const PointOfInterestPanel = ({
               alt="Golden Telescope"
               className="rounded-lg border-black border-2 h-12 w-12"
               onClick={() => {
-                unlockPointOfInterest(
-                  pointOfInterest.id,
-                  usersTeam?.id ?? '',
-                  pointOfInterest.lat,
-                  pointOfInterest.lng
-                );
                 consumeItem(goldenTelescope.id, {
                   pointOfInterestId: pointOfInterest.id,
                 });
+                setUsedItem(inventoryItems.find(item => item.id === ItemType.GoldenTelescope)!);
+                onClose(true);
               }}
             />
           )}

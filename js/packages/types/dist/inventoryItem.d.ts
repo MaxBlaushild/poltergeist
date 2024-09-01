@@ -20,7 +20,9 @@ export declare enum ItemType {
     BrilliantRuby = 5,
     CortezsCutlass = 6,
     RustedMusket = 7,
-    GoldCoin = 8
+    GoldCoin = 8,
+    Dagger = 9,
+    Damage = 10
 }
 export declare const ItemsUsabledInMenu: ItemType[];
 export declare const PointOfInterestEffectingItems: ItemType[];

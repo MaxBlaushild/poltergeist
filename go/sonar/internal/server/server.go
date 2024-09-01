@@ -14,6 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
@@ -34,6 +35,7 @@ type server struct {
 	awsClient     aws.AWSClient
 	judgeClient   judge.Client
 	quartermaster quartermaster.Quartermaster
+	chatClient    chat.Client
 }
 
 type Server interface {
@@ -48,6 +50,7 @@ func NewServer(
 	awsClient aws.AWSClient,
 	judgeClient judge.Client,
 	quartermaster quartermaster.Quartermaster,
+	chatClient chat.Client,
 ) Server {
 	return &server{
 		authClient:    authClient,
@@ -57,6 +60,7 @@ func NewServer(
 		awsClient:     awsClient,
 		judgeClient:   judgeClient,
 		quartermaster: quartermaster,
+		chatClient:    chatClient,
 	}
 }
 
@@ -85,7 +89,6 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
 	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
 	r.POST("/sonar/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterest))
-	r.POST("/sonar/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterest))
 	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
 	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.getNeighbors))
 	r.POST("/sonar/matches/:id/start", middleware.WithAuthentication(s.authClient, s.startMatch))
@@ -105,7 +108,10 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:teamInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
+	r.GET("/sonar/matches/:id/chat", middleware.WithAuthentication(s.authClient, s.getMatchChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
+	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
+	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
 
 	r.Run(":8042")
 }
@@ -122,6 +128,136 @@ func (s *server) populateProfilesForMatch(ctx *gin.Context, userID uuid.UUID, ma
 	}
 
 	return nil
+}
+
+func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if user.ID != uuid.MustParse("1f1bf125-3062-461b-adf4-d824fada3a95") {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": "only admins can unlock point of interest",
+		})
+		return
+	}
+
+	var requestBody struct {
+		TeamID            uuid.UUID `binding:"required" json:"teamId"`
+		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Unlock(ctx, requestBody.PointOfInterestID, requestBody.TeamID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.chatClient.AddUnlockMessage(ctx, requestBody.TeamID, requestBody.PointOfInterestID); err != nil {
+		ctx.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest unlocked successfully",
+	})
+}
+
+func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if user.ID != uuid.MustParse("1f1bf125-3062-461b-adf4-d824fada3a95") {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": "only admins can unlock point of interest",
+		})
+		return
+	}
+
+	var requestBody struct {
+		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
+		TeamID            uuid.UUID `binding:"required" json:"teamId"`
+		Tier              int       `binding:"required" json:"tier"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	challenge, err := s.dbClient.PointOfInterestChallenge().GetChallengeForPointOfInterest(ctx, requestBody.PointOfInterestID, requestBody.Tier)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if _, err := s.dbClient.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, challenge.ID, requestBody.TeamID, "", "", true); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, challenge.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "challenge submitted successfully",
+	})
+}
+
+func (s *server) getMatchChat(ctx *gin.Context) {
+	stringMatchID := ctx.Param("id")
+	if stringMatchID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "match ID is required",
+		})
+		return
+	}
+
+	matchID, err := uuid.Parse(stringMatchID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid match ID",
+		})
+		return
+	}
+
+	auditItems, err := s.dbClient.AuditItem().GetAuditItemsForMatch(ctx, matchID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, auditItems)
 }
 
 func (s *server) addItemToTeam(ctx *gin.Context) {
@@ -178,6 +314,13 @@ func (s *server) useItem(ctx *gin.Context) {
 	}
 
 	if err := s.quartermaster.UseItem(ctx, teamInventoryItemID, &request); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.chatClient.AddUseItemMessage(ctx, teamInventoryItemID, request); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -301,6 +444,13 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	if submission.Judgement.Judgement {
 		item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID)
 		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.ChallengeID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
@@ -1404,8 +1554,8 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 
 	distanceFromPOI := util.HaversineDistance(latPOI, lngPOI, latReq, lngReq)
 
-	if distanceFromPOI > 25 {
-		c.JSON(400, gin.H{"error": "point of interest is not within 50 meters"})
+	if distanceFromPOI > 200 {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("point of interest is not within 200 meters: %f", distanceFromPOI)})
 		return
 	}
 
@@ -1416,89 +1566,12 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		return
 	}
 
+	if err := s.chatClient.AddUnlockMessage(c, teamID, pointOfInterestID); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
 	c.JSON(200, gin.H{
 		"message": "everything cool",
 	})
-}
-
-func (s *server) capturePointOfInterest(c *gin.Context) {
-	var capturePointOfInterestRequest struct {
-		PointOfInterestID string `json:"pointOfInterestId" binding:"required"`
-		TeamID            string `json:"teamId" binding:"required"`
-		Tier              int    `json:"tier" binding:"required"`
-	}
-
-	if err := c.Bind(&capturePointOfInterestRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	pointOfInterestID, err := uuid.Parse(capturePointOfInterestRequest.PointOfInterestID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit poi id",
-		})
-		return
-	}
-
-	teamID, err := uuid.Parse(capturePointOfInterestRequest.TeamID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit team id",
-		})
-		return
-	}
-
-	if err := s.dbClient.PointOfInterest().Capture(c, pointOfInterestID, teamID, capturePointOfInterestRequest.Tier); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	/// TEXT EVERYBODY!!!!!!!!!!!
-
-	teams, err := s.dbClient.Team().GetAll(c)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	var userIDs []uuid.UUID
-	for _, team := range teams {
-		for _, userTeam := range team.UserTeams {
-			userIDs = append(userIDs, userTeam.UserID)
-		}
-	}
-
-	users, err := s.authClient.GetUsers(c, userIDs)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	var capturingTeam models.Team
-	for _, team := range teams {
-		if team.ID == teamID {
-			capturingTeam = team
-		}
-	}
-
-	pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(c, pointOfInterestID)
-	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	for _, user := range users {
-		s.texterClient.Text(c, &texter.Text{
-			To:   user.PhoneNumber,
-			From: s.config.Public.PhoneNumber,
-			Body: fmt.Sprintf("%s has captured %s at tier %d.", capturingTeam.Name, pointOfInterest.Name, capturePointOfInterestRequest.Tier),
-		})
-	}
-
-	c.JSON(200, gin.H{"messgae": "done!"})
 }

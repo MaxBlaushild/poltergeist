@@ -11,6 +11,8 @@ interface InventoryContextType {
   consumeItem: (teamInventoryItemId: string, metadata?: UseItemMetadata) => Promise<void>;
   useItemError: string | null;
   isUsingItem: boolean;
+  usedItem: InventoryItem | null;
+  setUsedItem: (inventoryItem: InventoryItem | null) => void;
 };
 
 interface UseItemMetadata {
@@ -22,11 +24,13 @@ const InventoryContext = createContext<InventoryContextType>({
   inventoryItems: [],
   presentedInventoryItem: null,
   inventoryItemError: null,
-  setPresentedInventoryItem: () => {},
+  setPresentedInventoryItem: (item: InventoryItem | null) => {},
   inventoryItemsAreLoading: false,
   consumeItem: () => Promise.resolve(),
   useItemError: null,
   isUsingItem: false,
+  usedItem: null,
+  setUsedItem: (item: InventoryItem | null) => {},
 });
 
 export const useInventory = () => useContext(InventoryContext);
@@ -39,6 +43,7 @@ export const InventoryProvider = ({ children }) => {
   const [useItemError, setUseItemError] = useState<string | null>(null);
   const [isUsingItem, setIsUsingItem] = useState<boolean>(false);
   const [presentedInventoryItem, setPresentedInventoryItem] = useState<InventoryItem | null>(null);
+  const [usedItem, setUsedItem] = useState<InventoryItem | null>(null);
 
   const fetchInventoryItems = async () => {
     setInventoryItemsAreLoading(true);
@@ -80,6 +85,8 @@ export const InventoryProvider = ({ children }) => {
       consumeItem,
       useItemError,
       isUsingItem,
+      usedItem,
+      setUsedItem,
     }}>
       {children}
     </InventoryContext.Provider>

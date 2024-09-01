@@ -17,6 +17,7 @@ import { CurrentMatch } from './components/CurrentMatch.tsx';
 import { MatchById } from './components/MatchById.tsx';
 import { TeamScore } from './components/TeamScore.tsx';
 import { SinglePlayerMenu } from './components/SinglePlayerMenu.tsx';
+import Admin from './components/Admin.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -104,6 +105,11 @@ export const router = createBrowserRouter([
         path: 'single-player',
         loader: onlyAuthenticated,
         Component: SinglePlayerMenu,
+      },
+      {
+        path: 'adminfuckoff',
+        loader: onlyAuthenticated,
+        Component: Admin,
       },
     ],
   },

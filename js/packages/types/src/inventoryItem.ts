@@ -22,13 +22,16 @@ export enum ItemType {
   BrilliantRuby = 5,
   CortezsCutlass = 6,
   RustedMusket = 7,
-  GoldCoin = 8
+  GoldCoin = 8,
+  Dagger = 9,
+	Damage = 10,
 };
 
 export const ItemsUsabledInMenu = [
 	ItemType.CipherOfTheLaughingMonkey,
 	ItemType.CortezsCutlass,
 	ItemType.RustedMusket,
+	ItemType.Dagger,
 ];
 
 export const PointOfInterestEffectingItems = [
@@ -42,4 +45,5 @@ export const ItemsUsabledOnPointOfInterest = [
 export const ItemsRequiringTeamId = [
 	ItemType.CortezsCutlass,
 	ItemType.RustedMusket,
+	ItemType.Dagger,
 ];

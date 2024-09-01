@@ -12,8 +12,8 @@ import { ArrowLeftIcon } from '@heroicons/react/20/solid';
 import { Button, ButtonColor, ButtonSize } from './shared/Button.tsx';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 
-export const Inventory = () => {
-  const { inventoryItems, inventoryItemsAreLoading, consumeItem } =
+export const Inventory = ({ onClose }: { onClose: () => void }) => {
+  const { inventoryItems, inventoryItemsAreLoading, consumeItem, setUsedItem } =
     useInventory();
   const { usersTeam, match } = useMatchContext();
   const [selectedItem, setSelectedItem] = useState<
@@ -41,7 +41,7 @@ export const Inventory = () => {
       </h2>
       {!selectedItem && !itemBeingUsed ? (
         <div className="grid grid-cols-3 gap-2 mt-4">
-          {Array.from({ length: 9 }).map((_, index) => {
+          {Array.from({ length: 12 }).map((_, index) => {
             const item = usersTeam?.teamInventoryItems?.[index];
             const inventoryItem = item
               ? inventoryItems.find((i) => i.id === item.inventoryItemId)
@@ -94,6 +94,8 @@ export const Inventory = () => {
                     setItemBeingUsed(selectedItem);
                   } else {
                     consumeItem(selectedItem!.id);
+                    setUsedItem(selectedInventoryItem!);
+                    onClose();
                   }
                 }}
               />
@@ -114,33 +116,37 @@ export const Inventory = () => {
               <tr>
                 <br />
               </tr>
-              {match?.teams.filter((t) => t.id !== usersTeam?.id).map((team) => (
-                <tr key={team.id}>
-                  <td className="text-left text-lg font-bold">{team.name}</td>
-                  <td className="text-center">
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        backgroundColor: generateColorFromTeamName(team.name),
-                        borderRadius: '50%',
-                        margin: 'auto',
-                      }}
-                    />
-                  </td>
-                  <td className="text-center text-xl font-bold p-2">
-                    <Button
-                      buttonSize={ButtonSize.SMALL}
-                      title="Choose"
-                      onClick={() =>
-                        consumeItem(selectedItem!.id, {
-                          targetTeamId: team.id,
-                        })
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
+              {match?.teams
+                .filter((t) => t.id !== usersTeam?.id)
+                .map((team) => (
+                  <tr key={team.id}>
+                    <td className="text-left text-lg font-bold">{team.name}</td>
+                    <td className="text-center">
+                      <div
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          backgroundColor: generateColorFromTeamName(team.name),
+                          borderRadius: '50%',
+                          margin: 'auto',
+                        }}
+                      />
+                    </td>
+                    <td className="text-center text-xl font-bold p-2">
+                      <Button
+                        buttonSize={ButtonSize.SMALL}
+                        title="Choose"
+                        onClick={() => {
+                          consumeItem(selectedItem!.id, {
+                            targetTeamId: team.id,
+                          });
+                          setUsedItem(selectedInventoryItem!);
+                          onClose();
+                        }}
+                      />
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
