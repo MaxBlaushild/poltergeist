@@ -15,4 +15,5 @@ type PointOfInterestChallenge struct {
 	CreatedAt                           time.Time                            `json:"created_at"`
 	UpdatedAt                           time.Time                            `json:"updated_at"`
 	PointOfInterestChallengeSubmissions []PointOfInterestChallengeSubmission `json:"pointOfInterestChallengeSubmissions"`
+	InventoryItemID                     int                                  `json:"inventoryItemId"`
 }

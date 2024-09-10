@@ -43,11 +43,13 @@ const Marker = ({
   zoom,
   hasDiscovered,
   onClick,
+  controllingTeam,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
   zoom: number;
   hasDiscovered: boolean;
+  controllingTeam: Team | null;
   onClick: (e: React.MouseEvent) => void;
 }) => {
   const imageUrl = hasDiscovered
@@ -125,7 +127,10 @@ const Marker = ({
       <img
         src={imageUrl}
         alt={hasDiscovered ? pointOfInterest.name : 'Mystery fortress'}
-        className={`w-${pinSize} h-${pinSize} rounded-lg border-2 border-black`}
+        className={`w-${pinSize} h-${pinSize} rounded-lg border-2`}
+        style={{
+          borderColor: controllingTeam ? generateColorFromTeamName(controllingTeam.name) : 'black',
+        }}
       />
     </button>
   );
@@ -147,6 +152,8 @@ export const MatchInProgress = () => {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
+  const [previousZoom, setPreviousZoom] = useState(0);
+  const [previousUnlockedPoiCount, setPreviousUnlockedPoiCount] = useState(-1);
   const usersTeam = match?.teams.find((team) =>
     team.users.some((user) => user.id === currentUser?.id)
   );
@@ -163,6 +170,7 @@ export const MatchInProgress = () => {
   const closePanel = () => {
     if (isPanelVisible) {
       setIsPanelVisible(false);
+      setSelectedPointOfInterest(null);
     }
   };
 
@@ -223,9 +231,25 @@ export const MatchInProgress = () => {
     event.stopPropagation();
   };
 
+  const memoizedAlternativeCoordinates = useMemo(() => {
+    return match?.pointsOfInterest.reduce((acc, poi) => {
+        const baseLat = parseFloat(poi.lat);
+        const baseLng = parseFloat(poi.lng);
+        const radius = 150 / 111000; // degrees per meter
+        const angle = ((baseLat + baseLng) * 1000) % 360; // deterministic angle based on lat and lng
+        const newLat = baseLat + radius * Math.cos((angle * Math.PI) / 180);
+        const newLng = baseLng + radius * Math.sin((angle * Math.PI) / 180);
+        acc[poi.id] = { newLat, newLng: newLng * -1 };
+        return acc;
+    }, {});
+  }, [match]);
+
   useEffect(() => {
-    console.log(match && map.current && usersTeam, map.current?.isStyleLoaded())
     if ((match && map.current && usersTeam, map.current?.isStyleLoaded())) {
+      const unlockedPoiCount = match?.pointsOfInterest.filter((poi) => hasTeamDiscoveredPointOfInterest(usersTeam!, poi))?.length;
+      if (Math.abs(zoom - previousZoom) < 1 && unlockedPoiCount === previousUnlockedPoiCount) return;
+      setPreviousUnlockedPoiCount(unlockedPoiCount!);
+      setPreviousZoom(zoom);
       const uniquePairs = getUniquePoiPairsWithinDistance(match!);
       markers.forEach((marker) => marker.remove());
       setMarkers([]);
@@ -306,12 +330,19 @@ export const MatchInProgress = () => {
           pointOfInterest
         );
 
+        const controllingInterest = getControllingTeamForPoi(pointOfInterest);
+        const controllingTeam = match?.teams.find(
+          (team) =>
+            team.id === controllingInterest?.submission?.teamId
+        );
+
         createRoot(markerDiv).render(
           <Marker
             pointOfInterest={pointOfInterest}
             index={i}
             zoom={zoom}
             hasDiscovered={!!hasDiscovered}
+            controllingTeam={controllingTeam}
             onClick={(e) => {
               e.stopPropagation();
               setSelectedPointOfInterest(pointOfInterest);
@@ -323,14 +354,11 @@ export const MatchInProgress = () => {
         let lng = parseFloat(pointOfInterest.lng) * -1;
 
         if (!hasDiscovered) {
-          const baseLat = parseFloat(pointOfInterest.lat);
-          const baseLng = parseFloat(pointOfInterest.lng);
-          const radius = 300 / 111000; // degrees per meter
-          const angle = ((baseLat + baseLng) * 1000) % 360; // deterministic angle based on lat and lng
-          const newLat = baseLat + radius * Math.cos((angle * Math.PI) / 180);
-          const newLng = baseLng + radius * Math.sin((angle * Math.PI) / 180);
-          lat = newLat;
-          lng = newLng * -1;
+          const coords = memoizedAlternativeCoordinates?.[pointOfInterest.id];
+          if (coords) {
+            lat = coords.newLat;
+            lng = coords.newLng;
+          }
         }
 
         const marker = new mapboxgl.Marker(markerDiv)
@@ -340,7 +368,7 @@ export const MatchInProgress = () => {
         setMarkers((prevMarkers) => [...prevMarkers, marker]);
       });
     }
-  }, [match, map, zoom, usersTeam]);
+  }, [match, map, zoom, usersTeam, memoizedAlternativeCoordinates]);
 
   return (
     <div className="">

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './Scoreboard.css';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
-import { PointOfInterest, getControllingTeamForPoi } from '@poltergeist/types';
+import { ItemType, PointOfInterest, getControllingTeamForPoi } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import Divider from './shared/Divider.tsx';
 import { useNavigate } from 'react-router-dom';
@@ -63,11 +63,15 @@ export const Scoreboard = () => {
 
   match?.teams.forEach((team) => {
     team.teamInventoryItems.forEach((item) => {
-      if (item.inventoryItemId === 8) {
+      if (item.inventoryItemId === ItemType.GoldCoin) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) + item.quantity;
       }
-      if (item.inventoryItemId === 10) {
+      if (item.inventoryItemId === ItemType.Damage && !team.teamInventoryItems.some((i) => i.inventoryItemId === ItemType.Entseed)) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) - (item.quantity * 2);
+      }
+
+      if (item.inventoryItemId === ItemType.Entseed) {
+        scoreboard[team.id] = (scoreboard[team.id] || 0) + (item.quantity * 3);
       }
     });
   });

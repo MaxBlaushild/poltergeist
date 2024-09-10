@@ -9,10 +9,8 @@ import (
 	"github.com/MaxBlaushild/authenticator/internal/token"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/encoding"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
-	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -295,18 +293,6 @@ func main() {
 		c.JSON(200, gin.H{"message": "everything ok"})
 	})
 
-	r.GET("/authenticator/credentials", func(c *gin.Context) {
-		credentials, err := dbClient.Credential().FindAll(c)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(200, credentials)
-	})
-
 	r.GET("/authenticator/get-all-users", func(c *gin.Context) {
 		users, err := dbClient.User().FindAll(c)
 		if err != nil {
@@ -350,190 +336,6 @@ func main() {
 		}
 
 		c.JSON(200, users)
-	})
-
-	r.POST("/authenticator/webauthn/registration-options", func(ctx *gin.Context) {
-		var registerOptionsRequest struct {
-			Name        string `json:"name" binding:"required"`
-			PhoneNumber string `json:"phoneNumber" binding:"required"`
-		}
-
-		if err := ctx.Bind(&registerOptionsRequest); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"message": "shit register options request",
-			})
-			return
-		}
-		user, err := dbClient.User().Insert(ctx, registerOptionsRequest.Name, registerOptionsRequest.PhoneNumber, nil)
-		if err != nil {
-			ctx.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		options, sessionData, err := webauthnClient.BeginRegistration(
-			user,
-			webauthn.WithCredentialParameters([]protocol.CredentialParameter{
-				{
-					Type:      "public-key",
-					Algorithm: -7,
-				},
-				{
-					Type:      "public-key",
-					Algorithm: -257,
-				},
-			}),
-		)
-		if err != nil {
-			ctx.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		if err := dbClient.Challenge().Insert(ctx, sessionData.Challenge, user.ID); err != nil {
-			ctx.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		ctx.JSON(200, options)
-	})
-
-	r.POST("/authenticator/webauthn/register", func(c *gin.Context) {
-		response, err := protocol.ParseCredentialCreationResponseBody(c.Request.Body)
-		if err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-
-		chal := response.Response.CollectedClientData.Challenge
-
-		challenge, err := dbClient.Challenge().Find(c, chal)
-		if err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-
-		user, err := dbClient.User().FindByID(c, challenge.UserID)
-		if err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		credential, err := webauthnClient.CreateCredential(user, webauthn.SessionData{
-			Challenge: challenge.Challenge,
-			UserID:    user.WebAuthnID(),
-		}, response)
-		if err != nil {
-			c.JSON(401, gin.H{"error": err.Error()})
-			return
-		}
-
-		_, err = dbClient.Credential().Insert(
-			c,
-			encoding.BytesToBase64UrlEncoded(credential.ID),
-			encoding.BytesToBase64UrlEncoded(credential.PublicKey),
-			user.ID,
-		)
-		if err != nil {
-
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		token, err := tokenClient.New(user.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": errors.Wrap(err, "jwt creation error").Error(),
-			})
-			return
-		}
-
-		c.JSON(200, gin.H{
-			"user":  user,
-			"token": token,
-		})
-	})
-
-	r.POST("/authenticator/webauthn/login-options", func(c *gin.Context) {
-		var loginOptions struct {
-			PhoneNumber string `json:"phoneNumber" binding:"required"`
-		}
-
-		if err := c.Bind(&loginOptions); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"message": "login options request",
-			})
-			return
-		}
-
-		user, err := dbClient.User().FindByPhoneNumber(c, loginOptions.PhoneNumber)
-		if err != nil {
-			c.JSON(404, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		options, session, err := webauthnClient.BeginLogin(user)
-		if err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		if err = dbClient.Challenge().Insert(c, session.Challenge, user.ID); err != nil {
-			c.JSON(500, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		c.JSON(200, options)
-	})
-
-	r.POST("/authenticator/webauthn/login", func(c *gin.Context) {
-		response, err := protocol.ParseCredentialRequestResponseBody(c.Request.Body)
-		if err != nil {
-			c.JSON(400, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		chal := response.Response.CollectedClientData.Challenge
-
-		challenge, err := dbClient.Challenge().Find(c, chal)
-		if err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-
-		user, err := dbClient.User().FindByID(c, challenge.UserID)
-		if err != nil {
-			c.JSON(500, gin.H{"error": err.Error()})
-			return
-		}
-
-		_, err = webauthnClient.ValidateLogin(user, webauthn.SessionData{
-			Challenge: challenge.Challenge,
-			UserID:    user.WebAuthnID(),
-		}, response)
-		if err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-
-		token, err := tokenClient.New(user.ID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": errors.Wrap(err, "jwt creation error").Error(),
-			})
-			return
-		}
-
-		c.JSON(200, gin.H{
-			"user":  user,
-			"token": token,
-		})
 	})
 
 	r.Run(":8089")

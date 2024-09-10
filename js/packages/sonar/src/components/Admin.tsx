@@ -4,6 +4,7 @@ import Divider from './shared/Divider.tsx';
 import TextInput from './shared/TextInput.tsx';
 import { Button } from './shared/Button.tsx';
 import { useAPI } from '@poltergeist/contexts';
+import './Admin.css';
 
 const Admin = () => {
   const { match, getCurrentMatch } = useMatchContext();
@@ -17,7 +18,7 @@ const Admin = () => {
   }, []);
 
   return (
-    <div className="bg-white">
+    <div className="Admin__background">
       <h1 className="text-2xl font-bold">Admin</h1>
       <h2 className="text-xl font-bold">Teams</h2>
       <Divider />
@@ -54,7 +55,7 @@ const Admin = () => {
       <h2 className="text-xl font-bold">Capture for team</h2>
       <TextInput label="Team ID" value={teamId} onChange={setTeamId} />
       <TextInput label="Point of Interest ID" value={pointOfInterestId} onChange={setPointOfInterestId} />
-      <input type='quantity' value={quantity} onChange={e => setQuantity(e.target.value)} />
+      <TextInput label="Quantity" value={quantity} onChange={setQuantity} />
       <Button title="Capture" disabled={!teamId || !pointOfInterestId || !quantity} onClick={async () => {
           const submission = await apiClient.post(
             `/sonar/admin/pointOfInterest/capture`,

@@ -71,6 +71,21 @@ export const PointOfInterestPanel = ({
       new Date(item.expiresAt) > new Date()
   );
 
+  const completedForTier = {};
+  pointOfInterest.pointOfInterestChallenges
+    .sort((a, b) => a.tier - b.tier)
+    .forEach((challenge) => {
+      const completed = challenge.pointOfInterestChallengeSubmissions?.some(
+        (submission) => submission.isCorrect
+      );
+      if (completed) {
+        completedForTier[challenge.tier] = completed;
+        for (let j = 0; j < challenge.tier; j++) {
+          completedForTier[j] = true;
+        }
+      }
+    });
+
   return (
     <div className="flex flex-col items-center gap-4">
       <h3 className="text-2xl font-bold">
@@ -100,9 +115,7 @@ export const PointOfInterestPanel = ({
                   <span key={`Tier ${toRoman(challenge.tier)}`}>
                     {toRoman(challenge.tier)}
                   </span>
-                  {challenge.pointOfInterestChallengeSubmissions?.some(
-                    (submission) => submission.isCorrect
-                  ) ? (
+                  {completedForTier[challenge.tier] ? (
                     <LockClosedIcon className="h-4 w-4" />
                   ) : (
                     <LockOpenIcon className="h-4 w-4" />
@@ -119,6 +132,7 @@ export const PointOfInterestPanel = ({
               <TabItem key={`Tier ${toRoman(challenge.tier)}`}>
                 <SubmitAnswerForChallenge
                   challenge={challenge}
+                  completed={completedForTier[challenge.tier]}
                   onSubmit={(immediate) => {
                     onClose(immediate);
                   }}
