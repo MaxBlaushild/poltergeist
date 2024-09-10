@@ -20,6 +20,7 @@ import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
 
 type SubmitAnswerForChallengeProps = {
   challenge: PointOfInterestChallenge;
+  completed: boolean;
   onSubmit: (immediate: boolean) => void;
 };
 
@@ -39,11 +40,6 @@ export const SubmitAnswerForChallenge = (
     CapturePointOfInterestResponse | undefined
   >(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-
-  const hasBeenAnsweredCorrectly =
-    props.challenge.pointOfInterestChallengeSubmissions?.some(
-      (submission) => submission.isCorrect
-    );
 
   let matchingRubyForChallenge;
   switch (props.challenge.tier) {
@@ -95,14 +91,14 @@ export const SubmitAnswerForChallenge = (
                 )
               : props.challenge.question}
           </p>
-          {!hasBeenAnsweredCorrectly && (
+          {!props.completed && (
             <textarea
               className="w-full h-24"
               value={textSubmission}
               onChange={(e) => setTextSubmission(e.target.value)}
             />
           )}
-          {!hasBeenAnsweredCorrectly && (
+          {!props.completed && (
             <input
               id="file"
               type="file"
@@ -112,8 +108,8 @@ export const SubmitAnswerForChallenge = (
           )}
           <div className="flex flex-row justify-between gap-2">
             <Button
-              title={hasBeenAnsweredCorrectly ? 'Locked' : 'Submit Answer'}
-              disabled={props.challenge.pointOfInterestChallengeSubmissions?.some(
+              title={props.completed ? 'Locked' : 'Submit Answer'}
+              disabled={props.completed || props.challenge.pointOfInterestChallengeSubmissions?.some(
                 (submission) => submission.isCorrect
               )}
               onClick={async () => {
@@ -143,7 +139,7 @@ export const SubmitAnswerForChallenge = (
                 }
               }}
             />
-            {!!matchingInventoryItem && !hasBeenAnsweredCorrectly && (
+            {!!matchingInventoryItem && !props.completed && (
               <img
                 src={matchingRubyForChallenge?.imageUrl}
                 alt={matchingRubyForChallenge?.name}

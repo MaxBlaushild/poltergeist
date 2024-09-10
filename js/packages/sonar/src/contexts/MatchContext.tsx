@@ -133,7 +133,7 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const getCurrentMatch = useCallback(async () => {
     setIsCurrentMatchLoading(true);
     try {
-      const response = await apiClient.get<Match>('/sonar/matches/current');
+      const response = await apiClient.get<Match>('/sonar/matches/current?timestamp=' + new Date().getTime());
       setMatch(response);
       setIsCurrentMatchLoading(false);
     } catch (error) {

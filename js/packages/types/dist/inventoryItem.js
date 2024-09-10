@@ -18,6 +18,8 @@ export var ItemType;
     ItemType[ItemType["GoldCoin"] = 8] = "GoldCoin";
     ItemType[ItemType["Dagger"] = 9] = "Dagger";
     ItemType[ItemType["Damage"] = 10] = "Damage";
+    ItemType[ItemType["Entseed"] = 11] = "Entseed";
+    ItemType[ItemType["Ale"] = 12] = "Ale";
 })(ItemType || (ItemType = {}));
 ;
 export const ItemsUsabledInMenu = [
@@ -25,6 +27,7 @@ export const ItemsUsabledInMenu = [
     ItemType.CortezsCutlass,
     ItemType.RustedMusket,
     ItemType.Dagger,
+    ItemType.Ale,
 ];
 export const PointOfInterestEffectingItems = [
     ItemType.CipherOfTheLaughingMonkey,

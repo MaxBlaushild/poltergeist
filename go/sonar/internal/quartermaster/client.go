@@ -21,6 +21,7 @@ type Quartermaster interface {
 	FindItemForItemID(itemID int) (InventoryItem, error)
 	GetInventoryItems() []InventoryItem
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
+	GetItemSpecificItem(ctx context.Context, teamID uuid.UUID, itemID int) (InventoryItem, error)
 }
 
 type UseItemMetadata struct {
@@ -48,6 +49,19 @@ func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
 
 func (c *client) GetItem(ctx context.Context, teamID uuid.UUID) (InventoryItem, error) {
 	item, err := c.getRandomItem()
+	if err != nil {
+		return InventoryItem{}, err
+	}
+
+	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, item.ID, 1); err != nil {
+		return InventoryItem{}, err
+	}
+
+	return item, nil
+}
+
+func (c *client) GetItemSpecificItem(ctx context.Context, teamID uuid.UUID, itemID int) (InventoryItem, error) {
+	item, err := c.FindItemForItemID(itemID)
 	if err != nil {
 		return InventoryItem{}, err
 	}

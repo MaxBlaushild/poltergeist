@@ -60,7 +60,24 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, teamInventoryItem *mod
 		}
 		return q.db.InventoryItem().StealItem(ctx, teamMatch.TeamID, metadata.TargetTeamID, randomItem.InventoryItemID)
 	case 10:
-		// Steal an item from another team.
+		// It's damage
+		return nil
+	case 11:
+		// You have an acorn!
+		return nil
+	case 12:
+		// Drink to remove one damage
+		items, err := q.db.InventoryItem().GetTeamsItems(ctx, teamMatch.TeamID)
+		if err != nil {
+			return err
+		}
+
+		for _, item := range items {
+			if item.InventoryItemID == 10 {
+				return q.db.InventoryItem().UseInventoryItem(ctx, item.ID)
+			}
+		}
+
 		return nil
 	default:
 		return errors.New("no effect found for this item")
@@ -80,5 +97,14 @@ func (q *client) captureChallenge(ctx context.Context, pointOfInterestID uuid.UU
 	if _, err := q.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, challenge.ID, teamID, challengeAnswer, "", true); err != nil {
 		return err
 	}
-	return nil
+
+	if challenge.InventoryItemID == 0 {
+		item, err := q.getRandomItem()
+		if err != nil {
+			return err
+		}
+		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, item.ID, 1)
+	} else {
+		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, challenge.InventoryItemID, 1)
+	}
 }

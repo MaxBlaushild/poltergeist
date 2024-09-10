@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { generateColorFromTeamName } from '../../utils/generateColor.ts';
 import { useMatchContext } from '../../contexts/MatchContext.tsx';
 import { PointOfInterestEffectingItems } from '@poltergeist/types';

@@ -66,7 +66,7 @@ var PreDefinedItems = []InventoryItem{
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/cortez-cutlass.png",
 		FlavorText: "A relic of the high seas, its blade still sharp enough to cut through the thickest of hides.",
 		EffectText: "Steal all of another team's items.",
-		RarityTier: "Mythic",
+		RarityTier: "Not Droppable",
 	},
 	{
 		ID:         7,
@@ -74,7 +74,7 @@ var PreDefinedItems = []InventoryItem{
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/rusted-musket.png",
 		FlavorText: "Found in a shipwreck, its barrel rusted and its stock worn.",
 		EffectText: "Use on an opponent to lower their score by 2.",
-		RarityTier: "Uncommon",
+		RarityTier: "Common",
 	},
 	{
 		ID:         8,
@@ -96,8 +96,24 @@ var PreDefinedItems = []InventoryItem{
 		ID:         10,
 		Name:       "Damage",
 		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/bullet-hole.png",
-		FlavorText: "You've been shot! Just rub some sand on it.",
+		FlavorText: "You've been shot! Some ale will help.",
 		EffectText: "Decreases score by 2 while held in inventory.",
 		RarityTier: "Not Droppable",
+	},
+	{
+		ID:         11,
+		Name:       "Entseed",
+		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/entseed.png",
+		FlavorText: "This seed will grow into an Ent one day. For now, you can just bask in it's life energy.",
+		EffectText: "Increase score by 3 and neutralize the effects of Damage while held in inventory.",
+		RarityTier: "Not Droppable",
+	},
+	{
+		ID:         12,
+		Name:       "Ale",
+		ImageURL:   "https://crew-points-of-interest.s3.amazonaws.com/ale.png",
+		FlavorText: "A hearty brew, made from the finest ingredients.",
+		EffectText: "Removes one damage when drank.",
+		RarityTier: "Uncommon",
 	},
 }

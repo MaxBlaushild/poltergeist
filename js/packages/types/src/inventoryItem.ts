@@ -25,6 +25,8 @@ export enum ItemType {
   GoldCoin = 8,
   Dagger = 9,
 	Damage = 10,
+	Entseed = 11,
+	Ale = 12,
 };
 
 export const ItemsUsabledInMenu = [
@@ -32,6 +34,7 @@ export const ItemsUsabledInMenu = [
 	ItemType.CortezsCutlass,
 	ItemType.RustedMusket,
 	ItemType.Dagger,
+	ItemType.Ale,
 ];
 
 export const PointOfInterestEffectingItems = [

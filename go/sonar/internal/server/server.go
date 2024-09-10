@@ -440,14 +440,32 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
+	challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, requestBody.ChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	var item quartermaster.InventoryItem
 	if submission.Judgement.Judgement {
-		item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
+		if challenge.InventoryItemID == 0 {
+			item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error": err.Error(),
+				})
+				return
+			}
+		} else {
+			item, err = s.quartermaster.GetItemSpecificItem(ctx, requestBody.TeamID, challenge.InventoryItemID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error": err.Error(),
+				})
+				return
+			}
 		}
 
 		if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.ChallengeID); err != nil {
