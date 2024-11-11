@@ -8,7 +8,8 @@ export type LogisterProps = {
   logister: (
     phoneNumber: string,
     verificationCode: string,
-    name: string
+    name: string,
+    isRegister: boolean
   ) => void;
   getVerificationCode: (phoneNumber: string) => void;
   isRegister: boolean;
@@ -26,6 +27,7 @@ export function Logister(props: LogisterProps) {
   const [code, setCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState<string | undefined>(undefined);
   const [name, setName] = useState<string>('');
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | undefined>(undefined);
 
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
@@ -92,7 +94,7 @@ export function Logister(props: LogisterProps) {
         ) : null}
         {isWaitingOnVerificationCode ? (
           <button
-            onClick={() => logister(phoneNumber!, code, name)}
+            onClick={() => logister(phoneNumber!, code, name, isRegister)}
             disabled={code.length !== 6 || (isRegister && name.length === 0)}
             className="Logister__button"
           >

@@ -14,6 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
@@ -36,6 +37,7 @@ type server struct {
 	judgeClient   judge.Client
 	quartermaster quartermaster.Quartermaster
 	chatClient    chat.Client
+	charicturist  charicturist.Client
 }
 
 type Server interface {
@@ -51,6 +53,7 @@ func NewServer(
 	judgeClient judge.Client,
 	quartermaster quartermaster.Quartermaster,
 	chatClient chat.Client,
+	charicturist charicturist.Client,
 ) Server {
 	return &server{
 		authClient:    authClient,
@@ -61,6 +64,7 @@ func NewServer(
 		judgeClient:   judgeClient,
 		quartermaster: quartermaster,
 		chatClient:    chatClient,
+		charicturist:  charicturist,
 	}
 }
 
@@ -79,7 +83,6 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.getSubmissionForSurvey))
 	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
 	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
-	r.GET("/sonar/userProfiles", middleware.WithAuthentication(s.authClient, s.getUserProfiles))
 	r.POST("/sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.submitSurveyAnswer))
 	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.createCategory))
 	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
@@ -112,22 +115,43 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
 	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
-
+	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.generateProfilePictureOptions))
 	r.Run(":8042")
 }
 
-func (s *server) populateProfilesForMatch(ctx *gin.Context, userID uuid.UUID, match *models.Match) error {
-	for i, team := range match.Teams {
-		for j, user := range team.Users {
-			profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, userID, user.ID)
-			if err != nil {
-				return err
-			}
-			match.Teams[i].Users[j].Profile = profile
-		}
+func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
+	var requestBody struct {
+		ProfilePictureUrl string `binding:"required" json:"profilePictureUrl"`
 	}
 
-	return nil
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.charicturist.CreateCharacter(ctx, charicturist.CreateCharacterRequest{
+		ProfilePictureUrl: requestBody.ProfilePictureUrl,
+		UserId:            user.ID,
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "success!",
+	})
 }
 
 func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
@@ -569,13 +593,6 @@ func (s *server) getCurrentMatch(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.populateProfilesForMatch(ctx, user.ID, match); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	ctx.JSON(http.StatusOK, match)
 }
 
@@ -645,38 +662,6 @@ func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, pointsOfInterest)
-}
-
-func (s *server) getUserProfiles(ctx *gin.Context) {
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	submissions, err := s.dbClient.SonarSurveySubmission().GetAllSubmissionsForUser(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	var sonarUsers []*models.SonarUser
-	for _, submission := range submissions {
-		sonarUser, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-		sonarUsers = append(sonarUsers, sonarUser)
-	}
-
-	ctx.JSON(http.StatusOK, sonarUsers)
 }
 
 func (s *server) deleteCategory(ctx *gin.Context) {
@@ -805,15 +790,6 @@ func (s *server) whoami(ctx *gin.Context) {
 		return
 	}
 
-	profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-	}
-
-	user.Profile = profile
-
 	ctx.JSON(http.StatusOK, user)
 }
 
@@ -822,14 +798,6 @@ func (s *server) getSubmission(ctx *gin.Context) {
 	if submissionID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "submission ID is required",
-		})
-		return
-	}
-
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
 		})
 		return
 	}
@@ -849,16 +817,6 @@ func (s *server) getSubmission(ctx *gin.Context) {
 		})
 		return
 	}
-
-	profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	submission.User.Profile = profile
 
 	ctx.JSON(http.StatusOK, submission)
 }
@@ -896,16 +854,6 @@ func (s *server) getSubmissionForSurvey(ctx *gin.Context) {
 		return
 	}
 
-	profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	submission.User.Profile = profile
-
 	ctx.JSON(http.StatusOK, submission)
 }
 
@@ -914,14 +862,6 @@ func (s *server) getSurvey(ctx *gin.Context) {
 	if surveyID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "survey ID is required",
-		})
-		return
-	}
-
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
 		})
 		return
 	}
@@ -941,27 +881,6 @@ func (s *server) getSurvey(ctx *gin.Context) {
 		})
 		return
 	}
-
-	profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, survey.UserID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	for i, submission := range survey.SonarSurveySubmissions {
-		submissionProfile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-		survey.SonarSurveySubmissions[i].User.Profile = submissionProfile
-	}
-
-	survey.User.Profile = profile
 
 	ctx.JSON(http.StatusOK, survey)
 }
@@ -1026,18 +945,6 @@ func (s *server) getSurveySubmissions(ctx *gin.Context) {
 			"error": err.Error(),
 		})
 		return
-	}
-
-	for i, submission := range submissions {
-		profile, err := s.dbClient.SonarUser().FindOrCreateSonarUser(ctx, user.ID, submission.UserID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		submissions[i].User.Profile = profile
 	}
 
 	ctx.JSON(http.StatusOK, submissions)
@@ -1394,14 +1301,6 @@ func (s *server) addUserToTeam(c *gin.Context) {
 func (s *server) getMatch(c *gin.Context) {
 	matchID := c.Param("id")
 
-	user, err := s.getAuthenticatedUser(c)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	uuidMatchID, err := uuid.Parse(matchID)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
@@ -1409,11 +1308,6 @@ func (s *server) getMatch(c *gin.Context) {
 	}
 	match, err := s.dbClient.Match().FindByID(c, uuidMatchID)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	if err := s.populateProfilesForMatch(c, user.ID, match); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}

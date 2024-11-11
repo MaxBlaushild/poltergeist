@@ -6,12 +6,14 @@ export interface UserProfileContextType {
   currentUser: User | null;
   currentUserLoading: boolean;
   currentUserError: Error | null;
+  refreshUser: () => void;
 }
 
 const UserProfileContext = createContext<UserProfileContextType>({
   currentUser: null,
   currentUserLoading: true,
-  currentUserError: null
+  currentUserError: null,
+  refreshUser: () => {},
 });
 
 export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -37,7 +39,7 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, [apiClient, user]);
 
   return (
-    <UserProfileContext.Provider value={{ currentUser, currentUserLoading, currentUserError }}>
+    <UserProfileContext.Provider value={{ currentUser, currentUserLoading, currentUserError, refreshUser: fetchCurrentUser }}>
       {children}
     </UserProfileContext.Provider>
   );

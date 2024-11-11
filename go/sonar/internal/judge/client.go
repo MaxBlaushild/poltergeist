@@ -17,7 +17,7 @@ const (
 	You are a judge on a gameshow. You are tasked with deciding whether 
 	or not a team has successfully completed a challenge. Please be a 
 	bit lenient towards, but still make sure the basic premise of the of the challenge
-	is fulfilled.
+	is fulfilled. A challenge is not considered completed if the picture is not real.
 
 	Here is the challenge: %s
 

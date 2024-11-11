@@ -31,7 +31,7 @@ func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string
 
 func (h *userHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var user models.User
-	if err := h.db.WithContext(ctx).Preload("Credentials").First(&user, id).Error; err != nil {
+	if err := h.db.WithContext(ctx).First(&user, id).Error; err != nil {
 		return nil, err
 	}
 
@@ -40,7 +40,7 @@ func (h *userHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.User, 
 
 func (h *userHandle) FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error) {
 	var user models.User
-	if err := h.db.WithContext(ctx).Preload("Credentials").Where(&models.User{PhoneNumber: phoneNumber}).First(&user).Error; err != nil {
+	if err := h.db.WithContext(ctx).Where(&models.User{PhoneNumber: phoneNumber}).First(&user).Error; err != nil {
 		return nil, err
 	}
 
@@ -77,4 +77,8 @@ func (h *userHandle) Delete(ctx context.Context, userID uuid.UUID) error {
 
 func (h *userHandle) DeleteAll(ctx context.Context) error {
 	return h.db.WithContext(ctx).Where("1 = 1").Delete(&models.User{}).Error
+}
+
+func (h *userHandle) UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("profile_picture_url", url).Error
 }

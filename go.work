@@ -1,6 +1,6 @@
-go 1.21
+go 1.22
 
-toolchain go1.21.3
+toolchain go1.22.9
 
 use (
 	./go/authenticator
@@ -8,23 +8,23 @@ use (
 	./go/core
 	./go/crystal-crisis-api
 	./go/fount-of-erebos
+	./go/migrate
 	./go/pkg/auth
 	./go/pkg/billing
 	./go/pkg/db
 	./go/pkg/deep_priest
 	./go/pkg/email
 	./go/pkg/encoding
+	./go/pkg/http
+	./go/pkg/middleware
 	./go/pkg/models
 	./go/pkg/slack
 	./go/pkg/texter
 	./go/pkg/twilio
-	./go/pkg/http
 	./go/pkg/util
-	./go/pkg/middleware
 	./go/proteus
 	./go/scorekeeper
+	./go/sonar
 	./go/texter
 	./go/trivai
-	./go/migrate
-	./go/sonar
 )

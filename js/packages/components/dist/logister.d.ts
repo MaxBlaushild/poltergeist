@@ -1,5 +1,5 @@
 export type LogisterProps = {
-    logister: (phoneNumber: string, verificationCode: string, name: string) => void;
+    logister: (phoneNumber: string, verificationCode: string, name: string, isRegister: boolean) => void;
     getVerificationCode: (phoneNumber: string) => void;
     isRegister: boolean;
     isWaitingOnVerificationCode: boolean;

@@ -28,13 +28,13 @@ type client struct {
 	sonarSurveySubmissionHandle       *sonarSurveySubmissionHandle
 	sonarActivityHandle               *sonarActivityHandle
 	sonarCategoryHandle               *sonarCategoryHandle
-	sonarUserHandle                   *sonarUserHandle
 	matchHandle                       *matchHandle
 	verificationCodeHandle            *verificationCodeHandler
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
 	inventoryItemHandle               *inventoryItemHandler
 	auditItemHandle                   *auditItemHandler
+	imageGenerationHandle             *imageGenerationHandle
 }
 
 type ClientConfig struct {
@@ -80,13 +80,13 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		sonarSurveySubmissionHandle:       &sonarSurveySubmissionHandle{db: db},
 		sonarActivityHandle:               &sonarActivityHandle{db: db},
 		sonarCategoryHandle:               &sonarCategoryHandle{db: db},
-		sonarUserHandle:                   &sonarUserHandle{db: db},
 		matchHandle:                       &matchHandle{db: db},
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
+		imageGenerationHandle:             &imageGenerationHandle{db: db},
 	}, err
 }
 
@@ -182,6 +182,6 @@ func (c *client) SonarCategory() SonarCategoryHandle {
 	return c.sonarCategoryHandle
 }
 
-func (c *client) SonarUser() SonarUserHandle {
-	return c.sonarUserHandle
+func (c *client) ImageGeneration() ImageGenerationHandle {
+	return c.imageGenerationHandle
 }

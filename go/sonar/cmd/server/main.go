@@ -5,7 +5,9 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/imagine"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
@@ -37,8 +39,9 @@ func main() {
 	judgeClient := judge.NewClient(awsClient, dbClient, deepPriest)
 	quartermaster := quartermaster.NewClient(dbClient)
 	chatClient := chat.NewClient(dbClient, quartermaster)
-
-	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster, chatClient)
+	imagineClient := imagine.NewClient(cfg.Secret.ImagineApiKey)
+	charicturist := charicturist.NewClient(imagineClient, dbClient)
+	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster, chatClient, charicturist)
 
 	s.ListenAndServe("8042")
 }
