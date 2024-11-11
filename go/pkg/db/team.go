@@ -80,17 +80,6 @@ func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName s
 }
 
 func (h *teamHandle) AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID uuid.UUID) error {
-	var stringMatchID string
-	if err := h.db.WithContext(ctx).Model(&models.TeamMatch{}).Select("match_id").Where("team_id = ?", teamID).Scan(&stringMatchID).Error; err == nil {
-		matchID, err := uuid.Parse(stringMatchID)
-		if err != nil {
-			return err
-		}
-		if err := h.RemoveUserFromMatch(ctx, matchID, userID); err != nil {
-			return err
-		}
-	}
-
 	userTeam := models.UserTeam{
 		UserID: userID,
 		TeamID: teamID,

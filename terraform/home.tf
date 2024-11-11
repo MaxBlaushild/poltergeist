@@ -118,6 +118,21 @@ variable "stripe_secret_key" {
   type        = string
 }
 
+
+resource "aws_secretsmanager_secret_version" "imagine_api_key" {
+  secret_id     = aws_secretsmanager_secret.imagine_api_key.id
+  secret_string = var.imagine_api_key
+}
+
+resource "aws_secretsmanager_secret" "imagine_api_key" {
+  name = "IMAGINE_API_KEY"
+}
+
+variable "imagine_api_key" {
+  description = "Imagine API Key"
+  type        = string
+}
+
 resource "aws_secretsmanager_secret_version" "twilio_account_sid" {
   secret_id     = aws_secretsmanager_secret.twilio_account_sid.id
   secret_string = var.twilio_account_sid
@@ -190,6 +205,15 @@ resource "aws_ecr_repository" "scorekeeper" {
 
 resource "aws_ecr_repository" "fount_of_erebos" {
   name                 = "fount-of-erebos"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "job_runner" {
+  name                 = "job-runner"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -340,6 +364,28 @@ module "ecs" {
           ]
         }
 
+        "job-runner" = {
+          cpu       = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "IMAGINE_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
+          }]
+          image = "${aws_ecr_repository.job_runner.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "job-runner"
+              containerPort = 9013
+              hostPort      = 9013
+              protocol      = "tcp"
+            }
+          ]
+        }
+
         "sonar" = {
           cpu       = 256
           memory    = 512
@@ -347,6 +393,9 @@ module "ecs" {
           secrets = [{
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "IMAGINE_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
           }]
           image = "${aws_ecr_repository.sonar.repository_url}:latest"
           port_mappings = [
@@ -747,6 +796,44 @@ resource "aws_db_subnet_group" "main" {
   }
 }
 
+resource "aws_elasticache_subnet_group" "redis_subnet_group" {
+  name       = "redis-subnet-group"
+  subnet_ids = [aws_subnet.main.id, aws_subnet.secondary.id]
+}
+
+resource "aws_security_group" "redis_sg" {
+  name        = "redis_sg"
+  description = "Allow inbound traffic for Redis"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress {
+    description = "Redis"
+    from_port   = 6379
+    to_port     = 6379
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_elasticache_cluster" "redis" {
+  cluster_id           = "poltergeist-redis"
+  engine               = "redis"
+  node_type            = "cache.t3.micro"
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis6.x"
+  engine_version       = "6.x"
+  port                 = 6379
+  subnet_group_name    = aws_elasticache_subnet_group.redis_subnet_group.name
+  security_group_ids   = [aws_security_group.redis_sg.id]
+}
+
 resource "aws_security_group" "db_sg" {
   name        = "db_sg"
   description = "Allow inbound traffic"
@@ -771,7 +858,7 @@ resource "aws_security_group" "db_sg" {
 resource "aws_db_instance" "poltergeist-db" {
   identifier             = "poltergeist"
   engine                 = "postgres"
-  engine_version         = "15.5"
+  engine_version         = "15.7"
   instance_class         = "db.t3.micro"
   allocated_storage      = 20
   db_name                = "poltergeist"
@@ -815,7 +902,7 @@ resource "aws_instance" "ssh_box" {
   instance_type          = "t2.nano"
   key_name               = aws_key_pair.lappentoppen.key_name
   subnet_id              = module.vpc.public_subnets[0]
-  vpc_security_group_ids = [aws_security_group.allow_ssh.id, aws_security_group.db_sg.id]
+  vpc_security_group_ids = [aws_security_group.allow_ssh.id, aws_security_group.db_sg.id, aws_security_group.redis_sg.id]
   associate_public_ip_address = true
 
   tags = {

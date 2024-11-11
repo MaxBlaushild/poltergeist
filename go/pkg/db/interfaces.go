@@ -25,13 +25,13 @@ type DbClient interface {
 	SonarSurveySubmission() SonarSurveySubmissionHandle
 	SonarActivity() SonarActivityHandle
 	SonarCategory() SonarCategoryHandle
-	SonarUser() SonarUserHandle
 	Match() MatchHandle
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	InventoryItem() InventoryItemHandle
 	AuditItem() AuditItemHandle
+	ImageGeneration() ImageGenerationHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -63,6 +63,7 @@ type UserHandle interface {
 	FindAll(ctx context.Context) ([]models.User, error)
 	Delete(ctx context.Context, userID uuid.UUID) error
 	DeleteAll(ctx context.Context) error
+	UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error
 }
 
 type TeamHandle interface {
@@ -144,13 +145,6 @@ type SonarCategoryHandle interface {
 	GetCategoryByID(ctx context.Context, id uuid.UUID) (models.SonarCategory, error)
 }
 
-type SonarUserHandle interface {
-	FindOrCreateSonarUser(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error)
-	GetSonarUserCount(ctx context.Context, viewerID uuid.UUID) (int64, error)
-	FindUserByViewerAndViewee(ctx context.Context, viewerID uuid.UUID, vieweeID uuid.UUID) (*models.SonarUser, error)
-	GetSonarUserProfileIcon(ctx context.Context, viewerID uuid.UUID) (string, error)
-}
-
 type MatchHandle interface {
 	Create(ctx context.Context, creatorID uuid.UUID, pointsOfInterestIDs []uuid.UUID) (*models.Match, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error)
@@ -190,4 +184,13 @@ type InventoryItemHandle interface {
 type AuditItemHandle interface {
 	Create(ctx context.Context, matchID uuid.UUID, message string) error
 	GetAuditItemsForMatch(ctx context.Context, matchID uuid.UUID) ([]*models.AuditItem, error)
+}
+
+type ImageGenerationHandle interface {
+	Create(ctx context.Context, imageGeneration *models.ImageGeneration) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ImageGeneration, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error)
+	UpdateState(ctx context.Context, imageGenerationID uuid.UUID, state models.GenerationStatus) error
+	FindByState(ctx context.Context, state models.GenerationStatus) ([]models.ImageGeneration, error)
+	SetOptions(ctx context.Context, imageGenerationID uuid.UUID, options []string) error
 }

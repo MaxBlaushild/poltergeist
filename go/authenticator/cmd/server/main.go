@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
 	"github.com/MaxBlaushild/authenticator/internal/token"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-gonic/gin"
-	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
@@ -38,23 +39,89 @@ func main() {
 		panic(err)
 	}
 
-	wconfig := &webauthn.Config{
-		RPDisplayName: cfg.Public.RpDisplayName,
-		RPID:          cfg.Public.RpID,
-		RPOrigins:     []string{cfg.Public.RpOrigin},
-	}
-
-	webauthnClient, err := webauthn.New(wconfig)
-	if err != nil {
-		panic(err)
-	}
-
 	tokenClient, err := token.NewClient(cfg.Secret.AuthPrivateKey)
 	if err != nil {
 		panic(err)
 	}
 
 	texterClient := texter.NewClient()
+
+	awsClient := aws.NewAWSClient("us-east-1")
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"message": "ok",
+		})
+	})
+
+	r.GET("/authenticator/users/:userID/profilePictureUploadUrl/:key", func(c *gin.Context) {
+		userID := c.Query("userID")
+		if userID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "userID is required",
+			})
+			return
+		}
+
+		key := c.Param("key")
+		if key == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "key is required",
+			})
+			return
+		}
+
+		url, err := awsClient.GeneratePresignedUploadURL(fmt.Sprintf("users/%s", userID), key, time.Hour)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"url": url,
+		})
+	})
+
+	r.POST("/authenticator/users/:userID/profilePictureUrl", func(c *gin.Context) {
+		var requestBody struct {
+			Url string `json:"key" binding:"required"`
+		}
+
+		if err := c.Bind(&requestBody); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		stringUserID := c.Param("userID")
+		if stringUserID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "userID is required",
+			})
+			return
+		}
+
+		userID, err := uuid.Parse(stringUserID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if err := dbClient.User().UpdateProfilePictureUrl(c, userID, requestBody.Url); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"message": "ok",
+		})
+	})
 
 	r.POST("/authenticator/token/verify", func(c *gin.Context) {
 		var requestBody auth.VerifyTokenRequest
@@ -108,6 +175,8 @@ func main() {
 
 		code, err := dbClient.TextVerificationCode().Insert(c, requestBody.PhoneNumber)
 		if err != nil {
+			fmt.Println("text verification code insertion error")
+			fmt.Println(err)
 			c.JSON(500, gin.H{
 				"error": err.Error(),
 			})
@@ -120,6 +189,8 @@ func main() {
 			From:     cfg.Public.PhoneNumber,
 			TextType: "verification-code",
 		}); err != nil {
+			fmt.Println("text send error")
+			fmt.Println(err)
 			c.JSON(500, gin.H{
 				"error": err.Error(),
 			})

@@ -104,3 +104,15 @@ sonar/ecr-push:
 	make sonar/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest
+
+PHONY: job-runner/build
+job-runner/build:
+	docker build -f ./deploy/services/job-runner/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest .
+
+PHONY: job-runner/ecr-push
+job-runner/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	make job-runner/build
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest
