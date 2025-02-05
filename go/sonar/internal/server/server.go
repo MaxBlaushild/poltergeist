@@ -116,12 +116,88 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
 	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
 	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.generateProfilePictureOptions))
+	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.getCompleteGenerationsForUser))
+	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.setProfilePicture))
 	r.Run(":8042")
+}
+
+func (s *server) createPointOfInterest(ctx *gin.Context) {
+	request := db.CreatePointOfInterestRequest{}
+	if err := ctx.Bind(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().CreateWithChallenges(ctx, &request); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest created successfully",
+	})
+}
+
+func (s *server) setProfilePicture(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var requestBody struct {
+		ProfilePictureUrl string `binding:"required" json:"profilePictureUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.User().UpdateProfilePictureUrl(ctx, user.ID, requestBody.ProfilePictureUrl); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "profile picture set successfully",
+	})
+}
+
+func (s *server) getCompleteGenerationsForUser(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	generations, err := s.dbClient.ImageGeneration().GetCompleteGenerationsForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, generations)
 }
 
 func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 	var requestBody struct {
 		ProfilePictureUrl string `binding:"required" json:"profilePictureUrl"`
+		Gender            string `binding:"required" json:"gender"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -142,6 +218,7 @@ func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 	if err := s.charicturist.CreateCharacter(ctx, charicturist.CreateCharacterRequest{
 		ProfilePictureUrl: requestBody.ProfilePictureUrl,
 		UserId:            user.ID,
+		Gender:            requestBody.Gender,
 	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -155,21 +232,6 @@ func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 }
 
 func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if user.ID != uuid.MustParse("1f1bf125-3062-461b-adf4-d824fada3a95") {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": "only admins can unlock point of interest",
-		})
-		return
-	}
-
 	var requestBody struct {
 		TeamID            uuid.UUID `binding:"required" json:"teamId"`
 		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
@@ -200,22 +262,6 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 }
 
 func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
-
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if user.ID != uuid.MustParse("1f1bf125-3062-461b-adf4-d824fada3a95") {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": "only admins can unlock point of interest",
-		})
-		return
-	}
-
 	var requestBody struct {
 		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
 		TeamID            uuid.UUID `binding:"required" json:"teamId"`
@@ -1371,39 +1417,6 @@ func (s *server) endMatch(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"message": "done"})
-}
-
-func (s *server) createPointOfInterest(c *gin.Context) {
-	var createPointOfInterestRequest struct {
-		Name               string `json:"name" binding:"required"`
-		Clue               string `json:"clue" binding:"required"`
-		TierOneChallenge   string `json:"tierOneChallenge" binding:"required"`
-		TierTwoChallenge   string `json:"tierTwoChallenge" binding:"required"`
-		TierThreeChallenge string `json:"tierThreeChallenge" binding:"required"`
-		Lat                string `json:"lat" binding:"required"`
-		Lng                string `json:"lng" binding:"required"`
-	}
-
-	if err := c.Bind(&createPointOfInterestRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	if err := s.dbClient.PointOfInterest().Create(c, models.PointOfInterest{
-		Name: createPointOfInterestRequest.Name,
-		Clue: createPointOfInterestRequest.Clue,
-		Lat:  createPointOfInterestRequest.Lat,
-		Lng:  createPointOfInterestRequest.Lng,
-	}); err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(200, gin.H{
-		"message": "everything cool",
-	})
 }
 
 func (s *server) unlockPointOfInterest(c *gin.Context) {

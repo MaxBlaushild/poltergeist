@@ -18,6 +18,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter
 	github.com/MaxBlaushild/poltergeist/pkg/twilio => ../pkg/twilio
+	github.com/MaxBlaushild/poltergeist/pkg/useapi => ../pkg/useapi
 	github.com/MaxBlaushild/poltergeist/pkg/util => ../pkg/util
 )
 
@@ -40,6 +41,7 @@ require (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect

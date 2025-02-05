@@ -18,6 +18,7 @@ import { MatchById } from './components/MatchById.tsx';
 import { TeamScore } from './components/TeamScore.tsx';
 import { SinglePlayerMenu } from './components/SinglePlayerMenu.tsx';
 import Admin from './components/Admin.tsx';
+import { CreatePointsOfInterest } from './components/CreatePointsOfInterest.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -110,6 +111,11 @@ export const router = createBrowserRouter([
         path: 'adminfuckoff',
         loader: onlyAuthenticated,
         Component: Admin,
+      },
+      {
+        path: 'create-point-of-interest',
+        loader: onlyAuthenticated,
+        Component: CreatePointsOfInterest,
       },
     ],
   },

@@ -8,8 +8,8 @@ import (
 	"github.com/MaxBlaushild/job-runner/internal/config"
 	"github.com/MaxBlaushild/job-runner/internal/processors"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/imagine"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
 	"github.com/hibiken/asynq"
 )
 
@@ -44,17 +44,34 @@ func main() {
 		},
 	)
 
-	client := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
+	redisConnOpt := asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl}
+	client := asynq.NewClient(redisConnOpt)
 	defer client.Close()
 
-	imageGenerationService := imagine.NewClient(cfg.Secret.ImagineApiKey)
+	useApiService := useapi.NewClient(cfg.Secret.UseApiKey)
 
-	pollImageGenerationProcessor := processors.NewPollImageGenerationProcessor(dbClient, imageGenerationService)
-	queuePollImageGenerationProcessor := processors.NewQueuePollImageGenerationProcessor(dbClient, imageGenerationService, client)
+	pollImageGenerationProcessor := processors.NewPollImageGenerationProcessor(dbClient, useApiService)
+	pollImageUpscaleProcessor := processors.NewPollImageUpscaleProcessor(dbClient, useApiService)
+	queuePollImageGenerationProcessor := processors.NewQueuePollImageGenerationProcessor(dbClient, useApiService, client)
+	
 	// mux maps a type to a handler
 	mux := asynq.NewServeMux()
 	mux.Handle(jobs.PollImageGenerationTaskType, &pollImageGenerationProcessor)
+	mux.Handle(jobs.PollImageUpscaleTaskType, &pollImageUpscaleProcessor)
 	mux.Handle(jobs.QueuePollImageGenerationTaskType, &queuePollImageGenerationProcessor)
+
+	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
+
+	// Schedule the task to run every 30 seconds.
+	if _, err = scheduler.Register("@every 30s", asynq.NewTask(jobs.QueuePollImageGenerationTaskType, nil)); err != nil {
+		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	go func() {
+		if err := scheduler.Run(); err != nil {
+			log.Fatalf("could not run scheduler: %v", err)
+		}
+	}()
 
 	// Start health check server
 	go func() {

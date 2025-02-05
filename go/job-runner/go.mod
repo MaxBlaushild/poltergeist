@@ -15,6 +15,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter
 	github.com/MaxBlaushild/poltergeist/pkg/twilio => ../pkg/twilio
+	github.com/MaxBlaushild/poltergeist/pkg/useapi => ../pkg/useapi
 	github.com/MaxBlaushild/poltergeist/pkg/util => ../pkg/util
 )
 
@@ -22,14 +23,16 @@ require (
 	cosmossdk.io/errors v1.0.1
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/imagine v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.0
 	github.com/spf13/viper v1.19.0
 )
 
 require (
-	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect

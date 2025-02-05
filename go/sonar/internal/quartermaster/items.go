@@ -116,4 +116,20 @@ var PreDefinedItems = []InventoryItem{
 		EffectText: "Removes one damage when drank.",
 		RarityTier: "Uncommon",
 	},
+	{
+		ID:         13,
+		Name:       "Witchflame",
+		ImageURL:   "https://crew-points-of-interest.s3.us-east-1.amazonaws.com/witchflame.png",
+		FlavorText: "A flame that burns with a sinister glow.",
+		EffectText: "Removes all damage when held. Also increases score by 1 when held.",
+		RarityTier: "Not Droppable",
+	},
+	{
+		ID:         14,
+		Name:       "Wicked Spellbook",
+		ImageURL:   "https://crew-points-of-interest.s3.us-east-1.amazonaws.com/wicked-spellbook.png",
+		FlavorText: "The spellbook whispers to you. Ignore it.",
+		EffectText: "Steal all of another team's items.",
+		RarityTier: "Not Droppable",
+	},
 }

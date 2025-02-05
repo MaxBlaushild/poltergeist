@@ -27,9 +27,12 @@ export enum ItemType {
 	Damage = 10,
 	Entseed = 11,
 	Ale = 12,
+  Witchflame = 13,
+  WickedSpellbook = 14,
 };
 
 export const ItemsUsabledInMenu = [
+	ItemType.WickedSpellbook,
 	ItemType.CipherOfTheLaughingMonkey,
 	ItemType.CortezsCutlass,
 	ItemType.RustedMusket,
@@ -46,6 +49,7 @@ export const ItemsUsabledOnPointOfInterest = [
 ];
 
 export const ItemsRequiringTeamId = [
+	ItemType.WickedSpellbook,
 	ItemType.CortezsCutlass,
 	ItemType.RustedMusket,
 	ItemType.Dagger,

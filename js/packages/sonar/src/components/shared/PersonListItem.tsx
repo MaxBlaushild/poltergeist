@@ -16,7 +16,7 @@ export const PersonListItem = ({ user, onClick, actionArea }: PersonListItemProp
   <div className="flex-grow flex flex-col">
     <div className="flex items-center space-x-3">
       <img
-        src={user.profile?.profilePictureUrl || 'default-profile.png'}
+        src={user.profilePictureUrl || 'default-profile.png'}
         alt={`${user.name}'s profile`}
         className="h-9 w-9 rounded-full"
       />

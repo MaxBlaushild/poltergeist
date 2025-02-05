@@ -33,6 +33,10 @@ func (h *imageGenerationHandle) FindByUserID(ctx context.Context, userID uuid.UU
 	return imageGenerations, nil
 }
 
+func (h *imageGenerationHandle) Updates(ctx context.Context, imageGenerationID uuid.UUID, updates *models.ImageGeneration) error {
+	return h.db.WithContext(ctx).Model(&models.ImageGeneration{}).Where("id = ?", imageGenerationID).Updates(updates).Error
+}
+
 func (h *imageGenerationHandle) UpdateState(ctx context.Context, imageGenerationID uuid.UUID, state models.GenerationStatus) error {
 	imgGen, err := h.FindByID(ctx, imageGenerationID)
 	if err != nil {
@@ -64,6 +68,14 @@ func (h *imageGenerationHandle) SetOptions(ctx context.Context, imageGenerationI
 func (h *imageGenerationHandle) FindByState(ctx context.Context, state models.GenerationStatus) ([]models.ImageGeneration, error) {
 	var imageGenerations []models.ImageGeneration
 	if err := h.db.WithContext(ctx).Where("status = ?", state).Find(&imageGenerations).Error; err != nil {
+		return nil, err
+	}
+	return imageGenerations, nil
+}
+
+func (h *imageGenerationHandle) GetCompleteGenerationsForUser(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error) {
+	var imageGenerations []models.ImageGeneration
+	if err := h.db.WithContext(ctx).Where("user_id = ? AND status = ?", userID, models.GenerationStatusComplete).Find(&imageGenerations).Error; err != nil {
 		return nil, err
 	}
 	return imageGenerations, nil

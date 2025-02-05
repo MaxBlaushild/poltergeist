@@ -84,6 +84,7 @@ type PointOfInterestHandle interface {
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
+	CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error
 }
 
 type PointOfInterestTeamHandle interface {
@@ -193,4 +194,6 @@ type ImageGenerationHandle interface {
 	UpdateState(ctx context.Context, imageGenerationID uuid.UUID, state models.GenerationStatus) error
 	FindByState(ctx context.Context, state models.GenerationStatus) ([]models.ImageGeneration, error)
 	SetOptions(ctx context.Context, imageGenerationID uuid.UUID, options []string) error
+	Updates(ctx context.Context, imageGenerationID uuid.UUID, updates *models.ImageGeneration) error
+	GetCompleteGenerationsForUser(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error)
 }

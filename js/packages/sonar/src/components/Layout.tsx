@@ -1,16 +1,84 @@
 import React, { useState } from 'react';
 import './Layout.css';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import { ChevronDownIcon, PencilIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { useAPI, useAuth } from '@poltergeist/contexts';
 import { Button, ButtonSize } from './shared/Button.tsx';
 import Divider from './shared/Divider.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { Scoreboard } from './Scoreboard.tsx';
+import useImageGenerations from '../hooks/useImageGenerations.ts';
+
+const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
+  const { imageGenerations } = useImageGenerations();
+  const { currentUser, refreshUser } = useUserProfiles();
+  const { apiClient } = useAPI();
+  const [selectedProfilePicture, setSelectedProfilePicture] = useState<string>(currentUser?.profilePictureUrl || '/blank-avatar.webp');
+
+  const setProfilePicture = async () => {
+    await apiClient.post('/sonar/profilePicture', {
+      profilePictureUrl: selectedProfilePicture,
+    });
+    refreshUser();
+  };
+
+  const profilePictures: string[] = [];
+  imageGenerations?.forEach((gen) => {
+    if (gen.optionOne) {
+      profilePictures.push(gen.optionOne);
+    }
+    if (gen.optionTwo) {
+      profilePictures.push(gen.optionTwo);
+    }
+    if (gen.optionThree) {
+      profilePictures.push(gen.optionThree);
+    }
+    if (gen.optionFour) {
+      profilePictures.push(gen.optionFour);
+    }
+  });
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center"
+      onClick={() => {
+        setProfilePicture();
+        onExit();
+      }}
+    >
+      <img
+        src={selectedProfilePicture}
+        alt="Profile Picture"
+        className="max-w-[90%] max-h-[80%] object-contain mb-4"
+      />
+      <div className="flex gap-2 overflow-x-auto p-2">
+        {profilePictures.map((url, index) => (
+          <div 
+            key={index} 
+            className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
+              url === selectedProfilePicture ? 'border-2 border-[#fa9eb5]' : ''
+            }`}
+          >
+            <img
+              src={url}
+              alt={`Profile Picture Option ${index + 1}`}
+              className="w-full h-full object-cover"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProfilePicture(url);
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 export function Layout() {
   const [isNavOpen, setIsNavOpen] = useState(false);
+  const [showProfilePicture, setShowProfilePicture] = useState(false);
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
   const { currentUser } = useUserProfiles();
@@ -19,6 +87,7 @@ export function Layout() {
 
   const toggleNav = () => {
     setIsNavOpen(!isNavOpen);
+    setShowProfilePicture(false);
   };
 
   return (
@@ -50,8 +119,8 @@ export function Layout() {
                 >
                   <img
                     src={
-                      currentUser?.profile?.profilePictureUrl ||
-                      '/test-profile.png'
+                      currentUser?.profilePictureUrl ||
+                      '/blank-avatar.webp'
                     }
                     alt="Profile Icon"
                     className="object-cover w-full h-full"
@@ -83,10 +152,13 @@ export function Layout() {
           <XMarkIcon className="h-8 w-8 mt-3 ml-3" />
         </button>
         <div className="flex items-center justify-start p-4 gap-4">
-          <div className="flex justify-center items-center w-16 h-16 rounded-full overflow-hidden">
+          <div 
+            className="flex justify-center items-center w-16 h-16 rounded-full overflow-hidden cursor-pointer"
+            onClick={() => setShowProfilePicture(true)}
+          >
             <img
               src={
-                currentUser?.profile?.profilePictureUrl || '/test-profile.png'
+                currentUser?.profilePictureUrl || '/blank-avatar.webp'
               }
               alt="Profile Icon"
               className="object-cover w-full h-full"
@@ -96,6 +168,9 @@ export function Layout() {
             {user?.name}
           </h2>
         </div>
+        {showProfilePicture && (
+          <ProfilePictureModal onExit={() => setShowProfilePicture(false)} />
+        )}
         {match ? (
           <div className="m-4 mb-6">
             <Button
