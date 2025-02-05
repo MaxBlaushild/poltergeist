@@ -41,7 +41,7 @@ func (h *teamHandle) GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]mod
 
 	return teams, nil
 }
-
+ 
 func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error) {
 	for _, userID := range userIDs {
 		if err := h.RemoveUserFromMatch(ctx, matchID, userID); err != nil {

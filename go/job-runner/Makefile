@@ -1,2 +1,2 @@
 dev:
-	go run ./cmd/server/main.go
+	go run ./cmd/runner/main.go

@@ -26,9 +26,28 @@ const toRoman = (num: number): string => {
   return lookup[num] || '';
 };
 
+const ProfilePictureModal = ({ onExit, url }: { onExit: () => void, url: string }) => {
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center"
+      onClick={() => {
+        onExit();
+      }}
+    >
+      <img
+        src={url}
+        alt="Profile Picture"
+        className="w-screen h-screen object-contain"
+      />
+    </div>
+  );
+};
+
 export const Scoreboard = () => {
   const { match } = useMatchContext();
   const navigate = useNavigate();
+  const [selectedProfilePicture, setSelectedProfilePicture] = useState<string | null>(null);
   const [selectedTeamID, setSelectedTeamID] = useState<string | null>(null);
   const selectedTeam = match?.teams.find((team) => team.id === selectedTeamID);
 
@@ -66,7 +85,7 @@ export const Scoreboard = () => {
       if (item.inventoryItemId === ItemType.GoldCoin) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) + item.quantity;
       }
-      if (item.inventoryItemId === ItemType.Damage && !team.teamInventoryItems.some((i) => i.inventoryItemId === ItemType.Entseed)) {
+      if (item.inventoryItemId === ItemType.Damage && !team.teamInventoryItems.some((i) => i.inventoryItemId === ItemType.Entseed || i.inventoryItemId === ItemType.Witchflame)) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) - (item.quantity * 2);
       }
 
@@ -133,7 +152,7 @@ export const Scoreboard = () => {
               <PersonListItem
               key={user.id}
               user={user}
-              onClick={(u) => {}}
+              onClick={(u) => setSelectedProfilePicture(u.profilePictureUrl)}
               actionArea={() => <div></div>}
               />
             ))}
@@ -146,14 +165,7 @@ export const Scoreboard = () => {
               user={{
                 id: poi.id,
                 name: poi.name,
-                profile: {
-                  id: poi.id,
-                  createdAt: "",
-                  updatedAt: "",
-                  viewerId: "",
-                  vieweeId: "",
-                  profilePictureUrl: poi.imageURL,
-                },
+                profilePictureUrl: poi.imageURL,
                 phoneNumber: "",
               }}
               onClick={(u) => {}}
@@ -164,6 +176,9 @@ export const Scoreboard = () => {
             ))}
           </div>
         </div>
+      )}
+      {selectedProfilePicture && (
+        <ProfilePictureModal onExit={() => setSelectedProfilePicture(null)} url={selectedProfilePicture} />
       )}
     </div>
   );

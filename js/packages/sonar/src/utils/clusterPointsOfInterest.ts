@@ -1,6 +1,6 @@
 import { Match, PointOfInterest } from '@poltergeist/types';
 import { calculateDistance } from './calculateDistance.ts';
-const distanceThreshold = 800;
+const distanceThreshold = 300;
 
 const distances = new Map();
 

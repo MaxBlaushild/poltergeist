@@ -2,11 +2,12 @@ package charicturist
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
-	"github.com/MaxBlaushild/poltergeist/pkg/imagine"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
 	"github.com/google/uuid"
 )
 
@@ -15,25 +16,36 @@ type Client interface {
 }
 
 type client struct {
-	imagine  imagine.ImagineClient
+	useApi   useapi.Client
 	dbClient db.DbClient
 }
 
 type CreateCharacterRequest struct {
 	UserId            uuid.UUID
 	ProfilePictureUrl string
+	Gender            string
 }
 
 const (
-	imaginePrompt = " a pirate, profile picture, pixelated, retro video game style, white background"
+	imaginePrompt = " a pirate, %sprofile picture, pixelated, retro video game style, white background"
 )
 
-func NewClient(imagine imagine.ImagineClient, dbClient db.DbClient) Client {
-	return &client{imagine: imagine, dbClient: dbClient}
+func NewClient(useApi useapi.Client, dbClient db.DbClient) Client {
+	return &client{useApi: useApi, dbClient: dbClient}
 }
 
 func (c *client) CreateCharacter(ctx context.Context, request CreateCharacterRequest) error {
-	imagineResponse, err := c.imagine.InitiateImageGeneration(ctx, request.ProfilePictureUrl+imaginePrompt)
+	genderQualifier := ""
+	if request.Gender == "male" {
+		genderQualifier = "a man, "
+	}
+
+	if request.Gender == "female" {
+		genderQualifier = "a woman, "
+	}
+
+	prompt := fmt.Sprintf(imaginePrompt, genderQualifier)
+	imagineResponse, err := c.useApi.GenerateImageOptions(ctx, request.ProfilePictureUrl+prompt)
 	if err != nil {
 		return err
 	}
@@ -43,8 +55,8 @@ func (c *client) CreateCharacter(ctx context.Context, request CreateCharacterReq
 		UserID:              request.UserId,
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
-		GenerationID:        imagineResponse.Data.ID,
-		GenerationBackendID: models.GenerationBackendImagine,
+		GenerationID:        imagineResponse.Hash,
+		GenerationBackendID: models.GenerationBackendUseApi,
 		Status:              models.GenerationStatusPending,
 	}); err != nil {
 		return err

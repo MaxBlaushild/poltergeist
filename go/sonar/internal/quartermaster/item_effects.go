@@ -79,6 +79,12 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, teamInventoryItem *mod
 		}
 
 		return nil
+	case 13:
+		// Remove all damage when held.
+		return nil
+	case 14:
+		// Steal all of another team's items.
+		return q.db.InventoryItem().StealItems(ctx, teamMatch.TeamID, metadata.TargetTeamID)
 	default:
 		return errors.New("no effect found for this item")
 	}

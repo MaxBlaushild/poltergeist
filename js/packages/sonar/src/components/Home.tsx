@@ -22,41 +22,52 @@ export function Home() {
     isWaitingForVerificationCode,
     isRegister,
   } = useAuth();
-  
+
   const [isLogistering, setIsLogistering] = useState<boolean>(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [shouldSetProfilePicture, setShouldSetProfilePicture] = useState<boolean>(false);
+  const [shouldSetProfilePicture, setShouldSetProfilePicture] =
+    useState<boolean>(false);
+  const [file, setFile] = useState<File | undefined>(undefined);
+  const [gender, setGender] = useState<string | undefined>(undefined);
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { search } = useLocation();
   const queryParams = new URLSearchParams(search);
   const from = queryParams.get('from');
   const unescapedFrom = from ? decodeURIComponent(from) : undefined;
   const { apiClient } = useAPI();
-  
 
-  const uploadProfilePicture = useCallback(async (image?: File | undefined): Promise<SubmitProfilePictureResponse | undefined> => {
-    const user = await apiClient.get<User>('/sonar/whoami');
-    let timestamp = new Date().getTime().toString();
-    const getExtension = (filename: string): string => {
-      return filename.split('.').pop()?.toLowerCase() || '';
-    };
-    const extension = image ? getExtension(image.name) : '';
-    var imageUrl = '';
+  const uploadProfilePicture = useCallback(
+    async (): Promise<SubmitProfilePictureResponse | undefined> => {
+      const user = await apiClient.get<User>('/sonar/whoami');
+      let timestamp = new Date().getTime().toString();
+      const getExtension = (filename: string): string => {
+        return filename.split('.').pop()?.toLowerCase() || '';
+      };
+      const extension = file ? getExtension(file.name) : '';
+      var imageUrl = '';
 
-    if (image) {
-      const presignedUrl = await getPresignedUploadURL("crew-profile-icons", `${user?.id}-${timestamp}.${extension}`);
-      if (!presignedUrl) return;
-      await uploadMedia(presignedUrl, image);
-      imageUrl = presignedUrl.split("?")[0];
-    }
+      if (file) {
+        const presignedUrl = await getPresignedUploadURL(
+          'crew-profile-icons',
+          `${user?.id}-${timestamp}.${extension}`
+        );
+        if (!presignedUrl) return;
+        await uploadMedia(presignedUrl, file);
+        imageUrl = presignedUrl.split('?')[0];
+      }
 
-    apiClient.post<SubmitProfilePictureResponse>(`/sonar/generateProfilePictureOptions`, {
-      profilePictureUrl: imageUrl,
-    });
+      apiClient.post<SubmitProfilePictureResponse>(
+        `/sonar/generateProfilePictureOptions`,
+        {
+          profilePictureUrl: imageUrl,
+          gender,
+        }
+      );
 
-    navigate(unescapedFrom || '/dashboard');
-
-  }, [navigate]);
+      navigate(unescapedFrom || '/dashboard');
+    },
+    [navigate, file, gender]
+  );
 
   return (
     <div className="Home__background">
@@ -82,33 +93,62 @@ export function Home() {
             <div className="flex flex-col items-center gap-4 w-full">
               <h2 className="Login__title">Sign in or sign up</h2>
               <Logister
-              logister={async (one, two, three, isRegister) => {
-                try {
-                  await logister(one, two, three);
-                  if (isRegister) {
-                    setShouldSetProfilePicture(true);
-                  } else {
-                    navigate(unescapedFrom || '/dashboard');
+                logister={async (one, two, three, isRegister) => {
+                  try {
+                    await logister(one, two, three);
+                    if (isRegister) {
+                      setShouldSetProfilePicture(true);
+                    } else {
+                      navigate(unescapedFrom || '/dashboard');
+                    }
+                  } catch (e) {
+                    setError('Something went wrong. Please try again later');
                   }
-                } catch (e) {
-                  setError('Something went wrong. Please try again later');
-                }
-              }}
-              error={error}
-              getVerificationCode={getVerificationCode}
-              isRegister={isRegister}
-              isWaitingOnVerificationCode={isWaitingForVerificationCode}
+                }}
+                error={error}
+                getVerificationCode={getVerificationCode}
+                isRegister={isRegister}
+                isWaitingOnVerificationCode={isWaitingForVerificationCode}
               />
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 w-full">
               <h2 className="Login__title">Take a selfie and get piratified</h2>
+              <p className="text-lg font-bold">
+                Upload a selfie and we'll generate a profile picture for you. It
+                will take a few seconds, so don't sweat it when it doesn't show
+                up immediately.
+              </p>
               <input
-              id="file"
-              type="file"
-              className="w-full"
-              onChange={(e) => uploadProfilePicture(e.target.files?.[0])}
-            />
+                id="file"
+                type="file"
+                className="w-full"
+                onChange={(e) => setFile(e.target.files?.[0])}
+              />
+              <div className="flex flex-col gap-2 w-full">
+                <label htmlFor="gender" className="text-lg font-bold">
+                  Select your gender for a more personalized pirate avatar:
+                </label>
+                <select
+                  id="gender"
+                  className="p-2 rounded border border-gray-300"
+                  onChange={(e) => setGender(e.target.value)}
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Choose your gender
+                  </option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <Button
+                title="Generate profile picture"
+                buttonSize={ButtonSize.LARGE}
+                disabled={!file || !gender}
+                onClick={() => uploadProfilePicture()}
+              />
             </div>
           )}
         </Modal>

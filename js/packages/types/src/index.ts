@@ -15,3 +15,5 @@ export * from './inventoryItem';
 export * from './teamInventoryItem';
 export * from './matchInventoryItemEffect';
 export * from './auditItem';
+export * from './imageGeneration';
+

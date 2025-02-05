@@ -12,6 +12,7 @@ const (
 	GenerationStatusUnidentified GenerationStatus = iota
 	GenerationStatusPending
 	GenerationStatusInProgress
+	GenerateImageOptions
 	GenerationStatusComplete
 	GenerationStatusFailed
 )
@@ -21,6 +22,7 @@ type GenerationBackend int
 const (
 	GenerationBackendUnidentified GenerationBackend = iota
 	GenerationBackendImagine
+	GenerationBackendUseApi
 )
 
 type ImageGeneration struct {

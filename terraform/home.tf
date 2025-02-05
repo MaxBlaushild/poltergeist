@@ -118,6 +118,19 @@ variable "stripe_secret_key" {
   type        = string
 }
 
+resource "aws_secretsmanager_secret_version" "use_api_key" {
+  secret_id     = aws_secretsmanager_secret.use_api_key.id
+  secret_string = var.use_api_key
+}
+
+resource "aws_secretsmanager_secret" "use_api_key" {
+  name = "USE_API_KEY"
+}
+
+variable "use_api_key" {
+  description = "Use API Key"
+  type        = string
+}
 
 resource "aws_secretsmanager_secret_version" "imagine_api_key" {
   secret_id     = aws_secretsmanager_secret.imagine_api_key.id
@@ -368,12 +381,15 @@ module "ecs" {
           cpu       = 256
           memory    = 512
           essential = true
-          secrets = [{
+          secrets = [{ 
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }, {
             name      = "IMAGINE_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
+          }, {
+            name      = "USE_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
           }]
           image = "${aws_ecr_repository.job_runner.repository_url}:latest"
           port_mappings = [
@@ -396,7 +412,10 @@ module "ecs" {
           }, {
             name      = "IMAGINE_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
-          }]
+          }, {
+            name      = "USE_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
+          },]
           image = "${aws_ecr_repository.sonar.repository_url}:latest"
           port_mappings = [
             {

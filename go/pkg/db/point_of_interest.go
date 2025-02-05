@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -10,6 +11,22 @@ import (
 
 type pointOfInterestHandle struct {
 	db *gorm.DB
+}
+
+type CreatePointOfInterestRequest struct {
+	Name                         string  `binding:"required" json:"name"`
+	Description                  string  `binding:"required" json:"description"`
+	ImageUrl                     string  `binding:"required" json:"imageUrl"`
+	Lat                          string  `binding:"required" json:"lat"`
+	Lon                          string  `binding:"required" json:"lon"`
+	Clue                         string  `binding:"required" json:"clue"`
+	TierOne                      string  `binding:"required" json:"tierOne"`
+	TierTwo                      *string `json:"tierTwo"`
+	TierThree                    *string `json:"tierThree"`
+	TierOneInventoryItemId       int     `json:"tierOneInventoryItemId"`
+	TierTwoInventoryItemId       int     `json:"tierTwoInventoryItemId"`
+	TierThreeInventoryItemId     int     `json:"tierThreeInventoryItemId"`
+	PointOfInterestGroupMemberID string  `json:"pointOfInterestGroupMemberId"`
 }
 
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {
@@ -92,4 +109,97 @@ func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uu
 
 func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest models.PointOfInterest) error {
 	return c.db.WithContext(ctx).Create(&pointOfInterest).Error
+}
+
+func (c *pointOfInterestHandle) CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error {
+	// Start a transaction since we need to create multiple related records
+	tx := c.db.WithContext(ctx).Begin()
+	if err := tx.Error; err != nil {
+		return err
+	}
+
+	updatedAt := time.Now()
+	createdAt := updatedAt
+	pointOfInterestID := uuid.New()
+
+	// Create the point of interest first
+	pointOfInterest := models.PointOfInterest{
+		ID:          pointOfInterestID,
+		Name:        request.Name,
+		Description: request.Description,
+		Lat:         request.Lat,
+		Lng:         request.Lon,
+		ImageUrl:    request.ImageUrl,
+		Clue:        request.Clue,
+		UpdatedAt:   updatedAt,
+		CreatedAt:   createdAt,
+	}
+
+	if err := tx.Create(&pointOfInterest).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	pointOfInterestGroupID, err := uuid.Parse(request.PointOfInterestGroupMemberID)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	pointOfInterestGroupMember := models.PointOfInterestGroupMember{
+		ID:                     uuid.New(),
+		PointOfInterestID:      pointOfInterestID,
+		PointOfInterestGroupID: pointOfInterestGroupID,
+	}
+
+	if err := tx.Create(&pointOfInterestGroupMember).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	tierOneChallenge := models.PointOfInterestChallenge{
+		ID:                uuid.New(),
+		PointOfInterestID: pointOfInterestID,
+		Question:          request.TierOne,
+		Tier:              1,
+		InventoryItemID:   request.TierOneInventoryItemId,
+	}
+
+	if err := tx.Create(&tierOneChallenge).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if request.TierTwo != nil && *request.TierTwo != "" {
+		tierTwoChallenge := models.PointOfInterestChallenge{
+			ID:                uuid.New(),
+			PointOfInterestID: pointOfInterestID,
+			Question:          *request.TierTwo,
+			Tier:              2,
+			InventoryItemID:   request.TierTwoInventoryItemId,
+		}
+
+		if err := tx.Create(&tierTwoChallenge).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	if request.TierThree != nil && *request.TierThree != "" {
+		tierThreeChallenge := models.PointOfInterestChallenge{
+			ID:                uuid.New(),
+			PointOfInterestID: pointOfInterestID,
+			Question:          *request.TierThree,
+			Tier:              3,
+			InventoryItemID:   request.TierThreeInventoryItemId,
+		}
+
+		if err := tx.Create(&tierThreeChallenge).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	// Commit the transaction if everything succeeded
+	return tx.Commit().Error
 }
