@@ -54,6 +54,7 @@ func (c *client) GenerateNewHowManyQuestion(ctx context.Context, promptSeed stri
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println(answer.Answer)
 	parts := strings.Split(answer.Answer, promptDelimiter)
 
 	if len(parts) < 3 {

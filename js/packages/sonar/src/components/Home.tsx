@@ -6,7 +6,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAPI, useAuth } from '@poltergeist/contexts';
 import { Logister } from '@poltergeist/components';
 import { Modal, ModalSize } from './shared/Modal.tsx';
-import { useMediaContext } from '../contexts/MediaContext.tsx';
+import { useMediaContext } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { User } from '@poltergeist/types';
 

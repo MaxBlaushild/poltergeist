@@ -11,6 +11,7 @@ type SecretConfig struct {
 	DbPassword    string
 	ImagineApiKey string
 	UseApiKey     string
+	MapboxApiKey  string
 }
 
 type PublicConfig struct {
@@ -60,6 +61,7 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 			DbPassword:    os.Getenv("DB_PASSWORD"),
 			ImagineApiKey: os.Getenv("IMAGINE_API_KEY"),
 			UseApiKey:     os.Getenv("USE_API_KEY"),
+			MapboxApiKey:  os.Getenv("MAPBOX_API_KEY"),
 		},
 		Public: publicCfg,
 	}, nil

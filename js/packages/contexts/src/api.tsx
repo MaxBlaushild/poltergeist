@@ -11,7 +11,9 @@ interface APIContextType {
   apiClient: APIClient;
 }
 
-const APIContext = createContext<APIContextType | null>(null);
+const APIContext = createContext<APIContextType | null>({
+  apiClient: new APIClient(process.env.REACT_APP_API_URL || ''),
+});
 
 interface APIProviderProps {
   children: ReactNode;

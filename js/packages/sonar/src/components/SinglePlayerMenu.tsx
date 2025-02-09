@@ -11,15 +11,7 @@ export const SinglePlayerMenu = () => {
   };
   return (
     <div className="SinglePlayerMenu">
-      <h2>Select Activities you want to do</h2>
-      <label>
-        Customize?
-        <input type="checkbox" checked={shouldSelectActivities} onChange={() => setShouldSelectActivities(!shouldSelectActivities)}  />
-      </label>
-      {shouldSelectActivities && <LameActivitySelector
-        selectedActivityIds={selectedActivityIds}
-        onSelect={handleActivitySelect}
-      />}
+      <Button title="Free Play" onClick={() => {}}   />
       <Button title="Start" onClick={() => {}}   />
     </div>
   );

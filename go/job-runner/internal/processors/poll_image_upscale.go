@@ -3,10 +3,13 @@ package processors
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"cosmossdk.io/errors"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
@@ -22,21 +25,48 @@ const (
 type PollImageUpscaleProcessor struct {
 	dbClient     db.DbClient
 	useApiClient useapi.Client
+	awsClient    aws.AWSClient
 }
 
 type PollImageUpscaleTaskPayload struct {
 	ID string `json:"id"`
 }
 
-func NewPollImageUpscaleProcessor(dbClient db.DbClient, useApiClient useapi.Client) PollImageUpscaleProcessor {
+func NewPollImageUpscaleProcessor(dbClient db.DbClient, useApiClient useapi.Client, awsClient aws.AWSClient) PollImageUpscaleProcessor {
 	return PollImageUpscaleProcessor{
 		dbClient:     dbClient,
 		useApiClient: useApiClient,
+		awsClient:    awsClient,
 	}
 }
 
+func (p *PollImageUpscaleProcessor) processImage(ctx context.Context, url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", errors.Wrap(err, "error getting image")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.Wrap(err, "error getting image: non-200 status code")
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", errors.Wrap(err, "error reading image body")
+	}
+
+	key := uuid.New().String() + ".png"
+
+	s3Url, err := p.awsClient.UploadImageToS3("crew-profile-icons", key, body)
+	if err != nil {
+		return "", errors.Wrap(err, "error uploading image to S3")
+	}
+
+	return s3Url, nil
+}
+
 func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
-	spew.Dump("processing task")
 	var payload PollImageUpscaleTaskPayload
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
 		return err
@@ -59,9 +89,17 @@ func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq
 	}
 
 	if imgGen.CreatedAt.Add(imageUpscaleTimeout).Before(time.Now()) {
-		if err := p.dbClient.ImageGeneration().UpdateState(ctx, imgGen.ID, models.GenerationStatusFailed); err != nil {
-			return errors.Wrap(err, "error updating image generation state to failed")
+		if imgGen.OptionOne == nil && imgGen.OptionTwo == nil && imgGen.OptionThree == nil && imgGen.OptionFour == nil {
+			if err := p.dbClient.ImageGeneration().UpdateState(ctx, imgGen.ID, models.GenerationStatusFailed); err != nil {
+				return errors.Wrap(err, "error updating image generation state to failed")
+			}
 		}
+
+		if err := p.dbClient.ImageGeneration().UpdateState(ctx, imgGen.ID, models.GenerationStatusComplete); err != nil {
+			return errors.Wrap(err, "error updating image generation state to complete")
+		}
+
+		return nil
 	}
 
 	if imgGen.OptionOne == nil {
@@ -75,24 +113,22 @@ func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq
 	if !strings.HasPrefix(*imgGen.OptionOne, "http://") && !strings.HasPrefix(*imgGen.OptionOne, "https://") {
 		upscaleResponse, err := p.useApiClient.CheckUpscaleImageStatus(ctx, *imgGen.OptionOne)
 		if err != nil {
-			spew.Dump("error upscaling image")
-			spew.Dump(err)
 			return errors.Wrap(err, "error upscaling image")
 		}
 
 		if upscaleResponse.Status == "done" {
+			s3Url, err := p.processImage(ctx, upscaleResponse.Result.URL)
+			if err != nil {
+				return errors.Wrap(err, "error processing image")
+			}
+
 			if err := p.dbClient.ImageGeneration().Updates(ctx, imgGen.ID, &models.ImageGeneration{
-				OptionOne: &upscaleResponse.Result.URL,
+				OptionOne: &s3Url,
 			}); err != nil {
-				spew.Dump("error updating image generation options")
-				spew.Dump(err)
 				return errors.Wrap(err, "error updating image generation options")
 			}
 
 			if err := p.dbClient.User().UpdateProfilePictureUrl(ctx, imgGen.UserID, upscaleResponse.Result.URL); err != nil {
-				spew.Dump("error updating user image one")
-				spew.Dump(err)
-				spew.Dump(upscaleResponse)
 				return errors.Wrap(err, "error updating user image one")
 			}
 		} else {
@@ -107,8 +143,13 @@ func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq
 		}
 
 		if upscaleResponse.Status == "done" {
+			s3Url, err := p.processImage(ctx, upscaleResponse.Result.URL)
+			if err != nil {
+				return errors.Wrap(err, "error processing image")
+			}
+
 			if err := p.dbClient.ImageGeneration().Updates(ctx, imgGen.ID, &models.ImageGeneration{
-				OptionTwo: &upscaleResponse.Result.URL,
+				OptionTwo: &s3Url,
 			}); err != nil {
 				return errors.Wrap(err, "error updating image generation options")
 			}
@@ -124,8 +165,13 @@ func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq
 		}
 
 		if upscaleResponse.Status == "done" {
+			s3Url, err := p.processImage(ctx, upscaleResponse.Result.URL)
+			if err != nil {
+				return errors.Wrap(err, "error processing image")
+			}
+
 			if err := p.dbClient.ImageGeneration().Updates(ctx, imgGen.ID, &models.ImageGeneration{
-				OptionThree: &upscaleResponse.Result.URL,
+				OptionThree: &s3Url,
 			}); err != nil {
 				return errors.Wrap(err, "error updating image generation options")
 			}
@@ -141,8 +187,13 @@ func (p *PollImageUpscaleProcessor) ProcessTask(ctx context.Context, task *asynq
 		}
 
 		if upscaleResponse.Status == "done" {
+			s3Url, err := p.processImage(ctx, upscaleResponse.Result.URL)
+			if err != nil {
+				return errors.Wrap(err, "error processing image")
+			}
+
 			if err := p.dbClient.ImageGeneration().Updates(ctx, imgGen.ID, &models.ImageGeneration{
-				OptionFour: &upscaleResponse.Result.URL,
+				OptionFour: &s3Url,
 			}); err != nil {
 				return errors.Wrap(err, "error updating image generation options")
 			}

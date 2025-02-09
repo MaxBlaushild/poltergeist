@@ -33,6 +33,8 @@ import { Log } from './Log.tsx';
 import NewItemModal from './NewItemModal.tsx';
 import UsedItemModal from './UsedItemModal.tsx';
 import { getUniquePoiPairsWithinDistance } from '../utils/clusterPointsOfInterest.ts';
+import { useLocation } from '@poltergeist/contexts';
+import { ImageBadge } from './shared/ImageBadge.tsx';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -140,6 +142,7 @@ export const MatchInProgress = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const { currentUser } = useUserProfiles();
+  const { location } = useLocation();
   const { match } = useMatchContext();
   const [lng, setLng] = useState(-70.9);
   const [lat, setLat] = useState(42.35);
@@ -153,11 +156,40 @@ export const MatchInProgress = () => {
   const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
   const [previousZoom, setPreviousZoom] = useState(0);
+  const [isMapInitialized, setIsMapInitialized] = useState(false);
+  
+  const [userLocator, setUserLocator] = useState<mapboxgl.Marker | null>(null);
   const [previousUnlockedPoiCount, setPreviousUnlockedPoiCount] = useState(-1);
   const usersTeam = match?.teams.find((team) =>
     team.users.some((user) => user.id === currentUser?.id)
   );
   const otherTeams = match?.teams.filter((team) => team.id !== usersTeam?.id);
+
+  useEffect(() => {
+    if (!map?.current || !map.current?.isStyleLoaded()) return;
+
+    let locator = userLocator;
+    if (!locator) {
+      const locatorDiv = document.createElement('div');
+      createRoot(locatorDiv).render(
+        <ImageBadge
+          imageUrl={currentUser?.profilePictureUrl ?? '/blank-avatar.webp'} 
+          onClick={() => {}}
+          hasBorder={true}
+        />
+      );
+      
+      locator = new mapboxgl.Marker(locatorDiv);
+      setUserLocator(locator);
+    }
+
+    // If we have location coordinates, use them
+    if (location?.longitude && location?.latitude) {
+      locator
+        .setLngLat([location.longitude, location.latitude])
+        .addTo(map.current);
+    }
+  }, [location, map, userLocator, currentUser]);
 
   useEffect(() => {
     if (selectedPointOfInterest) {
@@ -194,31 +226,26 @@ export const MatchInProgress = () => {
       zoom: zoom,
     });
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        setLng(position.coords.longitude);
-        setLat(position.coords.latitude);
-        map.current?.setCenter([
-          position.coords.longitude,
-          position.coords.latitude,
-        ]);
-      });
-    } else {
-      console.error('Geolocation is not supported by this browser.');
-    }
-
-    map.current.on('move', () => {
-      setLng(map.current?.getCenter().lng ?? 0);
-      setLat(map.current?.getCenter().lat ?? 0);
-      setZoom(map.current?.getZoom() ?? 0);
-    });
-
-    map.current?.on('zoom', () => {
-      setZoom(map.current?.getZoom() ?? 0);
-    });
-
     return () => map.current?.remove();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (isMapInitialized) return;
+    if (location.longitude && location.latitude && map?.current) {
+      setIsMapInitialized(true);
+      map.current?.setCenter([location.longitude, location.latitude]);
+
+      map.current.on('move', () => {
+        setLng(map.current?.getCenter().lng ?? 0);
+        setLat(map.current?.getCenter().lat ?? 0);
+        setZoom(map.current?.getZoom() ?? 0);
+      });
+  
+      map.current?.on('zoom', () => {
+        setZoom(map.current?.getZoom() ?? 0);
+      });
+    }
+  }, [location.longitude, location.latitude, map?.current]);
 
   const handleMapClick = () => {
     setIsPanelVisible(false);
@@ -239,7 +266,7 @@ export const MatchInProgress = () => {
         const angle = ((baseLat + baseLng) * 1000) % 360; // deterministic angle based on lat and lng
         const newLat = baseLat + radius * Math.cos((angle * Math.PI) / 180);
         const newLng = baseLng + radius * Math.sin((angle * Math.PI) / 180);
-        acc[poi.id] = { newLat, newLng: newLng * -1 };
+        acc[poi.id] = { newLat, newLng: newLng };
         return acc;
     }, {});
   }, [match]);
@@ -278,9 +305,9 @@ export const MatchInProgress = () => {
               geometry: {
                 type: 'LineString',
                 coordinates: [
-                  [parseFloat(prevPoint.lng) * -1, parseFloat(prevPoint.lat)],
+                  [parseFloat(prevPoint.lng), parseFloat(prevPoint.lat)],
                   [
-                    parseFloat(pointOfInterest.lng) * -1,
+                    parseFloat(pointOfInterest.lng),
                     parseFloat(pointOfInterest.lat),
                   ],
                 ],
@@ -350,8 +377,10 @@ export const MatchInProgress = () => {
           />
         );
 
+
+
         let lat = parseFloat(pointOfInterest.lat);
-        let lng = parseFloat(pointOfInterest.lng) * -1;
+        let lng = parseFloat(pointOfInterest.lng);
 
         if (!hasDiscovered) {
           const coords = memoizedAlternativeCoordinates?.[pointOfInterest.id];
@@ -387,6 +416,15 @@ export const MatchInProgress = () => {
         <div
           className="absolute top-20 right-4 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
           onClick={() => {
+            console.log('clicked');
+            if (location.longitude && location.latitude) {
+              const newCenter = [
+                location.longitude,
+                location.latitude,
+              ];
+              map.current?.flyTo({ center: newCenter, zoom: 15 });
+              return;
+            }
             if (navigator.geolocation) {
               navigator.geolocation.getCurrentPosition((position) => {
                 const newCenter = [
@@ -394,6 +432,8 @@ export const MatchInProgress = () => {
                   position.coords.latitude,
                 ];
                 map.current?.flyTo({ center: newCenter, zoom: 15 });
+              }, (error) => {
+                console.log('error', error);
               });
             }
           }}

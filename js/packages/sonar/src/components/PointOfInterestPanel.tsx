@@ -13,8 +13,9 @@ import { SubmitAnswerForChallenge } from './SubmitAnswerForChallenge.tsx';
 import { Button } from './shared/Button.tsx';
 import { LockClosedIcon, LockOpenIcon } from '@heroicons/react/20/solid';
 import { StatusIndicator } from './shared/StatusIndicator.tsx';
-import { useInventory } from '../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
+import { useLocation } from '@poltergeist/contexts';
 
 const toRoman = (num: number): string => {
   const lookup: { [key: number]: string } = {
@@ -48,6 +49,7 @@ export const PointOfInterestPanel = ({
     getCurrentMatch,
     match,
   } = useMatchContext();
+  const { location } = useLocation();
   const { consumeItem, setUsedItem, inventoryItems } = useInventory();
   const [buttonText, setButtonText] = useState<string>("I'm here!");
   const hasDiscovered = hasTeamDiscoveredPointOfInterest(
@@ -153,15 +155,14 @@ export const PointOfInterestPanel = ({
       {!hasDiscovered && (
         <div className="flex gap-2 w-full">
           <Button
-            onClick={() => {
-              navigator.geolocation.getCurrentPosition(async (position) => {
+            onClick={async () => {
+              console.log(location);
                 try {
-                  console.log('position', position);
                   await unlockPointOfInterest(
                     pointOfInterest.id,
                     usersTeam?.id ?? '',
-                    position.coords.latitude.toString(),
-                    (position.coords.longitude * -1).toString()
+                    location.latitude?.toString() ?? '',
+                    location.longitude?.toString() ?? ''
                   );
                   getCurrentMatch();
                 } catch (error) {
@@ -170,7 +171,6 @@ export const PointOfInterestPanel = ({
                     setButtonText("I'm here!");
                   }, 1000);
                 }
-              });
             }}
             title={buttonText}
           />

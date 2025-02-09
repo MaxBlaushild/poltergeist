@@ -34,6 +34,7 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
             const verifyToken = () => __awaiter(void 0, void 0, void 0, function* () {
                 try {
                     const response = yield axios.post(`${process.env.REACT_APP_API_URL}/authenticator/token/verify`, { token });
+                    console.log(response.data);
                     setUser(response.data);
                 }
                 catch (e) {

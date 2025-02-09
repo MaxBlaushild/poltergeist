@@ -13,7 +13,7 @@
     "lint": "NODE_ENV=development eslint --fix 'packages/**/*.js'",
     "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'"
   },
-  "author": "", 
+  "author": "",
   "license": "ISC",
   "devDependencies": {
     "@babel/eslint-parser": "^7.23.3",

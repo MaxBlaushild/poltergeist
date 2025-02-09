@@ -29,6 +29,57 @@ type CreatePointOfInterestRequest struct {
 	PointOfInterestGroupMemberID string  `json:"pointOfInterestGroupMemberId"`
 }
 
+func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error {
+	// Start a transaction since we'll be deleting multiple related records
+	tx := c.db.WithContext(ctx).Begin()
+	if err := tx.Error; err != nil {
+		return err
+	}
+
+	// Delete related PointOfInterestChallenge records
+	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestChallenge{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete related PointOfInterestTeam records
+	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestTeam{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete related PointOfInterestGroupMember records
+	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestGroupMember{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete the PointOfInterest itself
+	if err := tx.Delete(&models.PointOfInterest{}, "id = ?", id).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
+}
+
+func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error {
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"image_url":  imageUrl,
+		"updated_at": time.Now(),
+	}).Error
+}
+
+func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, latitude float64, longitude float64) error {
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"name":        name,
+		"description": description,
+		"lat":         latitude,
+		"lng":         longitude,
+		"updated_at":  time.Now(),
+	}).Error
+}
+
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {
 	var pointsOfInterest []models.PointOfInterest
 
@@ -109,6 +160,28 @@ func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uu
 
 func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest models.PointOfInterest) error {
 	return c.db.WithContext(ctx).Create(&pointOfInterest).Error
+}
+
+func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error {
+	pointOfInterest.ID = uuid.New()
+	pointOfInterest.CreatedAt = time.Now()
+	pointOfInterest.UpdatedAt = time.Now()
+
+	if err := c.db.WithContext(ctx).Create(&pointOfInterest).Error; err != nil {
+		return err
+	}
+
+	pointOfInterestGroupMember := models.PointOfInterestGroupMember{
+		ID:                     uuid.New(),
+		PointOfInterestID:      pointOfInterest.ID,
+		PointOfInterestGroupID: pointOfInterestGroupID,
+	}
+
+	if err := c.db.WithContext(ctx).Create(&pointOfInterestGroupMember).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *pointOfInterestHandle) CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error {

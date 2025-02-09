@@ -20,9 +20,12 @@ export var ItemType;
     ItemType[ItemType["Damage"] = 10] = "Damage";
     ItemType[ItemType["Entseed"] = 11] = "Entseed";
     ItemType[ItemType["Ale"] = 12] = "Ale";
+    ItemType[ItemType["Witchflame"] = 13] = "Witchflame";
+    ItemType[ItemType["WickedSpellbook"] = 14] = "WickedSpellbook";
 })(ItemType || (ItemType = {}));
 ;
 export const ItemsUsabledInMenu = [
+    ItemType.WickedSpellbook,
     ItemType.CipherOfTheLaughingMonkey,
     ItemType.CortezsCutlass,
     ItemType.RustedMusket,
@@ -36,6 +39,7 @@ export const ItemsUsabledOnPointOfInterest = [
     ItemType.GoldenTelescope,
 ];
 export const ItemsRequiringTeamId = [
+    ItemType.WickedSpellbook,
     ItemType.CortezsCutlass,
     ItemType.RustedMusket,
     ItemType.Dagger,

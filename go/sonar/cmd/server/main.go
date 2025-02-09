@@ -5,6 +5,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
@@ -41,7 +42,8 @@ func main() {
 	chatClient := chat.NewClient(dbClient, quartermaster)
 	useApiClient := useapi.NewClient(cfg.Secret.UseApiKey)
 	charicturist := charicturist.NewClient(useApiClient, dbClient)
-	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster, chatClient, charicturist)
+	mapboxClient := mapbox.NewClient(cfg.Secret.MapboxApiKey)
+	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster, chatClient, charicturist, mapboxClient)
 
 	s.ListenAndServe("8042")
 }

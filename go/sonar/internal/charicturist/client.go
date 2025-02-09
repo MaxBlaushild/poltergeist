@@ -35,15 +35,7 @@ func NewClient(useApi useapi.Client, dbClient db.DbClient) Client {
 }
 
 func (c *client) CreateCharacter(ctx context.Context, request CreateCharacterRequest) error {
-	genderQualifier := ""
-	if request.Gender == "male" {
-		genderQualifier = "a man, "
-	}
-
-	if request.Gender == "female" {
-		genderQualifier = "a woman, "
-	}
-
+	genderQualifier := "gender is " + request.Gender + ", "
 	prompt := fmt.Sprintf(imaginePrompt, genderQualifier)
 	imagineResponse, err := c.useApi.GenerateImageOptions(ctx, request.ProfilePictureUrl+prompt)
 	if err != nil {

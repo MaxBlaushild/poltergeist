@@ -21,13 +21,22 @@ export class APIClient {
   }
 
   async get<T>(url: string, params?: Record<string, unknown>): Promise<T> {
-    console.log(url);
     const response = await this.client.get<T>(url, { params });
     return response.data;
   }
 
   async post<T>(url: string, data?: Record<string, unknown>): Promise<T> {
     const response = await this.client.post<T>(url, data);
+    return response.data;
+  }
+
+  async patch<T>(url: string, data?: Record<string, unknown>): Promise<T> {
+    const response = await this.client.patch<T>(url, data);
+    return response.data;
+  }
+  
+  async delete<T>(url: string): Promise<T> {
+    const response = await this.client.delete<T>(url);
     return response.data;
   }
 }

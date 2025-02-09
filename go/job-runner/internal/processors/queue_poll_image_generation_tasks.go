@@ -38,8 +38,6 @@ func (p *QueueImageGenerationProcessor) ProcessTask(ctx context.Context, task *a
 		return err
 	}
 
-	spew.Dump("imgGens")
-	spew.Dump(len(imgGens))
 	for _, imgGen := range imgGens {
 		payload, err := json.Marshal(PollImageGenerationTaskPayload{
 			ID: imgGen.ID.String(),

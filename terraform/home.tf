@@ -131,6 +131,20 @@ variable "use_api_key" {
   description = "Use API Key"
   type        = string
 }
+  
+resource "aws_secretsmanager_secret_version" "mapbox_api_key" {
+  secret_id     = aws_secretsmanager_secret.mapbox_api_key.id
+  secret_string = var.mapbox_api_key
+}
+
+resource "aws_secretsmanager_secret" "mapbox_api_key" {
+  name = "MAPBOX_API_KEY"
+}
+
+variable "mapbox_api_key" {
+  description = "Mapbox API Key"
+  type        = string
+}
 
 resource "aws_secretsmanager_secret_version" "imagine_api_key" {
   secret_id     = aws_secretsmanager_secret.imagine_api_key.id
@@ -415,7 +429,11 @@ module "ecs" {
           }, {
             name      = "USE_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
-          },]
+          },
+          {
+            name      = "MAPBOX_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.mapbox_api_key.arn}"
+          }]
           image = "${aws_ecr_repository.sonar.repository_url}:latest"
           port_mappings = [
             {
@@ -601,7 +619,7 @@ data "aws_acm_certificate" "guesswith_us_cert" {
 
 
 data "aws_acm_certificate" "sonar_cert" {
-  domain      = "*.eeee.rsvp"
+  domain      = "*.unclaimedstreets.com"
   statuses    = ["ISSUED"]
   most_recent = true
 }

@@ -8,4 +8,5 @@ export interface PointOfInterestChallenge {
     tier: number;
     createdAt: Date;
     updatedAt: Date;
+    inventoryItemId: number;
 }

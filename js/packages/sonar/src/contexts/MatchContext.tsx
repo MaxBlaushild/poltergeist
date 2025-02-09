@@ -8,7 +8,7 @@ import React, {
 import { useAPI, useAuth } from '@poltergeist/contexts';
 import { AuditItem, InventoryItem, Match, Team } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
-import { useMediaContext } from './MediaContext.tsx';
+import { useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 
 export type Judgement = {

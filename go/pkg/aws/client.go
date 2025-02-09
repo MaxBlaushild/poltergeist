@@ -14,7 +14,7 @@ type client struct {
 }
 
 type AWSClient interface {
-	UploadImageToS3(bucket, key string, image []byte) error
+	UploadImageToS3(bucket, key string, image []byte) (string, error)
 	GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURL(bucket, key string, expiry time.Duration) (string, error)
 }
@@ -28,14 +28,16 @@ func NewAWSClient(region string) AWSClient {
 	}
 }
 
-func (client *client) UploadImageToS3(bucket, key string, image []byte) error {
+func (client *client) UploadImageToS3(bucket, key string, image []byte) (string, error) {
 	_, err := client.s3.PutObject(&s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 		Body:   bytes.NewReader(image),
-		ACL:    aws.String("public-read"),
 	})
-	return err
+	if err != nil {
+		return "", err
+	}
+	return "https://" + bucket + ".s3.amazonaws.com/" + key, nil
 }
 
 func (client *client) GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error) {

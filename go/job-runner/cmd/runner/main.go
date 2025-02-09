@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/MaxBlaushild/job-runner/internal/config"
 	"github.com/MaxBlaushild/job-runner/internal/processors"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
@@ -48,14 +50,27 @@ func main() {
 	client := asynq.NewClient(redisConnOpt)
 	defer client.Close()
 
+	awsClient := aws.NewAWSClient("us-east-1")
+
 	useApiService := useapi.NewClient(cfg.Secret.UseApiKey)
 
 	pollImageGenerationProcessor := processors.NewPollImageGenerationProcessor(dbClient, useApiService)
-	pollImageUpscaleProcessor := processors.NewPollImageUpscaleProcessor(dbClient, useApiService)
+	pollImageUpscaleProcessor := processors.NewPollImageUpscaleProcessor(dbClient, useApiService, awsClient)
 	queuePollImageGenerationProcessor := processors.NewQueuePollImageGenerationProcessor(dbClient, useApiService, client)
-	
-	// mux maps a type to a handler
+
 	mux := asynq.NewServeMux()
+
+	// Add error logging middleware to each handler
+	mux.Use(func(h asynq.Handler) asynq.Handler {
+		return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+			err := h.ProcessTask(ctx, t)
+			if err != nil {
+				log.Printf("Failed to process task %s: %v\nStack trace:\n%+v", t.Type(), err, err)
+			}
+			return err
+		})
+	})
+
 	mux.Handle(jobs.PollImageGenerationTaskType, &pollImageGenerationProcessor)
 	mux.Handle(jobs.PollImageUpscaleTaskType, &pollImageUpscaleProcessor)
 	mux.Handle(jobs.QueuePollImageGenerationTaskType, &queuePollImageGenerationProcessor)

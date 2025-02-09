@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { generateColorFromTeamName } from '../../utils/generateColor.ts';
 import { useMatchContext } from '../../contexts/MatchContext.tsx';
 import { PointOfInterestEffectingItems } from '@poltergeist/types';
-import { useInventory } from '../../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 
 export type StatusCircleProps = {
   color: string;

@@ -16,3 +16,6 @@ export * from './teamInventoryItem';
 export * from './matchInventoryItemEffect';
 export * from './auditItem';
 export * from './imageGeneration';
+export * from './openStreetMapLocation';
+export * from './pointOfInterestChallenge';
+export * from './place';
