@@ -1,7 +1,7 @@
 import React from 'react';
 import './SelectBattleArena.css';
 import { Button } from './shared/Button.tsx';
-import { usePointOfInterestGroups } from '../hooks/usePointOfInterestGroups.ts';
+import { usePointOfInterestGroups } from '@poltergeist/hooks';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { useNavigate } from 'react-router-dom';
 

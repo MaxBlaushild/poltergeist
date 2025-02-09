@@ -25,7 +25,8 @@ export declare enum ItemType {
     Damage = 10,
     Entseed = 11,
     Ale = 12,
-    Witchflame = 13
+    Witchflame = 13,
+    WickedSpellbook = 14
 }
 export declare const ItemsUsabledInMenu: ItemType[];
 export declare const PointOfInterestEffectingItems: ItemType[];

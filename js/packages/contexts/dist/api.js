@@ -1,7 +1,9 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useContext, } from 'react';
 import APIClient from '@poltergeist/api-client';
-const APIContext = createContext(null);
+const APIContext = createContext({
+    apiClient: new APIClient(process.env.REACT_APP_API_URL || ''),
+});
 export const APIProvider = ({ children }) => {
     const baseURL = process.env.REACT_APP_API_URL || '';
     const apiClient = new APIClient(baseURL);

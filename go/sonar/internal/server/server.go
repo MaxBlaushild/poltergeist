@@ -10,6 +10,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
@@ -38,6 +39,7 @@ type server struct {
 	quartermaster quartermaster.Quartermaster
 	chatClient    chat.Client
 	charicturist  charicturist.Client
+	mapboxClient  mapbox.Client
 }
 
 type Server interface {
@@ -54,6 +56,7 @@ func NewServer(
 	quartermaster quartermaster.Quartermaster,
 	chatClient chat.Client,
 	charicturist charicturist.Client,
+	mapboxClient mapbox.Client,
 ) Server {
 	return &server{
 		authClient:    authClient,
@@ -65,6 +68,7 @@ func NewServer(
 		quartermaster: quartermaster,
 		chatClient:    chatClient,
 		charicturist:  charicturist,
+		mapboxClient:  mapboxClient,
 	}
 }
 
@@ -89,7 +93,7 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
 	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.deleteActivity))
 	r.GET("/sonar/teams", middleware.WithAuthentication(s.authClient, s.getTeams))
-	r.POST("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
+	r.POST("/sonar/pointsOfInterest", s.createPointOfInterest)
 	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
 	r.POST("/sonar/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterest))
 	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
@@ -101,8 +105,8 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/matches/:id/leave", middleware.WithAuthentication(s.authClient, s.leaveMatch))
 	r.POST("/sonar/matches/:id/teams", middleware.WithAuthentication(s.authClient, s.createTeamForMatch))
 	r.POST("/sonar/teams/:teamID", middleware.WithAuthentication(s.authClient, s.addUserToTeam))
-	r.GET("/sonar/pointsOfInterest/group/:id", s.getPointsOfInterestByGroup)
-	r.POST("/sonar/pointsOfInterest/group", middleware.WithAuthentication(s.authClient, s.createPointOfInterestGroup))
+	r.GET("/sonar/pointsOfInterest/group/:id", s.getPointOfInterestGroup)
+	r.POST("/sonar/pointsOfInterest/group", s.createPointOfInterestGroup)
 	r.GET("/sonar/pointsOfInterest/groups", s.getPointsOfInterestGroups)
 	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.getCurrentMatch))
 	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.getPresignedUploadUrl))
@@ -115,14 +119,375 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
 	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
+	r.POST("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
 	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.generateProfilePictureOptions))
 	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.getCompleteGenerationsForUser))
 	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.setProfilePicture))
+	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
+	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
+	r.DELETE("/sonar/pointsOfInterest/challenge/:id", s.deletePointOfInterestChallenge)
+	r.PATCH("/sonar/pointsOfInterest/challenge/:id", s.editPointOfInterestChallenge)
+	r.POST("/sonar/pointsOfInterest/challenge", s.createPointOfInterestChallenge)
+	r.PATCH("/sonar/pointsOfInterest/:id", s.editPointOfInterest)
+	r.DELETE("/sonar/pointsOfInterest/:id", s.deletePointOfInterest)
+	r.PATCH("/sonar/pointsofInterest/group/imageUrl/:id", s.editPointOfInterestGroupImageUrl)
+	r.PATCH("/sonar/pointsofInterest/imageUrl/:id", s.editPointOfInterestImageUrl)
+	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
 	r.Run(":8042")
 }
 
+func (s *server) getMapboxPlaces(ctx *gin.Context) {
+	address := ctx.Query("address")
+	places, err := s.mapboxClient.GetPlaces(ctx, address)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, places)
+}
+
+func (s *server) editPointOfInterestGroupImageUrl(ctx *gin.Context) {
+	stringPointOfInterestGroupID := ctx.Param("id")
+	if stringPointOfInterestGroupID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest group ID is required",
+		})
+		return
+	}
+
+	pointOfInterestGroupID, err := uuid.Parse(stringPointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest group ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		ImageUrl string `binding:"required" json:"imageUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestGroup().UpdateImageUrl(ctx, pointOfInterestGroupID, requestBody.ImageUrl); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest group image URL edited successfully",
+	})
+}
+
+func (s *server) editPointOfInterestImageUrl(ctx *gin.Context) {
+	stringPointOfInterestID := ctx.Param("id")
+	if stringPointOfInterestID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest ID is required",
+		})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(stringPointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		ImageUrl string `binding:"required" json:"imageUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().UpdateImageUrl(ctx, pointOfInterestID, requestBody.ImageUrl); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest image URL edited successfully",
+	})
+}
+
+func (s *server) editPointOfInterest(ctx *gin.Context) {
+	stringPointOfInterestID := ctx.Param("id")
+	if stringPointOfInterestID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest ID is required",
+		})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(stringPointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Name        string  `binding:"required" json:"name"`
+		Description string  `binding:"required" json:"description"`
+		Latitude    float64 `binding:"required" json:"latitude"`
+		Longitude   float64 `binding:"required" json:"longitude"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Edit(ctx, pointOfInterestID, requestBody.Name, requestBody.Description, requestBody.Latitude, requestBody.Longitude); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest edited successfully",
+	})
+}
+
+func (s *server) createPointOfInterestChallenge(ctx *gin.Context) {
+	var requestBody struct {
+		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
+		Tier              int       `binding:"required" json:"tier"`
+		Question          string    `binding:"required" json:"question"`
+		InventoryItemID   int       `binding:"required" json:"inventoryItemId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if _, err := s.dbClient.PointOfInterestChallenge().Create(ctx, requestBody.PointOfInterestID, requestBody.Tier, requestBody.Question, requestBody.InventoryItemID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest challenge created successfully",
+	})
+}
+
+func (s *server) editPointOfInterestChallenge(ctx *gin.Context) {
+	stringPointOfInterestChallengeID := ctx.Param("id")
+	if stringPointOfInterestChallengeID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest challenge ID is required",
+		})
+		return
+	}
+
+	pointOfInterestChallengeID, err := uuid.Parse(stringPointOfInterestChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest challenge ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Question        string `binding:"required" json:"question"`
+		InventoryItemID int    `binding:"required" json:"inventoryItemId"`
+		Tier            int    `binding:"required" json:"tier"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if _, err := s.dbClient.PointOfInterestChallenge().Edit(ctx, pointOfInterestChallengeID, requestBody.Question, requestBody.InventoryItemID, requestBody.Tier); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest challenge edited successfully",
+	})
+}
+
+func (s *server) deletePointOfInterestChallenge(ctx *gin.Context) {
+	stringPointOfInterestChallengeID := ctx.Param("id")
+	if stringPointOfInterestChallengeID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest challenge ID is required",
+		})
+		return
+	}
+
+	pointOfInterestChallengeID, err := uuid.Parse(stringPointOfInterestChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest challenge ID",
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChallenge().Delete(ctx, pointOfInterestChallengeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest challenge deleted successfully",
+	})
+}
+
+func (s *server) deletePointOfInterest(ctx *gin.Context) {
+	stringPointOfInterestID := ctx.Param("id")
+	if stringPointOfInterestID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest ID is required",
+		})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(stringPointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest ID",
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterest().Delete(ctx, pointOfInterestID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest deleted successfully",
+	})
+}
+
+func (s *server) deletePointOfInterestGroup(ctx *gin.Context) {
+	stringPointOfInterestGroupID := ctx.Param("id")
+	if stringPointOfInterestGroupID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest group ID is required",
+		})
+		return
+	}
+
+	pointOfInterestGroupID, err := uuid.Parse(stringPointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest group ID",
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestGroup().Delete(ctx, pointOfInterestGroupID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "point of interest group deleted successfully",
+	})
+}
+
+func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
+	stringPointOfInterestGroupID := ctx.Param("id")
+	if stringPointOfInterestGroupID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest group ID is required",
+		})
+		return
+	}
+
+	pointOfInterestGroupID, err := uuid.Parse(stringPointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest group ID",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Name        string `binding:"required" json:"name"`
+		Description string `binding:"required" json:"description"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestGroup().Edit(ctx, pointOfInterestGroupID, requestBody.Name, requestBody.Description); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+}
+
 func (s *server) createPointOfInterest(ctx *gin.Context) {
-	request := db.CreatePointOfInterestRequest{}
+	stringPointOfInterestGroupID := ctx.Param("id")
+	if stringPointOfInterestGroupID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "point of interest group ID is required",
+		})
+		return
+	}
+
+	pointOfInterestGroupID, err := uuid.Parse(stringPointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid point of interest group ID",
+		})
+		return
+	}
+
+	var request struct {
+		Name        string `binding:"required" json:"name"`
+		Description string `binding:"required" json:"description"`
+		Latitude    string `binding:"required" json:"latitude"`
+		Longitude   string `binding:"required" json:"longitude"`
+		ImageUrl    string `binding:"required" json:"imageUrl"`
+		Clue        string `binding:"required" json:"clue"`
+	}
+
 	if err := ctx.Bind(&request); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -130,7 +495,14 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().CreateWithChallenges(ctx, &request); err != nil {
+	if err := s.dbClient.PointOfInterest().CreateForGroup(ctx, &models.PointOfInterest{
+		Name:        request.Name,
+		Description: request.Description,
+		Lat:         request.Latitude,
+		Lng:         request.Longitude,
+		ImageUrl:    request.ImageUrl,
+		Clue:        request.Clue,
+	}, pointOfInterestGroupID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -656,8 +1028,9 @@ func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
 
 func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 	var requestBody struct {
-		PointOfInterestIDs []uuid.UUID `binding:"required" json:"pointOfInterestIDs"`
-		Name               string      `binding:"required" json:"name"`
+		Name        string `binding:"required" json:"name"`
+		Description string `binding:"required" json:"description"`
+		ImageUrl    string `binding:"required" json:"imageUrl"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -667,7 +1040,7 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		return
 	}
 
-	group, err := s.dbClient.PointOfInterestGroup().Create(ctx, requestBody.PointOfInterestIDs, requestBody.Name)
+	group, err := s.dbClient.PointOfInterestGroup().Create(ctx, requestBody.Name, requestBody.Description, requestBody.ImageUrl)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -682,7 +1055,7 @@ func (s *server) GetPointsWithinRadius(ctx *gin.Context) {
 
 }
 
-func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
+func (s *server) getPointOfInterestGroup(ctx *gin.Context) {
 	groupID := ctx.Param("id")
 	if groupID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -699,7 +1072,7 @@ func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
 		return
 	}
 
-	pointsOfInterest, err := s.dbClient.PointOfInterest().FindByGroupID(ctx, uuidGroupID)
+	group, err := s.dbClient.PointOfInterestGroup().FindByID(ctx, uuidGroupID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -707,7 +1080,7 @@ func (s *server) getPointsOfInterestByGroup(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, pointsOfInterest)
+	ctx.JSON(http.StatusOK, group)
 }
 
 func (s *server) deleteCategory(ctx *gin.Context) {

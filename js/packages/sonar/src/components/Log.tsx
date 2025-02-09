@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
-import { useInventory } from '../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 import { hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';

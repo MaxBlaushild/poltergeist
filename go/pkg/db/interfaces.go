@@ -85,6 +85,10 @@ type PointOfInterestHandle interface {
 	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
 	CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error
+	Edit(ctx context.Context, id uuid.UUID, name string, description string, latitude float64, longitude float64) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
+	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
 }
 
 type PointOfInterestTeamHandle interface {
@@ -160,15 +164,21 @@ type VerificationCodeHandle interface {
 }
 
 type PointOfInterestGroupHandle interface {
-	Create(ctx context.Context, pointOfInterestIDs []uuid.UUID, name string) (*models.PointOfInterestGroup, error)
+	Create(ctx context.Context, name string, description string, imageUrl string) (*models.PointOfInterestGroup, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error)
 	FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error)
+	Edit(ctx context.Context, id uuid.UUID, name string, description string) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 }
 
 type PointOfInterestChallengeHandle interface {
+	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int) (*models.PointOfInterestChallenge, error)
 	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
 	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+	Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID int, tier int) (*models.PointOfInterestChallenge, error)
 }
 
 type InventoryItemHandle interface {

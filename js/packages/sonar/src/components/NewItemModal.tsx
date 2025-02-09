@@ -1,5 +1,5 @@
 import React from 'react';
-import { useInventory } from '../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 import { XMarkIcon } from '@heroicons/react/20/solid';
 import "./ItemModal.css"
 

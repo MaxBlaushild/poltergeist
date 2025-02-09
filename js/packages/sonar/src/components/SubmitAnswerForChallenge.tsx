@@ -14,7 +14,7 @@ import {
 import Divider from './shared/Divider.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 import { Oval } from 'react-loader-spinner';
-import { useInventory } from '../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 import { ItemType } from '@poltergeist/types';
 import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
 

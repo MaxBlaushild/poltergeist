@@ -1,26 +1,58 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './Layout.css';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { ChevronDownIcon, PencilIcon, XMarkIcon } from '@heroicons/react/20/solid';
-import { useAPI, useAuth } from '@poltergeist/contexts';
+import { useAPI, useAuth, useMediaContext } from '@poltergeist/contexts';
 import { Button, ButtonSize } from './shared/Button.tsx';
 import Divider from './shared/Divider.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { Scoreboard } from './Scoreboard.tsx';
 import useImageGenerations from '../hooks/useImageGenerations.ts';
+import { ImageBadge } from './shared/ImageBadge.tsx';
+import { Modal, ModalSize } from './shared/Modal.tsx';
 
 const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
   const { imageGenerations } = useImageGenerations();
+  const { getPresignedUploadURL, uploadMedia } = useMediaContext();
   const { currentUser, refreshUser } = useUserProfiles();
   const { apiClient } = useAPI();
   const [selectedProfilePicture, setSelectedProfilePicture] = useState<string>(currentUser?.profilePictureUrl || '/blank-avatar.webp');
+  const [showGenderInput, setShowGenderInput] = useState(false);
+  const [selectedGender, setSelectedGender] = useState('male');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [toastText, setToastText] = useState<string | null>(null);
 
   const setProfilePicture = async () => {
     await apiClient.post('/sonar/profilePicture', {
       profilePictureUrl: selectedProfilePicture,
     });
     refreshUser();
+  };
+
+  useEffect(() => {
+    if (toastText) {
+      setTimeout(() => {
+        setToastText(null);
+      }, 1500);
+    }
+  }, [toastText]);
+
+  const generateProfilePictureOptions = async () => {
+    if (!selectedFile) {
+      return;
+    }
+    const presignedUrl = await getPresignedUploadURL('crew-profile-icons', `${currentUser?.id}-${new Date().getTime().toString()}.${selectedFile.name.split('.').pop()?.toLowerCase() || ''}`);
+    if (!presignedUrl) {
+      return;
+    }
+    await uploadMedia(presignedUrl, selectedFile);
+    await apiClient.post('/sonar/generateProfilePictureOptions', {
+      profilePictureUrl: presignedUrl.split('?')[0],
+      gender: selectedGender,
+    });
+    setShowGenderInput(false);
+    setToastText('Successfully started generating profile picture options! Check back in a few minutes.');
   };
 
   const profilePictures: string[] = [];
@@ -41,7 +73,7 @@ const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
 
   return (
     <div 
-      className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center"
+      className="fixed inset-0 bg-black z-[100] flex flex-col items-center p-4 pt-10"
       onClick={() => {
         setProfilePicture();
         onExit();
@@ -53,25 +85,63 @@ const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
         className="max-w-[90%] max-h-[80%] object-contain mb-4"
       />
       <div className="flex gap-2 overflow-x-auto p-2">
-        {profilePictures.map((url, index) => (
-          <div 
-            key={index} 
-            className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
-              url === selectedProfilePicture ? 'border-2 border-[#fa9eb5]' : ''
-            }`}
-          >
-            <img
-              src={url}
-              alt={`Profile Picture Option ${index + 1}`}
-              className="w-full h-full object-cover"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedProfilePicture(url);
-              }}
-            />
-          </div>
-        ))}
+        <div className="grid grid-cols-4 gap-2">
+          {profilePictures.map((url, index) => (
+            <div 
+              key={index} 
+              className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
+                url === selectedProfilePicture ? 'border-2 border-[#fa9eb5]' : ''
+              }`}
+            >
+              <img
+                src={url}
+                alt={`Profile Picture Option ${index + 1}`}
+                className="w-full h-full object-cover"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedProfilePicture(url);
+                }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
+      <div className="flex flex-col items-center gap- mt-4 w-full" onClick={(e) => e.stopPropagation()}>
+        <Button
+          buttonSize={ButtonSize.SMALL}
+          title={showGenderInput ? "Hide Options" : "Generate New Options"}
+          onClick={() => setShowGenderInput(!showGenderInput)}
+        />
+        {showGenderInput && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200]" onClick={() => setShowGenderInput(false)}>
+            <div className="flex flex-col items-center gap-4 bg-gray-800 p-6 rounded-lg w-[90%] max-w-md" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-col gap-1 w-full">
+                <label className="text-white text-sm">Gender</label>
+                <input
+                  type="text"
+                  value={selectedGender}
+                  onChange={(e) => setSelectedGender(e.target.value)}
+                  placeholder="Enter gender"
+                  className="p-2 rounded bg-gray-700 text-white w-full"
+                />
+              </div>
+              <div className="flex justify-center w-full">
+                <input
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="text-white w-full"
+                />
+              </div>
+              <Button
+                buttonSize={ButtonSize.SMALL}
+                title="Generate"
+                onClick={generateProfilePictureOptions}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      {toastText ? <Modal size={ModalSize.TOAST}>{toastText}</Modal> : null}
     </div>
   );
 };
@@ -113,19 +183,10 @@ export function Layout() {
           <div>
             {user ? (
               <div className="relative">
-                <div
-                  className="flex justify-center items-center w-10 h-10 rounded-full overflow-hidden"
+                <ImageBadge
+                  imageUrl={currentUser?.profilePictureUrl || '/blank-avatar.webp'}
                   onClick={toggleNav}
-                >
-                  <img
-                    src={
-                      currentUser?.profilePictureUrl ||
-                      '/blank-avatar.webp'
-                    }
-                    alt="Profile Icon"
-                    className="object-cover w-full h-full"
-                  />
-                </div>
+                />
                 <div className="absolute bottom-0 right-0 flex justify-center items-center w-4 h-4 rounded-full overflow-hidden Header__circleThing">
                   <ChevronDownIcon className="w-4 h-4" />
                 </div>

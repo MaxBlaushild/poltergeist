@@ -1,7 +1,11 @@
 import React from 'react';
 // import './App.css';
 import { Logister } from '@poltergeist/components';
-import { AuthProvider, APIProvider } from '@poltergeist/contexts';
+import {
+  AuthProvider,
+  APIProvider,
+  MediaContextProvider,
+} from '@poltergeist/contexts';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { router } from './routes.ts';
 import { ActivityContextProvider } from './contexts/ActivityContext.tsx';
@@ -11,8 +15,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
 import { MultiBackend, TouchTransition } from 'react-dnd-multi-backend';
-import { MediaContextProvider } from './contexts/MediaContext.tsx';
-import { InventoryProvider } from './contexts/InventoryContext.tsx';
+import { InventoryProvider, LocationProvider } from '@poltergeist/contexts';
 
 const HTML5toTouch = {
   backends: [
@@ -34,21 +37,23 @@ function App() {
       <MediaContextProvider>
         <UserProfileProvider>
           <InventoryProvider>
-          <MatchContextProvider>
-            <AuthProvider appName="Sonar" uriPrefix="/sonar">
-              <ActivityContextProvider>
-                <DndProvider
-                  backend={TouchBackend}
-                  options={{
-                    enableTouchEvents: true,
-                    enableMouseEvents: true,
-                    enableHoverOutsideTarget: true,
-                  }}
-                >
-                  <RouterProvider router={router} />
-                </DndProvider>
-              </ActivityContextProvider>
-            </AuthProvider>
+            <MatchContextProvider>
+              <AuthProvider appName="Sonar" uriPrefix="/sonar">
+                <ActivityContextProvider>
+                  <LocationProvider>
+                    <DndProvider
+                      backend={TouchBackend}
+                      options={{
+                        enableTouchEvents: true,
+                        enableMouseEvents: true,
+                        enableHoverOutsideTarget: true,
+                      }}
+                    >
+                      <RouterProvider router={router} />
+                    </DndProvider>
+                  </LocationProvider>
+                </ActivityContextProvider>
+              </AuthProvider>
             </MatchContextProvider>
           </InventoryProvider>
         </UserProfileProvider>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useInventory } from '../contexts/InventoryContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import {
   InventoryItem,
