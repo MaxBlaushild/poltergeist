@@ -19,3 +19,5 @@ export * from './imageGeneration';
 export * from './openStreetMapLocation';
 export * from './pointOfInterestChallenge';
 export * from './place';
+export * from './pointOfInterestChildren';
+export * from './pointOfInterestGroupMember';

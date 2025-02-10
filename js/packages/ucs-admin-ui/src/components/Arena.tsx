@@ -17,7 +17,9 @@ export const Arena = () => {
     updateArenaImage, 
     createPointOfInterestChallenge,
     deletePointOfInterestChallenge,
-    updatePointOfInterestChallenge
+    updatePointOfInterestChallenge,
+    createPointOfInterestChildren,
+    deletePointOfInterestChildren
   } = useArena();
   const { inventoryItems } = useInventory();
   const [editingArena, setEditingArena] = useState(false);
@@ -29,10 +31,16 @@ export const Arena = () => {
   const [editedPoint, setEditedPoint] = useState<any>(null);
   const [showNewPointModal, setShowNewPointModal] = useState(false);
   const [showNewChallengeModal, setShowNewChallengeModal] = useState(false);
+  const [showNewChildModal, setShowNewChildModal] = useState(false);
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [selectedChallenge, setSelectedChallenge] = useState<PointOfInterestChallenge | null>(null);
   const [showEditChallengeModal, setShowEditChallengeModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [newChild, setNewChild] = useState({
+    pointOfInterestId: '',
+    pointOfInterestChallengeId: '',
+    pointOfInterestGroupMemberId: '',
+  });
   const [newChallenge, setNewChallenge] = useState<PointOfInterestChallenge>({
     question: '',
     inventoryItemId: 0,
@@ -131,6 +139,27 @@ export const Arena = () => {
       console.error('Error creating point:', error);
     } finally {
       setShowNewPointModal(false);
+    }
+  };
+
+  const handleNewChildSave = async () => {
+    try {
+      if (newChild.pointOfInterestId && newChild.pointOfInterestGroupMemberId && newChild.pointOfInterestChallengeId) {
+        await createPointOfInterestChildren(
+          newChild.pointOfInterestId,
+          newChild.pointOfInterestGroupMemberId,
+          newChild.pointOfInterestChallengeId
+        );
+        setShowNewChildModal(false);
+        setSelectedPointId(null);
+        setNewChild({
+          pointOfInterestId: '',
+          pointOfInterestChallengeId: '',
+          pointOfInterestGroupMemberId: '',
+        });
+      }
+    } catch (error) {
+      console.error('Error creating child point:', error);
     }
   };
 
@@ -406,6 +435,19 @@ export const Arena = () => {
                       >
                         Add Challenge
                       </button>
+                      <button
+                        onClick={() => {
+                          setNewChild({
+                            pointOfInterestId: point.id,
+                            pointOfInterestChallengeId: '',
+                            pointOfInterestGroupMemberId: '',
+                          });
+                          setShowNewChildModal(true);
+                        }}
+                        className="bg-green-500 text-white px-3 py-1 rounded text-sm"
+                      >
+                        Add Child
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -446,6 +488,32 @@ export const Arena = () => {
                     </ul>
                   </div>
                 )}
+              {arena.groupMembers.find(member => member.pointOfInterestId === point.id)?.children && (
+                <div className="mt-3">
+                  <h4 className="font-semibold mb-1">Children:</h4>
+                  <ul className="space-y-2">
+                    {arena.groupMembers.find(member => member.pointOfInterestId === point.id)?.children.map((child, idx) => (
+                      <li key={idx} className="p-2 border rounded">
+                        <div className="text-sm flex justify-between items-center">
+                          <div>
+                            <span className="font-medium">{arena.pointsOfInterest.find(p => p.id === child.pointOfInterestId)?.name}</span>
+                            <span className="text-gray-600 mx-2">|</span>
+                            <span className="text-gray-600">Tier {arena.pointsOfInterest.flatMap(p => p.pointOfInterestChallenges).find(c => c.id === child.pointOfInterestChallengeId)?.tier}</span>
+                            <span className="text-gray-600 mx-2">|</span>
+                            <span className="text-gray-600">{arena.pointsOfInterest.flatMap(p => p.pointOfInterestChallenges).find(c => c.id === child.pointOfInterestChallengeId)?.question}</span>
+                          </div>
+                          <button
+                            onClick={() => deletePointOfInterestChildren(child.id)}
+                            className="bg-red-500 text-white px-2 py-1 rounded text-xs"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -456,6 +524,59 @@ export const Arena = () => {
           onSave={handleNewPointSave}
           onCancel={() => setShowNewPointModal(false)}
         />
+      )}
+
+      {showNewChildModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-96">
+            <h3 className="text-xl font-bold mb-4">Add New Child Point</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Select Point</label>
+                <select
+                  value={newChild.pointOfInterestChallengeId}
+                  onChange={(e) => setNewChild({
+                    ...newChild,
+                    pointOfInterestChallengeId: e.target.value,
+                    pointOfInterestGroupMemberId: arena.groupMembers.find(member => member.pointOfInterestId === newChild.pointOfInterestId)?.id || ''
+                  })}
+                  className="mt-1 block w-full border rounded-md px-3 py-2"
+                >
+                  <option value="">Select a point...</option>
+                  {arena?.pointsOfInterest?.flatMap((point) => 
+                    point.pointOfInterestChallenges?.map((challenge) => (
+                      <option key={challenge.id} value={challenge.id}>
+                        {point.name} - {challenge.tier} - {challenge.question}
+                      </option>
+                    )) || []
+                  )}
+                </select>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={handleNewChildSave}
+                  className="bg-blue-500 text-white px-4 py-2 rounded"
+                >
+                  Save Child Point
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNewChildModal(false);
+                    setSelectedPointId(null);
+                    setNewChild({
+                      pointOfInterestId: '',
+                      pointOfInterestChallengeId: '',
+                      pointOfInterestGroupMemberId: '',
+                    });
+                  }}
+                  className="bg-gray-500 text-white px-4 py-2 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showEditChallengeModal && (

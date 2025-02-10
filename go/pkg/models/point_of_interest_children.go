@@ -17,3 +17,7 @@ type PointOfInterestChildren struct {
 	PointOfInterestChallengeID   uuid.UUID                  `json:"pointOfInterestChallengeId"`
 	PointOfInterestChallenge     PointOfInterestChallenge   `json:"pointOfInterestChallenge" gorm:"foreignKey:PointOfInterestChallengeID"`
 }
+
+func (PointOfInterestChildren) TableName() string {
+	return "point_of_interest_children"
+}

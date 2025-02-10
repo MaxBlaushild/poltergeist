@@ -13,6 +13,8 @@ interface ArenaContextType {
     updatePointOfInterestChallenge: (id: string, challenge: Partial<PointOfInterestChallenge>) => Promise<void>;
     deletePointOfInterestChallenge: (id: string) => Promise<void>;
     createPointOfInterestChallenge: (id: string, challenge: Partial<PointOfInterestChallenge>) => Promise<void>;
+    createPointOfInterestChildren: (pointOfInterestId: string, pointOfInterestGroupId: string, pointOfInterestChallengeId: string) => Promise<void>;
+    deletePointOfInterestChildren: (id: string) => Promise<void>;
 }
 interface ArenaProviderProps {
     children: React.ReactNode;

@@ -132,8 +132,51 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/pointsOfInterest/:id", s.deletePointOfInterest)
 	r.PATCH("/sonar/pointsofInterest/group/imageUrl/:id", s.editPointOfInterestGroupImageUrl)
 	r.PATCH("/sonar/pointsofInterest/imageUrl/:id", s.editPointOfInterestImageUrl)
+	r.POST("/sonar/pointOfInterest/children", middleware.WithAuthentication(s.authClient, s.createPointOfInterestChildren))
+	r.DELETE("/sonar/pointOfInterest/children/:id", middleware.WithAuthentication(s.authClient, s.deletePointOfInterestChildren))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
 	r.Run(":8042")
+}
+
+func (s *server) createPointOfInterestChildren(ctx *gin.Context) {
+	var requestBody struct {
+		PointOfInterestGroupMemberID uuid.UUID `binding:"required" json:"pointOfInterestGroupMemberId"`
+		PointOfInterestID            uuid.UUID `binding:"required" json:"pointOfInterestId"`
+		PointOfInterestChallengeID   uuid.UUID `binding:"required" json:"pointOfInterestChallengeId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChildren().Create(ctx, requestBody.PointOfInterestGroupMemberID, requestBody.PointOfInterestID, requestBody.PointOfInterestChallengeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "point of interest children created successfully"})
+}
+
+func (s *server) deletePointOfInterestChildren(ctx *gin.Context) {
+	stringPointOfInterestChildrenID := ctx.Param("id")
+	if stringPointOfInterestChildrenID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "point of interest children ID is required"})
+		return
+	}
+
+	pointOfInterestChildrenID, err := uuid.Parse(stringPointOfInterestChildrenID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest children ID"})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChildren().Delete(ctx, pointOfInterestChildrenID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "point of interest children deleted successfully"})
 }
 
 func (s *server) getMapboxPlaces(ctx *gin.Context) {
