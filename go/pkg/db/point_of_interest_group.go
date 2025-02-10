@@ -52,7 +52,7 @@ func (c *pointOfInterestGroupHandle) Create(ctx context.Context, name string, de
 
 func (c *pointOfInterestGroupHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroup models.PointOfInterestGroup
-	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").First(&pointOfInterestGroup, "id = ?", id).Error; err != nil {
+	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Preload("GroupMembers.Children").First(&pointOfInterestGroup, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &pointOfInterestGroup, nil
@@ -60,7 +60,7 @@ func (c *pointOfInterestGroupHandle) FindByID(ctx context.Context, id uuid.UUID)
 
 func (c *pointOfInterestGroupHandle) FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroups []*models.PointOfInterestGroup
-	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Find(&pointOfInterestGroups).Error; err != nil {
+	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Preload("GroupMembers.Children").Find(&pointOfInterestGroups).Error; err != nil {
 		return nil, err
 	}
 	return pointOfInterestGroups, nil

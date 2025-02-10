@@ -1,0 +1,1 @@
+ALTER TABLE point_of_interest_groups ADD COLUMN type INTEGER NOT NULL DEFAULT 1;

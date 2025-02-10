@@ -32,6 +32,7 @@ type DbClient interface {
 	InventoryItem() InventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
+	PointOfInterestChildren() PointOfInterestChildrenHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -206,4 +207,9 @@ type ImageGenerationHandle interface {
 	SetOptions(ctx context.Context, imageGenerationID uuid.UUID, options []string) error
 	Updates(ctx context.Context, imageGenerationID uuid.UUID, updates *models.ImageGeneration) error
 	GetCompleteGenerationsForUser(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error)
+}
+
+type PointOfInterestChildrenHandle interface {
+	Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, pointOfInterestID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }

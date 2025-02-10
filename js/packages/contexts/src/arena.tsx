@@ -23,6 +23,8 @@ interface ArenaContextType {
   updatePointOfInterestChallenge: (id: string, challenge: Partial<PointOfInterestChallenge>) => Promise<void>;
   deletePointOfInterestChallenge: (id: string) => Promise<void>;
   createPointOfInterestChallenge: (id: string, challenge: Partial<PointOfInterestChallenge>) => Promise<void>;
+  createPointOfInterestChildren: (pointOfInterestId: string, pointOfInterestGroupId: string, pointOfInterestChallengeId: string) => Promise<void>;
+  deletePointOfInterestChildren: (id: string) => Promise<void>;
 }
 
 interface ArenaProviderProps {
@@ -245,6 +247,34 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     }
   };
 
+  const createPointOfInterestChildren = async (pointOfInterestId: string, pointOfInterestGroupMemberId: string, pointOfInterestChallengeId: string) => {
+    setLoading(true);
+    try {
+      const response = await apiClient.post(`/sonar/pointOfInterest/children`, {
+        pointOfInterestId,
+        pointOfInterestGroupMemberId,
+        pointOfInterestChallengeId,
+      });
+      fetchArena(arenaId!);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePointOfInterestChildren = async (id: string) => {
+    setLoading(true);
+    try {
+      const response = await apiClient.delete(`/sonar/pointOfInterest/children/${id}`);
+      fetchArena(arenaId!);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (arenaId) {
       fetchArena(arenaId);
@@ -266,6 +296,8 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         createPointOfInterestChallenge,
         updatePointOfInterestChallenge,
         deletePointOfInterestChallenge,
+        createPointOfInterestChildren,
+        deletePointOfInterestChildren,
       }}
     >
       {children}

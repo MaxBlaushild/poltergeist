@@ -204,6 +204,36 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
+    const createPointOfInterestChildren = (pointOfInterestId, pointOfInterestGroupMemberId, pointOfInterestChallengeId) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            const response = yield apiClient.post(`/sonar/pointOfInterest/children`, {
+                pointOfInterestId,
+                pointOfInterestGroupMemberId,
+                pointOfInterestChallengeId,
+            });
+            fetchArena(arenaId);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+        }
+        finally {
+            setLoading(false);
+        }
+    });
+    const deletePointOfInterestChildren = (id) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            const response = yield apiClient.delete(`/sonar/pointOfInterest/children/${id}`);
+            fetchArena(arenaId);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+        }
+        finally {
+            setLoading(false);
+        }
+    });
     useEffect(() => {
         if (arenaId) {
             fetchArena(arenaId);
@@ -222,6 +252,8 @@ export const ArenaProvider = ({ children, arenaId }) => {
             createPointOfInterestChallenge,
             updatePointOfInterestChallenge,
             deletePointOfInterestChallenge,
+            createPointOfInterestChildren,
+            deletePointOfInterestChildren,
         } }, { children: children })));
 };
 export const useArena = () => {
