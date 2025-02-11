@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { PointOfInterestGroup, PointOfInterest, PointOfInterestChallenge } from '@poltergeist/types';
+import { PointOfInterestGroup, PointOfInterest, PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
 import { useMediaContext } from './media';
 import { useAPI } from './api';
 
@@ -7,7 +7,7 @@ interface ArenaContextType {
   arena: PointOfInterestGroup | null;
   loading: boolean;
   error: Error | null;
-  updateArena: (name: string, description: string) => Promise<void>;
+  updateArena: (name: string, description: string, type: PointOfInterestGroupType) => Promise<void>;
   updateArenaImage: (id: string, image: File) => Promise<void>;
   createPointOfInterest: (
     name: string,
@@ -58,7 +58,8 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     }
   };
 
-  const updateArena = async (name: string, description: string) => {
+
+  const updateArena = async (name: string, description: string, type: PointOfInterestGroupType) => {
     setLoading(true);
 
     if (!arena) {
@@ -69,12 +70,14 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
       const response = await apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, {
         name,
         description,
+        type,
       });
 
       setArena({
         ...arena,
         name,
         description,
+        type,
       });
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred'));

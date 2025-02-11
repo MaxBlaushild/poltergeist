@@ -1,5 +1,10 @@
 import { PointOfInterest } from "./pointOfInterest";
 import { PointOfInterestGroupMember } from "./pointOfInterestGroupMember";
+export declare enum PointOfInterestGroupType {
+    Unassigned = 0,
+    Arena = 1,
+    Quest = 2
+}
 export type PointOfInterestGroup = {
     id: string;
     createdAt: Date;
@@ -9,4 +14,5 @@ export type PointOfInterestGroup = {
     description: string;
     imageUrl: string;
     groupMembers: PointOfInterestGroupMember[];
+    type: PointOfInterestGroupType;
 };

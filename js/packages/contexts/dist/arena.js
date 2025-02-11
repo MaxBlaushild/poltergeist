@@ -36,7 +36,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
-    const updateArena = (name, description) => __awaiter(void 0, void 0, void 0, function* () {
+    const updateArena = (name, description, type) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         if (!arena) {
             return;
@@ -45,9 +45,11 @@ export const ArenaProvider = ({ children, arenaId }) => {
             const response = yield apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, {
                 name,
                 description,
+                type,
             });
             setArena(Object.assign(Object.assign({}, arena), { name,
-                description }));
+                description,
+                type }));
         }
         catch (err) {
             setError(err instanceof Error ? err : new Error('An error occurred'));

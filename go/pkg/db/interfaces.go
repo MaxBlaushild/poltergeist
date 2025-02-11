@@ -165,12 +165,13 @@ type VerificationCodeHandle interface {
 }
 
 type PointOfInterestGroupHandle interface {
-	Create(ctx context.Context, name string, description string, imageUrl string) (*models.PointOfInterestGroup, error)
+	Create(ctx context.Context, name string, description string, imageUrl string, typeValue models.PointOfInterestGroupType) (*models.PointOfInterestGroup, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error)
 	FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error)
-	Edit(ctx context.Context, id uuid.UUID, name string, description string) error
+	Edit(ctx context.Context, id uuid.UUID, name string, description string, typeValue models.PointOfInterestGroupType) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
+	FindByType(ctx context.Context, typeValue models.PointOfInterestGroupType) ([]*models.PointOfInterestGroup, error)
 }
 
 type PointOfInterestChallengeHandle interface {

@@ -8,7 +8,7 @@ export interface UsePointOfInterestGroupsResult {
   error: Error | null;
 }
 
-export const usePointOfInterestGroups = (): UsePointOfInterestGroupsResult => {
+export const usePointOfInterestGroups = (type?: number): UsePointOfInterestGroupsResult => {
   const { apiClient } = useAPI();
   const [pointOfInterestGroups, setPointOfInterestGroups] = useState<PointOfInterestGroup[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -17,7 +17,7 @@ export const usePointOfInterestGroups = (): UsePointOfInterestGroupsResult => {
   useEffect(() => {
     const fetchPointOfInterestGroups = async () => {
       try {
-        const fetchedPointOfInterestGroups = await apiClient.get<PointOfInterestGroup[]>('/sonar/pointsOfInterest/groups');
+        const fetchedPointOfInterestGroups = await apiClient.get<PointOfInterestGroup[]>(`/sonar/pointsOfInterest/groups${type ? `?type=${type}` : ''}`);
         setPointOfInterestGroups(fetchedPointOfInterestGroups);
       } catch (error) {
         setError(error as Error);
@@ -27,7 +27,7 @@ export const usePointOfInterestGroups = (): UsePointOfInterestGroupsResult => {
     };
 
     fetchPointOfInterestGroups();
-  }, [apiClient]);
+  }, [apiClient, type]);
 
   return {
     pointOfInterestGroups,

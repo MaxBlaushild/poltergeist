@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 import { useState, useEffect } from 'react';
 import { useAPI } from '@poltergeist/contexts';
-export const usePointOfInterestGroups = () => {
+export const usePointOfInterestGroups = (type) => {
     const { apiClient } = useAPI();
     const [pointOfInterestGroups, setPointOfInterestGroups] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -17,7 +17,7 @@ export const usePointOfInterestGroups = () => {
     useEffect(() => {
         const fetchPointOfInterestGroups = () => __awaiter(void 0, void 0, void 0, function* () {
             try {
-                const fetchedPointOfInterestGroups = yield apiClient.get('/sonar/pointsOfInterest/groups');
+                const fetchedPointOfInterestGroups = yield apiClient.get(`/sonar/pointsOfInterest/groups${type ? `?type=${type}` : ''}`);
                 setPointOfInterestGroups(fetchedPointOfInterestGroups);
             }
             catch (error) {
@@ -28,7 +28,7 @@ export const usePointOfInterestGroups = () => {
             }
         });
         fetchPointOfInterestGroups();
-    }, [apiClient]);
+    }, [apiClient, type]);
     return {
         pointOfInterestGroups,
         loading,
