@@ -488,6 +488,7 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	var requestBody struct {
 		Name        string `binding:"required" json:"name"`
 		Description string `binding:"required" json:"description"`
+		Type        int    `binding:"required" json:"type"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -497,7 +498,9 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterestGroup().Edit(ctx, pointOfInterestGroupID, requestBody.Name, requestBody.Description); err != nil {
+	typeValue := models.PointOfInterestGroupType(requestBody.Type)
+
+	if err := s.dbClient.PointOfInterestGroup().Edit(ctx, pointOfInterestGroupID, requestBody.Name, requestBody.Description, typeValue); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -1058,6 +1061,29 @@ func (s *server) getCurrentMatch(ctx *gin.Context) {
 }
 
 func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
+	intTypeAsString := ctx.Query("type")
+	var typeValue models.PointOfInterestGroupType
+	if intTypeAsString != "" {
+		intType, err := strconv.Atoi(intTypeAsString)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid type value",
+			})
+			return
+		}
+		typeValue = models.PointOfInterestGroupType(intType)
+		groups, err := s.dbClient.PointOfInterestGroup().FindByType(ctx, typeValue)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, groups)
+		return
+	}
+
 	groups, err := s.dbClient.PointOfInterestGroup().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -1074,6 +1100,7 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		Name        string `binding:"required" json:"name"`
 		Description string `binding:"required" json:"description"`
 		ImageUrl    string `binding:"required" json:"imageUrl"`
+		Type        int    `binding:"required" json:"type"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1083,7 +1110,7 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		return
 	}
 
-	group, err := s.dbClient.PointOfInterestGroup().Create(ctx, requestBody.Name, requestBody.Description, requestBody.ImageUrl)
+	group, err := s.dbClient.PointOfInterestGroup().Create(ctx, requestBody.Name, requestBody.Description, requestBody.ImageUrl, models.PointOfInterestGroupType(requestBody.Type))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

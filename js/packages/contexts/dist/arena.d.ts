@@ -1,10 +1,10 @@
 import React from 'react';
-import { PointOfInterestGroup, PointOfInterest, PointOfInterestChallenge } from '@poltergeist/types';
+import { PointOfInterestGroup, PointOfInterest, PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
 interface ArenaContextType {
     arena: PointOfInterestGroup | null;
     loading: boolean;
     error: Error | null;
-    updateArena: (name: string, description: string) => Promise<void>;
+    updateArena: (name: string, description: string, type: PointOfInterestGroupType) => Promise<void>;
     updateArenaImage: (id: string, image: File) => Promise<void>;
     createPointOfInterest: (name: string, description: string, lat: number, lng: number, image: File | null, clue: string) => Promise<void>;
     updatePointOfInterest: (id: string, arena: Partial<PointOfInterest>) => Promise<void>;

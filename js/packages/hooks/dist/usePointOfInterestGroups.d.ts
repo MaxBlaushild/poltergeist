@@ -4,4 +4,4 @@ export interface UsePointOfInterestGroupsResult {
     loading: boolean;
     error: Error | null;
 }
-export declare const usePointOfInterestGroups: () => UsePointOfInterestGroupsResult;
+export declare const usePointOfInterestGroups: (type?: number) => UsePointOfInterestGroupsResult;

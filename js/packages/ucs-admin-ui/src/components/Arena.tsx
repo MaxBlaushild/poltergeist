@@ -3,7 +3,7 @@ import { usePointOfInterestGroups } from '@poltergeist/hooks';
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AddNewPointOfInterest } from './AddNewPointOfInterest.tsx';
-import { PointOfInterestChallenge } from '@poltergeist/types';
+import { PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
 
 export const Arena = () => {
   const { 
@@ -36,6 +36,7 @@ export const Arena = () => {
   const [selectedChallenge, setSelectedChallenge] = useState<PointOfInterestChallenge | null>(null);
   const [showEditChallengeModal, setShowEditChallengeModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [arenaType, setArenaType] = useState<PointOfInterestGroupType | undefined>(arena?.type);
   const [newChild, setNewChild] = useState({
     pointOfInterestId: '',
     pointOfInterestChallengeId: '',
@@ -76,14 +77,15 @@ export const Arena = () => {
     setEditingArena(true);
     setArenaName(arena.name);
     setArenaDescription(arena.description);
+    setArenaType(arena.type);
   };
 
   const handleArenaSave = async () => {
     try {
-      if (!arenaName || !arenaDescription) {
+      if (!arenaName || !arenaDescription || !arenaType) {
         throw new Error('Name and description are required');
       }
-      await updateArena(arenaName, arenaDescription);
+      await updateArena(arenaName, arenaDescription, arenaType);
       setEditingArena(false);
     } catch (error) {
       console.error('Error saving arena:', error);
@@ -249,6 +251,14 @@ export const Arena = () => {
                   onChange={(e) => setArenaDescription(e.target.value)}
                   className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
                 />
+                <select
+                  value={arenaType}
+                  onChange={(e) => setArenaType(JSON.parse(e.target.value) as PointOfInterestGroupType)}
+                  className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
+                >
+                  <option value={PointOfInterestGroupType.Arena}>Arena</option>
+                  <option value={PointOfInterestGroupType.Quest}>Quest</option>
+                </select>
                 <div className="flex gap-2">
                   <button
                     onClick={handleArenaSave}
@@ -269,6 +279,9 @@ export const Arena = () => {
                 <h1 className="text-3xl font-bold mb-2">{arena.name}</h1>
                 <p className="text-gray-600 text-lg mb-4">
                   {arena.description}
+                </p>
+                <p className="text-gray-600 text-lg mb-4">
+                  Type: {arena.type ? PointOfInterestGroupType[arena.type] : 'Unknown'}
                 </p>
                 <button
                   onClick={handleArenaEdit}
