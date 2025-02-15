@@ -16,7 +16,6 @@ type DbClient interface {
 	Team() TeamHandle
 	UserTeam() UserTeamHandle
 	PointOfInterest() PointOfInterestHandle
-	PointOfInterestTeam() PointOfInterestTeamHandle
 	NeighboringPointsOfInterest() NeighboringPointsOfInterestHandle
 	TextVerificationCode() TextVerificationCodeHandle
 	SentText() SentTextHandle
@@ -80,20 +79,15 @@ type UserTeamHandle interface{}
 
 type PointOfInterestHandle interface {
 	FindAll(ctx context.Context) ([]models.PointOfInterest, error)
-	Capture(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID, tier int) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error)
 	Create(ctx context.Context, crystal models.PointOfInterest) error
-	Unlock(ctx context.Context, crystalID uuid.UUID, teamID uuid.UUID) error
+	Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
 	CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error
-	Edit(ctx context.Context, id uuid.UUID, name string, description string, latitude float64, longitude float64) error
+	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
-}
-
-type PointOfInterestTeamHandle interface {
-	FindByTeamID(ctx context.Context, teamID uuid.UUID) ([]models.PointOfInterestTeam, error)
 }
 
 type NeighboringPointsOfInterestHandle interface {

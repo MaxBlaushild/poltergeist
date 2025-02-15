@@ -6,7 +6,6 @@ use (
 	./go/authenticator
 	./go/billing
 	./go/core
-	./go/crystal-crisis-api
 	./go/fount-of-erebos
 	./go/migrate
 	./go/pkg/auth

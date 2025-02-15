@@ -15,7 +15,11 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { TouchBackend } from 'react-dnd-touch-backend';
 import { MultiBackend, TouchTransition } from 'react-dnd-multi-backend';
-import { InventoryProvider, LocationProvider } from '@poltergeist/contexts';
+import { InventoryProvider, LocationProvider, MapProvider } from '@poltergeist/contexts';
+import mapboxgl from 'mapbox-gl';
+
+mapboxgl.accessToken =
+  'REDACTED';
 
 const HTML5toTouch = {
   backends: [
@@ -41,16 +45,18 @@ function App() {
               <AuthProvider appName="Sonar" uriPrefix="/sonar">
                 <ActivityContextProvider>
                   <LocationProvider>
-                    <DndProvider
-                      backend={TouchBackend}
+                    <MapProvider>
+                      <DndProvider
+                        backend={TouchBackend}
                       options={{
                         enableTouchEvents: true,
                         enableMouseEvents: true,
                         enableHoverOutsideTarget: true,
                       }}
                     >
-                      <RouterProvider router={router} />
-                    </DndProvider>
+                        <RouterProvider router={router} />
+                      </DndProvider>
+                    </MapProvider>
                   </LocationProvider>
                 </ActivityContextProvider>
               </AuthProvider>

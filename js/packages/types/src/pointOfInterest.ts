@@ -1,6 +1,6 @@
 import { PointOfInterestChallenge } from "./pointOfInterestChallenge";
 import { PointOfInterestChallengeSubmission } from "./pointOfInterestChallengeSubmission";
-import { PointOfInterestTeam } from "./pointOfInterestTeam";
+import { PointOfInterestDiscovery } from "./pointOfInterestDiscovery";
 
 export interface PointOfInterest {
     id: string;

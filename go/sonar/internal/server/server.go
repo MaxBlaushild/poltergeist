@@ -287,10 +287,10 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name        string  `binding:"required" json:"name"`
-		Description string  `binding:"required" json:"description"`
-		Latitude    float64 `binding:"required" json:"latitude"`
-		Longitude   float64 `binding:"required" json:"longitude"`
+		Name        string `binding:"required" json:"name"`
+		Description string `binding:"required" json:"description"`
+		Lat         string `binding:"required" json:"lat"`
+		Lng         string `binding:"required" json:"lng"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -300,7 +300,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Edit(ctx, pointOfInterestID, requestBody.Name, requestBody.Description, requestBody.Latitude, requestBody.Longitude); err != nil {
+	if err := s.dbClient.PointOfInterest().Edit(ctx, pointOfInterestID, requestBody.Name, requestBody.Description, requestBody.Lat, requestBody.Lng); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -651,8 +651,9 @@ func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 
 func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 	var requestBody struct {
-		TeamID            uuid.UUID `binding:"required" json:"teamId"`
-		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
+		TeamID            *uuid.UUID `binding:"required" json:"teamId"`
+		PointOfInterestID uuid.UUID  `json:"pointOfInterestId,omitempty"`
+		UserID            *uuid.UUID `json:"userId,omitempty"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -662,14 +663,14 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Unlock(ctx, requestBody.PointOfInterestID, requestBody.TeamID); err != nil {
+	if err := s.dbClient.PointOfInterest().Unlock(ctx, requestBody.PointOfInterestID, requestBody.TeamID, requestBody.UserID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	if err := s.chatClient.AddUnlockMessage(ctx, requestBody.TeamID, requestBody.PointOfInterestID); err != nil {
+	if err := s.chatClient.AddUnlockMessage(ctx, *requestBody.TeamID, requestBody.PointOfInterestID); err != nil {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -1864,36 +1865,21 @@ func (s *server) endMatch(c *gin.Context) {
 
 func (s *server) unlockPointOfInterest(c *gin.Context) {
 	var pointOfInterestUnlockRequest struct {
-		TeamID            string `json:"teamId" binding:"required"`
-		PointOfInterestID string `json:"pointOfInterestId" binding:"required"`
-		Lat               string `json:"lat" binding:"required"`
-		Lng               string `json:"lng" binding:"required"`
+		TeamID            *uuid.UUID `json:"teamId"`
+		UserID            *uuid.UUID `json:"userId"`
+		PointOfInterestID uuid.UUID  `json:"pointOfInterestId" binding:"required"`
+		Lat               string     `json:"lat" binding:"required"`
+		Lng               string     `json:"lng" binding:"required"`
 	}
 
 	if err := c.Bind(&pointOfInterestUnlockRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit poi unlock request",
+			"message": err.Error(),
 		})
 		return
 	}
 
-	pointOfInterestID, err := uuid.Parse(pointOfInterestUnlockRequest.PointOfInterestID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit poi id",
-		})
-		return
-	}
-
-	teamID, err := uuid.Parse(pointOfInterestUnlockRequest.TeamID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "shit team id",
-		})
-		return
-	}
-
-	pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(c, pointOfInterestID)
+	pointOfInterest, err := s.dbClient.PointOfInterest().FindByID(c, pointOfInterestUnlockRequest.PointOfInterestID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -1927,16 +1913,18 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Unlock(c, pointOfInterestID, teamID); err != nil {
+	if err := s.dbClient.PointOfInterest().Unlock(c, pointOfInterestUnlockRequest.PointOfInterestID, pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.UserID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	if err := s.chatClient.AddUnlockMessage(c, teamID, pointOfInterestID); err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
+	if pointOfInterestUnlockRequest.TeamID != nil {
+		if err := s.chatClient.AddUnlockMessage(c, *pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.PointOfInterestID); err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	c.JSON(200, gin.H{

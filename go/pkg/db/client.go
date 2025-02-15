@@ -19,7 +19,6 @@ type client struct {
 	teamHandle                        *teamHandle
 	userTeamHandle                    *userTeamHandle
 	pointOfInterestHandle             *pointOfInterestHandle
-	pointOfInterestTeamHandle         *pointOfInterestTeamHandle
 	neighboringPointsOfInterestHandle *neighboringPointsOfInterestHandle
 	textVerificationCodeHandle        *textVerificationCodeHandle
 	sentTextHandle                    *sentTextHandle
@@ -72,7 +71,6 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		teamHandle:                        &teamHandle{db: db},
 		userTeamHandle:                    &userTeamHandle{db: db},
 		pointOfInterestHandle:             &pointOfInterestHandle{db: db},
-		pointOfInterestTeamHandle:         &pointOfInterestTeamHandle{db: db},
 		neighboringPointsOfInterestHandle: &neighboringPointsOfInterestHandle{db: db},
 		textVerificationCodeHandle:        &textVerificationCodeHandle{db: db},
 		sentTextHandle:                    &sentTextHandle{db: db},
@@ -154,10 +152,6 @@ func (c *client) Team() TeamHandle {
 
 func (c *client) UserTeam() UserTeamHandle {
 	return c.userTeamHandle
-}
-
-func (c *client) PointOfInterestTeam() PointOfInterestTeamHandle {
-	return c.pointOfInterestTeamHandle
 }
 
 func (c *client) TextVerificationCode() TextVerificationCodeHandle {

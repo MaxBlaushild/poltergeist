@@ -1,7 +1,7 @@
 import React from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { useInventory } from '@poltergeist/contexts';
-import { hasTeamDiscoveredPointOfInterest } from '@poltergeist/types';
+import { hasDiscoveredPointOfInterest } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
 
@@ -61,9 +61,10 @@ export const Log = () => {
       const poiId = pointOfInterestMatches[1];
       const pointOfInterest = pointsOfInterestById?.[poiId];
       const poiName = pointOfInterest?.name || 'Unknown Point of Interest';
-      const isDiscovered = hasTeamDiscoveredPointOfInterest(
-        usersTeam,
-        pointOfInterest
+      const isDiscovered = hasDiscoveredPointOfInterest(
+        pointOfInterest.id,
+        usersTeam?.id ?? '',
+        usersTeam?.pointOfInterestDiscoveries ?? []
       );
       message = message.replace(
         pointOfInterestPattern,

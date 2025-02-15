@@ -22,7 +22,7 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, teamInventoryItem *mod
 		return q.AddEffectToMatch(ctx, teamMatch.MatchID, teamInventoryItem.InventoryItemID, teamInventoryItem.TeamID, itemDuration)
 	case 2:
 		// Instantly reveal a hidden point on the map.
-		return q.db.PointOfInterest().Unlock(ctx, metadata.PointOfInterestID, teamMatch.TeamID)
+		return q.db.PointOfInterest().Unlock(ctx, metadata.PointOfInterestID, &teamMatch.TeamID, nil)
 	case 3:
 		// 	// Instantly capture a tier one challenge.
 		return q.captureChallenge(ctx, metadata.PointOfInterestID, teamMatch.TeamID, 1)

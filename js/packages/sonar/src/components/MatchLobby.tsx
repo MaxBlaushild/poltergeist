@@ -8,6 +8,7 @@ import { Modal, ModalSize } from './shared/Modal.tsx';
 import { useDrag, useDrop } from 'react-dnd';
 import { Team as TeamModel, User } from '@poltergeist/types';
 import TextInput from './shared/TextInput.tsx';
+import { useNavigate } from 'react-router-dom';
 
 const stepTexts: string[] = ['Get ready', '3', '2', '1', 'Start!'];
 
@@ -21,6 +22,7 @@ export const MatchLobby = () => {
   const queryParams = new URLSearchParams(window.location.search);
   const teamId = queryParams.get('teamId');
   const startedAt = match?.startedAt;
+  const navigate = useNavigate();
 
   const [, drop] = useDrop(() => ({
     accept: 'person',
@@ -33,6 +35,14 @@ export const MatchLobby = () => {
       setToastText(null);
     }, 1500);
   };
+
+  useEffect(() => {
+    if (match?.startedAt) {
+      window.location.href = '/match/in-progress';
+    }
+  }, [match]);
+
+
 
   useEffect(() => {
     let timeout;

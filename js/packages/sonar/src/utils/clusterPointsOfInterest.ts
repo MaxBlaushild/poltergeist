@@ -23,15 +23,15 @@ export const getMemoizedDistance = (
 
 const pairMemo = new Map();
 
-export const getUniquePoiPairsWithinDistance = (match: Match) => {
-  if (pairMemo.has(match.id)) {
-    return pairMemo.get(match.id);
+export const getUniquePoiPairsWithinDistance = (pointsOfInterest: PointOfInterest[]) => {
+  if (pairMemo.has(pointsOfInterest.length)) {
+    return pairMemo.get(pointsOfInterest.length);
   }
 
   const pairs: [PointOfInterest, PointOfInterest][] = [];
   const uniquePairsMap = new Map();
 
-  match?.pointsOfInterest.forEach((poi1, index, array) => {
+  pointsOfInterest.forEach((poi1, index, array) => {
     array.slice(index + 1).forEach((poi2) => {
       const distance = getMemoizedDistance(poi1, poi2);
       if (distance < distanceThreshold) {
@@ -48,6 +48,6 @@ export const getUniquePoiPairsWithinDistance = (match: Match) => {
     });
   });
 
-  pairMemo.set(match.id, pairs);
+  pairMemo.set(pointsOfInterest.length, pairs);
   return pairs;
 };
