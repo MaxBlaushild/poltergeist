@@ -24,7 +24,7 @@ export function Dashboard(props: DashboardProps) {
         {match && (
           <Button
             title="Continue"
-            onClick={() => navigate('/match')}
+            onClick={() => navigate('/match/lobby')}
           />
         )}
         <Button

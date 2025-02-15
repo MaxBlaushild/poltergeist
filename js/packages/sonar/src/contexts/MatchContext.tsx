@@ -178,7 +178,7 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const startMatch = useCallback(async () => {
     try {
       await apiClient.post(`/sonar/matches/${match?.id}/start`);
-      getCurrentMatch();
+      window.location.href = '/match/in-progress';
     } catch (error) {
       console.error('Failed to start match', error);
     }
@@ -240,6 +240,10 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return response;
   }, [apiClient]);
+
+  useEffect(() => {
+    getCurrentMatch();
+  }, []);
 
   return (
     <MatchContext.Provider

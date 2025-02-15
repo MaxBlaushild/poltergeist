@@ -16,10 +16,11 @@ import { Match } from './components/Match.tsx';
 import { CurrentMatch } from './components/CurrentMatch.tsx';
 import { MatchById } from './components/MatchById.tsx';
 import { TeamScore } from './components/TeamScore.tsx';
-import { SinglePlayerMenu } from './components/SinglePlayerMenu.tsx';
 import Admin from './components/Admin.tsx';
 import { CreatePointsOfInterest } from './components/CreatePointsOfInterest.tsx';
-
+import { SinglePlayer } from './components/SinglePlayer.tsx';
+import { MatchInProgress } from './components/MatchInProgress.tsx';
+import { MatchLobby } from './components/MatchLobby.tsx';
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
     let params = new URLSearchParams();
@@ -98,14 +99,19 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
       },
       {
-        path: 'match',
+        path: 'match/in-progress',
         loader: onlyAuthenticated,
-        Component: CurrentMatch,
+        Component: MatchInProgress,
+      },
+      {
+        path: 'match/lobby',
+        loader: onlyAuthenticated,
+        Component: MatchLobby,
       },
       {
         path: 'single-player',
         loader: onlyAuthenticated,
-        Component: SinglePlayerMenu,
+        Component: SinglePlayer,
       },
       {
         path: 'adminfuckoff',

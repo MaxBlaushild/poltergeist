@@ -163,7 +163,9 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     setLoading(true);
     try {
       const response = await apiClient.patch(`/sonar/pointsOfInterest/${id}`, {
-        arena,
+        ...arena,
+        lat: typeof arena.lat === 'string' ? arena.lat : JSON.stringify(arena.lat),
+        lng: typeof arena.lng === 'string' ? arena.lng : JSON.stringify(arena.lng),
       });
       fetchArena(arenaId!);
     } catch (err) {

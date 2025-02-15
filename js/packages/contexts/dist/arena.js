@@ -118,9 +118,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
     const updatePointOfInterest = (id, arena) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         try {
-            const response = yield apiClient.patch(`/sonar/pointsOfInterest/${id}`, {
-                arena,
-            });
+            const response = yield apiClient.patch(`/sonar/pointsOfInterest/${id}`, Object.assign(Object.assign({}, arena), { lat: typeof arena.lat === 'string' ? arena.lat : JSON.stringify(arena.lat), lng: typeof arena.lng === 'string' ? arena.lng : JSON.stringify(arena.lng) }));
             fetchArena(arenaId);
         }
         catch (err) {

@@ -34,7 +34,7 @@ export const SelectBattleArena = () => {
                     disabled={loading}
                     onClick={() => {
                       createMatch(poiGroup.pointsOfInterest.map((poi) => poi.id));
-                      navigate('/match');
+                      navigate('/match/lobby');
                     }}
                   />
                 </div>

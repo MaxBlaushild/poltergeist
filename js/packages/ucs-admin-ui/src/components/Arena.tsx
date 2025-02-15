@@ -12,7 +12,8 @@ export const Arena = () => {
     error, 
     updateArena, 
     createPointOfInterest, 
-    deletePointOfInterest, 
+    deletePointOfInterest,
+    updatePointOfInterest,
     updatePointOfInterestImage, 
     updateArenaImage, 
     createPointOfInterestChallenge,
@@ -111,9 +112,8 @@ export const Arena = () => {
 
   const handlePointSave = async (pointId: string) => {
     try {
-      // TODO: Implement API call to save point changes
-      setEditingPointId(null);
-      setEditedPoint(null);
+      console.log('editedPoint', editedPoint);
+      await updatePointOfInterest(pointId, editedPoint);
     } catch (error) {
       console.error('Error saving point:', error);
     }
@@ -346,7 +346,7 @@ export const Arena = () => {
                       onChange={(e) =>
                         setEditedPoint({
                           ...editedPoint,
-                          lat: parseFloat(e.target.value),
+                          lat: e.target.value,
                         })
                       }
                       className="border rounded px-2 py-1 w-full mb-1"
@@ -358,7 +358,7 @@ export const Arena = () => {
                       onChange={(e) =>
                         setEditedPoint({
                           ...editedPoint,
-                          lng: parseFloat(e.target.value),
+                          lng: e.target.value,
                         })
                       }
                       className="border rounded px-2 py-1 w-full"

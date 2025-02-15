@@ -51,7 +51,7 @@ export const Scoreboard = () => {
   const [selectedTeamID, setSelectedTeamID] = useState<string | null>(null);
   const selectedTeam = match?.teams.find((team) => team.id === selectedTeamID);
 
-  const uniquePoiPairs = match ? getUniquePoiPairsWithinDistance(match!) : [];
+  const uniquePoiPairs = match ? getUniquePoiPairsWithinDistance(match?.pointsOfInterest ?? []) : [];
 
   const scoreboard: { [key: string]: number } = {};
   const capturedPoints: { [key: string]: { poi: PointOfInterest, challenge: PointOfInterestChallenge }[] } = {};

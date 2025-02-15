@@ -1,14 +1,12 @@
-import { PointOfInterestTeam } from "./pointOfInterestTeam";
-import { PointOfInterest } from "./pointOfInterest";
 import { User } from "./user";
 import { TeamInventoryItem } from "./teamInventoryItem";
+import { PointOfInterestDiscovery } from "./pointOfInterestDiscovery";
 export type Team = {
     id: string;
     createdAt: Date;
     updatedAt: Date;
     name: string;
     users: User[];
-    pointOfInterestTeams: PointOfInterestTeam[];
     teamInventoryItems: TeamInventoryItem[];
+    pointOfInterestDiscoveries: PointOfInterestDiscovery[];
 };
-export declare const hasTeamDiscoveredPointOfInterest: (team: Team | undefined, pointOfInterest: PointOfInterest) => boolean | undefined;

@@ -42,8 +42,7 @@ func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error 
 		return err
 	}
 
-	// Delete related PointOfInterestTeam records
-	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestTeam{}).Error; err != nil {
+	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestDiscovery{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
@@ -70,12 +69,12 @@ func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID
 	}).Error
 }
 
-func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, latitude float64, longitude float64) error {
+func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error {
 	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"name":        name,
 		"description": description,
-		"lat":         latitude,
-		"lng":         longitude,
+		"lat":         lat,
+		"lng":         lng,
 		"updated_at":  time.Now(),
 	}).Error
 }
@@ -140,19 +139,11 @@ func (c *pointOfInterestHandle) FindByMatchID(ctx context.Context, matchID uuid.
 	return pointsOfInterest, nil
 }
 
-func (c *pointOfInterestHandle) Capture(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID, tier int) error {
-	updates := models.PointOfInterestTeam{
-		CaptureTier: tier,
-	}
-
-	return c.db.WithContext(ctx).Model(&models.PointOfInterestTeam{}).Where("team_id = ? AND point_of_interest_id = ?", teamID, pointOfInterestID).Updates(&updates).Error
-}
-
-func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID uuid.UUID) error {
-	unlock := models.PointOfInterestTeam{
+func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID) error {
+	unlock := models.PointOfInterestDiscovery{
 		TeamID:            teamID,
+		UserID:            userID,
 		PointOfInterestID: pointOfInterestID,
-		Unlocked:          true,
 	}
 
 	return c.db.WithContext(ctx).Create(&unlock).Error

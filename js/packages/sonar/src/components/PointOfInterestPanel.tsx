@@ -3,7 +3,9 @@ import {
   PointOfInterest,
   Team,
   getControllingTeamForPoi,
-  hasTeamDiscoveredPointOfInterest,
+  hasDiscoveredPointOfInterest,
+  InventoryItem,
+  MatchInventoryItemEffect,
 } from '@poltergeist/types';
 import React, { useState } from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
@@ -33,38 +35,43 @@ const toRoman = (num: number): string => {
   return lookup[num] || '';
 };
 
+interface PointOfInterestPanelProps {
+  pointOfInterest: PointOfInterest;
+  onClose: (immediate: boolean) => void;
+  consumableItems: InventoryItem[];
+  itemEffects: MatchInventoryItemEffect[];
+  onUnlock: () => void;
+}
+
 export const PointOfInterestPanel = ({
   pointOfInterest,
-  allTeams,
-  onClose
-}: {
-  pointOfInterest: PointOfInterest;
-  allTeams: Team[];
-  onClose: (immediate: boolean) => void;
-}) => {
+  onClose,
+  onUnlock,
+  consumableItems,
+}: PointOfInterestPanelProps) => {
   const {
     unlockPointOfInterest,
-    attemptCapturePointOfInterest,
     usersTeam,
-    getCurrentMatch,
     match,
   } = useMatchContext();
   const { location } = useLocation();
   const { consumeItem, setUsedItem, inventoryItems } = useInventory();
   const [buttonText, setButtonText] = useState<string>("I'm here!");
-  const hasDiscovered = hasTeamDiscoveredPointOfInterest(
-    usersTeam,
-    pointOfInterest
+  const allTeams = match?.teams ?? [];
+  const hasDiscovered = hasDiscoveredPointOfInterest(
+    pointOfInterest.id,
+    usersTeam?.id ?? '',
+    usersTeam?.pointOfInterestDiscoveries ?? []
   );
   const { submission, challenge } = getControllingTeamForPoi(pointOfInterest);
   const controllingTeam = allTeams.find(
     (team) => team.id === submission?.teamId
   );
 
-  const goldenTelescope = usersTeam?.teamInventoryItems.find(
-    (item) =>
-      item.inventoryItemId === ItemType.GoldenTelescope && item.quantity > 0
-  );
+  // const goldenTelescope = usersTeam?.teamInventoryItems.find(
+  //   (item) =>
+  //     item.inventoryItemId === ItemType.GoldenTelescope && item.quantity > 0
+  // );
 
   const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
     (item) =>
@@ -158,13 +165,7 @@ export const PointOfInterestPanel = ({
             onClick={async () => {
               console.log(location);
                 try {
-                  await unlockPointOfInterest(
-                    pointOfInterest.id,
-                    usersTeam?.id ?? '',
-                    location.latitude?.toString() ?? '',
-                    location.longitude?.toString() ?? ''
-                  );
-                  getCurrentMatch();
+                  await onUnlock();
                 } catch (error) {
                   setButtonText('Wrong, dingus');
                   setTimeout(() => {
