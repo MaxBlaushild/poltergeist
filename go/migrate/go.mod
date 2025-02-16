@@ -1,6 +1,6 @@
 module github.com/MaxBlaushild/poltergeist/migrate
 
-go 1.18
+go 1.22
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.16.2

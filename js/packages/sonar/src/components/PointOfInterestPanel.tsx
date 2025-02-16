@@ -175,18 +175,20 @@ export const PointOfInterestPanel = ({
             }}
             title={buttonText}
           />
-          {!!goldenTelescope && (
-            <img
-              src={`https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png`}
-              alt="Golden Telescope"
-              className="rounded-lg border-black border-2 h-12 w-12"
-              onClick={() => {
-                consumeItem(goldenTelescope.id, {
-                  pointOfInterestId: pointOfInterest.id,
-                });
-                setUsedItem(inventoryItems.find(item => item.id === ItemType.GoldenTelescope)!);
-                onClose(true);
-              }}
+          {consumableItems.map((item) => {
+            return (
+              <img
+                src={`https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png`}
+                alt="Golden Telescope"
+                className="rounded-lg border-black border-2 h-12 w-12"
+                onClick={() => {
+                  console.log(item.id);
+                  consumeItem(item.id, {
+                    pointOfInterestId: pointOfInterest.id,
+                  });
+                  setUsedItem(inventoryItems.find(item => item.id === item.id)!);
+                  onClose(true);
+                }}
             />
           )}
         </div>

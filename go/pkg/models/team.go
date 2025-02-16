@@ -13,6 +13,6 @@ type Team struct {
 	Name                       string    `json:"name"`
 	UserTeams                  []UserTeam
 	Users                      []User                     `json:"users" gorm:"many2many:user_teams;"`
-	TeamInventoryItems         []TeamInventoryItem        `json:"teamInventoryItems"`
+	OwnedInventoryItems        []OwnedInventoryItem       `json:"ownedInventoryItems"`
 	PointOfInterestDiscoveries []PointOfInterestDiscovery `json:"pointOfInterestDiscoveries"`
 }

@@ -63,10 +63,11 @@ func (p *pointOfInterestChallengeHandle) FindByID(ctx context.Context, id uuid.U
 	return &challenge, nil
 }
 
-func (p *pointOfInterestChallengeHandle) SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error) {
+func (p *pointOfInterestChallengeHandle) SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error) {
 	challenge := models.PointOfInterestChallengeSubmission{
 		PointOfInterestChallengeID: challengeID,
 		TeamID:                     teamID,
+		UserID:                     userID,
 		Text:                       text,
 		ImageURL:                   imageURL,
 		IsCorrect:                  &isCorrect,

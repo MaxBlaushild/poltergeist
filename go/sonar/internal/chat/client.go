@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/google/uuid"
 )
@@ -15,9 +16,9 @@ type client struct {
 }
 
 type Client interface {
-	AddUseItemMessage(ctx context.Context, teamInventoryItemID uuid.UUID, metadata quartermaster.UseItemMetadata) error
-	AddUnlockMessage(ctx context.Context, teamID uuid.UUID, pointOfInterestID uuid.UUID) error
-	AddCaptureMessage(ctx context.Context, teamID uuid.UUID, challengeID uuid.UUID) error
+	AddUseItemMessage(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata quartermaster.UseItemMetadata) error
+	AddUnlockMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, pointOfInterestID uuid.UUID) error
+	AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challengeID uuid.UUID) error
 }
 
 func NewClient(dbClient db.DbClient, quartermaster quartermaster.Quartermaster) Client {
@@ -66,10 +67,23 @@ func (c *client) makeChallengeTierName(tier int) string {
 	}
 }
 
-func (c *client) AddCaptureMessage(ctx context.Context, teamID uuid.UUID, challengeID uuid.UUID) error {
-	teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, teamID)
-	if err != nil {
-		return err
+func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challengeID uuid.UUID) error {
+	var teamName string
+	var matchID *uuid.UUID
+	if userID != nil {
+		teamName = "You"
+		matchID = nil
+	} else {
+		team, err := c.dbClient.Team().GetByID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, team.ID)
+		if err != nil {
+			return err
+		}
+		teamName = c.makeTeamName(team.ID)
+		matchID = &teamMatch.MatchID
 	}
 
 	challenge, err := c.dbClient.PointOfInterestChallenge().FindByID(ctx, challengeID)
@@ -79,32 +93,56 @@ func (c *client) AddCaptureMessage(ctx context.Context, teamID uuid.UUID, challe
 
 	message := fmt.Sprintf(
 		"%s captured %s at tier %s.",
-		c.makeTeamName(teamID),
+		teamName,
 		c.makePointOfInterestName(challenge.PointOfInterestID),
 		c.makeChallengeTierName(challenge.Tier),
 	)
 
-	return c.dbClient.AuditItem().Create(ctx, teamMatch.MatchID, message)
+	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }
 
-func (c *client) AddUnlockMessage(ctx context.Context, teamID uuid.UUID, pointOfInterestID uuid.UUID) error {
-	teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, teamID)
-	if err != nil {
-		return err
+func (c *client) AddUnlockMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, pointOfInterestID uuid.UUID) error {
+	var userName string
+	var matchID *uuid.UUID
+	if userID != nil {
+		userName = "You"
+		matchID = nil
+	} else {
+		team, err := c.dbClient.Team().GetByID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		userName = c.makeTeamName(team.ID)
+		matchID = &teamMatch.MatchID
 	}
 
-	message := fmt.Sprintf("%s unlocked %s.", c.makeTeamName(teamID), c.makePointOfInterestName(pointOfInterestID))
+	message := fmt.Sprintf("%s unlocked %s.", userName, c.makePointOfInterestName(pointOfInterestID))
 
-	return c.dbClient.AuditItem().Create(ctx, teamMatch.MatchID, message)
+	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }
 
-func (c *client) AddUseItemMessage(ctx context.Context, teamInventoryItemID uuid.UUID, metadata quartermaster.UseItemMetadata) error {
-	teamInventoryItem, err := c.dbClient.InventoryItem().FindByID(ctx, teamInventoryItemID)
-	if err != nil {
-		return err
+func (c *client) AddUseItemMessage(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata quartermaster.UseItemMetadata) error {
+	if ownedInventoryItem.IsTeamItem() {
+		return c.addUseItemMessageForTeam(ctx, ownedInventoryItem, metadata)
 	}
 
-	team, err := c.dbClient.Team().GetByID(ctx, teamInventoryItem.TeamID)
+	return c.addUseItemMessageForUser(ctx, ownedInventoryItem, metadata)
+}
+
+func (c *client) makeUseMessage(ctx context.Context, userName string, itemName string) string {
+	return fmt.Sprintf("%s used a %s", userName, itemName)
+}
+
+func (c *client) addUseItemMessageForTeam(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata quartermaster.UseItemMetadata) error {
+	if ownedInventoryItem.TeamID == nil {
+		return nil
+	}
+
+	team, err := c.dbClient.Team().GetByID(ctx, *ownedInventoryItem.TeamID)
 	if err != nil {
 		return err
 	}
@@ -114,12 +152,12 @@ func (c *client) AddUseItemMessage(ctx context.Context, teamInventoryItemID uuid
 		return err
 	}
 
-	item, err := c.quartermaster.FindItemForItemID(teamInventoryItem.InventoryItemID)
+	item, err := c.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
 	if err != nil {
 		return err
 	}
 
-	message := fmt.Sprintf("%s used a %s", c.makeTeamName(team.ID), c.makeInventoryItemName(item.ID))
+	message := c.makeUseMessage(ctx, c.makeTeamName(team.ID), c.makeInventoryItemName(item.ID))
 
 	if metadata.TargetTeamID != uuid.Nil {
 		message += fmt.Sprintf(" on %s", c.makeTeamName(metadata.TargetTeamID))
@@ -129,9 +167,26 @@ func (c *client) AddUseItemMessage(ctx context.Context, teamInventoryItemID uuid
 
 	message += "."
 
-	if err := c.dbClient.AuditItem().Create(ctx, teamMatch.MatchID, message); err != nil {
+	if err := c.dbClient.AuditItem().Create(ctx, &teamMatch.MatchID, nil, message); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (c *client) addUseItemMessageForUser(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata quartermaster.UseItemMetadata) error {
+	if ownedInventoryItem.UserID == nil {
+		return nil
+	}
+
+	item, err := c.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	if err != nil {
+		return err
+	}
+
+	message := c.makeUseMessage(ctx, "You", c.makeInventoryItemName(item.ID))
+
+	message += "."
+
+	return c.dbClient.AuditItem().Create(ctx, nil, ownedInventoryItem.UserID, message)
 }

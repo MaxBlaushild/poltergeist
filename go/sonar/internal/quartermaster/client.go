@@ -16,12 +16,12 @@ type client struct {
 }
 
 type Quartermaster interface {
-	UseItem(ctx context.Context, teamInventoryItemID uuid.UUID, metadata *UseItemMetadata) error
-	GetItem(ctx context.Context, teamID uuid.UUID) (InventoryItem, error)
+	UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, metadata *UseItemMetadata) error
+	GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (InventoryItem, error)
 	FindItemForItemID(itemID int) (InventoryItem, error)
 	GetInventoryItems() []InventoryItem
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
-	GetItemSpecificItem(ctx context.Context, teamID uuid.UUID, itemID int) (InventoryItem, error)
+	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (InventoryItem, error)
 }
 
 type UseItemMetadata struct {
@@ -47,49 +47,46 @@ func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
 	return InventoryItem{}, fmt.Errorf("item not found")
 }
 
-func (c *client) GetItem(ctx context.Context, teamID uuid.UUID) (InventoryItem, error) {
+func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (InventoryItem, error) {
 	item, err := c.getRandomItem()
 	if err != nil {
 		return InventoryItem{}, err
 	}
 
-	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, item.ID, 1); err != nil {
+	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
 		return InventoryItem{}, err
 	}
 
 	return item, nil
 }
 
-func (c *client) GetItemSpecificItem(ctx context.Context, teamID uuid.UUID, itemID int) (InventoryItem, error) {
+func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (InventoryItem, error) {
 	item, err := c.FindItemForItemID(itemID)
 	if err != nil {
 		return InventoryItem{}, err
 	}
 
-	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, item.ID, 1); err != nil {
+	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
 		return InventoryItem{}, err
 	}
 
 	return item, nil
 }
 
-func (c *client) UseItem(ctx context.Context, teamInventoryItemID uuid.UUID, metadata *UseItemMetadata) error {
-	teamInventoryItem, err := c.db.InventoryItem().FindByID(ctx, teamInventoryItemID)
+func (c *client) UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, metadata *UseItemMetadata) error {
+	ownedInventoryItem, err := c.db.InventoryItem().FindByID(ctx, ownedInventoryItemID)
 	if err != nil {
 		return err
 	}
 
-	if err := c.db.InventoryItem().UseInventoryItem(ctx, teamInventoryItem.ID); err != nil {
+	if err := c.db.InventoryItem().UseInventoryItem(ctx, ownedInventoryItem.ID); err != nil {
 		return err
 	}
 
-	teamMatch, err := c.db.Match().FindForTeamID(ctx, teamInventoryItem.TeamID)
-	if err != nil {
-		return err
-	}
-
-	if err := c.ApplyItemEffectByID(ctx, teamInventoryItem, teamMatch, metadata); err != nil {
-		return err
+	if ownedInventoryItem.IsTeamItem() {
+		if err := c.ApplyItemEffectByID(ctx, *ownedInventoryItem, metadata); err != nil {
+			return err
+		}
 	}
 
 	return nil

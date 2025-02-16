@@ -23,7 +23,6 @@ export class APIClient {
     }
     get(url, params) {
         return __awaiter(this, void 0, void 0, function* () {
-            console.log(url);
             const response = yield this.client.get(url, { params });
             return response.data;
         });

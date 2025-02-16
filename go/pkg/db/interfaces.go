@@ -170,7 +170,7 @@ type PointOfInterestGroupHandle interface {
 
 type PointOfInterestChallengeHandle interface {
 	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int) (*models.PointOfInterestChallenge, error)
-	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
+	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
 	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -178,19 +178,19 @@ type PointOfInterestChallengeHandle interface {
 }
 
 type InventoryItemHandle interface {
-	CreateOrIncrementInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int, quantity int) error
-	GetInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int) (*models.TeamInventoryItem, error)
-	UseInventoryItem(ctx context.Context, teamInventoryItemID uuid.UUID) error
+	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
+	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
 	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
-	FindByID(ctx context.Context, id uuid.UUID) (*models.TeamInventoryItem, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
-	GetTeamsItems(ctx context.Context, teamID uuid.UUID) ([]models.TeamInventoryItem, error)
+	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
 }
 
 type AuditItemHandle interface {
-	Create(ctx context.Context, matchID uuid.UUID, message string) error
+	Create(ctx context.Context, matchID *uuid.UUID, userID *uuid.UUID, message string) error
 	GetAuditItemsForMatch(ctx context.Context, matchID uuid.UUID) ([]*models.AuditItem, error)
+	GetAuditItemsForUser(ctx context.Context, userID uuid.UUID) ([]*models.AuditItem, error)
 }
 
 type ImageGenerationHandle interface {

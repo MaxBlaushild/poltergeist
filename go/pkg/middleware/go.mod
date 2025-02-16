@@ -2,8 +2,6 @@ module github.com/MaxBlaushild/poltergeist/pkg/middleware
 
 go 1.21
 
-toolchain go1.21.3
-
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../auth
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../db

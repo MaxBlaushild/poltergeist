@@ -14,9 +14,26 @@ type inventoryItemHandler struct {
 	db *gorm.DB
 }
 
-func (h *inventoryItemHandler) GetTeamsItems(ctx context.Context, teamID uuid.UUID) ([]models.TeamInventoryItem, error) {
-	var items []models.TeamInventoryItem
-	result := h.db.Where("team_id = ?", teamID).Find(&items)
+func (h *inventoryItemHandler) GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error) {
+	var items []models.OwnedInventoryItem
+
+	if userOrTeam.TeamID != nil {
+		result := h.db.Where("team_id = ?", userOrTeam.TeamID).Find(&items)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+	} else {
+		result := h.db.Where("user_id = ?", userOrTeam.UserID).Find(&items)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+	}
+	return items, nil
+}
+
+func (h *inventoryItemHandler) GetUsersItems(ctx context.Context, userID uuid.UUID) ([]models.OwnedInventoryItem, error) {
+	var items []models.OwnedInventoryItem
+	result := h.db.Where("user_id = ?", userID).Find(&items)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -24,13 +41,13 @@ func (h *inventoryItemHandler) GetTeamsItems(ctx context.Context, teamID uuid.UU
 }
 
 func (h *inventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error {
-	items, err := h.GetTeamsItems(ctx, victimTeamID)
+	items, err := h.GetItems(ctx, models.OwnedInventoryItem{TeamID: &victimTeamID})
 	if err != nil {
 		return err
 	}
 
 	for _, item := range items {
-		if err := h.CreateOrIncrementInventoryItem(ctx, thiefTeamID, item.InventoryItemID, item.Quantity); err != nil {
+		if err := h.CreateOrIncrementInventoryItem(ctx, &thiefTeamID, nil, item.InventoryItemID, item.Quantity); err != nil {
 			return err
 		}
 		item.Quantity = 0
@@ -40,14 +57,14 @@ func (h *inventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.
 }
 
 func (h *inventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error {
-	items, err := h.GetTeamsItems(ctx, victimTeamID)
+	items, err := h.GetItems(ctx, models.OwnedInventoryItem{TeamID: &victimTeamID})
 	if err != nil {
 		return err
 	}
 
 	for _, item := range items {
 		if item.InventoryItemID == inventoryItemID {
-			if err := h.CreateOrIncrementInventoryItem(ctx, thiefTeamID, item.InventoryItemID, item.Quantity); err != nil {
+			if err := h.CreateOrIncrementInventoryItem(ctx, &thiefTeamID, nil, item.InventoryItemID, item.Quantity); err != nil {
 				return err
 			}
 			item.Quantity = 0
@@ -57,8 +74,8 @@ func (h *inventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.U
 	return nil
 }
 
-func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.TeamInventoryItem, error) {
-	var item models.TeamInventoryItem
+func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error) {
+	var item models.OwnedInventoryItem
 	result := h.db.Where("id = ?", id).First(&item)
 	if result.Error != nil {
 		return nil, result.Error
@@ -66,14 +83,26 @@ func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*mod
 	return &item, nil
 }
 
-func (h *inventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int, quantity int) error {
-	var item models.TeamInventoryItem
-	result := h.db.Where("team_id = ? AND inventory_item_id = ?", teamID, inventoryItemID).First(&item)
+func (h *inventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error {
+	var item models.OwnedInventoryItem
+	var query string
+	var queryID *uuid.UUID
+
+	if teamID != nil {
+		query = "team_id = ? AND inventory_item_id = ?"
+		queryID = teamID
+	} else {
+		query = "user_id = ? AND inventory_item_id = ?"
+		queryID = userID
+	}
+
+	result := h.db.Where(query, queryID, inventoryItemID).First(&item)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			newItem := models.TeamInventoryItem{
+			newItem := models.OwnedInventoryItem{
 				ID:              uuid.New(),
 				TeamID:          teamID,
+				UserID:          userID,
 				InventoryItemID: inventoryItemID,
 				Quantity:        quantity,
 			}
@@ -85,21 +114,9 @@ func (h *inventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Contex
 	return h.db.Save(&item).Error
 }
 
-func (h *inventoryItemHandler) GetInventoryItem(ctx context.Context, teamID uuid.UUID, inventoryItemID int) (*models.TeamInventoryItem, error) {
-	var item models.TeamInventoryItem
-	result := h.db.Where("team_id = ? AND inventory_item_id = ?", teamID, inventoryItemID).First(&item)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, result.Error
-	}
-	return &item, nil
-}
-
-func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, teamInventoryItemID uuid.UUID) error {
-	var item models.TeamInventoryItem
-	result := h.db.Where("id = ?", teamInventoryItemID).First(&item)
+func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error {
+	var item models.OwnedInventoryItem
+	result := h.db.Where("id = ?", ownedInventoryItemID).First(&item)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -110,7 +127,7 @@ func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, teamInvento
 func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
 	newEffect := models.MatchInventoryItemEffect{
 		ID:              uuid.New(),
-		MatchID:         matchID, // Assuming matchID is defined in the context where this function is called
+		MatchID:         matchID,
 		TeamID:          teamID,
 		InventoryItemID: inventoryItemID,
 		CreatedAt:       time.Now(),

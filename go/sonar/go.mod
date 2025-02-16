@@ -1,8 +1,6 @@
 module github.com/MaxBlaushild/poltergeist/sonar
 
-go 1.21
-
-toolchain go1.22.9
+go 1.22
 
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
@@ -28,10 +26,11 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000
-	github.com/MaxBlaushild/poltergeist/pkg/imagine v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/mapbox v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/texter v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
@@ -42,8 +41,6 @@ require (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
-	github.com/MaxBlaushild/poltergeist/pkg/mapbox v0.0.0-00010101000000-000000000000 // indirect
-	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect

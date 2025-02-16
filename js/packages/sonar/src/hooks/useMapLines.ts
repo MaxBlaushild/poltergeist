@@ -9,6 +9,8 @@ import {
 } from '@poltergeist/types';
 import { getUniquePoiPairsWithinDistance } from '../utils/clusterPointsOfInterest.ts';
 import { useMap } from '@poltergeist/contexts';
+import { useMatchContext } from '../contexts/MatchContext.tsx';
+
 interface UseMapLinesProps {
   pointsOfInterest: PointOfInterest[];
   usersTeam: Team;
@@ -18,6 +20,7 @@ export const useMapLines = ({
   pointsOfInterest,
   usersTeam,
 }) => {
+  const { match } = useMatchContext();
   const { zoom, map } = useMap();
   const [previousZoom, setPreviousZoom] = useState(zoom);
   const [lines, setLines] = useState<any[]>([]);
