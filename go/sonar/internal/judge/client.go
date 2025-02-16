@@ -48,7 +48,8 @@ type JudgeSubmissionRequest struct {
 	ChallengeID        uuid.UUID
 	ImageSubmissionUrl string
 	TextSubmission     string
-	TeamID             uuid.UUID
+	TeamID             *uuid.UUID
+	UserID             *uuid.UUID
 }
 
 type SubmissionJudgement struct {
@@ -98,7 +99,7 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 		return nil, fmt.Errorf("error decoding judgement response (%s): %w", answer.Answer, err)
 	}
 
-	challengeSubmission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.ChallengeID, request.TeamID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
+	challengeSubmission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.ChallengeID, request.TeamID, request.UserID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
 	if err != nil {
 		return nil, err
 	}

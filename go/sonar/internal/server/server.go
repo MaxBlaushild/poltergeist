@@ -114,7 +114,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
-	r.POST("/sonar/inventory/:teamInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
+	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
 	r.GET("/sonar/matches/:id/chat", middleware.WithAuthentication(s.authClient, s.getMatchChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
@@ -670,7 +670,7 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.chatClient.AddUnlockMessage(ctx, *requestBody.TeamID, requestBody.PointOfInterestID); err != nil {
+	if err := s.chatClient.AddUnlockMessage(ctx, requestBody.TeamID, requestBody.UserID, requestBody.PointOfInterestID); err != nil {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
@@ -682,9 +682,10 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 
 func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
 	var requestBody struct {
-		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
-		TeamID            uuid.UUID `binding:"required" json:"teamId"`
-		Tier              int       `binding:"required" json:"tier"`
+		PointOfInterestID uuid.UUID  `binding:"required" json:"pointOfInterestId"`
+		TeamID            *uuid.UUID `binding:"required" json:"teamId"`
+		UserID            *uuid.UUID `json:"userId,omitempty"`
+		Tier              int        `binding:"required" json:"tier"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -702,14 +703,14 @@ func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.dbClient.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, challenge.ID, requestBody.TeamID, "", "", true); err != nil {
+	if _, err := s.dbClient.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, challenge.ID, requestBody.TeamID, requestBody.UserID, "", "", true); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, challenge.ID); err != nil {
+	if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.UserID, challenge.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -766,7 +767,7 @@ func (s *server) addItemToTeam(ctx *gin.Context) {
 		return
 	}
 
-	item, err := s.quartermaster.GetItem(ctx, teamID)
+	item, err := s.quartermaster.GetItem(ctx, &teamID, nil)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -778,18 +779,18 @@ func (s *server) addItemToTeam(ctx *gin.Context) {
 }
 
 func (s *server) useItem(ctx *gin.Context) {
-	stringTeamInventoryItemID := ctx.Param("teamInventoryItemID")
-	if stringTeamInventoryItemID == "" {
+	stringOwnedInventoryItemID := ctx.Param("ownedInventoryItemID")
+	if stringOwnedInventoryItemID == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "team inventory item ID is required",
+			"error": "owned inventory item ID is required",
 		})
 		return
 	}
 
-	teamInventoryItemID, err := uuid.Parse(stringTeamInventoryItemID)
+	ownedInventoryItemID, err := uuid.Parse(stringOwnedInventoryItemID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid team inventory item ID",
+			"error": "invalid owned inventory item ID",
 		})
 		return
 	}
@@ -802,14 +803,22 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.quartermaster.UseItem(ctx, teamInventoryItemID, &request); err != nil {
+	if err := s.quartermaster.UseItem(ctx, ownedInventoryItemID, &request); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	if err := s.chatClient.AddUseItemMessage(ctx, teamInventoryItemID, request); err != nil {
+	ownedInventoryItem, err := s.dbClient.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.chatClient.AddUseItemMessage(ctx, *ownedInventoryItem, request); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -838,7 +847,7 @@ func (s *server) getTeamsInventory(ctx *gin.Context) {
 		return
 	}
 
-	inventory, err := s.dbClient.InventoryItem().GetTeamsItems(ctx, teamID)
+	inventory, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{TeamID: &teamID})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -903,10 +912,11 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		ChallengeID        uuid.UUID `binding:"required" json:"challengeID"`
-		TeamID             uuid.UUID `binding:"required" json:"teamID"`
-		TextSubmission     string    ` json:"textSubmission"`
-		ImageSubmissionUrl string    ` json:"imageSubmissionUrl"`
+		ChallengeID        uuid.UUID  `binding:"required" json:"challengeID"`
+		TeamID             *uuid.UUID `binding:"required" json:"teamID"`
+		UserID             *uuid.UUID `json:"userID"`
+		TextSubmission     string     ` json:"textSubmission"`
+		ImageSubmissionUrl string     ` json:"imageSubmissionUrl"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -919,6 +929,7 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	submission, err := s.judgeClient.JudgeSubmission(ctx, judge.JudgeSubmissionRequest{
 		ChallengeID:        requestBody.ChallengeID,
 		TeamID:             requestBody.TeamID,
+		UserID:             requestBody.UserID,
 		TextSubmission:     requestBody.TextSubmission,
 		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
 	})
@@ -940,7 +951,7 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	var item quartermaster.InventoryItem
 	if submission.Judgement.Judgement {
 		if challenge.InventoryItemID == 0 {
-			item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID)
+			item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID, requestBody.UserID)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{
 					"error": err.Error(),
@@ -948,7 +959,7 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 				return
 			}
 		} else {
-			item, err = s.quartermaster.GetItemSpecificItem(ctx, requestBody.TeamID, challenge.InventoryItemID)
+			item, err = s.quartermaster.GetItemSpecificItem(ctx, requestBody.TeamID, requestBody.UserID, challenge.InventoryItemID)
 			if err != nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{
 					"error": err.Error(),
@@ -957,7 +968,7 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 			}
 		}
 
-		if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.ChallengeID); err != nil {
+		if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.UserID, requestBody.ChallengeID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
@@ -1921,7 +1932,7 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	}
 
 	if pointOfInterestUnlockRequest.TeamID != nil {
-		if err := s.chatClient.AddUnlockMessage(c, *pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.PointOfInterestID); err != nil {
+		if err := s.chatClient.AddUnlockMessage(c, pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.UserID, pointOfInterestUnlockRequest.PointOfInterestID); err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}

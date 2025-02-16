@@ -17,3 +17,11 @@ type OwnedInventoryItem struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
+
+func (o *OwnedInventoryItem) IsTeamItem() bool {
+	return o.TeamID != nil
+}
+
+func (o *OwnedInventoryItem) IsUserItem() bool {
+	return o.UserID != nil
+}

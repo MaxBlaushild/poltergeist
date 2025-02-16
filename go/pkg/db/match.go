@@ -30,7 +30,7 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 		Preload("PointsOfInterest.PointOfInterestChallenges.PointOfInterestChallengeSubmissions").
 		Preload("Teams.Users").
 		Preload("Teams.PointOfInterestDiscoveries").
-		Preload("Teams.TeamInventoryItems").
+		Preload("Teams.OwnedInventoryItems").
 		Preload("InventoryItemEffects").
 		Where("id = ?", id).First(&match).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -48,7 +48,7 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 		for j, poiChallenge := range poiTeam.PointOfInterestChallenges {
 			filteredSubmissions := []models.PointOfInterestChallengeSubmission{}
 			for _, submission := range poiChallenge.PointOfInterestChallengeSubmissions {
-				if teamIDs[submission.TeamID] {
+				if teamIDs[*submission.TeamID] {
 					filteredSubmissions = append(filteredSubmissions, submission)
 				}
 			}
