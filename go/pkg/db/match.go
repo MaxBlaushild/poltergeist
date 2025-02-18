@@ -27,10 +27,8 @@ func (h *matchHandle) FindForTeamID(ctx context.Context, teamID uuid.UUID) (*mod
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
 	if err := h.db.WithContext(ctx).
-		Preload("PointsOfInterest.PointOfInterestChallenges.PointOfInterestChallengeSubmissions").
+		Preload("PointsOfInterest.PointOfInterestChallenges").
 		Preload("Teams.Users").
-		Preload("Teams.PointOfInterestDiscoveries").
-		Preload("Teams.OwnedInventoryItems").
 		Preload("InventoryItemEffects").
 		Where("id = ?", id).First(&match).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -59,6 +57,14 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 }
 
 func (h *matchHandle) FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error) {
+	matchID, err := h.FindCurrentMatchIDForUser(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
+	return h.FindByID(ctx, *matchID)
+}
+
+func (h *matchHandle) FindCurrentMatchIDForUser(ctx context.Context, userId uuid.UUID) (*uuid.UUID, error) {
 	var stringMatchId string
 	sql := `
 		SELECT m.id FROM matches m
@@ -81,12 +87,7 @@ func (h *matchHandle) FindCurrentMatchForUser(ctx context.Context, userId uuid.U
 		return nil, nil
 	}
 
-	match, err := h.FindByID(ctx, matchID)
-	if err != nil {
-		return nil, err
-	}
-
-	return match, nil
+	return &matchID, nil
 }
 
 func (h *matchHandle) Create(ctx context.Context, creatorID uuid.UUID, pointsOfInterestIDs []uuid.UUID) (*models.Match, error) {

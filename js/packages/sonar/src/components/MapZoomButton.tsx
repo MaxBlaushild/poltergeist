@@ -12,7 +12,6 @@ export const MapZoomButton = () => {
       <div
         className="absolute top-20 right-4 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
         onClick={() => {
-          console.log('clicked');
           if (location?.longitude && location?.latitude) {
             const newCenter = [location.longitude, location.latitude];
             map.current?.flyTo({ center: newCenter, zoom: 15 });

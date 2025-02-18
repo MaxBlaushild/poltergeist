@@ -13,7 +13,6 @@ import { ArenaProvider, InventoryProvider } from '@poltergeist/contexts';
 import { Login } from './components/Login.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
-  console.log('onlyAuthenticated', request);
   if (!localStorage.getItem('token')) {
     let params = new URLSearchParams();
     params.set('from', new URL(request.url).pathname);
@@ -23,7 +22,6 @@ function onlyAuthenticated({ request }: LoaderFunctionArgs) {
 }
 
 function onlyUnauthenticated({ request }: LoaderFunctionArgs) {
-  console.log('onlyUnauthenticated', request);
   if (localStorage.getItem('token')) {
     return redirect('/');
   }

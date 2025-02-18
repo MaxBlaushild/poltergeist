@@ -11,16 +11,6 @@ import { useUserProfiles } from './UserProfileContext.tsx';
 import { useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 
-export type Judgement = {
-  judgement: boolean;
-  reason: string;
-};
-
-export type CapturePointOfInterestResponse = {
-  item: InventoryItem;
-  judgement: Judgement;
-};
-
 interface MatchContextType {
   match: Match | null;
   createMatch: (pointsOfInterestIds: string[]) => Promise<void>;
@@ -37,15 +27,6 @@ interface MatchContextType {
   leaveMatchError: string | null;
   editTeamName: (teamId: string, name: string) => Promise<void>;
   usersTeam: Team | undefined;
-  attemptCapturePointOfInterest: (teamId: string, challengeId: string, text: string, image: File | undefined) => Promise<CapturePointOfInterestResponse | undefined>;
-  unlockPointOfInterest: (
-    pointOfInterestId: string,
-    teamId: string,
-    lat: string,
-    lng: string
-  ) => Promise<void>;
-  auditItems: AuditItem[];
-  fetchAuditItems: () => Promise<void>;
 }
 
 export const MatchContext = createContext<MatchContextType | undefined>(
@@ -78,21 +59,8 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const [joinTeamError, setJoinTeamError] = useState<string | null>(null);
   const [leaveMatchError, setLeaveMatchError] = useState<string | null>(null);
   const [isLeavingMatch, setIsLeavingMatch] = useState(false);
-  const [usersTeam, setUsersTeam] = useState<Team | undefined>(undefined);
   const userID = currentUser?.id;
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
-
-  const fetchAuditItems = useCallback(async () => {
-    if (!match) return;
-    const response = await apiClient.get<AuditItem[]>(`/sonar/matches/${match.id}/chat`);
-    setAuditItems(response);
-  }, [apiClient, match?.id]);
-
-  useEffect(() => {
-    if (!match) return;
-    setUsersTeam(match.teams.find((team) => team.users.some((user) => user.id === userID)));
-  }, [match, userID]);
+  const usersTeam = match?.teams.find((team) => team.users.some((user) => user.id === userID));
 
   const createTeam = useCallback(async () => {
     if (!match) return;
@@ -193,53 +161,12 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [apiClient, match?.id, getCurrentMatch]);
 
-  const unlockPointOfInterest = useCallback(
-    async (
-      pointOfInterestId: string,
-      teamId: string,
-      lat: string,
-      lng: string
-    ) => {
-      await apiClient.post(`/sonar/pointOfInterest/unlock`, {
-        pointOfInterestId,
-        teamId,
-        lat,
-        lng,
-      });
-      getCurrentMatch();
-    },
-    [apiClient, userID]
-  );
-
   const editTeamName = useCallback(async (teamId: string, name: string) => {
     await apiClient.post(`/sonar/teams/${teamId}/edit`, {
       name,
     });
     getCurrentMatch();
   }, [apiClient, getCurrentMatch]);
-
-  const attemptCapturePointOfInterest = useCallback(async (teamId: string, challengeId: string, text: string, image?: File | undefined): Promise<CapturePointOfInterestResponse | undefined> => {
-    const key = `${teamId}/${challengeId}.webp`;
-    let imageUrl = '';
-
-    if (image) {
-      const presignedUrl = await getPresignedUploadURL("crew-points-of-interest", key);
-      if (!presignedUrl) return;
-      await uploadMedia(presignedUrl, image);
-      imageUrl = presignedUrl.split("?")[0];
-    }
-
-    var response = await apiClient.post<CapturePointOfInterestResponse>(`/sonar/pointOfInterest/challenge`, {
-      teamId,
-      challengeId,
-      textSubmission: text,
-      imageSubmissionUrl: imageUrl,
-    });
-
-    getCurrentMatch();
-
-    return response;
-  }, [apiClient]);
 
   useEffect(() => {
     getCurrentMatch();
@@ -263,10 +190,6 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
         leaveMatchError,
         usersTeam,
         editTeamName,
-        unlockPointOfInterest,
-        attemptCapturePointOfInterest,
-        auditItems,
-        fetchAuditItems,
       }}
     >
       {children}

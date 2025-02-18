@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import './Scoreboard.css';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
-import { ItemType, PointOfInterest, getControllingTeamForPoi } from '@poltergeist/types';
+import { ItemType, PointOfInterest, getHighestFirstCompletedChallenge } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import Divider from './shared/Divider.tsx';
 import { useNavigate } from 'react-router-dom';
@@ -57,7 +57,7 @@ export const Scoreboard = () => {
   const capturedPoints: { [key: string]: { poi: PointOfInterest, challenge: PointOfInterestChallenge }[] } = {};
 
   match?.pointsOfInterest.forEach((poi) => {
-    const pointOneControllingInterest = getControllingTeamForPoi(poi);
+    const pointOneControllingInterest = getHighestFirstCompletedChallenge(poi);
     if (pointOneControllingInterest?.submission?.teamId) {
       capturedPoints[pointOneControllingInterest.submission.teamId] = [
         ...capturedPoints[pointOneControllingInterest.submission.teamId] ?? [],
@@ -67,9 +67,9 @@ export const Scoreboard = () => {
   });
 
   uniquePoiPairs?.forEach(([prevPoint, pointOfInterest]) => {
-    const pointOneControllingInterest = getControllingTeamForPoi(prevPoint);
+    const pointOneControllingInterest = getHighestFirstCompletedChallenge(prevPoint);
     const pointTwoControllingInterest =
-      getControllingTeamForPoi(pointOfInterest);
+    getHighestFirstCompletedChallenge(pointOfInterest);
 
     if (
       pointOneControllingInterest?.submission?.teamId ===
@@ -81,11 +81,11 @@ export const Scoreboard = () => {
   });
 
   match?.teams.forEach((team) => {
-    team.teamInventoryItems.forEach((item) => {
+    team.ownedInventoryItems.forEach((item) => {
       if (item.inventoryItemId === ItemType.GoldCoin) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) + item.quantity;
       }
-      if (item.inventoryItemId === ItemType.Damage && !team.teamInventoryItems.some((i) => i.inventoryItemId === ItemType.Entseed || i.inventoryItemId === ItemType.Witchflame)) {
+      if (item.inventoryItemId === ItemType.Damage && !team.ownedInventoryItems.some((i) => i.inventoryItemId === ItemType.Entseed || i.inventoryItemId === ItemType.Witchflame)) {
         scoreboard[team.id] = (scoreboard[team.id] || 0) - (item.quantity * 2);
       }
 

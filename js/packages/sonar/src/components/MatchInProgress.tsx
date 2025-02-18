@@ -1,7 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import './MatchInProgress.css';
 import './Match.css';
-import { Match, PointOfInterest, PointOfInterestDiscovery, Team } from '@poltergeist/types';
+import {
+  hasDiscoveredPointOfInterest,
+  getHighestFirstCompletedChallenge,
+  Match,
+  PointOfInterest,
+  PointOfInterestDiscovery,
+  Team,
+} from '@poltergeist/types';
 import { Button } from './shared/Button.tsx';
 import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
 import { Drawer } from './Drawer.tsx';
@@ -16,39 +23,34 @@ import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.ts
 import { useUserLocator } from '../hooks/useUserLocator.tsx';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
+import { useInventory } from '@poltergeist/contexts';
+import { useLocation } from '@poltergeist/contexts';
+import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
+import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
+import useSubmission from '../hooks/useSubmission.ts';
+import { useSubmissionsContext } from '../contexts/SubmissionsContext.tsx';
 
 export const MatchInProgress = () => {
-  const { match } = useMatchContext();
+  const { match, usersTeam } = useMatchContext();
+  const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
-  const usersTeam = match?.teams.find((team) =>
-    team.users.some((user) => user.id === currentUser?.id)
-  );
-  return (
-    <MultiplayerMap
-      pointsOfInterest={match?.pointsOfInterest ?? []}
-      discoveries={[]}
-      usersTeam={usersTeam ?? null}
-    />
-  );
-};
-
-interface MultiplayerMapProps {
-  pointsOfInterest: PointOfInterest[];
-  discoveries: PointOfInterestDiscovery[];
-  usersTeam: Team | null;
-}
-
-const MultiplayerMap = ({ pointsOfInterest, discoveries, usersTeam }: MultiplayerMapProps) => {
-  const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
-    pointsOfInterest,
-    discoveries,
-    entityId: usersTeam?.id ?? '',
-  });
+  const { pointsOfInterest } = usePointOfInterestContext();
+  const { selectedPointOfInterest, setSelectedPointOfInterest } =
+    usePointOfInterestMarkers({
+      pointsOfInterest,
+      discoveries,
+      entityId: usersTeam?.id ?? '',
+    });
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [isInventoryVisible, setIsInventoryVisible] = useState(false);
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
-
+  const { inventoryItems, setUsedItem, consumeItem } = useInventory();
+  const { location } = useLocation();
+  const { getCurrentMatch } = useMatchContext();
+  const { submissions } = useSubmissionsContext();
+  
   useUserLocator();
 
   useEffect(() => {
@@ -89,9 +91,18 @@ const MultiplayerMap = ({ pointsOfInterest, discoveries, usersTeam }: Multiplaye
     event.stopPropagation();
   };
 
+  const onClosePointOfInterestPanel = (immediate: boolean) => {
+    if (immediate) {
+      closePanel();
+    } else {
+      setTimeout(() => {
+        closePanel();
+      }, 2000);
+    }
+  };
+
   return (
     <Map>
-      <MapZoomButton />
       {areMapOverlaysVisible && <MapZoomButton />}
       {areMapOverlaysVisible && (
         <div className="absolute bottom-20 right-0 z-10 w-full p-2">
@@ -102,15 +113,7 @@ const MultiplayerMap = ({ pointsOfInterest, discoveries, usersTeam }: Multiplaye
         {selectedPointOfInterest && (
           <PointOfInterestPanel
             pointOfInterest={selectedPointOfInterest}
-            onClose={(immediate) => {
-              if (immediate) {
-                closePanel();
-              } else {
-                setTimeout(() => {
-                  closePanel();
-                }, 2000);
-              }
-            }}
+            onClose={onClosePointOfInterestPanel}
           />
         )}
       </Drawer>

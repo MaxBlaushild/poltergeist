@@ -90,3 +90,29 @@ func (p *pointOfInterestChallengeHandle) GetChallengeForPointOfInterest(ctx cont
 	}
 	return &challenge, nil
 }
+
+func (p *pointOfInterestChallengeHandle) GetSubmissionsForMatch(ctx context.Context, matchID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error) {
+	var submissions []models.PointOfInterestChallengeSubmission
+	var teams []models.TeamMatch
+	if err := p.db.WithContext(ctx).Where("match_id = ?", matchID).Find(&teams).Error; err != nil {
+		return nil, err
+	}
+
+	teamIDs := make([]uuid.UUID, len(teams))
+	for i, team := range teams {
+		teamIDs[i] = team.TeamID
+	}
+
+	if err := p.db.WithContext(ctx).Where("team_id IN ?", teamIDs).Find(&submissions).Error; err != nil {
+		return nil, err
+	}
+	return submissions, nil
+}
+
+func (p *pointOfInterestChallengeHandle) GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error) {
+	var submissions []models.PointOfInterestChallengeSubmission
+	if err := p.db.WithContext(ctx).Where("user_id = ?", userID).Find(&submissions).Error; err != nil {
+		return nil, err
+	}
+	return submissions, nil
+}

@@ -4,15 +4,23 @@ import { useInventory } from '@poltergeist/contexts';
 import { hasDiscoveredPointOfInterest } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
+import { useLogContext } from '../contexts/LogContext.tsx';
+import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
+import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 const Team = 'Team';
 const PointOfInterest = 'PointOfInterest';
 const InventoryItem = 'InventoryItem';
 
 export const Log = () => {
-  const { auditItems, fetchAuditItems, match, usersTeam } = useMatchContext();
+  const { match, usersTeam } = useMatchContext();
+  const { auditItems, fetchAuditItems } = useLogContext();
   const { inventoryItems } = useInventory();
   const [isExpanded, setIsExpanded] = React.useState(false);
+  const { pointsOfInterest } = usePointOfInterestContext();
+  const { discoveries } = useDiscoveriesContext();
+  const { currentUser } = useUserProfiles();
 
   React.useEffect(() => {
     fetchAuditItems();
@@ -24,11 +32,11 @@ export const Log = () => {
     return () => clearInterval(intervalId);
   }, [fetchAuditItems]);
 
-  const teamsById = match?.teams.reduce(
+  const teamsById = match?.teams?.reduce(
     (acc, team) => ({ ...acc, [team.id]: team }),
     {}
   );
-  const pointsOfInterestById = match?.pointsOfInterest.reduce(
+  const pointsOfInterestById = pointsOfInterest.reduce(
     (acc, pointOfInterest) => ({
       ...acc,
       [pointOfInterest.id]: pointOfInterest,
@@ -63,8 +71,8 @@ export const Log = () => {
       const poiName = pointOfInterest?.name || 'Unknown Point of Interest';
       const isDiscovered = hasDiscoveredPointOfInterest(
         pointOfInterest.id,
-        usersTeam?.id ?? '',
-        usersTeam?.pointOfInterestDiscoveries ?? []
+        usersTeam?.id ?? currentUser?.id ?? '',
+        discoveries ?? []
       );
       message = message.replace(
         pointOfInterestPattern,

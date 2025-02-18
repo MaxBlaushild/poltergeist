@@ -32,6 +32,7 @@ type DbClient interface {
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
 	PointOfInterestChildren() PointOfInterestChildrenHandle
+	PointOfInterestDiscovery() PointOfInterestDiscoveryHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -73,6 +74,7 @@ type TeamHandle interface {
 	RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error
 	UpdateTeamName(ctx context.Context, teamID uuid.UUID, name string) (*models.Team, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Team, error)
+	GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.Team, error)
 }
 
 type UserTeamHandle interface{}
@@ -152,6 +154,7 @@ type MatchHandle interface {
 	EndMatch(ctx context.Context, matchID uuid.UUID) error
 	FindCurrentMatchForUser(ctx context.Context, userId uuid.UUID) (*models.Match, error)
 	FindForTeamID(ctx context.Context, teamID uuid.UUID) (*models.TeamMatch, error)
+	FindCurrentMatchIDForUser(ctx context.Context, userId uuid.UUID) (*uuid.UUID, error)
 }
 
 type VerificationCodeHandle interface {
@@ -175,6 +178,8 @@ type PointOfInterestChallengeHandle interface {
 	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID int, tier int) (*models.PointOfInterestChallenge, error)
+	GetSubmissionsForMatch(ctx context.Context, matchID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
+	GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 }
 
 type InventoryItemHandle interface {
@@ -207,4 +212,9 @@ type ImageGenerationHandle interface {
 type PointOfInterestChildrenHandle interface {
 	Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, pointOfInterestID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type PointOfInterestDiscoveryHandle interface {
+	GetDiscoveriesForTeam(teamID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
+	GetDiscoveriesForUser(userID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
 }

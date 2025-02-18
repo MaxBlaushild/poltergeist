@@ -12,7 +12,7 @@ export interface PointOfInterest {
     description: string;
     pointOfInterestChallenges: PointOfInterestChallenge[];
 }
-export declare const getControllingTeamForPoi: (pointOfInterest: PointOfInterest) => {
+export declare const getHighestFirstCompletedChallenge: (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]) => {
     submission: PointOfInterestChallengeSubmission | null;
     challenge: PointOfInterestChallenge | null;
 };

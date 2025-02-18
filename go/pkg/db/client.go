@@ -35,6 +35,7 @@ type client struct {
 	auditItemHandle                   *auditItemHandler
 	imageGenerationHandle             *imageGenerationHandle
 	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
+	pointOfInterestDiscoveryHandle    *pointOfInterestDiscoveryHandle
 }
 
 type ClientConfig struct {
@@ -87,7 +88,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		auditItemHandle:                   &auditItemHandler{db: db},
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
 		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
+		pointOfInterestDiscoveryHandle:    &pointOfInterestDiscoveryHandle{db: db},
 	}, err
+}
+
+func (c *client) PointOfInterestDiscovery() PointOfInterestDiscoveryHandle {
+	return c.pointOfInterestDiscoveryHandle
 }
 
 func (c *client) PointOfInterestChildren() PointOfInterestChildrenHandle {

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Map } from './Map.tsx';
-import { usePointsOfInterest } from '@poltergeist/hooks';
 import { useAuth } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useUserLocator } from '../hooks/useUserLocator.tsx';
@@ -14,16 +13,20 @@ import { Inventory } from './Inventory.tsx';
 import { QuestLog } from './QuestLog.tsx';
 import NewItemModal from './NewItemModal.tsx';
 import UsedItemModal from './UsedItemModal.tsx';
+import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
+import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { Log } from './Log.tsx';
 
 export const SinglePlayer = () => {
-  const { pointsOfInterest, loading, error } = usePointsOfInterest();
+  const { pointsOfInterest } = usePointOfInterestContext();
+  const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
 
   return (
     <div>
       <SinglePlayerMap
         pointsOfInterest={pointsOfInterest || []}
-        discoveries={[]}
+        discoveries={discoveries || []}
         entityId={currentUser?.id ?? ''}
       />
     </div>
@@ -87,10 +90,13 @@ const SinglePlayerMap = ({ pointsOfInterest, discoveries, entityId }: SinglePlay
     event.stopPropagation();
   };
 
-
-
   return <Map>
-    <MapZoomButton />
+    {areMapOverlaysVisible && <MapZoomButton />}
+      {areMapOverlaysVisible && (
+        <div className="absolute bottom-20 right-0 z-10 w-full p-2">
+          <Log />
+        </div>
+      )}
     <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
         {selectedPointOfInterest && (
           <PointOfInterestPanel

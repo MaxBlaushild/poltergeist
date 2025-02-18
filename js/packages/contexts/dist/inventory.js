@@ -22,6 +22,9 @@ const InventoryContext = createContext({
     isUsingItem: false,
     usedItem: null,
     setUsedItem: (item) => { },
+    ownedInventoryItems: [],
+    ownedInventoryItemsAreLoading: false,
+    ownedInventoryItemsError: null,
 });
 export const useInventory = () => useContext(InventoryContext);
 export const InventoryProvider = ({ children }) => {
@@ -33,6 +36,9 @@ export const InventoryProvider = ({ children }) => {
     const [isUsingItem, setIsUsingItem] = useState(false);
     const [presentedInventoryItem, setPresentedInventoryItem] = useState(null);
     const [usedItem, setUsedItem] = useState(null);
+    const [ownedInventoryItems, setOwnedInventoryItems] = useState([]);
+    const [ownedInventoryItemsAreLoading, setOwnedInventoryItemsAreLoading] = useState(false);
+    const [ownedInventoryItemsError, setOwnedInventoryItemsError] = useState(null);
     const fetchInventoryItems = () => __awaiter(void 0, void 0, void 0, function* () {
         setInventoryItemsAreLoading(true);
         setError(null);
@@ -47,19 +53,35 @@ export const InventoryProvider = ({ children }) => {
             setInventoryItemsAreLoading(false);
         }
     });
+    const fetchOwnedInventoryItems = () => __awaiter(void 0, void 0, void 0, function* () {
+        setOwnedInventoryItemsAreLoading(true);
+        setOwnedInventoryItemsError(null);
+        try {
+            const response = yield apiClient.get('/sonar/ownedInventoryItems');
+            setOwnedInventoryItems(response);
+        }
+        catch (err) {
+            setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');
+        }
+        finally {
+            setOwnedInventoryItemsAreLoading(false);
+        }
+    });
     useEffect(() => {
         fetchInventoryItems();
+        fetchOwnedInventoryItems();
     }, []);
-    const consumeItem = (teamInventoryItemId, metadata = {}) => __awaiter(void 0, void 0, void 0, function* () {
+    const consumeItem = (ownedInventoryItemId, metadata = {}) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             setIsUsingItem(true);
-            yield apiClient.post(`/sonar/inventory/${teamInventoryItemId}/use`, Object.assign({}, metadata));
+            yield apiClient.post(`/sonar/inventory/${ownedInventoryItemId}/use`, Object.assign({}, metadata));
         }
         catch (err) {
             setUseItemError(err instanceof Error ? err.message : 'Failed to use item');
         }
         finally {
             setIsUsingItem(false);
+            fetchOwnedInventoryItems();
         }
     });
     return (_jsx(InventoryContext.Provider, Object.assign({ value: {
@@ -73,5 +95,8 @@ export const InventoryProvider = ({ children }) => {
             isUsingItem,
             usedItem,
             setUsedItem,
+            ownedInventoryItems,
+            ownedInventoryItemsAreLoading,
+            ownedInventoryItemsError,
         } }, { children: children })));
 };

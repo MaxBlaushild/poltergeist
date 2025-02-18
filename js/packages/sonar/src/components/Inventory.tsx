@@ -5,7 +5,7 @@ import {
   InventoryItem,
   ItemsRequiringTeamId,
   ItemsUsabledInMenu,
-  TeamInventoryItem,
+  OwnedInventoryItem,
 } from '@poltergeist/types';
 import Divider from './shared/Divider.tsx';
 import { ArrowLeftIcon } from '@heroicons/react/20/solid';
@@ -13,14 +13,14 @@ import { Button, ButtonColor, ButtonSize } from './shared/Button.tsx';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 
 export const Inventory = ({ onClose }: { onClose: () => void }) => {
-  const { inventoryItems, inventoryItemsAreLoading, consumeItem, setUsedItem } =
+  const { inventoryItems, ownedInventoryItems, ownedInventoryItemsAreLoading, consumeItem, setUsedItem } =
     useInventory();
   const { usersTeam, match } = useMatchContext();
   const [selectedItem, setSelectedItem] = useState<
-    TeamInventoryItem | undefined
+    OwnedInventoryItem | undefined
   >(undefined);
   const [itemBeingUsed, setItemBeingUsed] = useState<
-    TeamInventoryItem | undefined
+    OwnedInventoryItem | undefined
   >(undefined);
   const selectedInventoryItem = inventoryItems?.find(
     (i) => i.id === selectedItem?.inventoryItemId
@@ -42,7 +42,7 @@ export const Inventory = ({ onClose }: { onClose: () => void }) => {
       {!selectedItem && !itemBeingUsed ? (
         <div className="grid grid-cols-3 gap-2 mt-4">
           {Array.from({ length: 12 }).map((_, index) => {
-            const item = usersTeam?.teamInventoryItems?.[index];
+            const item = ownedInventoryItems?.[index];
             const inventoryItem = item
               ? inventoryItems.find((i) => i.id === item.inventoryItemId)
               : null;
