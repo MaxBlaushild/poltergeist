@@ -7,11 +7,8 @@ export const useLocation = () => {
     });
     const [error, setError] = useState(null);
     useEffect(() => {
-        console.log('TRYING TO GET LOCATION');
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition((position) => {
-                console.log('getCurrentPosition');
-                console.log(position);
                 setLocation({
                     latitude: position.coords.latitude,
                     longitude: position.coords.longitude,

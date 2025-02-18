@@ -1,5 +1,5 @@
 import { MutableRefObject, useEffect, useRef, useState, createContext, useContext, ReactNode } from 'react';
-import { useLocation } from '@poltergeist/contexts';
+import { useLocation } from './location';
 import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
 import 'mapbox-gl/dist/mapbox-gl.css';

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAPI } from './api';
-import { Category, Activity, InventoryItem } from '@poltergeist/types';
+import { Category, Activity, InventoryItem, OwnedInventoryItem } from '@poltergeist/types';
 
 interface InventoryContextType {
   inventoryItems: InventoryItem[];
@@ -8,11 +8,14 @@ interface InventoryContextType {
   inventoryItemError: string | null;
   setPresentedInventoryItem: (inventoryItem: InventoryItem | null) => void;
   inventoryItemsAreLoading: boolean;
-  consumeItem: (teamInventoryItemId: string, metadata?: UseItemMetadata) => Promise<void>;
+  consumeItem: (ownedInventoryItemId: string, metadata?: UseItemMetadata) => Promise<void>;
   useItemError: string | null;
   isUsingItem: boolean;
   usedItem: InventoryItem | null;
   setUsedItem: (inventoryItem: InventoryItem | null) => void;
+  ownedInventoryItems: OwnedInventoryItem[];
+  ownedInventoryItemsAreLoading: boolean;
+  ownedInventoryItemsError: string | null;
 };
 
 interface UseItemMetadata {
@@ -31,6 +34,9 @@ const InventoryContext = createContext<InventoryContextType>({
   isUsingItem: false,
   usedItem: null,
   setUsedItem: (item: InventoryItem | null) => {},
+  ownedInventoryItems: [],
+  ownedInventoryItemsAreLoading: false,
+  ownedInventoryItemsError: null,
 });
 
 export const useInventory = () => useContext(InventoryContext);
@@ -44,6 +50,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [isUsingItem, setIsUsingItem] = useState<boolean>(false);
   const [presentedInventoryItem, setPresentedInventoryItem] = useState<InventoryItem | null>(null);
   const [usedItem, setUsedItem] = useState<InventoryItem | null>(null);
+  const [ownedInventoryItems, setOwnedInventoryItems] = useState<OwnedInventoryItem[]>([]);
+  const [ownedInventoryItemsAreLoading, setOwnedInventoryItemsAreLoading] = useState<boolean>(false);
+  const [ownedInventoryItemsError, setOwnedInventoryItemsError] = useState<string | null>(null);
 
   const fetchInventoryItems = async () => {
     setInventoryItemsAreLoading(true);
@@ -58,20 +67,35 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const fetchOwnedInventoryItems = async () => {
+    setOwnedInventoryItemsAreLoading(true);
+    setOwnedInventoryItemsError(null);
+    try {
+      const response = await apiClient.get<OwnedInventoryItem[]>('/sonar/ownedInventoryItems');
+      setOwnedInventoryItems(response);
+    } catch (err) {
+      setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');
+    } finally {
+      setOwnedInventoryItemsAreLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchInventoryItems();
+    fetchOwnedInventoryItems();
   }, []);
 
-  const consumeItem = async (teamInventoryItemId: string, metadata: UseItemMetadata = {}) => {
+  const consumeItem = async (ownedInventoryItemId: string, metadata: UseItemMetadata = {}) => {
     try {
       setIsUsingItem(true);
-      await apiClient.post(`/sonar/inventory/${teamInventoryItemId}/use`, {
+      await apiClient.post(`/sonar/inventory/${ownedInventoryItemId}/use`, {
         ...metadata,
       });
     } catch (err) {
       setUseItemError(err instanceof Error ? err.message : 'Failed to use item');
     } finally {
       setIsUsingItem(false);
+      fetchOwnedInventoryItems();
     }
   };
 
@@ -87,6 +111,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       isUsingItem,
       usedItem,
       setUsedItem,
+      ownedInventoryItems,
+      ownedInventoryItemsAreLoading,
+      ownedInventoryItemsError,
     }}>
       {children}
     </InventoryContext.Provider>

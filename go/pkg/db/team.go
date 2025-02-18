@@ -35,13 +35,17 @@ func (h *teamHandle) UpdateTeamName(ctx context.Context, teamID uuid.UUID, name 
 func (h *teamHandle) GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.Team, error) {
 	var teams []models.Team
 
-	if err := h.db.WithContext(ctx).Preload("Users.Profile").Where("match_id = ?", matchID).Find(&teams).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Joins("JOIN team_matches ON teams.id = team_matches.team_id").
+		Preload("Users").
+		Where("team_matches.match_id = ?", matchID).
+		Find(&teams).Error; err != nil {
 		return nil, err
 	}
 
 	return teams, nil
 }
- 
+
 func (h *teamHandle) Create(ctx context.Context, userIDs []uuid.UUID, teamName string, matchID uuid.UUID) (*models.Team, error) {
 	for _, userID := range userIDs {
 		if err := h.RemoveUserFromMatch(ctx, matchID, userID); err != nil {

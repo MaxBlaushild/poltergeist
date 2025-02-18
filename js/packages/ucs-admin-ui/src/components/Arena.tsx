@@ -112,7 +112,6 @@ export const Arena = () => {
 
   const handlePointSave = async (pointId: string) => {
     try {
-      console.log('editedPoint', editedPoint);
       await updatePointOfInterest(pointId, editedPoint);
     } catch (error) {
       console.error('Error saving point:', error);

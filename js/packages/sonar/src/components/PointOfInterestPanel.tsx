@@ -2,10 +2,13 @@ import {
   ItemType,
   PointOfInterest,
   Team,
-  getControllingTeamForPoi,
+  getHighestFirstCompletedChallenge,
   hasDiscoveredPointOfInterest,
   InventoryItem,
   MatchInventoryItemEffect,
+  OwnedInventoryItem,
+  User,
+  ItemsUsabledOnPointOfInterest,
 } from '@poltergeist/types';
 import React, { useState } from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
@@ -15,63 +18,33 @@ import { SubmitAnswerForChallenge } from './SubmitAnswerForChallenge.tsx';
 import { Button } from './shared/Button.tsx';
 import { LockClosedIcon, LockOpenIcon } from '@heroicons/react/20/solid';
 import { StatusIndicator } from './shared/StatusIndicator.tsx';
-import { useInventory } from '@poltergeist/contexts';
+import { useInventory, useLocation } from '@poltergeist/contexts';
 import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
-import { useLocation } from '@poltergeist/contexts';
-
-const toRoman = (num: number): string => {
-  const lookup: { [key: number]: string } = {
-    1: 'I',
-    2: 'II',
-    3: 'III',
-    4: 'IV',
-    5: 'V',
-    6: 'VI',
-    7: 'VII',
-    8: 'VIII',
-    9: 'IX',
-    10: 'X',
-  };
-  return lookup[num] || '';
-};
+import { toRoman } from '../utils/toRoman.ts';
+import { mapCaptureTiers } from '../utils/mapCaptureTiers.ts';
+import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
+import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { useSubmissionsContext } from '../contexts/SubmissionsContext.tsx';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 interface PointOfInterestPanelProps {
   pointOfInterest: PointOfInterest;
   onClose: (immediate: boolean) => void;
-  consumableItems: InventoryItem[];
-  itemEffects: MatchInventoryItemEffect[];
-  onUnlock: () => void;
 }
 
 export const PointOfInterestPanel = ({
   pointOfInterest,
   onClose,
-  onUnlock,
-  consumableItems,
 }: PointOfInterestPanelProps) => {
-  const {
-    unlockPointOfInterest,
-    usersTeam,
-    match,
-  } = useMatchContext();
+  const { match, usersTeam } = useMatchContext();
+  const { discoveries } = useDiscoveriesContext();
+  const { submissions } = useSubmissionsContext();
+  const { currentUser } = useUserProfiles();
+  const { discoverPointOfInterest } = useDiscoveriesContext();
+  const completedForTier = mapCaptureTiers(pointOfInterest, submissions);
+  const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems } = useInventory();
   const { location } = useLocation();
-  const { consumeItem, setUsedItem, inventoryItems } = useInventory();
   const [buttonText, setButtonText] = useState<string>("I'm here!");
-  const allTeams = match?.teams ?? [];
-  const hasDiscovered = hasDiscoveredPointOfInterest(
-    pointOfInterest.id,
-    usersTeam?.id ?? '',
-    usersTeam?.pointOfInterestDiscoveries ?? []
-  );
-  const { submission, challenge } = getControllingTeamForPoi(pointOfInterest);
-  const controllingTeam = allTeams.find(
-    (team) => team.id === submission?.teamId
-  );
-
-  // const goldenTelescope = usersTeam?.teamInventoryItems.find(
-  //   (item) =>
-  //     item.inventoryItemId === ItemType.GoldenTelescope && item.quantity > 0
-  // );
 
   const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
     (item) =>
@@ -80,20 +53,33 @@ export const PointOfInterestPanel = ({
       new Date(item.expiresAt) > new Date()
   );
 
-  const completedForTier = {};
-  pointOfInterest.pointOfInterestChallenges
-    .sort((a, b) => a.tier - b.tier)
-    .forEach((challenge) => {
-      const completed = challenge.pointOfInterestChallengeSubmissions?.some(
-        (submission) => submission.isCorrect
-      );
-      if (completed) {
-        completedForTier[challenge.tier] = completed;
-        for (let j = 0; j < challenge.tier; j++) {
-          completedForTier[j] = true;
-        }
-      }
+  const hasDiscovered = hasDiscoveredPointOfInterest(
+    pointOfInterest.id,
+    usersTeam ? usersTeam.id : currentUser?.id ?? '',
+    discoveries ?? []
+  );
+
+  const { submission, challenge } = getHighestFirstCompletedChallenge(pointOfInterest, submissions);
+
+  var capturingEntityName = '';
+  if (submission?.teamId) {
+    capturingEntityName = match?.teams.find(team => team.id === submission.teamId)?.name ?? 'Unknown';
+  } else if (submission?.userId) {
+    capturingEntityName = currentUser?.name ?? 'Unknown';
+  }
+
+  var captureTier: number | null = null;
+  if (challenge) {
+    captureTier = challenge.tier;
+  }
+
+  const onConsumeItem = async (ownedInventoryItemId: string) => {
+    await consumeItem(ownedInventoryItemId, {
+      pointOfInterestId: pointOfInterest.id,
     });
+    setUsedItem(inventoryItems.find((item) => item.id === item.id)!);
+    onClose(true);
+  };
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -109,9 +95,8 @@ export const PointOfInterestPanel = ({
         alt={pointOfInterest.name}
       />
         <StatusIndicator
-          tier={challenge?.tier}
-          teamName={controllingTeam?.name}
-          yourTeamName={usersTeam?.name ?? ''}
+          capturingEntityName={capturingEntityName}
+          captureTier={captureTier}
         />
         {hasDiscovered && (
         <TabNav
@@ -141,7 +126,7 @@ export const PointOfInterestPanel = ({
               <TabItem key={`Tier ${toRoman(challenge.tier)}`}>
                 <SubmitAnswerForChallenge
                   challenge={challenge}
-                  completed={completedForTier[challenge.tier]}
+                  pointOfInterest={pointOfInterest}
                   onSubmit={(immediate) => {
                     onClose(immediate);
                   }}
@@ -163,9 +148,8 @@ export const PointOfInterestPanel = ({
         <div className="flex gap-2 w-full">
           <Button
             onClick={async () => {
-              console.log(location);
                 try {
-                  await onUnlock();
+                  await discoverPointOfInterest(pointOfInterest.id);
                 } catch (error) {
                   setButtonText('Wrong, dingus');
                   setTimeout(() => {
@@ -175,22 +159,20 @@ export const PointOfInterestPanel = ({
             }}
             title={buttonText}
           />
-          {consumableItems.map((item) => {
+
+          {ownedInventoryItems.filter(item => ItemsUsabledOnPointOfInterest.includes(item.inventoryItemId)).map((item) => {
+            const inventoryItem = inventoryItems.find(i => i.id === item.inventoryItemId);
             return (
               <img
-                src={`https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png`}
-                alt="Golden Telescope"
+                src={inventoryItem?.imageUrl}
+                alt={inventoryItem?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
-                onClick={() => {
-                  console.log(item.id);
-                  consumeItem(item.id, {
-                    pointOfInterestId: pointOfInterest.id,
-                  });
-                  setUsedItem(inventoryItems.find(item => item.id === item.id)!);
-                  onClose(true);
+                onClick={async() => {
+                  await onConsumeItem(item.id);
                 }}
-            />
-          )}
+              />
+            );
+          })}
         </div>
       )}
     </div>

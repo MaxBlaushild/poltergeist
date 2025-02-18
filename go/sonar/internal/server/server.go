@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
@@ -23,6 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"gorm.io/gorm"
 )
 
 var (
@@ -115,7 +117,7 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
-	r.GET("/sonar/matches/:id/chat", middleware.WithAuthentication(s.authClient, s.getMatchChat))
+	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
 	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
@@ -134,8 +136,115 @@ func (s *server) ListenAndServe(port string) {
 	r.PATCH("/sonar/pointsofInterest/imageUrl/:id", s.editPointOfInterestImageUrl)
 	r.POST("/sonar/pointOfInterest/children", middleware.WithAuthentication(s.authClient, s.createPointOfInterestChildren))
 	r.DELETE("/sonar/pointOfInterest/children/:id", middleware.WithAuthentication(s.authClient, s.deletePointOfInterestChildren))
+	r.GET("/sonar/pointsOfInterest/discoveries", middleware.WithAuthentication(s.authClient, s.getPointOfInterestDiscoveries))
+	r.GET("/sonar/pointsOfInterest/challenges/submissions", middleware.WithAuthentication(s.authClient, s.getPointOfInterestChallengeSubmissions))
+	r.GET("/sonar/ownedInventoryItems", middleware.WithAuthentication(s.authClient, s.getOwnedInventoryItems))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
 	r.Run(":8042")
+}
+
+func (s *server) getOwnedInventoryItems(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userOrTeam := models.OwnedInventoryItem{UserID: &user.ID}
+
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if matchID != nil && err == nil {
+		teams, err := s.dbClient.Team().GetByMatchID(ctx, *matchID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		for _, team := range teams {
+			for _, user := range team.Users {
+				if user.ID == user.ID {
+					userOrTeam.TeamID = &team.ID
+					break
+				}
+			}
+		}
+	}
+
+	items, err := s.dbClient.InventoryItem().GetItems(ctx, userOrTeam)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (s *server) getPointOfInterestDiscoveries(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if matchID == nil || err != nil {
+		discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForUser(user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, discoveries)
+		return
+	}
+
+	teams, err := s.dbClient.Team().GetByMatchID(ctx, *matchID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var teamID uuid.UUID
+	for _, team := range teams {
+		for _, user := range team.Users {
+			if user.ID == user.ID {
+				teamID = team.ID
+				break
+			}
+		}
+	}
+
+	discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForTeam(teamID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, discoveries)
+}
+
+func (s *server) getPointOfInterestChallengeSubmissions(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if matchID == nil || err != nil {
+		submissions, err := s.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, submissions)
+		return
+	}
+
+	submissions, err := s.dbClient.PointOfInterestChallenge().GetSubmissionsForMatch(ctx, *matchID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, submissions)
 }
 
 func (s *server) createPointOfInterestChildren(ctx *gin.Context) {
@@ -722,12 +831,26 @@ func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
 	})
 }
 
-func (s *server) getMatchChat(ctx *gin.Context) {
-	stringMatchID := ctx.Param("id")
-	if stringMatchID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "match ID is required",
+func (s *server) getChat(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
 		})
+		return
+	}
+
+	stringMatchID := ctx.Query("matchId")
+	if stringMatchID == "" {
+		auditItems, err := s.dbClient.AuditItem().GetAuditItemsForUser(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, auditItems)
 		return
 	}
 
@@ -913,10 +1036,10 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 
 	var requestBody struct {
 		ChallengeID        uuid.UUID  `binding:"required" json:"challengeID"`
-		TeamID             *uuid.UUID `binding:"required" json:"teamID"`
+		TeamID             *uuid.UUID `json:"teamID"`
 		UserID             *uuid.UUID `json:"userID"`
-		TextSubmission     string     ` json:"textSubmission"`
-		ImageSubmissionUrl string     ` json:"imageSubmissionUrl"`
+		TextSubmission     string     `json:"textSubmission"`
+		ImageSubmissionUrl string     `json:"imageSubmissionUrl"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1691,14 +1814,42 @@ func (s *server) getTeams(c *gin.Context) {
 	c.JSON(200, payload)
 }
 
-func (s *server) getPointsOfInterest(c *gin.Context) {
-	pointOfInterests, err := s.dbClient.PointOfInterest().FindAll(c)
+func (s *server) getPointsOfInterest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
 		return
 	}
 
-	c.JSON(200, pointOfInterests)
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if err != nil && err != sql.ErrNoRows && err != gorm.ErrRecordNotFound {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if matchID != nil {
+		match, err := s.dbClient.Match().FindByID(ctx, *matchID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		ctx.JSON(200, match.PointsOfInterest)
+		return
+	}
+
+	pointOfInterests, err := s.dbClient.PointOfInterest().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(200, pointOfInterests)
 }
 
 func (s *server) createMatch(c *gin.Context) {

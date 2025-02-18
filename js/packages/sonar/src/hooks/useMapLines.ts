@@ -4,7 +4,7 @@ import {
   PointOfInterest,
   PointOfInterestDiscovery,
   Team,
-  getControllingTeamForPoi,
+  getHighestFirstCompletedChallenge,
   hasDiscoveredPointOfInterest,
 } from '@poltergeist/types';
 import { getUniquePoiPairsWithinDistance } from '../utils/clusterPointsOfInterest.ts';
@@ -75,8 +75,8 @@ export const useMapLines = ({
             },
           });
 
-          const pointOneControllingInterest = getControllingTeamForPoi(prevPoint);
-          const pointTwoControllingInterest = getControllingTeamForPoi(pointOfInterest);
+          const pointOneControllingInterest = getHighestFirstCompletedChallenge(prevPoint);
+          const pointTwoControllingInterest = getHighestFirstCompletedChallenge(pointOfInterest);
 
           let color = 'grey';
           let opacity = 0.5;

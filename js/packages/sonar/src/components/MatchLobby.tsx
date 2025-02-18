@@ -42,8 +42,6 @@ export const MatchLobby = () => {
     }
   }, [match]);
 
-
-
   useEffect(() => {
     let timeout;
     if (shouldCountdown) {

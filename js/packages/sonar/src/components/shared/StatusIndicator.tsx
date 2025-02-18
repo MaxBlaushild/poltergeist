@@ -9,9 +9,8 @@ export type StatusCircleProps = {
 };
 
 export type StatusIndicatorProps = {
-  tier?: number | null;
-  teamName?: string | null;
-  yourTeamName: string;
+  capturingEntityName?: string | null;
+  captureTier?: number | null;
 };
 
 export const StatusCircle = ({
@@ -32,9 +31,8 @@ export const StatusCircle = ({
 };
 
 export const StatusIndicator = ({
-  tier,
-  teamName,
-  yourTeamName,
+  capturingEntityName,
+  captureTier,
 }: StatusIndicatorProps) => {
   const { match, usersTeam } = useMatchContext();
   const { inventoryItems } = useInventory();
@@ -47,21 +45,16 @@ export const StatusIndicator = ({
   let color = 'grey';
   let text = 'Unclaimed';
 
-  if (tier && teamName) {
-    color = generateColorFromTeamName(teamName);
-
-    if (teamName === yourTeamName) {
-      text = 'Owned by you';
-    } else {
-      text = `${teamName}`;
-    }
+  if (capturingEntityName) {
+    color = generateColorFromTeamName(capturingEntityName);
+    text = `${capturingEntityName}`;
   }
 
   const numCircles: number[] = [];
-  if (!tier) {
+  if (!captureTier) {
     numCircles.push(1);
   } else {
-    for (let i = 0; i < tier; i++) {
+    for (let i = 0; i < captureTier; i++) {
       numCircles.push(1);
     }
   }

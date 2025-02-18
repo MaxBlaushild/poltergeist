@@ -82,7 +82,7 @@ func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name str
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {
 	var pointsOfInterest []models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).Find(&pointsOfInterest).Error; err != nil {
+	if err := c.db.WithContext(ctx).Preload("PointOfInterestChallenges").Find(&pointsOfInterest).Error; err != nil {
 		return nil, err
 	}
 

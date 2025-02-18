@@ -1,6 +1,6 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { useEffect, useRef, useState, createContext, useContext } from 'react';
-import { useLocation } from '@poltergeist/contexts';
+import { useLocation } from './location';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 const MapContext = createContext(undefined);

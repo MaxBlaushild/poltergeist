@@ -2,10 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './SubmitAnswerForChallenge.css';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
 import { Button } from './shared/Button.tsx';
-import {
-  CapturePointOfInterestResponse,
-  useMatchContext,
-} from '../contexts/MatchContext.tsx';
+import { useMatchContext } from '../contexts/MatchContext.tsx';
 import {
   XMarkIcon,
   CheckBadgeIcon,
@@ -15,30 +12,46 @@ import Divider from './shared/Divider.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 import { Oval } from 'react-loader-spinner';
 import { useInventory } from '@poltergeist/contexts';
-import { ItemType } from '@poltergeist/types';
+import {
+  ItemType,
+  MatchInventoryItemEffect,
+  OwnedInventoryItem,
+  PointOfInterest,
+  Team,
+  User,
+} from '@poltergeist/types';
 import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
+import {
+  CapturePointOfInterestResponse,
+  useSubmissionsContext,
+} from '../contexts/SubmissionsContext.tsx';
+import { mapCaptureTiers } from '../utils/mapCaptureTiers.ts';
 
 type SubmitAnswerForChallengeProps = {
+  pointOfInterest: PointOfInterest;
   challenge: PointOfInterestChallenge;
-  completed: boolean;
   onSubmit: (immediate: boolean) => void;
 };
 
 export const SubmitAnswerForChallenge = (
   props: SubmitAnswerForChallengeProps
 ) => {
-  const { usersTeam, attemptCapturePointOfInterest, getCurrentMatch, match } =
-    useMatchContext();
-  const { inventoryItems, consumeItem, setPresentedInventoryItem, setUsedItem } = useInventory();
+  const { match, usersTeam } = useMatchContext();
+  const { submissions } = useSubmissionsContext();
+  const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems } =
+    useInventory();
+  const completedForTier = mapCaptureTiers(props.pointOfInterest, submissions);
+  const { createSubmission } = useSubmissionsContext();
   const [textSubmission, setTextSubmission] = useState<string | undefined>(
     undefined
   );
   const [imageSubmission, setImageSubmission] = useState<File | undefined>(
     undefined
   );
-  const [judgement, setJudgement] = useState<
-    CapturePointOfInterestResponse | undefined
-  >(undefined);
+  const [correctness, setCorrectness] = useState<boolean | undefined>(
+    undefined
+  );
+  const [reason, setReason] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   let matchingRubyForChallenge;
@@ -60,8 +73,9 @@ export const SubmitAnswerForChallenge = (
       break;
   }
 
-  const matchingInventoryItem = usersTeam?.teamInventoryItems?.find(
-    (item) => item.inventoryItemId === matchingRubyForChallenge?.id && item.quantity > 0
+  const matchingInventoryItem = ownedInventoryItems?.find(
+    (item) =>
+      item.inventoryItemId === matchingRubyForChallenge?.id && item.quantity > 0
   );
 
   const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
@@ -71,17 +85,11 @@ export const SubmitAnswerForChallenge = (
       new Date(item.expiresAt) > new Date()
   );
 
-  useEffect(() => {
-    if (judgement) {
-      if (judgement.judgement.judgement.judgement) {
-        setPresentedInventoryItem(judgement.item);
-      }
-    }
-  }, [judgement]);
+  const completed = completedForTier[props.challenge.tier] ?? false;
 
   return (
     <div className="w-full rounded-xl flex flex-col gap-3">
-      {!judgement && !isLoading && (
+      {correctness === undefined && !isLoading && (
         <>
           <p className="text-md text-left">
             {isGoldenMonkeyActive
@@ -91,14 +99,14 @@ export const SubmitAnswerForChallenge = (
                 )
               : props.challenge.question}
           </p>
-          {!props.completed && (
+          {!completed && (
             <textarea
               className="w-full h-24"
               value={textSubmission}
               onChange={(e) => setTextSubmission(e.target.value)}
             />
           )}
-          {!props.completed && (
+          {!completed && (
             <input
               id="file"
               type="file"
@@ -108,38 +116,38 @@ export const SubmitAnswerForChallenge = (
           )}
           <div className="flex flex-row justify-between gap-2">
             <Button
-              title={props.completed ? 'Locked' : 'Submit Answer'}
-              disabled={props.completed || props.challenge.pointOfInterestChallengeSubmissions?.some(
-                (submission) => submission.isCorrect
-              )}
+              title={completed ? 'Locked' : 'Submit Answer'}
+              disabled={
+                completed ||
+                props.challenge.pointOfInterestChallengeSubmissions?.some(
+                  (submission) => submission.isCorrect
+                )
+              }
               onClick={async () => {
-                if (usersTeam) {
-                  try {
-                    setIsLoading(true);
-                    try {
-                      const judgement = await attemptCapturePointOfInterest(
-                        usersTeam.id,
-                        props.challenge.id,
-                        textSubmission,
-                        imageSubmission
-                      );
-                      setJudgement(judgement);
-                      props.onSubmit(false);
-                      setTimeout(() => {
-                        setJudgement(undefined);
-                      }, 3000);
-                    } catch (e) {
-                      console.log(e);
-                    } finally {
-                      setIsLoading(false);
-                      setTextSubmission(undefined);
-                      setImageSubmission(undefined);
-                    }
-                  } catch {}
+                setIsLoading(true);
+                try {
+                  const result = await createSubmission(
+                    props.challenge.id,
+                    textSubmission,
+                    imageSubmission
+                  );
+                  setCorrectness(result?.correctness ?? false);
+                  setReason(result?.reason ?? 'Failed for an unknown reason.');
+                  props.onSubmit(false);
+                  setTimeout(() => {
+                    setCorrectness(undefined);
+                    setReason(undefined);
+                  }, 3000);
+                } catch (e) {
+                  console.log(e);
+                } finally {
+                  setIsLoading(false);
+                  setTextSubmission(undefined);
+                  setImageSubmission(undefined);
                 }
               }}
             />
-            {!!matchingInventoryItem && !props.completed && (
+            {!!matchingInventoryItem && !completed && (
               <img
                 src={matchingRubyForChallenge?.imageUrl}
                 alt={matchingRubyForChallenge?.name}
@@ -150,8 +158,7 @@ export const SubmitAnswerForChallenge = (
                   });
                   setUsedItem(matchingRubyForChallenge!);
                   props.onSubmit(true);
-                }
-                }
+                }}
               />
             )}
           </div>
@@ -170,13 +177,16 @@ export const SubmitAnswerForChallenge = (
           />
         </div>
       )}
-      {judgement && (
+      {correctness !== undefined && (
         <>
           <XMarkIcon
             className="h-6 w-6"
-            onClick={() => setJudgement(undefined)}
+            onClick={() => {
+              setCorrectness(undefined);
+              setReason(undefined);
+            }}
           />
-          {judgement.judgement.judgement.judgement ? (
+          {correctness ? (
             <div className="flex flex-col items-center gap-3 mt-4 mb-4">
               <CheckBadgeIcon className="h-20 w-20 text-green-500" />
               <p>Correct</p>
@@ -184,7 +194,7 @@ export const SubmitAnswerForChallenge = (
           ) : (
             <div className="flex flex-col items-center gap-3 mt-4 mb-4">
               <XCircleIcon className="h-20 w-20 text-red-500" />
-              <p>{judgement.judgement.judgement.reason}</p>
+              <p>{reason}</p>
             </div>
           )}
         </>

@@ -15,13 +15,13 @@ export interface PointOfInterest {
 	pointOfInterestChallenges: PointOfInterestChallenge[];
 }
 
-export const getControllingTeamForPoi = (pointOfInterest: PointOfInterest): { submission: PointOfInterestChallengeSubmission | null, challenge: PointOfInterestChallenge | null } => {
+export const getHighestFirstCompletedChallenge = (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]): { submission: PointOfInterestChallengeSubmission | null, challenge: PointOfInterestChallenge | null } => {
 	const sortedChallenges = pointOfInterest.pointOfInterestChallenges.sort((a, b) => b.tier - a.tier);
 	let firstCorrectSubmission = null;
 	let associatedChallenge = null;
 
 	for (const challenge of sortedChallenges) {
-		const correctSubmissions = challenge.pointOfInterestChallengeSubmissions?.filter(submission => submission.isCorrect);
+		const correctSubmissions = submissions.filter(submission => submission.pointOfInterestChallengeId === challenge.id && submission.isCorrect);
 
 		if (correctSubmissions?.length > 0) {
 			firstCorrectSubmission = correctSubmissions[0];
