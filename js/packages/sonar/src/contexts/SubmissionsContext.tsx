@@ -71,10 +71,14 @@ export const SubmissionsContextProvider: React.FC<
   const { getPresignedUploadURL, uploadMedia } = useMediaContext();
   const { setPresentedInventoryItem } = useInventory();
   const fetchSubmissions = useCallback(async () => {
-    const response = await apiClient.get<PointOfInterestChallengeSubmission[]>(
-        `/sonar/pointsOfInterest/challenges/submissions`
-    );
-    setSubmissions(response);
+    try {
+      const response = await apiClient.get<PointOfInterestChallengeSubmission[]>(
+          `/sonar/pointsOfInterest/challenges/submissions`
+      );
+      setSubmissions(response);
+    } catch (error) {
+      console.error('Failed to fetch submissions:', error);
+    }
   }, [apiClient]);
 
   const createSubmission = useCallback(async (

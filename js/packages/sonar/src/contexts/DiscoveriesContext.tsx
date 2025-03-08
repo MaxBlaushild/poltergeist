@@ -47,10 +47,14 @@ export const DiscoveriesContextProvider: React.FC<
   const { usersTeam } = useMatchContext();
 
   const fetchDiscoveries = useCallback(async () => {
-    const response = await apiClient.get<PointOfInterestDiscovery[]>(
-      `/sonar/pointsOfInterest/discoveries`
-    );
-    setDiscoveries(response);
+    try {
+      const response = await apiClient.get<PointOfInterestDiscovery[]>(
+        `/sonar/pointsOfInterest/discoveries`
+      );
+      setDiscoveries(response);
+    } catch (error) {
+      console.error('Failed to fetch discoveries:', error);
+    }
   }, [apiClient, usersTeam?.id]);
 
   const discoverPointOfInterest = async (pointOfInterestId: string) => {

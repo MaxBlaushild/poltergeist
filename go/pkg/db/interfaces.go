@@ -33,6 +33,7 @@ type DbClient interface {
 	ImageGeneration() ImageGenerationHandle
 	PointOfInterestChildren() PointOfInterestChildrenHandle
 	PointOfInterestDiscovery() PointOfInterestDiscoveryHandle
+	MatchUser() MatchUserHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -217,4 +218,10 @@ type PointOfInterestChildrenHandle interface {
 type PointOfInterestDiscoveryHandle interface {
 	GetDiscoveriesForTeam(teamID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
 	GetDiscoveriesForUser(userID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
+}
+
+type MatchUserHandle interface {
+	Create(ctx context.Context, matchUser *models.MatchUser) error
+	FindByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.MatchUser, error)
+	FindUsersForMatch(ctx context.Context, matchID uuid.UUID) ([]models.User, error)
 }

@@ -8,7 +8,6 @@ import React, {
 import { useAPI, useLocation } from '@poltergeist/contexts';
 import { PointOfInterest } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
-import { useMatchContext } from './MatchContext.tsx';
 
 interface PointOfInterestContextType {
   fetchPointsOfInterest: () => Promise<void>;
