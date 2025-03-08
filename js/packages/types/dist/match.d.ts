@@ -1,6 +1,7 @@
 import { MatchInventoryItemEffect } from "./matchInventoryItemEffect";
 import { PointOfInterest } from "./pointOfInterest";
 import { Team } from "./team";
+import { User } from "./user";
 import { VerificationCode } from "./verificationCode";
 export type Match = {
     id: string;
@@ -13,4 +14,5 @@ export type Match = {
     pointsOfInterest: PointOfInterest[];
     teams: Team[];
     inventoryItemEffects: MatchInventoryItemEffect[];
+    users: User[];
 };

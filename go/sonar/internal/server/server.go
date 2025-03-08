@@ -139,8 +139,47 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/pointsOfInterest/discoveries", middleware.WithAuthentication(s.authClient, s.getPointOfInterestDiscoveries))
 	r.GET("/sonar/pointsOfInterest/challenges/submissions", middleware.WithAuthentication(s.authClient, s.getPointOfInterestChallengeSubmissions))
 	r.GET("/sonar/ownedInventoryItems", middleware.WithAuthentication(s.authClient, s.getOwnedInventoryItems))
+	r.POST("/sonar/matches/:id/invite", middleware.WithAuthentication(s.authClient, s.inviteToMatch))
+	r.GET("/sonar/matches/:id/users", middleware.WithAuthentication(s.authClient, s.getMatch))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
 	r.Run(":8042")
+}
+
+func (s *server) getMatch(ctx *gin.Context) {
+	matchId := ctx.Param("id")
+}
+func (s *server) getMatch(ctx *gin.Context) {
+
+}
+
+func (s *server) inviteToMatch(ctx *gin.Context) {
+	matchId := ctx.Param("id")
+	matchID, err := uuid.Parse(matchId)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid match ID"})
+		return
+	}
+
+	var requestBody struct {
+		UserID uuid.UUID `binding:"required" json:"userId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	matchUser := &models.MatchUser{
+		MatchID: matchID,
+		UserID:  requestBody.UserID,
+	}
+
+	if err := s.dbClient.MatchUser().Create(ctx, matchUser); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "user invited to match successfully"})
 }
 
 func (s *server) getOwnedInventoryItems(ctx *gin.Context) {

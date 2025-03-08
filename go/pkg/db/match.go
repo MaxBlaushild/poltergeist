@@ -27,6 +27,7 @@ func (h *matchHandle) FindForTeamID(ctx context.Context, teamID uuid.UUID) (*mod
 func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match, error) {
 	var match models.Match
 	if err := h.db.WithContext(ctx).
+		Preload("Users").
 		Preload("PointsOfInterest.PointOfInterestChallenges").
 		Preload("Teams.Users").
 		Preload("InventoryItemEffects").

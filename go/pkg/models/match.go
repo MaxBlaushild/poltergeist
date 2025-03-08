@@ -18,4 +18,5 @@ type Match struct {
 	PointsOfInterest     []PointOfInterest          `json:"pointsOfInterest" gorm:"many2many:match_points_of_interest;"`
 	Teams                []Team                     `json:"teams" gorm:"many2many:team_matches;"`
 	InventoryItemEffects []MatchInventoryItemEffect `json:"inventoryItemEffects"`
+	Users                []User                     `json:"users" gorm:"many2many:match_users;"`
 }

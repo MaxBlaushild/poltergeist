@@ -45,10 +45,14 @@ export const LogContextProvider: React.FC<LogContextProviderProps> = ({
   const { match } = useMatchContext();
 
   const fetchAuditItems = useCallback(async () => {
-    const response = await apiClient.get<AuditItem[]>(
-      `/sonar/chat${match?.id ? `?matchId=${match.id}` : ''}`
-    );
-    setAuditItems(response);
+    try {
+      const response = await apiClient.get<AuditItem[]>(
+        `/sonar/chat${match?.id ? `?matchId=${match.id}` : ''}`
+      );
+      setAuditItems(response);
+    } catch (error) {
+      console.error('Failed to fetch audit items:', error);
+    }
   }, [apiClient, match?.id]);
 
   useEffect(() => {

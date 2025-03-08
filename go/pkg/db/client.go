@@ -36,6 +36,7 @@ type client struct {
 	imageGenerationHandle             *imageGenerationHandle
 	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
 	pointOfInterestDiscoveryHandle    *pointOfInterestDiscoveryHandle
+	matchUserHandle                   *matchUserHandle
 }
 
 type ClientConfig struct {
@@ -89,7 +90,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
 		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
 		pointOfInterestDiscoveryHandle:    &pointOfInterestDiscoveryHandle{db: db},
+		matchUserHandle:                   &matchUserHandle{db: db},
 	}, err
+}
+
+func (c *client) MatchUser() MatchUserHandle {
+	return c.matchUserHandle
 }
 
 func (c *client) PointOfInterestDiscovery() PointOfInterestDiscoveryHandle {

@@ -10,6 +10,7 @@ import { AuditItem, InventoryItem, Match, Team } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
+import { useSearchParams } from 'react-router-dom';
 
 interface MatchContextType {
   match: Match | null;
@@ -25,6 +26,7 @@ interface MatchContextType {
   leaveMatch: () => Promise<void>;
   isLeavingMatch: boolean;
   leaveMatchError: string | null;
+  addUserToMatch: (userId: string) => Promise<void>;
   editTeamName: (teamId: string, name: string) => Promise<void>;
   usersTeam: Team | undefined;
 }
@@ -80,6 +82,13 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [apiClient, match?.id, userID]);
 
+  const addUserToMatch = useCallback(async (userId: string) => {
+    await apiClient.post(`/sonar/matches/${match?.id}/invite`, {
+      userId,
+    });
+    getCurrentMatch();
+  }, [apiClient, match?.id]);
+
   const addUserToTeam = useCallback(
     async (teamId: string) => {
       if (!match) return;
@@ -101,7 +110,8 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
   const getCurrentMatch = useCallback(async () => {
     setIsCurrentMatchLoading(true);
     try {
-      const response = await apiClient.get<Match>('/sonar/matches/current?timestamp=' + new Date().getTime());
+      const matchId = new URLSearchParams(window.location.search).get('matchId');
+      const response = await apiClient.get<Match>(`/sonar/matches/${matchId ? matchId + '/users' : 'current'}?timestamp=${new Date().getTime()}`);
       setMatch(response);
       setIsCurrentMatchLoading(false);
     } catch (error) {
@@ -190,6 +200,7 @@ export const MatchContextProvider: React.FC<{ children: React.ReactNode }> = ({
         leaveMatchError,
         usersTeam,
         editTeamName,
+        addUserToMatch,
       }}
     >
       {children}

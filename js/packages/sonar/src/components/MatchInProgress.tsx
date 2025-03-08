@@ -48,7 +48,6 @@ export const MatchInProgress = () => {
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
   const { inventoryItems, setUsedItem, consumeItem } = useInventory();
   const { location } = useLocation();
-  const { getCurrentMatch } = useMatchContext();
   const { submissions } = useSubmissionsContext();
   
   useUserLocator();

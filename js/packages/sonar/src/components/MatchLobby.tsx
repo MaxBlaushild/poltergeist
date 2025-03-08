@@ -15,6 +15,7 @@ const stepTexts: string[] = ['Get ready', '3', '2', '1', 'Start!'];
 export const MatchLobby = () => {
   const { match, createTeam, isStartingMatch, startMatch } = useMatchContext();
   const { currentUser } = useUserProfiles();
+  const { getCurrentMatch } = useMatchContext();
   const [toastText, setToastText] = useState<string | null>(null);
   const [countdownNumber, setCountdownNumber] = useState<number | null>(null);
   const [currentStepTextIndex, setCurrentStepTextIndex] = useState(-1);
@@ -43,6 +44,14 @@ export const MatchLobby = () => {
   }, [match]);
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      getCurrentMatch();
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [getCurrentMatch]);
+
+  useEffect(() => {
     let timeout;
     if (shouldCountdown) {
       const updateStep = (index) => {
@@ -64,6 +73,8 @@ export const MatchLobby = () => {
     return <></>;
   }
 
+  const freeAgents = match.users.filter((user) => !match.teams.some((team) => team.users.some((u) => u.id === user.id)));
+
   const teams = match.teams;
   const otherTeams = match.teams.filter(
     (team) =>
@@ -73,8 +84,9 @@ export const MatchLobby = () => {
   const usersTeam = match.teams.find((team) =>
     team.users.find((user) => user.id === currentUser?.id)
   );
-  const canStartMatch = teams.length > 1 && currentUser?.id === match.creatorId;
-  const matchLink = `${window.location.origin}/match/${match.id}`;
+  const isAdmin = currentUser?.id === match.creatorId;
+  const canStartMatch = teams.length > 1 && isAdmin;
+  const matchLink = `${window.location.origin}/match/lobby?matchId=${match.id}`;
   const currentStepText =
     currentStepTextIndex > -1 ? stepTexts[currentStepTextIndex] : undefined;
 
@@ -94,6 +106,15 @@ export const MatchLobby = () => {
               matchLink={matchLink}
             />
           ) : null}
+          {freeAgents.length > 0 ? <Team
+             team={{
+              name: 'No team',
+              users: freeAgents
+            }}
+            user={currentUser}
+            sendToast={sendToast}
+            matchLink={matchLink}
+          /> : null}
           {otherTeams?.map((team) => (
             <Team
               team={team}
@@ -107,18 +128,25 @@ export const MatchLobby = () => {
           <Button
             title="Invite"
             onClick={() => {
-              navigator.clipboard.writeText(matchLink);
+              navigator.clipboard.writeText(`Hey! Join me for a game of UnclaimedStreets - an augmented reality game where we'll explore the city, solve puzzles, and compete against other teams! Click here to join my lobby: ${matchLink}`);
               setToastText('Invite link copied to clipboard');
               setTimeout(() => {
                 setToastText(null);
               }, 1500);
             }}
           />
-          <Button
+          {isAdmin ? <Button
             title="Start"
             // disabled={!canStartMatch}
             onClick={() => setShouldCountdown(true)}
-          />
+          /> : null}
+          {!teams.some((team) => team.users.some((user) => user.id === currentUser?.id)) ? <Button
+            title="New team"
+            onClick={() => {
+              createTeam();
+              sendToast('Joined match');
+            }}
+          /> : null}
         </div>
       </div>
       {toastText ? <Modal size={ModalSize.TOAST}>{toastText}</Modal> : null}
@@ -135,13 +163,15 @@ const Team = ({
   user,
   sendToast,
   matchLink,
+  isUserInTeam,
   editable = false,
 }: {
-  team: TeamModel;
+  team?: TeamModel | null; 
   user?: User | null;
   sendToast: (text: string) => void;
   matchLink: string;
   editable?: boolean;
+  isUserInTeam?: boolean;
 }) => {
   const { addUserToTeam, editTeamName } = useMatchContext();
   const [teamName, setTeamName] = useState(team.name);
@@ -200,14 +230,14 @@ const Team = ({
               />
             </div>
           ))}
-        <Button
-          title={`Invite to team`}
-          onClick={() => {
-            navigator.clipboard.writeText(`${matchLink}?teamId=${team.id}`);
-            sendToast(`Invite link copied to clipboard`);
-          }}
-        />
       </div>
+      {!user ? <Button
+        title="Join"
+        onClick={() => {
+          addUserToTeam(team.id);
+          sendToast('Joined team');
+        }}
+      /> : null}
     </div>
   );
 };

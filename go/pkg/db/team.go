@@ -89,19 +89,37 @@ func (h *teamHandle) AddUserToTeam(ctx context.Context, teamID uuid.UUID, userID
 		TeamID: teamID,
 	}
 
+	// Get the match ID for the team the user is joining
+	var matchTeam models.TeamMatch
+	if err := h.db.WithContext(ctx).Where("team_id = ?", teamID).First(&matchTeam).Error; err != nil {
+		return err
+	}
+
+	// Remove user from any other teams in this match
+	if err := h.RemoveUserFromMatch(ctx, matchTeam.MatchID, userID); err != nil {
+		return err
+	}
+
 	return h.db.WithContext(ctx).Create(&userTeam).Error
 }
 
 func (h *teamHandle) RemoveUserFromMatch(ctx context.Context, matchID uuid.UUID, userID uuid.UUID) error {
-	sqlStatement := `
-			DELETE FROM user_teams
-				USING team_matches
-				WHERE user_teams.team_id = team_matches.team_id
-		  			AND user_teams.user_id = ?
-		  			AND team_matches.match_id = ?;
-		`
+	teamMatches := []models.TeamMatch{}
 
-	return h.db.WithContext(ctx).Exec(sqlStatement, userID, matchID).Error
+	if err := h.db.WithContext(ctx).Where("match_id = ?", matchID).Find(&teamMatches).Error; err != nil {
+		return err
+	}
+
+	teamIDs := []uuid.UUID{}
+	for _, teamMatch := range teamMatches {
+		teamIDs = append(teamIDs, teamMatch.TeamID)
+	}
+
+	if err := h.db.WithContext(ctx).Where("user_id = ? AND team_id IN (?)", userID, teamIDs).Delete(&models.UserTeam{}).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (h *teamHandle) GetByID(ctx context.Context, id uuid.UUID) (*models.Team, error) {

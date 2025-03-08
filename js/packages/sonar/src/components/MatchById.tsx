@@ -6,7 +6,7 @@ import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 export const MatchById = () => {
   const { id: matchId } = useParams();
-  const { match, getMatch, createTeam, addUserToTeam } = useMatchContext();
+  const { match, getMatch, addUserToMatch } = useMatchContext();
   const { currentUser } = useUserProfiles();
   const navigate = useNavigate();
   const queryParams = new URLSearchParams(window.location.search);
@@ -19,25 +19,33 @@ export const MatchById = () => {
   }, [matchId, getMatch]);
 
   useEffect(() => {
-    if (!match) {
+    if (!match || !currentUser) {
       return;
     }
 
-    if (!currentUser) {
-      return;
-    }
-
-    const isAlreadyInMatch = match.teams.some(team => team.users.some(user => user.id === currentUser.id))
+    const isAlreadyInMatch = match.teams.some(team => 
+      team.users.some(user => user.id === currentUser.id)
+    );
     if (isAlreadyInMatch) {
       return;
     }
-    if (teamId) {
-      addUserToTeam(teamId);
-    } else {
-      createTeam();
-    }
-    navigate('/match');
-  }, [teamId, currentUser, match]);
+    
+    let isMounted = true;
+    
+    addUserToMatch(currentUser.id)
+      .then(() => {
+        if (isMounted) {
+          navigate('/match');
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to add user to match:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser, match, navigate, addUserToMatch]);
 
   return <Match match={match} />;
 };
