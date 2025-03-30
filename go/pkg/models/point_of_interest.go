@@ -21,6 +21,7 @@ type PointOfInterest struct {
 	Description               string                     `json:"description"`
 	PointOfInterestChallenges []PointOfInterestChallenge `json:"pointOfInterestChallenges"`
 	Geometry                  string                     `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Tags                      []Tag                      `json:"tags" gorm:"many2many:tag_points_of_interest;"`
 }
 
 func (p *PointOfInterest) TableName() string {
