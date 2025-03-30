@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useId } from 'react';
 import { useMap } from '@poltergeist/contexts';
-
+import './Map.css';
 interface MapProps {
   children: React.ReactNode;
 }
@@ -11,22 +11,18 @@ export const Map = ({ children }: MapProps) => {
 
   useEffect(() => {
     if (!mapContainer?.current || !map.current?.isStyleLoaded() || isLoaded) return;
-    const parentElement = document.getElementById('map-parent');
+    const mapElement = mapContainer.current;
+    
+    const parentElement = document.getElementById(`map-parent`);
     if (parentElement) {
-      parentElement.appendChild(mapContainer.current);
+      parentElement.appendChild(mapElement);
       setIsLoaded(true);
     }
-
-    return () => {
-      if (mapContainer.current) {
-        mapContainer.current.remove();
-      }
-    };
-  }, [mapContainer?.current, map?.current, isLoaded]);
+  }, [map, mapContainer, isLoaded]);
 
   return (
       <div
-        id="map-parent"
+        id={`map-parent`}
         ref={mapContainer}
         style={{
           top: -70,

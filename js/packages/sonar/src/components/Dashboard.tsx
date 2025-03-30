@@ -4,39 +4,31 @@ import React, { useEffect } from 'react';
 import { Button } from './shared/Button.tsx';
 import { useNavigate } from 'react-router-dom';
 import { useSurveys } from '../hooks/useSurveys.ts';
-import { useMatchContext } from '../contexts/MatchContext.tsx';
+import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
 
 type DashboardProps = {};
 
 export function Dashboard(props: DashboardProps) {
   const navigate = useNavigate();
   const { surveys, isLoading } = useSurveys();
-  const { match, isCurrentMatchLoading, getCurrentMatch } = useMatchContext();
-
-  useEffect(() => {
-    getCurrentMatch();
-  }, []);
+  const { hasCurrentMatch } = useHasCurrentMatch();
 
   return (
     <div className="Dashboard__background">
       <div className="Dashboard__modal">
         <h3>Welcome back! Choose your adventure:</h3>
-        {match && (
+        {hasCurrentMatch && (
           <Button
             title="Continue"
             onClick={() => navigate('/match/lobby')}
           />
         )}
-        <Button
+        {!hasCurrentMatch && <Button
           title="Single player"
-                onClick={() => navigate('/single-player')}
-        />
-        <Button
-          title="Co-op"
-          disabled={true}
-          onClick={() => navigate('/new-survey')}
-        />
-        {!isCurrentMatchLoading && !match && (
+          onClick={() => navigate('/single-player')}
+        />}
+
+        {!hasCurrentMatch && (
           <Button
             title="Battle mode"
             onClick={() => navigate('/select-battle-arena')}

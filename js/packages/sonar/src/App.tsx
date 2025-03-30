@@ -7,7 +7,7 @@ import {
   MediaContextProvider,
 } from '@poltergeist/contexts';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
-import { router } from './routes.ts';
+import { router } from './routes.tsx';
 import { ActivityContextProvider } from './contexts/ActivityContext.tsx';
 import { UserProfileProvider } from './contexts/UserProfileContext.tsx';
 import { MatchContextProvider } from './contexts/MatchContext.tsx';
@@ -28,6 +28,7 @@ import {
 } from './contexts/PointOfInterestContext.tsx';
 import { SubmissionsContextProvider } from './contexts/SubmissionsContext.tsx';
 import { DiscoveriesContextProvider } from './contexts/DiscoveriesContext.tsx';
+import { LocationError } from './components/LocationError.tsx';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -52,34 +53,27 @@ function App() {
       <MediaContextProvider>
         <UserProfileProvider>
           <InventoryProvider>
-            <MatchContextProvider>
               <AuthProvider appName="Sonar" uriPrefix="/sonar">
-                <ActivityContextProvider>
-                  <LocationProvider>
-                    <PointOfInterestContextProvider>
-                      <LogContextProvider>
-                        <DiscoveriesContextProvider>
-                          <SubmissionsContextProvider>
-                            <MapProvider>
-                              <DndProvider
+                <LocationProvider>
+                    <LogContextProvider>
+                      <DiscoveriesContextProvider>
+                        <SubmissionsContextProvider>
+                            <DndProvider
                               backend={TouchBackend}
-                            options={{
-                              enableTouchEvents: true,
-                              enableMouseEvents: true,
-                              enableHoverOutsideTarget: true,
-                            }}
-                          >
-                            <RouterProvider router={router} />
-                              </DndProvider>
-                            </MapProvider>
-                          </SubmissionsContextProvider>
-                        </DiscoveriesContextProvider>
-                      </LogContextProvider>
-                    </PointOfInterestContextProvider>
-                  </LocationProvider>
-                </ActivityContextProvider>
+                              options={{
+                                enableTouchEvents: true,
+                                enableMouseEvents: true,
+                                enableHoverOutsideTarget: true,
+                              }}
+                            >
+                              <RouterProvider router={router} />
+                              <LocationError />
+                            </DndProvider>
+                        </SubmissionsContextProvider>
+                      </DiscoveriesContextProvider>
+                    </LogContextProvider>
+                </LocationProvider>
               </AuthProvider>
-            </MatchContextProvider>
           </InventoryProvider>
         </UserProfileProvider>
       </MediaContextProvider>

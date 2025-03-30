@@ -58,7 +58,7 @@ export const InventoryProvider = ({ children }) => {
         setOwnedInventoryItemsError(null);
         try {
             const response = yield apiClient.get('/sonar/ownedInventoryItems');
-            setOwnedInventoryItems(response);
+            setOwnedInventoryItems(response.filter((item) => item.quantity > 0));
         }
         catch (err) {
             setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');

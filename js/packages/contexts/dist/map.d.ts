@@ -5,6 +5,8 @@ interface MapContextValue {
     mapContainer: MutableRefObject<HTMLDivElement>;
     zoom: number;
     setZoom: (zoom: number) => void;
+    setLocation: (lat: number, lng: number) => void;
+    flyToLocation: (lat: number, lng: number, zoom?: number) => void;
 }
 interface MapProviderProps {
     children: ReactNode;

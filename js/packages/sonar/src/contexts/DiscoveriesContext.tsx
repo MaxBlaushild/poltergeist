@@ -8,13 +8,16 @@ import React, {
 import { useAPI, useLocation } from '@poltergeist/contexts';
 import { PointOfInterestDiscovery } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
-import { useMatchContext } from './MatchContext.tsx';
 
 interface DiscoveriesContextType {
   discoveries: PointOfInterestDiscovery[];
   fetchDiscoveries: () => Promise<void>;
   setDiscoveries: (discoveries: PointOfInterestDiscovery[]) => void;
-  discoverPointOfInterest: (pointOfInterestId: string) => Promise<void>;
+  discoverPointOfInterest: (
+    pointOfInterestId: string,
+    teamId?: string | undefined,
+    userId?: string | undefined,
+  ) => Promise<void>;
 }
 
 interface DiscoveriesContextProviderProps {
@@ -44,7 +47,6 @@ export const DiscoveriesContextProvider: React.FC<
   const [discoveries, setDiscoveries] = useState<PointOfInterestDiscovery[]>(
     []
   );
-  const { usersTeam } = useMatchContext();
 
   const fetchDiscoveries = useCallback(async () => {
     try {
@@ -55,13 +57,17 @@ export const DiscoveriesContextProvider: React.FC<
     } catch (error) {
       console.error('Failed to fetch discoveries:', error);
     }
-  }, [apiClient, usersTeam?.id]);
+  }, [apiClient]);
 
-  const discoverPointOfInterest = async (pointOfInterestId: string) => {
+  const discoverPointOfInterest = async (
+    pointOfInterestId: string,
+    teamId?: string | undefined,
+    userId?: string | undefined,
+  ) => {
     await apiClient.post(`/sonar/pointOfInterest/unlock`, {
       pointOfInterestId,
-      teamId: usersTeam?.id,
-      userId: usersTeam ? undefined : currentUser?.id,
+      teamId,
+      userId,
       lat: location?.latitude?.toString(),
       lng: location?.longitude?.toString(),
     });
@@ -70,15 +76,15 @@ export const DiscoveriesContextProvider: React.FC<
       id: '',
       createdAt: new Date(),
       updatedAt: new Date(),
-      teamId: usersTeam?.id,
-      userId: usersTeam ? undefined : currentUser?.id,
+      teamId: teamId,
+      userId: userId,
       pointOfInterestId: pointOfInterestId,
     }]);
   };
 
   useEffect(() => {
     fetchDiscoveries();
-  }, [usersTeam?.id]);
+  }, []);
 
   return (
     <DiscoveriesContext.Provider

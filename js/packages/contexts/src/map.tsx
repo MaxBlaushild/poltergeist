@@ -1,4 +1,4 @@
-import { MutableRefObject, useEffect, useRef, useState, createContext, useContext, ReactNode } from 'react';
+import { MutableRefObject, useEffect, useRef, useState, createContext, useContext, ReactNode, useCallback } from 'react';
 import { useLocation } from './location';
 import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
@@ -9,6 +9,8 @@ interface MapContextValue {
   mapContainer: MutableRefObject<HTMLDivElement>;
   zoom: number;
   setZoom: (zoom: number) => void;
+  setLocation: (lat: number, lng: number) => void;
+  flyToLocation: (lat: number, lng: number, zoom?: number) => void;
 }
 
 const MapContext = createContext<MapContextValue | undefined>(undefined);
@@ -26,39 +28,72 @@ export const MapProvider = ({ children }: MapProviderProps) => {
   const [zoom, setZoom] = useState(16);
   const [lng, setLng] = useState(0);
   const [lat, setLat] = useState(0);
-  const [isMapInitialized, setIsMapInitialized] = useState(false);
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
 
   useEffect(() => {
+    console.log('map.current', map.current);
     if (!map.current) {
       map.current = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: 'mapbox://styles/maxblaushild/clzq7o8pr00ce01qgey4y0g31',
-        center: [location?.longitude ?? 0, location?.latitude ?? 0],
+        center: [0, 0],
         zoom: 16,
       });
-    }
-  }, []); // Empty dependency array means this runs once on mount
 
-  useEffect(() => {
-    if (isMapInitialized) return;
-    if (location?.longitude && location?.latitude && map?.current) {
-      setIsMapInitialized(true);
-      map.current?.setCenter([location.longitude, location.latitude]);
+      const geolocateControl = new mapboxgl.GeolocateControl({
+        positionOptions: {
+          enableHighAccuracy: true
+        },
+        trackUserLocation: true,
+        showUserHeading: true
+      });
+      
+      map.current.addControl(geolocateControl);
 
-      map.current?.on('zoom', () => {
+      map.current.on('load', () => {
+        geolocateControl.trigger();
+      });
+
+      console.log('reeeeee')
+      map.current.on('zoom', () => {
         setZoom(map.current?.getZoom() ?? 0);
       });
 
-      map.current?.on('move', () => {
+      map.current.on('move', () => {
         setLng(map.current?.getCenter().lng ?? 0);
         setLat(map.current?.getCenter().lat ?? 0);
         setZoom(map.current?.getZoom() ?? 0);
       });
     }
-  }, [location?.longitude, location?.latitude, map?.current, isMapInitialized]);
+  }, []);
+
+  useEffect(() => {
+    if (map.current && location?.longitude && location?.latitude && !isMapLoaded) {
+      console.log('setting center', location.longitude, location.latitude);
+      map.current.setCenter([location.longitude, location.latitude]);
+      setIsMapLoaded(true);
+    }
+  }, [location?.longitude, location?.latitude, isMapLoaded]);
+
+  const setLocation = useCallback((lat: number, lng: number) => {
+    if (map.current) {
+      map.current.setCenter([lng, lat]);
+    }
+  }, [map]);
+
+  const flyToLocation = useCallback((lat: number, lng: number, zoom?: number) => {
+    if (map.current) {
+      map.current.flyTo({
+        center: [lng, lat],
+        zoom: zoom || map.current.getZoom(),
+        essential: true,
+        duration: 2000
+      });
+    }
+  }, [map]);
 
   return (
-    <MapContext.Provider value={{ map, mapContainer: mapContainerRef, zoom, setZoom }}>
+    <MapContext.Provider value={{ map, mapContainer: mapContainerRef, zoom, setZoom, setLocation, flyToLocation }}>
       {children}
     </MapContext.Provider>
   );

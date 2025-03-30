@@ -1,6 +1,7 @@
 import React from 'react';
 import { generateColorFromTeamName } from '../utils/generateColor';
 import { PointOfInterest, Team } from '@poltergeist/types';
+import { useLocation } from '@poltergeist/contexts';
 
 export const PointOfInterestMarker = ({
   pointOfInterest,
@@ -9,17 +10,19 @@ export const PointOfInterestMarker = ({
   hasDiscovered,
   onClick,
   borderColor,
+  usersLocation,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
   zoom: number;
   hasDiscovered: boolean;
   borderColor: string | undefined;
+  usersLocation: Location | null;
   onClick: (e: React.MouseEvent) => void;
 }) => {
   const imageUrl = hasDiscovered
-    ? pointOfInterest.imageURL
-    : `https://crew-points-of-interest.s3.amazonaws.com/unclaimed-pirate-fortress-${(index % 6) + 1}.png`;
+  ? pointOfInterest.imageURL
+    : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`;
 
   let pinSize = 4;
   switch (Math.floor(zoom)) {
@@ -66,35 +69,55 @@ export const PointOfInterestMarker = ({
       pinSize = 8;
       break;
     case 14:
-      pinSize = 16;
+      pinSize = 8;
       break;
     case 15:
       pinSize = 16;
       break;
     case 16:
-      pinSize = 24;
+      pinSize = 16;
       break;
     case 17:
-      pinSize = 24;
+      pinSize = 16;
       break;
     case 18:
-      pinSize = 24;
+      pinSize = 16;
       break;
     case 19:
-      pinSize = 24;
+      pinSize = 16;
       break;
     default:
-      pinSize = 24;
+      pinSize = 16;
       break;
   }
+  let opacity = 1;
+  if (usersLocation?.latitude && usersLocation?.longitude) {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = usersLocation.latitude * Math.PI/180;
+    const φ2 = parseFloat(pointOfInterest.lat) * Math.PI/180;
+    const Δφ = (parseFloat(pointOfInterest.lat) - usersLocation.latitude) * Math.PI/180;
+    const Δλ = (parseFloat(pointOfInterest.lng) - usersLocation.longitude) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+
+    if (distance < 50) { // Within 50 meters
+      opacity = 0.3;
+    }
+  }
+
   return (
     <button onClick={onClick} className="marker">
       <img
         src={imageUrl}
-        alt={hasDiscovered ? pointOfInterest.name : 'Mystery fortress'}
+        alt={pointOfInterest.name} 
         className={`w-${pinSize} h-${pinSize} rounded-lg border-2`}
         style={{
           borderColor,
+          opacity
         }}
       />
     </button>

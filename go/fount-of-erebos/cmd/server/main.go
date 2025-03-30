@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/MaxBlaushild/fount-of-erebos/internal/config"
@@ -38,6 +39,7 @@ func main() {
 
 		answer, err := openApiClient.GetAnswer(ctx, consultQuestion.Question)
 		if err != nil {
+			fmt.Println(err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{
 				"message": "something went wrong",
 			})

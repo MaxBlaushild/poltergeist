@@ -83,10 +83,8 @@ func (c *client) UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, me
 		return err
 	}
 
-	if ownedInventoryItem.IsTeamItem() {
-		if err := c.ApplyItemEffectByID(ctx, *ownedInventoryItem, metadata); err != nil {
-			return err
-		}
+	if err := c.ApplyItemEffectByID(ctx, *ownedInventoryItem, metadata); err != nil {
+		return err
 	}
 
 	return nil

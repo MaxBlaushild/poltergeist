@@ -70,13 +70,19 @@ func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID
 }
 
 func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error {
-	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"name":        name,
-		"description": description,
-		"lat":         lat,
-		"lng":         lng,
-		"updated_at":  time.Now(),
-	}).Error
+	pointOfInterest := models.PointOfInterest{
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Lat:         lat,
+		Lng:         lng,
+		UpdatedAt:   time.Now(),
+	}
+	if err := pointOfInterest.SetGeometry(lat, lng); err != nil {
+		return err
+	}
+
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(pointOfInterest).Error
 }
 
 func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfInterest, error) {
@@ -150,6 +156,10 @@ func (c *pointOfInterestHandle) Unlock(ctx context.Context, pointOfInterestID uu
 }
 
 func (c *pointOfInterestHandle) Create(ctx context.Context, pointOfInterest models.PointOfInterest) error {
+	if err := pointOfInterest.SetGeometry(pointOfInterest.Lat, pointOfInterest.Lng); err != nil {
+		return err
+	}
+
 	return c.db.WithContext(ctx).Create(&pointOfInterest).Error
 }
 
@@ -168,102 +178,13 @@ func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInter
 		PointOfInterestGroupID: pointOfInterestGroupID,
 	}
 
+	if err := pointOfInterest.SetGeometry(pointOfInterest.Lat, pointOfInterest.Lng); err != nil {
+		return err
+	}
+
 	if err := c.db.WithContext(ctx).Create(&pointOfInterestGroupMember).Error; err != nil {
 		return err
 	}
 
 	return nil
-}
-
-func (c *pointOfInterestHandle) CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error {
-	// Start a transaction since we need to create multiple related records
-	tx := c.db.WithContext(ctx).Begin()
-	if err := tx.Error; err != nil {
-		return err
-	}
-
-	updatedAt := time.Now()
-	createdAt := updatedAt
-	pointOfInterestID := uuid.New()
-
-	// Create the point of interest first
-	pointOfInterest := models.PointOfInterest{
-		ID:          pointOfInterestID,
-		Name:        request.Name,
-		Description: request.Description,
-		Lat:         request.Lat,
-		Lng:         request.Lon,
-		ImageUrl:    request.ImageUrl,
-		Clue:        request.Clue,
-		UpdatedAt:   updatedAt,
-		CreatedAt:   createdAt,
-	}
-
-	if err := tx.Create(&pointOfInterest).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	pointOfInterestGroupID, err := uuid.Parse(request.PointOfInterestGroupMemberID)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	pointOfInterestGroupMember := models.PointOfInterestGroupMember{
-		ID:                     uuid.New(),
-		PointOfInterestID:      pointOfInterestID,
-		PointOfInterestGroupID: pointOfInterestGroupID,
-	}
-
-	if err := tx.Create(&pointOfInterestGroupMember).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	tierOneChallenge := models.PointOfInterestChallenge{
-		ID:                uuid.New(),
-		PointOfInterestID: pointOfInterestID,
-		Question:          request.TierOne,
-		Tier:              1,
-		InventoryItemID:   request.TierOneInventoryItemId,
-	}
-
-	if err := tx.Create(&tierOneChallenge).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	if request.TierTwo != nil && *request.TierTwo != "" {
-		tierTwoChallenge := models.PointOfInterestChallenge{
-			ID:                uuid.New(),
-			PointOfInterestID: pointOfInterestID,
-			Question:          *request.TierTwo,
-			Tier:              2,
-			InventoryItemID:   request.TierTwoInventoryItemId,
-		}
-
-		if err := tx.Create(&tierTwoChallenge).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-
-	if request.TierThree != nil && *request.TierThree != "" {
-		tierThreeChallenge := models.PointOfInterestChallenge{
-			ID:                uuid.New(),
-			PointOfInterestID: pointOfInterestID,
-			Question:          *request.TierThree,
-			Tier:              3,
-			InventoryItemID:   request.TierThreeInventoryItemId,
-		}
-
-		if err := tx.Create(&tierThreeChallenge).Error; err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-
-	// Commit the transaction if everything succeeded
-	return tx.Commit().Error
 }

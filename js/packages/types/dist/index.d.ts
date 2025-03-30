@@ -21,3 +21,4 @@ export * from './pointOfInterestChildren';
 export * from './pointOfInterestGroupMember';
 export * from './pointOfInterestDiscovery';
 export * from './ownedInventoryItem';
+export * from './questLog';

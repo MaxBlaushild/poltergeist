@@ -11,7 +11,8 @@ import { Scoreboard } from './Scoreboard.tsx';
 import useImageGenerations from '../hooks/useImageGenerations.ts';
 import { ImageBadge } from './shared/ImageBadge.tsx';
 import { Modal, ModalSize } from './shared/Modal.tsx';
-
+import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
+import useLeaveMatch from '../hooks/useLeaveMatch.ts';
 const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
   const { imageGenerations } = useImageGenerations();
   const { getPresignedUploadURL, uploadMedia } = useMediaContext();
@@ -152,9 +153,8 @@ export function Layout() {
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
   const { currentUser } = useUserProfiles();
-  const { match, isLeavingMatch, leaveMatch, leaveMatchError } =
-    useMatchContext();
-
+  const { hasCurrentMatch, matchID } = useHasCurrentMatch();
+  const { leaveMatch } = useLeaveMatch();
   const toggleNav = () => {
     setIsNavOpen(!isNavOpen);
     setShowProfilePicture(false);
@@ -232,14 +232,14 @@ export function Layout() {
         {showProfilePicture && (
           <ProfilePictureModal onExit={() => setShowProfilePicture(false)} />
         )}
-        {match ? (
+        {hasCurrentMatch ? (
           <div className="m-4 mb-6">
             <Button
               title="Leave match"
-              onClick={() => {
-                leaveMatch();
+              onClick={async () => {
+                await leaveMatch(matchID);
                 navigate('/dashboard');
-                setIsNavOpen(false);
+                window.location.reload();
               }}
             />
           </div>

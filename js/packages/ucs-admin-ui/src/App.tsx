@@ -11,6 +11,7 @@ import { createBrowserRouter, RouterProvider, useParams } from 'react-router-dom
 import { LoaderFunctionArgs, redirect } from 'react-router-dom';
 import { ArenaProvider, InventoryProvider } from '@poltergeist/contexts';
 import { Login } from './components/Login.tsx';
+import Armory from './components/Armory.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -56,6 +57,11 @@ const router = createBrowserRouter([
         <Arena />
       </ArenaWrapper>
     ),
+    loader: onlyAuthenticated,
+  },
+  {
+    path: "/armory",
+    element: <Armory />,
     loader: onlyAuthenticated,
   },
 ]);

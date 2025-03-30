@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import './SubmitAnswerForChallenge.css';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
 import { Button } from './shared/Button.tsx';
-import { useMatchContext } from '../contexts/MatchContext.tsx';
 import {
   XMarkIcon,
   CheckBadgeIcon,
@@ -12,8 +11,10 @@ import Divider from './shared/Divider.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 import { Oval } from 'react-loader-spinner';
 import { useInventory } from '@poltergeist/contexts';
+import { useLocation } from '@poltergeist/contexts';
 import {
   ItemType,
+  Match,
   MatchInventoryItemEffect,
   OwnedInventoryItem,
   PointOfInterest,
@@ -26,20 +27,26 @@ import {
   useSubmissionsContext,
 } from '../contexts/SubmissionsContext.tsx';
 import { mapCaptureTiers } from '../utils/mapCaptureTiers.ts';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 
 type SubmitAnswerForChallengeProps = {
   pointOfInterest: PointOfInterest;
   challenge: PointOfInterestChallenge;
+  match?: Match | undefined;
+  usersTeam?: Team | undefined;
   onSubmit: (immediate: boolean) => void;
 };
 
 export const SubmitAnswerForChallenge = (
   props: SubmitAnswerForChallengeProps
 ) => {
-  const { match, usersTeam } = useMatchContext();
-  const { submissions } = useSubmissionsContext();
+  const { submissions, setSubmissions } = useSubmissionsContext();
+  const { currentUser } = useUserProfiles();
+  const { location } = useLocation();
   const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems } =
     useInventory();
+  const { refreshQuestLog } = useQuestLogContext();
   const completedForTier = mapCaptureTiers(props.pointOfInterest, submissions);
   const { createSubmission } = useSubmissionsContext();
   const [textSubmission, setTextSubmission] = useState<string | undefined>(
@@ -78,14 +85,31 @@ export const SubmitAnswerForChallenge = (
       item.inventoryItemId === matchingRubyForChallenge?.id && item.quantity > 0
   );
 
-  const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
+  const isGoldenMonkeyActive = props.match?.inventoryItemEffects.some(
     (item) =>
       item.inventoryItemId === ItemType.CipherOfTheLaughingMonkey &&
-      item.teamId !== usersTeam?.id &&
+      item.teamId !== props.usersTeam?.id &&
       new Date(item.expiresAt) > new Date()
   );
 
   const completed = completedForTier[props.challenge.tier] ?? false;
+
+  // Calculate distance between user and POI using Haversine formula
+  const isWithinRange = location?.latitude && location?.longitude && props.pointOfInterest.lat && props.pointOfInterest.lng ? (() => {
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = location?.latitude * Math.PI/180;
+    const φ2 = parseFloat(props.pointOfInterest.lat) * Math.PI/180;
+    const Δφ = (parseFloat(props.pointOfInterest.lat) - location?.latitude) * Math.PI/180;
+    const Δλ = (parseFloat(props.pointOfInterest.lng) - location?.longitude) * Math.PI/180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c;
+
+    return distance <= 100; // Within 100 meters
+  })() : false;
 
   return (
     <div className="w-full rounded-xl flex flex-col gap-3">
@@ -95,7 +119,7 @@ export const SubmitAnswerForChallenge = (
             {isGoldenMonkeyActive
               ? scrambleAndObscureWords(
                   props.challenge.question,
-                  usersTeam?.id ?? ''
+                  props.usersTeam?.id ?? ''
                 )
               : props.challenge.question}
           </p>
@@ -116,9 +140,14 @@ export const SubmitAnswerForChallenge = (
           )}
           <div className="flex flex-row justify-between gap-2">
             <Button
-              title={completed ? 'Locked' : 'Submit Answer'}
+              title={completed ? 
+                !props.usersTeam?.id ? 'Completed' : 'Locked' : 
+                isWithinRange ? 
+                  'Submit Answer' : 
+                  'Too Far Away'}
               disabled={
                 completed ||
+                !isWithinRange ||
                 props.challenge.pointOfInterestChallengeSubmissions?.some(
                   (submission) => submission.isCorrect
                 )
@@ -129,11 +158,33 @@ export const SubmitAnswerForChallenge = (
                   const result = await createSubmission(
                     props.challenge.id,
                     textSubmission,
-                    imageSubmission
+                    imageSubmission,
+                    props.usersTeam?.id,
+                    props.usersTeam ? undefined : currentUser?.id
                   );
                   setCorrectness(result?.correctness ?? false);
                   setReason(result?.reason ?? 'Failed for an unknown reason.');
+
+                  if (result?.correctness) {
+                    setSubmissions([...submissions, {
+                      id: '',
+                      isCorrect: true,
+                      text: textSubmission ?? '',
+                      teamId: props.usersTeam?.id,
+                      userId: currentUser?.id,
+                      pointOfInterestChallengeId: props.challenge.id,
+                      imageUrl: imageSubmission?.name ?? '',
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
+                    }]);
+                  }
                   props.onSubmit(false);
+                  try {
+                    refreshQuestLog();
+                  } catch (e) {
+                    console.log(e);
+                  }
+
                   setTimeout(() => {
                     setCorrectness(undefined);
                     setReason(undefined);
@@ -152,11 +203,27 @@ export const SubmitAnswerForChallenge = (
                 src={matchingRubyForChallenge?.imageUrl}
                 alt={matchingRubyForChallenge?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
-                onClick={() => {
-                  consumeItem(matchingInventoryItem?.id, {
+                onClick={async () => {
+                  await consumeItem(matchingInventoryItem?.id, {
                     pointOfInterestId: props.challenge.pointOfInterestId,
                   });
                   setUsedItem(matchingRubyForChallenge!);
+                  setSubmissions([...submissions, {
+                    id: '',
+                    isCorrect: true,
+                    text: 'Used a ruby to answer the challenge',
+                    teamId: props.usersTeam?.id,
+                    userId: currentUser?.id,
+                    pointOfInterestChallengeId: props.challenge.id,
+                    imageUrl: '',
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                  }]);
+                  try {
+                    refreshQuestLog();
+                  } catch (e) {
+                    console.log(e);
+                  }
                   props.onSubmit(true);
                 }}
               />

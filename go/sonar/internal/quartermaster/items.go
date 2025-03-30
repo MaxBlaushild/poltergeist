@@ -132,4 +132,12 @@ var PreDefinedItems = []InventoryItem{
 		EffectText: "Steal all of another team's items.",
 		RarityTier: "Not Droppable",
 	},
+	{
+		ID:         15,
+		Name:       "The Compass of Peace",
+		ImageURL:   "https://crew-points-of-interest.s3.us-east-1.amazonaws.com/compass-of-peace.png",
+		FlavorText: "Given to you by Shalimar the Merchant. The compass is said to point towards what the wearer needs most to heal.",
+		EffectText: "Negate up to 3 damage when held.",
+		RarityTier: "Not Droppable",
+	},
 }

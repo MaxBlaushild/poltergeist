@@ -1,3 +1,4 @@
+import React from 'react';
 import { LoaderFunctionArgs, createBrowserRouter } from 'react-router-dom';
 import { Layout } from './components/Layout.tsx';
 import { Home } from './components/Home.tsx';
@@ -21,6 +22,11 @@ import { CreatePointsOfInterest } from './components/CreatePointsOfInterest.tsx'
 import { SinglePlayer } from './components/SinglePlayer.tsx';
 import { MatchInProgress } from './components/MatchInProgress.tsx';
 import { MatchLobby } from './components/MatchLobby.tsx';
+import { QuestLogContextProvider } from './contexts/QuestLogContext.tsx';
+import { MapProvider } from '@poltergeist/contexts';
+import { PointOfInterestContextProvider } from './contexts/PointOfInterestContext.tsx';
+import { MatchContextProvider } from './contexts/MatchContext.tsx';
+
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
     let params = new URLSearchParams();
@@ -91,7 +97,15 @@ export const router = createBrowserRouter([
       {
         path: 'select-battle-arena',
         loader: onlyAuthenticated,
-        Component: SelectBattleArena,
+        Component: () => (
+          <MatchContextProvider>
+            <PointOfInterestContextProvider>
+              <MapProvider>
+                <SelectBattleArena />
+              </MapProvider>
+            </PointOfInterestContextProvider>
+          </MatchContextProvider>
+        ),
       },
       {
         path: 'match/:id',
@@ -101,7 +115,15 @@ export const router = createBrowserRouter([
       {
         path: 'match/in-progress',
         loader: onlyAuthenticated,
-        Component: MatchInProgress,
+        Component: () => (
+          <MatchContextProvider>
+            <PointOfInterestContextProvider>
+              <MapProvider>
+                <MatchInProgress />
+              </MapProvider>
+            </PointOfInterestContextProvider>
+          </MatchContextProvider>
+        ),
       },
       {
         path: 'match/lobby',
@@ -111,7 +133,13 @@ export const router = createBrowserRouter([
       {
         path: 'single-player',
         loader: onlyAuthenticated,
-        Component: SinglePlayer,
+        Component: () => (
+          <QuestLogContextProvider>
+            <MapProvider>
+              <SinglePlayer />
+            </MapProvider>
+          </QuestLogContextProvider>
+        ),
       },
       {
         path: 'adminfuckoff',

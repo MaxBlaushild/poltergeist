@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Map } from './Map.tsx';
 import { useAuth } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
-import { useUserLocator } from '../hooks/useUserLocator.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
 import { PointOfInterest, PointOfInterestDiscovery } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
@@ -16,41 +15,78 @@ import UsedItemModal from './UsedItemModal.tsx';
 import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { Log } from './Log.tsx';
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+import { usePointsOfInterest } from '@poltergeist/hooks';
 
-export const SinglePlayer = () => {
-  const { pointsOfInterest } = usePointOfInterestContext();
-  const { discoveries } = useDiscoveriesContext();
-  const { currentUser } = useUserProfiles();
+const MemoizedMap = React.memo(Map);
 
+const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest }: {
+  areMapOverlaysVisible: boolean;
+  discoveries: PointOfInterestDiscovery[];
+  totalPointsOfInterest: PointOfInterest[];
+}) => {
+  if (!areMapOverlaysVisible) return null;
+  
   return (
-    <div>
-      <SinglePlayerMap
-        pointsOfInterest={pointsOfInterest || []}
-        discoveries={discoveries || []}
-        entityId={currentUser?.id ?? ''}
+    <>
+      <MapZoomButton />
+      <div className="absolute bottom-20 right-0 z-10 w-full p-2">
+        <Log 
+          pointsOfInterest={totalPointsOfInterest || []} 
+          discoveries={discoveries}
+          needsDiscovery={false}
+        />
+      </div>
+      <NewItemModal />
+      <UsedItemModal />
+    </>
+  );
+});
+
+const DrawerControls = React.memo(({ 
+  isInventoryOpen, 
+  isQuestLogOpen, 
+  setIsInventoryOpen, 
+  setIsQuestLogOpen 
+}: {
+  isInventoryOpen: boolean;
+  isQuestLogOpen: boolean;
+  setIsInventoryOpen: (value: boolean) => void;
+  setIsQuestLogOpen: (value: boolean) => void;
+}) => {
+  if (isInventoryOpen || isQuestLogOpen) return null;
+  
+  return (
+    <div className="flex justify-between w-full gap-4">
+      <Button
+        onClick={() => setIsInventoryOpen(true)}
+        title="Inventory"
+      />
+      <Button
+        onClick={() => setIsQuestLogOpen(true)}
+        title="Quest Log"
       />
     </div>
   );
-};
+});
 
-interface SinglePlayerMapProps {
-  pointsOfInterest: PointOfInterest[];
-  discoveries: PointOfInterestDiscovery[];
-  entityId: string;
-}
+export const SinglePlayer = () => {
+  const { pointsOfInterest } = useQuestLogContext();
+  const { discoveries } = useDiscoveriesContext();
+  const { currentUser } = useUserProfiles();
 
-const SinglePlayerMap = ({ pointsOfInterest, discoveries, entityId }: SinglePlayerMapProps) => {
   const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
     pointsOfInterest,
     discoveries,
-    entityId,
+    entityId: currentUser?.id ?? '',
+    needsDiscovery: false,
   });
+
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [isQuestLogOpen, setIsQuestLogOpen] = useState(false);
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
-
-  useUserLocator();
+  const { pointsOfInterest: totalPointsOfInterest } = usePointsOfInterest();
 
   useEffect(() => {
     if (selectedPointOfInterest) {
@@ -90,14 +126,14 @@ const SinglePlayerMap = ({ pointsOfInterest, discoveries, entityId }: SinglePlay
     event.stopPropagation();
   };
 
-  return <Map>
-    {areMapOverlaysVisible && <MapZoomButton />}
-      {areMapOverlaysVisible && (
-        <div className="absolute bottom-20 right-0 z-10 w-full p-2">
-          <Log />
-        </div>
-      )}
-    <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
+  return (
+    <MemoizedMap>
+      <MapOverlays 
+        areMapOverlaysVisible={areMapOverlaysVisible}
+        discoveries={discoveries}
+        totalPointsOfInterest={totalPointsOfInterest || []}
+      />
+      <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
         {selectedPointOfInterest && (
           <PointOfInterestPanel
             pointOfInterest={selectedPointOfInterest}
@@ -121,24 +157,23 @@ const SinglePlayerMap = ({ pointsOfInterest, discoveries, entityId }: SinglePlay
         }}
         peekHeight={isPanelVisible ? 0 : 80}
       >
-        <div className="flex justify-between w-full gap-4">
-          {!isInventoryOpen && !isQuestLogOpen && (
-            <Button
-              onClick={() => setIsInventoryOpen(true)}
-              title="Inventory"
-            ></Button>
-          )}
-          {!isInventoryOpen && !isQuestLogOpen && (
-            <Button
-              onClick={() => setIsQuestLogOpen(true)}
-              title="Quest Log"
-            ></Button>
-          )}
-        </div>
+        <DrawerControls 
+          isInventoryOpen={isInventoryOpen}
+          isQuestLogOpen={isQuestLogOpen}
+          setIsInventoryOpen={setIsInventoryOpen}
+          setIsQuestLogOpen={setIsQuestLogOpen}
+        />
         {isInventoryOpen && <Inventory onClose={() => setIsInventoryOpen(false)} />}
-        {isQuestLogOpen && <QuestLog onClose={() => setIsQuestLogOpen(false)} />}
+        {isQuestLogOpen && <QuestLog onClose={(pointOfInterest) => {
+          setIsQuestLogOpen(false);
+          console.log('pointOfInterest', pointOfInterest);
+          if (pointOfInterest) {
+            setTimeout(() => {
+              setSelectedPointOfInterest(pointOfInterest);
+            }, 2000);
+          }
+        }} />}
       </Drawer>
-      {areMapOverlaysVisible && <NewItemModal />}
-      {areMapOverlaysVisible && <UsedItemModal />}
-  </Map>;
+    </MemoizedMap>
+  );
 };

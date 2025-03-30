@@ -9,9 +9,11 @@ export const mapCaptureTiers = (
   pointOfInterest.pointOfInterestChallenges
     .sort((a, b) => a.tier - b.tier)
     .forEach((challenge) => {
-      const completed = submissions.some(
-        (submission) => submission.isCorrect
-      );
+      const completed = submissions
+        .filter(submission => submission.pointOfInterestChallengeId === challenge.id)
+        .some(
+          (submission) => submission.isCorrect
+        );
       if (completed) {
         completedForTier[challenge.tier] = completed;
         for (let j = 0; j < challenge.tier; j++) {

@@ -1,27 +1,32 @@
 import React from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { useInventory } from '@poltergeist/contexts';
-import { hasDiscoveredPointOfInterest } from '@poltergeist/types';
+import { hasDiscoveredPointOfInterest, Match, PointOfInterestDiscovery, PointOfInterest as PointOfInterestType, Team as TeamType } from '@poltergeist/types';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/20/solid';
 import { useLogContext } from '../contexts/LogContext.tsx';
 import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
-
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 const Team = 'Team';
 const PointOfInterest = 'PointOfInterest';
 const InventoryItem = 'InventoryItem';
 
-export const Log = () => {
-  const { match, usersTeam } = useMatchContext();
+type LogProps = {
+  match?: Match | undefined,
+  usersTeam?: TeamType | undefined,
+  pointsOfInterest: PointOfInterestType[],
+  discoveries: PointOfInterestDiscovery[],
+  needsDiscovery?: boolean,
+}
+
+export const Log = ({ match, usersTeam, pointsOfInterest = [], discoveries = [], needsDiscovery = false }: LogProps) => {
   const { auditItems, fetchAuditItems } = useLogContext();
   const { inventoryItems } = useInventory();
-  const [isExpanded, setIsExpanded] = React.useState(false);
-  const { pointsOfInterest } = usePointOfInterestContext();
-  const { discoveries } = useDiscoveriesContext();
+  const [ isExpanded, setIsExpanded] = React.useState(false);
   const { currentUser } = useUserProfiles();
-
+  const { isRootNode } = useQuestLogContext();
   React.useEffect(() => {
     fetchAuditItems();
 
@@ -36,7 +41,7 @@ export const Log = () => {
     (acc, team) => ({ ...acc, [team.id]: team }),
     {}
   );
-  const pointsOfInterestById = pointsOfInterest.reduce(
+  const pointsOfInterestById = pointsOfInterest?.reduce(
     (acc, pointOfInterest) => ({
       ...acc,
       [pointOfInterest.id]: pointOfInterest,
@@ -69,7 +74,7 @@ export const Log = () => {
       const poiId = pointOfInterestMatches[1];
       const pointOfInterest = pointsOfInterestById?.[poiId];
       const poiName = pointOfInterest?.name || 'Unknown Point of Interest';
-      const isDiscovered = hasDiscoveredPointOfInterest(
+      const isDiscovered = (!needsDiscovery && !isRootNode(pointOfInterest)) || hasDiscoveredPointOfInterest(
         pointOfInterest.id,
         usersTeam?.id ?? currentUser?.id ?? '',
         discoveries ?? []

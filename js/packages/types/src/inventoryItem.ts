@@ -29,6 +29,7 @@ export enum ItemType {
 	Ale = 12,
   Witchflame = 13,
   WickedSpellbook = 14,
+  CompassOfPeace = 15,
 };
 
 export const ItemsUsabledInMenu = [
