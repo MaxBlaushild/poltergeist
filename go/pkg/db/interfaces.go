@@ -86,7 +86,6 @@ type PointOfInterestHandle interface {
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
-	CreateWithChallenges(ctx context.Context, request *CreatePointOfInterestRequest) error
 	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
@@ -170,6 +169,8 @@ type PointOfInterestGroupHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	FindByType(ctx context.Context, typeValue models.PointOfInterestGroupType) ([]*models.PointOfInterestGroup, error)
+	GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64) ([]models.PointOfInterestGroup, error)
+	GetStartedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error)
 }
 
 type PointOfInterestChallengeHandle interface {

@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { generateColorFromTeamName } from '../../utils/generateColor.ts';
-import { useMatchContext } from '../../contexts/MatchContext.tsx';
-import { PointOfInterestEffectingItems } from '@poltergeist/types';
+import { Match, PointOfInterestEffectingItems, Team } from '@poltergeist/types';
 import { useInventory } from '@poltergeist/contexts';
 
 export type StatusCircleProps = {
@@ -11,6 +10,8 @@ export type StatusCircleProps = {
 export type StatusIndicatorProps = {
   capturingEntityName?: string | null;
   captureTier?: number | null;
+  match?: Match | null;
+  usersTeam?: Team | undefined;
 };
 
 export const StatusCircle = ({
@@ -33,8 +34,9 @@ export const StatusCircle = ({
 export const StatusIndicator = ({
   capturingEntityName,
   captureTier,
+  match,
+  usersTeam,
 }: StatusIndicatorProps) => {
-  const { match, usersTeam } = useMatchContext();
   const { inventoryItems } = useInventory();
   const effectingItems = match?.inventoryItemEffects.filter(
     (item) =>

@@ -26,7 +26,7 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 		return q.AddEffectToMatch(ctx, teamMatch.MatchID, ownedInventoryItem, itemDuration)
 	case 2:
 		// Instantly reveal a hidden point on the map.
-		return q.db.PointOfInterest().Unlock(ctx, metadata.PointOfInterestID, ownedInventoryItem.TeamID, nil)
+		return q.db.PointOfInterest().Unlock(ctx, metadata.PointOfInterestID, ownedInventoryItem.TeamID, ownedInventoryItem.UserID)
 	case 3:
 		// 	// Instantly capture a tier one challenge.
 		return q.captureChallenge(ctx, metadata.PointOfInterestID, ownedInventoryItem, 1)
@@ -97,6 +97,9 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 	case 14:
 		// Steal all of another team's items.
 		return q.db.InventoryItem().StealItems(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID)
+	case 15:
+		// Negate up to 3 damage when held.
+		return nil
 	default:
 		return errors.New("no effect found for this item")
 	}

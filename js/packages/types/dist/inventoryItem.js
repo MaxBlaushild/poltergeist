@@ -22,6 +22,7 @@ export var ItemType;
     ItemType[ItemType["Ale"] = 12] = "Ale";
     ItemType[ItemType["Witchflame"] = 13] = "Witchflame";
     ItemType[ItemType["WickedSpellbook"] = 14] = "WickedSpellbook";
+    ItemType[ItemType["CompassOfPeace"] = 15] = "CompassOfPeace";
 })(ItemType || (ItemType = {}));
 ;
 export const ItemsUsabledInMenu = [

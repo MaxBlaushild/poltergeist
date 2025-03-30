@@ -8,7 +8,7 @@ interface ImageBadgeProps {
 export const ImageBadge = ({ imageUrl, onClick, hasBorder = false }: ImageBadgeProps) => {
   return (
     <div
-      className={`flex justify-center items-center w-10 h-10 rounded-full overflow-hidden ${hasBorder ? 'border-2 border-black' : ''}`}
+      className={`flex z-100 justify-center items-center w-10 h-10 rounded-full overflow-hidden ${hasBorder ? 'border-2 border-black' : ''}`}
       onClick={onClick}
     >
       <img

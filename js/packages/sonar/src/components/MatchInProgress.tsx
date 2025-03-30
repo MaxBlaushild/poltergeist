@@ -20,7 +20,6 @@ import UsedItemModal from './UsedItemModal.tsx';
 import { MapZoomButton } from './MapZoomButton.tsx';
 import { Map } from './Map.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
-import { useUserLocator } from '../hooks/useUserLocator.tsx';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useInventory } from '@poltergeist/contexts';
@@ -41,6 +40,7 @@ export const MatchInProgress = () => {
       pointsOfInterest,
       discoveries,
       entityId: usersTeam?.id ?? '',
+      needsDiscovery: true,
     });
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
@@ -50,7 +50,6 @@ export const MatchInProgress = () => {
   const { location } = useLocation();
   const { submissions } = useSubmissionsContext();
   
-  useUserLocator();
 
   useEffect(() => {
     if (selectedPointOfInterest) {
@@ -105,7 +104,13 @@ export const MatchInProgress = () => {
       {areMapOverlaysVisible && <MapZoomButton />}
       {areMapOverlaysVisible && (
         <div className="absolute bottom-20 right-0 z-10 w-full p-2">
-          <Log />
+          <Log 
+            match={match || undefined} 
+            usersTeam={usersTeam} 
+            pointsOfInterest={pointsOfInterest} 
+            discoveries={discoveries} 
+            needsDiscovery={true}
+          />
         </div>
       )}
       <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
@@ -113,6 +118,9 @@ export const MatchInProgress = () => {
           <PointOfInterestPanel
             pointOfInterest={selectedPointOfInterest}
             onClose={onClosePointOfInterestPanel}
+            match={match || undefined}
+            usersTeam={usersTeam}
+            needsDiscovery
           />
         )}
       </Drawer>
@@ -140,7 +148,11 @@ export const MatchInProgress = () => {
         </div>
         {isLeaderboardVisible && <Scoreboard />}
         {isInventoryVisible && (
-          <Inventory onClose={() => setIsInventoryVisible(false)} />
+          <Inventory 
+            onClose={() => setIsInventoryVisible(false)} 
+            match={match || undefined} 
+            usersTeam={usersTeam} 
+          />
         )}
       </Drawer>
       {areMapOverlaysVisible && <NewItemModal />}

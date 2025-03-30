@@ -27,6 +27,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   min-width: 220px;
+  z-index: 9999;
 }
 
 .Modal__toast {

@@ -72,7 +72,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     setOwnedInventoryItemsError(null);
     try {
       const response = await apiClient.get<OwnedInventoryItem[]>('/sonar/ownedInventoryItems');
-      setOwnedInventoryItems(response);
+      setOwnedInventoryItems(response.filter((item) => item.quantity > 0));
     } catch (err) {
       setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');
     } finally {

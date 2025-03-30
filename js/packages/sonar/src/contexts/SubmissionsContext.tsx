@@ -7,7 +7,6 @@ import React, {
 } from 'react';
 import { useAPI, useInventory, useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
-import { useMatchContext } from './MatchContext.tsx';
 import { InventoryItem } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 
@@ -37,7 +36,9 @@ interface SubmissionsContextType {
   createSubmission: (
     challengeId: string,
     text: string | undefined,
-    image?: File | undefined
+    image?: File | undefined,
+    teamId?: string | undefined,
+    userId?: string | undefined,
   ) => Promise<{ correctness: boolean, reason: string } | undefined>;
 }
 
@@ -66,8 +67,6 @@ export const SubmissionsContextProvider: React.FC<
   const [submissions, setSubmissions] = useState<PointOfInterestChallengeSubmission[]>(
     []
   );
-  const { usersTeam } = useMatchContext();
-  const { currentUser } = useUserProfiles();
   const { getPresignedUploadURL, uploadMedia } = useMediaContext();
   const { setPresentedInventoryItem } = useInventory();
   const fetchSubmissions = useCallback(async () => {
@@ -84,9 +83,11 @@ export const SubmissionsContextProvider: React.FC<
   const createSubmission = useCallback(async (
     challengeId: string,
     text: string | undefined,
-    image?: File | undefined
+    image?: File | undefined,
+    teamId?: string | undefined,
+    userId?: string | undefined,
   ): Promise<{ correctness: boolean, reason: string } | undefined> => {
-    const key = `${usersTeam ? usersTeam.id : currentUser?.id}/${challengeId}.webp`;
+    const key = `${teamId ? teamId : userId}/${challengeId}.webp`;
     let imageUrl = '';
 
     if (image) {
@@ -97,8 +98,8 @@ export const SubmissionsContextProvider: React.FC<
     }
 
     var response = await apiClient.post<CapturePointOfInterestResponse>(`/sonar/pointOfInterest/challenge`, {
-      teamId: usersTeam?.id,
-      userId: usersTeam ? undefined : currentUser?.id,
+      teamId,
+      userId,
       challengeId,
       textSubmission: text,
       imageSubmissionUrl: imageUrl,
@@ -111,7 +112,7 @@ export const SubmissionsContextProvider: React.FC<
     fetchSubmissions();
 
     return { correctness: response?.judgement?.judgement?.judgement ?? false, reason: response?.judgement?.judgement?.reason ?? 'Failed for an unknown reason.' };
-  }, [apiClient, usersTeam, currentUser, getPresignedUploadURL, uploadMedia, setPresentedInventoryItem]);
+  }, [apiClient, getPresignedUploadURL, uploadMedia, setPresentedInventoryItem]);
 
   useEffect(() => {
     fetchSubmissions();

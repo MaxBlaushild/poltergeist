@@ -13,6 +13,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/server"
 )
 
@@ -43,7 +44,21 @@ func main() {
 	useApiClient := useapi.NewClient(cfg.Secret.UseApiKey)
 	charicturist := charicturist.NewClient(useApiClient, dbClient)
 	mapboxClient := mapbox.NewClient(cfg.Secret.MapboxApiKey)
-	s := server.NewServer(authClient, texterClient, dbClient, cfg, awsClient, judgeClient, quartermaster, chatClient, charicturist, mapboxClient)
+	questlogClient := questlog.NewClient(dbClient)
+
+	s := server.NewServer(
+		authClient,
+		texterClient,
+		dbClient,
+		cfg,
+		awsClient,
+		judgeClient,
+		quartermaster,
+		chatClient,
+		charicturist,
+		mapboxClient,
+		questlogClient,
+	)
 
 	s.ListenAndServe("8042")
 }

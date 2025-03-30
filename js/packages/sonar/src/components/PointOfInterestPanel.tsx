@@ -9,6 +9,7 @@ import {
   OwnedInventoryItem,
   User,
   ItemsUsabledOnPointOfInterest,
+  Match,
 } from '@poltergeist/types';
 import React, { useState } from 'react';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
@@ -26,18 +27,22 @@ import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.ts
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { useSubmissionsContext } from '../contexts/SubmissionsContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
-
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 interface PointOfInterestPanelProps {
   pointOfInterest: PointOfInterest;
   onClose: (immediate: boolean) => void;
+  match?: Match | null;
+  usersTeam?: Team | undefined;
 }
 
 export const PointOfInterestPanel = ({
   pointOfInterest,
   onClose,
+  match,
+  usersTeam,
 }: PointOfInterestPanelProps) => {
-  const { match, usersTeam } = useMatchContext();
-  const { discoveries } = useDiscoveriesContext();
+  const { discoveries, setDiscoveries } = useDiscoveriesContext();
+  const { isRootNode } = useQuestLogContext();
   const { submissions } = useSubmissionsContext();
   const { currentUser } = useUserProfiles();
   const { discoverPointOfInterest } = useDiscoveriesContext();
@@ -73,18 +78,18 @@ export const PointOfInterestPanel = ({
     captureTier = challenge.tier;
   }
 
-  const onConsumeItem = async (ownedInventoryItemId: string) => {
+  const onConsumeItem = async (ownedInventoryItemId: string, itemId: number) => {
     await consumeItem(ownedInventoryItemId, {
       pointOfInterestId: pointOfInterest.id,
     });
-    setUsedItem(inventoryItems.find((item) => item.id === item.id)!);
+    setUsedItem(inventoryItems.find((item) => item.id === itemId) ?? null);
     onClose(true);
   };
 
   return (
     <div className="flex flex-col items-center gap-4">
       <h3 className="text-2xl font-bold">
-        {hasDiscovered ? pointOfInterest.name : 'Uncharted Waters'}
+        {pointOfInterest.name}
       </h3>
       <img
         src={
@@ -97,6 +102,8 @@ export const PointOfInterestPanel = ({
         <StatusIndicator
           capturingEntityName={capturingEntityName}
           captureTier={captureTier}
+          match={match}
+          usersTeam={usersTeam}
         />
         {hasDiscovered && (
         <TabNav
@@ -149,7 +156,11 @@ export const PointOfInterestPanel = ({
           <Button
             onClick={async () => {
                 try {
-                  await discoverPointOfInterest(pointOfInterest.id);
+                  await discoverPointOfInterest(
+                    pointOfInterest.id,
+                    usersTeam?.id,
+                    usersTeam ? undefined : currentUser?.id
+                  );
                 } catch (error) {
                   setButtonText('Wrong, dingus');
                   setTimeout(() => {
@@ -168,7 +179,18 @@ export const PointOfInterestPanel = ({
                 alt={inventoryItem?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
                 onClick={async() => {
-                  await onConsumeItem(item.id);
+                  await onConsumeItem(item.id, inventoryItem?.id ?? 0);
+
+                  if (inventoryItem?.id === ItemType.GoldenTelescope) {
+                    setDiscoveries([...discoveries, {
+                      id: '',
+                      createdAt: new Date(),
+                      updatedAt: new Date(),
+                      teamId: usersTeam?.id,
+                      userId: usersTeam ? undefined : currentUser?.id,
+                      pointOfInterestId: pointOfInterest.id,
+                    }]);
+                  }
                 }}
               />
             );

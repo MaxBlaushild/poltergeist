@@ -8,6 +8,8 @@ interface LocationContextType {
     location: Location | null;
     isLoading: boolean;
     error: string | null;
+    message: string | null;
+    acknowledgeError: () => void;
 }
 export declare const LocationProvider: ({ children }: {
     children: ReactNode;

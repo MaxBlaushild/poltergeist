@@ -5,13 +5,9 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { useAPI, useAuth } from '@poltergeist/contexts';
-import { AuditItem, InventoryItem, Match, Team } from '@poltergeist/types';
+import { useAPI } from '@poltergeist/contexts';
+import { AuditItem } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
-import { useMediaContext } from '@poltergeist/contexts';
-import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
-import { useMatchContext } from './MatchContext.tsx';
-
 
 interface LogContextType {
   auditItems: AuditItem[];
@@ -42,18 +38,17 @@ export const LogContextProvider: React.FC<LogContextProviderProps> = ({
   const { apiClient } = useAPI();
   const { currentUser } = useUserProfiles();
   const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
-  const { match } = useMatchContext();
 
   const fetchAuditItems = useCallback(async () => {
     try {
       const response = await apiClient.get<AuditItem[]>(
-        `/sonar/chat${match?.id ? `?matchId=${match.id}` : ''}`
+        `/sonar/chat`
       );
       setAuditItems(response);
     } catch (error) {
       console.error('Failed to fetch audit items:', error);
     }
-  }, [apiClient, match?.id]);
+  }, [apiClient]);
 
   useEffect(() => {
     fetchAuditItems();

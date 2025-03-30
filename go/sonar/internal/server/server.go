@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -32,16 +32,17 @@ var (
 )
 
 type server struct {
-	authClient    auth.Client
-	texterClient  texter.Client
-	dbClient      db.DbClient
-	config        *config.Config
-	awsClient     aws.AWSClient
-	judgeClient   judge.Client
-	quartermaster quartermaster.Quartermaster
-	chatClient    chat.Client
-	charicturist  charicturist.Client
-	mapboxClient  mapbox.Client
+	authClient     auth.Client
+	texterClient   texter.Client
+	dbClient       db.DbClient
+	config         *config.Config
+	awsClient      aws.AWSClient
+	judgeClient    judge.Client
+	quartermaster  quartermaster.Quartermaster
+	chatClient     chat.Client
+	charicturist   charicturist.Client
+	mapboxClient   mapbox.Client
+	questlogClient questlog.QuestlogClient
 }
 
 type Server interface {
@@ -59,18 +60,20 @@ func NewServer(
 	chatClient chat.Client,
 	charicturist charicturist.Client,
 	mapboxClient mapbox.Client,
+	questlogClient questlog.QuestlogClient,
 ) Server {
 	return &server{
-		authClient:    authClient,
-		texterClient:  texterClient,
-		dbClient:      dbClient,
-		config:        config,
-		awsClient:     awsClient,
-		judgeClient:   judgeClient,
-		quartermaster: quartermaster,
-		chatClient:    chatClient,
-		charicturist:  charicturist,
-		mapboxClient:  mapboxClient,
+		authClient:     authClient,
+		texterClient:   texterClient,
+		dbClient:       dbClient,
+		config:         config,
+		awsClient:      awsClient,
+		judgeClient:    judgeClient,
+		quartermaster:  quartermaster,
+		chatClient:     chatClient,
+		charicturist:   charicturist,
+		mapboxClient:   mapboxClient,
+		questlogClient: questlogClient,
 	}
 }
 
@@ -81,15 +84,10 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/login", s.login)
 
 	r.GET("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.getSurverys))
-	r.GET("/sonar/surveys/submissions", middleware.WithAuthentication(s.authClient, s.getSurveySubmissions))
 	r.POST("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.newSurvey))
-	r.GET("/sonar/activities", middleware.WithAuthentication(s.authClient, s.getActivities))
-	r.GET("/sonar/categories", middleware.WithAuthentication(s.authClient, s.getCategories))
-	r.GET("/sonar/surveys/:id", middleware.WithAuthentication(s.authClient, s.getSurvey))
 	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.getSubmissionForSurvey))
 	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
 	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
-	r.POST("/sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.submitSurveyAnswer))
 	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.createCategory))
 	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
 	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
@@ -142,14 +140,106 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/matches/:id/invite", middleware.WithAuthentication(s.authClient, s.inviteToMatch))
 	r.GET("/sonar/matches/:id/users", middleware.WithAuthentication(s.authClient, s.getMatch))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
+	r.GET("/sonar/questlog", middleware.WithAuthentication(s.authClient, s.getQuestLog))
+	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.hasCurrentMatch))
+	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.getAllUsers))
+	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.giveItem))
 	r.Run(":8042")
 }
 
-func (s *server) getMatch(ctx *gin.Context) {
-	matchId := ctx.Param("id")
-}
-func (s *server) getMatch(ctx *gin.Context) {
+func (s *server) getAllUsers(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 
+	users, err := s.dbClient.User().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, users)
+}
+
+func (s *server) giveItem(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		UserID   *uuid.UUID `json:"userID"`
+		TeamID   *uuid.UUID `json:"teamID"`
+		ItemID   int        `binding:"required" json:"itemID"`
+		Quantity int        `binding:"required" json:"quantity"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(
+		ctx,
+		requestBody.TeamID,
+		requestBody.UserID,
+		requestBody.ItemID,
+		requestBody.Quantity,
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "item given to user successfully"})
+}
+
+func (s *server) hasCurrentMatch(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"hasCurrentMatch": matchID != nil,
+		"matchID":         matchID,
+	})
+}
+
+func (s *server) getQuestLog(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	stringLat := ctx.Query("lat")
+	stringLng := ctx.Query("lng")
+	lat, err := strconv.ParseFloat(stringLat, 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid lat"})
+		return
+	}
+	lng, err := strconv.ParseFloat(stringLng, 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid lng"})
+		return
+	}
+
+	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questLog)
 }
 
 func (s *server) inviteToMatch(ctx *gin.Context) {
@@ -879,8 +969,8 @@ func (s *server) getChat(ctx *gin.Context) {
 		return
 	}
 
-	stringMatchID := ctx.Query("matchId")
-	if stringMatchID == "" {
+	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
+	if matchID == nil || err != nil {
 		auditItems, err := s.dbClient.AuditItem().GetAuditItemsForUser(ctx, user.ID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -893,15 +983,7 @@ func (s *server) getChat(ctx *gin.Context) {
 		return
 	}
 
-	matchID, err := uuid.Parse(stringMatchID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid match ID",
-		})
-		return
-	}
-
-	auditItems, err := s.dbClient.AuditItem().GetAuditItemsForMatch(ctx, matchID)
+	auditItems, err := s.dbClient.AuditItem().GetAuditItemsForMatch(ctx, *matchID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -1518,161 +1600,6 @@ func (s *server) getSubmissionForSurvey(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, submission)
-}
-
-func (s *server) getSurvey(ctx *gin.Context) {
-	surveyID := ctx.Param("id")
-	if surveyID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "survey ID is required",
-		})
-		return
-	}
-
-	surveyUUID, err := uuid.Parse(surveyID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid survey ID",
-		})
-		return
-	}
-
-	survey, err := s.dbClient.SonarSurvey().GetSurveyByID(ctx, surveyUUID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, survey)
-}
-
-func (s *server) getCategories(ctx *gin.Context) {
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	categories, err := s.dbClient.SonarCategory().GetAllCategoriesWithActivities(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	userSpecificCategories, err := s.dbClient.SonarCategory().GetCategoriesByUserID(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	allCategories := append(categories, userSpecificCategories...)
-	sort.Slice(allCategories, func(i, j int) bool {
-		return allCategories[i].Title < allCategories[j].Title
-	})
-
-	ctx.JSON(http.StatusOK, allCategories)
-}
-
-func (s *server) getActivities(ctx *gin.Context) {
-	activities, err := s.dbClient.SonarActivity().GetAllActivities(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, activities)
-}
-
-func (s *server) getSurveySubmissions(ctx *gin.Context) {
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	submissions, err := s.dbClient.SonarSurveySubmission().GetAllSubmissionsForUser(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, submissions)
-}
-
-func (s *server) submitSurveyAnswer(ctx *gin.Context) {
-	sID := ctx.Param("id")
-	if sID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "survey ID is required",
-		})
-		return
-	}
-	user, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	var requestBody struct {
-		ActivityIDs []string `json:"activityIds"`
-		Downs       []bool   `json:"downs"`
-	}
-
-	if err := ctx.BindJSON(&requestBody); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
-		return
-	}
-
-	surveyID, err := uuid.Parse(sID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid survey ID",
-		})
-		return
-	}
-
-	activityUUIDs := make([]uuid.UUID, len(requestBody.ActivityIDs))
-	for i, activityID := range requestBody.ActivityIDs {
-		activityUUID, err := uuid.Parse(activityID)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("invalid activity ID at index %d", i),
-			})
-			return
-		}
-		activityUUIDs[i] = activityUUID
-	}
-
-	submission, err := s.dbClient.SonarSurveySubmission().CreateSubmission(ctx, surveyID, user.ID, activityUUIDs, requestBody.Downs)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"message":    "survey submission created successfully",
-		"submission": submission,
-	})
 }
 
 func (s *server) getAuthenticatedUser(ctx *gin.Context) (*models.User, error) {

@@ -5,17 +5,24 @@ import {
   InventoryItem,
   ItemsRequiringTeamId,
   ItemsUsabledInMenu,
+  Match,
   OwnedInventoryItem,
+  Team,
 } from '@poltergeist/types';
 import Divider from './shared/Divider.tsx';
 import { ArrowLeftIcon } from '@heroicons/react/20/solid';
 import { Button, ButtonColor, ButtonSize } from './shared/Button.tsx';
 import { generateColorFromTeamName } from '../utils/generateColor.ts';
 
-export const Inventory = ({ onClose }: { onClose: () => void }) => {
+type InventoryProps = {
+  onClose: () => void;
+  match?: Match | undefined;
+  usersTeam?: Team | undefined;
+}
+
+export const Inventory = ({ onClose, match, usersTeam }: InventoryProps) => {
   const { inventoryItems, ownedInventoryItems, ownedInventoryItemsAreLoading, consumeItem, setUsedItem } =
     useInventory();
-  const { usersTeam, match } = useMatchContext();
   const [selectedItem, setSelectedItem] = useState<
     OwnedInventoryItem | undefined
   >(undefined);

@@ -43,6 +43,7 @@ export const Arena = () => {
     pointOfInterestChallengeId: '',
     pointOfInterestGroupMemberId: '',
   });
+  const [newChildChallengeSelection, setNewChildChallengeSelection] = useState<PointOfInterestChallenge[]>([]);
   const [newChallenge, setNewChallenge] = useState<PointOfInterestChallenge>({
     question: '',
     inventoryItemId: 0,
@@ -450,10 +451,11 @@ export const Arena = () => {
                       <button
                         onClick={() => {
                           setNewChild({
-                            pointOfInterestId: point.id,
+                            pointOfInterestId: '',
                             pointOfInterestChallengeId: '',
-                            pointOfInterestGroupMemberId: '',
+                            pointOfInterestGroupMemberId: arena.groupMembers.find(member => member.pointOfInterestId === point.id)?.id || '',
                           });
+                          setNewChildChallengeSelection(point.pointOfInterestChallenges);
                           setShowNewChildModal(true);
                         }}
                         className="bg-green-500 text-white px-3 py-1 rounded text-sm"
@@ -544,26 +546,43 @@ export const Arena = () => {
             <h3 className="text-xl font-bold mb-4">Add New Child Point</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Select Point</label>
+                <label className="block text-sm font-medium text-gray-700">Select Child Point</label>
                 <select
-                  value={newChild.pointOfInterestChallengeId}
+                  value={newChild.pointOfInterestId}
                   onChange={(e) => setNewChild({
                     ...newChild,
-                    pointOfInterestChallengeId: e.target.value,
-                    pointOfInterestGroupMemberId: arena.groupMembers.find(member => member.pointOfInterestId === newChild.pointOfInterestId)?.id || ''
+                    pointOfInterestId: e.target.value,
                   })}
                   className="mt-1 block w-full border rounded-md px-3 py-2"
                 >
                   <option value="">Select a point...</option>
-                  {arena?.pointsOfInterest?.flatMap((point) => 
-                    point.pointOfInterestChallenges?.map((challenge) => (
-                      <option key={challenge.id} value={challenge.id}>
-                        {point.name} - {challenge.tier} - {challenge.question}
-                      </option>
-                    )) || []
-                  )}
+                  {arena?.pointsOfInterest?.map((point) => (
+                    <option key={point.id} value={point.id}>
+                      {point.name}
+                    </option>
+                  ))}
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Select Challenge</label>
+                <select
+                  value={newChild.pointOfInterestChallengeId}
+                  onChange={(e) => setNewChild({
+                    ...newChild,
+                    pointOfInterestChallengeId: e.target.value
+                  })}
+                  className="mt-1 block w-full border rounded-md px-3 py-2"
+                >
+                  <option value="">Select a challenge...</option>
+                  {newChildChallengeSelection.map((challenge) => (
+                    <option key={challenge.id} value={challenge.id}>
+                      Tier {challenge.tier} - {challenge.question}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="flex gap-2 mt-4">
                 <button
                   onClick={handleNewChildSave}
@@ -575,6 +594,7 @@ export const Arena = () => {
                   onClick={() => {
                     setShowNewChildModal(false);
                     setSelectedPointId(null);
+                    setNewChildChallengeSelection([]);
                     setNewChild({
                       pointOfInterestId: '',
                       pointOfInterestChallengeId: '',
