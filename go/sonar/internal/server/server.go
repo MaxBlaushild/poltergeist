@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
@@ -144,7 +145,27 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.hasCurrentMatch))
 	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.getAllUsers))
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.giveItem))
+	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.getTags))
+	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.getTagGroups))
 	r.Run(":8042")
+}
+
+func (s *server) getTags(ctx *gin.Context) {
+	tags, err := s.dbClient.Tag().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, tags)
+}
+
+func (s *server) getTagGroups(ctx *gin.Context) {
+	tagGroups, err := s.dbClient.TagGroup().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, tagGroups)
 }
 
 func (s *server) getAllUsers(ctx *gin.Context) {
@@ -223,6 +244,8 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 
 	stringLat := ctx.Query("lat")
 	stringLng := ctx.Query("lng")
+	stringTags := strings.Split(ctx.Query("tags"), ",")
+
 	lat, err := strconv.ParseFloat(stringLat, 64)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid lat"})
@@ -234,7 +257,7 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 		return
 	}
 
-	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng)
+	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng, stringTags)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

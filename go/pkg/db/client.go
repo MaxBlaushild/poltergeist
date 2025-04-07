@@ -37,6 +37,8 @@ type client struct {
 	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
 	pointOfInterestDiscoveryHandle    *pointOfInterestDiscoveryHandle
 	matchUserHandle                   *matchUserHandle
+	tagHandle                         *tagHandle
+	tagGroupHandle                    *tagGroupHandle
 }
 
 type ClientConfig struct {
@@ -91,9 +93,18 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
 		pointOfInterestDiscoveryHandle:    &pointOfInterestDiscoveryHandle{db: db},
 		matchUserHandle:                   &matchUserHandle{db: db},
+		tagHandle:                         &tagHandle{db: db},
+		tagGroupHandle:                    &tagGroupHandle{db: db},
 	}, err
 }
 
+func (c *client) Tag() TagHandle {
+	return c.tagHandle
+}
+
+func (c *client) TagGroup() TagGroupHandle {
+	return c.tagGroupHandle
+}
 func (c *client) MatchUser() MatchUserHandle {
 	return c.matchUserHandle
 }

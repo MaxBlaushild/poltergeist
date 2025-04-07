@@ -34,6 +34,8 @@ type DbClient interface {
 	PointOfInterestChildren() PointOfInterestChildrenHandle
 	PointOfInterestDiscovery() PointOfInterestDiscoveryHandle
 	MatchUser() MatchUserHandle
+	Tag() TagHandle
+	TagGroup() TagGroupHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -225,4 +227,19 @@ type MatchUserHandle interface {
 	Create(ctx context.Context, matchUser *models.MatchUser) error
 	FindByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.MatchUser, error)
 	FindUsersForMatch(ctx context.Context, matchID uuid.UUID) ([]models.User, error)
+}
+
+type TagHandle interface {
+	FindAll(ctx context.Context) ([]*models.Tag, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Tag, error)
+	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]*models.Tag, error)
+	Create(ctx context.Context, tag *models.Tag) error
+	Update(ctx context.Context, tag *models.Tag) error
+}
+
+type TagGroupHandle interface {
+	FindAll(ctx context.Context) ([]*models.TagGroup, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.TagGroup, error)
+	Create(ctx context.Context, tagGroup *models.TagGroup) error
+	Update(ctx context.Context, tagGroup *models.TagGroup) error
 }
