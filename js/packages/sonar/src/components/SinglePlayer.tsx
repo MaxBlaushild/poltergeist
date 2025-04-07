@@ -5,6 +5,7 @@ import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
 import { PointOfInterest, PointOfInterestDiscovery } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
+import { TagFilter } from './TagFilter.tsx';
 import { Drawer } from './Drawer.tsx';
 import { Button } from './shared/Button.tsx';
 import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
@@ -30,6 +31,7 @@ const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPoint
   return (
     <>
       <MapZoomButton />
+      <TagFilter />
       <div className="absolute bottom-20 right-0 z-10 w-full p-2">
         <Log 
           pointsOfInterest={totalPointsOfInterest || []} 

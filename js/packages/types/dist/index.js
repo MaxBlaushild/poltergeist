@@ -22,3 +22,5 @@ export * from './pointOfInterestGroupMember';
 export * from './pointOfInterestDiscovery';
 export * from './ownedInventoryItem';
 export * from './questLog';
+export * from './tag';
+export * from './tagGroup';

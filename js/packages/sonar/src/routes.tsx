@@ -26,6 +26,7 @@ import { QuestLogContextProvider } from './contexts/QuestLogContext.tsx';
 import { MapProvider } from '@poltergeist/contexts';
 import { PointOfInterestContextProvider } from './contexts/PointOfInterestContext.tsx';
 import { MatchContextProvider } from './contexts/MatchContext.tsx';
+import { TagProvider } from './contexts/TagContext.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -136,7 +137,9 @@ export const router = createBrowserRouter([
         Component: () => (
           <QuestLogContextProvider>
             <MapProvider>
-              <SinglePlayer />
+              <TagProvider>
+                <SinglePlayer />
+              </TagProvider>
             </MapProvider>
           </QuestLogContextProvider>
         ),
