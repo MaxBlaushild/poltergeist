@@ -1,6 +1,6 @@
 export type Tag = {
     id: string;
-    value: string;
+    name: string;
     tagGroupId: string;
     createdAt: string;
     updatedAt: string;

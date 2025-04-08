@@ -32,7 +32,7 @@ type QuestLog struct {
 }
 
 type QuestlogClient interface {
-	GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64) (*QuestLog, error)
+	GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) (*QuestLog, error)
 }
 
 type questlogClient struct {
@@ -47,8 +47,8 @@ func NewClient(dbClient db.DbClient) QuestlogClient {
 	return &questlogClient{dbClient: dbClient}
 }
 
-func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64) (*QuestLog, error) {
-	groups, err := c.GetNearbyQuests(ctx, userID, lat, lng)
+func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) (*QuestLog, error) {
+	groups, err := c.GetNearbyQuests(ctx, userID, lat, lng, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -84,8 +84,8 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat 
 	}, nil
 }
 
-func (c *questlogClient) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64) ([]models.PointOfInterestGroup, error) {
-	groups, err := c.dbClient.PointOfInterestGroup().GetNearbyQuests(ctx, userID, lat, lng, NearbyDistanceInMeters)
+func (c *questlogClient) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) ([]models.PointOfInterestGroup, error) {
+	groups, err := c.dbClient.PointOfInterestGroup().GetNearbyQuests(ctx, userID, lat, lng, NearbyDistanceInMeters, tags)
 	if err != nil {
 		return nil, err
 	}

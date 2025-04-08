@@ -13,19 +13,22 @@ type pointOfInterestGroupHandle struct {
 	db *gorm.DB
 }
 
-func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64) ([]models.PointOfInterestGroup, error) {
+func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64, tags []string) ([]models.PointOfInterestGroup, error) {
 	var groups []models.PointOfInterestGroup
 	query := c.db.WithContext(ctx).
 		Distinct("pog.*").
 		Table("point_of_interest_groups pog").
 		Joins("JOIN point_of_interest_group_members pogm ON pogm.point_of_interest_group_id = pog.id").
 		Joins("JOIN points_of_interest poi ON poi.id = pogm.point_of_interest_id").
+		Joins("JOIN tag_entities te ON te.point_of_interest_id = poi.id").
+		Joins("JOIN tags t ON t.id = te.tag_id").
 		Where("ST_DWithin(poi.geometry, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)",
 			lng, lat, radiusInMeters).
 		// Left join with children to check if point is a child
 		Joins("LEFT JOIN point_of_interest_children poic ON poic.point_of_interest_id = poi.id").
 		Where("pog.type = ?", models.PointOfInterestGroupTypeQuest).
 		Where("poic.point_of_interest_id IS NULL"). // Only get points that don't appear as children
+		Where("t.value IN ?", tags).
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
