@@ -10,6 +10,7 @@ import { useAPI, useLocation } from '@poltergeist/contexts';
 import { PointOfInterest, PointOfInterestGroup, Quest, QuestLog, QuestNode } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useSubmissionsContext } from './SubmissionsContext.tsx';
+import { useTagContext } from './TagContext.tsx';
 
 interface QuestLogContextType {
   refreshQuestLog: () => Promise<void>;
@@ -39,6 +40,7 @@ export const useQuestLogContext = () => {
 export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ children }) => {
   const { apiClient } = useAPI();
   const [quests, setQuests] = useState<Quest[]>([]);
+  const { selectedTags } = useTagContext();
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
@@ -46,17 +48,14 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
   const lastFetchLocation = useRef<{lat: number, lng: number} | null>(null);
 
   const refreshQuestLog = useCallback(async () => {
-    console.log('refreshing quest log');
-    if (!location?.latitude || !location?.longitude) {
-      console.log('no location');
+    if (!location?.latitude || !location?.longitude || !selectedTags?.length || selectedTags.length === 0) {
       return;
     }
 
     try {
-      const fetchedQuestLog = await apiClient.get<QuestLog>(`/sonar/questlog?lat=${location?.latitude}&lng=${location?.longitude}`);
+      const fetchedQuestLog = await apiClient.get<QuestLog>(`/sonar/questlog?lat=${location?.latitude}&lng=${location?.longitude}&tags=${selectedTags.map(tag => tag.name).join(',')}`);
       setQuests(fetchedQuestLog.quests);
       const pointsOfInterest = getMapPointsOfInterest(fetchedQuestLog.quests);
-      console.log('points of interest', pointsOfInterest);
       setPointsOfInterest(pointsOfInterest);
       lastFetchLocation.current = {
         lat: location.latitude,
@@ -67,7 +66,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
     } finally {
       setLoading(false);
     }
-  }, [apiClient, location?.latitude, location?.longitude]);
+  }, [apiClient, location?.latitude, location?.longitude, selectedTags]);
 
   const fetchQuestLog = useCallback(async () => {
     if (!location?.latitude || !location?.longitude) {
@@ -93,9 +92,10 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
       }
 
     }
-
+    console.log('refreshing quest log');
+    console.log('selectedTags', selectedTags);
     refreshQuestLog();
-  }, [apiClient, location?.latitude, location?.longitude]);
+  }, [apiClient, location?.latitude, location?.longitude, selectedTags]);
 
   const isRootNode = (pointOfInterest: PointOfInterest) => {
     return quests.some(quest => quest.rootNode.pointOfInterest.id === pointOfInterest.id);

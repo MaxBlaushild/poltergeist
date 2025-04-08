@@ -135,13 +135,14 @@ export const router = createBrowserRouter([
         path: 'single-player',
         loader: onlyAuthenticated,
         Component: () => (
+          <TagProvider>
+
           <QuestLogContextProvider>
             <MapProvider>
-              <TagProvider>
                 <SinglePlayer />
-              </TagProvider>
-            </MapProvider>
-          </QuestLogContextProvider>
+              </MapProvider>
+            </QuestLogContextProvider>
+          </TagProvider>
         ),
       },
       {
