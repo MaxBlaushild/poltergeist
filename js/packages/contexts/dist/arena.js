@@ -58,6 +58,35 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
+    const addTagToPointOfInterest = (tagId, pointOfInterestId) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            const response = yield apiClient.post(`/sonar/tags/add`, {
+                tagId,
+                pointOfInterestId,
+            });
+            fetchArena(arenaId);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+        }
+        finally {
+            setLoading(false);
+        }
+    });
+    const removeTagFromPointOfInterest = (tagId, pointOfInterestId) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            const response = yield apiClient.delete(`/sonar/tags/${tagId}/pointOfInterest/${pointOfInterestId}`);
+            fetchArena(arenaId);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+        }
+        finally {
+            setLoading(false);
+        }
+    });
     const updateArenaImage = (id, image) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         const imageKey = `arenas/${((image === null || image === void 0 ? void 0 : image.name) || 'image.jpg').toLowerCase().replace(/\s+/g, '-')}`;
@@ -254,6 +283,8 @@ export const ArenaProvider = ({ children, arenaId }) => {
             deletePointOfInterestChallenge,
             createPointOfInterestChildren,
             deletePointOfInterestChildren,
+            addTagToPointOfInterest,
+            removeTagFromPointOfInterest,
         } }, { children: children })));
 };
 export const useArena = () => {

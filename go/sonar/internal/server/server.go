@@ -147,7 +147,50 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.giveItem))
 	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.getTags))
 	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.getTagGroups))
+	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.addTagToPointOfInterest))
+	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.removeTagFromPointOfInterest))
 	r.Run(":8042")
+}
+
+func (s *server) addTagToPointOfInterest(ctx *gin.Context) {
+	var requestBody struct {
+		TagID             uuid.UUID `json:"tagID"`
+		PointOfInterestID uuid.UUID `json:"pointOfInterestID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err := s.dbClient.Tag().AddTagToPointOfInterest(ctx, requestBody.TagID, requestBody.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "tag added to point of interest successfully"})
+}
+
+func (s *server) removeTagFromPointOfInterest(ctx *gin.Context) {
+	tagID := ctx.Param("tagID")
+	pointOfInterestID := ctx.Param("pointOfInterestID")
+	tagIDUUID, err := uuid.Parse(tagID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tag ID"})
+		return
+	}
+	pointOfInterestIDUUID, err := uuid.Parse(pointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest ID"})
+		return
+	}
+
+	err = s.dbClient.Tag().RemoveTagFromPointOfInterest(ctx, tagIDUUID, pointOfInterestIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "tag removed from point of interest successfully"})
 }
 
 func (s *server) getTags(ctx *gin.Context) {
@@ -244,7 +287,7 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 
 	stringLat := ctx.Query("lat")
 	stringLng := ctx.Query("lng")
-	stringTags := strings.Split(ctx.Query("tags"), ",")
+	tags := strings.Split(ctx.Query("tags"), ",")
 
 	lat, err := strconv.ParseFloat(stringLat, 64)
 	if err != nil {
@@ -257,7 +300,7 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 		return
 	}
 
-	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng, stringTags)
+	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng, tags)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

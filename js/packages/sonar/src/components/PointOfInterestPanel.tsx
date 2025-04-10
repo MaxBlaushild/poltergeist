@@ -99,12 +99,28 @@ export const PointOfInterestPanel = ({
         }
         alt={pointOfInterest.name}
       />
-        <StatusIndicator
-          capturingEntityName={capturingEntityName}
-          captureTier={captureTier}
-          match={match}
-          usersTeam={usersTeam}
-        />
+        <div className="flex justify-between items-center w-full">
+          <div className="flex-shrink-0">
+            <StatusIndicator
+              capturingEntityName={capturingEntityName}
+              captureTier={captureTier}
+              match={match}
+              usersTeam={usersTeam}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 justify-end">
+            {pointOfInterest.tags?.map((tag) => {
+              return (
+                <div 
+                  key={tag.id}
+                  className="px-3 py-1 bg-gray-200 rounded-full text-sm"
+                >
+                  {tag.name.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')}
+                </div>
+              );
+            })}
+          </div>
+        </div>
         {hasDiscovered && (
         <TabNav
           tabs={[

@@ -26,7 +26,7 @@ import { QuestLogContextProvider } from './contexts/QuestLogContext.tsx';
 import { MapProvider } from '@poltergeist/contexts';
 import { PointOfInterestContextProvider } from './contexts/PointOfInterestContext.tsx';
 import { MatchContextProvider } from './contexts/MatchContext.tsx';
-import { TagProvider } from './contexts/TagContext.tsx';
+import { TagProvider } from '@poltergeist/contexts';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
