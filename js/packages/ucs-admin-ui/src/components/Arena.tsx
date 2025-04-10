@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AddNewPointOfInterest } from './AddNewPointOfInterest.tsx';
 import { PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
+import { useTagContext } from '@poltergeist/contexts';
 
 export const Arena = () => {
   const { 
@@ -20,8 +21,11 @@ export const Arena = () => {
     deletePointOfInterestChallenge,
     updatePointOfInterestChallenge,
     createPointOfInterestChildren,
-    deletePointOfInterestChildren
+    deletePointOfInterestChildren,
+    addTagToPointOfInterest,
+    removeTagFromPointOfInterest
   } = useArena();
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const { inventoryItems } = useInventory();
   const [editingArena, setEditingArena] = useState(false);
   const [editingArenaImage, setEditingArenaImage] = useState(false);
@@ -56,12 +60,15 @@ export const Arena = () => {
   });
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { apiClient } = useAPI();
+  const { tagGroups } = useTagContext();
   const [newPoint, setNewPoint] = useState({
     name: '',
     description: '',
     lat: 0,
     lng: 0,
   });
+
+  const tags = tagGroups.flatMap(group => group.tags);
 
   if (loading) {
     return <div className="p-4">Loading...</div>;
@@ -422,9 +429,31 @@ export const Arena = () => {
                     <h3 className="text-xl font-semibold mb-2">{point.name}</h3>
                     <p className="text-gray-600 mb-2">{point.description}</p>
                     <p className="text-gray-600 mb-2">Clue: {point.clue}</p>
+                    <p className="text-gray-600 mb-2">Tags: {point.tags?.map(tag => tag.name).join(', ')}</p>
                     <div className="text-sm text-gray-500">
                       <p>Latitude: {point.lat}</p>
                       <p>Longitude: {point.lng}</p>
+                    </div>
+                    <div className="mt-2">
+                      <div className="flex gap-2 items-center">
+                        <select
+                          className="border rounded px-2 py-1 text-sm"
+                          onChange={(e) => setSelectedTagId(e.target.value)}
+                        >
+                          <option value="">Select a tag...</option>
+                          {tags.map((tag) => (
+                            <option key={tag.id} value={tag.id}>
+                              {tag.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => addTagToPointOfInterest(selectedTagId, point.id)}
+                          className="bg-green-500 text-white px-3 py-1 rounded text-sm"
+                        >
+                          Add Tag
+                        </button>
+                      </div>
                     </div>
                     <div className="flex gap-2 mt-2">
                       <button

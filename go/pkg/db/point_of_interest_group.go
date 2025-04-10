@@ -31,6 +31,7 @@ func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID
 		Where("t.value IN ?", tags).
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
+		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
 		Preload("GroupMembers.Children").
 		Preload("GroupMembers.Children.PointOfInterest").
@@ -53,6 +54,7 @@ func (c *pointOfInterestGroupHandle) GetStartedQuests(ctx context.Context, userI
 		Joins("JOIN point_of_interest_challenge_submissions pocs ON pocs.point_of_interest_challenge_id = poc.id").
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
+		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
 		Preload("GroupMembers.Children").
 		Preload("GroupMembers.Children.PointOfInterest").
@@ -126,7 +128,11 @@ func (c *pointOfInterestGroupHandle) Create(ctx context.Context, name string, de
 
 func (c *pointOfInterestGroupHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroup models.PointOfInterestGroup
-	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Preload("GroupMembers.Children").First(&pointOfInterestGroup, "id = ?", id).Error; err != nil {
+	if err := c.db.WithContext(ctx).
+		Preload("PointsOfInterest.PointOfInterestChallenges").
+		Preload("PointsOfInterest.Tags").
+		Preload("GroupMembers.Children").
+		First(&pointOfInterestGroup, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &pointOfInterestGroup, nil

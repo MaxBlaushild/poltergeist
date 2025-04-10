@@ -69,7 +69,6 @@ export const MapProvider = ({ children }: MapProviderProps) => {
 
   useEffect(() => {
     if (map.current && location?.longitude && location?.latitude && !isMapLoaded) {
-      console.log('setting center', location.longitude, location.latitude);
       map.current.setCenter([location.longitude, location.latitude]);
       setIsMapLoaded(true);
     }

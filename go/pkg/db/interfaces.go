@@ -235,6 +235,8 @@ type TagHandle interface {
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]*models.Tag, error)
 	Create(ctx context.Context, tag *models.Tag) error
 	Update(ctx context.Context, tag *models.Tag) error
+	AddTagToPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error
+	RemoveTagFromPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error
 }
 
 type TagGroupHandle interface {

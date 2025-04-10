@@ -25,6 +25,8 @@ interface ArenaContextType {
   createPointOfInterestChallenge: (id: string, challenge: Partial<PointOfInterestChallenge>) => Promise<void>;
   createPointOfInterestChildren: (pointOfInterestId: string, pointOfInterestGroupId: string, pointOfInterestChallengeId: string) => Promise<void>;
   deletePointOfInterestChildren: (id: string) => Promise<void>;
+  addTagToPointOfInterest: (tagId: string, pointOfInterestId: string) => Promise<void>;
+  removeTagFromPointOfInterest: (tagId: string, pointOfInterestId: string) => Promise<void>;
 }
 
 interface ArenaProviderProps {
@@ -79,6 +81,33 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         description,
         type,
       });
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const addTagToPointOfInterest = async (tagId: string, pointOfInterestId: string) => {
+    setLoading(true);
+    try {
+      const response = await apiClient.post(`/sonar/tags/add`, {
+        tagId,
+        pointOfInterestId,
+      });
+      fetchArena(arenaId!);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeTagFromPointOfInterest = async (tagId: string, pointOfInterestId: string) => {
+    setLoading(true);
+    try {
+      const response = await apiClient.delete(`/sonar/tags/${tagId}/pointOfInterest/${pointOfInterestId}`);
+      fetchArena(arenaId!);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred'));
     } finally {
@@ -303,6 +332,8 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         deletePointOfInterestChallenge,
         createPointOfInterestChildren,
         deletePointOfInterestChildren,
+        addTagToPointOfInterest,
+        removeTagFromPointOfInterest,
       }}
     >
       {children}

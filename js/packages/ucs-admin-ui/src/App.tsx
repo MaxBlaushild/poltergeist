@@ -4,6 +4,7 @@ import {
   AuthProvider,
   APIProvider,
   MediaContextProvider,
+  TagProvider,
 } from '@poltergeist/contexts';
 import { Arenas } from './components/Arenas.tsx';
 import { Arena } from './components/Arena.tsx';
@@ -69,9 +70,10 @@ const router = createBrowserRouter([
 const App = () => {
   return (
     <APIProvider>
-      <MediaContextProvider>
-        <AuthProvider
-          appName="UCS Admin Dashboard"
+      <TagProvider>
+        <MediaContextProvider>
+          <AuthProvider
+            appName="UCS Admin Dashboard"
           uriPrefix="/sonar"
         >
           <InventoryProvider>
@@ -79,6 +81,7 @@ const App = () => {
           </InventoryProvider>
         </AuthProvider>
       </MediaContextProvider>
+      </TagProvider>
     </APIProvider>
   );
 };

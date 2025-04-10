@@ -1,0 +1,3 @@
+ALTER TABLE tag_groups
+ADD COLUMN icon_url VARCHAR(255),
+ADD COLUMN image_url VARCHAR(255);

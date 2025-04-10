@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AdjustmentsHorizontalIcon } from '@heroicons/react/24/solid';
 import { Modal } from './shared/Modal.tsx';
-import { useTagContext } from '../contexts/TagContext.tsx';
+import { useTagContext } from '@poltergeist/contexts';
+import { XMarkIcon } from '@heroicons/react/20/solid';
 
 export const TagFilter = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,7 +59,10 @@ const TagFilterModal = ({ onClose }: { onClose: () => void }) => {
 
   return (
     <Modal>
-      <h1 className="font-bold">What are you in the mood for?</h1>
+      <div className="flex justify-between w-full">
+        <h1 className="font-bold float-left">What are you in the mood for?</h1>
+        <XMarkIcon className='w-6 h-6 float-right' onClick={onClose} />
+      </div>
       <div className="flex flex-col gap-2 w-full mt-4">
         {tagGroups.map((tagGroup) => (
           <div key={tagGroup.id} className="border rounded p-2 w-full">

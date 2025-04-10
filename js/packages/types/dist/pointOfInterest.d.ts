@@ -1,5 +1,6 @@
 import { PointOfInterestChallenge } from "./pointOfInterestChallenge";
 import { PointOfInterestChallengeSubmission } from "./pointOfInterestChallengeSubmission";
+import { Tag } from "./tag";
 export interface PointOfInterest {
     id: string;
     createdAt: Date;
@@ -11,6 +12,7 @@ export interface PointOfInterest {
     imageURL: string;
     description: string;
     pointOfInterestChallenges: PointOfInterestChallenge[];
+    tags: Tag[];
 }
 export declare const getHighestFirstCompletedChallenge: (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]) => {
     submission: PointOfInterestChallengeSubmission | null;

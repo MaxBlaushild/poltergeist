@@ -10,7 +10,7 @@ import { useAPI, useLocation } from '@poltergeist/contexts';
 import { PointOfInterest, PointOfInterestGroup, Quest, QuestLog, QuestNode } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useSubmissionsContext } from './SubmissionsContext.tsx';
-import { useTagContext } from './TagContext.tsx';
+import { useTagContext } from '@poltergeist/contexts';
 
 interface QuestLogContextType {
   refreshQuestLog: () => Promise<void>;
@@ -46,9 +46,10 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
   const [error, setError] = useState<Error | null>(null);
   const { location } = useLocation();
   const lastFetchLocation = useRef<{lat: number, lng: number} | null>(null);
+  const lastFetchTags = useRef<string[]>([]);
 
   const refreshQuestLog = useCallback(async () => {
-    if (!location?.latitude || !location?.longitude || !selectedTags?.length || selectedTags.length === 0) {
+    if (!location?.latitude || !location?.longitude || !selectedTags?.length) {
       return;
     }
 
@@ -61,6 +62,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
         lat: location.latitude,
         lng: location.longitude
       };
+      lastFetchTags.current = selectedTags.map(tag => tag.name);
     } catch (error) {
       setError(error as Error);
     } finally {
@@ -88,12 +90,12 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
       const distance = R * c;
 
       if (distance < 100) { // Less than 100 meters moved
-        return;
+        if (lastFetchTags.current.length !== selectedTags.length) {
+          refreshQuestLog();
+        }
       }
 
     }
-    console.log('refreshing quest log');
-    console.log('selectedTags', selectedTags);
     refreshQuestLog();
   }, [apiClient, location?.latitude, location?.longitude, selectedTags]);
 
