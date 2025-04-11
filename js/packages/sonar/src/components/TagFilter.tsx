@@ -74,6 +74,11 @@ const TagFilterModal = ({ onClose }: { onClose: () => void }) => {
                   checked={isGroupChecked(tagGroup)}
                   onChange={(e) => toggleGroupTags(tagGroup, e.target.checked)}
                 />
+                <img 
+                  src={tagGroup.iconUrl || 'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp'}
+                  alt={tagGroup.name}
+                  className="w-6 h-6 object-cover"
+                />
                 <span 
                   className="cursor-pointer"
                   onClick={() => toggleGroup(tagGroup.id)}

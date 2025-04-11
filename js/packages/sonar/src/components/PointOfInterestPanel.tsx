@@ -28,6 +28,7 @@ import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { useSubmissionsContext } from '../contexts/SubmissionsContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+import { useTagContext } from '@poltergeist/contexts';
 interface PointOfInterestPanelProps {
   pointOfInterest: PointOfInterest;
   onClose: (immediate: boolean) => void;
@@ -50,7 +51,8 @@ export const PointOfInterestPanel = ({
   const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems } = useInventory();
   const { location } = useLocation();
   const [buttonText, setButtonText] = useState<string>("I'm here!");
-
+  const { tagGroups } = useTagContext();
+  const tagGroup = tagGroups?.find(group => group.tags?.some(tag => pointOfInterest.tags?.some(t => t.id === tag.id)));
   const isGoldenMonkeyActive = match?.inventoryItemEffects.some(
     (item) =>
       item.inventoryItemId === ItemType.CipherOfTheLaughingMonkey &&

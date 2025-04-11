@@ -5,4 +5,6 @@ export type TagGroup = {
     createdAt: string;
     updatedAt: string;
     tags: Tag[];
+    iconUrl: string;
+    imageUrl: string;
 };

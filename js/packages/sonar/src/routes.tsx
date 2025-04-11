@@ -136,9 +136,8 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
         Component: () => (
           <TagProvider>
-
-          <QuestLogContextProvider>
-            <MapProvider>
+            <QuestLogContextProvider>
+              <MapProvider>
                 <SinglePlayer />
               </MapProvider>
             </QuestLogContextProvider>

@@ -18,7 +18,6 @@ import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { Log } from './Log.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import { usePointsOfInterest } from '@poltergeist/hooks';
-
 const MemoizedMap = React.memo(Map);
 
 const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest }: {
@@ -89,7 +88,7 @@ export const SinglePlayer = () => {
   const [isQuestLogOpen, setIsQuestLogOpen] = useState(false);
   const [areMapOverlaysVisible, setAreMapOverlaysVisible] = useState(true);
   const { pointsOfInterest: totalPointsOfInterest } = usePointsOfInterest();
-
+  
   useEffect(() => {
     if (selectedPointOfInterest) {
       setIsPanelVisible(true);

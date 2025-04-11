@@ -3,8 +3,9 @@ import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
 import { PointOfInterest, PointOfInterestDiscovery, hasDiscoveredPointOfInterest } from '@poltergeist/types';
 import { PointOfInterestMarker } from '../components/PointOfInterestMarker.tsx';
-import { useLocation, useMap } from '@poltergeist/contexts';
+import { useLocation, useMap, useTagContext } from '@poltergeist/contexts';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+
 interface UsePointOfInterestMarkersProps {
   pointsOfInterest: PointOfInterest[];
   discoveries: PointOfInterestDiscovery[];
@@ -31,6 +32,7 @@ export const usePointOfInterestMarkers = ({
   const [selectedPointOfInterest, setSelectedPointOfInterest] = useState<PointOfInterest | null>(null);
   const { isRootNode } = useQuestLogContext();
   const { location } = useLocation();
+  const { tagGroups } = useTagContext();
 
   const memoizedAlternativeCoordinates = useMemo(() => {
     return pointsOfInterest.reduce((acc, poi) => {
@@ -59,6 +61,7 @@ export const usePointOfInterestMarkers = ({
         pointOfInterest={pointOfInterest}
         index={index}
         zoom={zoom}
+        tagGroups={tagGroups}
         hasDiscovered={hasDiscovered}
         borderColor={'black'}
         usersLocation={location}

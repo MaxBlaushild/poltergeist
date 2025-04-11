@@ -1,6 +1,6 @@
 import React from 'react';
 import { generateColorFromTeamName } from '../utils/generateColor';
-import { PointOfInterest, Team } from '@poltergeist/types';
+import { PointOfInterest, TagGroup, Team } from '@poltergeist/types';
 import { useLocation } from '@poltergeist/contexts';
 
 export const PointOfInterestMarker = ({
@@ -11,6 +11,7 @@ export const PointOfInterestMarker = ({
   onClick,
   borderColor,
   usersLocation,
+  tagGroups,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
@@ -19,10 +20,12 @@ export const PointOfInterestMarker = ({
   borderColor: string | undefined;
   usersLocation: Location | null;
   onClick: (e: React.MouseEvent) => void;
+  tagGroups: TagGroup[];
 }) => {
+  const tagGroup = tagGroups?.find(group => group.tags?.some(tag => pointOfInterest.tags?.some(t => t.id === tag.id)));
   const imageUrl = hasDiscovered
   ? pointOfInterest.imageURL
-    : `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`;
+    : tagGroup?.iconUrl || `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`;
 
   let pinSize = 4;
   switch (Math.floor(zoom)) {

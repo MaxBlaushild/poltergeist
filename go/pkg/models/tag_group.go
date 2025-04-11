@@ -14,6 +14,8 @@ type TagGroup struct {
 	UpdatedAt time.Time      `gorm:"not null" json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Tags      []Tag          `gorm:"foreignKey:TagGroupID" json:"tags"`
+	IconUrl   string         `gorm:"not null" json:"iconUrl"`
+	ImageUrl  string         `gorm:"not null" json:"imageUrl"`
 }
 
 func (TagGroup) TableName() string {

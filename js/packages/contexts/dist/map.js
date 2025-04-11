@@ -48,7 +48,6 @@ export const MapProvider = ({ children }) => {
     }, []);
     useEffect(() => {
         if (map.current && (location === null || location === void 0 ? void 0 : location.longitude) && (location === null || location === void 0 ? void 0 : location.latitude) && !isMapLoaded) {
-            console.log('setting center', location.longitude, location.latitude);
             map.current.setCenter([location.longitude, location.latitude]);
             setIsMapLoaded(true);
         }
