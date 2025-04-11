@@ -81,6 +81,20 @@ resource "aws_secretsmanager_secret_version" "twilio_phone_number" {
   secret_string = var.twilio_phone_number
 }
 
+resource "aws_secretsmanager_secret" "google_maps_api_key" {
+  name = "GOOGLE_MAPS_API_KEY"
+}
+
+variable "google_maps_api_key" {
+  description = "Google Maps API Key"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "google_maps_api_key" {
+  secret_id     = aws_secretsmanager_secret.google_maps_api_key.id
+  secret_string = var.google_maps_api_key
+}
+
 resource "aws_secretsmanager_secret" "twilio_auth_token" {
   name = "TWILIO_AUTH_TOKEN"
 }

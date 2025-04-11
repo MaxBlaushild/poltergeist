@@ -48,6 +48,7 @@ func (h *tagHandle) AddTagToPointOfInterest(ctx context.Context, tagID uuid.UUID
 	return h.db.WithContext(ctx).Create(&models.TagEntity{
 		TagID:             tagID,
 		PointOfInterestID: &pointOfInterestID,
+		ID:                uuid.New(),
 	}).Error
 }
 
