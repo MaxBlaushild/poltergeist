@@ -1,0 +1,2 @@
+DROP INDEX idx_points_of_interest_google_maps_place_id;
+ALTER TABLE points_of_interest DROP COLUMN google_maps_place_id;

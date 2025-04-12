@@ -1,0 +1,2 @@
+ALTER TABLE points_of_interest ADD COLUMN google_maps_place_id VARCHAR;
+CREATE INDEX idx_points_of_interest_google_maps_place_id ON points_of_interest(google_maps_place_id);

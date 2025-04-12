@@ -93,6 +93,7 @@ type PointOfInterestHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
+	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
 }
 
 type NeighboringPointsOfInterestHandle interface {

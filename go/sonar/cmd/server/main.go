@@ -5,6 +5,8 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
@@ -45,7 +47,8 @@ func main() {
 	charicturist := charicturist.NewClient(useApiClient, dbClient)
 	mapboxClient := mapbox.NewClient(cfg.Secret.MapboxApiKey)
 	questlogClient := questlog.NewClient(dbClient)
-
+	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
+	locationSeeder := locationseeder.NewClient(googlemapsClient, dbClient, deepPriest)
 	s := server.NewServer(
 		authClient,
 		texterClient,
@@ -58,6 +61,7 @@ func main() {
 		charicturist,
 		mapboxClient,
 		questlogClient,
+		locationSeeder,
 	)
 
 	s.ListenAndServe("8042")
