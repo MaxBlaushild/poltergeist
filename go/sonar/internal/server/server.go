@@ -11,6 +11,8 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -44,6 +46,7 @@ type server struct {
 	charicturist   charicturist.Client
 	mapboxClient   mapbox.Client
 	questlogClient questlog.QuestlogClient
+	locationSeeder locationseeder.Client
 }
 
 type Server interface {
@@ -62,6 +65,7 @@ func NewServer(
 	charicturist charicturist.Client,
 	mapboxClient mapbox.Client,
 	questlogClient questlog.QuestlogClient,
+	locationSeeder locationseeder.Client,
 ) Server {
 	return &server{
 		authClient:     authClient,
@@ -75,6 +79,7 @@ func NewServer(
 		charicturist:   charicturist,
 		mapboxClient:   mapboxClient,
 		questlogClient: questlogClient,
+		locationSeeder: locationSeeder,
 	}
 }
 
@@ -150,8 +155,103 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.addTagToPointOfInterest))
 	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.removeTagFromPointOfInterest))
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.getZones))
-	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestForZone))
+	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.getZone))
+	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.createZone))
+	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestForZone))
+	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.generatePointsOfInterestForZone))
+	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.getPlaceTypes))
 	r.Run(":8042")
+}
+
+func (s *server) getPlaceTypes(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, googlemaps.AllPlaceTypes)
+}
+
+func (s *server) generatePointsOfInterestForZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		PlaceType googlemaps.PlaceType `json:"placeType"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	pointsOfInterest, err := s.locationSeeder.SeedPointsOfInterest(ctx, *zone, requestBody.PlaceType)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, pointsOfInterest)
+}
+
+func (s *server) getPointsOfInterestForZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	pointsOfInterest, err := s.dbClient.PointOfInterest().FindAllForZone(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, pointsOfInterest)
+}
+func (s *server) getZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, zone)
+}
+
+func (s *server) createZone(ctx *gin.Context) {
+	var requestBody struct {
+		Name   string  `json:"name"`
+		Lat    float64 `json:"lat"`
+		Lng    float64 `json:"lng"`
+		Radius float64 `json:"radius"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zone := &models.Zone{
+		Name:      requestBody.Name,
+		Latitude:  requestBody.Lat,
+		Longitude: requestBody.Lng,
+		Radius:    requestBody.Radius,
+	}
+	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, zone)
 }
 
 func (s *server) getZones(ctx *gin.Context) {

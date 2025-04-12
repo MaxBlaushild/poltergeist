@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -68,6 +69,7 @@ type Client interface {
 }
 
 func NewClient(googlemapsClient googlemaps.Client, dbClient db.DbClient, deepPriest deep_priest.DeepPriest) Client {
+	log.Println("Creating new locationseeder client")
 	return &client{
 		googlemapsClient: googlemapsClient,
 		dbClient:         dbClient,
@@ -76,6 +78,8 @@ func NewClient(googlemapsClient googlemaps.Client, dbClient db.DbClient, deepPri
 }
 
 func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, locationType googlemaps.PlaceType) ([]*models.PointOfInterest, error) {
+	log.Printf("Starting to seed points of interest for zone %s with location type %s", zone.Name, locationType)
+
 	places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
 		Lat:      zone.Latitude,
 		Long:     zone.Longitude,
@@ -83,31 +87,43 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, loc
 		Category: string(locationType),
 	})
 	if err != nil {
+		log.Printf("Error finding places: %v", err)
 		return nil, err
 	}
 
+	log.Printf("Found %d places to convert to points of interest", len(places))
+
 	pointsOfInterest := make([]*models.PointOfInterest, len(places))
 	for i, place := range places {
+		log.Printf("Generating point of interest %d/%d for place: %s", i+1, len(places), place.Name)
 		poi, err := c.GeneratePointOfInterest(ctx, place)
 		if err != nil {
+			log.Printf("Error generating point of interest for place %s: %v", place.Name, err)
 			return nil, err
 		}
 		pointsOfInterest[i] = poi
 	}
 
+	log.Printf("Successfully generated %d points of interest", len(pointsOfInterest))
 	return pointsOfInterest, nil
 }
 
 func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place) (*models.PointOfInterest, error) {
+	log.Printf("Starting to generate point of interest for place: %s", place.Name)
+
 	fantasyPointOfInterest, err := c.generateFantasyTheming(place)
 	if err != nil {
+		log.Printf("Error generating fantasy theming: %v", err)
 		return nil, err
 	}
+	log.Printf("Generated fantasy theming with name: %s", fantasyPointOfInterest.Name)
 
 	imageUrl, err := c.generateFantasyImage(place)
 	if err != nil {
+		log.Printf("Error generating fantasy image: %v", err)
 		return nil, err
 	}
+	log.Printf("Generated fantasy image URL: %s", imageUrl)
 
 	poi := &models.PointOfInterest{
 		ID:          uuid.New(),
@@ -121,14 +137,19 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 		UpdatedAt:   time.Now(),
 	}
 
+	log.Printf("Created point of interest object with ID: %s", poi.ID)
+
 	tags := make([]*models.Tag, len(place.Types))
 	for i, t := range place.Types {
+		log.Printf("Processing tag %d/%d: %s", i+1, len(place.Types), t)
 		tag, err := c.mapTypeToTag(googlemaps.PlaceType(t))
 		if err != nil {
+			log.Printf("Error mapping type to tag: %v", err)
 			return nil, err
 		}
 
 		if err := c.dbClient.Tag().Upsert(ctx, tag); err != nil {
+			log.Printf("Error upserting tag: %v", err)
 			return nil, err
 		}
 
@@ -136,37 +157,49 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 	}
 
 	if err := c.dbClient.PointOfInterest().Create(ctx, *poi); err != nil {
+		log.Printf("Error creating point of interest in database: %v", err)
 		return nil, err
 	}
+	log.Printf("Successfully created point of interest in database")
 
 	for _, tag := range tags {
+		log.Printf("Adding tag %s to point of interest", tag.Name)
 		if err := c.dbClient.Tag().AddTagToPointOfInterest(ctx, tag.ID, poi.ID); err != nil {
+			log.Printf("Error adding tag to point of interest: %v", err)
 			return nil, err
 		}
 
 		poi.Tags = append(poi.Tags, *tag)
 	}
 
+	log.Printf("Successfully generated point of interest with %d tags", len(poi.Tags))
 	return poi, nil
 }
 
 func (c *client) generateFantasyTheming(place googlemaps.Place) (*FantasyPointOfInterest, error) {
+	log.Printf("Generating fantasy theming for place: %s", place.Name)
+
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
 		Question: c.makeFantasyThemingPrompt(place),
 	})
 	if err != nil {
+		log.Printf("Error getting response from DeepPriest: %v", err)
 		return nil, err
 	}
 
 	var fantasyPointOfInterest FantasyPointOfInterest
 	if err := json.Unmarshal([]byte(answer.Answer), &fantasyPointOfInterest); err != nil {
+		log.Printf("Error unmarshaling fantasy point of interest: %v", err)
 		return nil, err
 	}
 
+	log.Printf("Successfully generated fantasy theming")
 	return &fantasyPointOfInterest, nil
 }
 
 func (c *client) generateFantasyImage(place googlemaps.Place) (string, error) {
+	log.Printf("Generating fantasy image for place: %s", place.Name)
+
 	res, err := c.deepPriest.GenerateImage(deep_priest.GenerateImageRequest{
 		Prompt:         c.makeFantasyImagePrompt(place),
 		Style:          style,
@@ -178,14 +211,16 @@ func (c *client) generateFantasyImage(place googlemaps.Place) (string, error) {
 		Quality:        "standard",
 	})
 	if err != nil {
+		log.Printf("Error generating image: %v", err)
 		return "", err
 	}
 
+	log.Printf("Successfully generated fantasy image")
 	return res, nil
 }
 
 func (c *client) makeFantasyImagePrompt(place googlemaps.Place) string {
-	return fmt.Sprintf(
+	prompt := fmt.Sprintf(
 		generateFantasyImagePromptTemplate,
 		place.Name,
 		place.Vicinity,
@@ -195,10 +230,12 @@ func (c *client) makeFantasyImagePrompt(place googlemaps.Place) string {
 		c.generateSophistication(place),
 		place.BusinessStatus,
 	)
+	log.Printf("Generated fantasy image prompt: %s", prompt)
+	return prompt
 }
 
 func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
-	return fmt.Sprintf(
+	prompt := fmt.Sprintf(
 		generatePointOfInterestPromptTemplate,
 		place.Name,
 		place.Vicinity,
@@ -208,21 +245,25 @@ func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
 		c.generateSophistication(place),
 		place.BusinessStatus,
 	)
+	log.Printf("Generated fantasy theming prompt: %s", prompt)
+	return prompt
 }
 
 func (c *client) generateSophistication(place googlemaps.Place) string {
+	sophistication := "casual"
 	switch place.PriceLevel {
 	case 0:
-		return "free"
+		sophistication = "free"
 	case 1:
-		return "casual"
+		sophistication = "casual"
 	case 2:
-		return "mid-tier"
+		sophistication = "mid-tier"
 	case 3:
-		return "high-end"
+		sophistication = "high-end"
 	case 4:
-		return "luxury"
+		sophistication = "luxury"
 	}
 
-	return "casual"
+	log.Printf("Generated sophistication level for place %s: %s", place.Name, sophistication)
+	return sophistication
 }

@@ -128,7 +128,11 @@ func (c *pointOfInterestHandle) FindByGroupID(ctx context.Context, groupID uuid.
 func (c *pointOfInterestHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.PointOfInterest, error) {
 	var pointsOfInterest []models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).Where("id IN (?)", ids).Find(&pointsOfInterest).Error; err != nil {
+	if err := c.db.WithContext(ctx).
+		Preload("Tags").
+		Preload("PointOfInterestChallenges").
+		Where("id IN (?)", ids).
+		Find(&pointsOfInterest).Error; err != nil {
 		return nil, err
 	}
 
@@ -187,4 +191,24 @@ func (c *pointOfInterestHandle) CreateForGroup(ctx context.Context, pointOfInter
 	}
 
 	return nil
+}
+
+func (c *pointOfInterestHandle) FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error) {
+	var pointOfInterestZones []models.PointOfInterestZone
+
+	if err := c.db.WithContext(ctx).Where("zone_id = ?", zoneID).Find(&pointOfInterestZones).Error; err != nil {
+		return nil, err
+	}
+
+	var pointOfInterestIDs []uuid.UUID
+	for _, pointOfInterestZone := range pointOfInterestZones {
+		pointOfInterestIDs = append(pointOfInterestIDs, pointOfInterestZone.PointOfInterestID)
+	}
+
+	pointsOfInterest, err := c.FindByIDs(ctx, pointOfInterestIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	return pointsOfInterest, nil
 }

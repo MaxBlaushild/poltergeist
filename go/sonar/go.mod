@@ -9,8 +9,11 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/imagine => ../pkg/imagine
+	github.com/MaxBlaushild/poltergeist/pkg/location => ../pkg/location
+	github.com/MaxBlaushild/poltergeist/pkg/locationseeder => ../pkg/locationseeder
 	github.com/MaxBlaushild/poltergeist/pkg/mapbox => ../pkg/mapbox
 	github.com/MaxBlaushild/poltergeist/pkg/middleware => ../pkg/middleware
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
@@ -40,7 +43,9 @@ require (
 )
 
 require (
+	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.10.2 // indirect
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
