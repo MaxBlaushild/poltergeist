@@ -36,6 +36,13 @@ func (h *tagHandle) FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]*mo
 	return tags, nil
 }
 
+func (h *tagHandle) Upsert(ctx context.Context, tag *models.Tag) error {
+	return h.db.WithContext(ctx).
+		Where("value = ?", tag.Value).
+		Assign(tag).
+		FirstOrCreate(tag).Error
+}
+
 func (h *tagHandle) Create(ctx context.Context, tag *models.Tag) error {
 	return h.db.WithContext(ctx).Create(tag).Error
 }

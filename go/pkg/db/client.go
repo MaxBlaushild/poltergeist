@@ -39,6 +39,7 @@ type client struct {
 	matchUserHandle                   *matchUserHandle
 	tagHandle                         *tagHandle
 	tagGroupHandle                    *tagGroupHandle
+	zoneHandle                        *zoneHandler
 }
 
 type ClientConfig struct {
@@ -95,7 +96,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		matchUserHandle:                   &matchUserHandle{db: db},
 		tagHandle:                         &tagHandle{db: db},
 		tagGroupHandle:                    &tagGroupHandle{db: db},
+		zoneHandle:                        &zoneHandler{db: db},
 	}, err
+}
+
+func (c *client) Zone() ZoneHandle {
+	return c.zoneHandle
 }
 
 func (c *client) Tag() TagHandle {

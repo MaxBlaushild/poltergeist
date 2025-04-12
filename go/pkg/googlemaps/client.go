@@ -26,8 +26,21 @@ func NewClient(apiKey string) Client {
 }
 
 type Place struct {
-	Name     string `json:"name"`
-	Vicinity string `json:"vicinity"`
+	Name             string   `json:"name"`
+	Vicinity         string   `json:"vicinity"`
+	PlaceID          string   `json:"place_id"`
+	Rating           float64  `json:"rating"`
+	UserRatingsTotal int      `json:"user_ratings_total"`
+	PriceLevel       int      `json:"price_level"`
+	Types            []string `json:"types"`
+	BusinessStatus   string   `json:"business_status"`
+	OpenNow          bool     `json:"opening_hours,omitempty"`
+	Geometry         struct {
+		Location struct {
+			Lat float64 `json:"lat"`
+			Lng float64 `json:"lng"`
+		} `json:"location"`
+	} `json:"geometry"`
 }
 
 type GooglePlacesResponse struct {

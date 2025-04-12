@@ -66,5 +66,22 @@ func main() {
 		ctx.JSON(http.StatusOK, gin.H{"answer": answer})
 	})
 
+	router.POST("/generateImage", func(ctx *gin.Context) {
+		var generateImageRequest deep_priest.ImageGenerationRequest
+
+		if err := ctx.Bind(&generateImageRequest); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "question must be included"})
+			return
+		}
+
+		imageUrl, err := openApiClient.GenerateImage(ctx, generateImageRequest)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"imageUrl": imageUrl})
+	})
+
 	router.Run(":8081")
 }

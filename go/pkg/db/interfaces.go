@@ -36,6 +36,7 @@ type DbClient interface {
 	MatchUser() MatchUserHandle
 	Tag() TagHandle
 	TagGroup() TagGroupHandle
+	Zone() ZoneHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -237,6 +238,7 @@ type TagHandle interface {
 	Update(ctx context.Context, tag *models.Tag) error
 	AddTagToPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error
 	RemoveTagFromPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error
+	Upsert(ctx context.Context, tag *models.Tag) error
 }
 
 type TagGroupHandle interface {
@@ -244,4 +246,11 @@ type TagGroupHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.TagGroup, error)
 	Create(ctx context.Context, tagGroup *models.TagGroup) error
 	Update(ctx context.Context, tagGroup *models.TagGroup) error
+}
+
+type ZoneHandle interface {
+	Create(ctx context.Context, zone *models.Zone) error
+	FindAll(ctx context.Context) ([]*models.Zone, error)
+	Update(ctx context.Context, zone *models.Zone) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 }
