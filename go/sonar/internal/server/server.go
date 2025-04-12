@@ -149,7 +149,13 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.getTagGroups))
 	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.addTagToPointOfInterest))
 	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.removeTagFromPointOfInterest))
+	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.getZones))
+	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestForZone))
 	r.Run(":8042")
+}
+
+func (s *server) getZones(ctx *gin.Context) {
+
 }
 
 func (s *server) addTagToPointOfInterest(ctx *gin.Context) {

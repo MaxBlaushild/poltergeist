@@ -3,6 +3,7 @@ package open_ai
 import (
 	"context"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -45,6 +46,28 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 	}
 
 	return resp.Choices[0].Message.Content, nil
+}
+
+func (c *client) GenerateImage(ctx context.Context, request deep_priest.ImageGenerationRequest) (string, error) {
+	resp, err := c.ai.CreateImage(
+		ctx,
+		openai.ImageRequest{
+			Prompt:         request.Prompt,
+			N:              request.N,
+			Size:           request.Size,
+			Style:          request.Style,
+			User:           request.User,
+			Quality:        request.Quality,
+			ResponseFormat: request.ResponseFormat,
+			Model:          request.Model,
+		},
+	)
+
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Data[0].URL, nil
 }
 
 func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error) {

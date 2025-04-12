@@ -1,0 +1,1 @@
+drop table point_of_interest_zones;
