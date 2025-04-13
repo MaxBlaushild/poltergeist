@@ -9,5 +9,5 @@ import (
 type OpenAiClient interface {
 	GetAnswer(ctx context.Context, q string) (string, error)
 	GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error)
-	GenerateImage(ctx context.Context, request deep_priest.ImageGenerationRequest) (string, error)
+	GenerateImage(ctx context.Context, request deep_priest.GenerateImageRequest) (string, error)
 }

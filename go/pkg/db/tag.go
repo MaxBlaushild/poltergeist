@@ -6,6 +6,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type tagHandle struct {
@@ -38,9 +39,13 @@ func (h *tagHandle) FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]*mo
 
 func (h *tagHandle) Upsert(ctx context.Context, tag *models.Tag) error {
 	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "value"}},
+			DoNothing: true,
+		}).
+		Create(tag).
 		Where("value = ?", tag.Value).
-		Assign(tag).
-		FirstOrCreate(tag).Error
+		First(tag).Error
 }
 
 func (h *tagHandle) Create(ctx context.Context, tag *models.Tag) error {

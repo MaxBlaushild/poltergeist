@@ -160,7 +160,24 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.getPlaceTypes))
+	r.DELETE("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.deleteZone))
 	r.Run(":8042")
+}
+
+func (s *server) deleteZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	err = s.dbClient.Zone().Delete(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "zone deleted successfully"})
 }
 
 func (s *server) getPlaceTypes(ctx *gin.Context) {
@@ -230,10 +247,10 @@ func (s *server) getZone(ctx *gin.Context) {
 
 func (s *server) createZone(ctx *gin.Context) {
 	var requestBody struct {
-		Name   string  `json:"name"`
-		Lat    float64 `json:"lat"`
-		Lng    float64 `json:"lng"`
-		Radius float64 `json:"radius"`
+		Name      string  `json:"name"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+		Radius    float64 `json:"radius"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -243,8 +260,8 @@ func (s *server) createZone(ctx *gin.Context) {
 
 	zone := &models.Zone{
 		Name:      requestBody.Name,
-		Latitude:  requestBody.Lat,
-		Longitude: requestBody.Lng,
+		Latitude:  requestBody.Latitude,
+		Longitude: requestBody.Longitude,
 		Radius:    requestBody.Radius,
 	}
 	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {
@@ -255,7 +272,12 @@ func (s *server) createZone(ctx *gin.Context) {
 }
 
 func (s *server) getZones(ctx *gin.Context) {
-
+	zones, err := s.dbClient.Zone().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, zones)
 }
 
 func (s *server) addTagToPointOfInterest(ctx *gin.Context) {
