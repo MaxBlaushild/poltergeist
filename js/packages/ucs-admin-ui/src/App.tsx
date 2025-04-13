@@ -13,6 +13,9 @@ import { LoaderFunctionArgs, redirect } from 'react-router-dom';
 import { ArenaProvider, InventoryProvider } from '@poltergeist/contexts';
 import { Login } from './components/Login.tsx';
 import Armory from './components/Armory.tsx';
+import { Zones } from './components/Zones.tsx';
+import { ZoneProvider } from './contexts/zones.tsx';
+import { Zone } from './components/Zone.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -65,12 +68,25 @@ const router = createBrowserRouter([
     element: <Armory />,
     loader: onlyAuthenticated,
   },
+  {
+    path: "/zones",
+    element: (
+        <Zones />
+    ),
+    loader: onlyAuthenticated,
+  },
+  {
+    path: "/zones/:id",
+    element: <Zone />,
+    loader: onlyAuthenticated,
+  },
 ]);
 
 const App = () => {
   return (
     <APIProvider>
       <TagProvider>
+        <ZoneProvider>
         <MediaContextProvider>
           <AuthProvider
             appName="UCS Admin Dashboard"
@@ -81,6 +97,7 @@ const App = () => {
           </InventoryProvider>
         </AuthProvider>
       </MediaContextProvider>
+      </ZoneProvider>
       </TagProvider>
     </APIProvider>
   );

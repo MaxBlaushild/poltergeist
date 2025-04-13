@@ -94,6 +94,7 @@ type PointOfInterestHandle interface {
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
 	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
+	HasBeenImportedByGoogleMaps(ctx context.Context, googleMapsPlaceID string) (bool, error)
 }
 
 type NeighboringPointsOfInterestHandle interface {
@@ -254,4 +255,6 @@ type ZoneHandle interface {
 	FindAll(ctx context.Context) ([]*models.Zone, error)
 	Update(ctx context.Context, zone *models.Zone) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
+	Delete(ctx context.Context, zoneID uuid.UUID) error
+	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 }

@@ -37,6 +37,10 @@ func (h *zoneHandler) Update(ctx context.Context, zone *models.Zone) error {
 	return h.db.WithContext(ctx).Save(zone).Error
 }
 
+func (h *zoneHandler) Delete(ctx context.Context, zoneID uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.Zone{}, "id = ?", zoneID).Error
+}
+
 func (h *zoneHandler) AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error {
 	return h.db.WithContext(ctx).Create(&models.PointOfInterestZone{
 		ID:                uuid.New(),

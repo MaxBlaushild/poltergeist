@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/MaxBlaushild/fount-of-erebos/internal/config"
@@ -67,19 +68,24 @@ func main() {
 	})
 
 	router.POST("/generateImage", func(ctx *gin.Context) {
-		var generateImageRequest deep_priest.ImageGenerationRequest
+		log.Println("Received request to generate image")
+		var generateImageRequest deep_priest.GenerateImageRequest
 
 		if err := ctx.Bind(&generateImageRequest); err != nil {
+			log.Printf("Error binding request: %v", err)
 			ctx.JSON(http.StatusBadRequest, gin.H{"message": "question must be included"})
 			return
 		}
 
+		log.Printf("Generating image with prompt: %s", generateImageRequest.Prompt)
 		imageUrl, err := openApiClient.GenerateImage(ctx, generateImageRequest)
 		if err != nil {
+			log.Printf("Error generating image: %v", err)
 			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
 			return
 		}
 
+		log.Printf("Successfully generated image with URL: %s", imageUrl)
 		ctx.JSON(http.StatusOK, gin.H{"imageUrl": imageUrl})
 	})
 

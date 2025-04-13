@@ -2,6 +2,7 @@ package open_ai
 
 import (
 	"context"
+	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	openai "github.com/sashabaranov/go-openai"
@@ -16,6 +17,7 @@ type ClientConfig struct {
 }
 
 func NewClient(config ClientConfig) OpenAiClient {
+	log.Println("Initializing OpenAI client")
 	ai := openai.NewClient(config.ApiKey)
 
 	return &client{
@@ -24,6 +26,7 @@ func NewClient(config ClientConfig) OpenAiClient {
 }
 
 func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
+	log.Printf("Getting answer for question: %s", q)
 	resp, err := c.ai.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -42,13 +45,16 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 	)
 
 	if err != nil {
+		log.Printf("Error getting answer: %v", err)
 		return "", err
 	}
 
+	log.Printf("Successfully got answer: %s", resp.Choices[0].Message.Content)
 	return resp.Choices[0].Message.Content, nil
 }
 
-func (c *client) GenerateImage(ctx context.Context, request deep_priest.ImageGenerationRequest) (string, error) {
+func (c *client) GenerateImage(ctx context.Context, request deep_priest.GenerateImageRequest) (string, error) {
+	log.Printf("Generating image with prompt: %s", request.Prompt)
 	resp, err := c.ai.CreateImage(
 		ctx,
 		openai.ImageRequest{
@@ -64,13 +70,17 @@ func (c *client) GenerateImage(ctx context.Context, request deep_priest.ImageGen
 	)
 
 	if err != nil {
+		log.Printf("Error generating image: %v", err)
 		return "", err
 	}
+	log.Printf("Image generation response: %+v", resp)
 
+	log.Printf("Successfully generated image with URL: %s", resp.Data[0].URL)
 	return resp.Data[0].URL, nil
 }
 
 func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error) {
+	log.Printf("Getting answer for question with image. Question: %s, Image URL: %s", q, imageUrl)
 	resp, err := c.ai.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -101,8 +111,10 @@ func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl stri
 	)
 
 	if err != nil {
+		log.Printf("Error getting answer with image: %v", err)
 		return "", err
 	}
 
+	log.Printf("Successfully got answer with image: %s", resp.Choices[0].Message.Content)
 	return resp.Choices[0].Message.Content, nil
 }

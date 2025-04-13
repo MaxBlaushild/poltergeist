@@ -1,0 +1,1 @@
+delete from tag_groups where name = 'unknown';

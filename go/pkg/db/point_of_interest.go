@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -211,4 +212,16 @@ func (c *pointOfInterestHandle) FindAllForZone(ctx context.Context, zoneID uuid.
 	}
 
 	return pointsOfInterest, nil
+}
+
+func (c *pointOfInterestHandle) HasBeenImportedByGoogleMaps(ctx context.Context, googleMapsPlaceID string) (bool, error) {
+	var pointOfInterest models.PointOfInterest
+	if err := c.db.WithContext(ctx).Where("google_maps_place_id = ?", googleMapsPlaceID).First(&pointOfInterest).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }
