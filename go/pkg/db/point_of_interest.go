@@ -54,6 +54,11 @@ func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error 
 		return err
 	}
 
+	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestZone{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
 	// Delete the PointOfInterest itself
 	if err := tx.Delete(&models.PointOfInterest{}, "id = ?", id).Error; err != nil {
 		tx.Rollback()
@@ -214,14 +219,18 @@ func (c *pointOfInterestHandle) FindAllForZone(ctx context.Context, zoneID uuid.
 	return pointsOfInterest, nil
 }
 
-func (c *pointOfInterestHandle) HasBeenImportedByGoogleMaps(ctx context.Context, googleMapsPlaceID string) (bool, error) {
+func (c *pointOfInterestHandle) FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error) {
 	var pointOfInterest models.PointOfInterest
 	if err := c.db.WithContext(ctx).Where("google_maps_place_id = ?", googleMapsPlaceID).First(&pointOfInterest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+			return nil, nil
 		}
-		return false, err
+		return nil, err
 	}
 
-	return true, nil
+	return &pointOfInterest, nil
+}
+
+func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error {
+	return c.db.WithContext(ctx).Model(&models.PointOfInterest{}).Where("id = ?", pointOfInterestID).Updates(updates).Error
 }

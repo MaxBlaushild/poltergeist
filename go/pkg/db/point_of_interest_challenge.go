@@ -22,6 +22,25 @@ func (p *pointOfInterestChallengeHandle) Delete(ctx context.Context, id uuid.UUI
 	return p.db.Delete(&models.PointOfInterestChallenge{}, "id = ?", id).Error
 }
 
+func (p *pointOfInterestChallengeHandle) DeleteAllForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) error {
+	challenges := []models.PointOfInterestChallenge{}
+	if err := p.db.WithContext(ctx).Where("point_of_interest_id = ?", pointOfInterestID).Find(&challenges).Error; err != nil {
+		return err
+	}
+
+	for _, challenge := range challenges {
+		// First delete related records in point_of_interest_children
+		if err := p.db.WithContext(ctx).Delete(&models.PointOfInterestChildren{}, "point_of_interest_challenge_id = ?", challenge.ID).Error; err != nil {
+			return err
+		}
+		// Then delete the challenge itself
+		if err := p.Delete(ctx, challenge.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *pointOfInterestChallengeHandle) Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID int, tier int) (*models.PointOfInterestChallenge, error) {
 	challenge := models.PointOfInterestChallenge{
 		Question:        question,

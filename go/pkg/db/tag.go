@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -66,4 +67,23 @@ func (h *tagHandle) AddTagToPointOfInterest(ctx context.Context, tagID uuid.UUID
 
 func (h *tagHandle) RemoveTagFromPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("tag_id = ? AND point_of_interest_id = ?", tagID, pointOfInterestID).Delete(&models.TagEntity{}).Error
+}
+
+func (h *tagHandle) FindByValue(ctx context.Context, value string) (*models.Tag, error) {
+	var tag models.Tag
+	if err := h.db.WithContext(ctx).Where("value = ?", value).First(&tag).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &tag, nil
+}
+
+func (h *tagHandle) MoveTagToTagGroup(ctx context.Context, tagID uuid.UUID, tagGroupID uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.Tag{}).Where("id = ?", tagID).Update("tag_group_id", tagGroupID).Error
+}
+
+func (h *tagHandle) CreateTagGroup(ctx context.Context, tagGroup *models.TagGroup) error {
+	return h.db.WithContext(ctx).Create(tagGroup).Error
 }

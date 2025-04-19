@@ -11,6 +11,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
@@ -35,18 +36,20 @@ var (
 )
 
 type server struct {
-	authClient     auth.Client
-	texterClient   texter.Client
-	dbClient       db.DbClient
-	config         *config.Config
-	awsClient      aws.AWSClient
-	judgeClient    judge.Client
-	quartermaster  quartermaster.Quartermaster
-	chatClient     chat.Client
-	charicturist   charicturist.Client
-	mapboxClient   mapbox.Client
-	questlogClient questlog.QuestlogClient
-	locationSeeder locationseeder.Client
+	authClient       auth.Client
+	texterClient     texter.Client
+	dbClient         db.DbClient
+	config           *config.Config
+	awsClient        aws.AWSClient
+	judgeClient      judge.Client
+	quartermaster    quartermaster.Quartermaster
+	chatClient       chat.Client
+	charicturist     charicturist.Client
+	mapboxClient     mapbox.Client
+	questlogClient   questlog.QuestlogClient
+	locationSeeder   locationseeder.Client
+	googlemapsClient googlemaps.Client
+	dungeonmaster    dungeonmaster.Client
 }
 
 type Server interface {
@@ -66,20 +69,24 @@ func NewServer(
 	mapboxClient mapbox.Client,
 	questlogClient questlog.QuestlogClient,
 	locationSeeder locationseeder.Client,
+	googlemapsClient googlemaps.Client,
+	dungeonmaster dungeonmaster.Client,
 ) Server {
 	return &server{
-		authClient:     authClient,
-		texterClient:   texterClient,
-		dbClient:       dbClient,
-		config:         config,
-		awsClient:      awsClient,
-		judgeClient:    judgeClient,
-		quartermaster:  quartermaster,
-		chatClient:     chatClient,
-		charicturist:   charicturist,
-		mapboxClient:   mapboxClient,
-		questlogClient: questlogClient,
-		locationSeeder: locationSeeder,
+		authClient:       authClient,
+		texterClient:     texterClient,
+		dbClient:         dbClient,
+		config:           config,
+		awsClient:        awsClient,
+		judgeClient:      judgeClient,
+		quartermaster:    quartermaster,
+		chatClient:       chatClient,
+		charicturist:     charicturist,
+		mapboxClient:     mapboxClient,
+		questlogClient:   questlogClient,
+		locationSeeder:   locationSeeder,
+		googlemapsClient: googlemapsClient,
+		dungeonmaster:    dungeonmaster,
 	}
 }
 
@@ -161,7 +168,199 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.getPlaceTypes))
 	r.DELETE("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.deleteZone))
+	r.POST("/sonar/pointOfInterest/import", middleware.WithAuthentication(s.authClient, s.importPointOfInterest))
+	r.POST("/sonar/pointOfInterest/refresh", middleware.WithAuthentication(s.authClient, s.refreshPointOfInterest))
+	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.refreshPointOfInterestImage))
+	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.getGooglePlaces))
+	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.getGooglePlace))
+	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.generateQuest))
+	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.moveTagToTagGroup))
+	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.createTagGroup))
+	r.GET("/sonar/quests/archTypes", middleware.WithAuthentication(s.authClient, s.getQuestArchTypes))
 	r.Run(":8042")
+}
+
+func (s *server) getQuestArchTypes(ctx *gin.Context) {
+	questArchTypes, err := s.dbClient.QuestArchetype().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questArchTypes)
+}
+
+func (s *server) moveTagToTagGroup(ctx *gin.Context) {
+	var requestBody struct {
+		TagID      uuid.UUID `json:"tagID"`
+		TagGroupID uuid.UUID `json:"tagGroupID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err := s.dbClient.Tag().MoveTagToTagGroup(ctx, requestBody.TagID, requestBody.TagGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "tag moved to tag group successfully"})
+}
+
+func (s *server) createTagGroup(ctx *gin.Context) {
+	var requestBody struct {
+		Name     string `json:"name"`
+		IconUrl  string `json:"iconUrl"`
+		ImageUrl string `json:"imageUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tagGroup := &models.TagGroup{
+		Name:      requestBody.Name,
+		ID:        uuid.New(),
+		UpdatedAt: time.Now(),
+		CreatedAt: time.Now(),
+		IconUrl:   requestBody.IconUrl,
+		ImageUrl:  requestBody.ImageUrl,
+	}
+
+	err := s.dbClient.Tag().CreateTagGroup(ctx, tagGroup)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, tagGroup)
+}
+
+func (s *server) generateQuest(ctx *gin.Context) {
+	id := ctx.Param("zoneID")
+	questArchTypeID := ctx.Param("questArchTypeID")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	questArchTypeIDUUID, err := uuid.Parse(questArchTypeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest arch type ID"})
+		return
+	}
+
+	quest, err := s.dungeonmaster.GenerateQuest(ctx, zone, questArchTypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, quest)
+}
+
+func (s *server) getGooglePlaces(ctx *gin.Context) {
+	query := ctx.Query("query")
+	places, err := s.googlemapsClient.FindCandidatesByQuery(query)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, places)
+}
+
+func (s *server) getGooglePlace(ctx *gin.Context) {
+	placeID := ctx.Param("placeID")
+	place, err := s.googlemapsClient.FindPlaceByID(placeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, place)
+}
+
+func (s *server) refreshPointOfInterestImage(ctx *gin.Context) {
+	var requestBody struct {
+		PointOfInterestID uuid.UUID `json:"pointOfInterestID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	poi, err := s.dbClient.PointOfInterest().FindByID(ctx, requestBody.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.locationSeeder.RefreshPointOfInterestImage(ctx, poi)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, poi)
+}
+
+func (s *server) importPointOfInterest(ctx *gin.Context) {
+	var requestBody struct {
+		PlaceID string    `json:"placeID"`
+		ZoneID  uuid.UUID `json:"zoneID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, requestBody.ZoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	poi, err := s.locationSeeder.ImportPlace(ctx, requestBody.PlaceID, *zone)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, poi)
+}
+
+func (s *server) refreshPointOfInterest(ctx *gin.Context) {
+	var requestBody struct {
+		PointOfInterestID uuid.UUID `json:"pointOfInterestID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	poi, err := s.dbClient.PointOfInterest().FindByID(ctx, requestBody.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.locationSeeder.RefreshPointOfInterest(ctx, poi)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, poi)
 }
 
 func (s *server) deleteZone(ctx *gin.Context) {
@@ -181,7 +380,7 @@ func (s *server) deleteZone(ctx *gin.Context) {
 }
 
 func (s *server) getPlaceTypes(ctx *gin.Context) {
-	ctx.JSON(http.StatusOK, googlemaps.AllPlaceTypes)
+	ctx.JSON(http.StatusOK, googlemaps.GetAllPlaceTypes())
 }
 
 func (s *server) generatePointsOfInterestForZone(ctx *gin.Context) {
@@ -199,14 +398,16 @@ func (s *server) generatePointsOfInterestForZone(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		PlaceType googlemaps.PlaceType `json:"placeType"`
+		IncludedTypes  []googlemaps.PlaceType `json:"includedTypes"`
+		ExcludedTypes  []googlemaps.PlaceType `json:"excludedTypes"`
+		NumberOfPlaces int32                  `json:"numberOfPlaces"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	pointsOfInterest, err := s.locationSeeder.SeedPointsOfInterest(ctx, *zone, requestBody.PlaceType)
+	pointsOfInterest, err := s.locationSeeder.SeedPointsOfInterest(ctx, *zone, requestBody.IncludedTypes, requestBody.ExcludedTypes, requestBody.NumberOfPlaces)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

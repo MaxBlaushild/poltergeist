@@ -14,6 +14,8 @@ export const TagContext = createContext({
     tagGroups: [],
     selectedTags: [],
     setSelectedTags: () => { },
+    createTagGroup: () => { },
+    moveTagToTagGroup: () => { },
 });
 export const TagProvider = ({ children }) => {
     const { apiClient } = useAPI();
@@ -25,10 +27,18 @@ export const TagProvider = ({ children }) => {
         setTagGroups(response);
         setSelectedTags(response.flatMap(group => group.tags));
     });
+    const createTagGroup = (tagGroup) => __awaiter(void 0, void 0, void 0, function* () {
+        const response = yield apiClient.post('/sonar/tagGroups', tagGroup);
+        setTagGroups([...tagGroups, response]);
+    });
+    const moveTagToTagGroup = (tagID, tagGroupID) => __awaiter(void 0, void 0, void 0, function* () {
+        yield apiClient.post(`/sonar/tags/move`, { tagID, tagGroupID });
+        fetchTagGroups();
+    });
     useEffect(() => {
         fetchTagGroups();
     }, []);
-    return (_jsx(TagContext.Provider, Object.assign({ value: { tagGroups, selectedTags, setSelectedTags } }, { children: children })));
+    return (_jsx(TagContext.Provider, Object.assign({ value: { tagGroups, selectedTags, setSelectedTags, createTagGroup, moveTagToTagGroup } }, { children: children })));
 };
 export const useTagContext = () => {
     return useContext(TagContext);

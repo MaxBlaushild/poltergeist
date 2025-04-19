@@ -24,3 +24,6 @@ export * from './ownedInventoryItem';
 export * from './questLog';
 export * from './tag';
 export * from './tagGroup';
+export * from './candidate';
+export * from './googlePlace';
+export * from './questArchtype';

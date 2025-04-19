@@ -6,12 +6,16 @@ type TagContextType = {
   tagGroups: TagGroup[];
   selectedTags: Tag[];
   setSelectedTags: (tags: Tag[]) => void;
+  createTagGroup: (tagGroup: TagGroup) => void;
+  moveTagToTagGroup: (tagID: string, tagGroupID: string) => void;
 };
 
 export const TagContext = createContext<TagContextType>({
   tagGroups: [],
   selectedTags: [],
   setSelectedTags: () => {},
+  createTagGroup: () => {},
+  moveTagToTagGroup: () => {},
 });
 
 export const TagProvider = ({ children }: { children: React.ReactNode }) => {
@@ -26,12 +30,22 @@ export const TagProvider = ({ children }: { children: React.ReactNode }) => {
     setSelectedTags(response.flatMap(group => group.tags));
   };
 
+  const createTagGroup = async (tagGroup: TagGroup) => {
+    const response = await apiClient.post<TagGroup>('/sonar/tagGroups', tagGroup);
+    setTagGroups([...tagGroups, response]);
+  };
+
+  const moveTagToTagGroup = async (tagID: string, tagGroupID: string) => {
+    await apiClient.post(`/sonar/tags/move`, { tagID, tagGroupID });
+    fetchTagGroups();
+  };
+
   useEffect(() => {
     fetchTagGroups();
   }, []);
 
   return (
-    <TagContext.Provider value={{ tagGroups, selectedTags, setSelectedTags }}>
+    <TagContext.Provider value={{ tagGroups, selectedTags, setSelectedTags, createTagGroup, moveTagToTagGroup }}>
       {children}
     </TagContext.Provider>
   );

@@ -2,12 +2,14 @@ package locationseeder
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"strconv"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
@@ -19,6 +21,7 @@ type client struct {
 	googlemapsClient googlemaps.Client
 	dbClient         db.DbClient
 	deepPriest       deep_priest.DeepPriest
+	awsClient        aws.AWSClient
 }
 
 type FantasyPointOfInterest struct {
@@ -28,66 +31,135 @@ type FantasyPointOfInterest struct {
 	Challenge   string `json:"challenge"`
 }
 
-const premise = `
-	You are a video game designer tasked with converting real-world locations into points of interest on a fantasy RPG map. These points of interest should closely mirror their real-world counterparts but be reimagined within a fantasy setting, with a retro, pixelated, video game style.
-
-	Each real-world location is provided with the following details:
-
-	Name: %s (Convert this name into a fitting fantasy title, such as a tavern, guild hall, or enchanted marketplace.)
-
-	Vicinity: %s (Describe the surrounding area in a fantastical way—imagine the real-world location as part of a magical kingdom, ancient forest, or mystical city.)
-
-	Rating: %.1f stars from %d reviews (Reflect the rating as if it were from adventurers, using retro-styled pixelated fonts.)
-
-	Types: %v (For example, a café could become a “Tavern,” a park could become a “Sacred Grove,” or a museum could become a “Library of Lore.”)
-
-	Sophistication: %s (Translate this into fantasy status—'Legendary,' 'Epic,' 'Hidden,' 'Common,' etc.)
-
-	Business Status: %s (Imagine the business status as something more fitting for the fantasy world—e.g., 'Open for quests,' 'Temporarily closed due to dragon attack,' etc.)
-`
-
-const generatePointOfInterestPromptTemplate = premise + `
-	Please format your response as a JSON object with the following fields:
-	
-	{
-		"name": "string",
-		"description": "string",
-		"clue": "string",
-	}
-`
-
-const generateFantasyImagePromptTemplate = premise + `
-	The goal is to take these real-world values and translate them into fantasy-themed locations while maintaining their core concept but enhancing them with magical, mythical, and pixelated video game-style elements. Each location should evoke a sense of nostalgia for retro video games, with blocky shapes, pixelated visuals, and vibrant colors that evoke classic RPG vibes.
-`
-
-const style = "natural"
-
 type Client interface {
 	GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error)
-	SeedPointsOfInterest(ctx context.Context, zone models.Zone, locationType googlemaps.PlaceType) ([]*models.PointOfInterest, error)
+	SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error)
+	RefreshPointOfInterestImage(ctx context.Context, poi *models.PointOfInterest) error
+	RefreshPointOfInterest(ctx context.Context, poi *models.PointOfInterest) error
+	ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error)
 }
 
-func NewClient(googlemapsClient googlemaps.Client, dbClient db.DbClient, deepPriest deep_priest.DeepPriest) Client {
+func NewClient(
+	googlemapsClient googlemaps.Client,
+	dbClient db.DbClient,
+	deepPriest deep_priest.DeepPriest,
+	awsClient aws.AWSClient,
+) Client {
 	log.Println("Creating new locationseeder client")
 	return &client{
 		googlemapsClient: googlemapsClient,
 		dbClient:         dbClient,
 		deepPriest:       deepPriest,
+		awsClient:        awsClient,
 	}
 }
 
-func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, locationType googlemaps.PlaceType) ([]*models.PointOfInterest, error) {
-	log.Printf("Starting to seed points of interest for zone %s with location type %s", zone.Name, locationType)
+func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zone) (*models.PointOfInterest, error) {
+	place, err := c.googlemapsClient.FindPlaceByID(placeID)
+	if err != nil {
+		log.Printf("Error finding place by ID: %v", err)
+		return nil, err
+	}
+
+	poi, err := c.GeneratePointOfInterest(ctx, *place, zone)
+	if err != nil {
+		log.Printf("Error generating point of interest: %v", err)
+		return nil, err
+	}
+
+	return poi, nil
+}
+
+func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOfInterest) error {
+	if poi == nil || poi.GoogleMapsPlaceID == nil {
+		log.Printf("Point of interest %s has no Google Maps place ID", poi.Name)
+		return fmt.Errorf("point of interest has no Google Maps place ID")
+	}
+
+	place, err := c.googlemapsClient.FindPlaceByID(*poi.GoogleMapsPlaceID)
+	if err != nil {
+		log.Printf("Error finding place by ID: %v", err)
+		return err
+	}
+
+	fantasyPointOfInterest, err := c.generateFantasyTheming(*place)
+	if err != nil {
+		log.Printf("Error generating fantasy theming: %v", err)
+		return err
+	}
+
+	imageUrl, err := c.generateFantasyImage(ctx, *place)
+	if err != nil {
+		log.Printf("Error generating fantasy image: %v", err)
+		return err
+	}
+
+	if err := c.dbClient.PointOfInterest().Update(ctx, poi.ID, &models.PointOfInterest{
+		Name:        fantasyPointOfInterest.Name,
+		Description: fantasyPointOfInterest.Description,
+		Clue:        fantasyPointOfInterest.Clue,
+		ImageUrl:    imageUrl,
+		UpdatedAt:   time.Now(),
+	}); err != nil {
+		log.Printf("Error updating point of interest: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully updated point of interest %s", poi.Name)
+	return nil
+}
+
+func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.PointOfInterest) error {
+	if poi == nil || poi.GoogleMapsPlaceID == nil {
+		log.Printf("Point of interest %s has no Google Maps place ID", poi.Name)
+		return fmt.Errorf("point of interest has no Google Maps place ID")
+	}
+
+	log.Printf("Refreshing point of interest image for %s", poi.Name)
+
+	place, err := c.googlemapsClient.FindPlaceByID(*poi.GoogleMapsPlaceID)
+	if err != nil {
+		log.Printf("Error finding place by ID: %v", err)
+
+		return err
+	}
+
+	if place == nil {
+		log.Printf("Place not found")
+		return fmt.Errorf("place not found")
+	}
+
+	imageUrl, err := c.generateFantasyImage(ctx, *place)
+	if err != nil {
+		log.Printf("Error generating fantasy image: %v", err)
+		return err
+	}
+
+	if err := c.dbClient.PointOfInterest().UpdateImageUrl(ctx, poi.ID, imageUrl); err != nil {
+		log.Printf("Error updating point of interest image URL: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully updated point of interest image URL for %s", poi.Name)
+
+	return nil
+}
+
+func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error) {
+	log.Printf("Starting to seed points of interest for zone %s with included types %v and excluded types %v", zone.Name, includedTypes, excludedTypes)
 
 	log.Printf("Zone latitude: %f, longitude: %f, radius: %d", zone.Latitude, zone.Longitude, int(zone.Radius))
-	log.Printf("Location type: %s", string(locationType))
+
+	lat, lng, radius := c.fuzzCoordinates(zone.Latitude, zone.Longitude, zone.Radius)
+	log.Printf("Fuzzed latitude: %f, longitude: %f, radius: %f", lat, lng, radius)
 
 	places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
-		Lat:            zone.Latitude,
-		Long:           zone.Longitude,
-		Radius:         zone.Radius,
-		Category:       string(locationType),
-		MaxResultCount: 20,
+		Lat:            lat,
+		Long:           lng,
+		Radius:         radius,
+		IncludedTypes:  includedTypes,
+		ExcludedTypes:  excludedTypes,
+		MaxResultCount: numberOfPlaces,
 	})
 	if err != nil {
 		log.Printf("Error finding places: %v", err)
@@ -100,11 +172,14 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, loc
 	for i, place := range places {
 		log.Printf("Generating point of interest %d/%d for place: %s", i+1, len(places), place.Name)
 
-		if hasBeenImported, err := c.dbClient.PointOfInterest().HasBeenImportedByGoogleMaps(ctx, place.ID); err != nil {
+		existingPointOfInterest, err := c.dbClient.PointOfInterest().FindByGoogleMapsPlaceID(ctx, place.ID)
+		if err != nil {
 			log.Printf("Error checking if point of interest has been imported: %v", err)
 			return nil, err
-		} else if hasBeenImported {
+		}
+		if existingPointOfInterest != nil {
 			log.Printf("Point of interest %s has already been imported", place.Name)
+			pointsOfInterest = append(pointsOfInterest, existingPointOfInterest)
 			continue
 		}
 
@@ -120,6 +195,27 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, loc
 	return pointsOfInterest, nil
 }
 
+func (c *client) fuzzCoordinates(lat float64, lng float64, radius float64) (float64, float64, float64) {
+	// Convert radius from meters to degrees (approximate)
+	radiusDegrees := radius / 111000.0 // 111km per degree
+
+	// Generate random angle and distance within radius
+	angle := rand.Float64() * 2 * math.Pi
+	distance := rand.Float64() * radiusDegrees
+
+	// Calculate new coordinates
+	newLat := lat + (distance * math.Cos(angle))
+	newLng := lng + (distance * math.Sin(angle))
+
+	// Calculate what percentage of the radius was used
+	percentageUsed := (distance / radiusDegrees) * 100
+
+	// Calculate remaining radius in meters
+	remainingRadius := math.Max(100, radius*(1-percentageUsed/100))
+
+	return newLat, newLng, remainingRadius
+}
+
 func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error) {
 	log.Printf("Starting to generate point of interest for place: %s", place.Name)
 
@@ -130,7 +226,7 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 	}
 	log.Printf("Generated fantasy theming with name: %s", fantasyPointOfInterest.Name)
 
-	imageUrl, err := c.generateFantasyImage(place)
+	imageUrl, err := c.generateFantasyImage(ctx, place)
 	if err != nil {
 		log.Printf("Error generating fantasy image: %v", err)
 		return nil, err
@@ -138,35 +234,25 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 	log.Printf("Generated fantasy image URL: %s", imageUrl)
 
 	poi := &models.PointOfInterest{
-		ID:          uuid.New(),
-		Name:        fantasyPointOfInterest.Name,
-		Description: fantasyPointOfInterest.Description,
-		Clue:        fantasyPointOfInterest.Clue,
-		ImageUrl:    imageUrl,
-		Lat:         strconv.FormatFloat(place.Location.Latitude, 'f', -1, 64),
-		Lng:         strconv.FormatFloat(place.Location.Longitude, 'f', -1, 64),
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:                uuid.New(),
+		Name:              fantasyPointOfInterest.Name,
+		Description:       fantasyPointOfInterest.Description,
+		Clue:              fantasyPointOfInterest.Clue,
+		ImageUrl:          imageUrl,
+		GoogleMapsPlaceID: &place.ID,
+		Lat:               strconv.FormatFloat(place.Location.Latitude, 'f', -1, 64),
+		Lng:               strconv.FormatFloat(place.Location.Longitude, 'f', -1, 64),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
 	}
 
 	log.Printf("Created point of interest object with ID: %s", poi.ID)
 
-	// tags := make([]*models.Tag, len(place.Types))
-	// for i, t := range place.Types {
-	// 	log.Printf("Processing tag %d/%d: %s", i+1, len(place.Types), t)
-	// 	tag := &models.Tag{
-	// 		ID:         uuid.New(),
-	// 		Value:      t,
-	// 		TagGroupID: uuid.MustParse("520de224-e432-4f7a-82f8-0df1ac62d44b"),
-	// 	}
-
-	// 	if err := c.dbClient.Tag().Upsert(ctx, tag); err != nil {
-	// 		log.Printf("Error upserting tag: %v", err)
-	// 		return nil, err
-	// 	}
-
-	// 	tags[i] = tag
-	// }
+	tags, err := c.ProccessPlaceTypes(ctx, place.Types)
+	if err != nil {
+		log.Printf("Error processing place types: %v", err)
+		return nil, err
+	}
 
 	if err := c.dbClient.PointOfInterest().Create(ctx, *poi); err != nil {
 		log.Printf("Error creating point of interest in database: %v", err)
@@ -174,15 +260,15 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 	}
 	log.Printf("Successfully created point of interest in database")
 
-	// for _, tag := range tags {
-	// 	log.Printf("Adding tag %s to point of interest", tag.Value)
-	// 	if err := c.dbClient.Tag().AddTagToPointOfInterest(ctx, tag.ID, poi.ID); err != nil {
-	// 		log.Printf("Error adding tag to point of interest: %v", err)
-	// 		return nil, err
-	// 	}
+	for _, tag := range tags {
+		log.Printf("Adding tag %s to point of interest", tag.Value)
+		if err := c.dbClient.Tag().AddTagToPointOfInterest(ctx, tag.ID, poi.ID); err != nil {
+			log.Printf("Error adding tag to point of interest: %v", err)
+			return nil, err
+		}
 
-	// 	poi.Tags = append(poi.Tags, *tag)
-	// }
+		poi.Tags = append(poi.Tags, *tag)
+	}
 
 	if err := c.dbClient.Zone().AddPointOfInterestToZone(ctx, zone.ID, poi.ID); err != nil {
 		log.Printf("Error adding point of interest to zone: %v", err)
@@ -191,94 +277,4 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 
 	log.Printf("Successfully generated point of interest with %d tags", len(poi.Tags))
 	return poi, nil
-}
-
-func (c *client) generateFantasyTheming(place googlemaps.Place) (*FantasyPointOfInterest, error) {
-	log.Printf("Generating fantasy theming for place: %s", place.Name)
-
-	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: c.makeFantasyThemingPrompt(place),
-	})
-	if err != nil {
-		log.Printf("Error getting response from DeepPriest: %v", err)
-		return nil, err
-	}
-
-	var fantasyPointOfInterest FantasyPointOfInterest
-	if err := json.Unmarshal([]byte(answer.Answer), &fantasyPointOfInterest); err != nil {
-		log.Printf("Error unmarshaling fantasy point of interest: %v", err)
-		return nil, err
-	}
-
-	log.Printf("Successfully generated fantasy theming")
-	return &fantasyPointOfInterest, nil
-}
-
-func (c *client) generateFantasyImage(place googlemaps.Place) (string, error) {
-	log.Printf("Generating fantasy image for place: %s", place.Name)
-
-	res, err := c.deepPriest.GenerateImage(deep_priest.GenerateImageRequest{
-		Prompt:         c.makeFantasyImagePrompt(place),
-		Style:          style,
-		Size:           "1024x1024",
-		N:              1,
-		ResponseFormat: "b64_json",
-		User:           "poltergeist",
-		Model:          "dall-e-3",
-		Quality:        "standard",
-	})
-	if err != nil {
-		log.Printf("Error generating image: %v", err)
-		return "", err
-	}
-
-	log.Printf("Successfully generated fantasy image")
-	return res, nil
-}
-
-func (c *client) makeFantasyImagePrompt(place googlemaps.Place) string {
-	prompt := fmt.Sprintf(
-		generateFantasyImagePromptTemplate,
-		place.DisplayName.Text,
-		place.FormattedAddress,
-		place.Rating,
-		place.UserRatingCount,
-		place.Types,
-		c.generateSophistication(place),
-		place.BusinessStatus,
-	)
-	log.Printf("Generated fantasy image prompt: %s", prompt)
-	return prompt
-}
-
-func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
-	prompt := fmt.Sprintf(
-		generatePointOfInterestPromptTemplate,
-		place.DisplayName.Text,
-		place.FormattedAddress,
-		place.Rating,
-		place.UserRatingCount,
-		place.Types,
-		c.generateSophistication(place),
-		place.BusinessStatus,
-	)
-	log.Printf("Generated fantasy theming prompt: %s", prompt)
-	return prompt
-}
-
-func (c *client) generateSophistication(place googlemaps.Place) string {
-	switch place.PriceLevel {
-	case "PRICE_LEVEL_FREE":
-		return "free"
-	case "PRICE_LEVEL_INEXPENSIVE":
-		return "casual"
-	case "PRICE_LEVEL_MODERATE":
-		return "mid-tier"
-	case "PRICE_LEVEL_EXPENSIVE":
-		return "high-end"
-	case "PRICE_LEVEL_VERY_EXPENSIVE":
-		return "luxury"
-	default:
-		return "casual" // Default for PRICE_LEVEL_UNSPECIFIED or unknown values
-	}
 }

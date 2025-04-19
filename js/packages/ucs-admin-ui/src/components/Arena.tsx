@@ -215,7 +215,8 @@ export const Arena = () => {
                 <img
                   src={arena.imageUrl}
                   alt={arena.name}
-                  className="w-48 h-48 rounded-lg object-cover"
+                  className="w-64 h-64 rounded-lg object-contain bg-gray-100 cursor-pointer"
+                  onClick={() => setSelectedImage(arena.imageUrl)}
                 />
                 <button
                   onClick={() => setEditingArenaImage(true)}
@@ -284,7 +285,7 @@ export const Arena = () => {
             ) : (
               <div>
                 <h1 className="text-3xl font-bold mb-2">{arena.name}</h1>
-                <p className="text-gray-600 text-lg mb-4">
+                <p className="text-gray-600 text-lg mb-4 w-[1400px]">
                   {arena.description}
                 </p>
                 <p className="text-gray-600 text-lg mb-4">
@@ -429,6 +430,9 @@ export const Arena = () => {
                     <h3 className="text-xl font-semibold mb-2">{point.name}</h3>
                     <p className="text-gray-600 mb-2">{point.description}</p>
                     <p className="text-gray-600 mb-2">Clue: {point.clue}</p>
+                    <p className="text-gray-600 mb-2">
+                      Place ID: <a href={`/place/${point.googleMapsPlaceId}`} className="text-blue-500 hover:underline">{point.googleMapsPlaceId}</a>
+                    </p>
                     <p className="text-gray-600 mb-2">Tags: {point.tags?.map(tag => tag.name).join(', ')}</p>
                     <div className="text-sm text-gray-500">
                       <p>Latitude: {point.lat}</p>
