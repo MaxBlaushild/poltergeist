@@ -1,5 +1,5 @@
 -- Create QuestArchetypeNodes Table
-CREATE TABLE QuestArchetypeNodes (
+CREATE TABLE quest_archetype_nodes (
     id UUID PRIMARY KEY,                            -- Node ID (UUID)
     created_at TIMESTAMP NOT NULL,                  -- Creation Timestamp
     updated_at TIMESTAMP NOT NULL,                  -- Update Timestamp
@@ -9,7 +9,7 @@ CREATE TABLE QuestArchetypeNodes (
 );
 
 -- Create QuestArchtypeChallenges Table
-CREATE TABLE QuestArchetypeChallenges (
+CREATE TABLE quest_archetype_challenges (
     id UUID PRIMARY KEY,                            -- Challenge ID (UUID)
     created_at TIMESTAMP NOT NULL,                  -- Creation Timestamp
     updated_at TIMESTAMP NOT NULL,                  -- Update Timestamp
@@ -20,7 +20,7 @@ CREATE TABLE QuestArchetypeChallenges (
 );
 
 -- Create QuestArchTypeNodeChallenges Table (Bridge Table between QuestArchtypeChallenge and QuestArchtypeNode)
-CREATE TABLE QuestArchTypeNodeChallenges (
+CREATE TABLE quest_archetype_node_challenges (
     id UUID PRIMARY KEY,                            -- Bridge Table ID (UUID)
     created_at TIMESTAMP NOT NULL,                  -- Creation Timestamp
     updated_at TIMESTAMP NOT NULL,                  -- Update Timestamp
@@ -32,7 +32,7 @@ CREATE TABLE QuestArchTypeNodeChallenges (
 );
 
 -- Create QuestArchetypes Table
-CREATE TABLE QuestArchetypes (
+CREATE TABLE quest_archetypes (
     id UUID PRIMARY KEY,                            -- QuestArchetype ID (UUID)
     name VARCHAR(255) NOT NULL,                      -- Quest Name
     created_at TIMESTAMP NOT NULL,                  -- Creation Timestamp
