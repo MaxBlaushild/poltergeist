@@ -41,9 +41,3 @@ CREATE TABLE quest_archetypes (
     root_id UUID NOT NULL,                          -- Foreign key to QuestArchetypeNode (Root Node)
     FOREIGN KEY (root_id) REFERENCES quest_archetype_nodes(id) -- Root node reference (starting node for the quest)
 );
-
--- Example of Adding Indexes for Faster Lookups (Optional)
-CREATE INDEX idx_quest_archtype_challenge_unlocked_node_id ON quest_archetype_challenges(unlocked_node_id);
-CREATE INDEX idx_quest_archtype_challenge_node_id ON quest_archetype_challenges(quest_archetype_node_id);
-CREATE INDEX idx_quest_archtype_type_challenge_id ON quest_archetype_node_challenges(quest_archetype_challenge_id);
-CREATE INDEX idx_quest_archtype_type_node_id ON quest_archetype_node_challenges(quest_archetype_node_id);
