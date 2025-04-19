@@ -1,1 +1,1 @@
-drop table LocationArchTypes;
+drop table location_archetypes;
