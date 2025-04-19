@@ -153,3 +153,23 @@ func (c *pointOfInterestGroupHandle) FindByType(ctx context.Context, typeValue m
 	}
 	return pointOfInterestGroups, nil
 }
+
+func (c *pointOfInterestGroupHandle) AddMember(ctx context.Context, pointOfInterestID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.PointOfInterestGroupMember, error) {
+	member := models.PointOfInterestGroupMember{
+		PointOfInterestID:      pointOfInterestID,
+		PointOfInterestGroupID: pointOfInterestGroupID,
+		CreatedAt:              time.Now(),
+		UpdatedAt:              time.Now(),
+		ID:                     uuid.New(),
+	}
+
+	if err := c.db.Create(&member).Error; err != nil {
+		return nil, err
+	}
+
+	return &member, nil
+}
+
+func (c *pointOfInterestGroupHandle) Update(ctx context.Context, pointOfInterestGroupID uuid.UUID, updates *models.PointOfInterestGroup) error {
+	return c.db.Model(&models.PointOfInterestGroup{}).Where("id = ?", pointOfInterestGroupID).Updates(updates).Error
+}

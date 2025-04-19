@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 const (
-	baseURL = "https://places.googleapis.com/v1/places:searchNearby"
-
-	TypeGroceryStore = "grocery_or_supermarket"
+	baseURL         = "https://places.googleapis.com/v1/places:searchNearby"
+	placeDetailsURL = "https://places.googleapis.com/v1/places"
+	placeSearchURL  = "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
 )
 
 type client struct {
@@ -20,78 +21,17 @@ type client struct {
 
 type Client interface {
 	FindPlaces(query PlaceQuery) ([]Place, error)
+	FindPlaceByID(id string) (*Place, error)
+	FindCandidatesByQuery(query string) ([]Candidate, error)
 }
 
 func NewClient(apiKey string) Client {
 	return &client{apiKey: apiKey}
 }
 
-type Place struct {
-	Name                     string        `json:"name,omitempty"`
-	ID                       string        `json:"id,omitempty"`
-	DisplayName              LocalizedText `json:"displayName,omitempty"`
-	Types                    []string      `json:"types,omitempty"`
-	PrimaryType              string        `json:"primaryType,omitempty"`
-	PrimaryTypeDisplayName   LocalizedText `json:"primaryTypeDisplayName,omitempty"`
-	NationalPhoneNumber      string        `json:"nationalPhoneNumber,omitempty"`
-	InternationalPhoneNumber string        `json:"internationalPhoneNumber,omitempty"`
-	FormattedAddress         string        `json:"formattedAddress,omitempty"`
-	Location                 struct {
-		Latitude  float64 `json:"latitude,omitempty"`
-		Longitude float64 `json:"longitude,omitempty"`
-	} `json:"location,omitempty"`
-	Rating                float64       `json:"rating,omitempty"`
-	UtcOffsetMinutes      *int32        `json:"utcOffsetMinutes,omitempty"`
-	BusinessStatus        string        `json:"businessStatus,omitempty"`
-	PriceLevel            string        `json:"priceLevel,omitempty"`
-	UserRatingCount       *int32        `json:"userRatingCount,omitempty"`
-	Takeout               *bool         `json:"takeout,omitempty"`
-	Delivery              *bool         `json:"delivery,omitempty"`
-	DineIn                *bool         `json:"dineIn,omitempty"`
-	CurbsidePickup        *bool         `json:"curbsidePickup,omitempty"`
-	Reservable            *bool         `json:"reservable,omitempty"`
-	ServesBreakfast       *bool         `json:"servesBreakfast,omitempty"`
-	ServesLunch           *bool         `json:"servesLunch,omitempty"`
-	ServesDinner          *bool         `json:"servesDinner,omitempty"`
-	ServesBeer            *bool         `json:"servesBeer,omitempty"`
-	ServesWine            *bool         `json:"servesWine,omitempty"`
-	ServesBrunch          *bool         `json:"servesBrunch,omitempty"`
-	ServesVegetarianFood  *bool         `json:"servesVegetarianFood,omitempty"`
-	EditorialSummary      LocalizedText `json:"editorialSummary,omitempty"`
-	OutdoorSeating        *bool         `json:"outdoorSeating,omitempty"`
-	LiveMusic             *bool         `json:"liveMusic,omitempty"`
-	MenuForChildren       *bool         `json:"menuForChildren,omitempty"`
-	ServesCocktails       *bool         `json:"servesCocktails,omitempty"`
-	ServesDessert         *bool         `json:"servesDessert,omitempty"`
-	ServesCoffee          *bool         `json:"servesCoffee,omitempty"`
-	GoodForChildren       *bool         `json:"goodForChildren,omitempty"`
-	AllowsDogs            *bool         `json:"allowsDogs,omitempty"`
-	Restroom              *bool         `json:"restroom,omitempty"`
-	GoodForGroups         *bool         `json:"goodForGroups,omitempty"`
-	GoodForWatchingSports *bool         `json:"goodForWatchingSports,omitempty"`
-	PlaceId               string        `json:"placeId,omitempty"`
+type CandidateResponse struct {
+	Candidates []Candidate `json:"candidates"`
 }
-
-type Photo struct {
-	Uri           string `json:"uri,omitempty"`
-	PhotoUri      string `json:"photoUri,omitempty"`
-	HeightPx      int    `json:"heightPx,omitempty"`
-	DisplayName   string `json:"displayName,omitempty"`
-	GoogleMapsUri string `json:"googleMapsUri,omitempty"`
-}
-
-type Review struct {
-	Text                   string `json:"text,omitempty"`
-	LanguageCode           string `json:"languageCode,omitempty"`
-	OverviewFlagContentUri string `json:"overviewFlagContentUri,omitempty"`
-}
-
-type LocalizedText struct {
-	Text         string `json:"text,omitempty"`
-	LanguageCode string `json:"languageCode,omitempty"`
-}
-
-// End of Selection
 
 type GooglePlacesResponse struct {
 	Places []Place `json:"places"`
@@ -100,9 +40,10 @@ type GooglePlacesResponse struct {
 type PlaceQuery struct {
 	Lat            float64
 	Long           float64
-	Category       string
 	Radius         float64
 	MaxResultCount int32
+	IncludedTypes  []PlaceType
+	ExcludedTypes  []PlaceType
 }
 
 type searchNearbyRequest struct {
@@ -115,8 +56,70 @@ type searchNearbyRequest struct {
 			Radius float64 `json:"radius"`
 		} `json:"circle"`
 	} `json:"locationRestriction"`
-	IncludedTypes  []string `json:"includedTypes,omitempty"`
-	MaxResultCount int32    `json:"maxResultCount,omitempty"`
+	IncludedTypes  []PlaceType `json:"includedTypes,omitempty"`
+	ExcludedTypes  []PlaceType `json:"excludedTypes,omitempty"`
+	MaxResultCount int32       `json:"maxResultCount,omitempty"`
+}
+
+func (c *client) FindCandidatesByQuery(query string) ([]Candidate, error) {
+	// Create URL with query parameters
+	url := fmt.Sprintf("%s?input=%s&inputtype=textquery&fields=place_id,name,formatted_address,geometry,types,photos,opening_hours&key=%s",
+		placeSearchURL,
+		url.QueryEscape(query),
+		c.apiKey)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	var data CandidateResponse
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&data); err != nil {
+		return nil, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	return data.Candidates, nil
+}
+
+func (c *client) FindPlaceByID(id string) (*Place, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/%s", placeDetailsURL, id), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.Header.Set("X-Goog-Api-Key", c.apiKey)
+	req.Header.Set("X-Goog-FieldMask", "*")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response: %w", err)
+	}
+
+	var place Place
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&place); err != nil {
+		return nil, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	return &place, nil
 }
 
 func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
@@ -124,7 +127,8 @@ func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
 	reqBody.LocationRestriction.Circle.Center.Latitude = query.Lat
 	reqBody.LocationRestriction.Circle.Center.Longitude = query.Long
 	reqBody.LocationRestriction.Circle.Radius = query.Radius
-	reqBody.IncludedTypes = []string{query.Category}
+	reqBody.IncludedTypes = query.IncludedTypes
+	reqBody.ExcludedTypes = query.ExcludedTypes
 	reqBody.MaxResultCount = query.MaxResultCount
 
 	jsonBody, err := json.Marshal(reqBody)

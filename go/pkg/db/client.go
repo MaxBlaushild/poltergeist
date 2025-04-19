@@ -40,6 +40,11 @@ type client struct {
 	tagHandle                         *tagHandle
 	tagGroupHandle                    *tagGroupHandle
 	zoneHandle                        *zoneHandler
+	locationArchetypeHandle           *locationArchetypeHandle
+	questArchetypeHandle              *questArchetypeHandle
+	questArchetypeNodeHandle          *questArchetypeNodeHandle
+	questArchetypeChallengeHandle     *questArchetypeChallengeHandle
+	questArchetypeNodeChallengeHandle *questArchetypeNodeChallengeHandle
 }
 
 type ClientConfig struct {
@@ -97,7 +102,32 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		tagHandle:                         &tagHandle{db: db},
 		tagGroupHandle:                    &tagGroupHandle{db: db},
 		zoneHandle:                        &zoneHandler{db: db},
-	}, err
+		locationArchetypeHandle:           &locationArchetypeHandle{db: db},
+		questArchetypeHandle:              &questArchetypeHandle{db: db},
+		questArchetypeNodeHandle:          &questArchetypeNodeHandle{db: db},
+		questArchetypeChallengeHandle:     &questArchetypeChallengeHandle{db: db},
+		questArchetypeNodeChallengeHandle: &questArchetypeNodeChallengeHandle{db: db},
+	}, nil
+}
+
+func (c *client) LocationArchetype() LocationArchetypeHandle {
+	return c.locationArchetypeHandle
+}
+
+func (c *client) QuestArchetype() QuestArchetypeHandle {
+	return c.questArchetypeHandle
+}
+
+func (c *client) QuestArchetypeNode() QuestArchetypeNodeHandle {
+	return c.questArchetypeNodeHandle
+}
+
+func (c *client) QuestArchetypeChallenge() QuestArchetypeChallengeHandle {
+	return c.questArchetypeChallengeHandle
+}
+
+func (c *client) QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle {
+	return c.questArchetypeNodeChallengeHandle
 }
 
 func (c *client) Zone() ZoneHandle {
@@ -111,6 +141,7 @@ func (c *client) Tag() TagHandle {
 func (c *client) TagGroup() TagGroupHandle {
 	return c.tagGroupHandle
 }
+
 func (c *client) MatchUser() MatchUserHandle {
 	return c.matchUserHandle
 }

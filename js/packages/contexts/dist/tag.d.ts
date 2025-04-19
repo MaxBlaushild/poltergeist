@@ -4,6 +4,8 @@ type TagContextType = {
     tagGroups: TagGroup[];
     selectedTags: Tag[];
     setSelectedTags: (tags: Tag[]) => void;
+    createTagGroup: (tagGroup: TagGroup) => void;
+    moveTagToTagGroup: (tagID: string, tagGroupID: string) => void;
 };
 export declare const TagContext: React.Context<TagContextType>;
 export declare const TagProvider: ({ children }: {
