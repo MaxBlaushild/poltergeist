@@ -302,6 +302,7 @@ type QuestArchetypeChallengeHandle interface {
 	FindAll(ctx context.Context) ([]*models.QuestArchetypeChallenge, error)
 	Update(ctx context.Context, questArchetypeChallenge *models.QuestArchetypeChallenge) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	FindAllByNodeID(ctx context.Context, nodeID uuid.UUID) ([]*models.QuestArchetypeChallenge, error)
 }
 
 type QuestArchetypeNodeChallengeHandle interface {

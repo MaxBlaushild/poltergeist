@@ -16,24 +16,24 @@ func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *model
 	return h.db.WithContext(ctx).Create(questArchetype).Error
 }
 
-func loadChallengesWithUnlockedNodes(db *gorm.DB) *gorm.DB {
-	return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
-		return db.Preload("UnlockedNode", func(db *gorm.DB) *gorm.DB {
-			return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
-				return db.Preload("UnlockedNode", func(db *gorm.DB) *gorm.DB {
-					return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
-						return db.Preload("UnlockedNode")
-					})
-				})
-			})
-		})
-	})
-}
+// func loadChallengesWithUnlockedNodes(db *gorm.DB) *gorm.DB {
+// 	return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
+// 		return db.Preload("UnlockedNode", func(db *gorm.DB) *gorm.DB {
+// 			return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
+// 				return db.Preload("UnlockedNode", func(db *gorm.DB) *gorm.DB {
+// 					return db.Preload("Challenges", func(db *gorm.DB) *gorm.DB {
+// 						return db.Preload("UnlockedNode")
+// 					})
+// 				})
+// 			})
+// 		})
+// 	})
+// }
 
 func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetype, error) {
 	var questArchetype models.QuestArchetype
 	if err := h.db.WithContext(ctx).
-		Preload("Root", loadChallengesWithUnlockedNodes).
+		Preload("Root").
 		First(&questArchetype, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (h *questArchetypeHandle) Delete(ctx context.Context, id uuid.UUID) error {
 func (h *questArchetypeHandle) FindAll(ctx context.Context) ([]*models.QuestArchetype, error) {
 	var questArchetypes []*models.QuestArchetype
 	if err := h.db.WithContext(ctx).
-		Preload("Root", loadChallengesWithUnlockedNodes).
+		Preload("Root").
 		Find(&questArchetypes).Error; err != nil {
 		return nil, err
 	}
