@@ -1,0 +1,1 @@
+alter table location_archetypes drop column name;

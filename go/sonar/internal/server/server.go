@@ -176,17 +176,331 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.generateQuest))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.createTagGroup))
-	r.GET("/sonar/quests/archTypes", middleware.WithAuthentication(s.authClient, s.getQuestArchTypes))
+	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.getLocationArchetypes))
+	r.GET("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.getLocationArchetype))
+	r.POST("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.createLocationArchetype))
+	r.DELETE("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteLocationArchetype))
+	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.updateLocationArchetype))
+	r.GET("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.getQuestArchetypes))
+	r.GET("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.getQuestArchetype))
+	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.createQuestArchetype))
+	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteQuestArchetype))
+	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.updateQuestArchetype))
+	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.createQuestArchetypeNode))
+	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.generateQuestArchetypeChallenge))
+	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.getQuestArchetypeChallenges))
 	r.Run(":8042")
 }
 
-func (s *server) getQuestArchTypes(ctx *gin.Context) {
+func (s *server) getQuestArchetypeChallenges(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
+		return
+	}
+
+	questArchetypeChallenges, err := s.dbClient.QuestArchetypeChallenge().FindAllByNodeID(ctx, questArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questArchetypeChallenges)
+}
+
+func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
+		return
+	}
+
+	var requestBody struct {
+		RewardPoints int                        `json:"rewardPoints"`
+		UnlockedNode *models.QuestArchetypeNode `json:"unlockedNode"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var newNodeID *uuid.UUID
+	if requestBody.UnlockedNode == nil {
+		id := uuid.New()
+		newNodeID = &id
+		questArchetypeNode := &models.QuestArchetypeNode{
+			ID:                  *newNodeID,
+			CreatedAt:           time.Now(),
+			UpdatedAt:           time.Now(),
+			LocationArchetypeID: requestBody.UnlockedNode.LocationArchetypeID,
+		}
+
+		if err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	questArchetypeChallenge := &models.QuestArchetypeChallenge{
+		ID:             uuid.New(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		Reward:         requestBody.RewardPoints,
+		UnlockedNodeID: newNodeID,
+	}
+
+	err = s.dbClient.QuestArchetypeChallenge().Create(ctx, questArchetypeChallenge)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.QuestArchetypeNodeChallenge().Create(ctx, &models.QuestArchetypeNodeChallenge{
+		ID:                        uuid.New(),
+		CreatedAt:                 time.Now(),
+		UpdatedAt:                 time.Now(),
+		QuestArchetypeChallengeID: questArchetypeChallenge.ID,
+		QuestArchetypeNodeID:      questArchetypeIDUUID,
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, questArchetypeChallenge)
+}
+
+func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
+	var requestBody struct {
+		LocationArchetypeID uuid.UUID `json:"locationArchetypeID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	questArchetypeNode := &models.QuestArchetypeNode{
+		ID:                  uuid.New(),
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+		LocationArchetypeID: requestBody.LocationArchetypeID,
+	}
+
+	err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, questArchetypeNode)
+}
+
+func (s *server) deleteQuestArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
+		return
+	}
+	err = s.dbClient.QuestArchetype().Delete(ctx, questArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest archetype deleted successfully"})
+}
+
+func (s *server) updateQuestArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
+		return
+	}
+	var requestBody struct {
+		Name string `json:"name"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	questArchetype, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	questArchetype.Name = requestBody.Name
+
+	err = s.dbClient.QuestArchetype().Update(ctx, questArchetype)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questArchetype)
+}
+
+func (s *server) deleteLocationArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	locationArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid location archetype ID"})
+		return
+	}
+	err = s.dbClient.LocationArchetype().Delete(ctx, locationArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "location archetype deleted successfully"})
+}
+
+func (s *server) updateLocationArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	locationArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid location archetype ID"})
+		return
+	}
+
+	var requestBody struct {
+		Name          string                 `json:"name"`
+		IncludedTypes []googlemaps.PlaceType `json:"includedTypes"`
+		ExcludedTypes []googlemaps.PlaceType `json:"excludedTypes"`
+		Challenges    []string               `json:"challenges"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	locationArchetype, err := s.dbClient.LocationArchetype().FindByID(ctx, locationArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	locationArchetype.Name = requestBody.Name
+	locationArchetype.IncludedTypes = requestBody.IncludedTypes
+	locationArchetype.ExcludedTypes = requestBody.ExcludedTypes
+	locationArchetype.Challenges = requestBody.Challenges
+
+	err = s.dbClient.LocationArchetype().Update(ctx, locationArchetype)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, locationArchetype)
+}
+
+func (s *server) createLocationArchetype(ctx *gin.Context) {
+	var requestBody struct {
+		Name          string                 `json:"name"`
+		IncludedTypes []googlemaps.PlaceType `json:"includedTypes"`
+		ExcludedTypes []googlemaps.PlaceType `json:"excludedTypes"`
+		Challenges    []string               `json:"challenges"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	locationArchetype := &models.LocationArchetype{
+		Name:          requestBody.Name,
+		ID:            uuid.New(),
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		IncludedTypes: requestBody.IncludedTypes,
+		ExcludedTypes: requestBody.ExcludedTypes,
+		Challenges:    requestBody.Challenges,
+	}
+
+	err := s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, locationArchetype)
+}
+
+func (s *server) getLocationArchetypes(ctx *gin.Context) {
+	locationArchetypes, err := s.dbClient.LocationArchetype().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, locationArchetypes)
+}
+
+func (s *server) getLocationArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	locationArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid location archetype ID"})
+		return
+	}
+	locationArchetype, err := s.dbClient.LocationArchetype().FindByID(ctx, locationArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, locationArchetype)
+}
+
+func (s *server) getQuestArchetypes(ctx *gin.Context) {
 	questArchTypes, err := s.dbClient.QuestArchetype().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, questArchTypes)
+}
+
+func (s *server) getQuestArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchTypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype ID"})
+		return
+	}
+	questArchType, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchTypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questArchType)
+}
+
+func (s *server) createQuestArchetype(ctx *gin.Context) {
+	var requestBody struct {
+		Name   string    `json:"name"`
+		RootID uuid.UUID `json:"rootID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	questArchType := &models.QuestArchetype{
+		Name:      requestBody.Name,
+		RootID:    requestBody.RootID,
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	err := s.dbClient.QuestArchetype().Create(ctx, questArchType)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, questArchType)
 }
 
 func (s *server) moveTagToTagGroup(ctx *gin.Context) {

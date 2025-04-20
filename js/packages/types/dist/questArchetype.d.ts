@@ -1,27 +1,27 @@
-export interface QuestArchTypeChallenge {
+export interface QuestArchetypeChallenge {
     id: string;
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
     reward: number;
     unlockedNodeId?: string;
-    unlockedNode?: QuestArchTypeNode;
+    unlockedNode?: QuestArchetypeNode;
 }
-export interface QuestArchTypeNode {
+export interface QuestArchetypeNode {
     id: string;
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
     locationArchType: string;
     locationArchTypeId: string;
-    challenges: QuestArchTypeChallenge[];
+    challenges: QuestArchetypeChallenge[];
 }
-export interface QuestArchType {
+export interface QuestArchetype {
     id: string;
     name: string;
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
-    root: QuestArchTypeNode;
+    root: QuestArchetypeNode;
     rootId: string;
 }
