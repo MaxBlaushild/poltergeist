@@ -9,18 +9,19 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type LocationArchetype struct {
-	ID             uuid.UUID              `json:"id"`
-	Name           string                 `json:"name"`
-	CreatedAt      time.Time              `json:"createdAt"`
-	UpdatedAt      time.Time              `json:"updatedAt"`
-	DeletedAt      gorm.DeletedAt         `json:"deletedAt"`
-	IncludedTypes  []googlemaps.PlaceType `json:"includedTypes"`
-	ExcludedTypes  []googlemaps.PlaceType `json:"excludedTypes"`
-	Challenges     []string               `json:"challenges"`
-	UsedChallenges []string               `gorm:"-" json:"usedChallenges"`
+	ID             uuid.UUID                 `json:"id"`
+	Name           string                    `json:"name"`
+	CreatedAt      time.Time                 `json:"createdAt"`
+	UpdatedAt      time.Time                 `json:"updatedAt"`
+	DeletedAt      gorm.DeletedAt            `json:"deletedAt"`
+	IncludedTypes  googlemaps.PlaceTypeSlice `json:"includedTypes" gorm:"type:text[]"`
+	ExcludedTypes  googlemaps.PlaceTypeSlice `json:"excludedTypes" gorm:"type:text[]"`
+	Challenges     pq.StringArray            `json:"challenges" gorm:"type:text[]"`
+	UsedChallenges []string                  `gorm:"-" json:"usedChallenges"`
 }
 
 func (l *LocationArchetype) GetRandomChallenge() (string, error) {

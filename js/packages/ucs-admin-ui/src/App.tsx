@@ -18,6 +18,10 @@ import { ZoneProvider } from './contexts/zones.tsx';
 import { Zone } from './components/Zone.tsx';
 import { Place } from './components/Place.tsx';
 import { Tags } from './components/Tags.tsx';
+import LocationArchetypes from './components/LocationArchetypes.tsx';
+import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
+import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
+import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -57,6 +61,9 @@ const Navigation = () => {
         <Link to="/armory" className="text-white hover:text-gray-300">Armory</Link>
         <Link to="/zones" className="text-white hover:text-gray-300">Zones</Link>
         <Link to="/tags" className="text-white hover:text-gray-300">Tags</Link>
+        <Link to="/location-archetypes" className="text-white hover:text-gray-300">Location Archetypes</Link>
+        <Link to="/quest-archetypes" className="text-white hover:text-gray-300">Quest Archetypes</Link>
+        <Link to="/zone-quest-archetypes" className="text-white hover:text-gray-300">Zone Quest Archetypes</Link>
       </div>
     </nav>
   );
@@ -125,6 +132,23 @@ const router = createBrowserRouter([
         element: <Tags />,
         loader: onlyAuthenticated,
       },
+      {
+        path: "/location-archetypes",
+        element: (
+            <LocationArchetypes />
+        ),
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/quest-archetypes",
+        element: <QuestArchetypeComponent />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/zone-quest-archetypes",
+        element: <ZoneQuestArchetypes />,
+        loader: onlyAuthenticated,
+      },
     ]
   }
 ]);
@@ -134,16 +158,18 @@ const App = () => {
     <APIProvider>
       <TagProvider>
         <ZoneProvider>
-          <MediaContextProvider>
-            <AuthProvider
-              appName="UCS Admin Dashboard"
-              uriPrefix="/sonar"
-            >
+          <QuestArchetypesProvider>
+            <MediaContextProvider>
+              <AuthProvider
+                appName="UCS Admin Dashboard"
+                uriPrefix="/sonar"
+              >
               <InventoryProvider>
                 <RouterProvider router={router} />
               </InventoryProvider>
-            </AuthProvider>
-          </MediaContextProvider>
+              </AuthProvider>
+            </MediaContextProvider>
+          </QuestArchetypesProvider>
         </ZoneProvider>
       </TagProvider>
     </APIProvider>

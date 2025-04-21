@@ -7,11 +7,14 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
+	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster => ../pkg/dungeonmaster
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/imagine => ../pkg/imagine
 	github.com/MaxBlaushild/poltergeist/pkg/jobs => ../pkg/jobs
+	github.com/MaxBlaushild/poltergeist/pkg/locationseeder => ../pkg/locationseeder
 	github.com/MaxBlaushild/poltergeist/pkg/models => ../pkg/models
 	github.com/MaxBlaushild/poltergeist/pkg/slack => ../pkg/slack
 	github.com/MaxBlaushild/poltergeist/pkg/texter => ../pkg/texter
@@ -22,10 +25,10 @@ replace (
 
 require (
 	cosmossdk.io/errors v1.0.1
-	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/imagine v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
-	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/useapi v0.0.0-00010101000000-000000000000
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/google/uuid v1.6.0
@@ -35,6 +38,10 @@ require (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -48,6 +55,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/lib/pq v1.10.9 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect

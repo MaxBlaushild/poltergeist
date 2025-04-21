@@ -14,7 +14,7 @@ type QuestArchetypeNode struct {
 	DeletedAt           gorm.DeletedAt            `json:"deletedAt"`
 	LocationArchetype   LocationArchetype         `json:"locationArchetype"`
 	LocationArchetypeID uuid.UUID                 `json:"locationArchetypeId"`
-	Challenges          []QuestArchetypeChallenge `json:"challenges"`
+	Challenges          []QuestArchetypeChallenge `json:"challenges" gorm:"many2many:quest_archetype_node_challenges;"`
 }
 
 func (q *QuestArchetypeNode) GetRandomChallenge() (string, error) {

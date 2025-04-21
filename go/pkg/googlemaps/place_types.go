@@ -1,8 +1,14 @@
 package googlemaps
 
-import "reflect"
+import (
+	"database/sql/driver"
+	"strings"
+)
 
 type PlaceType string
+
+// PlaceTypeSlice is a custom type for []PlaceType that implements Scanner and Valuer
+type PlaceTypeSlice []PlaceType
 
 var AutomotivePlaceTypes = []PlaceType{
 	TypeCarDealer,
@@ -541,22 +547,343 @@ const (
 )
 
 func GetAllPlaceTypes() []PlaceType {
-	var placeTypes []PlaceType
+	return []PlaceType{
+		TypeAirstrip,
+		TypeBusStop,
+		TypeFerryTerminal,
+		TypeHeliport,
+		TypeInternationalAirport,
+		TypeParkAndRide,
+		TypeTransitDepot,
+		TypeTruckStop,
+		TypeArena,
+		TypeAthleticField,
+		TypeFishingCharter,
+		TypeFishingPond,
+		TypeFitnessCenter,
+		TypeGolfCourse,
+		TypeIceSkatingRink,
+		TypePlayground,
+		TypeSkiResort,
+		TypeSportsActivityLocation,
+		TypeSportsClub,
+		TypeSportsCoaching,
+		TypeSportsComplex,
+		TypeSwimmingPool,
+		TypeAsianGroceryStore,
+		TypeAutoPartsStore,
+		TypeButcherShop,
+		TypeCellPhoneStore,
+		TypeDiscountStore,
+		TypeFoodStore,
+		TypeGiftShop,
+		TypeGroceryStore,
+		TypeHomeImprovementStore,
+		TypeMarket,
+		TypeSportingGoodsStore,
+		TypeWarehouseStore,
+		TypeWholesaler,
+		TypeBeach,
+		TypeBedAndBreakfast,
+		TypeBudgetJapaneseInn,
+		TypeCampingCabin,
+		TypeCottage,
+		TypeExtendedStayHotel,
+		TypeFarmstay,
+		TypeGuestHouse,
+		TypeHostel,
+		TypeHotel,
+		TypeInn,
+		TypeJapaneseInn,
+		TypeMobileHomePark,
+		TypeMotel,
+		TypePrivateGuestRoom,
+		TypeResortHotel,
+		TypeGovernmentOffice,
+		TypeNeighborhoodPolice,
+		TypeAcaiShop,
+		TypeAfghaniRestaurant,
+		TypeAfricanRestaurant,
+		TypeAmericanRestaurant,
+		TypeAsianRestaurant,
+		TypeBagelShop,
+		TypeBarAndGrill,
+		TypeBarbecueRestaurant,
+		TypeBrazilianRestaurant,
+		TypeBreakfastRestaurant,
+		TypeBrunchRestaurant,
+		TypeBuffetRestaurant,
+		TypeCafeteria,
+		TypeCandyStore,
+		TypeCatCafe,
+		TypeChineseRestaurant,
+		TypeChocolateFactory,
+		TypeChocolateShop,
+		TypeCoffeeShop,
+		TypeConfectionery,
+		TypeDeli,
+		TypeDessertRestaurant,
+		TypeDessertShop,
+		TypeDiner,
+		TypeDogCafe,
+		TypeDonutShop,
+		TypeFastFoodRestaurant,
+		TypeFineDiningRestaurant,
+		TypeFoodCourt,
+		TypeFrenchRestaurant,
+		TypeGreekRestaurant,
+		TypeHamburgerRestaurant,
+		TypeIceCreamShop,
+		TypeIndianRestaurant,
+		TypeIndonesianRestaurant,
+		TypeItalianRestaurant,
+		TypeJapaneseRestaurant,
+		TypeJuiceShop,
+		TypeKoreanRestaurant,
+		TypeLebaneseRestaurant,
+		TypeMediterraneanRestaurant,
+		TypeMexicanRestaurant,
+		TypeMiddleEasternRestaurant,
+		TypePizzaRestaurant,
+		TypePub,
+		TypeRamenRestaurant,
+		TypeSandwichShop,
+		TypeSeafoodRestaurant,
+		TypeSpanishRestaurant,
+		TypeSteakHouse,
+		TypeSushiRestaurant,
+		TypeTeaHouse,
+		TypeThaiRestaurant,
+		TypeTurkishRestaurant,
+		TypeVeganRestaurant,
+		TypeVegetarianRestaurant,
+		TypeVietnameseRestaurant,
+		TypeAdventureSportsCenter,
+		TypeAmphitheatre,
+		TypeAmusementCenter,
+		TypeBanquetHall,
+		TypeBarbecueArea,
+		TypeBotanicalGarden,
+		TypeChildrensCamp,
+		TypeComedyClub,
+		TypeCommunityCenter,
+		TypeConcertHall,
+		TypeConventionCenter,
+		TypeCulturalCenter,
+		TypeCyclingPark,
+		TypeDanceHall,
+		TypeDogPark,
+		TypeEventVenue,
+		TypeFerrisWheel,
+		TypeGarden,
+		TypeHikingArea,
+		TypeHistoricalLandmark,
+		TypeInternetCafe,
+		TypeKaraoke,
+		TypeMarina,
+		TypeNationalPark,
+		TypeObservationDeck,
+		TypeOffRoadingArea,
+		TypeOperaHouse,
+		TypePhilharmonicHall,
+		TypePicnicGround,
+		TypePlanetarium,
+		TypePlaza,
+		TypeRollerCoaster,
+		TypeSkateboardPark,
+		TypeStatePark,
+		TypeVideoArcade,
+		TypeVisitorCenter,
+		TypeWaterPark,
+		TypeWeddingVenue,
+		TypeWildlifePark,
+		TypeWildlifeRefuge,
+		TypeCorporateOffice,
+		TypeFarm,
+		TypeRanch,
+		TypeElectricVehicleChargingStation,
+		TypeRestStop,
+		TypeAccounting,
+		TypeAirport,
+		TypeAmusementPark,
+		TypeAquarium,
+		TypeArtGallery,
+		TypeAtm,
+		TypeBakery,
+		TypeBank,
+		TypeBar,
+		TypeBeautySalon,
+		TypeArtStudio,
+		TypeAuditorium,
+		TypeCulturalLandmark,
+		TypeHistoricalPlace,
+		TypeMonument,
+		TypePerformingArtsTheater,
+		TypeSculpture,
+		TypeBicycleStore,
+		TypeBookStore,
+		TypeBowlingAlley,
+		TypeBusStation,
+		TypeCafe,
+		TypeCampground,
+		TypeCarDealer,
+		TypeCarRental,
+		TypeCarRepair,
+		TypeCarWash,
+		TypeCasino,
+		TypeCemetery,
+		TypeChurch,
+		TypeCityHall,
+		TypeClothingStore,
+		TypeConvenienceStore,
+		TypeCourthouse,
+		TypeDentist,
+		TypeDepartmentStore,
+		TypeDoctor,
+		TypeDrugstore,
+		TypeElectrician,
+		TypeElectronicsStore,
+		TypeEmbassy,
+		TypeFireStation,
+		TypeFlorist,
+		TypeFuneralHome,
+		TypeFurnitureStore,
+		TypeGasStation,
+		TypeGym,
+		TypeHairCare,
+		TypeHardwareStore,
+		TypeHinduTemple,
+		TypeHomeGoodsStore,
+		TypeHospital,
+		TypeInsuranceAgency,
+		TypeJewelryStore,
+		TypeLaundry,
+		TypeLawyer,
+		TypeLibrary,
+		TypeLightRailStation,
+		TypeLiquorStore,
+		TypeLocalGovernmentOffice,
+		TypeLocksmith,
+		TypeLodging,
+		TypeMealDelivery,
+		TypeMealTakeaway,
+		TypeMosque,
+		TypeMovieRental,
+		TypeMovieTheater,
+		TypeMovingCompany,
+		TypeMuseum,
+		TypeNightClub,
+		TypePainter,
+		TypePark,
+		TypeParking,
+		TypePetStore,
+		TypePharmacy,
+		TypePhysiotherapist,
+		TypePlumber,
+		TypePolice,
+		TypePostOffice,
+		TypePrimarySchool,
+		TypeRealEstateAgency,
+		TypeRestaurant,
+		TypeRoofingContractor,
+		TypeRvPark,
+		TypeSchool,
+		TypeSecondarySchool,
+		TypeShoeStore,
+		TypeShoppingMall,
+		TypeSpa,
+		TypeStadium,
+		TypeStorage,
+		TypeStore,
+		TypeSubwayStation,
+		TypeSupermarket,
+		TypeSynagogue,
+		TypeTaxiStand,
+		TypeTouristAttraction,
+		TypeTrainStation,
+		TypeTransitStation,
+		TypeTravelAgency,
+		TypeUniversity,
+		TypeVeterinaryCare,
+		TypeWineBar,
+		TypeZoo,
+	}
+}
 
-	// Get the reflect.Type of PlaceType
-	placeTypeType := reflect.TypeOf(PlaceType(""))
-
-	// Get the package's reflect.Type
-	pkg := reflect.TypeOf(PlaceType(""))
-
-	// Iterate through all exported values in the package
-	for i := 0; i < pkg.NumMethod(); i++ {
-		method := pkg.Method(i)
-		// Check if the constant is of type PlaceType
-		if method.Type == placeTypeType {
-			placeTypes = append(placeTypes, PlaceType(method.Name))
-		}
+// Scan implements the sql.Scanner interface for PlaceType
+func (p *PlaceType) Scan(value interface{}) error {
+	if value == nil {
+		*p = ""
+		return nil
 	}
 
+	switch v := value.(type) {
+	case string:
+		*p = PlaceType(v)
+	case []byte:
+		*p = PlaceType(v)
+	default:
+		return nil
+	}
+	return nil
+}
+
+// Value implements the driver.Valuer interface for PlaceType
+func (p PlaceType) Value() (driver.Value, error) {
+	return string(p), nil
+}
+
+// Scan implements the sql.Scanner interface for PlaceTypeSlice
+func (p *PlaceTypeSlice) Scan(value interface{}) error {
+	if value == nil {
+		*p = nil
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		// Remove curly braces and split by comma
+		cleaned := strings.Trim(v, "{}")
+		if cleaned == "" {
+			*p = PlaceTypeSlice{}
+			return nil
+		}
+		parts := strings.Split(cleaned, ",")
+		types := make(PlaceTypeSlice, len(parts))
+		for i, part := range parts {
+			types[i] = PlaceType(strings.TrimSpace(part))
+		}
+		*p = types
+	case []byte:
+		return p.Scan(string(v))
+	default:
+		return nil
+	}
+	return nil
+}
+
+// Value implements the driver.Valuer interface for PlaceTypeSlice
+func (p PlaceTypeSlice) Value() (driver.Value, error) {
+	if p == nil {
+		return nil, nil
+	}
+	if len(p) == 0 {
+		return "{}", nil
+	}
+
+	// Convert to PostgreSQL array format
+	parts := make([]string, len(p))
+	for i, t := range p {
+		parts[i] = string(t)
+	}
+	return "{" + strings.Join(parts, ",") + "}", nil
+}
+
+// NewPlaceTypeSlice creates a new PlaceTypeSlice from a string slice
+func NewPlaceTypeSlice(types []string) PlaceTypeSlice {
+	placeTypes := make(PlaceTypeSlice, len(types))
+	for i, t := range types {
+		placeTypes[i] = PlaceType(t)
+	}
 	return placeTypes
 }

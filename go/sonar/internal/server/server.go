@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
@@ -27,6 +29,8 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
@@ -50,6 +54,7 @@ type server struct {
 	locationSeeder   locationseeder.Client
 	googlemapsClient googlemaps.Client
 	dungeonmaster    dungeonmaster.Client
+	asyncClient      *asynq.Client
 }
 
 type Server interface {
@@ -71,6 +76,7 @@ func NewServer(
 	locationSeeder locationseeder.Client,
 	googlemapsClient googlemaps.Client,
 	dungeonmaster dungeonmaster.Client,
+	asyncClient *asynq.Client,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -87,6 +93,7 @@ func NewServer(
 		locationSeeder:   locationSeeder,
 		googlemapsClient: googlemapsClient,
 		dungeonmaster:    dungeonmaster,
+		asyncClient:      asyncClient,
 	}
 }
 
@@ -189,7 +196,99 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.createQuestArchetypeNode))
 	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.generateQuestArchetypeChallenge))
 	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.getQuestArchetypeChallenges))
+	r.POST("/sonar/zones/:id/questArchetypes", middleware.WithAuthentication(s.authClient, s.generateQuestArchetypesForZone))
+	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.getZoneQuestArchetypes))
+	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.createZoneQuestArchetype))
+	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteZoneQuestArchetype))
 	r.Run(":8042")
+}
+
+func (s *server) getZoneQuestArchetypes(ctx *gin.Context) {
+	zoneQuestArchetypes, err := s.dbClient.ZoneQuestArchetype().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, zoneQuestArchetypes)
+}
+
+func (s *server) createZoneQuestArchetype(ctx *gin.Context) {
+	var requestBody struct {
+		ZoneID           uuid.UUID `json:"zoneID"`
+		QuestArchetypeID uuid.UUID `json:"questArchetypeID"`
+		NumberOfQuests   int       `json:"numberOfQuests"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneQuestArchetype := &models.ZoneQuestArchetype{
+		ID:               uuid.New(),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+		ZoneID:           requestBody.ZoneID,
+		QuestArchetypeID: requestBody.QuestArchetypeID,
+		NumberOfQuests:   requestBody.NumberOfQuests,
+	}
+
+	err := s.dbClient.ZoneQuestArchetype().Create(ctx, zoneQuestArchetype)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, zoneQuestArchetype)
+}
+
+func (s *server) deleteZoneQuestArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneQuestArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone quest archetype ID"})
+		return
+	}
+
+	err = s.dbClient.ZoneQuestArchetype().Delete(ctx, zoneQuestArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "zone quest archetype deleted successfully"})
+}
+
+func (s *server) generateQuestArchetypesForZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	zoneQuestArchetypes, err := s.dbClient.ZoneQuestArchetype().FindByZoneID(ctx, zoneIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, zoneQuestArchetype := range zoneQuestArchetypes {
+		payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
+			ZoneID:           zoneIDUUID,
+			QuestArchetypeID: zoneQuestArchetype.QuestArchetypeID,
+		})
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest archetypes generated successfully"})
 }
 
 func (s *server) getQuestArchetypeChallenges(ctx *gin.Context) {
@@ -217,8 +316,8 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		RewardPoints int                        `json:"rewardPoints"`
-		UnlockedNode *models.QuestArchetypeNode `json:"unlockedNode"`
+		Reward              int        `json:"reward"`
+		LocationArchetypeID *uuid.UUID `json:"locationArchetypeID"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -227,14 +326,14 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var newNodeID *uuid.UUID
-	if requestBody.UnlockedNode == nil {
+	if requestBody.LocationArchetypeID != nil {
 		id := uuid.New()
 		newNodeID = &id
 		questArchetypeNode := &models.QuestArchetypeNode{
 			ID:                  *newNodeID,
 			CreatedAt:           time.Now(),
 			UpdatedAt:           time.Now(),
-			LocationArchetypeID: requestBody.UnlockedNode.LocationArchetypeID,
+			LocationArchetypeID: *requestBody.LocationArchetypeID,
 		}
 
 		if err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode); err != nil {
@@ -247,7 +346,7 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		ID:             uuid.New(),
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
-		Reward:         requestBody.RewardPoints,
+		Reward:         requestBody.Reward,
 		UnlockedNodeID: newNodeID,
 	}
 
@@ -367,10 +466,10 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name          string                 `json:"name"`
-		IncludedTypes []googlemaps.PlaceType `json:"includedTypes"`
-		ExcludedTypes []googlemaps.PlaceType `json:"excludedTypes"`
-		Challenges    []string               `json:"challenges"`
+		Name          string   `json:"name"`
+		IncludedTypes []string `json:"includedTypes"`
+		ExcludedTypes []string `json:"excludedTypes"`
+		Challenges    []string `json:"challenges"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -385,9 +484,9 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 	}
 
 	locationArchetype.Name = requestBody.Name
-	locationArchetype.IncludedTypes = requestBody.IncludedTypes
-	locationArchetype.ExcludedTypes = requestBody.ExcludedTypes
-	locationArchetype.Challenges = requestBody.Challenges
+	locationArchetype.IncludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.IncludedTypes)
+	locationArchetype.ExcludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes)
+	locationArchetype.Challenges = pq.StringArray(requestBody.Challenges)
 
 	err = s.dbClient.LocationArchetype().Update(ctx, locationArchetype)
 	if err != nil {
@@ -399,10 +498,10 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 
 func (s *server) createLocationArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name          string                 `json:"name"`
-		IncludedTypes []googlemaps.PlaceType `json:"includedTypes"`
-		ExcludedTypes []googlemaps.PlaceType `json:"excludedTypes"`
-		Challenges    []string               `json:"challenges"`
+		Name          string   `json:"name"`
+		IncludedTypes []string `json:"includedTypes"`
+		ExcludedTypes []string `json:"excludedTypes"`
+		Challenges    []string `json:"challenges"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -415,14 +514,14 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		ID:            uuid.New(),
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
-		IncludedTypes: requestBody.IncludedTypes,
-		ExcludedTypes: requestBody.ExcludedTypes,
-		Challenges:    requestBody.Challenges,
+		IncludedTypes: googlemaps.NewPlaceTypeSlice(requestBody.IncludedTypes),
+		ExcludedTypes: googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes),
+		Challenges:    pq.StringArray(requestBody.Challenges),
 	}
 
 	err := s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"shit ass error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, locationArchetype)
@@ -560,25 +659,27 @@ func (s *server) generateQuest(ctx *gin.Context) {
 		return
 	}
 
-	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
 	questArchTypeIDUUID, err := uuid.Parse(questArchTypeID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest arch type ID"})
 		return
 	}
 
-	quest, err := s.dungeonmaster.GenerateQuest(ctx, zone, questArchTypeIDUUID)
+	payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
+		ZoneID:           zoneID,
+		QuestArchetypeID: questArchTypeIDUUID,
+	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, quest)
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest generation started"})
 }
 
 func (s *server) getGooglePlaces(ctx *gin.Context) {

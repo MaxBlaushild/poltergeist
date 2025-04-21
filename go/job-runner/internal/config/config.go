@@ -8,9 +8,10 @@ import (
 )
 
 type SecretConfig struct {
-	DbPassword    string
-	ImagineApiKey string
-	UseApiKey     string
+	DbPassword       string
+	ImagineApiKey    string
+	UseApiKey        string
+	GoogleMapsApiKey string
 }
 
 type PublicConfig struct {

@@ -10,8 +10,13 @@ import (
 	"github.com/MaxBlaushild/job-runner/internal/processors"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
+
 	"github.com/hibiken/asynq"
 )
 
@@ -53,10 +58,16 @@ func main() {
 	awsClient := aws.NewAWSClient("us-east-1")
 
 	useApiService := useapi.NewClient(cfg.Secret.UseApiKey)
+	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
+	deepPriestClient := deep_priest.SummonDeepPriest()
+	locationSeederClient := locationseeder.NewClient(googlemapsClient, dbClient, deepPriestClient, awsClient)
+	dungeonmasterClient := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriestClient, locationSeederClient, awsClient)
 
 	pollImageGenerationProcessor := processors.NewPollImageGenerationProcessor(dbClient, useApiService)
 	pollImageUpscaleProcessor := processors.NewPollImageUpscaleProcessor(dbClient, useApiService, awsClient)
 	queuePollImageGenerationProcessor := processors.NewQueuePollImageGenerationProcessor(dbClient, useApiService, client)
+	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
+	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 
 	mux := asynq.NewServeMux()
 
@@ -74,11 +85,16 @@ func main() {
 	mux.Handle(jobs.PollImageGenerationTaskType, &pollImageGenerationProcessor)
 	mux.Handle(jobs.PollImageUpscaleTaskType, &pollImageUpscaleProcessor)
 	mux.Handle(jobs.QueuePollImageGenerationTaskType, &queuePollImageGenerationProcessor)
-
+	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
+	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
 	// Schedule the task to run every 30 seconds.
 	if _, err = scheduler.Register("@every 30s", asynq.NewTask(jobs.QueuePollImageGenerationTaskType, nil)); err != nil {
+		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueQuestGenerationsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
 	}
 

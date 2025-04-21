@@ -24,4 +24,5 @@ use (
 	./go/sonar
 	./go/texter
 	./go/trivai
+	./go/job-runner
 )
