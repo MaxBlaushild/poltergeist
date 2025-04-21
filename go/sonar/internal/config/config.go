@@ -21,6 +21,7 @@ type PublicConfig struct {
 	DbPort      string `mapstructure:"DB_PORT"`
 	DbName      string `mapstructure:"DB_NAME"`
 	PhoneNumber string `mapstructure:"PHONE_NUMBER"`
+	RedisUrl    string `mapstructure:"REDIS_URL"`
 }
 
 type Config struct {

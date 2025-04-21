@@ -36,9 +36,6 @@ func (p *PollImageGenerationProcessor) ProcessTask(ctx context.Context, task *as
 		return err
 	}
 
-	spew.Dump("payload")
-	spew.Dump(payload)
-
 	uuidID, err := uuid.Parse(payload.ID)
 	if err != nil {
 		return err

@@ -42,6 +42,7 @@ type DbClient interface {
 	QuestArchetypeNode() QuestArchetypeNodeHandle
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
+	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -311,4 +312,16 @@ type QuestArchetypeNodeChallengeHandle interface {
 	FindAll(ctx context.Context) ([]*models.QuestArchetypeNodeChallenge, error)
 	Update(ctx context.Context, questArchetypeNodeChallenge *models.QuestArchetypeNodeChallenge) error
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type ZoneQuestArchetypeHandle interface {
+	Create(ctx context.Context, zoneQuestArchetype *models.ZoneQuestArchetype) error
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]*models.ZoneQuestArchetype, error)
+	FindByZoneIDAndQuestArchetypeID(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID) (*models.ZoneQuestArchetype, error)
+	Delete(ctx context.Context, zoneQuestArchetypeID uuid.UUID) error
+	DeleteByZoneIDAndQuestArchetypeID(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID) error
+	DeleteByZoneID(ctx context.Context, zoneID uuid.UUID) error
+	DeleteByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) error
+	DeleteAll(ctx context.Context) error
+	FindAll(ctx context.Context) ([]*models.ZoneQuestArchetype, error)
 }

@@ -1,0 +1,1 @@
+drop table zone_quest_archetypes;

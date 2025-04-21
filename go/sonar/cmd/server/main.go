@@ -18,6 +18,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/server"
+	"github.com/hibiken/asynq"
 )
 
 func main() {
@@ -51,6 +52,7 @@ func main() {
 	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
 	locationSeeder := locationseeder.NewClient(googlemapsClient, dbClient, deepPriest, awsClient)
 	dungeonmaster := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient)
+	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
 	s := server.NewServer(
 		authClient,
 		texterClient,
@@ -66,6 +68,7 @@ func main() {
 		locationSeeder,
 		googlemapsClient,
 		dungeonmaster,
+		asyncClient,
 	)
 
 	s.ListenAndServe("8042")

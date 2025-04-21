@@ -1,3 +1,4 @@
+import { LocationArchetype } from "./locationArchetype";
 export interface QuestArchetypeChallenge {
     id: string;
     createdAt: Date;
@@ -12,8 +13,8 @@ export interface QuestArchetypeNode {
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;
-    locationArchType: string;
-    locationArchTypeId: string;
+    locationArchetype: LocationArchetype;
+    locationArchetypeId: string;
     challenges: QuestArchetypeChallenge[];
 }
 export interface QuestArchetype {
