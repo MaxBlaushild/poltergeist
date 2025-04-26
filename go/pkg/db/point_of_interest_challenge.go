@@ -56,15 +56,23 @@ func (p *pointOfInterestChallengeHandle) Edit(ctx context.Context, id uuid.UUID,
 	return &challenge, nil
 }
 
-func (p *pointOfInterestChallengeHandle) Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int) (*models.PointOfInterestChallenge, error) {
+func (p *pointOfInterestChallengeHandle) Create(
+	ctx context.Context,
+	pointOfInterestID uuid.UUID,
+	tier int,
+	question string,
+	inventoryItemID int,
+	pointOfInterestGroupID *uuid.UUID,
+) (*models.PointOfInterestChallenge, error) {
 	challenge := models.PointOfInterestChallenge{
-		PointOfInterestID: pointOfInterestID,
-		Tier:              tier,
-		Question:          question,
-		InventoryItemID:   inventoryItemID,
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-		ID:                uuid.New(),
+		PointOfInterestID:      pointOfInterestID,
+		Tier:                   tier,
+		Question:               question,
+		InventoryItemID:        inventoryItemID,
+		CreatedAt:              time.Now(),
+		UpdatedAt:              time.Now(),
+		ID:                     uuid.New(),
+		PointOfInterestGroupID: pointOfInterestGroupID,
 	}
 
 	if err := p.db.Create(&challenge).Error; err != nil {

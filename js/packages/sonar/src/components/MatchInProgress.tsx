@@ -10,7 +10,7 @@ import {
   Team,
 } from '@poltergeist/types';
 import { Button } from './shared/Button.tsx';
-import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
+import { PointOfInterestPanel } from './PointOfInterestPanel/PointOfInterestPanel.tsx';
 import { Drawer } from './Drawer.tsx';
 import { Scoreboard } from './Scoreboard.tsx';
 import { Inventory } from './Inventory.tsx';

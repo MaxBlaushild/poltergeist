@@ -63,8 +63,6 @@ export const QuestComponent = ({
           );
         })()}
       </div>
-
-
       <div className="ml-6 mt-2 w-full text-left">
         {(() => {
           const renderNode = (node: QuestNode) => {

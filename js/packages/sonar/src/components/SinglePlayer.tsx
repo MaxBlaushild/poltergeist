@@ -8,7 +8,7 @@ import { MapZoomButton } from './MapZoomButton.tsx';
 import { TagFilter } from './TagFilter.tsx';
 import { Drawer } from './Drawer.tsx';
 import { Button } from './shared/Button.tsx';
-import { PointOfInterestPanel } from './PointOfInterestPanel.tsx';
+import { PointOfInterestPanel } from './PointOfInterestPanel/PointOfInterestPanel.tsx';
 import { Inventory } from './Inventory.tsx';
 import { QuestLog } from './QuestLog.tsx';
 import NewItemModal from './NewItemModal.tsx';

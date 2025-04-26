@@ -1366,10 +1366,11 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 
 func (s *server) createPointOfInterestChallenge(ctx *gin.Context) {
 	var requestBody struct {
-		PointOfInterestID uuid.UUID `binding:"required" json:"pointOfInterestId"`
-		Tier              int       `binding:"required" json:"tier"`
-		Question          string    `binding:"required" json:"question"`
-		InventoryItemID   int       `binding:"required" json:"inventoryItemId"`
+		PointOfInterestID      uuid.UUID `binding:"required" json:"pointOfInterestId"`
+		Tier                   int       `binding:"required" json:"tier"`
+		Question               string    `binding:"required" json:"question"`
+		InventoryItemID        int       `binding:"required" json:"inventoryItemId"`
+		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1379,7 +1380,7 @@ func (s *server) createPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.dbClient.PointOfInterestChallenge().Create(ctx, requestBody.PointOfInterestID, requestBody.Tier, requestBody.Question, requestBody.InventoryItemID); err != nil {
+	if _, err := s.dbClient.PointOfInterestChallenge().Create(ctx, requestBody.PointOfInterestID, requestBody.Tier, requestBody.Question, requestBody.InventoryItemID, &requestBody.PointOfInterestGroupID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})

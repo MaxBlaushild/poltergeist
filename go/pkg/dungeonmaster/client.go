@@ -176,12 +176,6 @@ func (c *client) processNode(
 	*locations = append(*locations, pointOfInterest.Name)
 	*descriptions = append(*descriptions, pointOfInterest.Description)
 
-	log.Printf("Deleting existing challenges for point of interest %s", pointOfInterest.ID)
-	if err := c.dbClient.PointOfInterestChallenge().DeleteAllForPointOfInterest(ctx, pointOfInterest.ID); err != nil {
-		log.Printf("Error deleting challenges: %v", err)
-		return err
-	}
-
 	for i, allotedChallenge := range questArchTypeNode.Challenges {
 		log.Printf("Processing challenge %d", i)
 
@@ -199,6 +193,7 @@ func (c *client) processNode(
 			i,
 			randomChallenge,
 			allotedChallenge.Reward,
+			&quest.ID,
 		)
 		if err != nil {
 			log.Printf("Error creating challenge: %v", err)

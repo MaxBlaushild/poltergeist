@@ -188,7 +188,7 @@ type PointOfInterestGroupHandle interface {
 }
 
 type PointOfInterestChallengeHandle interface {
-	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int) (*models.PointOfInterestChallenge, error)
+	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int, pointOfInterestGroupID *uuid.UUID) (*models.PointOfInterestChallenge, error)
 	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
 	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
