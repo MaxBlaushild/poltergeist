@@ -118,11 +118,11 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
         Component: () => (
           <MatchContextProvider>
-            <PointOfInterestContextProvider>
               <MapProvider>
+            <PointOfInterestContextProvider>
                 <MatchInProgress />
-              </MapProvider>
             </PointOfInterestContextProvider>
+              </MapProvider>
           </MatchContextProvider>
         ),
       },
@@ -136,11 +136,11 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
         Component: () => (
           <TagProvider>
-            <QuestLogContextProvider>
               <MapProvider>
+            <QuestLogContextProvider>
                 <SinglePlayer />
-              </MapProvider>
             </QuestLogContextProvider>
+              </MapProvider>
           </TagProvider>
         ),
       },

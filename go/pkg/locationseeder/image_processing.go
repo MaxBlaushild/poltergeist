@@ -3,6 +3,7 @@ package locationseeder
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -14,6 +15,10 @@ func (c *client) UploadImage(ctx context.Context, placeID string, base64Image st
 	imageBytes, err := base64.StdEncoding.DecodeString(base64Image)
 	if err != nil {
 		return "", err
+	}
+
+	if len(imageBytes) == 0 {
+		return "", fmt.Errorf("no image data provided")
 	}
 
 	imageFormat, err := util.DetectImageFormat(imageBytes)

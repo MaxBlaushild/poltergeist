@@ -25,6 +25,7 @@ type Quest struct {
 	RootNode    *QuestNode `json:"rootNode"`
 	ImageUrl    string     `json:"imageUrl"`
 	Name        string     `json:"name"`
+	Description string     `json:"description"`
 }
 
 type QuestLog struct {
@@ -192,5 +193,6 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(group models.PointOfIn
 		RootNode:    rootNode,
 		ImageUrl:    group.ImageUrl,
 		Name:        group.Name,
+		Description: group.Description,
 	}
 }

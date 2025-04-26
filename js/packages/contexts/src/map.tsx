@@ -11,6 +11,8 @@ interface MapContextValue {
   setZoom: (zoom: number) => void;
   setLocation: (lat: number, lng: number) => void;
   flyToLocation: (lat: number, lng: number, zoom?: number) => void;
+  lng: number;
+  lat: number;
 }
 
 const MapContext = createContext<MapContextValue | undefined>(undefined);
@@ -92,7 +94,14 @@ export const MapProvider = ({ children }: MapProviderProps) => {
   }, [map]);
 
   return (
-    <MapContext.Provider value={{ map, mapContainer: mapContainerRef, zoom, setZoom, setLocation, flyToLocation }}>
+    <MapContext.Provider value={{ 
+      map, 
+      mapContainer: mapContainerRef, 
+      zoom, 
+      setZoom, 
+      setLocation, 
+      flyToLocation,
+      lng, lat }}>
       {children}
     </MapContext.Provider>
   );

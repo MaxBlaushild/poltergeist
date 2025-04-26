@@ -32,6 +32,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -55,6 +56,7 @@ type server struct {
 	googlemapsClient googlemaps.Client
 	dungeonmaster    dungeonmaster.Client
 	asyncClient      *asynq.Client
+	redisClient      *redis.Client
 }
 
 type Server interface {
@@ -77,6 +79,7 @@ func NewServer(
 	googlemapsClient googlemaps.Client,
 	dungeonmaster dungeonmaster.Client,
 	asyncClient *asynq.Client,
+	redisClient *redis.Client,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -94,6 +97,7 @@ func NewServer(
 		googlemapsClient: googlemapsClient,
 		dungeonmaster:    dungeonmaster,
 		asyncClient:      asyncClient,
+		redisClient:      redisClient,
 	}
 }
 

@@ -58,9 +58,10 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword:    os.Getenv("DB_PASSWORD"),
-			ImagineApiKey: os.Getenv("IMAGINE_API_KEY"),
-			UseApiKey:     os.Getenv("USE_API_KEY"),
+			DbPassword:       os.Getenv("DB_PASSWORD"),
+			ImagineApiKey:    os.Getenv("IMAGINE_API_KEY"),
+			UseApiKey:        os.Getenv("USE_API_KEY"),
+			GoogleMapsApiKey: os.Getenv("GOOGLE_MAPS_API_KEY"),
 		},
 		Public: publicCfg,
 	}, nil

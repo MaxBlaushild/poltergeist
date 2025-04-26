@@ -14,6 +14,7 @@ type PointOfInterest struct {
 	CreatedAt                 time.Time                  `json:"createdAt"`
 	UpdatedAt                 time.Time                  `json:"updatedAt"`
 	Name                      string                     `json:"name"`
+	OriginalName              string                     `json:"originalName"`
 	Clue                      string                     `json:"clue"`
 	Lat                       string                     `json:"lat"`
 	Lng                       string                     `json:"lng"`

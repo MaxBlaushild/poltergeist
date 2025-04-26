@@ -122,34 +122,48 @@ func (c *client) processNode(
 ) error {
 	log.Printf("Processing node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID)
 
-	count := 1
-	if _, ok := foundPlaces[questArchTypeNode.LocationArchetypeID]; !ok {
-		foundPlaces[questArchTypeNode.LocationArchetypeID] = make(map[string]bool)
-	} else {
-		count = len(foundPlaces[questArchTypeNode.LocationArchetypeID]) + 1
+	locationArchetype, err := c.dbClient.LocationArchetype().FindByID(ctx, questArchTypeNode.LocationArchetypeID)
+	if err != nil {
+		log.Printf("Error finding location archetype: %v", err)
+		return err
 	}
 
-	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, questArchTypeNode.LocationArchetype.IncludedTypes, questArchTypeNode.LocationArchetype.ExcludedTypes, int32(count))
+	log.Printf("Location archetype: %+v", locationArchetype)
+	for _, includedType := range locationArchetype.IncludedTypes {
+		log.Printf("Included type: %s", includedType)
+	}
+	for _, excludedType := range locationArchetype.ExcludedTypes {
+		log.Printf("Excluded type: %s", excludedType)
+	}
+
+	count := 1
+	if _, ok := foundPlaces[locationArchetype.ID]; !ok {
+		foundPlaces[locationArchetype.ID] = make(map[string]bool)
+	} else {
+		count = len(foundPlaces[locationArchetype.ID]) + 1
+	}
+
+	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, locationArchetype.IncludedTypes, locationArchetype.ExcludedTypes, int32(count))
 	if err != nil {
 		log.Printf("Error seeding points of interest: %v", err)
 		return err
 	}
 
 	if len(pointsOfInterest) == 0 {
-		log.Printf("No points of interest found for place type %s", questArchTypeNode.LocationArchetypeID)
+		log.Printf("No points of interest found for place type %s", locationArchetype.ID)
 		return errors.New("no points of interest found")
 	}
 
 	var pointOfInterest *models.PointOfInterest
 	for _, poi := range pointsOfInterest {
-		if !foundPlaces[questArchTypeNode.LocationArchetypeID][poi.ID.String()] {
+		if !foundPlaces[locationArchetype.ID][poi.ID.String()] {
 			pointOfInterest = poi
-			foundPlaces[questArchTypeNode.LocationArchetypeID][poi.ID.String()] = true
+			foundPlaces[locationArchetype.ID][poi.ID.String()] = true
 			break
 		}
 	}
 	if pointOfInterest == nil {
-		return fmt.Errorf("no unused points of interest found for type %s", questArchTypeNode.LocationArchetypeID)
+		return fmt.Errorf("no unused points of interest found for type %s", locationArchetype.ID)
 	}
 	log.Printf("Found point of interest: %s", pointOfInterest.Name)
 
@@ -170,6 +184,7 @@ func (c *client) processNode(
 
 	for i, allotedChallenge := range questArchTypeNode.Challenges {
 		log.Printf("Processing challenge %d", i)
+
 		randomChallenge, err := questArchTypeNode.GetRandomChallenge()
 		if err != nil {
 			log.Printf("Error getting random challenge: %v", err)
@@ -198,9 +213,14 @@ func (c *client) processNode(
 			}
 		}
 
-		if allotedChallenge.UnlockedNode != nil {
-			log.Printf("Processing child node: %s", allotedChallenge.UnlockedNode.LocationArchetypeID)
-			if err := c.processNode(ctx, zone, allotedChallenge.UnlockedNode, locations, descriptions, challenges, quest, newMember, foundPlaces); err != nil {
+		if allotedChallenge.UnlockedNodeID != nil {
+			unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *allotedChallenge.UnlockedNodeID)
+			if err != nil {
+				log.Printf("Error finding unlocked node: %v", err)
+				return err
+			}
+			log.Printf("Processing child node: %s", unlockedNode.LocationArchetypeID)
+			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, foundPlaces); err != nil {
 				log.Printf("Error processing child node: %v", err)
 				return err
 			}

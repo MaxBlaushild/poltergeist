@@ -1,0 +1,1 @@
+alter table points_of_interest add column original_name varchar(255);

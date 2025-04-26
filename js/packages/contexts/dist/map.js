@@ -67,7 +67,15 @@ export const MapProvider = ({ children }) => {
             });
         }
     }, [map]);
-    return (_jsx(MapContext.Provider, Object.assign({ value: { map, mapContainer: mapContainerRef, zoom, setZoom, setLocation, flyToLocation } }, { children: children })));
+    return (_jsx(MapContext.Provider, Object.assign({ value: {
+            map,
+            mapContainer: mapContainerRef,
+            zoom,
+            setZoom,
+            setLocation,
+            flyToLocation,
+            lng, lat
+        } }, { children: children })));
 };
 export const useMap = () => {
     const context = useContext(MapContext);

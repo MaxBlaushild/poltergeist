@@ -1,0 +1,1 @@
+alter table points_of_interest drop column original_name;

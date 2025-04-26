@@ -208,12 +208,7 @@ func (c *client) fuzzCoordinates(lat float64, lng float64, radius float64) (floa
 	newLng := lng + (distance * math.Sin(angle))
 
 	// Calculate what percentage of the radius was used
-	percentageUsed := (distance / radiusDegrees) * 100
-
-	// Calculate remaining radius in meters
-	remainingRadius := math.Max(100, radius*(1-percentageUsed/100))
-
-	return newLat, newLng, remainingRadius
+	return newLat, newLng, radius
 }
 
 func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error) {

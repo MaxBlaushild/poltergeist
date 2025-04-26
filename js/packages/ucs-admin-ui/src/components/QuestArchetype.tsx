@@ -56,6 +56,7 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
                     index={i}
                     locationArchetypes={locationArchetypes}
                     depth={depth + 1}
+                    onEdit={onEdit}
                   />
                 ))}
               </div>

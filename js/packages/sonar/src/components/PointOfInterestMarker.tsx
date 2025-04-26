@@ -2,6 +2,7 @@ import React from 'react';
 import { generateColorFromTeamName } from '../utils/generateColor';
 import { PointOfInterest, TagGroup, Team } from '@poltergeist/types';
 import { useLocation } from '@poltergeist/contexts';
+import { tagsToFilter } from '../utils/tagFilter.ts';
 
 export const PointOfInterestMarker = ({
   pointOfInterest,
@@ -22,7 +23,12 @@ export const PointOfInterestMarker = ({
   onClick: (e: React.MouseEvent) => void;
   tagGroups: TagGroup[];
 }) => {
-  const tagGroup = tagGroups?.find(group => group.tags?.some(tag => pointOfInterest.tags?.some(t => t.id === tag.id)));
+  const tagGroup = tagGroups?.reduce<{group: TagGroup | null, matchCount: number}>((bestMatch, group) => {
+    const matchCount = (group.tags || []).filter(tag => 
+      pointOfInterest.tags?.some(t => t.id === tag.id && !tagsToFilter.includes(tag.name))
+    ).length;
+    return matchCount > bestMatch.matchCount ? {group, matchCount} : bestMatch;
+  }, {group: null, matchCount: 0})?.group;
   const imageUrl = hasDiscovered
   ? pointOfInterest.imageURL
     : tagGroup?.iconUrl || `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`;
