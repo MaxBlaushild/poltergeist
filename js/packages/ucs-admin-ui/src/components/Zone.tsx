@@ -8,8 +8,10 @@ import { useGeneratePointsOfInterest } from '../hooks/useGeneratePointsOfInteres
 import { useCandidates } from '@poltergeist/hooks';
 import { Candidate } from '@poltergeist/types';
 import { useQuestArchtypes } from '../hooks/useQuestArchtypes.ts';
+import { useAPI } from '@poltergeist/contexts';
 export const Zone = () => {
   const { id } = useParams();
+  const { apiClient } = useAPI();
   const { zones, selectedZone, setSelectedZone, createZone, deleteZone } =
     useZoneContext();
   const zone = zones.find((zone) => zone.id === id);
@@ -20,9 +22,17 @@ export const Zone = () => {
     error: placeTypesError,
   } = usePlaceTypes();
   const [isGenerating, setIsGenerating] = useState(false);
-  const [selectedIncludedPlaceTypes, setSelectedIncludedPlaceTypes] = useState<string[]>([]);
-  const [selectedExcludedPlaceTypes, setSelectedExcludedPlaceTypes] = useState<string[]>([]);
-  const { questArchtypes, loading: questArchtypesLoading, error: questArchtypesError } = useQuestArchtypes(); 
+  const [selectedIncludedPlaceTypes, setSelectedIncludedPlaceTypes] = useState<
+    string[]
+  >([]);
+  const [selectedExcludedPlaceTypes, setSelectedExcludedPlaceTypes] = useState<
+    string[]
+  >([]);
+  const {
+    questArchtypes,
+    loading: questArchtypesLoading,
+    error: questArchtypesError,
+  } = useQuestArchtypes();
   const [numPlaces, setNumPlaces] = useState(1);
   const [address, setAddress] = useState('');
   const [showPlaces, setShowPlaces] = useState(false);
@@ -32,7 +42,9 @@ export const Zone = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [importedPlaces, setImportedPlaces] = useState<string[]>([]);
   const [isGeneratingQuest, setIsGeneratingQuest] = useState(false);
-  const [selectedQuestArchtype, setSelectedQuestArchtype] = useState<string | null>(null);
+  const [selectedQuestArchtype, setSelectedQuestArchtype] = useState<
+    string | null
+  >(null);
   const {
     candidates,
     loading: candidatesLoading,
@@ -62,6 +74,11 @@ export const Zone = () => {
 
   const handleCandidateSelect = (candidate: Candidate) => {
     importPointOfInterest(candidate.place_id, id!);
+  };
+
+  const handleGenerateQuest = async () => {
+    // const/sonar/zones/:id/questArchetypes
+    await apiClient.post(`/sonar/zones/${id}/questArchetypes`, {});
   };
 
   if (loading) {
@@ -138,7 +155,13 @@ export const Zone = () => {
               Updated At: {point.updatedAt.toLocaleString()}
             </p>
             <p className="text-gray-600 mb-3">
-              Place ID: <a href={`/place/${point.googleMapsPlaceId}`} className="text-blue-500 hover:underline">{point.googleMapsPlaceId}</a>
+              Place ID:{' '}
+              <a
+                href={`/place/${point.googleMapsPlaceId}`}
+                className="text-blue-500 hover:underline"
+              >
+                {point.googleMapsPlaceId}
+              </a>
             </p>
             <button
               className="bg-blue-500 hover:bg-blue-600 text-white rounded-md px-3 py-1 text-sm font-medium shadow-md mr-2 transition duration-200"
@@ -179,6 +202,12 @@ export const Zone = () => {
       >
         Generate Quest
       </button>
+      <button
+        onClick={handleGenerateQuest}
+        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-blue-300"
+      >
+        Generate Quests for Zone
+      </button>
       {isImporting && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-xl w-96">
@@ -215,7 +244,6 @@ export const Zone = () => {
           </div>
         </div>
       )}
-
 
       {isGeneratingQuest && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
@@ -281,29 +309,43 @@ export const Zone = () => {
               <div className="space-y-4">
                 <div>
                   <div className="mb-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Included Types:</h3>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">
+                      Selected Included Types:
+                    </h3>
                     <div className="flex flex-wrap gap-2">
                       {selectedIncludedPlaceTypes.map((type) => (
-                        <span key={type} className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm">
+                        <span
+                          key={type}
+                          className="px-2 py-1 bg-blue-100 text-blue-800 rounded-md text-sm"
+                        >
                           {type}
                         </span>
                       ))}
                       {selectedIncludedPlaceTypes.length === 0 && (
-                        <span className="text-gray-500 text-sm">No types selected</span>
+                        <span className="text-gray-500 text-sm">
+                          No types selected
+                        </span>
                       )}
                     </div>
                   </div>
 
                   <div className="mb-4">
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Excluded Types:</h3>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">
+                      Selected Excluded Types:
+                    </h3>
                     <div className="flex flex-wrap gap-2">
                       {selectedExcludedPlaceTypes.map((type) => (
-                        <span key={type} className="px-2 py-1 bg-red-100 text-red-800 rounded-md text-sm">
+                        <span
+                          key={type}
+                          className="px-2 py-1 bg-red-100 text-red-800 rounded-md text-sm"
+                        >
                           {type}
                         </span>
                       ))}
                       {selectedExcludedPlaceTypes.length === 0 && (
-                        <span className="text-gray-500 text-sm">No types selected</span>
+                        <span className="text-gray-500 text-sm">
+                          No types selected
+                        </span>
                       )}
                     </div>
                   </div>
@@ -319,7 +361,10 @@ export const Zone = () => {
                     multiple
                     value={selectedIncludedPlaceTypes}
                     onChange={(e) => {
-                      const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                      const selectedOptions = Array.from(
+                        e.target.selectedOptions,
+                        (option) => option.value
+                      );
                       setSelectedIncludedPlaceTypes(selectedOptions);
                     }}
                   >
@@ -341,7 +386,10 @@ export const Zone = () => {
                     multiple
                     value={selectedExcludedPlaceTypes}
                     onChange={(e) => {
-                      const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                      const selectedOptions = Array.from(
+                        e.target.selectedOptions,
+                        (option) => option.value
+                      );
                       setSelectedExcludedPlaceTypes(selectedOptions);
                     }}
                   >
@@ -387,7 +435,10 @@ export const Zone = () => {
                   </button>
                   <button
                     onClick={() => {
-                      if (selectedIncludedPlaceTypes && selectedExcludedPlaceTypes) {
+                      if (
+                        selectedIncludedPlaceTypes &&
+                        selectedExcludedPlaceTypes
+                      ) {
                         generatePointsOfInterest(
                           id!,
                           selectedIncludedPlaceTypes,
@@ -397,7 +448,9 @@ export const Zone = () => {
                         setIsGenerating(false);
                       }
                     }}
-                    disabled={!selectedIncludedPlaceTypes || !selectedExcludedPlaceTypes}
+                    disabled={
+                      !selectedIncludedPlaceTypes || !selectedExcludedPlaceTypes
+                    }
                     className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-blue-300"
                   >
                     Generate

@@ -1,0 +1,2 @@
+alter table points_of_interest drop constraint fk_point_of_interest_group_id;
+alter table points_of_interest drop column point_of_interest_group_id;

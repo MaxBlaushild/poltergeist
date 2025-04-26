@@ -8,14 +8,14 @@ import (
 
 type ZoneQuestArchetype struct {
 	ID               uuid.UUID      `json:"id"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
-	DeletedAt        *time.Time     `json:"deleted_at"`
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
+	DeletedAt        *time.Time     `json:"deletedAt"`
 	Zone             Zone           `json:"zone"`
-	ZoneID           uuid.UUID      `json:"zone_id"`
-	QuestArchetype   QuestArchetype `json:"quest_archetype"`
-	QuestArchetypeID uuid.UUID      `json:"quest_archetype_id"`
-	NumberOfQuests   int            `json:"number_of_quests"`
+	ZoneID           uuid.UUID      `json:"zoneId"`
+	QuestArchetype   QuestArchetype `json:"questArchetype"`
+	QuestArchetypeID uuid.UUID      `json:"questArchetypeId"`
+	NumberOfQuests   int            `json:"numberOfQuests"`
 }
 
 func (zqa *ZoneQuestArchetype) TableName() string {

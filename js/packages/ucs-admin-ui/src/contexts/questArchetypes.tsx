@@ -115,10 +115,18 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
   };
 
   const addChallengeToQuestArchetype = async (questArchetypeId: string, reward: number, locationArchetypeID?: string | null) => {
-    const newChallenge = await apiClient.post<QuestArchetypeChallenge>(`/sonar/questArchetypes/${questArchetypeId}/challenges`, {
+    const payload: { reward: number; locationArchetypeID?: string } = {
       reward,
-      locationArchetypeID,
-    });
+    };
+
+    if (locationArchetypeID) {
+      payload.locationArchetypeID = locationArchetypeID;
+    }
+
+    const newChallenge = await apiClient.post<QuestArchetypeChallenge>(
+      `/sonar/questArchetypes/${questArchetypeId}/challenges`,
+      payload
+    );
 
     fetchQuestArchetypes();
   };
@@ -151,6 +159,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       questArchetypes, 
       locationArchetypes, 
       placeTypes, 
+      zoneQuestArchetypes,
       createQuestArchetype,
       addChallengeToQuestArchetype,
       createLocationArchetype,

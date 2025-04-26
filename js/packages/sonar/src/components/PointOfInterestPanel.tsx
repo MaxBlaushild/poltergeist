@@ -29,6 +29,7 @@ import { useSubmissionsContext } from '../contexts/SubmissionsContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import { useTagContext } from '@poltergeist/contexts';
+import tagFilter from '../utils/tagFilter.ts';
 interface PointOfInterestPanelProps {
   pointOfInterest: PointOfInterest;
   onClose: (immediate: boolean) => void;
@@ -111,13 +112,13 @@ export const PointOfInterestPanel = ({
             />
           </div>
           <div className="flex flex-wrap gap-2 justify-end">
-            {pointOfInterest.tags?.map((tag) => {
+            {tagFilter(pointOfInterest.tags ?? []).map((tag) => {
               return (
                 <div 
                   key={tag.id}
                   className="px-3 py-1 bg-gray-200 rounded-full text-sm"
                 >
-                  {tag.name.split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')}
+                  {tag.name.split('_').map((word, i) => i === 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase()).join(' ')}
                 </div>
               );
             })}

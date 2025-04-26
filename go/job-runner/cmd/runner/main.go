@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/MaxBlaushild/job-runner/internal/config"
 	"github.com/MaxBlaushild/job-runner/internal/processors"
@@ -48,6 +52,7 @@ func main() {
 				"default":  3,
 				"low":      1,
 			},
+			ShutdownTimeout: 5 * time.Minute, // Allow tasks up to 5 minutes to complete during shutdown
 		},
 	)
 
@@ -113,6 +118,24 @@ func main() {
 		if err := http.ListenAndServe(":9013", nil); err != nil {
 			log.Fatalf("could not start health check server: %v", err)
 		}
+	}()
+
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT)
+
+	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	go func() {
+		<-sigChan
+		log.Println("Received shutdown signal. Draining queue...")
+
+		// Stop accepting new tasks and wait for in-progress tasks to complete
+		srv.Shutdown()
+
+		// Stop the scheduler
+		scheduler.Shutdown()
 	}()
 
 	if err := srv.Run(mux); err != nil {

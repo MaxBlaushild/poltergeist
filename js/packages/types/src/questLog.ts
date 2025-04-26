@@ -20,6 +20,7 @@ export interface Quest {
   rootNode: QuestNode;
   imageUrl: string;
   name: string;
+  description: string;
 }
 
 export interface QuestLog {

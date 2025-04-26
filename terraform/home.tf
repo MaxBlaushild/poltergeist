@@ -418,6 +418,9 @@ module "ecs" {
           }, {
             name      = "USE_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
+          }, {
+            name      = "GOOGLE_MAPS_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
           }]
           image = "${aws_ecr_repository.job_runner.repository_url}:latest"
           port_mappings = [

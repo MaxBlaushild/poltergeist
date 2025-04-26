@@ -6,6 +6,7 @@ import { Quest, QuestNode, PointOfInterest, hasDiscoveredPointOfInterest } from 
 import { useMap } from '@poltergeist/contexts';
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
+import { QuestComponent } from './Quest.tsx';
 
 interface QuestLogProps {
   onClose: (pointOfInterest?: PointOfInterest | null) => void;
@@ -16,19 +17,17 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
   const { submissions } = useSubmissionsContext();
   const { setLocation, flyToLocation } = useMap();
   const { discoveries } = useDiscoveriesContext();
+  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null);
 
   const [expandedQuests, setExpandedQuests] = useState<{
     [key: string]: boolean;
   }>({});
 
-  const toggleQuest = (questId: string) => {
-    setExpandedQuests((prev) => ({
-      ...prev,
-      [questId]: !prev[questId],
-    }));
+  const toggleQuest = (quest: Quest) => {
+    setSelectedQuest(quest);
   };
 
-  const onClickQuest = (
+  const onPointOfInterestClick = (
     e: React.MouseEvent<HTMLDivElement>,
     node: QuestNode
   ) => {
@@ -43,6 +42,19 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
   const inProgressQuests = quests.filter((quest) => !quest.isCompleted);
   const completedQuests = quests.filter((quest) => quest.isCompleted);
 
+  if (selectedQuest) {
+    return (
+      <div className="flex flex-col gap-4 p-4 pt-0 w-full">
+        <button 
+          className="text-left font-bold mb-4"
+          onClick={() => setSelectedQuest(null)}
+        >
+          ← Back to Quests
+        </button>
+        <QuestComponent quest={selectedQuest} onPointOfInterestClick={onPointOfInterestClick} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4 pt-0 w-full">
@@ -53,7 +65,6 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
             quests={inProgressQuests}
             toggleQuest={toggleQuest}
             expandedQuests={expandedQuests}
-            onClickQuest={onClickQuest}
           />
         </TabItem>
         <TabItem key="Completed">
@@ -61,7 +72,6 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
             quests={completedQuests}
             toggleQuest={toggleQuest}
             expandedQuests={expandedQuests}
-            onClickQuest={onClickQuest}
           />
         </TabItem>
       </TabNav>
@@ -71,23 +81,23 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
 
 type QuestListProps = {
   quests: Quest[];
-  toggleQuest: (questId: string) => void;
+  toggleQuest: (quest: Quest) => void;
   expandedQuests: { [key: string]: boolean };
-  onClickQuest: (e: React.MouseEvent<HTMLDivElement>, node: QuestNode) => void;
 };
 
 const QuestList = ({
   quests,
   toggleQuest,
   expandedQuests,
-  onClickQuest,
 }: QuestListProps) => {
   const { currentUser } = useUserProfiles();
   const { discoveries } = useDiscoveriesContext();
 
   return (
     <>
-      {quests.map((quest) => {
+      {quests.filter((quest, index, self) => 
+        index === self.findIndex((q) => q.rootNode.pointOfInterest.id === quest.rootNode.pointOfInterest.id)
+      ).map((quest) => {
         const isDiscovered = hasDiscoveredPointOfInterest(
           quest.rootNode.pointOfInterest.id,
           currentUser?.id ?? '',
@@ -97,84 +107,20 @@ const QuestList = ({
         return (
           <div
             key={quest.rootNode.pointOfInterest.id}
-            className="rounded p-2 w-full"
+            className="rounded p-2 w-full cursor-pointer hover:bg-gray-100"
+            onClick={() => {
+                toggleQuest(quest);
+            }}
           >
-            <button
-              className={`w-full flex items-center gap-2 ${!isDiscovered ? 'cursor-not-allowed' : ''}`}
-              onClick={() => isDiscovered && toggleQuest(quest.rootNode.pointOfInterest.id)}
-              disabled={!isDiscovered}
-            >
-              <span className={!isDiscovered ? 'opacity-0' : ''}>
-                {expandedQuests[quest.rootNode.pointOfInterest.id] ? '-' : '+'}
-              </span>
+            <div className="w-full flex items-center gap-2">
               <img
-                src={isDiscovered ? quest.imageUrl : 'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp'}
+                src={quest.imageUrl}
                 className="w-6 h-6 object-cover border-2 border-black"
                 alt=""
               />
               <span>{quest.name}</span>
-              {!isDiscovered && <span className="text-sm text-gray-500 ml-2">(Undiscovered)</span>}
-            </button>
-
-            {expandedQuests[quest.rootNode.pointOfInterest.id] && isDiscovered && (
-              <div className="ml-6 mt-2 w-full text-left">
-                {(() => {
-                  const renderNode = (node: QuestNode) => {
-
-                    const hasDiscoveredNode = hasDiscoveredPointOfInterest(
-                      node.pointOfInterest.id,
-                      currentUser?.id ?? '',
-                      discoveries
-                    );
-                    return (
-                      <div
-                        key={node.pointOfInterest.id}
-                        className="mb-2"
-                        onClick={(e) => onClickQuest(e, node)}
-                      >
-                        <div className="font-semibold flex items-center gap-2">
-                          <img
-                            src={hasDiscoveredNode ? node.pointOfInterest.imageURL : "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"}
-                            className="w-6 h-6 object-cover border-2 border-black"
-                            alt=""
-                          />
-                          <div className="flex flex-col">
-                            <span>{node.pointOfInterest.name}</span>
-                            {node.objectives.map((objective) => (
-                              <div
-                                key={objective.challenge.id}
-                                className="text-m text-gray-600 font-normal"
-                              >
-                                <span
-                                >
-                                  • {objective.challenge.question}
-                                  {objective.isCompleted && ' ✅'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        {Object.entries(node.children).map(
-                          ([childId, childNode]) => {
-                            if (
-                              node.objectives.some(
-                                (obj) =>
-                                  obj.challenge.id === childId && obj.isCompleted
-                              )
-                            ) {
-                              return renderNode(childNode);
-                            }
-                            return null;
-                          }
-                        )}
-                      </div>
-                    );
-                  };
-
-                  return renderNode(quest.rootNode);
-                })()}
-              </div>
-            )}
+              {/* {!isDiscovered && <span className="text-sm text-gray-500 ml-2">(Undiscovered)</span>} */}
+            </div>
           </div>
         );
       })}
