@@ -27,9 +27,13 @@ func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID
 		// Left join with children to check if point is a child
 		Joins("LEFT JOIN point_of_interest_children poic ON poic.point_of_interest_id = poi.id").
 		Where("pog.type = ?", models.PointOfInterestGroupTypeQuest).
-		Where("poic.point_of_interest_id IS NULL"). // Only get points that don't appear as children
-		Where("t.value IN ?", tags).
-		Preload("GroupMembers").
+		Where("poic.point_of_interest_id IS NULL") // Only get points that don't appear as children
+
+	if len(tags) > 0 {
+		query = query.Where("t.value IN ?", tags)
+	}
+
+	query = query.Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").

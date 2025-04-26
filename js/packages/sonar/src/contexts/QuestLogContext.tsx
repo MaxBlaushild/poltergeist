@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import { useAPI, useLocation } from '@poltergeist/contexts';
-import { PointOfInterest, PointOfInterestGroup, Quest, QuestLog, QuestNode } from '@poltergeist/types';
+import { PointOfInterest, PointOfInterestChallenge, Quest, QuestLog, QuestNode } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useSubmissionsContext } from './SubmissionsContext.tsx';
 import { useTagContext } from '@poltergeist/contexts';
@@ -17,6 +17,8 @@ interface QuestLogContextType {
   quests: Quest[];
   pointsOfInterest: PointOfInterest[];
   isRootNode: (pointOfInterest: PointOfInterest) => boolean;
+  pendingTasks: Record<string, PointOfInterestChallenge[]>;
+  completedTasks: Record<string, PointOfInterestChallenge[]>;
 }
 
 interface QuestLogProviderProps {
@@ -47,6 +49,8 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
   const { location } = useLocation();
   const lastFetchLocation = useRef<{lat: number, lng: number} | null>(null);
   const lastFetchTags = useRef<string[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<Record<string, PointOfInterestChallenge[]>>({});
+  const [completedTasks, setCompletedTasks] = useState<Record<string, PointOfInterestChallenge[]>>({});
 
   const refreshQuestLog = useCallback(async () => {
     if (!location?.latitude || !location?.longitude || !selectedTags?.length) {
@@ -58,6 +62,8 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
       setQuests(fetchedQuestLog.quests);
       const pointsOfInterest = getMapPointsOfInterest(fetchedQuestLog.quests);
       setPointsOfInterest(pointsOfInterest);
+      setPendingTasks(fetchedQuestLog.pendingTasks);
+      setCompletedTasks(fetchedQuestLog.completedTasks);
       lastFetchLocation.current = {
         lat: location.latitude,
         lng: location.longitude
@@ -114,6 +120,8 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
         quests,
         pointsOfInterest,
         isRootNode,
+        pendingTasks,
+        completedTasks,
       }}
     >
       {children}

@@ -29,7 +29,9 @@ type Quest struct {
 }
 
 type QuestLog struct {
-	Quests []Quest `json:"quests"`
+	Quests         []Quest                                         `json:"quests"`
+	PendingTasks   map[uuid.UUID][]models.PointOfInterestChallenge `json:"pendingTasks"`
+	CompletedTasks map[uuid.UUID][]models.PointOfInterestChallenge `json:"completedTasks"`
 }
 
 type QuestlogClient interface {
@@ -74,14 +76,18 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat 
 	for _, group := range uniqueGroups {
 		allQuests = append(allQuests, group)
 	}
+	pendingTasks := make(map[uuid.UUID][]models.PointOfInterestChallenge)
+	completedTasks := make(map[uuid.UUID][]models.PointOfInterestChallenge)
 	quests := make([]Quest, 0)
 	for _, group := range allQuests {
-		quest := c.ConvertToQuestWithCompletedNodes(group, submissions)
+		quest := c.ConvertToQuestWithCompletedNodes(group, submissions, pendingTasks, completedTasks)
 		quests = append(quests, *quest)
 	}
 
 	return &QuestLog{
-		Quests: quests,
+		Quests:         quests,
+		PendingTasks:   pendingTasks,
+		CompletedTasks: completedTasks,
 	}, nil
 }
 
@@ -101,7 +107,12 @@ func (c *questlogClient) GetStartedQuests(ctx context.Context, userID uuid.UUID)
 	return groups, nil
 }
 
-func (c *questlogClient) ConvertToQuestWithCompletedNodes(group models.PointOfInterestGroup, submissions []models.PointOfInterestChallengeSubmission) *Quest {
+func (c *questlogClient) ConvertToQuestWithCompletedNodes(
+	group models.PointOfInterestGroup,
+	submissions []models.PointOfInterestChallengeSubmission,
+	pendingTasks map[uuid.UUID][]models.PointOfInterestChallenge,
+	completedTasks map[uuid.UUID][]models.PointOfInterestChallenge,
+) *Quest {
 	submissionsByChallenge := make(map[uuid.UUID][]models.PointOfInterestChallengeSubmission)
 	for _, submission := range submissions {
 		submissionsByChallenge[submission.PointOfInterestChallengeID] = append(submissionsByChallenge[submission.PointOfInterestChallengeID], submission)
@@ -111,6 +122,10 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(group models.PointOfIn
 	buildObjectives := func(poi models.PointOfInterest) []QuestObjective {
 		objectives := make([]QuestObjective, 0)
 		for _, challenge := range poi.PointOfInterestChallenges {
+			if challenge.PointOfInterestGroupID != nil && *challenge.PointOfInterestGroupID != group.ID {
+				continue
+			}
+
 			submissions, exists := submissionsByChallenge[challenge.ID]
 			isCompleted := false
 			if exists {
@@ -131,6 +146,13 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(group models.PointOfIn
 				objective.Submissions = submissions
 			}
 			objectives = append(objectives, objective)
+
+			// Add to pending or completed tasks
+			if isCompleted {
+				completedTasks[poi.ID] = append(completedTasks[poi.ID], challenge)
+			} else {
+				pendingTasks[poi.ID] = append(pendingTasks[poi.ID], challenge)
+			}
 		}
 		return objectives
 	}

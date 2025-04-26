@@ -231,6 +231,7 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 	poi := &models.PointOfInterest{
 		ID:                uuid.New(),
 		Name:              fantasyPointOfInterest.Name,
+		OriginalName:      place.DisplayName.Text,
 		Description:       fantasyPointOfInterest.Description,
 		Clue:              fantasyPointOfInterest.Clue,
 		ImageUrl:          imageUrl,

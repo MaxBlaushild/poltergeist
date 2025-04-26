@@ -25,4 +25,6 @@ export interface Quest {
 
 export interface QuestLog {
   quests: Quest[];
+  pendingTasks: Record<string, PointOfInterestChallenge[]>;
+  completedTasks: Record<string, PointOfInterestChallenge[]>;
 }

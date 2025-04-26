@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import './SubmitAnswerForChallenge.css';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
-import { Button } from './shared/Button.tsx';
+import { Button } from '../shared/Button.tsx';
 import {
   XMarkIcon,
   CheckBadgeIcon,
   XCircleIcon,
 } from '@heroicons/react/20/solid';
-import Divider from './shared/Divider.tsx';
+import Divider from '../shared/Divider.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 import { Oval } from 'react-loader-spinner';
 import { useInventory } from '@poltergeist/contexts';
@@ -21,14 +20,14 @@ import {
   Team,
   User,
 } from '@poltergeist/types';
-import { scrambleAndObscureWords } from '../utils/scrambleSentences.ts';
+import { scrambleAndObscureWords } from '../../utils/scrambleSentences.ts';
 import {
   CapturePointOfInterestResponse,
   useSubmissionsContext,
-} from '../contexts/SubmissionsContext.tsx';
-import { mapCaptureTiers } from '../utils/mapCaptureTiers.ts';
-import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
-import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+} from '../../contexts/SubmissionsContext.tsx';
+import { mapCaptureTiers } from '../../utils/mapCaptureTiers.ts';
+import { useUserProfiles } from '../../contexts/UserProfileContext.tsx';
+import { useQuestLogContext } from '../../contexts/QuestLogContext.tsx';
 
 type SubmitAnswerForChallengeProps = {
   pointOfInterest: PointOfInterest;

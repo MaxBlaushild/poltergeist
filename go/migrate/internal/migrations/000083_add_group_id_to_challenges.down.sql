@@ -1,0 +1,5 @@
+alter table point_of_interest_challenges drop constraint fk_point_of_interest_group_id;
+alter table point_of_interest_challenges drop column point_of_interest_group_id;
+
+alter table points_of_interest add column point_of_interest_group_id uuid;
+alter table points_of_interest add constraint fk_point_of_interest_group_id foreign key (point_of_interest_group_id) references point_of_interest_groups(id);
