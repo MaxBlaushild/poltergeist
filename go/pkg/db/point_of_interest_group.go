@@ -87,6 +87,11 @@ func (c *pointOfInterestGroupHandle) Delete(ctx context.Context, id uuid.UUID) e
 		return err
 	}
 
+	if err := tx.Where("point_of_interest_group_id = ?", id).Delete(&models.PointOfInterestChallenge{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
 	// Delete related PointOfInterestGroupMember records
 	if err := tx.Where("point_of_interest_group_id = ?", id).Delete(&models.PointOfInterestGroupMember{}).Error; err != nil {
 		tx.Rollback()

@@ -10,7 +10,6 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/hibiken/asynq"
 )
 
@@ -54,9 +53,6 @@ func (p *QueueImageGenerationProcessor) ProcessTask(ctx context.Context, task *a
 	if err != nil {
 		return err
 	}
-
-	spew.Dump("upscaleImgGens")
-	spew.Dump(len(upscaleImgGens))
 
 	for _, gen := range upscaleImgGens {
 		payload, err := json.Marshal(PollImageUpscaleTaskPayload{

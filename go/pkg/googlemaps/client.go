@@ -156,9 +156,16 @@ func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
 	}
+
 	var data GooglePlacesResponse
 	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&data); err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
+	}
+
+	if len(data.Places) == 0 {
+		fmt.Println(string(body))
+		fmt.Printf("%+v", query)
+		return nil, fmt.Errorf("no places found")
 	}
 
 	return data.Places, nil

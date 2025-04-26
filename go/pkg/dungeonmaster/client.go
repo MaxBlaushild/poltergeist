@@ -73,11 +73,15 @@ func (c *client) GenerateQuest(
 		log.Printf("Error creating quest group: %v", err)
 		return nil, err
 	}
+
 	foundPlaces := make(map[uuid.UUID]map[string]bool)
 
 	log.Println("Processing quest nodes")
 	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, foundPlaces); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
+		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest group after node processing failure: %v", deleteErr)
+		}
 		return nil, err
 	}
 
@@ -85,6 +89,9 @@ func (c *client) GenerateQuest(
 	questCopy, err := c.generateQuestCopy(ctx, locations, descriptions, challenges)
 	if err != nil {
 		log.Printf("Error generating quest copy: %v", err)
+		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest group after copy generation failure: %v", deleteErr)
+		}
 		return nil, err
 	}
 
@@ -92,6 +99,9 @@ func (c *client) GenerateQuest(
 	questImage, err := c.generateQuestImage(ctx, *questCopy)
 	if err != nil {
 		log.Printf("Error generating quest image: %v", err)
+		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest group after image generation failure: %v", deleteErr)
+		}
 		return nil, err
 	}
 
@@ -102,6 +112,9 @@ func (c *client) GenerateQuest(
 		ImageUrl:    questImage,
 	}); err != nil {
 		log.Printf("Error updating quest: %v", err)
+		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest group after update failure: %v", deleteErr)
+		}
 		return nil, err
 	}
 
