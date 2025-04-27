@@ -109,7 +109,24 @@ export const PointOfInterestPanel = ({
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <h3 className="text-2xl font-bold">{pointOfInterest.name}</h3>
+      <div className="flex flex-col items-center gap-2">
+        <h3 className="text-2xl font-bold">{pointOfInterest.name}</h3>
+        {pointOfInterest.originalName && hasDiscovered && (
+          <h4 className="text-gray-500 text-xs">
+            ({pointOfInterest.originalName})
+            {pointOfInterest.googleMapsPlaceId && (
+              <a
+                href={`https://www.google.com/maps/place/?q=place_id:${pointOfInterest.googleMapsPlaceId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-2 text-blue-500 hover:text-blue-700"
+              >
+                View on Google Maps
+              </a>
+            )}
+          </h4>
+        )}
+      </div>
       <img
         src={
           hasDiscovered

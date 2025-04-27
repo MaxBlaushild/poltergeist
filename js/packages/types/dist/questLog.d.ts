@@ -19,9 +19,16 @@ export interface Quest {
     imageUrl: string;
     name: string;
     description: string;
+    id: string;
+    getTags: () => string[];
 }
 export interface QuestLog {
     quests: Quest[];
-    pendingTasks: Record<string, PointOfInterestChallenge[]>;
-    completedTasks: Record<string, PointOfInterestChallenge[]>;
+    pendingTasks: Record<string, Task[]>;
+    completedTasks: Record<string, Task[]>;
 }
+export interface Task {
+    challenge: PointOfInterestChallenge;
+    questId: string;
+}
+export declare function getQuestTags(quest: Quest): string[];

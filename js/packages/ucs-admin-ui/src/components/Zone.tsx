@@ -45,6 +45,7 @@ export const Zone = () => {
   const [selectedQuestArchtype, setSelectedQuestArchtype] = useState<
     string | null
   >(null);
+  const [nameFilter, setNameFilter] = useState('');
   const {
     candidates,
     loading: candidatesLoading,
@@ -98,14 +99,29 @@ export const Zone = () => {
     return <div>Error: {generatePointsOfInterestError.message}</div>;
   }
 
+  const filteredPoints = pointsOfInterest.filter(point => 
+    point.name.toLowerCase().includes(nameFilter.toLowerCase())
+  );
+
   return (
     <div className="m-10 p-8 bg-white rounded-lg shadow-lg">
       <h1 className="text-3xl font-bold mb-6 text-gray-800">{zone?.name}</h1>
       <p className="text-lg text-gray-600 mb-3">Latitude: {zone?.latitude}</p>
       <p className="text-lg text-gray-600 mb-3">Longitude: {zone?.longitude}</p>
       <p className="text-lg text-gray-600 mb-3">Radius: {zone?.radius}m</p>
+      
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Filter points by name..."
+          value={nameFilter}
+          onChange={(e) => setNameFilter(e.target.value)}
+          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {pointsOfInterest.map((point) => (
+        {filteredPoints.map((point) => (
           <div key={point.id} className="bg-gray-100 p-6 rounded-lg shadow-md">
             {point.imageURL && (
               <>
@@ -144,6 +160,12 @@ export const Zone = () => {
             </h2>
             <p className="text-gray-600 mb-3">
               Description: {point.description}
+            </p>
+            <p className="text-gray-600 mb-3">
+              Type: {point.originalName}
+            </p>
+            <p className="text-gray-600 mb-3">
+              Tags: {point.tags?.map(tag => tag.name).join(', ') || 'No tags'}
             </p>
             <p className="text-gray-600 mb-3">Latitude: {point.lat}</p>
             <p className="text-gray-600 mb-3">Longitude: {point.lng}</p>

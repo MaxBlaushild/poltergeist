@@ -58,6 +58,17 @@ func (h *tagHandle) Update(ctx context.Context, tag *models.Tag) error {
 }
 
 func (h *tagHandle) AddTagToPointOfInterest(ctx context.Context, tagID uuid.UUID, pointOfInterestID uuid.UUID) error {
+	var existing models.TagEntity
+	err := h.db.WithContext(ctx).Where("tag_id = ? AND point_of_interest_id = ?", tagID, pointOfInterestID).First(&existing).Error
+	if err == nil {
+		// Entity already exists, do nothing
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		// Unexpected error occurred
+		return err
+	}
+
 	return h.db.WithContext(ctx).Create(&models.TagEntity{
 		TagID:             tagID,
 		PointOfInterestID: &pointOfInterestID,

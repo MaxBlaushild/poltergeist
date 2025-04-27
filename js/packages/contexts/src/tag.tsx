@@ -27,7 +27,6 @@ export const TagProvider = ({ children }: { children: React.ReactNode }) => {
   const fetchTagGroups = async () => {
     const response = await apiClient.get<TagGroup[]>('/sonar/tagGroups');
     setTagGroups(response);
-    setSelectedTags(response.flatMap(group => group.tags));
   };
 
   const createTagGroup = async (tagGroup: TagGroup) => {

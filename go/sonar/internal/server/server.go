@@ -27,6 +27,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/search"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -57,6 +58,7 @@ type server struct {
 	dungeonmaster    dungeonmaster.Client
 	asyncClient      *asynq.Client
 	redisClient      *redis.Client
+	searchClient     search.SearchClient
 }
 
 type Server interface {
@@ -80,6 +82,7 @@ func NewServer(
 	dungeonmaster dungeonmaster.Client,
 	asyncClient *asynq.Client,
 	redisClient *redis.Client,
+	searchClient search.SearchClient,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -98,6 +101,7 @@ func NewServer(
 		dungeonmaster:    dungeonmaster,
 		asyncClient:      asyncClient,
 		redisClient:      redisClient,
+		searchClient:     searchClient,
 	}
 }
 
@@ -204,7 +208,18 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.getZoneQuestArchetypes))
 	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.createZoneQuestArchetype))
 	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteZoneQuestArchetype))
+	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.getRelevantTags))
 	r.Run(":8042")
+}
+
+func (s *server) getRelevantTags(ctx *gin.Context) {
+	query := ctx.Query("query")
+	relevantTags, err := s.searchClient.FindRelevantTags(ctx, query)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, relevantTags)
 }
 
 func (s *server) getZoneQuestArchetypes(ctx *gin.Context) {
@@ -1035,7 +1050,10 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 
 	stringLat := ctx.Query("lat")
 	stringLng := ctx.Query("lng")
-	tags := strings.Split(ctx.Query("tags"), ",")
+	var tags []string
+	if tagsQuery := ctx.Query("tags"); tagsQuery != "" {
+		tags = strings.Split(tagsQuery, ",")
+	}
 
 	lat, err := strconv.ParseFloat(stringLat, 64)
 	if err != nil {

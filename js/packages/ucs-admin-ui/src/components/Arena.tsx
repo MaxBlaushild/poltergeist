@@ -285,6 +285,7 @@ export const Arena = () => {
             ) : (
               <div>
                 <h1 className="text-3xl font-bold mb-2">{arena.name}</h1>
+                <p>{arena.id}</p>
                 <p className="text-gray-600 text-lg mb-4 w-[1400px]">
                   {arena.description}
                 </p>
@@ -430,9 +431,12 @@ export const Arena = () => {
                     <h3 className="text-xl font-semibold mb-2">{point.name}</h3>
                     <p className="text-gray-600 mb-2">{point.description}</p>
                     <p className="text-gray-600 mb-2">Clue: {point.clue}</p>
+                    <p className="text-gray-600 mb-2">Original Name: {point.originalName}</p>
+                    <p className="text-gray-600 mb-2">ID: {point.id}</p>
                     <p className="text-gray-600 mb-2">
                       Place ID: <a href={`/place/${point.googleMapsPlaceId}`} className="text-blue-500 hover:underline">{point.googleMapsPlaceId}</a>
                     </p>
+                    <p className="text-gray-600 mb-2">Geometry: {point.geometry}</p>
                     <p className="text-gray-600 mb-2">Tags: {point.tags?.map(tag => tag.name).join(', ')}</p>
                     <div className="text-sm text-gray-500">
                       <p>Latitude: {point.lat}</p>

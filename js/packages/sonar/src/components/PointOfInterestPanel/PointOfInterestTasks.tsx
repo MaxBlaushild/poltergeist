@@ -42,25 +42,26 @@ export const PointOfInterestTasks = ({ pointOfInterest, onClose }: PointOfIntere
             </div>
           ) : (
             <ul className="list-none">
-              {tasksForPointOfInterest.map((task) => (
+              {tasksForPointOfInterest.map((task) => {
+                const quest = quests.find((quest) => quest.id === task.questId);
+                return (
                 <li
-                  key={task.id}
-                  onClick={() => setSelectedTask(task)}
+                  key={task.challenge.id}
+                  onClick={() => setSelectedTask(task.challenge)}
                   className="mb-3 cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 px-4 py-3 bg-gray-100 rounded-lg group-hover:bg-gray-200 transition-colors">
-                    <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-blue-100 rounded-full text-blue-600">
-                      📝
-                    </div>
-                    <div className="flex-grow">
-                      <p className="text-gray-800">{task.question}</p>
+                    <div className="flex-grow text-left">
+                      <p className="text-xs text-gray-400">{quest?.name}</p>
+                      <p className="text-black font-bold">{task.challenge.question}</p>
                     </div>
                     <div className="flex-shrink-0 text-gray-400 group-hover:text-gray-600">
                       →
                     </div>
                   </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>

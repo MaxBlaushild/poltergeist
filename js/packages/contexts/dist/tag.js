@@ -25,7 +25,6 @@ export const TagProvider = ({ children }) => {
     const fetchTagGroups = () => __awaiter(void 0, void 0, void 0, function* () {
         const response = yield apiClient.get('/sonar/tagGroups');
         setTagGroups(response);
-        setSelectedTags(response.flatMap(group => group.tags));
     });
     const createTagGroup = (tagGroup) => __awaiter(void 0, void 0, void 0, function* () {
         const response = yield apiClient.post('/sonar/tagGroups', tagGroup);

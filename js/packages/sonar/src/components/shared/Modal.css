@@ -19,6 +19,7 @@
   right: 32px;
   width: calc(100% - 64px);
   height: calc(100% - 64px);
+  z-index: 9999;
 }
 
 .Modal__hero {
@@ -26,6 +27,17 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  min-width: 220px;
+  z-index: 9999;
+}
+
+.Modal__form {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 75%;
+  height: 50%;
   min-width: 220px;
   z-index: 9999;
 }

@@ -34,7 +34,6 @@ func NewClient(
 	locationSeeder locationseeder.Client,
 	awsClient aws.AWSClient,
 ) Client {
-	log.Println("Creating new dungeonmaster client")
 	return &client{
 		googlemapsClient: googlemapsClient,
 		dbClient:         dbClient,
@@ -74,10 +73,11 @@ func (c *client) GenerateQuest(
 		return nil, err
 	}
 
-	foundPlaces := make(map[uuid.UUID]map[string]bool)
+	// Track used POIs at the quest level
+	usedPOIs := make(map[uuid.UUID]bool)
 
 	log.Println("Processing quest nodes")
-	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, foundPlaces); err != nil {
+	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, usedPOIs); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
 		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
 			log.Printf("Error deleting quest group after node processing failure: %v", deleteErr)
@@ -131,7 +131,7 @@ func (c *client) processNode(
 	challenges *[]string,
 	quest *models.PointOfInterestGroup,
 	member *models.PointOfInterestGroupMember,
-	foundPlaces map[uuid.UUID]map[string]bool,
+	usedPOIs map[uuid.UUID]bool,
 ) error {
 	log.Printf("Processing node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID)
 
@@ -149,14 +149,7 @@ func (c *client) processNode(
 		log.Printf("Excluded type: %s", excludedType)
 	}
 
-	count := 1
-	if _, ok := foundPlaces[locationArchetype.ID]; !ok {
-		foundPlaces[locationArchetype.ID] = make(map[string]bool)
-	} else {
-		count = len(foundPlaces[locationArchetype.ID]) + 1
-	}
-
-	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, locationArchetype.IncludedTypes, locationArchetype.ExcludedTypes, int32(count))
+	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, locationArchetype.IncludedTypes, locationArchetype.ExcludedTypes, 1)
 	if err != nil {
 		log.Printf("Error seeding points of interest: %v", err)
 		return err
@@ -169,9 +162,9 @@ func (c *client) processNode(
 
 	var pointOfInterest *models.PointOfInterest
 	for _, poi := range pointsOfInterest {
-		if !foundPlaces[locationArchetype.ID][poi.ID.String()] {
+		if !usedPOIs[poi.ID] {
 			pointOfInterest = poi
-			foundPlaces[locationArchetype.ID][poi.ID.String()] = true
+			usedPOIs[poi.ID] = true
 			break
 		}
 	}
@@ -228,7 +221,7 @@ func (c *client) processNode(
 				return err
 			}
 			log.Printf("Processing child node: %s", unlockedNode.LocationArchetypeID)
-			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, foundPlaces); err != nil {
+			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, usedPOIs); err != nil {
 				log.Printf("Error processing child node: %v", err)
 				return err
 			}

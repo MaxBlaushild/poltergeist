@@ -17,6 +17,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/search"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/server"
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
@@ -59,6 +60,7 @@ func main() {
 		DB:       0,
 	})
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
+	searchClient := search.NewSearchClient(dbClient, deepPriest)
 	s := server.NewServer(
 		authClient,
 		texterClient,
@@ -76,6 +78,7 @@ func main() {
 		dungeonmaster,
 		asyncClient,
 		redisClient,
+		searchClient,
 	)
 
 	s.ListenAndServe("8042")

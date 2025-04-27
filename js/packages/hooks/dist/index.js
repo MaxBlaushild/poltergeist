@@ -4,3 +4,5 @@ export * from './useCityName';
 export * from './usePlaces';
 export * from './useCandidates';
 export * from './usePlace';
+export * from './useRelevantTagsSearch';
+export * from './useActiveQuest';

@@ -18,6 +18,8 @@ import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
 import { Log } from './Log.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import { usePointsOfInterest } from '@poltergeist/hooks';
+import { ActivityQuestionnaire } from './ActivityQuestionnaire.tsx';
+
 const MemoizedMap = React.memo(Map);
 
 const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest }: {
@@ -31,6 +33,7 @@ const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPoint
     <>
       <MapZoomButton />
       <TagFilter />
+      <ActivityQuestionnaire />
       <div className="absolute bottom-20 right-0 z-10 w-full p-2">
         <Log 
           pointsOfInterest={totalPointsOfInterest || []} 

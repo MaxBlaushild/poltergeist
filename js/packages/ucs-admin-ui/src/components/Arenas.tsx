@@ -5,7 +5,7 @@ import { PointOfInterestGroup, PointOfInterestGroupType } from '@poltergeist/typ
 
 const PointOfInterestGroupItem = ({ group }) => {
   const { lat, lng } = group.pointsOfInterest?.[0] || {};
-  const { cityName, loading, error } = useCityName(lat, JSON.stringify(parseFloat(lng)));
+  // const { cityName, loading, error } = useCityName(lat, JSON.stringify(parseFloat(lng)));
   const { apiClient } = useAPI();
 
   const deletePointOfInterestGroup = async (id: string) => {
@@ -27,13 +27,16 @@ const PointOfInterestGroupItem = ({ group }) => {
             <div className="flex flex-col items-end flex-1">
               <h3 className="text-xl font-bold mb-2 text-left w-full">{group.name}</h3>
               <p className="text-gray-600 text-left w-full">{group.description}</p>
-              {cityName && (
+              {/* {cityName && (
                 <p className="text-gray-600 text-left w-full">
                   Location: {cityName}
                 </p>
-              )}
+              )} */}
               <p className="text-gray-600 text-left w-full">
                 Type: {PointOfInterestGroupType[group.type]}
+              </p>
+              <p className="text-gray-600 text-left w-full">
+                ID: {group.id}
               </p>
               <p className="text-lg font-bold text-gray-700 text-left w-full">
                 Points of Interest: {group.pointsOfInterest?.length || 0}
@@ -63,9 +66,8 @@ export const Arenas = () => {
   const[name, setName] = React.useState<string>('');
   const[type, setType] = React.useState<PointOfInterestGroupType>(PointOfInterestGroupType.Arena);
   const[description, setDescription] = React.useState<string>('');
-  const [image, setImage] = React.useState<File | undefined>(
-    undefined
-  );
+  const [image, setImage] = React.useState<File | undefined>(undefined);
+  const [searchTerm, setSearchTerm] = React.useState<string>('');
   const fileInputRef = React.useRef(null);
 
   const handleImageUpload = (e) => {
@@ -100,10 +102,28 @@ export const Arenas = () => {
     });
   };
 
+  const filteredGroups = pointOfInterestGroups?.filter(group => 
+    group.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="flex flex-col gap-4 p-4">
+      <div className="w-full">
+        <input
+          type="text"
+          placeholder="Search arenas by name..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full p-2 border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+      
       <ul className="list-none">
-        {pointOfInterestGroups?.map((group) => (
+        {filteredGroups?.sort((a, b) => {
+          const dateA = typeof a.createdAt === 'string' ? new Date(a.createdAt) : a.createdAt;
+          const dateB = typeof b.createdAt === 'string' ? new Date(b.createdAt) : b.createdAt;
+          return dateB.getTime() - dateA.getTime();
+        }).map((group) => (
           <PointOfInterestGroupItem key={group.id} group={group} />
         ))}
       </ul>

@@ -2,6 +2,7 @@ package questlog
 
 import (
 	"context"
+	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -26,12 +27,18 @@ type Quest struct {
 	ImageUrl    string     `json:"imageUrl"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
+	ID          uuid.UUID  `json:"id"`
+}
+
+type QuestChallenge struct {
+	Challenge models.PointOfInterestChallenge `json:"challenge"`
+	QuestID   uuid.UUID                       `json:"questId"`
 }
 
 type QuestLog struct {
-	Quests         []Quest                                         `json:"quests"`
-	PendingTasks   map[uuid.UUID][]models.PointOfInterestChallenge `json:"pendingTasks"`
-	CompletedTasks map[uuid.UUID][]models.PointOfInterestChallenge `json:"completedTasks"`
+	Quests         []Quest                        `json:"quests"`
+	PendingTasks   map[uuid.UUID][]QuestChallenge `json:"pendingTasks"`
+	CompletedTasks map[uuid.UUID][]QuestChallenge `json:"completedTasks"`
 }
 
 type QuestlogClient interface {
@@ -43,7 +50,7 @@ type questlogClient struct {
 }
 
 const (
-	NearbyDistanceInMeters = 51900 // Approximately the width of Delhi in meters (51.9 km)
+	NearbyDistanceInMeters = 30000 // 30km
 )
 
 func NewClient(dbClient db.DbClient) QuestlogClient {
@@ -55,10 +62,12 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat 
 	if err != nil {
 		return nil, err
 	}
+
 	startedQuests, err := c.GetStartedQuests(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -76,8 +85,9 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat 
 	for _, group := range uniqueGroups {
 		allQuests = append(allQuests, group)
 	}
-	pendingTasks := make(map[uuid.UUID][]models.PointOfInterestChallenge)
-	completedTasks := make(map[uuid.UUID][]models.PointOfInterestChallenge)
+
+	pendingTasks := make(map[uuid.UUID][]QuestChallenge)
+	completedTasks := make(map[uuid.UUID][]QuestChallenge)
 	quests := make([]Quest, 0)
 	for _, group := range allQuests {
 		quest := c.ConvertToQuestWithCompletedNodes(group, submissions, pendingTasks, completedTasks)
@@ -110,8 +120,8 @@ func (c *questlogClient) GetStartedQuests(ctx context.Context, userID uuid.UUID)
 func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 	group models.PointOfInterestGroup,
 	submissions []models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]models.PointOfInterestChallenge,
-	completedTasks map[uuid.UUID][]models.PointOfInterestChallenge,
+	pendingTasks map[uuid.UUID][]QuestChallenge,
+	completedTasks map[uuid.UUID][]QuestChallenge,
 ) *Quest {
 	submissionsByChallenge := make(map[uuid.UUID][]models.PointOfInterestChallengeSubmission)
 	for _, submission := range submissions {
@@ -149,17 +159,48 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 
 			// Add to pending or completed tasks
 			if isCompleted {
-				completedTasks[poi.ID] = append(completedTasks[poi.ID], challenge)
+				exists := false
+				for _, task := range completedTasks[poi.ID] {
+					if task.Challenge.ID == challenge.ID {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					completedTasks[poi.ID] = append(completedTasks[poi.ID], QuestChallenge{
+						Challenge: challenge,
+						QuestID:   group.ID,
+					})
+				}
 			} else {
-				pendingTasks[poi.ID] = append(pendingTasks[poi.ID], challenge)
+				exists := false
+				for _, task := range pendingTasks[poi.ID] {
+					if task.Challenge.ID == challenge.ID {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					pendingTasks[poi.ID] = append(pendingTasks[poi.ID], QuestChallenge{
+						Challenge: challenge,
+						QuestID:   group.ID,
+					})
+				}
 			}
 		}
 		return objectives
 	}
 
 	// Helper function to recursively build quest nodes
-	var buildQuestNode func(poi models.PointOfInterest, children []models.PointOfInterestChildren) *QuestNode
-	buildQuestNode = func(poi models.PointOfInterest, children []models.PointOfInterestChildren) *QuestNode {
+	var buildQuestNode func(poi models.PointOfInterest, children []models.PointOfInterestChildren, visited map[uuid.UUID]bool) *QuestNode
+	buildQuestNode = func(poi models.PointOfInterest, children []models.PointOfInterestChildren, visited map[uuid.UUID]bool) *QuestNode {
+		// Check if we've already visited this POI in this group to prevent infinite recursion
+		if visited[poi.ID] {
+			log.Printf("Already visited POI %s in group %s with challenge ID %s, skipping to prevent infinite recursion", poi.ID, group.ID, poi.PointOfInterestChallenges[0].ID)
+			return nil
+		}
+		visited[poi.ID] = true
+
 		node := &QuestNode{
 			PointOfInterest: poi,
 			Objectives:      buildObjectives(poi),
@@ -177,15 +218,17 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 			if childGroupMember == nil {
 				continue
 			}
-			childNode := buildQuestNode(childGroupMember.PointOfInterest, childGroupMember.Children)
-			node.Children[child.PointOfInterestChallengeID] = childNode
+			childNode := buildQuestNode(childGroupMember.PointOfInterest, childGroupMember.Children, visited)
+			if childNode != nil {
+				node.Children[child.PointOfInterestChallengeID] = childNode
+			}
 		}
 
 		return node
 	}
 
-	// Build the root node and all its children
-	rootNode := buildQuestNode(group.GroupMembers[0].PointOfInterest, group.GroupMembers[0].Children)
+	visited := make(map[uuid.UUID]bool)
+	rootNode := buildQuestNode(group.GroupMembers[0].PointOfInterest, group.GroupMembers[0].Children, visited)
 
 	// Check if all objectives are completed
 	allCompleted := true
@@ -216,5 +259,6 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 		ImageUrl:    group.ImageUrl,
 		Name:        group.Name,
 		Description: group.Description,
+		ID:          group.ID,
 	}
 }
