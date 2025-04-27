@@ -15,6 +15,8 @@ export interface PointOfInterest {
 	pointOfInterestChallenges: PointOfInterestChallenge[];
 	tags: Tag[];
 	googleMapsPlaceId: string;
+	originalName: string;
+	geometry: string;
 }
 
 export const getHighestFirstCompletedChallenge = (pointOfInterest: PointOfInterest, submissions: PointOfInterestChallengeSubmission[]): { submission: PointOfInterestChallengeSubmission | null, challenge: PointOfInterestChallenge | null } => {

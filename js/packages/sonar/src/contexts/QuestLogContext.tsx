@@ -7,7 +7,7 @@ import React, {
   useRef,
 } from 'react';
 import { useAPI, useLocation } from '@poltergeist/contexts';
-import { PointOfInterest, PointOfInterestChallenge, Quest, QuestLog, QuestNode } from '@poltergeist/types';
+import { PointOfInterest, PointOfInterestChallenge, Quest, QuestLog, QuestNode, Task } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useSubmissionsContext } from './SubmissionsContext.tsx';
 import { useTagContext } from '@poltergeist/contexts';
@@ -17,8 +17,10 @@ interface QuestLogContextType {
   quests: Quest[];
   pointsOfInterest: PointOfInterest[];
   isRootNode: (pointOfInterest: PointOfInterest) => boolean;
-  pendingTasks: Record<string, PointOfInterestChallenge[]>;
-  completedTasks: Record<string, PointOfInterestChallenge[]>;
+  pendingTasks: Record<string, Task[]>;
+  completedTasks: Record<string, Task[]>;
+  activeQuest: Quest | null;
+  trackedQuests: Quest[];
 }
 
 interface QuestLogProviderProps {
@@ -49,16 +51,17 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
   const { location } = useLocation();
   const lastFetchLocation = useRef<{lat: number, lng: number} | null>(null);
   const lastFetchTags = useRef<string[]>([]);
-  const [pendingTasks, setPendingTasks] = useState<Record<string, PointOfInterestChallenge[]>>({});
-  const [completedTasks, setCompletedTasks] = useState<Record<string, PointOfInterestChallenge[]>>({});
+  const [pendingTasks, setPendingTasks] = useState<Record<string, Task[]>>({});
+  const [completedTasks, setCompletedTasks] = useState<Record<string, Task[]>>({});
+  const [ activeQuest, setActiveQuest ] = useState<Quest | null>(null);
 
   const refreshQuestLog = useCallback(async () => {
-    if (!location?.latitude || !location?.longitude || !selectedTags?.length) {
+    if (!location?.latitude || !location?.longitude) {
       return;
     }
 
     try {
-      const fetchedQuestLog = await apiClient.get<QuestLog>(`/sonar/questlog?lat=${location?.latitude}&lng=${location?.longitude}&tags=${selectedTags.map(tag => tag.name).join(',')}`);
+      const fetchedQuestLog = await apiClient.get<QuestLog>(`/sonar/questlog?lat=${location?.latitude}&lng=${location?.longitude}&${selectedTags.length ? `tags=${selectedTags.map(tag => tag.name).join(',')}` : ''}`);
       setQuests(fetchedQuestLog.quests);
       const pointsOfInterest = getMapPointsOfInterest(fetchedQuestLog.quests);
       setPointsOfInterest(pointsOfInterest);
@@ -122,6 +125,8 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
         isRootNode,
         pendingTasks,
         completedTasks,
+        activeQuest,
+        setActiveQuest,
       }}
     >
       {children}

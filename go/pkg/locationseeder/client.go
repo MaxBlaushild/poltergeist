@@ -95,14 +95,32 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 	}
 
 	if err := c.dbClient.PointOfInterest().Update(ctx, poi.ID, &models.PointOfInterest{
-		Name:        fantasyPointOfInterest.Name,
-		Description: fantasyPointOfInterest.Description,
-		Clue:        fantasyPointOfInterest.Clue,
-		ImageUrl:    imageUrl,
-		UpdatedAt:   time.Now(),
+		Name:         fantasyPointOfInterest.Name,
+		Description:  fantasyPointOfInterest.Description,
+		Clue:         fantasyPointOfInterest.Clue,
+		ImageUrl:     imageUrl,
+		OriginalName: place.DisplayName.Text,
+		Geometry:     poi.Geometry,
+		UpdatedAt:    time.Now(),
 	}); err != nil {
 		log.Printf("Error updating point of interest: %v", err)
 		return err
+	}
+
+	tags, err := c.ProccessPlaceTypes(ctx, place.Types)
+	if err != nil {
+		log.Printf("Error processing place types: %v", err)
+		return err
+	}
+
+	for _, tag := range tags {
+		log.Printf("Adding tag %s to point of interest", tag.Value)
+		if err := c.dbClient.Tag().AddTagToPointOfInterest(ctx, tag.ID, poi.ID); err != nil {
+			log.Printf("Error adding tag to point of interest: %v", err)
+			return err
+		}
+
+		poi.Tags = append(poi.Tags, *tag)
 	}
 
 	log.Printf("Successfully updated point of interest %s", poi.Name)

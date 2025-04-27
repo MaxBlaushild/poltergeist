@@ -8,6 +8,8 @@ import {
 } from '@poltergeist/types';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { TabItem } from './shared/TabNav.tsx';
+import { TabNav } from './shared/TabNav.tsx';
 
 interface QuestProps {
   quest: Quest;
@@ -27,19 +29,12 @@ export const QuestComponent = ({
   return (
     <div className="flex flex-col items-center gap-4 font-medium">
       <h2 className="text-2xl font-extrabold">{quest.name}</h2>
+      
       <img
         src={quest.imageUrl}
         alt={quest.name}
         className="w-full h-48 object-cover rounded-lg"
       />
-      <div className="w-full">
-        <details className="text-gray-700">
-          <summary className="cursor-pointer font-medium">
-            {quest.description.slice(0, 100)}...
-          </summary>
-          <p className="mt-2 font-medium">{quest.description.slice(100)}</p>
-        </details>
-      </div>
       <div className="w-full text-left text-gray-700">
         {(() => {
           let completedQuests = 0;
@@ -63,7 +58,10 @@ export const QuestComponent = ({
           );
         })()}
       </div>
-      <div className="ml-6 mt-2 w-full text-left">
+      <TabNav tabs={['Description', 'Tasks']}>
+        <TabItem key="Description">{quest.description}</TabItem>
+        <TabItem key="Tasks">
+        <div className="ml-6 mt-2 w-full text-left">
         {(() => {
           const renderNode = (node: QuestNode) => {
             const hasDiscoveredNode = hasDiscoveredPointOfInterest(
@@ -95,7 +93,7 @@ export const QuestComponent = ({
                         className="text-m text-gray-600 font-medium"
                       >
                         <span>
-                          • {objective.challenge.question}
+                          {objective.challenge.question}
                           {objective.isCompleted && ' ✅'}
                         </span>
                       </div>
@@ -119,6 +117,9 @@ export const QuestComponent = ({
           return renderNode(quest.rootNode);
         })()}
       </div>
+        </TabItem>
+      </TabNav>
+      
     </div>
   );
 };

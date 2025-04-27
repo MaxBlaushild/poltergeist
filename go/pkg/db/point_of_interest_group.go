@@ -14,34 +14,53 @@ type pointOfInterestGroupHandle struct {
 }
 
 func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64, tags []string) ([]models.PointOfInterestGroup, error) {
-	var groups []models.PointOfInterestGroup
+	pointsOfInterest := []models.PointOfInterest{}
 	query := c.db.WithContext(ctx).
-		Distinct("pog.*").
-		Table("point_of_interest_groups pog").
-		Joins("JOIN point_of_interest_group_members pogm ON pogm.point_of_interest_group_id = pog.id").
-		Joins("JOIN points_of_interest poi ON poi.id = pogm.point_of_interest_id").
-		Joins("JOIN tag_entities te ON te.point_of_interest_id = poi.id").
-		Joins("JOIN tags t ON t.id = te.tag_id").
+		Table("points_of_interest poi").
 		Where("ST_DWithin(poi.geometry, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)",
 			lng, lat, radiusInMeters).
-		// Left join with children to check if point is a child
-		Joins("LEFT JOIN point_of_interest_children poic ON poic.point_of_interest_id = poi.id").
-		Where("pog.type = ?", models.PointOfInterestGroupTypeQuest).
-		Where("poic.point_of_interest_id IS NULL") // Only get points that don't appear as children
+		Distinct("poi.*")
 
 	if len(tags) > 0 {
-		query = query.Where("t.value IN ?", tags)
+		query = query.
+			Joins("JOIN tag_entities te ON te.point_of_interest_id = poi.id").
+			Joins("JOIN tags t ON t.id = te.tag_id").
+			Where("t.value IN ?", tags)
 	}
 
-	query = query.Preload("GroupMembers").
+	if err := query.Find(&pointsOfInterest).Error; err != nil {
+		return nil, err
+	}
+
+	pointOfInterestIDs := make([]uuid.UUID, len(pointsOfInterest))
+	for i, poi := range pointsOfInterest {
+		pointOfInterestIDs[i] = poi.ID
+	}
+
+	var pointOfInterestGroupMembers []models.PointOfInterestGroupMember
+	if err := c.db.WithContext(ctx).Where("point_of_interest_id IN ?", pointOfInterestIDs).Find(&pointOfInterestGroupMembers).Error; err != nil {
+		return nil, err
+	}
+
+	groupIDMap := make(map[uuid.UUID]bool)
+	var groupIDs []uuid.UUID
+	for _, member := range pointOfInterestGroupMembers {
+		if !groupIDMap[member.PointOfInterestGroupID] {
+			groupIDs = append(groupIDs, member.PointOfInterestGroupID)
+			groupIDMap[member.PointOfInterestGroupID] = true
+		}
+	}
+
+	var groups []models.PointOfInterestGroup
+	if err := c.db.WithContext(ctx).
+		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
 		Preload("GroupMembers.Children").
 		Preload("GroupMembers.Children.PointOfInterest").
-		Find(&groups)
-
-	if err := query.Error; err != nil {
+		Where("id IN ?", groupIDs).
+		Find(&groups).Error; err != nil {
 		return nil, err
 	}
 

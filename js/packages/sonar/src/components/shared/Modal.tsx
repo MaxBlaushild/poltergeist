@@ -5,7 +5,9 @@ export enum ModalSize {
   FULLSCREEN = 'FULLSCREEN',
   HERO = 'HERO',
   FREE = 'FREE',
-  TOAST = 'TOAST',}
+  TOAST = 'TOAST',
+  FORM = 'FORM',
+}
 
 type ModalProps = {
   children: React.ReactNode;
@@ -21,6 +23,8 @@ export const Modal = ({ children, size = ModalSize.HERO }: ModalProps) => {
     modalClasses.push('Modal__hero');
   } else if (size === ModalSize.TOAST) {
     modalClasses.push('Modal__toast');
+  } else if (size === ModalSize.FORM) {
+    modalClasses.push('Modal__form');
   }
 
   return <div className={modalClasses.join(' ')}>{children}</div>;

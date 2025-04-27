@@ -30,12 +30,12 @@ export const useGeneratePointsOfInterest = (zoneId: string) => {
 
   const refreshPointOfInterest = async (pointOfInterestID: string) => {
     try {
-      setLoading(true);
+      // setLoading(true);
       await apiClient.post(`/sonar/pointOfInterest/refresh`, { pointOfInterestID });
-      setLoading(false);
+      // setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to refresh point of interest'));
-      setLoading(false);
+      // setLoading(false);
     }
   };
 

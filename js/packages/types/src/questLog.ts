@@ -7,6 +7,7 @@ export interface QuestObjective {
   challenge: PointOfInterestChallenge;
   isCompleted: boolean;
   submissions: PointOfInterestChallengeSubmission[];
+
 }
 
 export interface QuestNode {
@@ -21,10 +22,37 @@ export interface Quest {
   imageUrl: string;
   name: string;
   description: string;
+  id: string;
+  getTags: () => string[];
 }
 
 export interface QuestLog {
   quests: Quest[];
-  pendingTasks: Record<string, PointOfInterestChallenge[]>;
-  completedTasks: Record<string, PointOfInterestChallenge[]>;
+  pendingTasks: Record<string, Task[]>;
+  completedTasks: Record<string, Task[]>;
+}
+
+export interface Task {
+  challenge: PointOfInterestChallenge;
+  questId: string;
+}
+
+// Helper function to recursively get tags from a quest node
+function getTagsFromNode(node: QuestNode): string[] {
+  const tags = new Set<string>();
+  
+  // Add tags from current node's point of interest
+  node.pointOfInterest.tags.forEach(tag => tags.add(tag.name));
+  
+  // Recursively get tags from children
+  Object.values(node.children).forEach(child => {
+    getTagsFromNode(child).forEach(tag => tags.add(tag));
+  });
+  
+  return Array.from(tags);
+}
+
+// Implementation of getTags for Quest
+export function getQuestTags(quest: Quest): string[] {
+  return getTagsFromNode(quest.rootNode);
 }

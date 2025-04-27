@@ -1,0 +1,1 @@
+drop table tracked_point_of_interest_groups;
