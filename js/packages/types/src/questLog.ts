@@ -7,7 +7,6 @@ export interface QuestObjective {
   challenge: PointOfInterestChallenge;
   isCompleted: boolean;
   submissions: PointOfInterestChallengeSubmission[];
-
 }
 
 export interface QuestNode {
@@ -23,13 +22,13 @@ export interface Quest {
   name: string;
   description: string;
   id: string;
-  getTags: () => string[];
 }
 
 export interface QuestLog {
   quests: Quest[];
   pendingTasks: Record<string, Task[]>;
   completedTasks: Record<string, Task[]>;
+  trackedQuestIds: string[];
 }
 
 export interface Task {

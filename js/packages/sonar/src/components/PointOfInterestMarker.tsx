@@ -3,7 +3,7 @@ import { generateColorFromTeamName } from '../utils/generateColor';
 import { PointOfInterest, TagGroup, Team } from '@poltergeist/types';
 import { useLocation } from '@poltergeist/contexts';
 import { tagsToFilter } from '../utils/tagFilter.ts';
-
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 export const PointOfInterestMarker = ({
   pointOfInterest,
   index,
@@ -13,6 +13,7 @@ export const PointOfInterestMarker = ({
   borderColor,
   usersLocation,
   tagGroups,
+  isTrackedQuest,
 }: {
   pointOfInterest: PointOfInterest;
   index: number;
@@ -22,6 +23,7 @@ export const PointOfInterestMarker = ({
   usersLocation: Location | null;
   onClick: (e: React.MouseEvent) => void;
   tagGroups: TagGroup[];
+  isTrackedQuest: boolean;
 }) => {
   const tagGroup = tagGroups?.reduce<{group: TagGroup | null, matchCount: number}>((bestMatch, group) => {
     const matchCount = (group.tags || []).filter(tag => 
@@ -123,11 +125,16 @@ export const PointOfInterestMarker = ({
       <img
         src={imageUrl}
         alt={pointOfInterest.name} 
-        className={`w-${pinSize} h-${pinSize} rounded-lg border-2`}
+        className={`w-${pinSize} h-${pinSize} rounded-lg border-2 transition-all duration-300 ${
+          isTrackedQuest ? 'animate-pulse-glow' : ''
+        }`}
         style={{
+          '--glow-color': '#0066CC', // Deeper, richer blue glow for attention and interactivity
           borderColor,
-          opacity
-        }}
+          opacity,
+          transform: isTrackedQuest ? 'scale(1.1)' : 'scale(1)',
+          filter: isTrackedQuest ? 'brightness(1.2)' : 'brightness(1)'
+        } as React.CSSProperties}
       />
     </button>
   );

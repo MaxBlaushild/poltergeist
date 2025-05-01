@@ -19,13 +19,15 @@ import { Log } from './Log.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import { usePointsOfInterest } from '@poltergeist/hooks';
 import { ActivityQuestionnaire } from './ActivityQuestionnaire.tsx';
-
+import { TrackedQuests } from './TrackedQuests.tsx';
+import { CompletedTaskModal } from './CompletedTaskModal.tsx';
 const MemoizedMap = React.memo(Map);
 
-const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest }: {
+const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel  }: {
   areMapOverlaysVisible: boolean;
   discoveries: PointOfInterestDiscovery[];
   totalPointsOfInterest: PointOfInterest[];
+  openPointOfInterestPanel: (pointOfInterest: PointOfInterest) => void;
 }) => {
   if (!areMapOverlaysVisible) return null;
   
@@ -34,6 +36,9 @@ const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPoint
       <MapZoomButton />
       <TagFilter />
       <ActivityQuestionnaire />
+      <div className="absolute top-32 right-4 z-10 mt-2">
+        <TrackedQuests openPointOfInterestPanel={openPointOfInterestPanel} />
+      </div>
       <div className="absolute bottom-20 right-0 z-10 w-full p-2">
         <Log 
           pointsOfInterest={totalPointsOfInterest || []} 
@@ -75,16 +80,24 @@ const DrawerControls = React.memo(({
 });
 
 export const SinglePlayer = () => {
-  const { pointsOfInterest } = useQuestLogContext();
+  const { pointsOfInterest, trackedPointOfInterestIds, quests } = useQuestLogContext();
   const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
-
   const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
     pointsOfInterest,
     discoveries,
     entityId: currentUser?.id ?? '',
     needsDiscovery: false,
+    trackedPointOfInterestIds,
   });
+
+  const openPointOfInterestPanel = (pointOfInterest: PointOfInterest) => {
+    if (pointOfInterest) {
+      setTimeout(() => {
+        setSelectedPointOfInterest(pointOfInterest);
+      }, 1000);
+    }
+  };
 
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
@@ -136,6 +149,7 @@ export const SinglePlayer = () => {
         areMapOverlaysVisible={areMapOverlaysVisible}
         discoveries={discoveries}
         totalPointsOfInterest={totalPointsOfInterest || []}
+        openPointOfInterestPanel={openPointOfInterestPanel}
       />
       <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
         {selectedPointOfInterest && (
@@ -168,16 +182,24 @@ export const SinglePlayer = () => {
           setIsQuestLogOpen={setIsQuestLogOpen}
         />
         {isInventoryOpen && <Inventory onClose={() => setIsInventoryOpen(false)} />}
-        {isQuestLogOpen && <QuestLog onClose={(pointOfInterest) => {
+        {isQuestLogOpen && <QuestLog onClose={(pointOfInterest: PointOfInterest | null | undefined) => {
           setIsQuestLogOpen(false);
-          console.log('pointOfInterest', pointOfInterest);
           if (pointOfInterest) {
-            setTimeout(() => {
-              setSelectedPointOfInterest(pointOfInterest);
-            }, 2000);
+            openPointOfInterestPanel(pointOfInterest);
           }
         }} />}
       </Drawer>
+      {/* <CompletedTaskModal completedTask={{
+        quest: quests?.[0],
+        challenge: quests?.[0]?.rootNode?.objectives?.[0]?.challenge,
+        reward: {
+          id: 1,
+          name: 'Dragon knife',
+          imageUrl: 'https://crew-points-of-interest.s3.amazonaws.com/cortez-cutlass.png',
+          flavorText: 'Flavor text',
+          effectText: 'Effect text',
+        },
+      }} /> */}
     </MemoizedMap>
   );
 };

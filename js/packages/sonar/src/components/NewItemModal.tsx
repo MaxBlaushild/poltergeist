@@ -4,7 +4,7 @@ import { XMarkIcon } from '@heroicons/react/20/solid';
 import "./ItemModal.css"
 
 const NewItemModal = () => {
-  const { presentedInventoryItem, setPresentedInventoryItem, inventoryItems } = useInventory();
+  const { presentedInventoryItem, setPresentedInventoryItem } = useInventory();
   return presentedInventoryItem ? (
     <div className="ItemModal flex flex-col items-center z-10 gap-4">
       <div className="w-full flex item-start justify-start">

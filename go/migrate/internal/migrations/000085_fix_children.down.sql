@@ -1,0 +1,3 @@
+alter table point_of_interest_children drop constraint fk_next_point_of_interest_group_member_id;
+alter table point_of_interest_children drop column next_point_of_interest_group_member_id;
+alter table point_of_interest_children add column point_of_interest_id uuid;

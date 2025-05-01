@@ -14,14 +14,14 @@ type pointOfInterestChildrenHandle struct {
 	db *gorm.DB
 }
 
-func (c *pointOfInterestChildrenHandle) Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, pointOfInterestID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error {
+func (c *pointOfInterestChildrenHandle) Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, nextPointOfInterestGroupMemberID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error {
 	return c.db.Create(&models.PointOfInterestChildren{
-		ID:                           uuid.New(),
-		PointOfInterestGroupMemberID: pointOfInterestGroupMemberID,
-		PointOfInterestID:            pointOfInterestID,
-		PointOfInterestChallengeID:   pointOfInterestChallengeID,
-		CreatedAt:                    time.Now(),
-		UpdatedAt:                    time.Now(),
+		ID:                               uuid.New(),
+		PointOfInterestGroupMemberID:     pointOfInterestGroupMemberID,
+		NextPointOfInterestGroupMemberID: nextPointOfInterestGroupMemberID,
+		PointOfInterestChallengeID:       pointOfInterestChallengeID,
+		CreatedAt:                        time.Now(),
+		UpdatedAt:                        time.Now(),
 	}).Error
 }
 

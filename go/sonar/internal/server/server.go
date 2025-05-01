@@ -209,7 +209,78 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.createZoneQuestArchetype))
 	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteZoneQuestArchetype))
 	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.getRelevantTags))
+	r.POST("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.createTrackedPointOfInterestGroup))
+	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.getTrackedPointOfInterestGroups))
+	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.deleteTrackedPointOfInterestGroup))
+	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.Run(":8042")
+}
+
+func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	err = s.dbClient.TrackedPointOfInterestGroup().Create(ctx, requestBody.PointOfInterestGroupID, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "tracked point of interest group created successfully"})
+}
+
+func (s *server) getTrackedPointOfInterestGroups(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	trackedPointOfInterestGroups, err := s.dbClient.TrackedPointOfInterestGroup().GetByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, trackedPointOfInterestGroups)
+}
+
+func (s *server) deleteTrackedPointOfInterestGroup(ctx *gin.Context) {
+	id := ctx.Param("id")
+	groupIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tracked point of interest group ID"})
+		return
+	}
+	err = s.dbClient.TrackedPointOfInterestGroup().Delete(ctx, groupIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "tracked point of interest group deleted successfully"})
+}
+
+func (s *server) deleteAllTrackedPointOfInterestGroups(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	err = s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "all tracked point of interest groups deleted successfully"})
 }
 
 func (s *server) getRelevantTags(ctx *gin.Context) {

@@ -43,6 +43,7 @@ type DbClient interface {
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
+	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -185,6 +186,7 @@ type PointOfInterestGroupHandle interface {
 	GetStartedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error)
 	AddMember(ctx context.Context, pointOfInterestID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.PointOfInterestGroupMember, error)
 	Update(ctx context.Context, pointOfInterestGroupID uuid.UUID, updates *models.PointOfInterestGroup) error
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.PointOfInterestGroup, error)
 }
 
 type PointOfInterestChallengeHandle interface {
@@ -227,7 +229,7 @@ type ImageGenerationHandle interface {
 }
 
 type PointOfInterestChildrenHandle interface {
-	Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, pointOfInterestID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error
+	Create(ctx context.Context, pointOfInterestGroupMemberID uuid.UUID, nextPointOfInterestGroupMemberID uuid.UUID, pointOfInterestChallengeID uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -324,4 +326,11 @@ type ZoneQuestArchetypeHandle interface {
 	DeleteByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) error
 	DeleteAll(ctx context.Context) error
 	FindAll(ctx context.Context) ([]*models.ZoneQuestArchetype, error)
+}
+
+type TrackedPointOfInterestGroupHandle interface {
+	Create(ctx context.Context, pointOfInterestGroupID uuid.UUID, userID uuid.UUID) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedPointOfInterestGroup, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }

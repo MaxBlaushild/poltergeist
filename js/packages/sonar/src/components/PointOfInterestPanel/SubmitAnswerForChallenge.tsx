@@ -146,7 +146,7 @@ export const SubmitAnswerForChallenge = (
                   'Too Far Away'}
               disabled={
                 completed ||
-                !isWithinRange ||
+                // !isWithinRange ||
                 props.challenge.pointOfInterestChallengeSubmissions?.some(
                   (submission) => submission.isCorrect
                 )

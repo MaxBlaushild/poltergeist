@@ -25,3 +25,24 @@ type PointOfInterestGroup struct {
 	PointsOfInterest []PointOfInterest            `json:"pointsOfInterest" gorm:"many2many:point_of_interest_group_members;associationForeignKey:PointOfInterestID;foreignKey:ID;joinForeignKey:PointOfInterestGroupID;joinReferences:PointOfInterestID"`
 	Type             PointOfInterestGroupType     `json:"type"`
 }
+
+func (p *PointOfInterestGroup) GetRootMember() *PointOfInterestGroupMember {
+	for _, member := range p.GroupMembers {
+		isChild := false
+		for _, otherMember := range p.GroupMembers {
+			for _, child := range otherMember.Children {
+				if child.PointOfInterestGroupMemberID == member.ID {
+					isChild = true
+					break
+				}
+			}
+			if isChild {
+				break
+			}
+		}
+		if !isChild {
+			return &member
+		}
+	}
+	return nil
+}

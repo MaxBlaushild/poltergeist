@@ -11,6 +11,7 @@ interface UsePointOfInterestMarkersProps {
   discoveries: PointOfInterestDiscovery[];
   entityId: string;
   needsDiscovery?: boolean;
+  trackedPointOfInterestIds: string[];
 }
 
 interface UsePointOfInterestMarkersReturn {
@@ -22,6 +23,7 @@ interface UsePointOfInterestMarkersReturn {
 export const usePointOfInterestMarkers = ({
   pointsOfInterest,
   discoveries,
+  trackedPointOfInterestIds,
   entityId,
   needsDiscovery = false,
 }: UsePointOfInterestMarkersProps): UsePointOfInterestMarkersReturn => {
@@ -29,8 +31,8 @@ export const usePointOfInterestMarkers = ({
   const [markers, setMarkers] = useState<mapboxgl.Marker[]>([]);
   const [previousZoom, setPreviousZoom] = useState(0);
   const [previousUnlockedPoiCount, setPreviousUnlockedPoiCount] = useState(-1);
+  const [previousTrackedPointOfInterestIds, setPreviousTrackedPointOfInterestIds] = useState<string[]>([]);
   const [selectedPointOfInterest, setSelectedPointOfInterest] = useState<PointOfInterest | null>(null);
-  const { isRootNode } = useQuestLogContext();
   const { location } = useLocation();
   const { tagGroups } = useTagContext();
 
@@ -64,6 +66,7 @@ export const usePointOfInterestMarkers = ({
         tagGroups={tagGroups}
         hasDiscovered={hasDiscovered}
         borderColor={'black'}
+        isTrackedQuest={trackedPointOfInterestIds.includes(pointOfInterest.id)}
         usersLocation={location}
         onClick={(e) => {
           setSelectedPointOfInterest(pointOfInterest);
@@ -93,11 +96,11 @@ export const usePointOfInterestMarkers = ({
     const unlockedPoiCount = pointsOfInterest.filter((poi) => 
       hasDiscoveredPointOfInterest(poi.id, entityId, discoveries))?.length;
 
-    if (Math.abs(zoom - previousZoom) < 1 && unlockedPoiCount === previousUnlockedPoiCount) return;
+    if (Math.abs(zoom - previousZoom) < 1 && unlockedPoiCount === previousUnlockedPoiCount && previousTrackedPointOfInterestIds.length === trackedPointOfInterestIds.length) return;
       
     setPreviousUnlockedPoiCount(unlockedPoiCount!);
     setPreviousZoom(zoom);
-
+    setPreviousTrackedPointOfInterestIds(trackedPointOfInterestIds);
     markers.forEach((marker) => marker.remove());
     setMarkers([]);
     const newMarkers = pointsOfInterest.map((poi, i) => createPoiMarker(poi, i));
@@ -118,7 +121,7 @@ export const usePointOfInterestMarkers = ({
 
       return () => clearInterval(timer);
     }
-  }, [pointsOfInterest, map, zoom, discoveries, entityId, memoizedAlternativeCoordinates, map?.current]);
+  }, [pointsOfInterest, map, zoom, discoveries, entityId, memoizedAlternativeCoordinates, map?.current, trackedPointOfInterestIds.length]);
 
   return { markers, selectedPointOfInterest, setSelectedPointOfInterest };
 };
