@@ -77,7 +77,7 @@ func (c *client) GenerateQuest(
 	usedPOIs := make(map[uuid.UUID]bool)
 
 	log.Println("Processing quest nodes")
-	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, usedPOIs); err != nil {
+	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, usedPOIs, nil); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
 		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
 			log.Printf("Error deleting quest group after node processing failure: %v", deleteErr)
@@ -132,6 +132,7 @@ func (c *client) processNode(
 	quest *models.PointOfInterestGroup,
 	member *models.PointOfInterestGroupMember,
 	usedPOIs map[uuid.UUID]bool,
+	prevChallenge *models.PointOfInterestChallenge,
 ) error {
 	log.Printf("Processing node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID)
 
@@ -179,6 +180,13 @@ func (c *client) processNode(
 		return err
 	}
 
+	if prevChallenge != nil && member != nil {
+		if err := c.dbClient.PointOfInterestChildren().Create(ctx, member.ID, newMember.ID, prevChallenge.ID); err != nil {
+			log.Printf("Error creating point of interest children: %v", err)
+			return err
+		}
+	}
+
 	*locations = append(*locations, pointOfInterest.Name)
 	*descriptions = append(*descriptions, pointOfInterest.Description)
 
@@ -221,7 +229,7 @@ func (c *client) processNode(
 				return err
 			}
 			log.Printf("Processing child node: %s", unlockedNode.LocationArchetypeID)
-			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, usedPOIs); err != nil {
+			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, usedPOIs, challenge); err != nil {
 				log.Printf("Error processing child node: %v", err)
 				return err
 			}

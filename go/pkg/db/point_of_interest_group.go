@@ -52,13 +52,29 @@ func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID
 	}
 
 	var groups []models.PointOfInterestGroup
-	if err := c.db.WithContext(ctx).
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
+		Where("id IN ?", groupIDs).
+		Find(&groups).Error; err != nil {
+		return nil, err
+	}
+
+	return groups, nil
+}
+
+// preloadPointOfInterestGroupRelations preloads all common relations for a PointOfInterestGroup query
+func (c *pointOfInterestGroupHandle) preloadPointOfInterestGroupRelations(query *gorm.DB) *gorm.DB {
+	return query.
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
 		Preload("GroupMembers.Children").
-		Preload("GroupMembers.Children.PointOfInterest").
+		Preload("GroupMembers.Children.PointOfInterest")
+}
+
+func (c *pointOfInterestGroupHandle) FindByIDs(ctx context.Context, groupIDs []uuid.UUID) ([]models.PointOfInterestGroup, error) {
+	var groups []models.PointOfInterestGroup
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
 		Where("id IN ?", groupIDs).
 		Find(&groups).Error; err != nil {
 		return nil, err
@@ -75,17 +91,10 @@ func (c *pointOfInterestGroupHandle) GetStartedQuests(ctx context.Context, userI
 		Joins("JOIN point_of_interest_group_members pogm ON pogm.point_of_interest_group_id = pog.id").
 		Joins("JOIN point_of_interest_challenges poc ON poc.point_of_interest_id = pogm.point_of_interest_id").
 		Joins("JOIN point_of_interest_challenge_submissions pocs ON pocs.point_of_interest_challenge_id = poc.id").
-		Preload("GroupMembers").
-		Preload("GroupMembers.PointOfInterest").
-		Preload("GroupMembers.PointOfInterest.Tags").
-		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
-		Preload("GroupMembers.Children").
-		Preload("GroupMembers.Children.PointOfInterest").
 		Where("pocs.user_id = ?", userID).
-		Where("pog.type = ?", models.PointOfInterestGroupTypeQuest).
-		Find(&groups)
+		Where("pog.type = ?", models.PointOfInterestGroupTypeQuest)
 
-	if err := query.Error; err != nil {
+	if err := c.preloadPointOfInterestGroupRelations(query).Find(&groups).Error; err != nil {
 		return nil, err
 	}
 

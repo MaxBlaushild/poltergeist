@@ -1,0 +1,3 @@
+alter table point_of_interest_children drop column point_of_interest_id;
+alter table point_of_interest_children add column next_point_of_interest_group_member_id uuid;
+alter table point_of_interest_children add constraint fk_next_point_of_interest_group_member_id foreign key (next_point_of_interest_group_member_id) references point_of_interest_group_member(id);

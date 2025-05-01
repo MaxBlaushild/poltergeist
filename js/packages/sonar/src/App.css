@@ -37,3 +37,21 @@
     transform: rotate(360deg);
   }
 }
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 3px var(--glow-color),
+                0 0 6px var(--glow-color),
+                0 0 9px var(--glow-color),
+                0 0 12px var(--glow-color);
+  }
+  50% {
+    box-shadow: 0 0 3px var(--glow-color),
+                0 0 6px var(--glow-color),
+                0 0 9px var(--glow-color),
+                0 0 12px var(--glow-color);
+  }
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
