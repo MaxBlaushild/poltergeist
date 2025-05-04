@@ -14,7 +14,7 @@ type ModalProps = {
   size?: ModalSize;
 };
 
-export const Modal = ({ children, size = ModalSize.HERO }: ModalProps) => {
+export const Modal = ({ children, size = ModalSize.HERO, onClose }: ModalProps & { onClose?: () => void }) => {
   const modalClasses = ['Modal__modal'];
 
   if (size === ModalSize.FULLSCREEN) {
@@ -27,5 +27,19 @@ export const Modal = ({ children, size = ModalSize.HERO }: ModalProps) => {
     modalClasses.push('Modal__form');
   }
 
-  return <div className={modalClasses.join(' ')}>{children}</div>;
+  if (onClose) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center" onClick={onClose}>
+        <div className={modalClasses.join(' ')} onClick={e => e.stopPropagation()}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={modalClasses.join(' ')} onClick={e => e.stopPropagation()}>
+      {children}
+    </div>
+  );
 };

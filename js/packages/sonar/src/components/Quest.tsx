@@ -15,11 +15,11 @@ import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 interface QuestNodeProps {
   node: QuestNode;
   onPointOfInterestClick: (e: React.MouseEvent<HTMLDivElement>, node: QuestNode) => void;
-  hasDiscoveredNode: boolean;
+  discoveredPointsOfInterestIds: { [key: string]: boolean };
   darkMode?: boolean;
 }
 
-export const QuestNodeComponent = ({ node, onPointOfInterestClick, hasDiscoveredNode, darkMode = false }: QuestNodeProps) => {
+export const QuestNodeComponent = ({ node, onPointOfInterestClick, discoveredPointsOfInterestIds, darkMode = false }: QuestNodeProps) => {
   return (
     <div
       key={node.pointOfInterest.id}
@@ -29,7 +29,7 @@ export const QuestNodeComponent = ({ node, onPointOfInterestClick, hasDiscovered
       <div className="font-bold flex items-center gap-2">
         <img
           src={
-            hasDiscoveredNode
+            discoveredPointsOfInterestIds[node.pointOfInterest.id]
               ? node.pointOfInterest.imageURL
               : 'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp'
           }
@@ -51,17 +51,17 @@ export const QuestNodeComponent = ({ node, onPointOfInterestClick, hasDiscovered
           ))}
         </div>
       </div>
-      {Object.entries(node.children).map(([childId, childNode]) => {
+      {node.objectives.map((objective) => {
         if (
-          node.objectives.some(
-            (obj) => obj.challenge.id === childId && obj.isCompleted
-          )
+          objective.nextNode &&
+          objective.isCompleted
         ) {
           return <QuestNodeComponent 
-            key={childNode.pointOfInterest.id}
-            node={childNode} 
+            key={objective.nextNode.pointOfInterest.id}
+            node={objective.nextNode} 
             onPointOfInterestClick={onPointOfInterestClick}
-            hasDiscoveredNode={hasDiscoveredNode}
+            discoveredPointsOfInterestIds={discoveredPointsOfInterestIds}
+            darkMode={darkMode}
           />;
         }
         return null;
@@ -87,6 +87,11 @@ export const QuestComponent = ({
   const { trackQuest, untrackQuest, trackedQuestIds } = useQuestLogContext();
   const isTracked = trackedQuestIds.includes(quest.id);
 
+  const discovedPointsOfInterestIds = discoveries?.filter((discovery) => discovery.userId === currentUser?.id).reduce((acc, discovery) => {
+    acc[discovery.pointOfInterestId] = true;
+    return acc;
+  }, {});
+
   return (
     <div className="flex flex-col items-center gap-4 font-medium">
       <h2 className="text-2xl font-extrabold">{quest.name}</h2>
@@ -106,7 +111,12 @@ export const QuestComponent = ({
             if (node.objectives.every((obj) => obj.isCompleted)) {
               completedQuests++;
             }
-            Object.values(node.children).forEach(countQuests);
+           
+            node.objectives.forEach((objective) => {
+              if (objective.nextNode) {
+                countQuests(objective.nextNode);
+              }
+            });
           };
 
           countQuests(quest.rootNode);
@@ -142,11 +152,7 @@ export const QuestComponent = ({
             <QuestNodeComponent
               node={quest.rootNode}
               onPointOfInterestClick={onPointOfInterestClick}
-              hasDiscoveredNode={hasDiscoveredPointOfInterest(
-                quest.rootNode.pointOfInterest.id,
-                currentUser?.id ?? '',
-                discoveries
-              )}
+              discoveredPointsOfInterestIds={discovedPointsOfInterestIds}
             />
           </div>
         </TabItem>

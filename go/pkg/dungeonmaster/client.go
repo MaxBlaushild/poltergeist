@@ -214,14 +214,6 @@ func (c *client) processNode(
 			return err
 		}
 
-		if member != nil {
-			log.Printf("Creating point of interest children for member %s", member.ID)
-			if err := c.dbClient.PointOfInterestChildren().Create(ctx, member.ID, pointOfInterest.ID, challenge.ID); err != nil {
-				log.Printf("Error creating point of interest children: %v", err)
-				return err
-			}
-		}
-
 		if allotedChallenge.UnlockedNodeID != nil {
 			unlockedNode, err := c.dbClient.QuestArchetypeNode().FindByID(ctx, *allotedChallenge.UnlockedNodeID)
 			if err != nil {

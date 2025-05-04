@@ -28,6 +28,7 @@ import {
 import { mapCaptureTiers } from '../../utils/mapCaptureTiers.ts';
 import { useUserProfiles } from '../../contexts/UserProfileContext.tsx';
 import { useQuestLogContext } from '../../contexts/QuestLogContext.tsx';
+import { useCompletedTaskContext } from '../../contexts/CompletedTaskContext.tsx';
 
 type SubmitAnswerForChallengeProps = {
   pointOfInterest: PointOfInterest;
@@ -41,12 +42,12 @@ export const SubmitAnswerForChallenge = (
   props: SubmitAnswerForChallengeProps
 ) => {
   const { submissions, setSubmissions } = useSubmissionsContext();
+  const { setCompletedTask } = useCompletedTaskContext();
   const { currentUser } = useUserProfiles();
   const { location } = useLocation();
-  const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems } =
+  const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems, getInventoryItemById } =
     useInventory();
   const { refreshQuestLog } = useQuestLogContext();
-  const completedForTier = mapCaptureTiers(props.pointOfInterest, submissions);
   const { createSubmission } = useSubmissionsContext();
   const [textSubmission, setTextSubmission] = useState<string | undefined>(
     undefined
@@ -60,29 +61,12 @@ export const SubmitAnswerForChallenge = (
   const [reason, setReason] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  let matchingRubyForChallenge;
-  switch (props.challenge.tier) {
-    case 1:
-      matchingRubyForChallenge = inventoryItems.find(
-        (item) => item.id === ItemType.FlawedRuby
-      );
-      break;
-    case 2:
-      matchingRubyForChallenge = inventoryItems.find(
-        (item) => item.id === ItemType.Ruby
-      );
-      break;
-    case 3:
-      matchingRubyForChallenge = inventoryItems.find(
-        (item) => item.id === ItemType.BrilliantRuby
-      );
-      break;
-  }
-
-  const matchingInventoryItem = ownedInventoryItems?.find(
+  const hasRuby = ownedInventoryItems?.find(
     (item) =>
-      item.inventoryItemId === matchingRubyForChallenge?.id && item.quantity > 0
+      (item.inventoryItemId === ItemType.BrilliantRuby || item.inventoryItemId === ItemType.FlawedRuby || item.inventoryItemId === ItemType.Ruby) && item.quantity > 0
   );
+
+  const brilliantRuby = getInventoryItemById(ItemType.BrilliantRuby);
 
   const isGoldenMonkeyActive = props.match?.inventoryItemEffects.some(
     (item) =>
@@ -90,8 +74,6 @@ export const SubmitAnswerForChallenge = (
       item.teamId !== props.usersTeam?.id &&
       new Date(item.expiresAt) > new Date()
   );
-
-  const completed = completedForTier[props.challenge.tier] ?? false;
 
   // Calculate distance between user and POI using Haversine formula
   const isWithinRange = location?.latitude && location?.longitude && props.pointOfInterest.lat && props.pointOfInterest.lng ? (() => {
@@ -110,6 +92,38 @@ export const SubmitAnswerForChallenge = (
     return distance <= 100; // Within 100 meters
   })() : false;
 
+  const onSubmit = async (isCorrect: boolean, reason: string) => {
+    setCorrectness(isCorrect);
+    setReason(reason);
+
+    if (isCorrect) {
+      setTimeout(() => {
+        setSubmissions([...submissions, {
+          id: '',
+          isCorrect,
+          text: textSubmission ?? '',
+          teamId: props.usersTeam?.id,
+          userId: currentUser?.id,
+          pointOfInterestChallengeId: props.challenge.id,
+          imageUrl: imageSubmission?.name ?? '',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }]);
+        props.onSubmit(true);
+        setCompletedTask(props.challenge);
+        try {
+          refreshQuestLog();
+        } catch (e) {
+          console.log(e);
+        } finally {
+          setIsLoading(false);
+          setTextSubmission(undefined);
+          setImageSubmission(undefined);
+        }
+      }, 1000);
+    }
+  };
+
   return (
     <div className="w-full rounded-xl flex flex-col gap-3">
       {correctness === undefined && !isLoading && (
@@ -122,31 +136,26 @@ export const SubmitAnswerForChallenge = (
                 )
               : props.challenge.question}
           </p>
-          {!completed && (
-            <textarea
-              className="w-full h-24"
-              value={textSubmission}
-              onChange={(e) => setTextSubmission(e.target.value)}
-            />
-          )}
-          {!completed && (
-            <input
-              id="file"
-              type="file"
-              className="w-full"
-              onChange={(e) => setImageSubmission(e.target.files?.[0])}
-            />
-          )}
+          <textarea
+            className="w-full h-24"
+            value={textSubmission}
+            onChange={(e) => setTextSubmission(e.target.value)}
+          />
+          <input
+            id="file"
+            type="file"
+            className="w-full"
+            onChange={(e) => setImageSubmission(e.target.files?.[0])}
+          />
           <div className="flex flex-row justify-between gap-2">
             <Button
-              title={completed ? 
-                !props.usersTeam?.id ? 'Completed' : 'Locked' : 
-                isWithinRange ? 
-                  'Submit Answer' : 
-                  'Too Far Away'}
+              title={
+                isWithinRange ?
+                  'Submit Answer' :
+                  'Too Far Away'
+              }
               disabled={
-                completed ||
-                // !isWithinRange ||
+                !isWithinRange ||
                 props.challenge.pointOfInterestChallengeSubmissions?.some(
                   (submission) => submission.isCorrect
                 )
@@ -161,69 +170,25 @@ export const SubmitAnswerForChallenge = (
                     props.usersTeam?.id,
                     props.usersTeam ? undefined : currentUser?.id
                   );
-                  setCorrectness(result?.correctness ?? false);
-                  setReason(result?.reason ?? 'Failed for an unknown reason.');
-
-                  if (result?.correctness) {
-                    setSubmissions([...submissions, {
-                      id: '',
-                      isCorrect: true,
-                      text: textSubmission ?? '',
-                      teamId: props.usersTeam?.id,
-                      userId: currentUser?.id,
-                      pointOfInterestChallengeId: props.challenge.id,
-                      imageUrl: imageSubmission?.name ?? '',
-                      createdAt: new Date(),
-                      updatedAt: new Date(),
-                    }]);
-                  }
-                  props.onSubmit(false);
-                  try {
-                    refreshQuestLog();
-                  } catch (e) {
-                    console.log(e);
-                  }
-
-                  setTimeout(() => {
-                    setCorrectness(undefined);
-                    setReason(undefined);
-                  }, 3000);
+                  onSubmit(result?.correctness ?? false, result?.reason ?? 'Failed for an unknown reason.');
                 } catch (e) {
                   console.log(e);
                 } finally {
                   setIsLoading(false);
-                  setTextSubmission(undefined);
-                  setImageSubmission(undefined);
                 }
               }}
             />
-            {!!matchingInventoryItem && !completed && (
+            {hasRuby && (
               <img
-                src={matchingRubyForChallenge?.imageUrl}
-                alt={matchingRubyForChallenge?.name}
+                src={brilliantRuby?.imageUrl}
+                alt={brilliantRuby?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
                 onClick={async () => {
-                  await consumeItem(matchingInventoryItem?.id, {
+                  await consumeItem(hasRuby.id, {
                     pointOfInterestId: props.challenge.pointOfInterestId,
+                    challengeId: props.challenge.id,
                   });
-                  setUsedItem(matchingRubyForChallenge!);
-                  setSubmissions([...submissions, {
-                    id: '',
-                    isCorrect: true,
-                    text: 'Used a ruby to answer the challenge',
-                    teamId: props.usersTeam?.id,
-                    userId: currentUser?.id,
-                    pointOfInterestChallengeId: props.challenge.id,
-                    imageUrl: '',
-                    createdAt: new Date(),
-                    updatedAt: new Date(),
-                  }]);
-                  try {
-                    refreshQuestLog();
-                  } catch (e) {
-                    console.log(e);
-                  }
-                  props.onSubmit(true);
+                  onSubmit(true, 'Used a ruby to answer the challenge');
                 }}
               />
             )}
@@ -245,13 +210,6 @@ export const SubmitAnswerForChallenge = (
       )}
       {correctness !== undefined && (
         <>
-          <XMarkIcon
-            className="h-6 w-6"
-            onClick={() => {
-              setCorrectness(undefined);
-              setReason(undefined);
-            }}
-          />
           {correctness ? (
             <div className="flex flex-col items-center gap-3 mt-4 mb-4">
               <CheckBadgeIcon className="h-20 w-20 text-green-500" />

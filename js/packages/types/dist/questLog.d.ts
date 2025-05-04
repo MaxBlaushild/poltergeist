@@ -5,13 +5,12 @@ export interface QuestObjective {
     challenge: PointOfInterestChallenge;
     isCompleted: boolean;
     submissions: PointOfInterestChallengeSubmission[];
+    nextNode?: QuestNode | null;
 }
 export interface QuestNode {
     pointOfInterest: PointOfInterest;
     objectives: QuestObjective[];
-    children: {
-        [key: string]: QuestNode;
-    };
+    children: Record<string, QuestNode>;
 }
 export interface Quest {
     isCompleted: boolean;

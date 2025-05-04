@@ -19,12 +19,16 @@ const premise = `
 
 	Describe how %s would appear if it was in a fantasy role playing video game.
 
+	An editorial summary of %s is: %s.
+
 	Some categories that people use to describe %s are: %v.
 
 	The sophistication of %s is considered to be %s.
 `
 
 const generatePointOfInterestPromptTemplate = premise + `
+	Please try to keep the description to 50 words or less.
+
 	Please format your response as a JSON object with the following fields:
 	
 	{
@@ -132,6 +136,8 @@ func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place) string {
 		generateImagePromptPromptTemplate,
 		place.DisplayName.Text,
 		place.DisplayName.Text,
+		place.EditorialSummary.Text,
+		place.DisplayName.Text,
 		place.Types,
 		place.DisplayName.Text,
 		c.generateSophistication(place),
@@ -155,6 +161,8 @@ func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
 	prompt := fmt.Sprintf(
 		generatePointOfInterestPromptTemplate,
 		place.DisplayName.Text,
+		place.DisplayName.Text,
+		place.EditorialSummary.Text,
 		place.DisplayName.Text,
 		place.Types,
 		place.DisplayName.Text,

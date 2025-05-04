@@ -23,15 +23,26 @@ export const PointOfInterestCompletedTasks = ({ pointOfInterest }: PointOfIntere
 
   return (
     <div className="flex flex-col gap-3">
-      {tasksForPointOfInterest.map((task) => (
-        <div
-          key={task.id}
-          className="flex items-center gap-2 px-4 py-3 bg-gray-100 rounded-lg"
-        >
-          <span>✅</span>
-          <span>{task.question}</span>
-        </div>
-      ))}
+      {tasksForPointOfInterest.map((task) => {
+        const quest = quests.find((quest) => quest.id === task.questId);
+        
+        return (
+          <div
+            key={task.challenge.id}
+            className="mb-3 group"
+          >
+            <div className="flex items-center gap-3 px-4 py-3 bg-gray-100 rounded-lg group-hover:bg-gray-200 transition-colors">
+              <div className="flex-grow text-left">
+                {quest && <p className="text-xs text-gray-400">{quest?.name}</p>}
+                <p className="text-black font-bold">{task.challenge.question}</p>
+              </div>
+              <div className="flex-shrink-0 text-gray-400 group-hover:text-gray-600">
+                ✅
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };

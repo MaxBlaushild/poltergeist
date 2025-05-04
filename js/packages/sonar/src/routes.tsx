@@ -27,6 +27,7 @@ import { MapProvider } from '@poltergeist/contexts';
 import { PointOfInterestContextProvider } from './contexts/PointOfInterestContext.tsx';
 import { MatchContextProvider } from './contexts/MatchContext.tsx';
 import { TagProvider } from '@poltergeist/contexts';
+import { CompletedTaskProvider } from './contexts/CompletedTaskContext.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -118,11 +119,11 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
         Component: () => (
           <MatchContextProvider>
-              <MapProvider>
-            <PointOfInterestContextProvider>
+            <MapProvider>
+              <PointOfInterestContextProvider>
                 <MatchInProgress />
-            </PointOfInterestContextProvider>
-              </MapProvider>
+              </PointOfInterestContextProvider>
+            </MapProvider>
           </MatchContextProvider>
         ),
       },
@@ -136,11 +137,13 @@ export const router = createBrowserRouter([
         loader: onlyAuthenticated,
         Component: () => (
           <TagProvider>
-              <MapProvider>
-            <QuestLogContextProvider>
-                <SinglePlayer />
-            </QuestLogContextProvider>
-              </MapProvider>
+            <MapProvider>
+              <QuestLogContextProvider>
+                <CompletedTaskProvider>
+                  <SinglePlayer />
+                </CompletedTaskProvider>
+              </QuestLogContextProvider>
+            </MapProvider>
           </TagProvider>
         ),
       },

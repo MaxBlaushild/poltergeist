@@ -16,11 +16,13 @@ interface InventoryContextType {
   ownedInventoryItems: OwnedInventoryItem[];
   ownedInventoryItemsAreLoading: boolean;
   ownedInventoryItemsError: string | null;
+  getInventoryItemById: (id: number) => InventoryItem | null;
 };
 
 interface UseItemMetadata {
   targetTeamId?: string | null;
   pointOfInterestId?: string | null;
+  challengeId?: string | null;
 }
 
 const InventoryContext = createContext<InventoryContextType>({
@@ -37,6 +39,7 @@ const InventoryContext = createContext<InventoryContextType>({
   ownedInventoryItems: [],
   ownedInventoryItemsAreLoading: false,
   ownedInventoryItemsError: null,
+  getInventoryItemById: (id: number) => null,
 });
 
 export const useInventory = () => useContext(InventoryContext);
@@ -99,6 +102,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const getInventoryItemById = (id: number) => {
+    return inventoryItems.find((item) => item.id === id) || null;
+  };
+
   return (
     <InventoryContext.Provider value={{ 
       inventoryItems, 
@@ -114,6 +121,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       ownedInventoryItems,
       ownedInventoryItemsAreLoading,
       ownedInventoryItemsError,
+      getInventoryItemById,
     }}>
       {children}
     </InventoryContext.Provider>

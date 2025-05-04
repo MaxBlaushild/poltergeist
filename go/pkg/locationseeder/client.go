@@ -230,6 +230,19 @@ func (c *client) fuzzCoordinates(lat float64, lng float64, radius float64) (floa
 }
 
 func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error) {
+	placeDetails, err := c.googlemapsClient.FindPlaceByID(place.ID)
+	if err != nil {
+		log.Printf("Error getting place details: %v", err)
+		return nil, err
+	}
+
+	if placeDetails == nil {
+		log.Printf("Place details not found")
+		return nil, fmt.Errorf("place details not found")
+	}
+
+	place = *placeDetails
+
 	log.Printf("Starting to generate point of interest for place: %s", place.Name)
 
 	fantasyPointOfInterest, err := c.generateFantasyTheming(place)

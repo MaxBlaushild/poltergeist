@@ -315,10 +315,12 @@ export const Arena = () => {
           </button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {arena.pointsOfInterest?.map((point) => (
-            <div key={point.id} className="border rounded-lg p-4 shadow-sm">
-              {editingPointId === point.id ? (
-                <div>
+          {arena.groupMembers?.map((member) => {
+            const point = member.pointOfInterest;
+            return (
+              <div key={point.id} className="border rounded-lg p-4 shadow-sm">
+                {editingPointId === point.id ? (
+                  <div>
                   <input
                     type="text"
                     value={editedPoint?.name}
@@ -539,19 +541,22 @@ export const Arena = () => {
                     </ul>
                   </div>
                 )}
-              {arena.groupMembers.find(member => member.pointOfInterestId === point.id)?.children && (
+              {member.children && (
                 <div className="mt-3">
                   <h4 className="font-semibold mb-1">Children:</h4>
                   <ul className="space-y-2">
-                    {arena.groupMembers.find(member => member.pointOfInterestId === point.id)?.children.map((child, idx) => (
+                    {member.children.map((child, idx) => {
+                      const childPoint = arena.groupMembers.find(member => member.id === child.nextPointOfInterestGroupMemberId)?.pointOfInterest;
+                      const childChallenge = arena.groupMembers.flatMap(g => g.pointOfInterest.pointOfInterestChallenges).find(c => c.id === child.pointOfInterestChallengeId);
+                      return (
                       <li key={idx} className="p-2 border rounded">
                         <div className="text-sm flex justify-between items-center">
                           <div>
-                            <span className="font-medium">{arena.pointsOfInterest.find(p => p.id === child.pointOfInterestId)?.name}</span>
+                            <span className="font-medium">{childPoint?.name}</span>
                             <span className="text-gray-600 mx-2">|</span>
-                            <span className="text-gray-600">Tier {arena.pointsOfInterest.flatMap(p => p.pointOfInterestChallenges).find(c => c.id === child.pointOfInterestChallengeId)?.tier}</span>
+                            <span className="text-gray-600">Tier {childChallenge?.tier}</span>
                             <span className="text-gray-600 mx-2">|</span>
-                            <span className="text-gray-600">{arena.pointsOfInterest.flatMap(p => p.pointOfInterestChallenges).find(c => c.id === child.pointOfInterestChallengeId)?.question}</span>
+                            <span className="text-gray-600">{childChallenge?.question}</span>
                           </div>
                           <button
                             onClick={() => deletePointOfInterestChildren(child.id)}
@@ -561,12 +566,14 @@ export const Arena = () => {
                           </button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               )}
             </div>
-          ))}
+          );
+        })}
         </div>
       </div>
 
