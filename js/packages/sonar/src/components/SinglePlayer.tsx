@@ -21,6 +21,8 @@ import { usePointsOfInterest } from '@poltergeist/hooks';
 import { ActivityQuestionnaire } from './ActivityQuestionnaire.tsx';
 import { TrackedQuests } from './TrackedQuests.tsx';
 import { CompletedTaskModal } from './CompletedTaskModal.tsx';
+import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
+
 const MemoizedMap = React.memo(Map);
 
 const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel  }: {
@@ -46,8 +48,7 @@ const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPoint
           needsDiscovery={false}
         />
       </div>
-      <NewItemModal />
-      <UsedItemModal />
+
     </>
   );
 });
@@ -83,6 +84,7 @@ export const SinglePlayer = () => {
   const { pointsOfInterest, trackedPointOfInterestIds, quests } = useQuestLogContext();
   const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
+  const { completedTask } = useCompletedTaskContext();
   const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
     pointsOfInterest,
     discoveries,
@@ -121,16 +123,16 @@ export const SinglePlayer = () => {
   };
 
   useEffect(() => {
-    if (isInventoryOpen || isQuestLogOpen || isPanelVisible) {
+    if (isInventoryOpen || isQuestLogOpen || isPanelVisible || completedTask) {
       setAreMapOverlaysVisible(false);
     }
 
-    if (!isInventoryOpen && !isQuestLogOpen && !isPanelVisible) {
+    if (!isInventoryOpen && !isQuestLogOpen && !isPanelVisible && !completedTask) {
       setTimeout(() => {
         setAreMapOverlaysVisible(true);
       }, 300);
     }
-  }, [isInventoryOpen, isQuestLogOpen, isPanelVisible]);
+  }, [isInventoryOpen, isQuestLogOpen, isPanelVisible, completedTask]);
 
   const handleMapClick = () => {
     setIsPanelVisible(false);
@@ -189,17 +191,9 @@ export const SinglePlayer = () => {
           }
         }} />}
       </Drawer>
-      {/* <CompletedTaskModal completedTask={{
-        quest: quests?.[0],
-        challenge: quests?.[0]?.rootNode?.objectives?.[0]?.challenge,
-        reward: {
-          id: 1,
-          name: 'Dragon knife',
-          imageUrl: 'https://crew-points-of-interest.s3.amazonaws.com/cortez-cutlass.png',
-          flavorText: 'Flavor text',
-          effectText: 'Effect text',
-        },
-      }} /> */}
+      <CompletedTaskModal />
+      <NewItemModal />
+      <UsedItemModal />
     </MemoizedMap>
   );
 };

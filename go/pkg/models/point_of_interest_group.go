@@ -31,7 +31,7 @@ func (p *PointOfInterestGroup) GetRootMember() *PointOfInterestGroupMember {
 		isChild := false
 		for _, otherMember := range p.GroupMembers {
 			for _, child := range otherMember.Children {
-				if child.PointOfInterestGroupMemberID == member.ID {
+				if child.NextPointOfInterestGroupMemberID == member.ID {
 					isChild = true
 					break
 				}

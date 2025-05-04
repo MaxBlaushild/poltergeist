@@ -36,19 +36,6 @@ export const usePointOfInterestMarkers = ({
   const { location } = useLocation();
   const { tagGroups } = useTagContext();
 
-  const memoizedAlternativeCoordinates = useMemo(() => {
-    return pointsOfInterest.reduce((acc, poi) => {
-        const baseLat = parseFloat(poi.lat);
-        const baseLng = parseFloat(poi.lng);
-        const radius = 150 / 111000; // degrees per meter
-        const angle = ((baseLat + baseLng) * 1000) % 360; // deterministic angle based on lat and lng
-        const newLat = baseLat + radius * Math.cos((angle * Math.PI) / 180);
-        const newLng = baseLng + radius * Math.sin((angle * Math.PI) / 180);
-        acc[poi.id] = { newLat, newLng: newLng };
-        return acc;
-    }, {} as Record<string, { newLat: number; newLng: number }>);
-  }, [pointsOfInterest.length]);
-
   const createPoiMarker = (pointOfInterest: PointOfInterest, index: number) => {
     const markerDiv = document.createElement('div');
 
@@ -76,14 +63,6 @@ export const usePointOfInterestMarkers = ({
 
     let lat = parseFloat(pointOfInterest.lat);
     let lng = parseFloat(pointOfInterest.lng);
-
-    if (!hasDiscovered || !needsDiscovery) {
-      const coords = memoizedAlternativeCoordinates?.[pointOfInterest.id];
-      if (coords) {
-        lat = coords.newLat;
-        lng = coords.newLng;
-      }
-    }
 
     const marker = new mapboxgl.Marker(markerDiv)
       .setLngLat([lng, lat])
@@ -121,7 +100,7 @@ export const usePointOfInterestMarkers = ({
 
       return () => clearInterval(timer);
     }
-  }, [pointsOfInterest, map, zoom, discoveries, entityId, memoizedAlternativeCoordinates, map?.current, trackedPointOfInterestIds.length]);
+  }, [pointsOfInterest, map, zoom, discoveries, entityId, map?.current, trackedPointOfInterestIds.length]);
 
   return { markers, selectedPointOfInterest, setSelectedPointOfInterest };
 };

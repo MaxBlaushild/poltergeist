@@ -25,6 +25,7 @@ const InventoryContext = createContext({
     ownedInventoryItems: [],
     ownedInventoryItemsAreLoading: false,
     ownedInventoryItemsError: null,
+    getInventoryItemById: (id) => null,
 });
 export const useInventory = () => useContext(InventoryContext);
 export const InventoryProvider = ({ children }) => {
@@ -84,6 +85,9 @@ export const InventoryProvider = ({ children }) => {
             fetchOwnedInventoryItems();
         }
     });
+    const getInventoryItemById = (id) => {
+        return inventoryItems.find((item) => item.id === id) || null;
+    };
     return (_jsx(InventoryContext.Provider, Object.assign({ value: {
             inventoryItems,
             inventoryItemsAreLoading,
@@ -98,5 +102,6 @@ export const InventoryProvider = ({ children }) => {
             ownedInventoryItems,
             ownedInventoryItemsAreLoading,
             ownedInventoryItemsError,
+            getInventoryItemById,
         } }, { children: children })));
 };

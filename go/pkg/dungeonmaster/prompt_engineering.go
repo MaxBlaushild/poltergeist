@@ -25,7 +25,7 @@ const generateQuestPromptTemplate = `
 
 	%s
 
-	Please come up with copy for the quest that incorporates the task and chores into a cohesive quest that might appear in a fantasy role playing game.
+	Please come up with copy for the quest that incorporates the task and chores into a cohesive quest that might appear in a fantasy role playing game. Try to keep the description to 50 words or less. Feel free to make up names or proper nouns.
 
 	Please format your response as a JSON object with the following fields:
 	{
@@ -41,7 +41,7 @@ const generateQuestImagePromptTemplate = `
 
 	%s
 
-	Please describe what a hero image for this quest would look like.
+	Please describe what an iconic moment from this quest would look like to an outside observer.
 
 	Please format your response as a JSON object with the following fields:
 	{

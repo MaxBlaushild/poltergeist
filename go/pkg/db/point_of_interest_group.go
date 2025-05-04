@@ -68,8 +68,7 @@ func (c *pointOfInterestGroupHandle) preloadPointOfInterestGroupRelations(query 
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
-		Preload("GroupMembers.Children").
-		Preload("GroupMembers.Children.PointOfInterest")
+		Preload("GroupMembers.Children")
 }
 
 func (c *pointOfInterestGroupHandle) FindByIDs(ctx context.Context, groupIDs []uuid.UUID) ([]models.PointOfInterestGroup, error) {
@@ -172,10 +171,7 @@ func (c *pointOfInterestGroupHandle) Create(ctx context.Context, name string, de
 
 func (c *pointOfInterestGroupHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroup models.PointOfInterestGroup
-	if err := c.db.WithContext(ctx).
-		Preload("PointsOfInterest.PointOfInterestChallenges").
-		Preload("PointsOfInterest.Tags").
-		Preload("GroupMembers.Children").
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
 		First(&pointOfInterestGroup, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -184,7 +180,8 @@ func (c *pointOfInterestGroupHandle) FindByID(ctx context.Context, id uuid.UUID)
 
 func (c *pointOfInterestGroupHandle) FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroups []*models.PointOfInterestGroup
-	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Preload("GroupMembers.Children").Find(&pointOfInterestGroups).Error; err != nil {
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
+		Find(&pointOfInterestGroups).Error; err != nil {
 		return nil, err
 	}
 	return pointOfInterestGroups, nil
@@ -192,7 +189,9 @@ func (c *pointOfInterestGroupHandle) FindAll(ctx context.Context) ([]*models.Poi
 
 func (c *pointOfInterestGroupHandle) FindByType(ctx context.Context, typeValue models.PointOfInterestGroupType) ([]*models.PointOfInterestGroup, error) {
 	var pointOfInterestGroups []*models.PointOfInterestGroup
-	if err := c.db.Preload("PointsOfInterest.PointOfInterestChallenges").Preload("GroupMembers.Children").Where("type = ?", typeValue).Find(&pointOfInterestGroups).Error; err != nil {
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
+		Where("type = ?", typeValue).
+		Find(&pointOfInterestGroups).Error; err != nil {
 		return nil, err
 	}
 	return pointOfInterestGroups, nil

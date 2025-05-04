@@ -29,13 +29,13 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 		return q.db.PointOfInterest().Unlock(ctx, metadata.PointOfInterestID, ownedInventoryItem.TeamID, ownedInventoryItem.UserID)
 	case 3:
 		// 	// Instantly capture a tier one challenge.
-		return q.captureChallenge(ctx, metadata.PointOfInterestID, ownedInventoryItem, 1)
+		return q.captureChallenge(ctx, ownedInventoryItem, metadata)
 	case 4:
 		// Instantly capture a tier two challenge.
-		return q.captureChallenge(ctx, metadata.PointOfInterestID, ownedInventoryItem, 2)
+		return q.captureChallenge(ctx, ownedInventoryItem, metadata)
 	case 5:
 		// Instantly capture a tier three challenge.
-		return q.captureChallenge(ctx, metadata.PointOfInterestID, ownedInventoryItem, 3)
+		return q.captureChallenge(ctx, ownedInventoryItem, metadata)
 	case 6:
 		if ownedInventoryItem.IsTeamItem() {
 			// Steal all of another team's items. Must be within a 100 meter radius of the target team to use.
@@ -113,8 +113,8 @@ func (q *client) AddEffectToMatch(ctx context.Context, matchID uuid.UUID, invent
 	return q.db.InventoryItem().ApplyInventoryItem(ctx, matchID, inventoryItem.InventoryItemID, *inventoryItem.TeamID, duration)
 }
 
-func (q *client) captureChallenge(ctx context.Context, pointOfInterestID uuid.UUID, ownedInventoryItem models.OwnedInventoryItem, tier int) error {
-	challenge, err := q.db.PointOfInterestChallenge().GetChallengeForPointOfInterest(ctx, pointOfInterestID, tier)
+func (q *client) captureChallenge(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata *UseItemMetadata) error {
+	challenge, err := q.db.PointOfInterestChallenge().FindByID(ctx, metadata.ChallengeID)
 	if err != nil {
 		return err
 	}

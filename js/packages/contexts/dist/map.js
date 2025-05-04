@@ -63,7 +63,7 @@ export const MapProvider = ({ children }) => {
                 center: [lng, lat],
                 zoom: zoom || map.current.getZoom(),
                 essential: true,
-                duration: 2000
+                duration: 1000
             });
         }
     }, [map]);

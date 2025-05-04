@@ -1,0 +1,1 @@
+alter table zones add column boundary geometry(Polygon, 4326);

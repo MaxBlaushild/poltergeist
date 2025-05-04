@@ -7,12 +7,13 @@ export interface QuestObjective {
   challenge: PointOfInterestChallenge;
   isCompleted: boolean;
   submissions: PointOfInterestChallengeSubmission[];
+  nextNode?: QuestNode | null;
 }
 
 export interface QuestNode {
   pointOfInterest: PointOfInterest;
   objectives: QuestObjective[];
-  children: { [key: string]: QuestNode };
+  children: Record<string, QuestNode>;
 }
 
 export interface Quest {
@@ -44,8 +45,10 @@ function getTagsFromNode(node: QuestNode): string[] {
   node.pointOfInterest.tags.forEach(tag => tags.add(tag.name));
   
   // Recursively get tags from children
-  Object.values(node.children).forEach(child => {
-    getTagsFromNode(child).forEach(tag => tags.add(tag));
+  node.objectives.forEach(objective => {
+    if (objective.nextNode) {
+      getTagsFromNode(objective.nextNode).forEach(tag => tags.add(tag));
+    }
   });
   
   return Array.from(tags);

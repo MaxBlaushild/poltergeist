@@ -136,17 +136,19 @@ export const PointOfInterestPanel = ({
         alt={pointOfInterest.name}
       />
       <div className="flex justify-between items-center w-full">
-        <div className="flex-shrink-0">
+        {usersTeam && (
+          <div className="flex-shrink-0">
           <StatusIndicator
             capturingEntityName={capturingEntityName}
             captureTier={captureTier}
             match={match}
             usersTeam={usersTeam}
-          />
-        </div>
-        <div className="flex flex-wrap gap-2 justify-end">
+            />
+          </div>
+        )}
+        <div className={`flex flex-wrap gap-2 justify-end ${usersTeam ? '' : 'w-full'}`}>
           {tagFilter(pointOfInterest.tags ?? [])
-            .slice(0, 1)
+            .slice(0, usersTeam ? 1 : 2)
             .map((tag) => (
               <div
                 key={tag.id}
@@ -163,7 +165,7 @@ export const PointOfInterestPanel = ({
                   .join(' ')}
               </div>
             ))}
-          {tagFilter(pointOfInterest.tags ?? []).length > 1 && (
+          {tagFilter(pointOfInterest.tags ?? []).length > (usersTeam ? 1 : 2) && (
             <div
               className="px-3 py-1 bg-gray-200 rounded-full text-sm cursor-pointer hover:bg-gray-300"
               onClick={() => setShowAllTags(true)}

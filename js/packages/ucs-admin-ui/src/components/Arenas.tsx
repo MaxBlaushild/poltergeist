@@ -39,7 +39,7 @@ const PointOfInterestGroupItem = ({ group }) => {
                 ID: {group.id}
               </p>
               <p className="text-lg font-bold text-gray-700 text-left w-full">
-                Points of Interest: {group.pointsOfInterest?.length || 0}
+                Points of Interest: {group.groupMembers?.length || 0}
               </p>
             </div>
           </div>

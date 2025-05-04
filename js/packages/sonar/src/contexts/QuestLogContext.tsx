@@ -20,8 +20,10 @@ const getAllPointsOfInterestIdsForQuest = (quest: Quest): string[] => {
     pointsOfInterest.push(node.pointOfInterest.id);
 
     // Recursively traverse child nodes
-    Object.values(node.children).forEach(childNode => {
-      traverseNode(childNode);
+    node.objectives.forEach(objective => {
+      if (objective.nextNode) {
+        traverseNode(objective.nextNode);
+      }
     });
   };
 
@@ -187,9 +189,9 @@ const getMapPointsOfInterest = (quests: Quest[]) => {
     const addPointsFromNode = (node: QuestNode) => {
       pointsOfInterest.push(node.pointOfInterest);
       
-      Object.entries(node.children).forEach(([childId, childNode]) => {
-        if (node.objectives.some(obj => obj.challenge.id === childId && obj.isCompleted)) {
-          addPointsFromNode(childNode);
+      node.objectives.forEach(objective => {
+        if (objective.nextNode && objective.isCompleted) {
+          addPointsFromNode(objective.nextNode);
         }
       });
     };

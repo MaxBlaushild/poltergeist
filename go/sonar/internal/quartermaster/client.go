@@ -27,6 +27,7 @@ type Quartermaster interface {
 type UseItemMetadata struct {
 	PointOfInterestID uuid.UUID `json:"pointOfInterestId"`
 	TargetTeamID      uuid.UUID `json:"targetTeamId"`
+	ChallengeID       uuid.UUID `json:"challengeId"`
 }
 
 func NewClient(db db.DbClient) Quartermaster {

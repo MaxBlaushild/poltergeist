@@ -4,15 +4,24 @@ import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { QuestNodeComponent } from './Quest.tsx';
 import { PointOfInterest, QuestNode } from '@poltergeist/types';
 import { useMap } from '@poltergeist/contexts';
+import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 export const TrackedQuests = ({ openPointOfInterestPanel }: { openPointOfInterestPanel: (pointOfInterest: PointOfInterest) => void }) => {
   const { trackedQuestIds, quests } = useQuestLogContext();
+  const { discoveries } = useDiscoveriesContext();
+  const { currentUser } = useUserProfiles();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showContent, setShowContent] = useState(false);
   const { flyToLocation } = useMap();
   const trackedQuests = quests.filter((quest) =>
     trackedQuestIds.includes(quest.id)
   );
+
+  const discovedPointsOfInterestIds = discoveries?.filter((discovery) => discovery.userId === currentUser?.id).reduce((acc, discovery) => {
+    acc[discovery.pointOfInterestId] = true;
+    return acc;
+  }, {});
 
   useEffect(() => {
     let timeout;
@@ -60,7 +69,7 @@ export const TrackedQuests = ({ openPointOfInterestPanel }: { openPointOfInteres
             <QuestNodeComponent
               node={quest.rootNode}
               onPointOfInterestClick={onPointOfInterestClick}
-              hasDiscoveredNode={false}
+              discoveredPointsOfInterestIds={discovedPointsOfInterestIds}
               darkMode
             />
           </div>
