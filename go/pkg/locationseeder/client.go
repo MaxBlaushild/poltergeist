@@ -163,22 +163,55 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 	return nil
 }
 
+func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]googlemaps.Place, error) {
+	var placesInZone []googlemaps.Place
+	attempts := 0
+	maxAttempts := 5
+
+	for attempts < maxAttempts && int32(len(placesInZone)) < numberOfPlaces {
+		randomPoint := zone.GetRandomPoint()
+		log.Printf("Attempt %d - Fuzzed latitude: %f, longitude: %f, radius: %f", attempts+1, randomPoint.Y(), randomPoint.X(), zone.Radius)
+
+		places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
+			Lat:            randomPoint.Y(),
+			Long:           randomPoint.X(),
+			Radius:         zone.Radius,
+			IncludedTypes:  includedTypes,
+			ExcludedTypes:  excludedTypes,
+			MaxResultCount: numberOfPlaces,
+		})
+		if err != nil {
+			log.Printf("Error finding places: %v", err)
+			return nil, err
+		}
+
+		for _, place := range places {
+			if zone.IsPointInBoundary(place.Location.Latitude, place.Location.Longitude) {
+				placesInZone = append(placesInZone, place)
+				if int32(len(placesInZone)) >= numberOfPlaces {
+					break
+				}
+			}
+		}
+
+		attempts++
+	}
+
+	if int32(len(placesInZone)) < numberOfPlaces {
+		return nil, fmt.Errorf("could not find enough places in zone after %d attempts. Found %d places, needed %d", attempts, len(placesInZone), numberOfPlaces)
+	}
+
+	log.Printf("Found %d places in zone after %d attempts", len(placesInZone), attempts)
+	return placesInZone, nil
+}
+
 func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error) {
 	log.Printf("Starting to seed points of interest for zone %s with included types %v and excluded types %v", zone.Name, includedTypes, excludedTypes)
 
-	log.Printf("Zone latitude: %f, longitude: %f, radius: %d", zone.Latitude, zone.Longitude, int(zone.Radius))
+	randomPoint := zone.GetRandomPoint()
+	log.Printf("Fuzzed latitude: %f, longitude: %f, radius: %f", randomPoint.X(), randomPoint.Y(), zone.Radius)
 
-	lat, lng, radius := c.fuzzCoordinates(zone.Latitude, zone.Longitude, zone.Radius)
-	log.Printf("Fuzzed latitude: %f, longitude: %f, radius: %f", lat, lng, radius)
-
-	places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
-		Lat:            lat,
-		Long:           lng,
-		Radius:         radius,
-		IncludedTypes:  includedTypes,
-		ExcludedTypes:  excludedTypes,
-		MaxResultCount: numberOfPlaces,
-	})
+	places, err := c.GetPlacesInZone(ctx, zone, includedTypes, excludedTypes, numberOfPlaces)
 	if err != nil {
 		log.Printf("Error finding places: %v", err)
 		return nil, err

@@ -6,3 +6,4 @@ export * from './inventory';
 export * from './location';
 export * from './map';
 export * from './tag';
+export * from './zones';

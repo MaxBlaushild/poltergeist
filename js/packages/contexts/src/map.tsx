@@ -33,7 +33,6 @@ export const MapProvider = ({ children }: MapProviderProps) => {
   const [isMapLoaded, setIsMapLoaded] = useState(false);
 
   useEffect(() => {
-    console.log('map.current', map.current);
     if (!map.current) {
       map.current = new mapboxgl.Map({
         container: mapContainerRef.current,
@@ -56,7 +55,6 @@ export const MapProvider = ({ children }: MapProviderProps) => {
         geolocateControl.trigger();
       });
 
-      console.log('reeeeee')
       map.current.on('zoom', () => {
         setZoom(map.current?.getZoom() ?? 0);
       });

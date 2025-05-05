@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useZoneContext } from '../contexts/zones.tsx';
+import React, { useState, useEffect, useRef } from 'react';
+import { useZoneContext } from '@poltergeist/contexts';
 import { v4 as uuidv4 } from 'uuid';
 import { useParams } from 'react-router-dom';
 import { useZonePointsOfInterest } from '../hooks/useZonePointsOfInterest.ts';
@@ -9,6 +9,172 @@ import { useCandidates } from '@poltergeist/hooks';
 import { Candidate } from '@poltergeist/types';
 import { useQuestArchtypes } from '../hooks/useQuestArchtypes.ts';
 import { useAPI } from '@poltergeist/contexts';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { Buffer } from 'buffer';
+import * as turf from '@turf/turf';
+import * as wellknown from 'wellknown';
+import { Geometry, Polygon } from 'wkx-ts';
+import wkx from 'wkx';
+// Set Mapbox access token
+mapboxgl.accessToken = 'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
+
+interface MapProps {
+  center: [number, number];
+  onMapClick?: (lngLat: mapboxgl.LngLat) => void;
+  boundaryPoints?: [number, number][];
+}
+
+const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints }) => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const markers = useRef<mapboxgl.Marker[]>([]);
+
+  // Clean up function to remove sources and layers
+  const cleanupBoundary = () => {
+    if (map.current) {
+      if (map.current.getLayer('zone-boundary-outline')) {
+        map.current.removeLayer('zone-boundary-outline');
+      }
+      if (map.current.getLayer('zone-boundary')) {
+        map.current.removeLayer('zone-boundary');
+      }
+      if (map.current.getSource('zone-boundary')) {
+        map.current.removeSource('zone-boundary');
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (mapContainer.current && !map.current) {
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: center,
+        zoom: 14,
+        interactive: true
+      });
+
+      map.current.on('load', () => {
+        setMapLoaded(true);
+      });
+    }
+
+    return () => {
+      cleanupBoundary();
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (map.current && mapLoaded && onMapClick) {
+      map.current.dragPan.disable();
+      const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+      if (canvasContainer instanceof HTMLElement) {
+        canvasContainer.style.cursor = 'default';
+      }
+
+      map.current.on('click', (e) => {
+        console.log('clicked')
+        onMapClick(e.lngLat);
+      });
+    }
+    
+    if (map.current && mapLoaded && !onMapClick) {
+      map.current.dragPan.enable();
+      const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+      if (canvasContainer instanceof HTMLElement) {
+        canvasContainer.style.cursor = 'grab';
+      }
+      
+      map.current.on('click', (e) => {});
+    }
+  }, [mapLoaded, onMapClick]);
+
+  useEffect(() => {
+    if (map.current && mapLoaded) {
+      map.current.setCenter(center);
+    }
+  }, [center, mapLoaded]);
+
+  // Update markers when boundary points change
+  useEffect(() => {
+    if (map.current && mapLoaded) {
+      // Remove existing markers
+      markers.current.forEach(marker => marker.remove());
+      markers.current = [];
+
+      // Add new markers
+      boundaryPoints?.forEach(point => {
+        const marker = new mapboxgl.Marker({
+          color: '#088',
+          draggable: false
+        })
+          .setLngLat(point)
+          .addTo(map.current!);
+        markers.current.push(marker);
+      });
+    }
+  }, [boundaryPoints, mapLoaded]);
+
+  useEffect(() => {
+    if (map.current && mapLoaded && boundaryPoints && boundaryPoints.length > 0) {
+      // Clean up existing boundary
+      cleanupBoundary();
+
+      // Add boundary polygon
+      map.current.addSource('zone-boundary', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: [boundaryPoints]
+          }
+        }
+      });
+
+      map.current.addLayer({
+        id: 'zone-boundary',
+        type: 'fill',
+        source: 'zone-boundary',
+        layout: {},
+        paint: {
+          'fill-color': '#088',
+          'fill-opacity': 0.3
+        }
+      });
+
+      // Add boundary outline
+      map.current.addLayer({
+        id: 'zone-boundary-outline',
+        type: 'line',
+        source: 'zone-boundary',
+        layout: {},
+        paint: {
+          'line-color': '#088',
+          'line-width': 2
+        }
+      });
+    } else if (map.current && mapLoaded) {
+      // Clean up if no boundary points
+      cleanupBoundary();
+    }
+  }, [boundaryPoints, mapLoaded]);
+
+  return (
+    <div
+      ref={mapContainer}
+      className="w-full h-96 rounded-lg border border-gray-300"
+    />
+  );
+};
+
 export const Zone = () => {
   const { id } = useParams();
   const { apiClient } = useAPI();
@@ -46,6 +212,8 @@ export const Zone = () => {
     string | null
   >(null);
   const [nameFilter, setNameFilter] = useState('');
+  const [boundaryPoints, setBoundaryPoints] = useState<[number, number][]>([]);
+  const [isEditingBoundary, setIsEditingBoundary] = useState(false);
   const {
     candidates,
     loading: candidatesLoading,
@@ -63,6 +231,30 @@ export const Zone = () => {
   } = useGeneratePointsOfInterest(id!);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (zone?.boundaryCoords) {
+      setBoundaryPoints(zone.boundaryCoords.map(coord => [coord.longitude, coord.latitude] as [number, number]));
+    }
+  }, [zone]);
+
+  const handleMapClick = (lngLat: mapboxgl.LngLat) => {
+    const newPoint: [number, number] = [lngLat.lng, lngLat.lat];
+    setBoundaryPoints([...boundaryPoints, newPoint]);
+  };
+
+  const handleSaveBoundary = async () => {
+    if (zone) {
+      try {
+        await apiClient.post(`/sonar/zones/${zone.id}/boundary`, {
+          boundary: boundaryPoints
+        });
+        setIsEditingBoundary(false);
+      } catch (error) {
+        console.error('Error saving boundary:', error);
+      }
+    }
+  };
+
   const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -78,7 +270,6 @@ export const Zone = () => {
   };
 
   const handleGenerateQuest = async () => {
-    // const/sonar/zones/:id/questArchetypes
     await apiClient.post(`/sonar/zones/${id}/questArchetypes`, {});
   };
 
@@ -109,7 +300,77 @@ export const Zone = () => {
       <p className="text-lg text-gray-600 mb-3">Latitude: {zone?.latitude}</p>
       <p className="text-lg text-gray-600 mb-3">Longitude: {zone?.longitude}</p>
       <p className="text-lg text-gray-600 mb-3">Radius: {zone?.radius}m</p>
+
+      <div className="mb-6 space-x-2">
+        <button
+          onClick={() => setIsGenerating(!isGenerating)}
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+        >
+          {isGenerating ? 'Stop Generating' : 'Generate Points of Interest'}
+        </button>
+        <button
+          onClick={() => setIsImporting(!isImporting)}
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+        >
+          Import Point of Interest
+        </button>
+        <button
+          onClick={() => setIsGeneratingQuest(!isGeneratingQuest)}
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+        >
+          Generate Quest
+        </button>
+        <button
+          onClick={handleGenerateQuest}
+          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-blue-300"
+        >
+          Generate Quests for Zone
+        </button>
+      </div>
       
+      {/* Map Section */}
+      <div className="mb-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Zone Boundary</h2>
+          <div className="space-x-2">
+            <button
+              onClick={() => setBoundaryPoints([])}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md"
+            >
+              Clear Boundary
+            </button>
+            <button
+              onClick={() => setIsEditingBoundary(!isEditingBoundary)}
+              className={`px-4 py-2 rounded-md ${
+                isEditingBoundary
+                  ? 'bg-red-500 hover:bg-red-600'
+                  : 'bg-blue-500 hover:bg-blue-600'
+              } text-white`}
+            >
+              {isEditingBoundary ? 'Stop Editing' : 'Edit Boundary'}
+            </button>
+            {isEditingBoundary && (
+              <button
+                onClick={handleSaveBoundary}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md"
+              >
+                Save Boundary
+              </button>
+            )}
+          </div>
+        </div>
+        <Map
+          center={[zone.longitude, zone.latitude]}
+          onMapClick={isEditingBoundary ? handleMapClick : undefined}
+          boundaryPoints={boundaryPoints}
+        />
+        {isEditingBoundary && (
+          <p className="text-sm text-gray-600 mt-2">
+            Click on the map to add boundary points. Click "Save Boundary" when done.
+          </p>
+        )}
+      </div>
+
       <div className="mb-4">
         <input
           type="text"
@@ -206,30 +467,7 @@ export const Zone = () => {
           </div>
         ))}
       </div>
-      <button
-        onClick={() => setIsGenerating(!isGenerating)}
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-      >
-        {isGenerating ? 'Stop Generating' : 'Generate Points of Interest'}
-      </button>
-      <button
-        onClick={() => setIsImporting(!isImporting)}
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-      >
-        Import Point of Interest
-      </button>
-      <button
-        onClick={() => setIsGeneratingQuest(!isGeneratingQuest)}
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-      >
-        Generate Quest
-      </button>
-      <button
-        onClick={handleGenerateQuest}
-        className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-blue-300"
-      >
-        Generate Quests for Zone
-      </button>
+
       {isImporting && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-6 rounded-lg shadow-xl w-96">

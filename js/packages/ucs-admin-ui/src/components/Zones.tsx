@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useZoneContext } from '../contexts/zones.tsx';
+import { useZoneContext } from '@poltergeist/contexts';
 import { v4 as uuidv4 } from 'uuid';
 import { useNavigate } from 'react-router-dom';
 export const Zones = () => {

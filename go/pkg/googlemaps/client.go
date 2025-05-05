@@ -165,7 +165,8 @@ func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
 	if len(data.Places) == 0 {
 		fmt.Println(string(body))
 		fmt.Printf("%+v", query)
-		return nil, fmt.Errorf("no places found")
+		fmt.Printf("%+v", reqBody)
+		fmt.Println("--------------------------------")
 	}
 
 	return data.Places, nil

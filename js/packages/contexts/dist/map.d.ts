@@ -7,6 +7,8 @@ interface MapContextValue {
     setZoom: (zoom: number) => void;
     setLocation: (lat: number, lng: number) => void;
     flyToLocation: (lat: number, lng: number, zoom?: number) => void;
+    lng: number;
+    lat: number;
 }
 interface MapProviderProps {
     children: ReactNode;

@@ -14,10 +14,12 @@ interface InventoryContextType {
     ownedInventoryItems: OwnedInventoryItem[];
     ownedInventoryItemsAreLoading: boolean;
     ownedInventoryItemsError: string | null;
+    getInventoryItemById: (id: number) => InventoryItem | null;
 }
 interface UseItemMetadata {
     targetTeamId?: string | null;
     pointOfInterestId?: string | null;
+    challengeId?: string | null;
 }
 export declare const useInventory: () => InventoryContextType;
 export declare const InventoryProvider: ({ children }: {

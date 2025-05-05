@@ -44,6 +44,7 @@ type DbClient interface {
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
+	Point() PointHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -273,6 +274,7 @@ type ZoneHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 	Delete(ctx context.Context, zoneID uuid.UUID) error
 	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
+	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
 }
 
 type LocationArchetypeHandle interface {
@@ -333,4 +335,8 @@ type TrackedPointOfInterestGroupHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedPointOfInterestGroup, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type PointHandle interface {
+	CreatePoint(ctx context.Context, latitude float64, longitude float64) (*models.GeometryPoint, error)
 }
