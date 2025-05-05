@@ -5,16 +5,17 @@ import {
   APIProvider,
   MediaContextProvider,
   TagProvider,
+  MapProvider,
+  LocationProvider,
 } from '@poltergeist/contexts';
 import { Arenas } from './components/Arenas.tsx';
 import { Arena } from './components/Arena.tsx';
 import { createBrowserRouter, RouterProvider, useParams, Link, Outlet } from 'react-router-dom';
 import { LoaderFunctionArgs, redirect } from 'react-router-dom';
-import { ArenaProvider, InventoryProvider } from '@poltergeist/contexts';
+import { ArenaProvider, InventoryProvider, ZoneProvider } from '@poltergeist/contexts';
 import { Login } from './components/Login.tsx';
 import Armory from './components/Armory.tsx';
 import { Zones } from './components/Zones.tsx';
-import { ZoneProvider } from './contexts/zones.tsx';
 import { Zone } from './components/Zone.tsx';
 import { Place } from './components/Place.tsx';
 import { Tags } from './components/Tags.tsx';
@@ -158,9 +159,11 @@ const App = () => {
     <APIProvider>
       <TagProvider>
         <ZoneProvider>
-          <QuestArchetypesProvider>
-            <MediaContextProvider>
-              <AuthProvider
+          <LocationProvider>
+            <MapProvider>
+              <QuestArchetypesProvider>
+                <MediaContextProvider>
+                <AuthProvider
                 appName="UCS Admin Dashboard"
                 uriPrefix="/sonar"
               >
@@ -168,9 +171,11 @@ const App = () => {
                 <RouterProvider router={router} />
               </InventoryProvider>
               </AuthProvider>
-            </MediaContextProvider>
-          </QuestArchetypesProvider>
-        </ZoneProvider>
+              </MediaContextProvider>
+            </QuestArchetypesProvider>
+          </MapProvider>
+        </LocationProvider>
+      </ZoneProvider>
       </TagProvider>
     </APIProvider>
   );

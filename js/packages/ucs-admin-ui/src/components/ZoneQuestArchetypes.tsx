@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
-import { useZoneContext } from '../contexts/zones.tsx';
+import { useZoneContext } from '@poltergeist/contexts';
 
 export const ZoneQuestArchetypes = () => {
   const { zones } = useZoneContext();

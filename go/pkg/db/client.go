@@ -47,6 +47,7 @@ type client struct {
 	questArchetypeNodeChallengeHandle *questArchetypeNodeChallengeHandle
 	zoneQuestArchetypeHandle          *zoneQuestArchetypeHandle
 	trackedPointOfInterestGroupHandle *trackedPointOfInterestGroupHandle
+	pointHandle                       *pointHandler
 }
 
 type ClientConfig struct {
@@ -111,7 +112,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questArchetypeNodeChallengeHandle: &questArchetypeNodeChallengeHandle{db: db},
 		zoneQuestArchetypeHandle:          &zoneQuestArchetypeHandle{db: db},
 		trackedPointOfInterestGroupHandle: &trackedPointOfInterestGroupHandle{db: db},
+		pointHandle:                       &pointHandler{db: db},
 	}, nil
+}
+
+func (c *client) Point() PointHandle {
+	return c.pointHandle
 }
 
 func (c *client) TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle {

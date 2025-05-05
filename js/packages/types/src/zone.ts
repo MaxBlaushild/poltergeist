@@ -6,4 +6,9 @@ export type Zone = {
   radius: number;
   createdAt: string;
   updatedAt: string;
+  boundary: number[][];
+  boundaryCoords: {
+    latitude: number;
+    longitude: number;
+  }[];
 };

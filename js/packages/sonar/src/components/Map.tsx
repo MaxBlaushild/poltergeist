@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useId } from 'react';
 import { useMap } from '@poltergeist/contexts';
-import './Map.css';
+
 interface MapProps {
   children: React.ReactNode;
 }

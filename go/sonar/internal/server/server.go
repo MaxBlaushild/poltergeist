@@ -213,7 +213,34 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.getTrackedPointOfInterestGroups))
 	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.deleteAllTrackedPointOfInterestGroups))
+	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.upsertZoneBoundary))
 	r.Run(":8042")
+}
+
+func (s *server) upsertZoneBoundary(ctx *gin.Context) {
+	zoneID := ctx.Param("id")
+	zoneIDUUID, err := uuid.Parse(zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	var requestBody struct {
+		Boundary [][]float64 `json:"boundary"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.dbClient.Zone().UpdateBoundary(ctx, zoneIDUUID, requestBody.Boundary)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "zone boundary updated successfully"})
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
