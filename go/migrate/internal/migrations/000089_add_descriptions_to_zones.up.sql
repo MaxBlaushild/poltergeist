@@ -1,0 +1,1 @@
+alter table zones add column description text;

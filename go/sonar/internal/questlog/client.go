@@ -45,7 +45,7 @@ type QuestLog struct {
 }
 
 type QuestlogClient interface {
-	GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) (*QuestLog, error)
+	GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error)
 }
 
 type questlogClient struct {
@@ -61,10 +61,10 @@ func NewClient(dbClient db.DbClient) QuestlogClient {
 	return &questlogClient{dbClient: dbClient}
 }
 
-func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) (*QuestLog, error) {
-	log.Printf("Getting quest log for user %s at location (%f, %f) with tags %v", userID, lat, lng, tags)
+func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
+	log.Printf("Getting quest log for user %s in zone %s with tags %v", userID, zoneID, tags)
 
-	groups, err := c.GetNearbyQuests(ctx, userID, lat, lng, tags)
+	groups, err := c.GetQuestsInZone(ctx, userID, zoneID, tags)
 	if err != nil {
 		log.Printf("Error getting nearby quests: %v", err)
 		return nil, err
@@ -155,14 +155,14 @@ func (c *questlogClient) buildQuestsWithCompletedNodes(
 	return result
 }
 
-func (c *questlogClient) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, tags []string) ([]models.PointOfInterestGroup, error) {
-	log.Printf("Getting nearby quests for user %s at location (%f, %f) with tags %v", userID, lat, lng, tags)
-	groups, err := c.dbClient.PointOfInterestGroup().GetNearbyQuests(ctx, userID, lat, lng, NearbyDistanceInMeters, tags)
+func (c *questlogClient) GetQuestsInZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
+	log.Printf("Getting quests in zone %s for user %s with tags %v", zoneID, userID, tags)
+	groups, err := c.dbClient.PointOfInterestGroup().GetQuestsInZone(ctx, zoneID, tags)
 	if err != nil {
-		log.Printf("Error getting nearby quests: %v", err)
+		log.Printf("Error getting quests in zone: %v", err)
 		return nil, err
 	}
-	log.Printf("Found %d nearby quests", len(groups))
+	log.Printf("Found %d quests in zone", len(groups))
 	return groups, nil
 }
 

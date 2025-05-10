@@ -6,12 +6,13 @@ import React, {
   useEffect,
   useRef,
 } from 'react';
-import { useAPI, useLocation } from '@poltergeist/contexts';
+import { useAPI } from '@poltergeist/contexts';
 import { PointOfInterest, PointOfInterestChallenge, Quest, QuestLog, QuestNode, Task } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 import { useSubmissionsContext } from './SubmissionsContext.tsx';
 import { useTagContext } from '@poltergeist/contexts';
-
+import { useZoneContext } from '@poltergeist/contexts/dist/zones';
+import { v4 as uuidv4 } from 'uuid';
 const getAllPointsOfInterestIdsForQuest = (quest: Quest): string[] => {
   const pointsOfInterest: string[] = [];
 
@@ -68,98 +69,122 @@ export const useQuestLogContext = () => {
 export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ children }) => {
   const { apiClient } = useAPI();
   const [quests, setQuests] = useState<Quest[]>([]);
+  const { selectedZone } = useZoneContext();
   const { selectedTags } = useTagContext();
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
-  const { location } = useLocation();
-  const lastFetchLocation = useRef<{lat: number, lng: number} | null>(null);
   const lastFetchTags = useRef<string[]>([]);
+  const lastFetchZoneID = useRef<string | null>(null);
+  const isFetching = useRef<boolean>(false);
+  const fetchPromise = useRef<Promise<void> | null>(null);
   const [pendingTasks, setPendingTasks] = useState<Record<string, Task[]>>({});
   const [completedTasks, setCompletedTasks] = useState<Record<string, Task[]>>({});
   const [trackedQuestIds, setTrackedQuestIds] = useState<string[]>([]);
   const [trackedPointOfInterestIds, setTrackedPointOfInterestIds] = useState<string[]>([]);
+
   const refreshQuestLog = useCallback(async () => {
-    if (!location?.latitude || !location?.longitude) {
+    if (isFetching.current) {
+      return;
+    }
+
+    // If there's already a fetch in progress, wait for it
+    if (fetchPromise.current) {
+      await fetchPromise.current;
       return;
     }
 
     try {
-      const fetchedQuestLog = await apiClient.get<QuestLog>(`/sonar/questlog?lat=${location?.latitude}&lng=${location?.longitude}&${selectedTags.length ? `tags=${selectedTags.map(tag => tag.name).join(',')}` : ''}`);
-      setQuests(fetchedQuestLog.quests);
-      const pointsOfInterest = getMapPointsOfInterest(fetchedQuestLog.quests);
-      setPointsOfInterest(pointsOfInterest);
-      setPendingTasks(fetchedQuestLog.pendingTasks);
-      setCompletedTasks(fetchedQuestLog.completedTasks);
-      setTrackedQuestIds(fetchedQuestLog.trackedQuestIds);
-      lastFetchLocation.current = {
-        lat: location.latitude,
-        lng: location.longitude
-      };
+      isFetching.current = true;
+      setLoading(true);
       
-      const trackedQuests = fetchedQuestLog.trackedQuestIds.map(id => quests.find(quest => quest.id === id)).filter(quest => quest !== undefined);
-      const trackedPointsOfInterestIds = trackedQuests.flatMap(quest => getAllPointsOfInterestIdsForQuest(quest));
-      setTrackedPointOfInterestIds(trackedPointsOfInterestIds);
-      lastFetchTags.current = selectedTags.map(tag => tag.name);
+      // Create a new fetch promise
+      fetchPromise.current = (async () => {
+        const fetchedQuestLog = await apiClient.get<QuestLog>(
+          `/sonar/questlog?zoneId=${selectedZone?.id ?? uuidv4()}${
+            selectedTags.length ? `&tags=${selectedTags.map(tag => tag.name).join(',')}` : ''
+          }`
+        );
+
+        setQuests(fetchedQuestLog.quests);
+        const pointsOfInterest = getMapPointsOfInterest(fetchedQuestLog.quests);
+        setPointsOfInterest(pointsOfInterest);
+        setPendingTasks(fetchedQuestLog.pendingTasks);
+        setCompletedTasks(fetchedQuestLog.completedTasks);
+        setTrackedQuestIds(fetchedQuestLog.trackedQuestIds);
+        
+        const trackedQuests = fetchedQuestLog.trackedQuestIds
+          .map(id => fetchedQuestLog.quests.find(quest => quest.id === id))
+          .filter((quest): quest is Quest => quest !== undefined);
+        
+        const trackedPointsOfInterestIds = trackedQuests.flatMap(quest => 
+          getAllPointsOfInterestIdsForQuest(quest)
+        );
+        
+        setTrackedPointOfInterestIds(trackedPointsOfInterestIds);
+        
+        // Update last fetch state
+        lastFetchZoneID.current = selectedZone.id;
+        lastFetchTags.current = selectedTags.map(tag => tag.name);
+      })();
+
+      await fetchPromise.current;
     } catch (error) {
+      console.error('Error fetching quest log:', error);
       setError(error as Error);
     } finally {
       setLoading(false);
+      isFetching.current = false;
+      fetchPromise.current = null;
     }
-  }, [apiClient, location?.latitude, location?.longitude, selectedTags]);
+  }, [apiClient, selectedTags, selectedZone]);
 
-  const fetchQuestLog = useCallback(async () => {
-    if (!location?.latitude || !location?.longitude) {
-      return;
+  const shouldFetchQuestLog = useCallback(() => {
+    if (isFetching.current) return false;
+    if (!lastFetchZoneID.current) return true;
+    if (selectedZone && lastFetchZoneID.current !== selectedZone.id) return true;
+    if (lastFetchTags.current.length !== selectedTags.length) return true;
+    if (selectedTags.some(tag => !lastFetchTags.current.includes(tag.name))) return true;
+    return false;
+  }, [selectedZone, selectedTags]);
+
+  useEffect(() => {
+    if (shouldFetchQuestLog()) {
+      refreshQuestLog();
     }
-
-    // Only fetch if moved more than 100 meters or first fetch
-    if (lastFetchLocation.current) {
-      const R = 6371e3; // Earth's radius in meters
-      const φ1 = lastFetchLocation.current.lat * Math.PI/180;
-      const φ2 = location.latitude * Math.PI/180;
-      const Δφ = (location.latitude - lastFetchLocation.current.lat) * Math.PI/180;
-      const Δλ = (location.longitude - lastFetchLocation.current.lng) * Math.PI/180;
-
-      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const distance = R * c;
-
-      if (distance < 100) { // Less than 100 meters moved
-        if (lastFetchTags.current.length !== selectedTags.length) {
-          refreshQuestLog();
-        }
-      }
-
-    }
-    refreshQuestLog();
-  }, [apiClient, location?.latitude, location?.longitude, selectedTags]);
+  }, [shouldFetchQuestLog, refreshQuestLog]);
 
   const isRootNode = (pointOfInterest: PointOfInterest) => {
     return quests.some(quest => quest.rootNode.pointOfInterest.id === pointOfInterest.id);
   };
 
   const trackQuest = useCallback(async (questID: string) => {
-    await apiClient.post(`/sonar/trackedPointOfInterestGroups`, { pointOfInterestGroupID: questID });
-    setTrackedQuestIds([...trackedQuestIds, questID]);
-    fetchQuestLog();
-  }, [apiClient, trackedQuestIds]);
+    try {
+      await apiClient.post(`/sonar/trackedPointOfInterestGroups`, { pointOfInterestGroupID: questID });
+      // Don't update state optimistically, wait for refreshQuestLog
+      await refreshQuestLog();
+    } catch (error) {
+      console.error('Error tracking quest:', error);
+    }
+  }, [apiClient, refreshQuestLog]);
 
   const untrackQuest = useCallback(async (questID: string) => {
-    await apiClient.delete(`/sonar/trackedPointOfInterestGroups/${questID}`);
-    fetchQuestLog();
-  }, [apiClient, trackedQuestIds]);
+    try {
+      await apiClient.delete(`/sonar/trackedPointOfInterestGroups/${questID}`);
+      await refreshQuestLog();
+    } catch (error) {
+      console.error('Error untracking quest:', error);
+    }
+  }, [apiClient, refreshQuestLog]);
 
   const untrackAllQuests = useCallback(async () => {
-    await apiClient.delete(`/sonar/trackedPointOfInterestGroups`);
-    fetchQuestLog();
-  }, [apiClient]);
-
-  useEffect(() => {
-    fetchQuestLog();
-  }, [fetchQuestLog]);
+    try {
+      await apiClient.delete(`/sonar/trackedPointOfInterestGroups`);
+      await refreshQuestLog();
+    } catch (error) {
+      console.error('Error untracking all quests:', error);
+    }
+  }, [apiClient, refreshQuestLog]);
 
   return (
     <QuestLogContext.Provider

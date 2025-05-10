@@ -41,7 +41,7 @@ function onlyAuthenticated({ request }: LoaderFunctionArgs) {
 
 function onlyUnauthenticated({ request }: LoaderFunctionArgs) {
   if (localStorage.getItem('token')) {
-    return redirect('/dashboard');
+    return redirect('/single-player');
   }
   return null;
 }

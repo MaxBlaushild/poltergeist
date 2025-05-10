@@ -15,10 +15,17 @@ type client struct {
 	quartermaster quartermaster.Quartermaster
 }
 
+const (
+	CaptureMessage      = "%s captured %s at tier %s."
+	CompleteTaskMessage = "%s completed a task at %s."
+	CompleteQuestMessage = "%s completed a quest: %s."
+)
+
 type Client interface {
 	AddUseItemMessage(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata quartermaster.UseItemMetadata) error
 	AddUnlockMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, pointOfInterestID uuid.UUID) error
-	AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challengeID uuid.UUID) error
+	AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error
+	AddCompletedQuestMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error
 }
 
 func NewClient(dbClient db.DbClient, quartermaster quartermaster.Quartermaster) Client {
@@ -67,7 +74,16 @@ func (c *client) makeChallengeTierName(tier int) string {
 	}
 }
 
-func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challengeID uuid.UUID) error {
+func (c *client) AddCompletedQuestMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error {
+	if challenge.PointOfInterestGroupID == uuid.Nil {
+		return nil
+	}
+
+	pointOfInterestGroup, err := c.dbClient.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
+	if err != nil {
+		return err
+	}
+
 	var teamName string
 	var matchID *uuid.UUID
 	if userID != nil {
@@ -86,17 +102,48 @@ func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userI
 		matchID = &teamMatch.MatchID
 	}
 
-	challenge, err := c.dbClient.PointOfInterestChallenge().FindByID(ctx, challengeID)
-	if err != nil {
-		return err
+	message := fmt.Sprintf(
+		CompleteQuestMessage,
+		teamName,
+		pointOfInterestGroup.Name,
+	)
+
+	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
+}
+
+func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error {
+	var teamName string
+	var matchID *uuid.UUID
+	if userID != nil {
+		teamName = "You"
+		matchID = nil
+	} else {
+		team, err := c.dbClient.Team().GetByID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, team.ID)
+		if err != nil {
+			return err
+		}
+		teamName = c.makeTeamName(team.ID)
+		matchID = &teamMatch.MatchID
 	}
 
-	message := fmt.Sprintf(
-		"%s captured %s at tier %s.",
-		teamName,
-		c.makePointOfInterestName(challenge.PointOfInterestID),
-		c.makeChallengeTierName(challenge.Tier),
-	)
+	var message string
+	if userID != nil {
+		message = fmt.Sprintf(
+			CompleteTaskMessage,
+			teamName,
+			c.makePointOfInterestName(challenge.PointOfInterestID),
+		)
+	} else {
+		message = fmt.Sprintf(
+			CaptureMessage,
+			teamName,
+			c.makePointOfInterestName(challenge.PointOfInterestID),
+			c.makeChallengeTierName(challenge.Tier),
+		)
 
 	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }

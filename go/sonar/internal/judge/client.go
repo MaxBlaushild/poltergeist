@@ -45,7 +45,7 @@ type client struct {
 }
 
 type JudgeSubmissionRequest struct {
-	ChallengeID        uuid.UUID
+	Challenge          *models.PointOfInterestChallenge
 	ImageSubmissionUrl string
 	TextSubmission     string
 	TeamID             *uuid.UUID
@@ -62,6 +62,10 @@ type JudgeSubmissionResponse struct {
 	Judgement SubmissionJudgement                        `json:"judgement"`
 }
 
+func (r *JudgeSubmissionResponse) IsSuccessful() bool {
+	return r.Judgement.Judgement
+}
+
 func NewClient(aws aws.AWSClient, db db.DbClient, deepPriest deep_priest.DeepPriest) Client {
 	return &client{
 		aws:        aws,
@@ -71,14 +75,10 @@ func NewClient(aws aws.AWSClient, db db.DbClient, deepPriest deep_priest.DeepPri
 }
 
 func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionRequest) (*JudgeSubmissionResponse, error) {
-	challenge, err := c.db.PointOfInterestChallenge().FindByID(ctx, request.ChallengeID)
-	if err != nil {
-		return nil, err
-	}
-
-	prompt := c.makeJudgementMessage(challenge, request)
+	prompt := c.makeJudgementMessage(request.Challenge, request)
 
 	var answer *deep_priest.Answer
+	var err error
 	if request.ImageSubmissionUrl != "" {
 		answer, err = c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
 			Question: prompt,
@@ -99,7 +99,7 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 		return nil, fmt.Errorf("error decoding judgement response (%s): %w", answer.Answer, err)
 	}
 
-	challengeSubmission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.ChallengeID, request.TeamID, request.UserID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
+	challengeSubmission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.Challenge.ID, request.TeamID, request.UserID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
 	if err != nil {
 		return nil, err
 	}

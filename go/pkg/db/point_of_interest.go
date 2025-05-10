@@ -234,3 +234,11 @@ func (c *pointOfInterestHandle) FindByGoogleMapsPlaceID(ctx context.Context, goo
 func (c *pointOfInterestHandle) Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error {
 	return c.db.WithContext(ctx).Model(&models.PointOfInterest{}).Where("id = ?", pointOfInterestID).Updates(updates).Error
 }
+
+func (c *pointOfInterestHandle) FindZoneForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) (*models.PointOfInterestZone, error) {
+	var pointOfInterestZone models.PointOfInterestZone
+	if err := c.db.WithContext(ctx).Where("point_of_interest_id = ?", pointOfInterestID).First(&pointOfInterestZone).Error; err != nil {
+		return nil, err
+	}
+	return &pointOfInterestZone, nil
+}

@@ -13,6 +13,7 @@ import { ImageBadge } from './shared/ImageBadge.tsx';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
 import useLeaveMatch from '../hooks/useLeaveMatch.ts';
+
 const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
   const { imageGenerations } = useImageGenerations();
   const { getPresignedUploadURL, uploadMedia } = useMediaContext();
@@ -228,6 +229,22 @@ export function Layout() {
           <h2 className="text-center flex-1 text-xl font-bold text-left">
             {user?.name}
           </h2>
+        </div>
+        <div className="px-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-bold">Level 5</span>
+            <span className="text-sm text-gray-600">
+              2750 / 5000 XP
+            </span>
+          </div>
+          <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-blue-500 transition-all duration-300"
+              style={{
+                width: '55%'
+              }}
+            />
+          </div>
         </div>
         {showProfilePicture && (
           <ProfilePictureModal onExit={() => setShowProfilePicture(false)} />

@@ -1,0 +1,1 @@
+alter table zones drop column description;

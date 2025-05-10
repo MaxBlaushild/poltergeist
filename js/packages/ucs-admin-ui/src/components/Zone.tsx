@@ -23,9 +23,10 @@ interface MapProps {
   center: [number, number];
   onMapClick?: (lngLat: mapboxgl.LngLat) => void;
   boundaryPoints?: [number, number][];
+  selectedZonePoints?: [number, number][];
 }
 
-const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints }) => {
+const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, selectedZonePoints }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -97,7 +98,7 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints }) => {
 
   useEffect(() => {
     if (map.current && mapLoaded) {
-      map.current.setCenter(center);
+      // map.current.setCenter(center);
     }
   }, [center, mapLoaded]);
 
@@ -108,16 +109,39 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints }) => {
       markers.current.forEach(marker => marker.remove());
       markers.current = [];
 
-      // Add new markers
-      boundaryPoints?.forEach(point => {
-        const marker = new mapboxgl.Marker({
-          color: '#088',
-          draggable: false
-        })
-          .setLngLat(point)
-          .addTo(map.current!);
-        markers.current.push(marker);
-      });
+      // Sort points clockwise around centroid
+      const sortedPoints = boundaryPoints?.slice() || [];
+      if (sortedPoints.length > 0) {
+        // Calculate centroid
+        const centroid = sortedPoints.reduce((acc, point) => {
+          return [acc[0] + point[0]/sortedPoints.length, acc[1] + point[1]/sortedPoints.length];
+        }, [0,0]);
+        
+        // Sort points by angle from centroid
+        sortedPoints.sort((a, b) => {
+          const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+          const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+          return angleA - angleB;
+        });
+
+        // Close the polygon by adding the first point at the end if needed
+        if (sortedPoints.length > 0 && 
+            (sortedPoints[0][0] !== sortedPoints[sortedPoints.length - 1][0] || 
+             sortedPoints[0][1] !== sortedPoints[sortedPoints.length - 1][1])) {
+          sortedPoints.push([sortedPoints[0][0], sortedPoints[0][1]]);
+        }
+
+        // Add markers for the sorted points
+        sortedPoints.forEach(point => {
+          const marker = new mapboxgl.Marker({
+            color: '#088',
+            draggable: false
+          })
+            .setLngLat(point)
+            .addTo(map.current!);
+          markers.current.push(marker);
+        });
+      }
     }
   }, [boundaryPoints, mapLoaded]);
 
@@ -126,46 +150,146 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints }) => {
       // Clean up existing boundary
       cleanupBoundary();
 
-      // Add boundary polygon
-      map.current.addSource('zone-boundary', {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'Polygon',
-            coordinates: [boundaryPoints]
+      // Sort points clockwise around centroid
+      const sortedPoints = boundaryPoints.slice();
+      if (sortedPoints.length > 0) {
+        // Calculate centroid
+        const centroid = sortedPoints.reduce((acc, point) => {
+          return [acc[0] + point[0]/sortedPoints.length, acc[1] + point[1]/sortedPoints.length];
+        }, [0,0]);
+        
+        // Sort points by angle from centroid
+        sortedPoints.sort((a, b) => {
+          const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+          const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+          return angleA - angleB;
+        });
+
+        // Close the polygon by adding the first point at the end if needed
+        if (sortedPoints.length > 0 && 
+            (sortedPoints[0][0] !== sortedPoints[sortedPoints.length - 1][0] || 
+             sortedPoints[0][1] !== sortedPoints[sortedPoints.length - 1][1])) {
+          sortedPoints.push([sortedPoints[0][0], sortedPoints[0][1]]);
+        }
+
+        // Add boundary polygon
+        map.current.addSource('zone-boundary', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'Polygon',
+              coordinates: [sortedPoints]
+            }
           }
-        }
-      });
+        });
 
-      map.current.addLayer({
-        id: 'zone-boundary',
-        type: 'fill',
-        source: 'zone-boundary',
-        layout: {},
-        paint: {
-          'fill-color': '#088',
-          'fill-opacity': 0.3
-        }
-      });
+        map.current.addLayer({
+          id: 'zone-boundary',
+          type: 'fill',
+          source: 'zone-boundary',
+          layout: {},
+          paint: {
+            'fill-color': '#088',
+            'fill-opacity': 0.3
+          }
+        });
 
-      // Add boundary outline
-      map.current.addLayer({
-        id: 'zone-boundary-outline',
-        type: 'line',
-        source: 'zone-boundary',
-        layout: {},
-        paint: {
-          'line-color': '#088',
-          'line-width': 2
-        }
-      });
+        // Add boundary outline
+        map.current.addLayer({
+          id: 'zone-boundary-outline',
+          type: 'line',
+          source: 'zone-boundary',
+          layout: {},
+          paint: {
+            'line-color': '#088',
+            'line-width': 2
+          }
+        });
+      }
     } else if (map.current && mapLoaded) {
       // Clean up if no boundary points
       cleanupBoundary();
     }
   }, [boundaryPoints, mapLoaded]);
+
+  // Add effect for selected zone points
+  useEffect(() => {
+    if (map.current && mapLoaded && selectedZonePoints && selectedZonePoints.length > 0) {
+      // Sort points clockwise around centroid
+      const sortedPoints = selectedZonePoints.slice();
+      if (sortedPoints.length > 0) {
+        // Calculate centroid
+        const centroid = sortedPoints.reduce((acc, point) => {
+          return [acc[0] + point[0]/sortedPoints.length, acc[1] + point[1]/sortedPoints.length];
+        }, [0,0]);
+        
+        // Sort points by angle from centroid
+        sortedPoints.sort((a, b) => {
+          const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+          const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+          return angleA - angleB;
+        });
+
+        // Close the polygon by adding the first point at the end if needed
+        if (sortedPoints.length > 0 && 
+            (sortedPoints[0][0] !== sortedPoints[sortedPoints.length - 1][0] || 
+             sortedPoints[0][1] !== sortedPoints[sortedPoints.length - 1][1])) {
+          sortedPoints.push([sortedPoints[0][0], sortedPoints[0][1]]);
+        }
+
+        // Add selected zone polygon
+        map.current.addSource('selected-zone-boundary', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'Polygon',
+              coordinates: [sortedPoints]
+            }
+          }
+        });
+
+        map.current.addLayer({
+          id: 'selected-zone-boundary',
+          type: 'fill',
+          source: 'selected-zone-boundary',
+          layout: {},
+          paint: {
+            'fill-color': '#FF6B6B',
+            'fill-opacity': 0.3
+          }
+        });
+
+        map.current.addLayer({
+          id: 'selected-zone-boundary-outline',
+          type: 'line',
+          source: 'selected-zone-boundary',
+          layout: {},
+          paint: {
+            'line-color': '#FF6B6B',
+            'line-width': 2
+          }
+        });
+      }
+    }
+
+    return () => {
+      if (map.current) {
+        if (map.current.getLayer('selected-zone-boundary-outline')) {
+          map.current.removeLayer('selected-zone-boundary-outline');
+        }
+        if (map.current.getLayer('selected-zone-boundary')) {
+          map.current.removeLayer('selected-zone-boundary');
+        }
+        if (map.current.getSource('selected-zone-boundary')) {
+          map.current.removeSource('selected-zone-boundary');
+        }
+      }
+    };
+  }, [selectedZonePoints, mapLoaded]);
 
   return (
     <div
@@ -232,8 +356,8 @@ export const Zone = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (zone?.boundaryCoords) {
-      setBoundaryPoints(zone.boundaryCoords.map(coord => [coord.longitude, coord.latitude] as [number, number]));
+    if (zone?.points) {
+      setBoundaryPoints(zone.points.map(point => [point.longitude, point.latitude] as [number, number]));
     }
   }, [zone]);
 
@@ -246,7 +370,7 @@ export const Zone = () => {
     if (zone) {
       try {
         await apiClient.post(`/sonar/zones/${zone.id}/boundary`, {
-          boundary: boundaryPoints
+          boundary: boundaryPoints.map(point => [point[1], point[0]])
         });
         setIsEditingBoundary(false);
       } catch (error) {
@@ -300,6 +424,47 @@ export const Zone = () => {
       <p className="text-lg text-gray-600 mb-3">Latitude: {zone?.latitude}</p>
       <p className="text-lg text-gray-600 mb-3">Longitude: {zone?.longitude}</p>
       <p className="text-lg text-gray-600 mb-3">Radius: {zone?.radius}m</p>
+
+      {/* Zone Selector */}
+      <div className="mb-6">
+        <div className="flex items-center gap-4">
+          <select
+            className="border border-gray-300 rounded-md px-3 py-2"
+            onChange={(e) => {
+              const selected = zones.find(z => z.id === e.target.value);
+              if (selected) {
+                setSelectedZone({
+                  id: selected.id,
+                  name: selected.name,
+                  points: selected.points.map(p => [p.longitude, p.latitude] as [number, number])
+                });
+              }
+            }}
+            value={selectedZone?.id || ''}
+          >
+            <option value="">Select a zone to overlay</option>
+            {zones
+              .filter(z => z.id !== id) // Exclude current zone
+              .map(z => (
+                <option key={z.id} value={z.id}>
+                  {z.name}
+                </option>
+              ))}
+          </select>
+          
+          {selectedZone && (
+            <div className="flex items-center gap-2 bg-blue-100 px-3 py-1 rounded-full">
+              <span>{selectedZone.name}</span>
+              <button
+                onClick={() => setSelectedZone(null)}
+                className="text-blue-600 hover:text-blue-800"
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="mb-6 space-x-2">
         <button
@@ -363,6 +528,7 @@ export const Zone = () => {
           center={[zone.longitude, zone.latitude]}
           onMapClick={isEditingBoundary ? handleMapClick : undefined}
           boundaryPoints={boundaryPoints}
+          selectedZonePoints={selectedZone?.points}
         />
         {isEditingBoundary && (
           <p className="text-sm text-gray-600 mt-2">

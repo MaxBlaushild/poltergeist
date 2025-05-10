@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 
 interface Location {
     latitude: number | null;
@@ -47,6 +47,7 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
 
   const getLocation = (options = {}) => {
     return new Promise((resolve, reject) => {
+      console.log('getLocation', navigator.geolocation);
       if (!navigator.geolocation) {
         reject(new Error('Geolocation is not supported by this browser'));
         return;
@@ -80,19 +81,18 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
     return R * c; // Distance in meters
   };
 
-  const shouldUpdateLocation = (newLocation: Location) => {
-    if (!location?.latitude || !location?.longitude) return true;
+  const shouldUpdateLocation = useCallback((newLocation: Location, currentLocation: Location | null) => {
+    if (!currentLocation?.latitude || !currentLocation?.longitude) return true;
     if (!newLocation.latitude || !newLocation.longitude) return false;
 
     const distance = calculateDistance(
-      location.latitude,
-      location.longitude,
+      currentLocation.latitude,
+      currentLocation.longitude,
       newLocation.latitude,
       newLocation.longitude
     );
-
     return distance >= 25; // Only update if distance is 25 meters or more
-  };
+  }, []);
 
   useEffect(() => {
     const checkPermissionAndGetLocation = async () => {
@@ -128,7 +128,9 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
               longitude: position?.coords?.longitude,
               accuracy: position?.coords?.accuracy,
             };
-            if (shouldUpdateLocation(newLocation)) {
+            if (shouldUpdateLocation(newLocation, location)) {
+              console.log('updating location', newLocation);
+              console.log('location', location);
               setLocation(newLocation);
             }
             setError(null);
@@ -161,7 +163,7 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
                 longitude: position.coords.longitude,
                 accuracy: position.coords.accuracy,
               };
-              if (shouldUpdateLocation(newLocation)) {
+              if (shouldUpdateLocation(newLocation, location)) {
                 setLocation(newLocation);
               }
               setError(null); // Clear any previous errors on success
@@ -207,7 +209,13 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
 export const useLocation = () => {
   const context = useContext(LocationContext);
   if (context === undefined) {
-    throw new Error('useLocation must be used within a LocationProvider');
+    return {
+      location: null,
+      error: null,
+      isLoading: false,
+      message: null,
+      acknowledgeError: () => {}
+    };
   }
   return context;
 };

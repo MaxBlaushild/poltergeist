@@ -45,6 +45,8 @@ type DbClient interface {
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
 	Point() PointHandle
+	UserLevel() UserLevelHandle
+	UserZoneReputation() UserZoneReputationHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -104,6 +106,7 @@ type PointOfInterestHandle interface {
 	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
 	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)
 	Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error
+	FindZoneForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) (*models.PointOfInterestZone, error)
 }
 
 type NeighboringPointsOfInterestHandle interface {
@@ -188,6 +191,7 @@ type PointOfInterestGroupHandle interface {
 	AddMember(ctx context.Context, pointOfInterestID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.PointOfInterestGroupMember, error)
 	Update(ctx context.Context, pointOfInterestGroupID uuid.UUID, updates *models.PointOfInterestGroup) error
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.PointOfInterestGroup, error)
+	GetQuestsInZone(ctx context.Context, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error)
 }
 
 type PointOfInterestChallengeHandle interface {
@@ -200,6 +204,7 @@ type PointOfInterestChallengeHandle interface {
 	GetSubmissionsForMatch(ctx context.Context, matchID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	DeleteAllForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) error
+	GetChildrenForChallenge(ctx context.Context, challengeID uuid.UUID) ([]models.PointOfInterestChildren, error)
 }
 
 type InventoryItemHandle interface {
@@ -338,5 +343,16 @@ type TrackedPointOfInterestGroupHandle interface {
 }
 
 type PointHandle interface {
-	CreatePoint(ctx context.Context, latitude float64, longitude float64) (*models.GeometryPoint, error)
+	CreatePoint(ctx context.Context, latitude float64, longitude float64) (*models.Point, error)
+}
+
+type UserLevelHandle interface {
+	ProcessExperiencePointAdditions(ctx context.Context, userID uuid.UUID, experiencePoints int) (*models.UserLevel, error)
+	FindOrCreateForUser(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
+	Create(ctx context.Context, userLevel *models.UserLevel) error
+}
+
+type UserZoneReputationHandle interface {
+	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
 }

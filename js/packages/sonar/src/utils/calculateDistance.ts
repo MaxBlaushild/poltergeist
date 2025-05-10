@@ -15,3 +15,9 @@ export const calculateDistance = (poi1, poi2) => {
 
   return R * c; // Distance in meters
 };
+
+
+export const isXMetersAway = (poi1, poi2, x) => {
+  const distance = calculateDistance(poi1, poi2);
+  return distance < x;
+};

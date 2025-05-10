@@ -143,3 +143,11 @@ func (p *pointOfInterestChallengeHandle) GetSubmissionsForUser(ctx context.Conte
 	}
 	return submissions, nil
 }
+
+func (p *pointOfInterestChallengeHandle) GetChildrenForChallenge(ctx context.Context, challengeID uuid.UUID) ([]models.PointOfInterestChildren, error) {
+	var children []models.PointOfInterestChildren
+	if err := p.db.WithContext(ctx).Where("point_of_interest_challenge_id = ?", challengeID).Find(&children).Error; err != nil {
+		return nil, err
+	}
+	return children, nil
+}

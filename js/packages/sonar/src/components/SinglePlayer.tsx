@@ -3,6 +3,7 @@ import { Map } from './Map.tsx';
 import { useAuth } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
+import { useZoneBoundaries } from '../hooks/useZoneBoundaries.ts';
 import { PointOfInterest, PointOfInterestDiscovery } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
 import { TagFilter } from './TagFilter.tsx';
@@ -22,10 +23,11 @@ import { ActivityQuestionnaire } from './ActivityQuestionnaire.tsx';
 import { TrackedQuests } from './TrackedQuests.tsx';
 import { CompletedTaskModal } from './CompletedTaskModal.tsx';
 import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
+import { ZoneWidget } from './ZoneWidget.tsx';
 
 const MemoizedMap = React.memo(Map);
 
-const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel  }: {
+const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel, setAreMapOverlaysVisible }: {
   areMapOverlaysVisible: boolean;
   discoveries: PointOfInterestDiscovery[];
   totalPointsOfInterest: PointOfInterest[];
@@ -38,7 +40,7 @@ const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPoint
       <MapZoomButton />
       <TagFilter />
       <ActivityQuestionnaire />
-      <div className="absolute top-32 right-4 z-10 mt-2">
+      <div className="absolute top-56 right-4 z-10 mt-2">
         <TrackedQuests openPointOfInterestPanel={openPointOfInterestPanel} />
       </div>
       <div className="absolute bottom-20 right-0 z-10 w-full p-2">
@@ -85,6 +87,7 @@ export const SinglePlayer = () => {
   const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
   const { completedTask } = useCompletedTaskContext();
+
   const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
     pointsOfInterest,
     discoveries,
@@ -92,6 +95,8 @@ export const SinglePlayer = () => {
     needsDiscovery: false,
     trackedPointOfInterestIds,
   });
+
+  useZoneBoundaries();
 
   const openPointOfInterestPanel = (pointOfInterest: PointOfInterest) => {
     if (pointOfInterest) {
@@ -147,11 +152,13 @@ export const SinglePlayer = () => {
 
   return (
     <MemoizedMap>
+      <ZoneWidget onWidgetOpen={() => setAreMapOverlaysVisible(false)} onWidgetClose={() => setAreMapOverlaysVisible(true)} />
       <MapOverlays 
         areMapOverlaysVisible={areMapOverlaysVisible}
         discoveries={discoveries}
         totalPointsOfInterest={totalPointsOfInterest || []}
         openPointOfInterestPanel={openPointOfInterestPanel}
+        setAreMapOverlaysVisible={setAreMapOverlaysVisible}
       />
       <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
         {selectedPointOfInterest && (

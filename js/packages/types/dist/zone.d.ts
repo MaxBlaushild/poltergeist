@@ -1,3 +1,4 @@
+import { Point } from "./point";
 export type Zone = {
     id: string;
     name: string;
@@ -6,4 +7,10 @@ export type Zone = {
     radius: number;
     createdAt: string;
     updatedAt: string;
+    boundary: number[][];
+    boundaryCoords: {
+        latitude: number;
+        longitude: number;
+    }[];
+    points: Point[];
 };

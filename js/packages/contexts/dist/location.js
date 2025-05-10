@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 const LocationContext = createContext(undefined);
 export const LocationProvider = ({ children }) => {
     const [location, setLocation] = useState(null);
@@ -42,6 +42,7 @@ export const LocationProvider = ({ children }) => {
     };
     const getLocation = (options = {}) => {
         return new Promise((resolve, reject) => {
+            console.log('getLocation', navigator.geolocation);
             if (!navigator.geolocation) {
                 reject(new Error('Geolocation is not supported by this browser'));
                 return;
@@ -61,14 +62,14 @@ export const LocationProvider = ({ children }) => {
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c; // Distance in meters
     };
-    const shouldUpdateLocation = (newLocation) => {
-        if (!(location === null || location === void 0 ? void 0 : location.latitude) || !(location === null || location === void 0 ? void 0 : location.longitude))
+    const shouldUpdateLocation = useCallback((newLocation, currentLocation) => {
+        if (!(currentLocation === null || currentLocation === void 0 ? void 0 : currentLocation.latitude) || !(currentLocation === null || currentLocation === void 0 ? void 0 : currentLocation.longitude))
             return true;
         if (!newLocation.latitude || !newLocation.longitude)
             return false;
-        const distance = calculateDistance(location.latitude, location.longitude, newLocation.latitude, newLocation.longitude);
+        const distance = calculateDistance(currentLocation.latitude, currentLocation.longitude, newLocation.latitude, newLocation.longitude);
         return distance >= 25; // Only update if distance is 25 meters or more
-    };
+    }, []);
     useEffect(() => {
         const checkPermissionAndGetLocation = () => __awaiter(void 0, void 0, void 0, function* () {
             var _a, _b, _c;
@@ -100,7 +101,9 @@ export const LocationProvider = ({ children }) => {
                             longitude: (_b = position === null || position === void 0 ? void 0 : position.coords) === null || _b === void 0 ? void 0 : _b.longitude,
                             accuracy: (_c = position === null || position === void 0 ? void 0 : position.coords) === null || _c === void 0 ? void 0 : _c.accuracy,
                         };
-                        if (shouldUpdateLocation(newLocation)) {
+                        if (shouldUpdateLocation(newLocation, location)) {
+                            console.log('updating location', newLocation);
+                            console.log('location', location);
                             setLocation(newLocation);
                         }
                         setError(null);
@@ -133,7 +136,7 @@ export const LocationProvider = ({ children }) => {
                             longitude: position.coords.longitude,
                             accuracy: position.coords.accuracy,
                         };
-                        if (shouldUpdateLocation(newLocation)) {
+                        if (shouldUpdateLocation(newLocation, location)) {
                             setLocation(newLocation);
                         }
                         setError(null); // Clear any previous errors on success
@@ -169,7 +172,13 @@ export const LocationProvider = ({ children }) => {
 export const useLocation = () => {
     const context = useContext(LocationContext);
     if (context === undefined) {
-        throw new Error('useLocation must be used within a LocationProvider');
+        return {
+            location: null,
+            error: null,
+            isLoading: false,
+            message: null,
+            acknowledgeError: () => { }
+        };
     }
     return context;
 };

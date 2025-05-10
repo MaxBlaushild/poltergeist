@@ -18,11 +18,10 @@ export const ActivityQuestionnaire = () => {
     }, 3000);
   }
 
-  console.log('isOpen', isOpen);
   return (
     <>
       <div
-        className="absolute top-20 right-28 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
+        className="absolute top-44 right-4 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
         onClick={() => setIsOpen(!isOpen)}
     >
       <MagnifyingGlassIcon className="w-6 h-6" />
