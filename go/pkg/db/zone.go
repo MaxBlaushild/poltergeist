@@ -25,7 +25,7 @@ func (h *zoneHandler) Create(ctx context.Context, zone *models.Zone) error {
 
 func (h *zoneHandler) FindAll(ctx context.Context) ([]*models.Zone, error) {
 	var zones []*models.Zone
-	if err := h.db.WithContext(ctx).Find(&zones).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("Points").Find(&zones).Error; err != nil {
 		return nil, err
 	}
 	return zones, nil
@@ -33,7 +33,7 @@ func (h *zoneHandler) FindAll(ctx context.Context) ([]*models.Zone, error) {
 
 func (h *zoneHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error) {
 	var zone models.Zone
-	if err := h.db.WithContext(ctx).Where("id = ?", id).First(&zone).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("Points").Where("id = ?", id).First(&zone).Error; err != nil {
 		return nil, err
 	}
 	return &zone, nil

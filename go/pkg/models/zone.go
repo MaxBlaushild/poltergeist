@@ -3,14 +3,14 @@ package models
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"log"
+	"math"
 	mathrand "math/rand"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkb"
 	"gorm.io/gorm"
 )
 
@@ -27,22 +27,53 @@ type Location struct {
 }
 
 type Zone struct {
-	ID             uuid.UUID       `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-	Name           string          `json:"name"`
-	Latitude       float64         `json:"latitude"`
-	Longitude      float64         `json:"longitude"`
-	Radius         float64         `json:"radius"`
-	Boundary       string          `json:"boundary"`
-	BoundaryCoords []Location      `json:"boundaryCoords" gorm:"-"`
-	Polygon        *orb.Polygon    `json:"polygon" gorm:"-"`
-	Points         []GeometryPoint `json:"points" gorm:"many2many:boundary_points;"`
+	ID             uuid.UUID    `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+	Name           string       `json:"name"`
+	Description    string       `json:"description"`
+	Latitude       float64      `json:"latitude"`
+	Longitude      float64      `json:"longitude"`
+	Radius         float64      `json:"radius"`
+	Boundary       string       `json:"boundary"`
+	BoundaryCoords []Location   `json:"boundaryCoords" gorm:"-"`
+	Polygon        *orb.Polygon `json:"polygon" gorm:"-"`
+	Points         []Point      `json:"points" gorm:"many2many:boundary_points;"`
 }
 
 func (z *Zone) AfterFind(tx *gorm.DB) (err error) {
 	z.BoundaryCoords = z.GetBoundary()
-	return
+	return z.LoadPoints(tx)
+}
+
+func (z *Zone) LoadPoints(db *gorm.DB) error {
+	points := []Point{}
+	if err := db.Model(z).Association("Points").Find(&points); err != nil {
+		return err
+	}
+	if len(points) == 0 {
+		return nil
+	}
+
+	// Calculate centroid of all points
+	var sumX, sumY float64
+	for _, point := range points {
+		sumX += point.Longitude
+		sumY += point.Latitude
+	}
+	centroidX := sumX / float64(len(points))
+	centroidY := sumY / float64(len(points))
+
+	// Sort points by angle around centroid
+	sort.Slice(points, func(i, j int) bool {
+		angleI := math.Atan2(points[i].Latitude-centroidY, points[i].Longitude-centroidX)
+		angleJ := math.Atan2(points[j].Latitude-centroidY, points[j].Longitude-centroidX)
+		return angleI < angleJ
+	})
+
+	z.Points = points
+
+	return nil
 }
 
 func (z *Zone) GetPolygon() orb.Polygon {
@@ -50,28 +81,23 @@ func (z *Zone) GetPolygon() orb.Polygon {
 		return *z.Polygon
 	}
 
-	if z.Boundary == "" {
+	if len(z.Points) == 0 {
 		return nil
 	}
 
-	boundary, err := hex.DecodeString(z.Boundary)
-	if err != nil {
-		log.Printf("Error decoding boundary hex string: %v", err)
-		return nil
+	// Create a ring from the sorted points
+	ring := make(orb.Ring, len(z.Points))
+	for i, point := range z.Points {
+		ring[i] = orb.Point{point.Longitude, point.Latitude}
 	}
 
-	polygon, err := wkb.Unmarshal(boundary)
-	if err != nil {
-		log.Printf("Error unmarshaling WKB: %v", err)
-		return nil
+	// Close the ring by adding the first point at the end if needed
+	if len(ring) > 0 && !ring[0].Equal(ring[len(ring)-1]) {
+		ring = append(ring, ring[0])
 	}
 
-	p, ok := polygon.(orb.Polygon)
-	if !ok {
-		log.Printf("Error: geometry is not a polygon")
-		return nil
-	}
-
+	// Create polygon from ring
+	p := orb.Polygon{ring}
 	z.Polygon = &p
 
 	return p

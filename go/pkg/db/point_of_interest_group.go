@@ -13,6 +13,54 @@ type pointOfInterestGroupHandle struct {
 	db *gorm.DB
 }
 
+func (c *pointOfInterestGroupHandle) GetQuestsInZone(ctx context.Context, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
+	pointsOfInterest := []models.PointOfInterest{}
+	query := c.db.WithContext(ctx).
+		Table("points_of_interest poi").
+		Joins("JOIN point_of_interest_zones pz ON pz.point_of_interest_id = poi.id").
+		Where("pz.zone_id = ?", zoneID).
+		Distinct("poi.*")
+
+	if len(tags) > 0 {
+		query = query.
+			Joins("JOIN tag_entities te ON te.point_of_interest_id = poi.id").
+			Joins("JOIN tags t ON t.id = te.tag_id").
+			Where("t.value IN ?", tags)
+	}
+
+	if err := query.Find(&pointsOfInterest).Error; err != nil {
+		return nil, err
+	}
+
+	pointOfInterestIDs := make([]uuid.UUID, len(pointsOfInterest))
+	for i, poi := range pointsOfInterest {
+		pointOfInterestIDs[i] = poi.ID
+	}
+
+	var pointOfInterestGroupMembers []models.PointOfInterestGroupMember
+	if err := c.db.WithContext(ctx).Where("point_of_interest_id IN ?", pointOfInterestIDs).Find(&pointOfInterestGroupMembers).Error; err != nil {
+		return nil, err
+	}
+
+	groupIDMap := make(map[uuid.UUID]bool)
+	var groupIDs []uuid.UUID
+	for _, member := range pointOfInterestGroupMembers {
+		if !groupIDMap[member.PointOfInterestGroupID] {
+			groupIDs = append(groupIDs, member.PointOfInterestGroupID)
+			groupIDMap[member.PointOfInterestGroupID] = true
+		}
+	}
+
+	var groups []models.PointOfInterestGroup
+	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
+		Where("id IN ?", groupIDs).
+		Find(&groups).Error; err != nil {
+		return nil, err
+	}
+
+	return groups, nil
+}
+
 func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64, tags []string) ([]models.PointOfInterestGroup, error) {
 	pointsOfInterest := []models.PointOfInterest{}
 	query := c.db.WithContext(ctx).

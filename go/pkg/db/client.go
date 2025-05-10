@@ -48,6 +48,8 @@ type client struct {
 	zoneQuestArchetypeHandle          *zoneQuestArchetypeHandle
 	trackedPointOfInterestGroupHandle *trackedPointOfInterestGroupHandle
 	pointHandle                       *pointHandler
+	userLevelHandle                   *userLevelHandler
+	userZoneReputationHandle          *userZoneReputationHandler
 }
 
 type ClientConfig struct {
@@ -113,7 +115,17 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		zoneQuestArchetypeHandle:          &zoneQuestArchetypeHandle{db: db},
 		trackedPointOfInterestGroupHandle: &trackedPointOfInterestGroupHandle{db: db},
 		pointHandle:                       &pointHandler{db: db},
+		userLevelHandle:                   &userLevelHandler{db: db},
+		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
 	}, nil
+}
+
+func (c *client) UserZoneReputation() UserZoneReputationHandle {
+	return c.userZoneReputationHandle
+}
+
+func (c *client) UserLevel() UserLevelHandle {
+	return c.userLevelHandle
 }
 
 func (c *client) Point() PointHandle {

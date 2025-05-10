@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type GeometryPoint struct {
+type Point struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -17,7 +17,7 @@ type GeometryPoint struct {
 	Longitude float64   `json:"longitude"`
 }
 
-func (p *GeometryPoint) BeforeSave(tx *gorm.DB) error {
+func (p *Point) BeforeSave(tx *gorm.DB) error {
 	if p.Latitude != 0 && p.Longitude != 0 {
 		if err := p.SetGeometry(p.Latitude, p.Longitude); err != nil {
 			return err
@@ -26,8 +26,12 @@ func (p *GeometryPoint) BeforeSave(tx *gorm.DB) error {
 	return nil
 }
 
-func (p *GeometryPoint) SetGeometry(latitude float64, longitude float64) error {
+func (p *Point) SetGeometry(latitude float64, longitude float64) error {
 	// Create WKT (Well-Known Text) format: 'SRID=4326;POINT(lng lat)'
 	p.Geometry = fmt.Sprintf("SRID=4326;POINT(%f %f)", longitude, latitude)
 	return nil
+}
+
+func (p *Point) TableName() string {
+	return "points"
 }

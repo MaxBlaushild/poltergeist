@@ -68,11 +68,13 @@ export const MapProvider = ({ children }: MapProviderProps) => {
   }, []);
 
   useEffect(() => {
+    console.log('useEffect', location?.longitude, location?.latitude, isMapLoaded, map.current);
     if (map.current && location?.longitude && location?.latitude && !isMapLoaded) {
+      console.log('setting center', location.longitude, location.latitude);
       map.current.setCenter([location.longitude, location.latitude]);
       setIsMapLoaded(true);
     }
-  }, [location?.longitude, location?.latitude, isMapLoaded]);
+  }, [location?.longitude, location?.latitude, isMapLoaded, map.current]);
 
   const setLocation = useCallback((lat: number, lng: number) => {
     if (map.current) {

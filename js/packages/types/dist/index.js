@@ -30,3 +30,4 @@ export * from './questArchetype';
 export * from './locationArchetype';
 export * from './zoneQuestArchetype';
 export * from './zone';
+export * from './point';

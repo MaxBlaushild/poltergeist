@@ -24,6 +24,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
@@ -59,6 +60,7 @@ type server struct {
 	asyncClient      *asynq.Client
 	redisClient      *redis.Client
 	searchClient     search.SearchClient
+	gameEngineClient gameengine.GameEngineClient
 }
 
 type Server interface {
@@ -83,6 +85,7 @@ func NewServer(
 	asyncClient *asynq.Client,
 	redisClient *redis.Client,
 	searchClient search.SearchClient,
+	gameEngineClient gameengine.GameEngineClient,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -102,6 +105,7 @@ func NewServer(
 		asyncClient:      asyncClient,
 		redisClient:      redisClient,
 		searchClient:     searchClient,
+		gameEngineClient: gameEngineClient,
 	}
 }
 
@@ -146,7 +150,6 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
-	r.POST("/sonar/admin/pointOfInterest/capture", middleware.WithAuthentication(s.authClient, s.capturePointOfInterestForTeam))
 	r.POST("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
 	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.generateProfilePictureOptions))
 	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.getCompleteGenerationsForUser))
@@ -980,10 +983,11 @@ func (s *server) getZone(ctx *gin.Context) {
 
 func (s *server) createZone(ctx *gin.Context) {
 	var requestBody struct {
-		Name      string  `json:"name"`
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-		Radius    float64 `json:"radius"`
+		Name        string  `json:"name"`
+		Latitude    float64 `json:"latitude"`
+		Longitude   float64 `json:"longitude"`
+		Radius      float64 `json:"radius"`
+		Description string  `json:"description"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -992,10 +996,11 @@ func (s *server) createZone(ctx *gin.Context) {
 	}
 
 	zone := &models.Zone{
-		Name:      requestBody.Name,
-		Latitude:  requestBody.Latitude,
-		Longitude: requestBody.Longitude,
-		Radius:    requestBody.Radius,
+		Name:        requestBody.Name,
+		Latitude:    requestBody.Latitude,
+		Longitude:   requestBody.Longitude,
+		Radius:      requestBody.Radius,
+		Description: requestBody.Description,
 	}
 	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1146,25 +1151,18 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 		return
 	}
 
-	stringLat := ctx.Query("lat")
-	stringLng := ctx.Query("lng")
+	stringZoneID := ctx.Query("zoneId")
+	zoneID, err := uuid.Parse(stringZoneID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
 	var tags []string
 	if tagsQuery := ctx.Query("tags"); tagsQuery != "" {
 		tags = strings.Split(tagsQuery, ",")
 	}
 
-	lat, err := strconv.ParseFloat(stringLat, 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid lat"})
-		return
-	}
-	lng, err := strconv.ParseFloat(stringLng, 64)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid lng"})
-		return
-	}
-
-	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, lat, lng, tags)
+	questLog, err := s.questlogClient.GetQuestLog(ctx, user.ID, zoneID, tags)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1849,48 +1847,6 @@ func (s *server) unlockPointOfInterestForTeam(ctx *gin.Context) {
 	})
 }
 
-func (s *server) capturePointOfInterestForTeam(ctx *gin.Context) {
-	var requestBody struct {
-		PointOfInterestID uuid.UUID  `binding:"required" json:"pointOfInterestId"`
-		TeamID            *uuid.UUID `binding:"required" json:"teamId"`
-		UserID            *uuid.UUID `json:"userId,omitempty"`
-		Tier              int        `binding:"required" json:"tier"`
-	}
-
-	if err := ctx.Bind(&requestBody); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	challenge, err := s.dbClient.PointOfInterestChallenge().GetChallengeForPointOfInterest(ctx, requestBody.PointOfInterestID, requestBody.Tier)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if _, err := s.dbClient.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, challenge.ID, requestBody.TeamID, requestBody.UserID, "", "", true); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.UserID, challenge.ID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"message": "challenge submitted successfully",
-	})
-}
-
 func (s *server) getChat(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -2101,12 +2057,12 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
-	submission, err := s.judgeClient.JudgeSubmission(ctx, judge.JudgeSubmissionRequest{
-		ChallengeID:        requestBody.ChallengeID,
-		TeamID:             requestBody.TeamID,
-		UserID:             requestBody.UserID,
-		TextSubmission:     requestBody.TextSubmission,
-		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
+	submissionResult, err := s.gameEngineClient.ProcessSubmission(ctx, gameengine.Submission{
+		ChallengeID: requestBody.ChallengeID,
+		TeamID:      requestBody.TeamID,
+		UserID:      requestBody.UserID,
+		Text:        requestBody.TextSubmission,
+		ImageURL:    requestBody.ImageSubmissionUrl,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -2115,46 +2071,7 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 
-	challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, requestBody.ChallengeID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
-	var item quartermaster.InventoryItem
-	if submission.Judgement.Judgement {
-		if challenge.InventoryItemID == 0 {
-			item, err = s.quartermaster.GetItem(ctx, requestBody.TeamID, requestBody.UserID)
-			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{
-					"error": err.Error(),
-				})
-				return
-			}
-		} else {
-			item, err = s.quartermaster.GetItemSpecificItem(ctx, requestBody.TeamID, requestBody.UserID, challenge.InventoryItemID)
-			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{
-					"error": err.Error(),
-				})
-				return
-			}
-		}
-
-		if err := s.chatClient.AddCaptureMessage(ctx, requestBody.TeamID, requestBody.UserID, requestBody.ChallengeID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{
-		"judgement": submission,
-		"item":      item,
-	})
+	ctx.JSON(http.StatusOK, submissionResult)
 }
 
 func (s *server) getPresignedUploadUrl(ctx *gin.Context) {

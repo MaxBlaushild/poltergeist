@@ -37,7 +37,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   width: 75%;
-  height: 50%;
+  height: 66%;
   min-width: 220px;
   z-index: 9999;
 }

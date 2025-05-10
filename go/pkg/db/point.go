@@ -17,10 +17,10 @@ func NewPointHandler(db *gorm.DB) *pointHandler {
 	return &pointHandler{db: db}
 }
 
-func (h *pointHandler) CreatePoint(ctx context.Context, latitude float64, longitude float64) (*models.GeometryPoint, error) {
-	// Check for existing points within 100 meters
-	var existingPoint models.GeometryPoint
-	err := h.db.Where("ST_DWithin(geometry, ST_SetSRID(ST_MakePoint(?, ?), 4326), 100)", longitude, latitude).First(&existingPoint).Error
+func (h *pointHandler) CreatePoint(ctx context.Context, latitude float64, longitude float64) (*models.Point, error) {
+	// Check for existing points within 25 meters
+	var existingPoint models.Point
+	err := h.db.Where("ST_DWithin(geometry::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 25)", longitude, latitude).First(&existingPoint).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (h *pointHandler) CreatePoint(ctx context.Context, latitude float64, longit
 		return &existingPoint, nil
 	}
 
-	point := &models.GeometryPoint{
+	point := &models.Point{
 		Latitude:  latitude,
 		Longitude: longitude,
 		ID:        uuid.New(),

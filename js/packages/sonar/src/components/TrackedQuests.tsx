@@ -55,7 +55,7 @@ export const TrackedQuests = ({ openPointOfInterestPanel }: { openPointOfInteres
   return (
     <div className={`flex flex-col ${showContent ? 'gap-2' : 'gap-0'} ${isExpanded ? 'w-72' : 'w-20'} transition-[width] duration-300 rounded-lg bg-black/50 p-2`}>
       <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-        <h1 className="text-sm font-bold text-white">Quests</h1>
+        <h1 className="text-sm text-white">Quests</h1>
         {isExpanded ? (
           <ChevronUpIcon className="w-4 h-4 text-white" />
         ) : (

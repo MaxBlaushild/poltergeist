@@ -9,7 +9,7 @@ export const TagFilter = () => {
   return (
     <>
       <div
-        className="absolute top-20 right-16 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
+        className="absolute top-32 right-4 z-10 bg-white rounded-lg p-2 border-2 border-black opacity-80"
         onClick={() => setIsOpen(!isOpen)}
       >
         <AdjustmentsHorizontalIcon className="w-6 h-6" />
