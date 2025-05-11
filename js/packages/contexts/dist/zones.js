@@ -130,16 +130,18 @@ export const ZoneProvider = ({ children }) => {
     const deleteZone = (zone) => {
         setZones(prev => prev.filter(z => z.id !== zone.id));
     };
-    useEffect(() => {
-        console.log('Zones:', zones);
-    }, [zones]);
+    const editZone = (name, description, id) => __awaiter(void 0, void 0, void 0, function* () {
+        const response = yield apiClient.patch(`/sonar/zones/${id}/edit`, { name, description });
+        setZones(prev => prev.map(z => z.id === id ? Object.assign(Object.assign({}, z), { name: response.name, description: response.description }) : z));
+    });
     return (_jsx(ZoneContext.Provider, Object.assign({ value: {
             zones,
             selectedZone,
             setSelectedZone,
             createZone,
             deleteZone,
-            findZoneAtCoordinate
+            findZoneAtCoordinate,
+            editZone
         } }, { children: children })));
 };
 export const useZoneContext = () => {

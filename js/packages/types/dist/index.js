@@ -31,3 +31,6 @@ export * from './locationArchetype';
 export * from './zoneQuestArchetype';
 export * from './zone';
 export * from './point';
+export * from './submissionResult';
+export * from './userLevel';
+export * from './userZoneReputation';

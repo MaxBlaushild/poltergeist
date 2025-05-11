@@ -107,3 +107,24 @@ func (h *zoneHandler) UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boun
 
 	return nil
 }
+
+func (h *zoneHandler) FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error) {
+	var pointOfInterestZone models.PointOfInterestZone
+	if err := h.db.WithContext(ctx).Where("point_of_interest_id = ?", pointOfInterestID).First(&pointOfInterestZone).Error; err != nil {
+		return nil, err
+	}
+
+	var zone models.Zone
+	if err := h.db.WithContext(ctx).Where("id = ?", pointOfInterestZone.ZoneID).First(&zone).Error; err != nil {
+		return nil, err
+	}
+
+	return &zone, nil
+}
+
+func (h *zoneHandler) UpdateNameAndDescription(ctx context.Context, zoneID uuid.UUID, name string, description string) error {
+	return h.db.WithContext(ctx).Model(&models.Zone{}).Where("id = ?", zoneID).Updates(map[string]interface{}{
+		"name":        name,
+		"description": description,
+	}).Error
+}

@@ -217,7 +217,83 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.upsertZoneBoundary))
+	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.editZone))
+	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.getLevel))
+	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.getZoneReputation))
+
 	r.Run(":8042")
+}
+
+func (s *server) getLevel(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	level, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	level.ExperienceToNextLevel = level.XPToNextLevel()
+
+	fmt.Println("hjksdhjksadhjkahdsjkahdjkshjdhaksj")
+	fmt.Println(level.XPToNextLevel())
+	fmt.Println(level.ExperienceToNextLevel)
+
+	ctx.JSON(http.StatusOK, level)
+}
+
+func (s *server) getZoneReputation(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	zoneID := ctx.Param("id")
+	zoneIDUUID, err := uuid.Parse(zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	reputation, err := s.dbClient.UserZoneReputation().FindOrCreateForUserAndZone(ctx, user.ID, zoneIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, reputation)
+}
+
+func (s *server) editZone(ctx *gin.Context) {
+	zoneID := ctx.Param("id")
+	zoneIDUUID, err := uuid.Parse(zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	var requestBody struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.dbClient.Zone().UpdateNameAndDescription(ctx, zoneIDUUID, requestBody.Name, requestBody.Description)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "zone updated successfully"})
 }
 
 func (s *server) upsertZoneBoundary(ctx *gin.Context) {
@@ -1953,6 +2029,40 @@ func (s *server) useItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
+		return
+	}
+
+	inventoryItem, err := s.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if inventoryItem.IsCaptureType {
+		challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, request.ChallengeID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		result, err := s.gameEngineClient.ProcessSuccessfulSubmission(ctx, gameengine.Submission{
+			TeamID:      ownedInventoryItem.TeamID,
+			UserID:      ownedInventoryItem.UserID,
+			ChallengeID: challenge.ID,
+			Text:        "",
+			ImageURL:    "",
+		}, challenge)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, result)
 		return
 	}
 

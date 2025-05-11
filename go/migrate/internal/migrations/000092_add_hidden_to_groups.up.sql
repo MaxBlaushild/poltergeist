@@ -1,0 +1,1 @@
+alter table point_of_interest_groups add column hidden boolean default false;

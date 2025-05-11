@@ -58,15 +58,16 @@ func (u *UserZoneReputation) AfterFind(tx *gorm.DB) (err error) {
 func (u *UserZoneReputation) AddReputationPoints(points int) {
 	u.TotalReputation += points
 	u.ReputationOnLevel += points
-	if u.ReputationOnLevel >= u.GetReputationToNextLevel() && u.Level < 6 {
+	extraReputationPoints := u.ReputationOnLevel - u.GetReputationToNextLevel()
+	if extraReputationPoints >= 0 && u.Level < 6 {
 		u.Level++
 		u.LevelsGained++
-		u.ReputationOnLevel = u.TotalReputation - u.GetReputationToNextLevel()
+		u.ReputationOnLevel = extraReputationPoints
 	}
 }
 
 func (u *UserZoneReputation) GetReputationToNextLevel() int {
-	return BaseReputationPoints * int(math.Pow(float64(GrowthFactor), float64(u.Level)))
+	return BaseReputationPoints * int(math.Pow(float64(ReputationGrowthFactor), float64(u.Level)))
 }
 
 func (u *UserZoneReputation) GetReputationName() UserZoneReputationName {

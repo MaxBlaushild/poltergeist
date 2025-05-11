@@ -8,6 +8,7 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 )
 
 type PromptText struct {
@@ -24,6 +25,11 @@ const premise = `
 	Some categories that people use to describe %s are: %v.
 
 	The sophistication of %s is considered to be %s.
+
+	Here is a bit about the region %s is in:
+
+	Name: %s
+	Description: %s
 `
 
 const generatePointOfInterestPromptTemplate = premise + `
@@ -54,11 +60,9 @@ const generateImagePromptPromptTemplate = premise + `
 
 const style = "natural"
 
-func (c *client) generateFantasyTheming(place googlemaps.Place) (*FantasyPointOfInterest, error) {
-	log.Printf("Generating fantasy theming for place: %s", place.Name)
-
+func (c *client) generateFantasyTheming(place googlemaps.Place, zone *models.Zone) (*FantasyPointOfInterest, error) {
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: c.makeFantasyThemingPrompt(place),
+		Question: c.makeFantasyThemingPrompt(place, zone),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)
@@ -75,16 +79,12 @@ func (c *client) generateFantasyTheming(place googlemaps.Place) (*FantasyPointOf
 	return &fantasyPointOfInterest, nil
 }
 
-func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Place) (string, error) {
-	log.Printf("Generating fantasy image for place: %s", place.Name)
-
-	prompt, err := c.generateFantasyImagePrompt(place)
+func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Place, zone *models.Zone) (string, error) {
+	prompt, err := c.generateFantasyImagePrompt(place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy image prompt: %v", err)
 		return "", err
 	}
-
-	log.Printf("Generated fantasy image prompt: %s", prompt)
 
 	base64Image, err := c.deepPriest.GenerateImage(deep_priest.GenerateImageRequest{
 		Prompt:         prompt,
@@ -113,9 +113,9 @@ func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Plac
 	return imageUrl, nil
 }
 
-func (c *client) generateFantasyImagePrompt(place googlemaps.Place) (string, error) {
+func (c *client) generateFantasyImagePrompt(place googlemaps.Place, zone *models.Zone) (string, error) {
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: c.makeFantasyImagePromptPrompt(place),
+		Question: c.makeFantasyImagePromptPrompt(place, zone),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)
@@ -131,7 +131,7 @@ func (c *client) generateFantasyImagePrompt(place googlemaps.Place) (string, err
 	return promptText.Text, nil
 }
 
-func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place) string {
+func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place, zone *models.Zone) string {
 	prompt := fmt.Sprintf(
 		generateImagePromptPromptTemplate,
 		place.DisplayName.Text,
@@ -141,8 +141,9 @@ func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place) string {
 		place.Types,
 		place.DisplayName.Text,
 		c.generateSophistication(place),
+		zone.Name,
+		zone.Description,
 	)
-	log.Printf("Generated fantasy image prompt prompt: %s", prompt)
 	return prompt
 }
 
@@ -157,7 +158,7 @@ func (c *client) makeFantasyImagePromptPrompt(place googlemaps.Place) string {
 // 	return prompt
 // }
 
-func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
+func (c *client) makeFantasyThemingPrompt(place googlemaps.Place, zone *models.Zone) string {
 	prompt := fmt.Sprintf(
 		generatePointOfInterestPromptTemplate,
 		place.DisplayName.Text,
@@ -167,8 +168,9 @@ func (c *client) makeFantasyThemingPrompt(place googlemaps.Place) string {
 		place.Types,
 		place.DisplayName.Text,
 		c.generateSophistication(place),
+		zone.Name,
+		zone.Description,
 	)
-	log.Printf("Generated fantasy theming prompt: %s", prompt)
 	return prompt
 }
 

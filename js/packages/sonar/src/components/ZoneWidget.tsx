@@ -3,6 +3,7 @@ import { useZoneContext } from '@poltergeist/contexts';
 import { useLocation } from '@poltergeist/contexts';
 import { isXMetersAway } from '../utils/calculateDistance.ts';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+import { useUserZoneReputation } from '@poltergeist/hooks';
 interface ZoneWidgetProps {
   onWidgetOpen: () => void;
   onWidgetClose: () => void;
@@ -11,6 +12,7 @@ interface ZoneWidgetProps {
 export const ZoneWidget = ({ onWidgetOpen, onWidgetClose }: ZoneWidgetProps) => {
   const { zones, selectedZone, setSelectedZone, findZoneAtCoordinate } = useZoneContext();
   const { quests, pendingTasks, completedTasks } = useQuestLogContext();
+  const { userZoneReputation } = useUserZoneReputation(selectedZone?.id);
 
   const [isOpen, setIsOpen] = useState(false);
   const [showContent, setShowContent] = useState(false);
@@ -62,7 +64,7 @@ export const ZoneWidget = ({ onWidgetOpen, onWidgetClose }: ZoneWidgetProps) => 
             />
           </svg>
         </div>
-        <div className={`overflow-hidden transition-all duration-300 ${showContent ? 'max-h-24 mt-2' : 'max-h-0'}`}>
+        <div className={`overflow-y-auto transition-all duration-300 ${showContent ? 'max-h-24 mt-2' : 'max-h-0'}`}>
           <p className="text-sm">{selectedZone?.description ?? 'This will be a brief description of the zone written in fantasy terms.'}</p>
         </div>
         {showContent && (
@@ -80,13 +82,13 @@ export const ZoneWidget = ({ onWidgetOpen, onWidgetClose }: ZoneWidgetProps) => 
         {showContent && (
           <div className="mt-2 mb-2">
             <div className="flex justify-between items-center">
-              <span className="text-sm font-medium">Reputation: Honored</span>
-              <span className="text-xs">8,250 / 12,000</span>
+              <span className="text-sm font-medium">Reputation: {userZoneReputation?.name}</span>
+              <span className="text-xs">{userZoneReputation?.reputationOnLevel} / {userZoneReputation?.reputationToNextLevel}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
                 className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-                style={{ width: '69%' }} 
+                style={{ width: `${userZoneReputation ? (userZoneReputation.reputationOnLevel / userZoneReputation.reputationToNextLevel) * 100 : 0}%` }} 
               />
             </div>
           </div>

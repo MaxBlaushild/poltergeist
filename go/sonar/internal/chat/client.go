@@ -16,8 +16,8 @@ type client struct {
 }
 
 const (
-	CaptureMessage      = "%s captured %s at tier %s."
-	CompleteTaskMessage = "%s completed a task at %s."
+	CaptureMessage       = "%s captured %s at tier %s."
+	CompleteTaskMessage  = "%s completed a task at %s."
 	CompleteQuestMessage = "%s completed a quest: %s."
 )
 
@@ -75,7 +75,7 @@ func (c *client) makeChallengeTierName(tier int) string {
 }
 
 func (c *client) AddCompletedQuestMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error {
-	if challenge.PointOfInterestGroupID == uuid.Nil {
+	if challenge.PointOfInterestGroupID == nil {
 		return nil
 	}
 
@@ -144,6 +144,7 @@ func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userI
 			c.makePointOfInterestName(challenge.PointOfInterestID),
 			c.makeChallengeTierName(challenge.Tier),
 		)
+	}
 
 	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }

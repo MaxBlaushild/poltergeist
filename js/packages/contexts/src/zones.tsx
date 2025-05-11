@@ -28,7 +28,6 @@ export const isXMetersAway = (poi1, poi2, x) => {
   return distance < x;
 };
 
-
 // Define the structure for R-tree nodes
 interface ZoneIndexNode {
   minX: number;
@@ -46,6 +45,7 @@ type ZoneContextType = {
   createZone: (zone: Zone) => void;
   deleteZone: (zone: Zone) => void;
   findZoneAtCoordinate: (lng: number, lat: number) => Zone | null;
+  editZone: (name: string, description: string, id: string) => void;
 };
 
 const ZoneContext = createContext<ZoneContextType | null>(null);
@@ -163,9 +163,10 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setZones(prev => prev.filter(z => z.id !== zone.id));
   };
 
-  useEffect(() => {
-    console.log('Zones:', zones);
-  }, [zones]);
+  const editZone = async (name: string, description: string, id: string) => {
+    const response = await apiClient.patch<Zone>(`/sonar/zones/${id}/edit`, { name, description });
+    setZones(prev => prev.map(z => z.id === id ? {...z, name: response.name, description: response.description} : z));
+  };
 
   return (
     <ZoneContext.Provider value={{
@@ -174,7 +175,8 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSelectedZone,
       createZone,
       deleteZone,
-      findZoneAtCoordinate
+      findZoneAtCoordinate,
+      editZone
     }}>
       {children}
     </ZoneContext.Provider>
