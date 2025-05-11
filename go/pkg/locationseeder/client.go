@@ -32,7 +32,7 @@ type FantasyPointOfInterest struct {
 }
 
 type Client interface {
-	GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error)
+	GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error)
 	SeedPointsOfInterest(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]*models.PointOfInterest, error)
 	RefreshPointOfInterestImage(ctx context.Context, poi *models.PointOfInterest) error
 	RefreshPointOfInterest(ctx context.Context, poi *models.PointOfInterest) error
@@ -61,7 +61,7 @@ func (c *client) ImportPlace(ctx context.Context, placeID string, zone models.Zo
 		return nil, err
 	}
 
-	poi, err := c.GeneratePointOfInterest(ctx, *place, zone)
+	poi, err := c.GeneratePointOfInterest(ctx, *place, &zone)
 	if err != nil {
 		log.Printf("Error generating point of interest: %v", err)
 		return nil, err
@@ -76,19 +76,25 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 		return fmt.Errorf("point of interest has no Google Maps place ID")
 	}
 
+	zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, poi.ID)
+	if err != nil {
+		log.Printf("Error finding zone by ID: %v", err)
+		return err
+	}
+
 	place, err := c.googlemapsClient.FindPlaceByID(*poi.GoogleMapsPlaceID)
 	if err != nil {
 		log.Printf("Error finding place by ID: %v", err)
 		return err
 	}
 
-	fantasyPointOfInterest, err := c.generateFantasyTheming(*place)
+	fantasyPointOfInterest, err := c.generateFantasyTheming(*place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy theming: %v", err)
 		return err
 	}
 
-	imageUrl, err := c.generateFantasyImage(ctx, *place)
+	imageUrl, err := c.generateFantasyImage(ctx, *place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy image: %v", err)
 		return err
@@ -133,7 +139,11 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 		return fmt.Errorf("point of interest has no Google Maps place ID")
 	}
 
-	log.Printf("Refreshing point of interest image for %s", poi.Name)
+	zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, poi.ID)
+	if err != nil {
+		log.Printf("Error finding zone by ID: %v", err)
+		return err
+	}
 
 	place, err := c.googlemapsClient.FindPlaceByID(*poi.GoogleMapsPlaceID)
 	if err != nil {
@@ -147,7 +157,7 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 		return fmt.Errorf("place not found")
 	}
 
-	imageUrl, err := c.generateFantasyImage(ctx, *place)
+	imageUrl, err := c.generateFantasyImage(ctx, *place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy image: %v", err)
 		return err
@@ -234,7 +244,7 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 			continue
 		}
 
-		poi, err := c.GeneratePointOfInterest(ctx, place, zone)
+		poi, err := c.GeneratePointOfInterest(ctx, place, &zone)
 		if err != nil {
 			log.Printf("Error generating point of interest for place %s: %v", place.Name, err)
 			return nil, err
@@ -262,7 +272,7 @@ func (c *client) fuzzCoordinates(lat float64, lng float64, radius float64) (floa
 	return newLat, newLng, radius
 }
 
-func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone models.Zone) (*models.PointOfInterest, error) {
+func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error) {
 	placeDetails, err := c.googlemapsClient.FindPlaceByID(place.ID)
 	if err != nil {
 		log.Printf("Error getting place details: %v", err)
@@ -278,14 +288,14 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 
 	log.Printf("Starting to generate point of interest for place: %s", place.Name)
 
-	fantasyPointOfInterest, err := c.generateFantasyTheming(place)
+	fantasyPointOfInterest, err := c.generateFantasyTheming(place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy theming: %v", err)
 		return nil, err
 	}
 	log.Printf("Generated fantasy theming with name: %s", fantasyPointOfInterest.Name)
 
-	imageUrl, err := c.generateFantasyImage(ctx, place)
+	imageUrl, err := c.generateFantasyImage(ctx, place, zone)
 	if err != nil {
 		log.Printf("Error generating fantasy image: %v", err)
 		return nil, err

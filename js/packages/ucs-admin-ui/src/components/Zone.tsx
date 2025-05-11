@@ -302,7 +302,7 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, selectedZ
 export const Zone = () => {
   const { id } = useParams();
   const { apiClient } = useAPI();
-  const { zones, selectedZone, setSelectedZone, createZone, deleteZone } =
+  const { zones, selectedZone, setSelectedZone, createZone, deleteZone, editZone } =
     useZoneContext();
   const zone = zones.find((zone) => zone.id === id);
   const { pointsOfInterest, loading, error } = useZonePointsOfInterest(id!);
@@ -338,6 +338,9 @@ export const Zone = () => {
   const [nameFilter, setNameFilter] = useState('');
   const [boundaryPoints, setBoundaryPoints] = useState<[number, number][]>([]);
   const [isEditingBoundary, setIsEditingBoundary] = useState(false);
+  const [isEditingZone, setIsEditingZone] = useState(false);
+  const [name, setName] = useState(zone?.name || '');
+  const [description, setDescription] = useState(zone?.description || '');
   const {
     candidates,
     loading: candidatesLoading,
@@ -491,7 +494,65 @@ export const Zone = () => {
         >
           Generate Quests for Zone
         </button>
+        <button
+          onClick={() => setIsEditingZone(!isEditingZone)}
+          className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-blue-300"
+        >
+          Edit Zone
+        </button>
       </div>
+
+      {isEditingZone && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+            <h2 className="text-xl font-semibold mb-4">Edit Zone</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => setIsEditingZone(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  editZone(name, description, zone.id);
+                  setIsEditingZone(false);
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Map Section */}
       <div className="mb-8">

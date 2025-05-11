@@ -37,13 +37,23 @@ func (u *UserLevel) AfterFind(tx *gorm.DB) (err error) {
 func (u *UserLevel) AddExperiencePoints(points int) {
 	u.TotalExperiencePoints += points
 	u.ExperiencePointsOnLevel += points
-	if u.ExperiencePointsOnLevel >= u.XPToNextLevel() {
+	extraExperiencePoints := u.ExperiencePointsOnLevel - u.XPToNextLevel()
+
+	if extraExperiencePoints >= 0 {
 		u.Level++
 		u.LevelsGained++
-		u.ExperiencePointsOnLevel = u.TotalExperiencePoints - u.XPToNextLevel()
+		if u.Level != 1 {
+			u.ExperiencePointsOnLevel = extraExperiencePoints
+		} else {
+			u.ExperiencePointsOnLevel = 0
+		}
 	}
 }
 
 func (u *UserLevel) XPToNextLevel() int {
-	return BaseExperiencePoints * int(math.Log(float64(u.Level+1))) * GrowthFactor
+	if u.Level == 1 {
+		return BaseExperiencePoints
+	}
+
+	return BaseExperiencePoints * int(math.Round(math.Log(float64(u.Level+1)))) * GrowthFactor
 }

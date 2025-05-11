@@ -14,6 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
@@ -61,6 +62,7 @@ func main() {
 	})
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
+	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient)
 	s := server.NewServer(
 		authClient,
 		texterClient,
@@ -79,6 +81,7 @@ func main() {
 		asyncClient,
 		redisClient,
 		searchClient,
+		gameEngineClient,
 	)
 
 	s.ListenAndServe("8042")

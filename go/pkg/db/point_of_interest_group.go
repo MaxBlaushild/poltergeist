@@ -102,6 +102,7 @@ func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID
 	var groups []models.PointOfInterestGroup
 	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
 		Where("id IN ?", groupIDs).
+		Where("hidden = false").
 		Find(&groups).Error; err != nil {
 		return nil, err
 	}

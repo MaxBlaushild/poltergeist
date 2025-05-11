@@ -17,7 +17,7 @@ const InventoryContext = createContext({
     inventoryItemError: null,
     setPresentedInventoryItem: (item) => { },
     inventoryItemsAreLoading: false,
-    consumeItem: () => Promise.resolve(),
+    consumeItem: () => Promise.resolve(undefined),
     useItemError: null,
     isUsingItem: false,
     usedItem: null,
@@ -75,7 +75,8 @@ export const InventoryProvider = ({ children }) => {
     const consumeItem = (ownedInventoryItemId, metadata = {}) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             setIsUsingItem(true);
-            yield apiClient.post(`/sonar/inventory/${ownedInventoryItemId}/use`, Object.assign({}, metadata));
+            const result = yield apiClient.post(`/sonar/inventory/${ownedInventoryItemId}/use`, Object.assign({}, metadata));
+            return result;
         }
         catch (err) {
             setUseItemError(err instanceof Error ? err.message : 'Failed to use item');

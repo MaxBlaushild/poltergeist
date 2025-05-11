@@ -34,9 +34,12 @@ type SubmissionResult struct {
 	ExperienceAwarded int                           `json:"experienceAwarded"`
 	ReputationAwarded int                           `json:"reputationAwarded"`
 	ZoneID            uuid.UUID                     `json:"zoneID"`
+	LevelUp           bool                          `json:"levelUp"`
+	ReputationUp      bool                          `json:"reputationUp"`
 }
 
 type GameEngineClient interface {
+	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
 }
 
@@ -74,7 +77,7 @@ func (c *gameEngineClient) ProcessSubmission(ctx context.Context, submission Sub
 		}, nil
 	}
 
-	return c.processSuccessfulSubmission(ctx, submission, challenge)
+	return c.ProcessSuccessfulSubmission(ctx, submission, challenge)
 }
 
 func (c *gameEngineClient) judgeSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*judge.JudgeSubmissionResponse, error) {
@@ -92,7 +95,7 @@ func (c *gameEngineClient) judgeSubmission(ctx context.Context, submission Submi
 	return judgementResult, nil
 }
 
-func (c *gameEngineClient) processSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error) {
+func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error) {
 	questCompleted, err := c.HasCompletedQuest(ctx, challenge)
 	if err != nil {
 		return nil, err
@@ -104,6 +107,14 @@ func (c *gameEngineClient) processSuccessfulSubmission(ctx context.Context, subm
 	}
 
 	if err = c.awardItems(ctx, submission, challenge, &submissionResult); err != nil {
+		return nil, err
+	}
+
+	if err = c.awardExperiencePoints(ctx, submission, &submissionResult); err != nil {
+		return nil, err
+	}
+
+	if err = c.awardReputationPoints(ctx, submission, challenge, &submissionResult); err != nil {
 		return nil, err
 	}
 
@@ -154,7 +165,7 @@ func (c *gameEngineClient) addTaskCompleteMessage(ctx context.Context, submissio
 	return nil
 }
 
-func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge, submissionResult *SubmissionResult) error {
+func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission Submission, submissionResult *SubmissionResult) error {
 	experiencePoints := BaseExperiencePointsAwardedForSuccessfulSubmission
 	if submissionResult.QuestCompleted {
 		experiencePoints += BaseExperiencePointsAwardedForFinishedQuest
@@ -163,9 +174,12 @@ func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission
 	submissionResult.ExperienceAwarded = experiencePoints
 
 	if submission.UserID != nil {
-		if _, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, *submission.UserID, experiencePoints); err != nil {
+		userLevel, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, *submission.UserID, experiencePoints)
+		if err != nil {
 			return err
 		}
+
+		submissionResult.LevelUp = userLevel.LevelsGained > 0
 	}
 
 	return nil
@@ -184,13 +198,16 @@ func (c *gameEngineClient) awardReputationPoints(ctx context.Context, submission
 		return err
 	}
 
-	submissionResult.ZoneID = zone.ZoneID
-
 	if submission.UserID != nil {
-		if _, err := c.db.UserZoneReputation().ProcessReputationPointAdditions(ctx, *submission.UserID, zone.ZoneID, reputationPoints); err != nil {
+		userZoneReputation, err := c.db.UserZoneReputation().ProcessReputationPointAdditions(ctx, *submission.UserID, zone.ZoneID, reputationPoints)
+		if err != nil {
 			return err
 		}
+
+		submissionResult.ReputationUp = userZoneReputation.LevelsGained > 0
 	}
+
+	submissionResult.ZoneID = zone.ZoneID
 
 	return nil
 }

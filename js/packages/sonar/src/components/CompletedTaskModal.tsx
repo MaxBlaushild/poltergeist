@@ -1,24 +1,27 @@
 import React, { useEffect } from 'react';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
-import { CompletedTask, useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
-import { PointOfInterestChallenge, QuestNode } from '@poltergeist/types';
+import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
+import { QuestNode } from '@poltergeist/types';
 import { useInventory } from '@poltergeist/contexts';
-import { usePointOfInterestContext } from '../contexts/PointOfInterestContext.tsx';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { useDiscoveriesContext } from '../contexts/DiscoveriesContext.tsx';
+import { useZoneContext } from '@poltergeist/contexts';
+
 interface QuestNodes {
   currentNode: QuestNode;
   nextNode: QuestNode | null;
 }
 
 export const CompletedTaskModal = () => {
+  const { zones } = useZoneContext();
   const { getInventoryItemById } = useInventory();
   const { untrackQuest } = useQuestLogContext();
   const { currentUser } = useUserProfiles();
-  const { removeCompletedTask, completedTask } = useCompletedTaskContext();
+  const { removeCompletedTask, completedTask, setLevelUp, setReputationUp } = useCompletedTaskContext();
   const { discoveries } = useDiscoveriesContext();
 
+  const reputedZone = zones.find((zone) => zone.id === completedTask?.result?.zoneID);
 
   const findNextNode = (node: QuestNode): QuestNodes | null | undefined => {
     for (const objective of node.objectives) {
@@ -34,7 +37,6 @@ export const CompletedTaskModal = () => {
         if (result) return result;
       }
     }
-
     return undefined;
   }
 
@@ -56,92 +58,96 @@ export const CompletedTaskModal = () => {
 
   if (!completedTask) return null;
 
-  const reward = getInventoryItemById(completedTask?.challenge.inventoryItemId);
-
-  return <Modal size={ModalSize.FREE} onClose={removeCompletedTask}>
-    <div className="flex flex-col items-center gap-4 p-6 rounded-lg">
-      <div className="animate-bounce bg-white rounded-lg shadow-md p-3">
-        <h1 className="text-2xl font-bold text-amber-500 text-center">Victory!</h1>
-      </div>
+  return <Modal size={ModalSize.FREE} onClose={() => {
+    removeCompletedTask();
+    setTimeout(() => {
+      if (completedTask?.result.levelUp) {
+        setLevelUp(true);
+      }
+      if (completedTask?.result.reputationUp) {
+        setReputationUp(true);
+      }
+    }, 200);
+  }}>
+    <div className="flex flex-col items-center gap-2 p-4 rounded-lg">
+      <h1 className="text-xl font-bold text-amber-500">Victory!</h1>
       
-      <div className="w-full space-y-2">
-        <div className="bg-white rounded-lg shadow-md p-3">
-          <h2 className="text-xl font-bold text-center text-emerald-500 mb-3">Completed</h2>
-          <div className="flex items-center gap-4">
-            <img 
-              src={currentNode?.pointOfInterest?.imageURL}
-              alt={currentNode?.pointOfInterest?.name}
-              className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
-            />
-            <div className="flex-grow text-left">
-              <p className="text-base font-semibold text-gray-900 mb-2">
-                {currentNode?.pointOfInterest?.name}
-              </p>
-              <p className="text-base font-semibold text-gray-600">
-                {completedTask.challenge.question}
-              </p>
-              {isFinished && (
-                <p className="text-sm font-medium text-emerald-600 mt-2">
-                  Quest Complete: {completedTask.quest.name}
-                </p>
-              )}
-            </div>
+      <div className="w-full bg-white rounded-lg shadow-md p-2">
+        <div className="flex items-center gap-2">
+          <img 
+            src={currentNode?.pointOfInterest?.imageURL}
+            alt={currentNode?.pointOfInterest?.name}
+            className="w-12 h-12 object-cover rounded-lg"
+          />
+          <div className="flex-grow">
+            <p className="text-sm font-semibold text-gray-900">{currentNode?.pointOfInterest?.name}</p>
+            <p className="text-xs text-gray-600">{completedTask.challenge.question}</p>
+            {isFinished && (
+              <p className="text-xs text-emerald-600">Quest Complete: {completedTask.quest.name}</p>
+            )}
           </div>
         </div>
       </div>
 
-      {!isFinished && <div className="w-full space-y-2">
-        <div className="bg-white rounded-lg shadow-md p-3">
-          <h2 className="text-xl font-bold text-center text-emerald-500 mb-3">Next up</h2>
-          <div className="flex items-center gap-4">
+      {!isFinished && (
+        <div className="w-full bg-white rounded-lg shadow-md p-2">
+          <div className="flex items-center gap-2">
             <img 
               src={discoveriesForUser[nextNode?.pointOfInterest?.id] ? nextNode?.pointOfInterest?.imageURL : 'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp'}
               alt={nextNode?.pointOfInterest?.name}
-              className="w-16 h-16 object-cover rounded-lg flex-shrink-0"
+              className="w-12 h-12 object-cover rounded-lg"
             />
-            <div className="flex-grow text-left">
-              <p className="text-base font-semibold text-gray-900 mb-2">
-                {nextNode?.pointOfInterest?.name}
-              </p>
-              <p className="text-base font-semibold text-gray-600">
-                {nextNode?.objectives[0].challenge.question}
-              </p>
+            <div className="flex-grow">
+              <p className="text-sm font-semibold text-gray-900">{nextNode?.pointOfInterest?.name}</p>
+              <p className="text-xs text-gray-600">{nextNode?.objectives[0].challenge.question}</p>
             </div>
           </div>
         </div>
-      </div>}
+      )}
 
-      {/* https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp */}
+      <div className="w-full grid grid-cols-2 gap-2">
+        {completedTask.result.experienceAwarded > 0 && (
+          <div className="bg-white rounded-lg p-2 shadow-md">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg border border-blue-400 flex items-center justify-center">
+                <span className="text-sm font-bold text-blue-600">XP</span>
+              </div>
+              <span className="text-sm font-bold">+{completedTask.result.experienceAwarded}</span>
+            </div>
+          </div>
+        )}
 
-      {/* <div className="w-full bg-white rounded-xl p-6 space-y-4 shadow-md">
-        <h2 className="text-2xl font-bold text-center text-emerald-500">Rewards</h2>
-        
-        <div className="flex flex-col gap-3">
-          <div className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm">
-            <span className="text-lg text-gray-600">Experience</span>
-            <span className="text-xl font-bold text-amber-500">+100</span>
+        {completedTask.result.reputationAwarded > 0 && reputedZone && (
+          <div className="bg-white rounded-lg p-2 shadow-md">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg border border-purple-400 flex items-center justify-center">
+                <span className="text-sm font-bold text-purple-600">REP</span>
+              </div>
+              <div>
+                <span className="text-sm font-bold">+{completedTask.result.reputationAwarded}</span>
+                <p className="text-xs text-gray-600">{reputedZone.name}</p>
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm">
-            <span className="text-lg text-gray-600">Coins</span>
-            <span className="text-xl font-bold text-amber-500">+50</span>
-          </div>
-        </div>
-      </div> */}
-
-      <div className="w-full bg-white rounded-xl p-4 shadow-md">
-        <h2 className="text-xl font-bold text-center text-emerald-500 mb-3">Earned an item!</h2>
-        <div className="flex items-center gap-4">
-          <div className="relative flex-shrink-0">
-            <div className="absolute -inset-1 bg-amber-300 rounded-lg blur opacity-25 animate-pulse"></div>
-            <img 
-              src={reward.imageUrl}
-              alt={reward.name}
-              className="relative w-16 h-16 object-cover rounded-lg border-2 border-amber-400"
-            />
-          </div>
-          <span className="text-lg font-bold text-gray-800 text-left">{reward.name}</span>
-        </div>
+        )}
       </div>
+
+      {completedTask.result.itemsAwarded.length > 0 && (
+        <div className="w-full bg-white rounded-lg p-2 shadow-md">
+          <div className="flex flex-wrap gap-2 justify-center">
+            {completedTask.result.itemsAwarded.map((reward, index) => (
+              <div key={index} className="flex items-center gap-1">
+                <img 
+                  src={reward.imageUrl}
+                  alt={reward.name}
+                  className="w-8 h-8 object-cover rounded-lg border border-amber-400"
+                />
+                <span className="text-xs font-bold">{reward.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   </Modal>;
 };

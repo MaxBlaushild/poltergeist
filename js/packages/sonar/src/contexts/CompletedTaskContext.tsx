@@ -1,30 +1,46 @@
 import React from 'react';
-import { PointOfInterestChallenge, Quest, InventoryItem, QuestNode } from '@poltergeist/types';
+import { PointOfInterestChallenge, Quest, QuestNode, SubmissionResult, Zone } from '@poltergeist/types';
 import { createContext, useContext, useState } from 'react';
 import { useQuestLogContext } from './QuestLogContext.tsx';
 
 export interface CompletedTask {
   quest: Quest;
   challenge: PointOfInterestChallenge;
+  result: SubmissionResult;
 }
 
 interface CompletedTaskContextType {
   completedTask: CompletedTask | null;
-  setCompletedTask: (challenge: PointOfInterestChallenge) => void;
+  setCompletedTask: (challenge: PointOfInterestChallenge, result: SubmissionResult) => void;
   removeCompletedTask: () => void;
+  levelUp: boolean;
+  setLevelUp: (levelUp: boolean) => void;
+  reputationUp: boolean;
+  setReputationUp: (reputationUp: boolean) => void;
+  zoneId: string | null;
+  setZoneId: (zoneId: string | null) => void;
 }
 
 export const CompletedTaskContext = createContext<CompletedTaskContextType>({
   completedTask: null,
   setCompletedTask: () => {},
   removeCompletedTask: () => {},
+  levelUp: false,
+  setLevelUp: () => {},
+  reputationUp: false,
+  setReputationUp: () => {},
+  zoneId: null,
+  setZoneId: () => {},
 });
 
 export const CompletedTaskProvider = ({ children }: { children: React.ReactNode }) => {
   const { quests } = useQuestLogContext();
   const [completedTask, _setCompletedTask] = useState<CompletedTask | null>(null);
+  const [levelUp, setLevelUp] = useState(false);
+  const [reputationUp, setReputationUp] = useState(false);
+  const [zoneId, setZoneId] = useState<string | null>(null);
 
-  const setCompletedTask = (challenge: PointOfInterestChallenge) => {
+  const setCompletedTask = (challenge: PointOfInterestChallenge, result: SubmissionResult) => {
     const searchNodeForChallenge = (quest: Quest, node: QuestNode): Quest | null => {
       for (const objective of node.objectives) {
         if (objective.challenge.id === challenge.id) {
@@ -45,7 +61,8 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
     for (const quest of quests) {
       const completedQuest = searchNodeForChallenge(quest, quest.rootNode);
       if (completedQuest) {
-        _setCompletedTask({ quest: completedQuest, challenge });
+        _setCompletedTask({ quest: completedQuest, challenge, result });
+        setZoneId(result.zoneID);
         return;
       }
     }
@@ -56,7 +73,17 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
   };
 
   return (
-    <CompletedTaskContext.Provider value={{ completedTask, setCompletedTask, removeCompletedTask }}>
+    <CompletedTaskContext.Provider value={{ 
+      completedTask, 
+      setCompletedTask, 
+      removeCompletedTask, 
+      levelUp, 
+      setLevelUp, 
+      reputationUp, 
+      setReputationUp,
+      zoneId,
+      setZoneId,
+    }}>
       {children}
     </CompletedTaskContext.Provider>
   );

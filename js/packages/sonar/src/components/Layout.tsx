@@ -13,6 +13,7 @@ import { ImageBadge } from './shared/ImageBadge.tsx';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
 import useLeaveMatch from '../hooks/useLeaveMatch.ts';
+import { useUserLevel } from '@poltergeist/hooks';
 
 const ProfilePictureModal = ({ onExit }: { onExit: () => void }) => {
   const { imageGenerations } = useImageGenerations();
@@ -156,6 +157,8 @@ export function Layout() {
   const { currentUser } = useUserProfiles();
   const { hasCurrentMatch, matchID } = useHasCurrentMatch();
   const { leaveMatch } = useLeaveMatch();
+  const { userLevel } = useUserLevel();
+
   const toggleNav = () => {
     setIsNavOpen(!isNavOpen);
     setShowProfilePicture(false);
@@ -232,16 +235,16 @@ export function Layout() {
         </div>
         <div className="px-4 mb-6">
           <div className="flex items-center justify-between mb-2">
-            <span className="font-bold">Level 5</span>
+            <span className="font-bold">Level {userLevel?.level}</span>
             <span className="text-sm text-gray-600">
-              2750 / 5000 XP
+              {userLevel?.experiencePointsOnLevel} / {userLevel?.experienceToNextLevel} XP
             </span>
           </div>
           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div 
               className="h-full bg-blue-500 transition-all duration-300"
               style={{
-                width: '55%'
+                width: `${ userLevel ? (userLevel.experiencePointsOnLevel / userLevel.experienceToNextLevel) * 100 : 0}%`
               }}
             />
           </div>

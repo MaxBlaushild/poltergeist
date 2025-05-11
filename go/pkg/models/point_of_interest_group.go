@@ -21,6 +21,7 @@ type PointOfInterestGroup struct {
 	Name             string                       `json:"name"`
 	Description      string                       `json:"description"`
 	ImageUrl         string                       `json:"imageUrl"`
+	Hidden           bool                         `json:"hidden" gorm:"default:false"`
 	GroupMembers     []PointOfInterestGroupMember `json:"groupMembers" gorm:"foreignKey:PointOfInterestGroupID"`
 	PointsOfInterest []PointOfInterest            `json:"pointsOfInterest" gorm:"many2many:point_of_interest_group_members;associationForeignKey:PointOfInterestID;foreignKey:ID;joinForeignKey:PointOfInterestGroupID;joinReferences:PointOfInterestID"`
 	Type             PointOfInterestGroupType     `json:"type"`

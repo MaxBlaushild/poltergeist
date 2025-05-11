@@ -38,6 +38,8 @@ func (h *userLevelHandler) FindOrCreateForUser(ctx context.Context, userID uuid.
 		ExperiencePointsOnLevel: 0,
 	}
 
+	userLevel.ExperienceToNextLevel = userLevel.XPToNextLevel()
+
 	return userLevel, h.Create(ctx, userLevel)
 }
 

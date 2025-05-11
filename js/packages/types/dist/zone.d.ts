@@ -7,6 +7,7 @@ export type Zone = {
     radius: number;
     createdAt: string;
     updatedAt: string;
+    description: string;
     boundary: number[][];
     boundaryCoords: {
         latitude: number;

@@ -8,6 +8,7 @@ export const Zones = () => {
   const [latitude, setLatitude] = useState(0);
   const [longitude, setLongitude] = useState(0);
   const [radius, setRadius] = useState(0);
+  const [description, setDescription] = useState('');
   const [showCreateZone, setShowCreateZone] = useState(false);
   const navigate = useNavigate();
   
@@ -104,6 +105,21 @@ export const Zones = () => {
             />
           </div>
           <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: '4px',
+                border: '1px solid #ccc',
+                minHeight: '100px',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px' }}>Latitude:</label>
             <input
               type="number"
@@ -117,6 +133,7 @@ export const Zones = () => {
               }}
             />
           </div>
+
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px' }}>Longitude:</label>
             <input
@@ -165,6 +182,7 @@ export const Zones = () => {
                   latitude,
                   longitude,
                   radius,
+                  description,
                   createdAt: new Date(),
                   updatedAt: new Date()
                 });

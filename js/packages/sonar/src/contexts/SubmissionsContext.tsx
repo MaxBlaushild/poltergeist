@@ -7,27 +7,9 @@ import React, {
 } from 'react';
 import { useAPI, useInventory, useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
-import { InventoryItem } from '@poltergeist/types';
+import { InventoryItem, SubmissionResult } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 
-export type Judgement = {
-  judgement: InnerJudgement;
-  reason: string;
-};
-
-export type InnerJudgement = {
-  judgement: InnerMostJudgement;
-};
-
-export type InnerMostJudgement = {
-  judgement: boolean;
-  reason: string;
-};
-
-export type CapturePointOfInterestResponse = {
-  item: InventoryItem;
-  judgement: InnerJudgement;
-};
 
 interface SubmissionsContextType {
   submissions: PointOfInterestChallengeSubmission[];
@@ -39,7 +21,7 @@ interface SubmissionsContextType {
     image?: File | undefined,
     teamId?: string | undefined,
     userId?: string | undefined,
-  ) => Promise<{ correctness: boolean, reason: string } | undefined>;
+  ) => Promise<SubmissionResult | undefined>;
 }
 
 interface SubmissionsContextProviderProps {
@@ -86,7 +68,7 @@ export const SubmissionsContextProvider: React.FC<
     image?: File | undefined,
     teamId?: string | undefined,
     userId?: string | undefined,
-  ): Promise<{ correctness: boolean, reason: string } | undefined> => {
+  ): Promise<SubmissionResult | undefined> => {
     const key = `${teamId ? teamId : userId}/${challengeId}.webp`;
     let imageUrl = '';
 
@@ -97,7 +79,7 @@ export const SubmissionsContextProvider: React.FC<
       imageUrl = presignedUrl.split("?")[0];
     }
 
-    var response = await apiClient.post<CapturePointOfInterestResponse>(`/sonar/pointOfInterest/challenge`, {
+    var response = await apiClient.post<SubmissionResult>(`/sonar/pointOfInterest/challenge`, {
       teamId,
       userId,
       challengeId,
@@ -105,13 +87,9 @@ export const SubmissionsContextProvider: React.FC<
       imageSubmissionUrl: imageUrl,
     });
 
-    if (response.judgement.judgement.judgement) {
-      setPresentedInventoryItem(response.item);
-    }
-
     fetchSubmissions();
 
-    return { correctness: response?.judgement?.judgement?.judgement ?? false, reason: response?.judgement?.judgement?.reason ?? 'Failed for an unknown reason.' };
+    return response;
   }, [apiClient, getPresignedUploadURL, uploadMedia, setPresentedInventoryItem]);
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAPI } from './api';
-import { Category, Activity, InventoryItem, OwnedInventoryItem } from '@poltergeist/types';
+import { Category, Activity, InventoryItem, OwnedInventoryItem, SubmissionResult } from '@poltergeist/types';
 
 interface InventoryContextType {
   inventoryItems: InventoryItem[];
@@ -8,7 +8,7 @@ interface InventoryContextType {
   inventoryItemError: string | null;
   setPresentedInventoryItem: (inventoryItem: InventoryItem | null) => void;
   inventoryItemsAreLoading: boolean;
-  consumeItem: (ownedInventoryItemId: string, metadata?: UseItemMetadata) => Promise<void>;
+  consumeItem: (ownedInventoryItemId: string, metadata?: UseItemMetadata) => Promise<SubmissionResult | undefined>;
   useItemError: string | null;
   isUsingItem: boolean;
   usedItem: InventoryItem | null;
@@ -31,7 +31,7 @@ const InventoryContext = createContext<InventoryContextType>({
   inventoryItemError: null,
   setPresentedInventoryItem: (item: InventoryItem | null) => {},
   inventoryItemsAreLoading: false,
-  consumeItem: () => Promise.resolve(),
+  consumeItem: () => Promise.resolve(undefined),
   useItemError: null,
   isUsingItem: false,
   usedItem: null,
@@ -88,12 +88,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     fetchOwnedInventoryItems();
   }, []);
 
-  const consumeItem = async (ownedInventoryItemId: string, metadata: UseItemMetadata = {}) => {
+  const consumeItem = async (ownedInventoryItemId: string, metadata: UseItemMetadata = {}) : Promise<SubmissionResult | undefined> => {
     try {
       setIsUsingItem(true);
-      await apiClient.post(`/sonar/inventory/${ownedInventoryItemId}/use`, {
+      const result = await apiClient.post<SubmissionResult>(`/sonar/inventory/${ownedInventoryItemId}/use`, {
         ...metadata,
       });
+      return result;
     } catch (err) {
       setUseItemError(err instanceof Error ? err.message : 'Failed to use item');
     } finally {

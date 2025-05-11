@@ -280,6 +280,8 @@ type ZoneHandle interface {
 	Delete(ctx context.Context, zoneID uuid.UUID) error
 	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
+	UpdateNameAndDescription(ctx context.Context, zoneID uuid.UUID, name string, description string) error
+	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error)
 }
 
 type LocationArchetypeHandle interface {
@@ -355,4 +357,5 @@ type UserLevelHandle interface {
 
 type UserZoneReputationHandle interface {
 	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
+	FindOrCreateForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (*models.UserZoneReputation, error)
 }

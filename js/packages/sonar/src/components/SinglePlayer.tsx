@@ -4,7 +4,7 @@ import { useAuth } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
 import { useZoneBoundaries } from '../hooks/useZoneBoundaries.ts';
-import { PointOfInterest, PointOfInterestDiscovery } from '@poltergeist/types';
+import { PointOfInterest, PointOfInterestDiscovery, Zone } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
 import { TagFilter } from './TagFilter.tsx';
 import { Drawer } from './Drawer.tsx';
@@ -24,10 +24,12 @@ import { TrackedQuests } from './TrackedQuests.tsx';
 import { CompletedTaskModal } from './CompletedTaskModal.tsx';
 import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
 import { ZoneWidget } from './ZoneWidget.tsx';
+import { LevelUpModal } from './LevelUpModal.tsx';
+import { ReputationUpModal } from './ReputationUpModal.tsx';
 
 const MemoizedMap = React.memo(Map);
 
-const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel, setAreMapOverlaysVisible }: {
+const MapOverlays = React.memo(({ areMapOverlaysVisible, discoveries, totalPointsOfInterest, openPointOfInterestPanel }: {
   areMapOverlaysVisible: boolean;
   discoveries: PointOfInterestDiscovery[];
   totalPointsOfInterest: PointOfInterest[];
@@ -106,6 +108,8 @@ export const SinglePlayer = () => {
     }
   };
 
+  const [levelsGained, setLevelsGained] = useState(0);
+  const [zone, setZone] = useState<Zone | undefined>(undefined);
   const [isPanelVisible, setIsPanelVisible] = useState(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
   const [isQuestLogOpen, setIsQuestLogOpen] = useState(false);
@@ -158,7 +162,6 @@ export const SinglePlayer = () => {
         discoveries={discoveries}
         totalPointsOfInterest={totalPointsOfInterest || []}
         openPointOfInterestPanel={openPointOfInterestPanel}
-        setAreMapOverlaysVisible={setAreMapOverlaysVisible}
       />
       <Drawer isVisible={isPanelVisible} onClose={closePanel} peekHeight={0}>
         {selectedPointOfInterest && (
@@ -201,6 +204,8 @@ export const SinglePlayer = () => {
       <CompletedTaskModal />
       <NewItemModal />
       <UsedItemModal />
+      <LevelUpModal />
+      <ReputationUpModal />
     </MemoizedMap>
   );
 };

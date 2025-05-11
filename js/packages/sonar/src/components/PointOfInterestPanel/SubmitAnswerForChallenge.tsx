@@ -17,12 +17,12 @@ import {
   MatchInventoryItemEffect,
   OwnedInventoryItem,
   PointOfInterest,
+  SubmissionResult,
   Team,
   User,
 } from '@poltergeist/types';
 import { scrambleAndObscureWords } from '../../utils/scrambleSentences.ts';
 import {
-  CapturePointOfInterestResponse,
   useSubmissionsContext,
 } from '../../contexts/SubmissionsContext.tsx';
 import { mapCaptureTiers } from '../../utils/mapCaptureTiers.ts';
@@ -92,15 +92,15 @@ export const SubmitAnswerForChallenge = (
     return distance <= 100; // Within 100 meters
   })() : false;
 
-  const onSubmit = async (isCorrect: boolean, reason: string) => {
-    setCorrectness(isCorrect);
-    setReason(reason);
+  const onSubmit = async (result: SubmissionResult) => {
+    setCorrectness(result?.successful ?? false);
+    setReason(result?.reason ?? 'Failed for an unknown reason.');
 
-    if (isCorrect) {
+    if (result.successful) {
       setTimeout(() => {
         setSubmissions([...submissions, {
           id: '',
-          isCorrect,
+          isCorrect: result.questCompleted,
           text: textSubmission ?? '',
           teamId: props.usersTeam?.id,
           userId: currentUser?.id,
@@ -110,7 +110,7 @@ export const SubmitAnswerForChallenge = (
           updatedAt: new Date(),
         }]);
         props.onSubmit(true);
-        setCompletedTask(props.challenge);
+        setCompletedTask(props.challenge, result);
         try {
           refreshQuestLog();
         } catch (e) {
@@ -170,7 +170,7 @@ export const SubmitAnswerForChallenge = (
                     props.usersTeam?.id,
                     props.usersTeam ? undefined : currentUser?.id
                   );
-                  onSubmit(result?.correctness ?? false, result?.reason ?? 'Failed for an unknown reason.');
+                  onSubmit(result!);
                 } catch (e) {
                   console.log(e);
                 } finally {
@@ -184,11 +184,11 @@ export const SubmitAnswerForChallenge = (
                 alt={brilliantRuby?.name}
                 className="rounded-lg border-black border-2 h-12 w-12"
                 onClick={async () => {
-                  await consumeItem(hasRuby.id, {
+                  const result = await consumeItem(hasRuby.id, {
                     pointOfInterestId: props.challenge.pointOfInterestId,
                     challengeId: props.challenge.id,
                   });
-                  onSubmit(true, 'Used a ruby to answer the challenge');
+                  onSubmit(result!);
                 }}
               />
             )}
