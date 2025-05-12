@@ -82,3 +82,7 @@ func (h *userHandle) DeleteAll(ctx context.Context) error {
 func (h *userHandle) UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error {
 	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("profile_picture_url", url).Error
 }
+
+func (h *userHandle) UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("has_seen_tutorial", hasSeenTutorial).Error
+}

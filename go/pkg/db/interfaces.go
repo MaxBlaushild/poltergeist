@@ -79,6 +79,7 @@ type UserHandle interface {
 	Delete(ctx context.Context, userID uuid.UUID) error
 	DeleteAll(ctx context.Context) error
 	UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error
+	UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error
 }
 
 type TeamHandle interface {
