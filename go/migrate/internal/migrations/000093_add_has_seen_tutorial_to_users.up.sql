@@ -1,0 +1,1 @@
+alter table users add column has_seen_tutorial boolean default false;

@@ -176,7 +176,7 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]googlemaps.Place, error) {
 	var placesInZone []googlemaps.Place
 	attempts := 0
-	maxAttempts := 5
+	maxAttempts := 2
 
 	for attempts < maxAttempts && int32(len(placesInZone)) < numberOfPlaces {
 		randomPoint := zone.GetRandomPoint()

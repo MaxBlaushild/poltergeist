@@ -341,11 +341,11 @@ export const Zone = () => {
   const [isEditingZone, setIsEditingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
-  const {
-    candidates,
-    loading: candidatesLoading,
-    error: candidatesError,
-  } = useCandidates(query);
+  // const {
+  //   candidates,
+  //   loading: candidatesLoading,
+  //   error: candidatesError,
+  // } = useCandidates(query);
 
   const {
     loading: generatePointsOfInterestLoading,
@@ -713,7 +713,7 @@ export const Zone = () => {
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   onChange={handleQueryChange}
                 />
-                {showPlaces && candidates && candidates.length > 0 && (
+                {/* {showPlaces && candidates && candidates.length > 0 && (
                   <div className="w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
                     {candidates.map((candidate, index) => (
                       <div
@@ -725,7 +725,7 @@ export const Zone = () => {
                       </div>
                     ))}
                   </div>
-                )}
+                )} */}
               </div>
             </div>
           </div>

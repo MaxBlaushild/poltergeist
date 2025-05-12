@@ -15,4 +15,5 @@ type User struct {
 	Active            bool       `json:"active"`
 	Profile           *SonarUser `json:"profile" gorm:"foreignKey:ID"`
 	ProfilePictureUrl string     `json:"profilePictureUrl"`
+	HasSeenTutorial   bool       `json:"hasSeenTutorial" gorm:"default:false"`
 }
