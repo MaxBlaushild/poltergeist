@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 )
 
+// QuestCopy is the single source of truth for this struct definition.
 type QuestCopy struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -51,12 +52,18 @@ const generateQuestImagePromptTemplate = `
 
 const style = "natural"
 
+// generateQuestCopy is the primary implementation.
+// It calls generateQuestCopyInternalFunc if set (for testing).
 func (c *client) generateQuestCopy(
 	ctx context.Context,
 	locations []string,
 	descriptions []string,
 	challenges []string,
 ) (*QuestCopy, error) {
+	if generateQuestCopyInternalFunc != nil {
+		return generateQuestCopyInternalFunc(ctx, locations, descriptions, challenges)
+	}
+
 	log.Printf("Generating quest copy for locations: %v, descriptions: %v, and challenges: %v", locations, descriptions, challenges)
 
 	tasks := ""
@@ -91,7 +98,13 @@ func (c *client) generateQuestCopy(
 	return &questCopy, nil
 }
 
+// generateQuestImage is the primary implementation.
+// It calls generateQuestImageInternalFunc if set (for testing).
 func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (string, error) {
+	if generateQuestImageInternalFunc != nil {
+		return generateQuestImageInternalFunc(ctx, questCopy)
+	}
+
 	log.Printf("Generating quest image for quest: %s", questCopy.Name)
 
 	prompt, err := c.generateQuestImagePrompt(questCopy)
@@ -119,7 +132,7 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 
 	log.Printf("Generated image: %s", base64Image)
 
-	imageUrl, err := c.UploadImage(ctx, base64Image)
+	imageUrl, err := c.UploadImage(ctx, base64Image) // Assuming c.UploadImage exists
 	if err != nil {
 		log.Printf("Error processing image: %v", err)
 		return "", err
@@ -131,7 +144,9 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 
 func (c *client) generateQuestImagePrompt(questCopy QuestCopy) (string, error) {
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
-		Question: fmt.Sprintf(generateQuestImagePromptTemplate, questCopy.Name, questCopy.Description),
+		// The original prompt here had two %s placeholders but only passed questCopy.Name.
+		// Assuming it meant to use both Name and Description.
+		Question: fmt.Sprintf(generateQuestImagePromptTemplate, fmt.Sprintf("Name: %s\nDescription: %s", questCopy.Name, questCopy.Description)),
 	})
 	if err != nil {
 		log.Printf("Error getting response from DeepPriest: %v", err)
@@ -146,3 +161,5 @@ func (c *client) generateQuestImagePrompt(questCopy QuestCopy) (string, error) {
 
 	return questImagePrompt.Description, nil
 }
+
+// UploadImage method is defined in image_processing.go

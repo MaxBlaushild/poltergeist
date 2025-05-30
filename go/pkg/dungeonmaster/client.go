@@ -43,6 +43,14 @@ func NewClient(
 	}
 }
 
+// generateQuestCopyInternalFunc and generateQuestImageInternalFunc are package-level
+// variables used by the test suite to replace the actual implementations of
+// generateQuestCopy and generateQuestImage (defined in prompt_engineering.go).
+var (
+	generateQuestCopyInternalFunc func(ctx context.Context, locations []string, descriptions []string, challenges []string) (*QuestCopy, error)
+	generateQuestImageInternalFunc func(ctx context.Context, questCopy QuestCopy) (string, error)
+)
+
 func (c *client) GenerateQuest(
 	ctx context.Context,
 	zone *models.Zone,
@@ -86,6 +94,8 @@ func (c *client) GenerateQuest(
 	}
 
 	log.Println("Generating quest copy")
+	// This will call (c *client) generateQuestCopy defined in prompt_engineering.go,
+	// which in turn calls generateQuestCopyInternalFunc if it's set by a test.
 	questCopy, err := c.generateQuestCopy(ctx, locations, descriptions, challenges)
 	if err != nil {
 		log.Printf("Error generating quest copy: %v", err)
@@ -96,6 +106,8 @@ func (c *client) GenerateQuest(
 	}
 
 	log.Println("Generating quest image")
+	// This will call (c *client) generateQuestImage defined in prompt_engineering.go,
+	// which in turn calls generateQuestImageInternalFunc if it's set by a test.
 	questImage, err := c.generateQuestImage(ctx, *questCopy)
 	if err != nil {
 		log.Printf("Error generating quest image: %v", err)
@@ -150,7 +162,17 @@ func (c *client) processNode(
 		log.Printf("Excluded type: %s", excludedType)
 	}
 
-	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, locationArchetype.IncludedTypes, locationArchetype.ExcludedTypes, 1)
+	// Ensure includedTypes and excludedTypes are []googlemaps.PlaceType for SeedPointsOfInterest
+	var googleIncludedTypes []googlemaps.PlaceType
+	for _, t := range locationArchetype.IncludedTypes {
+		googleIncludedTypes = append(googleIncludedTypes, googlemaps.PlaceType(t))
+	}
+	var googleExcludedTypes []googlemaps.PlaceType
+	for _, t := range locationArchetype.ExcludedTypes {
+		googleExcludedTypes = append(googleExcludedTypes, googlemaps.PlaceType(t))
+	}
+
+	pointsOfInterest, err := c.locationSeeder.SeedPointsOfInterest(ctx, *zone, googleIncludedTypes, googleExcludedTypes, 1)
 	if err != nil {
 		log.Printf("Error seeding points of interest: %v", err)
 		return err
@@ -193,21 +215,25 @@ func (c *client) processNode(
 	for i, allotedChallenge := range questArchTypeNode.Challenges {
 		log.Printf("Processing challenge %d", i)
 
-		randomChallenge, err := questArchTypeNode.GetRandomChallenge()
+		randomChallengeText, err := questArchTypeNode.GetRandomChallenge() // This should return string
 		if err != nil {
 			log.Printf("Error getting random challenge: %v", err)
 			return err
 		}
-		*challenges = append(*challenges, randomChallenge)
+		*challenges = append(*challenges, randomChallengeText)
 
-		log.Printf("Creating challenge: %s", randomChallenge)
+		log.Printf("Creating challenge: %s", randomChallengeText)
+		// The db.PointOfInterestChallengeHandle().Create() expects:
+		// pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int, pointOfInterestGroupID *uuid.UUID
+		// allotedChallenge is models.QuestArchetypeNodeChallenge. It should have Reward and potentially Type/Data for challenge text.
+		// Assuming allotedChallenge.Challenge is the string and allotedChallenge.Reward is the int for inventoryItemID (as per test setup).
 		challenge, err := c.dbClient.PointOfInterestChallenge().Create(
 			ctx,
 			pointOfInterest.ID,
-			i,
-			randomChallenge,
-			allotedChallenge.Reward,
-			&quest.ID,
+			i, // tier
+			randomChallengeText, // question
+			allotedChallenge.Reward, // inventoryItemID (using Reward as per previous logic)
+			&quest.ID, // pointOfInterestGroupID
 		)
 		if err != nil {
 			log.Printf("Error creating challenge: %v", err)
