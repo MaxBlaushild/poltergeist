@@ -47,6 +47,7 @@ type DbClient interface {
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserZoneReputation() UserZoneReputationHandle
+	UserEquipment() UserEquipmentHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -359,4 +360,12 @@ type UserLevelHandle interface {
 type UserZoneReputationHandle interface {
 	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
 	FindOrCreateForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (*models.UserZoneReputation, error)
+}
+
+type UserEquipmentHandle interface {
+	GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
+	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID, equipmentSlot string) (*models.UserEquipment, error)
+	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
+	UnequipItemByOwnedInventoryItemID(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
+	GetEquippedItemInSlot(ctx context.Context, userID uuid.UUID, equipmentSlot string) (*models.UserEquipment, error)
 }

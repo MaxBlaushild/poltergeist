@@ -168,6 +168,9 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/pointsOfInterest/discoveries", middleware.WithAuthentication(s.authClient, s.getPointOfInterestDiscoveries))
 	r.GET("/sonar/pointsOfInterest/challenges/submissions", middleware.WithAuthentication(s.authClient, s.getPointOfInterestChallengeSubmissions))
 	r.GET("/sonar/ownedInventoryItems", middleware.WithAuthentication(s.authClient, s.getOwnedInventoryItems))
+	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.getUserEquipment))
+	r.POST("/sonar/equipment/equip", middleware.WithAuthentication(s.authClient, s.equipItem))
+	r.DELETE("/sonar/equipment/unequip/:slot", middleware.WithAuthentication(s.authClient, s.unequipItem))
 	r.POST("/sonar/matches/:id/invite", middleware.WithAuthentication(s.authClient, s.inviteToMatch))
 	r.GET("/sonar/matches/:id/users", middleware.WithAuthentication(s.authClient, s.getMatch))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
@@ -3015,5 +3018,88 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 
 	c.JSON(200, gin.H{
 		"message": "everything cool",
+	})
+}
+
+func (s *server) getUserEquipment(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	equipment, err := s.quartermaster.GetUserEquipment(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, equipment)
+}
+
+func (s *server) equipItem(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var requestBody struct {
+		OwnedInventoryItemID uuid.UUID `json:"ownedInventoryItemId" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	err = s.quartermaster.EquipItem(ctx, user.ID, requestBody.OwnedInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "item equipped successfully",
+	})
+}
+
+func (s *server) unequipItem(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	equipmentSlot := ctx.Param("slot")
+	if equipmentSlot == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "equipment slot is required",
+		})
+		return
+	}
+
+	err = s.quartermaster.UnequipItem(ctx, user.ID, equipmentSlot)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "item unequipped successfully",
 	})
 }
