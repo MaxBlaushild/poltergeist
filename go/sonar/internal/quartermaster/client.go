@@ -22,6 +22,9 @@ type Quartermaster interface {
 	GetInventoryItems() []InventoryItem
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
 	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (InventoryItem, error)
+	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
+	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
+	GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
 }
 
 type UseItemMetadata struct {
@@ -125,4 +128,52 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 			}
 		}
 	}
+}
+
+func (c *client) EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error {
+	// First, get the owned inventory item to determine what it is
+	ownedItem, err := c.db.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	if err != nil {
+		return fmt.Errorf("failed to find owned inventory item: %w", err)
+	}
+
+	// Verify the item belongs to the user
+	if ownedItem.UserID == nil || *ownedItem.UserID != userID {
+		return fmt.Errorf("item does not belong to user")
+	}
+
+	// Get the item definition to check if it's equippable
+	item, err := c.FindItemForItemID(ownedItem.InventoryItemID)
+	if err != nil {
+		return fmt.Errorf("failed to find item definition: %w", err)
+	}
+
+	// Check if the item is equippable
+	if item.ItemType != ItemTypeEquippable {
+		return fmt.Errorf("item is not equippable")
+	}
+
+	// Equip the item
+	_, err = c.db.UserEquipment().EquipItem(ctx, userID, ownedInventoryItemID, string(item.EquipmentSlot))
+	if err != nil {
+		return fmt.Errorf("failed to equip item: %w", err)
+	}
+
+	return nil
+}
+
+func (c *client) UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error {
+	err := c.db.UserEquipment().UnequipItem(ctx, userID, equipmentSlot)
+	if err != nil {
+		return fmt.Errorf("failed to unequip item: %w", err)
+	}
+	return nil
+}
+
+func (c *client) GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error) {
+	equipment, err := c.db.UserEquipment().GetUserEquipment(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user equipment: %w", err)
+	}
+	return equipment, nil
 }

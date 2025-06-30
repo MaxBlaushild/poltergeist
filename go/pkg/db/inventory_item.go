@@ -120,6 +120,12 @@ func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInvent
 	if result.Error != nil {
 		return result.Error
 	}
+	
+	// If this item is equipped and we're consuming it, unequip it first
+	if item.UserID != nil {
+		h.db.Where("owned_inventory_item_id = ?", ownedInventoryItemID).Delete(&models.UserEquipment{})
+	}
+	
 	item.Quantity -= 1
 	return h.db.Save(&item).Error
 }
