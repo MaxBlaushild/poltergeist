@@ -1,10 +1,13 @@
 export type InventoryItem = {
-  id: ItemType;
+  id: number;
   name: string;
   imageUrl: string;
   flavorText: string;
   effectText: string;
   rarityTier: Rarity;
+  isCaptureType?: boolean;
+  itemType?: string;
+  equipmentSlot?: string;
 };
 
 export enum Rarity {
@@ -33,25 +36,25 @@ export enum ItemType {
 };
 
 export const ItemsUsabledInMenu = [
-	ItemType.WickedSpellbook,
-	ItemType.CipherOfTheLaughingMonkey,
-	ItemType.CortezsCutlass,
-	ItemType.RustedMusket,
-	ItemType.Dagger,
-	ItemType.Ale,
+	14, // WickedSpellbook
+	1,  // CipherOfTheLaughingMonkey
+	6,  // CortezsCutlass
+	7,  // RustedMusket
+	9,  // Dagger
+	12, // Ale
 ];
 
 export const PointOfInterestEffectingItems = [
-	ItemType.CipherOfTheLaughingMonkey,
+	1, // CipherOfTheLaughingMonkey
 ];
 
 export const ItemsUsabledOnPointOfInterest = [
-	ItemType.GoldenTelescope,
+	2, // GoldenTelescope
 ];
 
 export const ItemsRequiringTeamId = [
-	ItemType.WickedSpellbook,
-	ItemType.CortezsCutlass,
-	ItemType.RustedMusket,
-	ItemType.Dagger,
+	14, // WickedSpellbook
+	6,  // CortezsCutlass
+	7,  // RustedMusket
+	9,  // Dagger
 ];

@@ -217,6 +217,9 @@ type InventoryItemHandle interface {
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
+	// New methods for inventory item definitions
+	GetAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
+	FindInventoryItemByID(ctx context.Context, inventoryItemID int) (*models.InventoryItem, error)
 }
 
 type AuditItemHandle interface {

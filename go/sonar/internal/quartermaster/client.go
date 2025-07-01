@@ -38,10 +38,62 @@ func NewClient(db db.DbClient) Quartermaster {
 }
 
 func (c *client) GetInventoryItems() []InventoryItem {
-	return PreDefinedItems
+	// Fetch items from database
+	ctx := context.Background()
+	dbItems, err := c.db.InventoryItem().GetAllInventoryItems(ctx)
+	if err != nil {
+		// Fallback to predefined items if database fails
+		return PreDefinedItems
+	}
+
+	// Convert database models to quartermaster InventoryItem format
+	items := make([]InventoryItem, len(dbItems))
+	for i, dbItem := range dbItems {
+		items[i] = InventoryItem{
+			ID:            dbItem.InventoryItemID,
+			Name:          dbItem.Name,
+			ImageURL:      dbItem.ImageURL,
+			FlavorText:    dbItem.FlavorText,
+			EffectText:    dbItem.EffectText,
+			RarityTier:    Rarity(dbItem.RarityTier),
+			IsCaptureType: dbItem.IsCaptureType,
+			ItemType:      ItemType(dbItem.ItemType),
+		}
+		
+		// Set equipment slot if present
+		if dbItem.EquipmentSlot != nil {
+			items[i].EquipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
+		}
+	}
+
+	return items
 }
 
 func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
+	// First try to find in database
+	ctx := context.Background()
+	dbItem, err := c.db.InventoryItem().FindInventoryItemByID(ctx, itemID)
+	if err == nil {
+		item := InventoryItem{
+			ID:            dbItem.InventoryItemID,
+			Name:          dbItem.Name,
+			ImageURL:      dbItem.ImageURL,
+			FlavorText:    dbItem.FlavorText,
+			EffectText:    dbItem.EffectText,
+			RarityTier:    Rarity(dbItem.RarityTier),
+			IsCaptureType: dbItem.IsCaptureType,
+			ItemType:      ItemType(dbItem.ItemType),
+		}
+		
+		// Set equipment slot if present
+		if dbItem.EquipmentSlot != nil {
+			item.EquipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
+		}
+		
+		return item, nil
+	}
+
+	// Fallback to predefined items
 	for _, item := range PreDefinedItems {
 		if item.ID == itemID {
 			return item, nil

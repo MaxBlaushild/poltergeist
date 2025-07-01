@@ -142,3 +142,23 @@ func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID u
 	}
 	return h.db.Create(&newEffect).Error
 }
+
+// GetAllInventoryItems retrieves all inventory item definitions from the database
+func (h *inventoryItemHandler) GetAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
+	var items []models.InventoryItem
+	result := h.db.Find(&items)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return items, nil
+}
+
+// FindInventoryItemByID retrieves a specific inventory item definition by its inventory_item_id
+func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, inventoryItemID int) (*models.InventoryItem, error) {
+	var item models.InventoryItem
+	result := h.db.Where("inventory_item_id = ?", inventoryItemID).First(&item)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &item, nil
+}
