@@ -48,6 +48,7 @@ type DbClient interface {
 	UserLevel() UserLevelHandle
 	UserZoneReputation() UserZoneReputationHandle
 	UserEquipment() UserEquipmentHandle
+	UserStats() UserStatsHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -368,4 +369,13 @@ type UserEquipmentHandle interface {
 	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
 	UnequipItemByOwnedInventoryItemID(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
 	GetEquippedItemInSlot(ctx context.Context, userID uuid.UUID, equipmentSlot string) (*models.UserEquipment, error)
+}
+
+type UserStatsHandle interface {
+	FindOrCreateForUser(ctx context.Context, userID uuid.UUID) (*models.UserStats, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserStats, error)
+	Create(ctx context.Context, userStats *models.UserStats) error
+	Update(ctx context.Context, userStats *models.UserStats) error
+	AllocateStatPoint(ctx context.Context, userID uuid.UUID, statName string) (*models.UserStats, error)
+	AddStatPoints(ctx context.Context, userID uuid.UUID, points int) (*models.UserStats, error)
 }
