@@ -6,6 +6,7 @@ export class APIClient {
   constructor(baseURL: string) {
     this.client = axios.create({
       baseURL,
+      timeout: 10000, // 10 second timeout for network quality monitoring
     });
 
     this.client.interceptors.request.use(
