@@ -11,6 +11,7 @@ import (
 const (
 	BaseExperiencePoints = 100
 	GrowthFactor         = 10
+	StatPointsPerLevel   = 5 // Stat points awarded per level up
 )
 
 type UserLevel struct {
@@ -48,6 +49,11 @@ func (u *UserLevel) AddExperiencePoints(points int) {
 			u.ExperiencePointsOnLevel = 0
 		}
 	}
+}
+
+// GetStatPointsEarned returns the number of stat points that should be awarded for the levels gained
+func (u *UserLevel) GetStatPointsEarned() int {
+	return u.LevelsGained * StatPointsPerLevel
 }
 
 func (u *UserLevel) XPToNextLevel() int {

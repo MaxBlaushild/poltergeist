@@ -223,6 +223,8 @@ func (s *server) ListenAndServe(port string) {
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.getLevel))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.getZoneReputation))
+	r.GET("/sonar/stats", middleware.WithAuthentication(s.authClient, s.getUserStats))
+	r.POST("/sonar/stats/allocate", middleware.WithAuthentication(s.authClient, s.allocateStatPoint))
 
 	r.Run(":8042")
 }
@@ -270,6 +272,115 @@ func (s *server) getZoneReputation(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, reputation)
+}
+
+func (s *server) getUserStats(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	stats, err := s.dbClient.UserStats().FindOrCreateForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create a response that includes both the raw stats and calculated modifiers
+	response := gin.H{
+		"id":                  stats.ID,
+		"createdAt":           stats.CreatedAt,
+		"updatedAt":           stats.UpdatedAt,
+		"userId":              stats.UserID,
+		"strength":            stats.Strength,
+		"dexterity":           stats.Dexterity,
+		"constitution":        stats.Constitution,
+		"intelligence":        stats.Intelligence,
+		"wisdom":              stats.Wisdom,
+		"charisma":            stats.Charisma,
+		"availableStatPoints": stats.AvailableStatPoints,
+		"modifiers":           stats.GetAllStatModifiers(),
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) allocateStatPoint(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		StatName string `json:"statName" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate stat name
+	validStats := []string{"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+	isValid := false
+	for _, validStat := range validStats {
+		if requestBody.StatName == validStat {
+			isValid = true
+			break
+		}
+	}
+
+	if !isValid {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid stat name. Must be one of: strength, dexterity, constitution, intelligence, wisdom, charisma"})
+		return
+	}
+
+	updatedStats, err := s.dbClient.UserStats().AllocateStatPoint(ctx, user.ID, requestBody.StatName)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create response with updated stats and modifiers
+	response := gin.H{
+		"id":                  updatedStats.ID,
+		"createdAt":           updatedStats.CreatedAt,
+		"updatedAt":           updatedStats.UpdatedAt,
+		"userId":              updatedStats.UserID,
+		"strength":            updatedStats.Strength,
+		"dexterity":           updatedStats.Dexterity,
+		"constitution":        updatedStats.Constitution,
+		"intelligence":        updatedStats.Intelligence,
+		"wisdom":              updatedStats.Wisdom,
+		"charisma":            updatedStats.Charisma,
+		"availableStatPoints": updatedStats.AvailableStatPoints,
+		"modifiers":           updatedStats.GetAllStatModifiers(),
+		"message":             fmt.Sprintf("%s increased to %d", requestBody.StatName, getStatValue(updatedStats, requestBody.StatName)),
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
+// Helper function to get stat value by name for the response message
+func getStatValue(stats *models.UserStats, statName string) int {
+	switch statName {
+	case "strength":
+		return stats.Strength
+	case "dexterity":
+		return stats.Dexterity
+	case "constitution":
+		return stats.Constitution
+	case "intelligence":
+		return stats.Intelligence
+	case "wisdom":
+		return stats.Wisdom
+	case "charisma":
+		return stats.Charisma
+	default:
+		return 0
+	}
 }
 
 func (s *server) editZone(ctx *gin.Context) {

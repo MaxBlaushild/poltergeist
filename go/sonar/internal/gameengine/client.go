@@ -180,6 +180,17 @@ func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission
 		}
 
 		submissionResult.LevelUp = userLevel.LevelsGained > 0
+
+		// Award stat points if the user leveled up
+		if userLevel.LevelsGained > 0 {
+			statPointsToAward := userLevel.GetStatPointsEarned()
+			if statPointsToAward > 0 {
+				_, err := c.db.UserStats().AddStatPoints(ctx, *submission.UserID, statPointsToAward)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	return nil
