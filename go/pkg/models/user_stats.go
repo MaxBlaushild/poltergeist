@@ -9,7 +9,6 @@ import (
 
 const (
 	DefaultStatValue     = 10
-	StatPointsPerLevel   = 5
 	MaxStatValue         = 20
 	MinStatValue         = 8
 )
