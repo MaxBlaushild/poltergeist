@@ -1190,7 +1190,7 @@ func (s *server) giveItem(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(
+			if err := s.dbClient.OwnedInventoryItem().CreateOrIncrementInventoryItem(
 		ctx,
 		requestBody.TeamID,
 		requestBody.UserID,
@@ -1306,7 +1306,7 @@ func (s *server) getOwnedInventoryItems(ctx *gin.Context) {
 		}
 	}
 
-	items, err := s.dbClient.InventoryItem().GetItems(ctx, userOrTeam)
+	items, err := s.dbClient.OwnedInventoryItem().GetItems(ctx, userOrTeam)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2020,7 +2020,7 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
-	ownedInventoryItem, err := s.dbClient.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	ownedInventoryItem, err := s.dbClient.OwnedInventoryItem().FindByID(ctx, ownedInventoryItemID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -2091,7 +2091,7 @@ func (s *server) getTeamsInventory(ctx *gin.Context) {
 		return
 	}
 
-	inventory, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{TeamID: &teamID})
+	inventory, err := s.dbClient.OwnedInventoryItem().GetItems(ctx, models.OwnedInventoryItem{TeamID: &teamID})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

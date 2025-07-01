@@ -57,7 +57,7 @@ func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UU
 		return InventoryItem{}, err
 	}
 
-	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
+	if err := c.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
 		return InventoryItem{}, err
 	}
 
@@ -70,7 +70,7 @@ func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, use
 		return InventoryItem{}, err
 	}
 
-	if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
+	if err := c.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
 		return InventoryItem{}, err
 	}
 
@@ -78,12 +78,12 @@ func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, use
 }
 
 func (c *client) UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, metadata *UseItemMetadata) error {
-	ownedInventoryItem, err := c.db.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	ownedInventoryItem, err := c.db.OwnedInventoryItem().FindByID(ctx, ownedInventoryItemID)
 	if err != nil {
 		return err
 	}
 
-	if err := c.db.InventoryItem().UseInventoryItem(ctx, ownedInventoryItem.ID); err != nil {
+	if err := c.db.OwnedInventoryItem().UseInventoryItem(ctx, ownedInventoryItem.ID); err != nil {
 		return err
 	}
 
@@ -132,7 +132,7 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 
 func (c *client) EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error {
 	// First, get the owned inventory item to determine what it is
-	ownedItem, err := c.db.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	ownedItem, err := c.db.OwnedInventoryItem().FindByID(ctx, ownedInventoryItemID)
 	if err != nil {
 		return fmt.Errorf("failed to find owned inventory item: %w", err)
 	}

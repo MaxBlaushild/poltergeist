@@ -10,11 +10,11 @@ import (
 	"gorm.io/gorm"
 )
 
-type inventoryItemHandler struct {
+type ownedInventoryItemHandler struct {
 	db *gorm.DB
 }
 
-func (h *inventoryItemHandler) GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error) {
+func (h *ownedInventoryItemHandler) GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error) {
 	var items []models.OwnedInventoryItem
 
 	if userOrTeam.TeamID != nil {
@@ -31,7 +31,7 @@ func (h *inventoryItemHandler) GetItems(ctx context.Context, userOrTeam models.O
 	return items, nil
 }
 
-func (h *inventoryItemHandler) GetUsersItems(ctx context.Context, userID uuid.UUID) ([]models.OwnedInventoryItem, error) {
+func (h *ownedInventoryItemHandler) GetUsersItems(ctx context.Context, userID uuid.UUID) ([]models.OwnedInventoryItem, error) {
 	var items []models.OwnedInventoryItem
 	result := h.db.Where("user_id = ?", userID).Find(&items)
 	if result.Error != nil {
@@ -40,7 +40,7 @@ func (h *inventoryItemHandler) GetUsersItems(ctx context.Context, userID uuid.UU
 	return items, nil
 }
 
-func (h *inventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error {
+func (h *ownedInventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error {
 	items, err := h.GetItems(ctx, models.OwnedInventoryItem{TeamID: &victimTeamID})
 	if err != nil {
 		return err
@@ -56,7 +56,7 @@ func (h *inventoryItemHandler) StealItems(ctx context.Context, thiefTeamID uuid.
 	return nil
 }
 
-func (h *inventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error {
+func (h *ownedInventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error {
 	items, err := h.GetItems(ctx, models.OwnedInventoryItem{TeamID: &victimTeamID})
 	if err != nil {
 		return err
@@ -74,7 +74,7 @@ func (h *inventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.U
 	return nil
 }
 
-func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error) {
+func (h *ownedInventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error) {
 	var item models.OwnedInventoryItem
 	result := h.db.Where("id = ?", id).First(&item)
 	if result.Error != nil {
@@ -83,7 +83,7 @@ func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*mod
 	return &item, nil
 }
 
-func (h *inventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error {
+func (h *ownedInventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error {
 	var item models.OwnedInventoryItem
 	var query string
 	var queryID *uuid.UUID
@@ -114,7 +114,7 @@ func (h *inventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Contex
 	return h.db.Save(&item).Error
 }
 
-func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error {
+func (h *ownedInventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error {
 	var item models.OwnedInventoryItem
 	result := h.db.Where("id = ?", ownedInventoryItemID).First(&item)
 	if result.Error != nil {
@@ -130,7 +130,7 @@ func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInvent
 	return h.db.Save(&item).Error
 }
 
-func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
+func (h *ownedInventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
 	newEffect := models.MatchInventoryItemEffect{
 		ID:              uuid.New(),
 		MatchID:         matchID,
