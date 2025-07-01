@@ -16,4 +16,6 @@ type User struct {
 	Profile           *SonarUser `json:"profile" gorm:"foreignKey:ID"`
 	ProfilePictureUrl string     `json:"profilePictureUrl"`
 	HasSeenTutorial   bool       `json:"hasSeenTutorial" gorm:"default:false"`
+	DndClassID        *uuid.UUID `json:"dndClassId"`
+	DndClass          *DndClass  `json:"dndClass" gorm:"foreignKey:DndClassID"`
 }

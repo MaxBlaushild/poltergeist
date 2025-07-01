@@ -329,6 +329,43 @@ func main() {
 			return
 		}
 
+		// Set D&D class if provided
+		if requestBody.DndClassID != nil && *requestBody.DndClassID != "" {
+			dndClassID, err := uuid.Parse(*requestBody.DndClassID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": errors.Wrap(err, "invalid dnd class id").Error(),
+				})
+				return
+			}
+
+			// Verify the D&D class exists
+			_, err = dbClient.DndClass().GetByID(ctx, dndClassID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": errors.Wrap(err, "dnd class not found").Error(),
+				})
+				return
+			}
+
+			// Update user with D&D class
+			if err := dbClient.User().UpdateDndClass(ctx, user.ID, dndClassID); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "updating user dnd class error").Error(),
+				})
+				return
+			}
+
+			// Reload user with D&D class information
+			user, err = dbClient.User().FindByIDWithDndClass(ctx, user.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "reloading user with dnd class error").Error(),
+				})
+				return
+			}
+		}
+
 		token, err := tokenClient.New(user.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -407,6 +444,18 @@ func main() {
 		}
 
 		c.JSON(200, users)
+	})
+
+	r.GET("/authenticator/dnd-classes", func(c *gin.Context) {
+		classes, err := dbClient.DndClass().GetAll(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, classes)
 	})
 
 	r.Run(":8089")

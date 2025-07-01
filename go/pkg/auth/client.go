@@ -19,6 +19,7 @@ type RegisterByTextRequest struct {
 	Code        string  `json:"code" binding:"required"`
 	Name        string  `json:"name"`
 	UserID      *string `json:"userId"`
+	DndClassID  *string `json:"dndClassId"`
 }
 
 type LoginByTextRequest struct {
@@ -52,6 +53,7 @@ type Client interface {
 	RegisterByText(ctx context.Context, request *RegisterByTextRequest) (*AuthenicateResponse, error)
 	LoginByText(ctx context.Context, request *LoginByTextRequest) (*AuthenicateResponse, error)
 	VerifyToken(ctx context.Context, request *VerifyTokenRequest) (*models.User, error)
+	GetDndClasses(ctx context.Context) ([]models.DndClass, error)
 }
 
 const (
@@ -125,4 +127,19 @@ func (c *client) VerifyToken(ctx context.Context, request *VerifyTokenRequest) (
 	}
 
 	return &user, nil
+}
+
+func (c *client) GetDndClasses(ctx context.Context) ([]models.DndClass, error) {
+	respBytes, err := c.httpClient.Get(ctx, "/authenticator/dnd-classes")
+	if err != nil {
+		return nil, err
+	}
+
+	var classes []models.DndClass
+	err = json.Unmarshal(respBytes, &classes)
+	if err != nil {
+		return nil, err
+	}
+
+	return classes, nil
 }

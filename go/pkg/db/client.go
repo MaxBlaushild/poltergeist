@@ -14,6 +14,7 @@ type client struct {
 	db                                *gorm.DB
 	scoreHandle                       *scoreHandler
 	userHandle                        *userHandle
+	dndClassHandle                    *dndClassHandler
 	howManyQuestionHandle             *howManyQuestionHandle
 	howManyAnswerHandle               *howManyAnswerHandle
 	teamHandle                        *teamHandle
@@ -84,6 +85,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		db:                                db,
 		scoreHandle:                       &scoreHandler{db: db},
 		userHandle:                        &userHandle{db: db},
+		dndClassHandle:                    &dndClassHandler{db: db},
 		howManyQuestionHandle:             &howManyQuestionHandle{db: db},
 		howManyAnswerHandle:               &howManyAnswerHandle{db: db},
 		teamHandle:                        &teamHandle{db: db},
@@ -244,6 +246,10 @@ func (c *client) HowManyQuestion() HowManyQuestionHandle {
 
 func (c *client) User() UserHandle {
 	return c.userHandle
+}
+
+func (c *client) DndClass() DndClassHandle {
+	return c.dndClassHandle
 }
 
 func (c *client) PointOfInterest() PointOfInterestHandle {
