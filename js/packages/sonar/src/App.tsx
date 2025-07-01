@@ -29,6 +29,8 @@ import {
 import { SubmissionsContextProvider } from './contexts/SubmissionsContext.tsx';
 import { DiscoveriesContextProvider } from './contexts/DiscoveriesContext.tsx';
 import { LocationError } from './components/LocationError.tsx';
+import { NetworkQualityProvider } from './contexts/NetworkQualityContext.tsx';
+import { LowLatencyWarning } from './components/LowLatencyWarning.tsx';
 
 mapboxgl.accessToken =
   'pk.eyJ1IjoibWF4YmxhdXNoaWxkIiwiYSI6ImNsenE2YWY2bDFmNnQyam9jOXJ4dHFocm4ifQ.tvO7DVEK_OLUyHfwDkUifA';
@@ -50,33 +52,36 @@ const HTML5toTouch = {
 function App() {
   return (
     <APIProvider>
-      <MediaContextProvider>
-        <UserProfileProvider>
-          <InventoryProvider>
-              <AuthProvider appName="Sonar" uriPrefix="/sonar">
-                <LocationProvider>
-                    <LogContextProvider>
-                      <DiscoveriesContextProvider>
-                        <SubmissionsContextProvider>
-                            <DndProvider
-                              backend={TouchBackend}
-                              options={{
-                                enableTouchEvents: true,
-                                enableMouseEvents: true,
-                                enableHoverOutsideTarget: true,
-                              }}
-                            >
-                              <RouterProvider router={router} />
-                              <LocationError />
-                            </DndProvider>
-                        </SubmissionsContextProvider>
-                      </DiscoveriesContextProvider>
-                    </LogContextProvider>
-                </LocationProvider>
-              </AuthProvider>
-          </InventoryProvider>
-        </UserProfileProvider>
-      </MediaContextProvider>
+      <NetworkQualityProvider>
+        <MediaContextProvider>
+          <UserProfileProvider>
+            <InventoryProvider>
+                <AuthProvider appName="Sonar" uriPrefix="/sonar">
+                  <LocationProvider>
+                      <LogContextProvider>
+                        <DiscoveriesContextProvider>
+                          <SubmissionsContextProvider>
+                              <DndProvider
+                                backend={TouchBackend}
+                                options={{
+                                  enableTouchEvents: true,
+                                  enableMouseEvents: true,
+                                  enableHoverOutsideTarget: true,
+                                }}
+                              >
+                                <RouterProvider router={router} />
+                                <LocationError />
+                                <LowLatencyWarning />
+                              </DndProvider>
+                          </SubmissionsContextProvider>
+                        </DiscoveriesContextProvider>
+                      </LogContextProvider>
+                  </LocationProvider>
+                </AuthProvider>
+            </InventoryProvider>
+          </UserProfileProvider>
+        </MediaContextProvider>
+      </NetworkQualityProvider>
     </APIProvider>
   );
 }

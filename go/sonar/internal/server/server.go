@@ -112,6 +112,7 @@ func NewServer(
 func (s *server) ListenAndServe(port string) {
 	r := gin.Default()
 
+	r.GET("/sonar/health", s.health)
 	r.POST("/sonar/register", s.register)
 	r.POST("/sonar/login", s.login)
 
@@ -3212,5 +3213,13 @@ func (s *server) unequipItem(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "item unequipped successfully",
+	})
+}
+
+func (s *server) health(ctx *gin.Context) {
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC(),
+		"service":   "sonar",
 	})
 }
