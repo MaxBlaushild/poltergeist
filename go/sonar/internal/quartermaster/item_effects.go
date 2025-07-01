@@ -39,20 +39,20 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 	case 6:
 		if ownedInventoryItem.IsTeamItem() {
 			// Steal all of another team's items. Must be within a 100 meter radius of the target team to use.
-			return q.db.InventoryItem().StealItems(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID)
+			return q.db.OwnedInventoryItem().StealItems(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID)
 		}
 
 		return nil
 	case 7:
 		// Inflict a wound on another team.
-		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, &metadata.TargetTeamID, nil, 10, 1)
+		return q.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, &metadata.TargetTeamID, nil, 10, 1)
 	case 8:
 		// Hold in your inventory to increase your score by 1.
 		return nil
 	case 9:
 		if ownedInventoryItem.IsTeamItem() {
 			// Steal an item from another team.
-			items, err := q.db.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{TeamID: &metadata.TargetTeamID})
+			items, err := q.db.OwnedInventoryItem().GetItems(ctx, models.OwnedInventoryItem{TeamID: &metadata.TargetTeamID})
 			if err != nil {
 				return err
 			}
@@ -67,7 +67,7 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 					break
 				}
 			}
-			return q.db.InventoryItem().StealItem(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID, randomItem.InventoryItemID)
+			return q.db.OwnedInventoryItem().StealItem(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID, randomItem.InventoryItemID)
 		}
 
 		return nil
@@ -79,14 +79,14 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 		return nil
 	case 12:
 		// Drink to remove one damage
-		items, err := q.db.InventoryItem().GetItems(ctx, ownedInventoryItem)
+		items, err := q.db.OwnedInventoryItem().GetItems(ctx, ownedInventoryItem)
 		if err != nil {
 			return err
 		}
 
 		for _, item := range items {
 			if item.InventoryItemID == 10 {
-				return q.db.InventoryItem().UseInventoryItem(ctx, item.ID)
+				return q.db.OwnedInventoryItem().UseInventoryItem(ctx, item.ID)
 			}
 		}
 
@@ -96,7 +96,7 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 		return nil
 	case 14:
 		// Steal all of another team's items.
-		return q.db.InventoryItem().StealItems(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID)
+		return q.db.OwnedInventoryItem().StealItems(ctx, *ownedInventoryItem.TeamID, metadata.TargetTeamID)
 	case 15:
 		// Negate up to 3 damage when held.
 		return nil
@@ -110,7 +110,7 @@ func (q *client) AddEffectToMatch(ctx context.Context, matchID uuid.UUID, invent
 		return errors.New("cant use item without a team")
 	}
 
-	return q.db.InventoryItem().ApplyInventoryItem(ctx, matchID, inventoryItem.InventoryItemID, *inventoryItem.TeamID, duration)
+	return q.db.OwnedInventoryItem().ApplyInventoryItem(ctx, matchID, inventoryItem.InventoryItemID, *inventoryItem.TeamID, duration)
 }
 
 func (q *client) captureChallenge(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata *UseItemMetadata) error {
@@ -128,8 +128,8 @@ func (q *client) captureChallenge(ctx context.Context, ownedInventoryItem models
 		if err != nil {
 			return err
 		}
-		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, ownedInventoryItem.TeamID, ownedInventoryItem.UserID, item.ID, 1)
+		return q.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, ownedInventoryItem.TeamID, ownedInventoryItem.UserID, item.ID, 1)
 	} else {
-		return q.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, ownedInventoryItem.TeamID, ownedInventoryItem.UserID, challenge.InventoryItemID, 1)
+		return q.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, ownedInventoryItem.TeamID, ownedInventoryItem.UserID, challenge.InventoryItemID, 1)
 	}
 }

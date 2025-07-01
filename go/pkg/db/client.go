@@ -31,7 +31,7 @@ type client struct {
 	verificationCodeHandle            *verificationCodeHandler
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
-	inventoryItemHandle               *inventoryItemHandler
+	ownedInventoryItemHandle          *ownedInventoryItemHandler
 	auditItemHandle                   *auditItemHandler
 	imageGenerationHandle             *imageGenerationHandle
 	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
@@ -99,7 +99,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
-		inventoryItemHandle:               &inventoryItemHandler{db: db},
+		ownedInventoryItemHandle:          &ownedInventoryItemHandler{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
 		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
@@ -194,8 +194,8 @@ func (c *client) AuditItem() AuditItemHandle {
 	return c.auditItemHandle
 }
 
-func (c *client) InventoryItem() InventoryItemHandle {
-	return c.inventoryItemHandle
+func (c *client) OwnedInventoryItem() OwnedInventoryItemHandle {
+	return c.ownedInventoryItemHandle
 }
 
 func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {

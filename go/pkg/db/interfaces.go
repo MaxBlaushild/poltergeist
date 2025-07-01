@@ -28,7 +28,7 @@ type DbClient interface {
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
-	InventoryItem() InventoryItemHandle
+	OwnedInventoryItem() OwnedInventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
 	PointOfInterestChildren() PointOfInterestChildrenHandle
@@ -209,7 +209,7 @@ type PointOfInterestChallengeHandle interface {
 	GetChildrenForChallenge(ctx context.Context, challengeID uuid.UUID) ([]models.PointOfInterestChildren, error)
 }
 
-type InventoryItemHandle interface {
+type OwnedInventoryItemHandle interface {
 	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
 	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
 	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
