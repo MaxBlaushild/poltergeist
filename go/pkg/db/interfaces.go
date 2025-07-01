@@ -28,6 +28,7 @@ type DbClient interface {
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
+	InventoryItem() InventoryItemHandle
 	OwnedInventoryItem() OwnedInventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
@@ -208,6 +209,14 @@ type PointOfInterestChallengeHandle interface {
 	GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	DeleteAllForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) error
 	GetChildrenForChallenge(ctx context.Context, challengeID uuid.UUID) ([]models.PointOfInterestChildren, error)
+}
+
+type InventoryItemHandle interface {
+	FindAll(ctx context.Context) ([]models.InventoryItem, error)
+	FindByID(ctx context.Context, id int) (*models.InventoryItem, error)
+	Create(ctx context.Context, item *models.InventoryItem) error
+	Update(ctx context.Context, item *models.InventoryItem) error
+	Delete(ctx context.Context, id int) error
 }
 
 type OwnedInventoryItemHandle interface {

@@ -38,10 +38,59 @@ func NewClient(db db.DbClient) Quartermaster {
 }
 
 func (c *client) GetInventoryItems() []InventoryItem {
-	return PreDefinedItems
+	// Get items from database
+	dbItems, err := c.db.InventoryItem().FindAll(context.Background())
+	if err != nil {
+		// Fallback to hardcoded items if database fails
+		return PreDefinedItems
+	}
+	
+	// Convert database models to quartermaster models
+	items := make([]InventoryItem, len(dbItems))
+	for i, dbItem := range dbItems {
+		equipmentSlot := EquipmentSlot("")
+		if dbItem.EquipmentSlot != nil {
+			equipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
+		}
+		
+		items[i] = InventoryItem{
+			ID:            dbItem.ID,
+			Name:          dbItem.Name,
+			ImageURL:      dbItem.ImageURL,
+			FlavorText:    dbItem.FlavorText,
+			EffectText:    dbItem.EffectText,
+			RarityTier:    Rarity(dbItem.RarityTier),
+			IsCaptureType: dbItem.IsCaptureType,
+			ItemType:      ItemType(dbItem.ItemType),
+			EquipmentSlot: equipmentSlot,
+		}
+	}
+	return items
 }
 
 func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
+	// Try to get item from database first
+	dbItem, err := c.db.InventoryItem().FindByID(context.Background(), itemID)
+	if err == nil {
+		equipmentSlot := EquipmentSlot("")
+		if dbItem.EquipmentSlot != nil {
+			equipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
+		}
+		
+		return InventoryItem{
+			ID:            dbItem.ID,
+			Name:          dbItem.Name,
+			ImageURL:      dbItem.ImageURL,
+			FlavorText:    dbItem.FlavorText,
+			EffectText:    dbItem.EffectText,
+			RarityTier:    Rarity(dbItem.RarityTier),
+			IsCaptureType: dbItem.IsCaptureType,
+			ItemType:      ItemType(dbItem.ItemType),
+			EquipmentSlot: equipmentSlot,
+		}, nil
+	}
+	
+	// Fallback to hardcoded items if database fails
 	for _, item := range PreDefinedItems {
 		if item.ID == itemID {
 			return item, nil
@@ -113,15 +162,18 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 		NotDroppable:   weightNotDroppable,
 	}
 
+	// Get items from database or fallback to hardcoded
+	items := c.GetInventoryItems()
+
 	totalWeight := 0
-	for _, item := range PreDefinedItems {
+	for _, item := range items {
 		totalWeight += rarityWeights[item.RarityTier]
 	}
 
 	for {
 		randWeight := rand.Intn(totalWeight + 1)
 
-		for _, item := range PreDefinedItems {
+		for _, item := range items {
 			randWeight -= rarityWeights[item.RarityTier]
 			if randWeight < 0 {
 				return item, nil
