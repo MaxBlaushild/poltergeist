@@ -16,6 +16,7 @@ type client struct {
 	userHandle                        *userHandle
 	dndClassHandle                    *dndClassHandler
 	monsterHandle                     *monsterHandler
+	monsterActionHandle               *monsterActionHandler
 	howManyQuestionHandle             *howManyQuestionHandle
 	howManyAnswerHandle               *howManyAnswerHandle
 	teamHandle                        *teamHandle
@@ -89,6 +90,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		userHandle:                        &userHandle{db: db},
 		dndClassHandle:                    &dndClassHandler{db: db},
 		monsterHandle:                     &monsterHandler{db: db},
+		monsterActionHandle:               &monsterActionHandler{db: db},
 		howManyQuestionHandle:             &howManyQuestionHandle{db: db},
 		howManyAnswerHandle:               &howManyAnswerHandle{db: db},
 		teamHandle:                        &teamHandle{db: db},
@@ -262,6 +264,10 @@ func (c *client) DndClass() DndClassHandle {
 
 func (c *client) Monster() MonsterHandle {
 	return c.monsterHandle
+}
+
+func (c *client) MonsterAction() MonsterActionHandle {
+	return c.monsterActionHandle
 }
 
 func (c *client) PointOfInterest() PointOfInterestHandle {

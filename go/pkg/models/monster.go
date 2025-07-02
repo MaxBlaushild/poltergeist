@@ -161,12 +161,11 @@ type Monster struct {
 	// Languages
 	Languages pq.StringArray `json:"languages" gorm:"type:text[]"`
 
-	// Special Abilities, Actions, etc.
-	SpecialAbilities         MonsterAbilities `json:"specialAbilities" gorm:"type:jsonb"`
-	Actions                  MonsterAbilities `json:"actions" gorm:"type:jsonb"`
-	LegendaryActions         MonsterAbilities `json:"legendaryActions" gorm:"type:jsonb"`
-	LegendaryActionsPerTurn  int              `json:"legendaryActionsPerTurn" gorm:"default:0"`
-	Reactions                MonsterAbilities `json:"reactions" gorm:"type:jsonb"`
+	// Legendary Actions configuration
+	LegendaryActionsPerTurn  int `json:"legendaryActionsPerTurn" gorm:"default:0"`
+
+	// Relationships
+	Actions []MonsterAction `gorm:"foreignKey:MonsterID" json:"actions,omitempty"`
 
 	// Visual and Flavor
 	ImageURL    *string `json:"imageUrl"`

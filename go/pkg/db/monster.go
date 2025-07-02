@@ -14,13 +14,13 @@ type monsterHandler struct {
 
 func (h *monsterHandler) GetAll(ctx context.Context) ([]models.Monster, error) {
 	var monsters []models.Monster
-	err := h.db.WithContext(ctx).Where("active = ?", true).Find(&monsters).Error
+	err := h.db.WithContext(ctx).Where("active = ?", true).Preload("Actions", "active = ?", true).Find(&monsters).Error
 	return monsters, err
 }
 
 func (h *monsterHandler) GetByID(ctx context.Context, id uuid.UUID) (*models.Monster, error) {
 	var monster models.Monster
-	err := h.db.WithContext(ctx).Where("id = ? AND active = ?", id, true).First(&monster).Error
+	err := h.db.WithContext(ctx).Where("id = ? AND active = ?", id, true).Preload("Actions", "active = ?", true).First(&monster).Error
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,7 @@ type DbClient interface {
 	User() UserHandle
 	DndClass() DndClassHandle
 	Monster() MonsterHandle
+	MonsterAction() MonsterActionHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
 	Team() TeamHandle
@@ -425,4 +426,24 @@ type MonsterHandle interface {
 	Update(ctx context.Context, monster *models.Monster) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	Search(ctx context.Context, query string) ([]models.Monster, error)
+}
+
+type MonsterActionHandle interface {
+	GetAll(ctx context.Context) ([]models.MonsterAction, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.MonsterAction, error)
+	GetByMonsterID(ctx context.Context, monsterID uuid.UUID) ([]models.MonsterAction, error)
+	GetByMonsterIDAndType(ctx context.Context, monsterID uuid.UUID, actionType string) ([]models.MonsterAction, error)
+	Create(ctx context.Context, action *models.MonsterAction) error
+	Update(ctx context.Context, action *models.MonsterAction) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByMonsterID(ctx context.Context, monsterID uuid.UUID) error
+	CreateBatch(ctx context.Context, actions []models.MonsterAction) error
+	UpdateOrderIndexes(ctx context.Context, monsterID uuid.UUID, actionType string, actionIDs []uuid.UUID) error
+	GetNextOrderIndex(ctx context.Context, monsterID uuid.UUID, actionType string) (int, error)
+	Search(ctx context.Context, query string) ([]models.MonsterAction, error)
+	GetByDamageType(ctx context.Context, damageType string) ([]models.MonsterAction, error)
+	GetAttacks(ctx context.Context) ([]models.MonsterAction, error)
+	GetSaveAbilities(ctx context.Context) ([]models.MonsterAction, error)
+	GetLegendaryActions(ctx context.Context, monsterID uuid.UUID) ([]models.MonsterAction, error)
+	CloneActionsToMonster(ctx context.Context, sourceMonsterID, targetMonsterID uuid.UUID) error
 }
