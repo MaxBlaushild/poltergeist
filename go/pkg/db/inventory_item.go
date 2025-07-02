@@ -17,9 +17,24 @@ func (h *inventoryItemHandler) FindAll(ctx context.Context) ([]models.InventoryI
 	return items, result.Error
 }
 
+func (h *inventoryItemHandler) FindAllWithStats(ctx context.Context) ([]models.InventoryItem, error) {
+	var items []models.InventoryItem
+	result := h.db.WithContext(ctx).Preload("Stats").Order("id").Find(&items)
+	return items, result.Error
+}
+
 func (h *inventoryItemHandler) FindByID(ctx context.Context, id int) (*models.InventoryItem, error) {
 	var item models.InventoryItem
 	result := h.db.WithContext(ctx).Where("id = ?", id).First(&item)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &item, nil
+}
+
+func (h *inventoryItemHandler) FindByIDWithStats(ctx context.Context, id int) (*models.InventoryItem, error) {
+	var item models.InventoryItem
+	result := h.db.WithContext(ctx).Preload("Stats").Where("id = ?", id).First(&item)
 	if result.Error != nil {
 		return nil, result.Error
 	}

@@ -30,6 +30,7 @@ type DbClient interface {
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	InventoryItem() InventoryItemHandle
+	InventoryItemStats() InventoryItemStatsHandle
 	OwnedInventoryItem() OwnedInventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
@@ -217,9 +218,20 @@ type PointOfInterestChallengeHandle interface {
 type InventoryItemHandle interface {
 	FindAll(ctx context.Context) ([]models.InventoryItem, error)
 	FindByID(ctx context.Context, id int) (*models.InventoryItem, error)
+	FindAllWithStats(ctx context.Context) ([]models.InventoryItem, error)
+	FindByIDWithStats(ctx context.Context, id int) (*models.InventoryItem, error)
 	Create(ctx context.Context, item *models.InventoryItem) error
 	Update(ctx context.Context, item *models.InventoryItem) error
 	Delete(ctx context.Context, id int) error
+}
+
+type InventoryItemStatsHandle interface {
+	FindByInventoryItemID(ctx context.Context, inventoryItemID int) (*models.InventoryItemStats, error)
+	Create(ctx context.Context, stats *models.InventoryItemStats) error
+	Update(ctx context.Context, stats *models.InventoryItemStats) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByInventoryItemID(ctx context.Context, inventoryItemID int) error
+	CreateOrUpdate(ctx context.Context, stats *models.InventoryItemStats) error
 }
 
 type OwnedInventoryItemHandle interface {
