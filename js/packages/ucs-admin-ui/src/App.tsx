@@ -23,6 +23,7 @@ import LocationArchetypes from './components/LocationArchetypes.tsx';
 import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
 import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
+import CreateInventoryItem from './components/CreateInventoryItem.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -60,6 +61,7 @@ const Navigation = () => {
       <div className="container mx-auto flex gap-4">
         <Link to="/" className="text-white hover:text-gray-300">Arenas</Link>
         <Link to="/armory" className="text-white hover:text-gray-300">Armory</Link>
+        <Link to="/inventory/create" className="text-white hover:text-gray-300">Create Item</Link>
         <Link to="/zones" className="text-white hover:text-gray-300">Zones</Link>
         <Link to="/tags" className="text-white hover:text-gray-300">Tags</Link>
         <Link to="/location-archetypes" className="text-white hover:text-gray-300">Location Archetypes</Link>
@@ -148,6 +150,11 @@ const router = createBrowserRouter([
       {
         path: "/zone-quest-archetypes",
         element: <ZoneQuestArchetypes />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/inventory/create",
+        element: <CreateInventoryItem />,
         loader: onlyAuthenticated,
       },
     ]
