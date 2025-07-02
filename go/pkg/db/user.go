@@ -86,3 +86,16 @@ func (h *userHandle) UpdateProfilePictureUrl(ctx context.Context, userID uuid.UU
 func (h *userHandle) UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error {
 	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("has_seen_tutorial", hasSeenTutorial).Error
 }
+
+func (h *userHandle) UpdateDndClass(ctx context.Context, userID uuid.UUID, dndClassID uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("dnd_class_id", dndClassID).Error
+}
+
+func (h *userHandle) FindByIDWithDndClass(ctx context.Context, id uuid.UUID) (*models.User, error) {
+	var user models.User
+	if err := h.db.WithContext(ctx).Preload("DndClass").First(&user, id).Error; err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

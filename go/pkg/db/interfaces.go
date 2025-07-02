@@ -11,6 +11,7 @@ import (
 type DbClient interface {
 	Score() ScoreHandle
 	User() UserHandle
+	DndClass() DndClassHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
 	Team() TeamHandle
@@ -83,6 +84,8 @@ type UserHandle interface {
 	DeleteAll(ctx context.Context) error
 	UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error
 	UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error
+	UpdateDndClass(ctx context.Context, userID uuid.UUID, dndClassID uuid.UUID) error
+	FindByIDWithDndClass(ctx context.Context, id uuid.UUID) (*models.User, error)
 }
 
 type TeamHandle interface {
@@ -387,4 +390,13 @@ type UserStatsHandle interface {
 	Update(ctx context.Context, userStats *models.UserStats) error
 	AllocateStatPoint(ctx context.Context, userID uuid.UUID, statName string) (*models.UserStats, error)
 	AddStatPoints(ctx context.Context, userID uuid.UUID, points int) (*models.UserStats, error)
+}
+
+type DndClassHandle interface {
+	GetAll(ctx context.Context) ([]models.DndClass, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.DndClass, error)
+	GetByName(ctx context.Context, name string) (*models.DndClass, error)
+	Create(ctx context.Context, class *models.DndClass) error
+	Update(ctx context.Context, class *models.DndClass) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
