@@ -14,6 +14,9 @@ type InventoryItem struct {
 	IsCaptureType bool      `gorm:"column:is_capture_type" json:"isCaptureType"`
 	ItemType      string    `gorm:"column:item_type" json:"itemType"`
 	EquipmentSlot *string   `gorm:"column:equipment_slot" json:"equipmentSlot,omitempty"`
+
+	// Relationship to stats
+	Stats *InventoryItemStats `json:"stats,omitempty" gorm:"foreignKey:InventoryItemID"`
 }
 
 func (InventoryItem) TableName() string {

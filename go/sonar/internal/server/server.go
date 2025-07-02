@@ -146,6 +146,11 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.submitAnswerPointOfInterestChallenge))
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
+	r.POST("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.createInventoryItem))
+	r.PUT("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.updateInventoryItem))
+	r.DELETE("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.deleteInventoryItem))
+	r.GET("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.getInventoryItemsWithStats))
+	r.GET("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.getInventoryItemByIdWithStats))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
@@ -3222,4 +3227,308 @@ func (s *server) health(ctx *gin.Context) {
 		"timestamp": time.Now().UTC(),
 		"service":   "sonar",
 	})
+}
+
+func (s *server) getInventoryItemsWithStats(ctx *gin.Context) {
+	items, err := s.dbClient.InventoryItem().FindAllWithStats(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (s *server) getInventoryItemByIdWithStats(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	item, err := s.dbClient.InventoryItem().FindByIDWithStats(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, item)
+}
+
+type CreateInventoryItemRequest struct {
+	Name          string  `json:"name" binding:"required"`
+	ImageURL      string  `json:"imageUrl" binding:"required"`
+	FlavorText    string  `json:"flavorText"`
+	EffectText    string  `json:"effectText"`
+	RarityTier    string  `json:"rarityTier" binding:"required"`
+	IsCaptureType bool    `json:"isCaptureType"`
+	ItemType      string  `json:"itemType" binding:"required"`
+	EquipmentSlot *string `json:"equipmentSlot,omitempty"`
+	Stats         *struct {
+		StrengthBonus     int `json:"strengthBonus"`
+		DexterityBonus    int `json:"dexterityBonus"`
+		ConstitutionBonus int `json:"constitutionBonus"`
+		IntelligenceBonus int `json:"intelligenceBonus"`
+		WisdomBonus       int `json:"wisdomBonus"`
+		CharismaBonus     int `json:"charismaBonus"`
+	} `json:"stats,omitempty"`
+}
+
+func (s *server) createInventoryItem(ctx *gin.Context) {
+	var req CreateInventoryItemRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate rarity tier
+	validRarities := []string{"Common", "Uncommon", "Epic", "Mythic", "Not Droppable"}
+	isValidRarity := false
+	for _, rarity := range validRarities {
+		if req.RarityTier == rarity {
+			isValidRarity = true
+			break
+		}
+	}
+	if !isValidRarity {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid rarity tier. Must be one of: Common, Uncommon, Epic, Mythic, Not Droppable"})
+		return
+	}
+
+	// Validate item type
+	validItemTypes := []string{"passive", "consumable", "equippable"}
+	isValidItemType := false
+	for _, itemType := range validItemTypes {
+		if req.ItemType == itemType {
+			isValidItemType = true
+			break
+		}
+	}
+	if !isValidItemType {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item type. Must be one of: passive, consumable, equippable"})
+		return
+	}
+
+	// Validate equipment slot if provided
+	if req.EquipmentSlot != nil {
+		validSlots := []string{"head", "chest", "legs", "feet", "left_hand", "right_hand", "neck", "ring", "belt", "gloves"}
+		isValidSlot := false
+		for _, slot := range validSlots {
+			if *req.EquipmentSlot == slot {
+				isValidSlot = true
+				break
+			}
+		}
+		if !isValidSlot {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equipment slot. Must be one of: head, chest, legs, feet, left_hand, right_hand, neck, ring, belt, gloves"})
+			return
+		}
+
+		// Equipment slot should only be set for equippable items
+		if req.ItemType != "equippable" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "equipment slot can only be set for equippable items"})
+			return
+		}
+	} else if req.ItemType == "equippable" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "equipment slot is required for equippable items"})
+		return
+	}
+
+	// Create the inventory item
+	item := &models.InventoryItem{
+		Name:          req.Name,
+		ImageURL:      req.ImageURL,
+		FlavorText:    req.FlavorText,
+		EffectText:    req.EffectText,
+		RarityTier:    req.RarityTier,
+		IsCaptureType: req.IsCaptureType,
+		ItemType:      req.ItemType,
+		EquipmentSlot: req.EquipmentSlot,
+	}
+
+	if err := s.dbClient.InventoryItem().Create(ctx, item); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create stats if provided
+	if req.Stats != nil && (req.Stats.StrengthBonus != 0 || req.Stats.DexterityBonus != 0 || req.Stats.ConstitutionBonus != 0 || req.Stats.IntelligenceBonus != 0 || req.Stats.WisdomBonus != 0 || req.Stats.CharismaBonus != 0) {
+		stats := &models.InventoryItemStats{
+			InventoryItemID:   item.ID,
+			StrengthBonus:     req.Stats.StrengthBonus,
+			DexterityBonus:    req.Stats.DexterityBonus,
+			ConstitutionBonus: req.Stats.ConstitutionBonus,
+			IntelligenceBonus: req.Stats.IntelligenceBonus,
+			WisdomBonus:       req.Stats.WisdomBonus,
+			CharismaBonus:     req.Stats.CharismaBonus,
+		}
+
+		if err := s.dbClient.InventoryItemStats().Create(ctx, stats); err != nil {
+			// If stats creation fails, we should delete the item to maintain consistency
+			s.dbClient.InventoryItem().Delete(ctx, item.ID)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create item stats: " + err.Error()})
+			return
+		}
+		item.Stats = stats
+	}
+
+	ctx.JSON(http.StatusCreated, item)
+}
+
+func (s *server) updateInventoryItem(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	var req CreateInventoryItemRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate rarity tier
+	validRarities := []string{"Common", "Uncommon", "Epic", "Mythic", "Not Droppable"}
+	isValidRarity := false
+	for _, rarity := range validRarities {
+		if req.RarityTier == rarity {
+			isValidRarity = true
+			break
+		}
+	}
+	if !isValidRarity {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid rarity tier. Must be one of: Common, Uncommon, Epic, Mythic, Not Droppable"})
+		return
+	}
+
+	// Validate item type
+	validItemTypes := []string{"passive", "consumable", "equippable"}
+	isValidItemType := false
+	for _, itemType := range validItemTypes {
+		if req.ItemType == itemType {
+			isValidItemType = true
+			break
+		}
+	}
+	if !isValidItemType {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item type. Must be one of: passive, consumable, equippable"})
+		return
+	}
+
+	// Validate equipment slot if provided
+	if req.EquipmentSlot != nil {
+		validSlots := []string{"head", "chest", "legs", "feet", "left_hand", "right_hand", "neck", "ring", "belt", "gloves"}
+		isValidSlot := false
+		for _, slot := range validSlots {
+			if *req.EquipmentSlot == slot {
+				isValidSlot = true
+				break
+			}
+		}
+		if !isValidSlot {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equipment slot. Must be one of: head, chest, legs, feet, left_hand, right_hand, neck, ring, belt, gloves"})
+			return
+		}
+
+		// Equipment slot should only be set for equippable items
+		if req.ItemType != "equippable" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "equipment slot can only be set for equippable items"})
+			return
+		}
+	} else if req.ItemType == "equippable" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "equipment slot is required for equippable items"})
+		return
+	}
+
+	// Get existing item to check if it exists
+	existingItem, err := s.dbClient.InventoryItem().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+		return
+	}
+
+	// Update the inventory item
+	item := &models.InventoryItem{
+		ID:            id,
+		Name:          req.Name,
+		ImageURL:      req.ImageURL,
+		FlavorText:    req.FlavorText,
+		EffectText:    req.EffectText,
+		RarityTier:    req.RarityTier,
+		IsCaptureType: req.IsCaptureType,
+		ItemType:      req.ItemType,
+		EquipmentSlot: req.EquipmentSlot,
+		CreatedAt:     existingItem.CreatedAt,
+	}
+
+	if err := s.dbClient.InventoryItem().Update(ctx, item); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update or create stats if provided
+	if req.Stats != nil {
+		stats := &models.InventoryItemStats{
+			InventoryItemID:   item.ID,
+			StrengthBonus:     req.Stats.StrengthBonus,
+			DexterityBonus:    req.Stats.DexterityBonus,
+			ConstitutionBonus: req.Stats.ConstitutionBonus,
+			IntelligenceBonus: req.Stats.IntelligenceBonus,
+			WisdomBonus:       req.Stats.WisdomBonus,
+			CharismaBonus:     req.Stats.CharismaBonus,
+		}
+
+		if err := s.dbClient.InventoryItemStats().CreateOrUpdate(ctx, stats); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update item stats: " + err.Error()})
+			return
+		}
+		item.Stats = stats
+	} else {
+		// Remove stats if none provided
+		if err := s.dbClient.InventoryItemStats().DeleteByInventoryItemID(ctx, item.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove item stats: " + err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, item)
+}
+
+func (s *server) deleteInventoryItem(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
+		return
+	}
+
+	// Check if item exists
+	existingItem, err := s.dbClient.InventoryItem().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "item not found"})
+		return
+	}
+
+	// Delete the item (stats will be deleted automatically due to CASCADE)
+	if err := s.dbClient.InventoryItem().Delete(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "item deleted successfully"})
 }
