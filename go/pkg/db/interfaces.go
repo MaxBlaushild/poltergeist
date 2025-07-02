@@ -12,6 +12,7 @@ type DbClient interface {
 	Score() ScoreHandle
 	User() UserHandle
 	DndClass() DndClassHandle
+	Monster() MonsterHandle
 	HowManyQuestion() HowManyQuestionHandle
 	HowManyAnswer() HowManyAnswerHandle
 	Team() TeamHandle
@@ -411,4 +412,17 @@ type DndClassHandle interface {
 	Create(ctx context.Context, class *models.DndClass) error
 	Update(ctx context.Context, class *models.DndClass) error
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type MonsterHandle interface {
+	GetAll(ctx context.Context) ([]models.Monster, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Monster, error)
+	GetByName(ctx context.Context, name string) (*models.Monster, error)
+	GetByChallengeRating(ctx context.Context, cr float64) ([]models.Monster, error)
+	GetByType(ctx context.Context, monsterType string) ([]models.Monster, error)
+	GetBySize(ctx context.Context, size string) ([]models.Monster, error)
+	Create(ctx context.Context, monster *models.Monster) error
+	Update(ctx context.Context, monster *models.Monster) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	Search(ctx context.Context, query string) ([]models.Monster, error)
 }

@@ -151,6 +151,14 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.deleteInventoryItem))
 	r.GET("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.getInventoryItemsWithStats))
 	r.GET("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.getInventoryItemByIdWithStats))
+	
+	// Monster endpoints
+	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.getMonsters))
+	r.GET("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.getMonster))
+	r.POST("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.createMonster))
+	r.PUT("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.updateMonster))
+	r.DELETE("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.deleteMonster))
+	r.GET("/sonar/admin/monsters/search", middleware.WithAuthentication(s.authClient, s.searchMonsters))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
@@ -3531,4 +3539,268 @@ func (s *server) deleteInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "item deleted successfully"})
+}
+
+// Monster endpoints
+
+func (s *server) getMonsters(ctx *gin.Context) {
+	monsters, err := s.dbClient.Monster().GetAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, monsters)
+}
+
+func (s *server) getMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	monster, err := s.dbClient.Monster().GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, monster)
+}
+
+type CreateMonsterRequest struct {
+	Name      string  `json:"name" binding:"required"`
+	Size      string  `json:"size" binding:"required"`
+	Type      string  `json:"type" binding:"required"`
+	Subtype   *string `json:"subtype"`
+	Alignment string  `json:"alignment" binding:"required"`
+
+	ArmorClass     int                        `json:"armorClass" binding:"required"`
+	HitPoints      int                        `json:"hitPoints" binding:"required"`
+	HitDice        *string                    `json:"hitDice"`
+	Speed          int                        `json:"speed" binding:"required"`
+	SpeedModifiers models.SpeedModifiers      `json:"speedModifiers"`
+
+	Strength     int `json:"strength" binding:"required"`
+	Dexterity    int `json:"dexterity" binding:"required"`
+	Constitution int `json:"constitution" binding:"required"`
+	Intelligence int `json:"intelligence" binding:"required"`
+	Wisdom       int `json:"wisdom" binding:"required"`
+	Charisma     int `json:"charisma" binding:"required"`
+
+	ProficiencyBonus  int     `json:"proficiencyBonus" binding:"required"`
+	ChallengeRating   float64 `json:"challengeRating" binding:"required"`
+	ExperiencePoints  int     `json:"experiencePoints" binding:"required"`
+
+	SavingThrowProficiencies pq.StringArray             `json:"savingThrowProficiencies"`
+	SkillProficiencies      models.SkillProficiencies  `json:"skillProficiencies"`
+
+	DamageVulnerabilities pq.StringArray `json:"damageVulnerabilities"`
+	DamageResistances     pq.StringArray `json:"damageResistances"`
+	DamageImmunities      pq.StringArray `json:"damageImmunities"`
+	ConditionImmunities   pq.StringArray `json:"conditionImmunities"`
+
+	Blindsight        int `json:"blindsight"`
+	Darkvision        int `json:"darkvision"`
+	Tremorsense       int `json:"tremorsense"`
+	Truesight         int `json:"truesight"`
+	PassivePerception int `json:"passivePerception" binding:"required"`
+
+	Languages pq.StringArray `json:"languages"`
+
+	SpecialAbilities        models.MonsterAbilities `json:"specialAbilities"`
+	Actions                 models.MonsterAbilities `json:"actions"`
+	LegendaryActions        models.MonsterAbilities `json:"legendaryActions"`
+	LegendaryActionsPerTurn int                     `json:"legendaryActionsPerTurn"`
+	Reactions               models.MonsterAbilities `json:"reactions"`
+
+	ImageURL    *string `json:"imageUrl"`
+	Description *string `json:"description"`
+	FlavorText  *string `json:"flavorText"`
+	Environment *string `json:"environment"`
+	Source      string  `json:"source"`
+}
+
+func (s *server) createMonster(ctx *gin.Context) {
+	var req CreateMonsterRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	monster := &models.Monster{
+		Name:      req.Name,
+		Size:      req.Size,
+		Type:      req.Type,
+		Subtype:   req.Subtype,
+		Alignment: req.Alignment,
+
+		ArmorClass:     req.ArmorClass,
+		HitPoints:      req.HitPoints,
+		HitDice:        req.HitDice,
+		Speed:          req.Speed,
+		SpeedModifiers: req.SpeedModifiers,
+
+		Strength:     req.Strength,
+		Dexterity:    req.Dexterity,
+		Constitution: req.Constitution,
+		Intelligence: req.Intelligence,
+		Wisdom:       req.Wisdom,
+		Charisma:     req.Charisma,
+
+		ProficiencyBonus: req.ProficiencyBonus,
+		ChallengeRating:  req.ChallengeRating,
+		ExperiencePoints: req.ExperiencePoints,
+
+		SavingThrowProficiencies: req.SavingThrowProficiencies,
+		SkillProficiencies:      req.SkillProficiencies,
+
+		DamageVulnerabilities: req.DamageVulnerabilities,
+		DamageResistances:     req.DamageResistances,
+		DamageImmunities:      req.DamageImmunities,
+		ConditionImmunities:   req.ConditionImmunities,
+
+		Blindsight:        req.Blindsight,
+		Darkvision:        req.Darkvision,
+		Tremorsense:       req.Tremorsense,
+		Truesight:         req.Truesight,
+		PassivePerception: req.PassivePerception,
+
+		Languages: req.Languages,
+
+		SpecialAbilities:        req.SpecialAbilities,
+		Actions:                 req.Actions,
+		LegendaryActions:        req.LegendaryActions,
+		LegendaryActionsPerTurn: req.LegendaryActionsPerTurn,
+		Reactions:               req.Reactions,
+
+		ImageURL:    req.ImageURL,
+		Description: req.Description,
+		FlavorText:  req.FlavorText,
+		Environment: req.Environment,
+		Source:      req.Source,
+		Active:      true,
+	}
+
+	err := s.dbClient.Monster().Create(ctx, monster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, monster)
+}
+
+func (s *server) updateMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	var req CreateMonsterRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// First, get the existing monster to preserve ID and timestamps
+	existingMonster, err := s.dbClient.Monster().GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update the monster with new data
+	existingMonster.Name = req.Name
+	existingMonster.Size = req.Size
+	existingMonster.Type = req.Type
+	existingMonster.Subtype = req.Subtype
+	existingMonster.Alignment = req.Alignment
+	existingMonster.ArmorClass = req.ArmorClass
+	existingMonster.HitPoints = req.HitPoints
+	existingMonster.HitDice = req.HitDice
+	existingMonster.Speed = req.Speed
+	existingMonster.SpeedModifiers = req.SpeedModifiers
+	existingMonster.Strength = req.Strength
+	existingMonster.Dexterity = req.Dexterity
+	existingMonster.Constitution = req.Constitution
+	existingMonster.Intelligence = req.Intelligence
+	existingMonster.Wisdom = req.Wisdom
+	existingMonster.Charisma = req.Charisma
+	existingMonster.ProficiencyBonus = req.ProficiencyBonus
+	existingMonster.ChallengeRating = req.ChallengeRating
+	existingMonster.ExperiencePoints = req.ExperiencePoints
+	existingMonster.SavingThrowProficiencies = req.SavingThrowProficiencies
+	existingMonster.SkillProficiencies = req.SkillProficiencies
+	existingMonster.DamageVulnerabilities = req.DamageVulnerabilities
+	existingMonster.DamageResistances = req.DamageResistances
+	existingMonster.DamageImmunities = req.DamageImmunities
+	existingMonster.ConditionImmunities = req.ConditionImmunities
+	existingMonster.Blindsight = req.Blindsight
+	existingMonster.Darkvision = req.Darkvision
+	existingMonster.Tremorsense = req.Tremorsense
+	existingMonster.Truesight = req.Truesight
+	existingMonster.PassivePerception = req.PassivePerception
+	existingMonster.Languages = req.Languages
+	existingMonster.SpecialAbilities = req.SpecialAbilities
+	existingMonster.Actions = req.Actions
+	existingMonster.LegendaryActions = req.LegendaryActions
+	existingMonster.LegendaryActionsPerTurn = req.LegendaryActionsPerTurn
+	existingMonster.Reactions = req.Reactions
+	existingMonster.ImageURL = req.ImageURL
+	existingMonster.Description = req.Description
+	existingMonster.FlavorText = req.FlavorText
+	existingMonster.Environment = req.Environment
+	existingMonster.Source = req.Source
+
+	err = s.dbClient.Monster().Update(ctx, existingMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, existingMonster)
+}
+
+func (s *server) deleteMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	err = s.dbClient.Monster().Delete(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "monster deleted successfully"})
+}
+
+func (s *server) searchMonsters(ctx *gin.Context) {
+	query := ctx.Query("q")
+	if query == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "query parameter 'q' is required"})
+		return
+	}
+
+	monsters, err := s.dbClient.Monster().Search(ctx, query)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, monsters)
 }
