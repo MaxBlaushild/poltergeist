@@ -151,6 +151,21 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.deleteInventoryItem))
 	r.GET("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.getInventoryItemsWithStats))
 	r.GET("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.getInventoryItemByIdWithStats))
+	
+	// Monster endpoints
+	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.getMonsters))
+	r.GET("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.getMonster))
+	r.POST("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.createMonster))
+	r.PUT("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.updateMonster))
+	r.DELETE("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.deleteMonster))
+	r.GET("/sonar/admin/monsters/search", middleware.WithAuthentication(s.authClient, s.searchMonsters))
+	
+	// Monster Action endpoints
+	r.GET("/sonar/admin/monsters/:id/actions", middleware.WithAuthentication(s.authClient, s.getMonsterActions))
+	r.POST("/sonar/admin/monsters/:id/actions", middleware.WithAuthentication(s.authClient, s.createMonsterAction))
+	r.PUT("/sonar/admin/monster-actions/:actionId", middleware.WithAuthentication(s.authClient, s.updateMonsterAction))
+	r.DELETE("/sonar/admin/monster-actions/:actionId", middleware.WithAuthentication(s.authClient, s.deleteMonsterAction))
+	r.POST("/sonar/admin/monsters/:id/actions/reorder", middleware.WithAuthentication(s.authClient, s.reorderMonsterActions))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
@@ -3531,4 +3546,465 @@ func (s *server) deleteInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "item deleted successfully"})
+}
+
+// Monster endpoints
+
+func (s *server) getMonsters(ctx *gin.Context) {
+	monsters, err := s.dbClient.Monster().GetAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, monsters)
+}
+
+func (s *server) getMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	monster, err := s.dbClient.Monster().GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, monster)
+}
+
+type CreateMonsterRequest struct {
+	Name      string  `json:"name" binding:"required"`
+	Size      string  `json:"size" binding:"required"`
+	Type      string  `json:"type" binding:"required"`
+	Subtype   *string `json:"subtype"`
+	Alignment string  `json:"alignment" binding:"required"`
+
+	ArmorClass     int                        `json:"armorClass" binding:"required"`
+	HitPoints      int                        `json:"hitPoints" binding:"required"`
+	HitDice        *string                    `json:"hitDice"`
+	Speed          int                        `json:"speed" binding:"required"`
+	SpeedModifiers models.SpeedModifiers      `json:"speedModifiers"`
+
+	Strength     int `json:"strength" binding:"required"`
+	Dexterity    int `json:"dexterity" binding:"required"`
+	Constitution int `json:"constitution" binding:"required"`
+	Intelligence int `json:"intelligence" binding:"required"`
+	Wisdom       int `json:"wisdom" binding:"required"`
+	Charisma     int `json:"charisma" binding:"required"`
+
+	ProficiencyBonus  int     `json:"proficiencyBonus" binding:"required"`
+	ChallengeRating   float64 `json:"challengeRating" binding:"required"`
+	ExperiencePoints  int     `json:"experiencePoints" binding:"required"`
+
+	SavingThrowProficiencies pq.StringArray             `json:"savingThrowProficiencies"`
+	SkillProficiencies      models.SkillProficiencies  `json:"skillProficiencies"`
+
+	DamageVulnerabilities pq.StringArray `json:"damageVulnerabilities"`
+	DamageResistances     pq.StringArray `json:"damageResistances"`
+	DamageImmunities      pq.StringArray `json:"damageImmunities"`
+	ConditionImmunities   pq.StringArray `json:"conditionImmunities"`
+
+	Blindsight        int `json:"blindsight"`
+	Darkvision        int `json:"darkvision"`
+	Tremorsense       int `json:"tremorsense"`
+	Truesight         int `json:"truesight"`
+	PassivePerception int `json:"passivePerception" binding:"required"`
+
+	Languages pq.StringArray `json:"languages"`
+
+	LegendaryActionsPerTurn int `json:"legendaryActionsPerTurn"`
+
+	ImageURL    *string `json:"imageUrl"`
+	Description *string `json:"description"`
+	FlavorText  *string `json:"flavorText"`
+	Environment *string `json:"environment"`
+	Source      string  `json:"source"`
+}
+
+func (s *server) createMonster(ctx *gin.Context) {
+	var req CreateMonsterRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	monster := &models.Monster{
+		Name:      req.Name,
+		Size:      req.Size,
+		Type:      req.Type,
+		Subtype:   req.Subtype,
+		Alignment: req.Alignment,
+
+		ArmorClass:     req.ArmorClass,
+		HitPoints:      req.HitPoints,
+		HitDice:        req.HitDice,
+		Speed:          req.Speed,
+		SpeedModifiers: req.SpeedModifiers,
+
+		Strength:     req.Strength,
+		Dexterity:    req.Dexterity,
+		Constitution: req.Constitution,
+		Intelligence: req.Intelligence,
+		Wisdom:       req.Wisdom,
+		Charisma:     req.Charisma,
+
+		ProficiencyBonus: req.ProficiencyBonus,
+		ChallengeRating:  req.ChallengeRating,
+		ExperiencePoints: req.ExperiencePoints,
+
+		SavingThrowProficiencies: req.SavingThrowProficiencies,
+		SkillProficiencies:      req.SkillProficiencies,
+
+		DamageVulnerabilities: req.DamageVulnerabilities,
+		DamageResistances:     req.DamageResistances,
+		DamageImmunities:      req.DamageImmunities,
+		ConditionImmunities:   req.ConditionImmunities,
+
+		Blindsight:        req.Blindsight,
+		Darkvision:        req.Darkvision,
+		Tremorsense:       req.Tremorsense,
+		Truesight:         req.Truesight,
+		PassivePerception: req.PassivePerception,
+
+		Languages: req.Languages,
+
+		LegendaryActionsPerTurn: req.LegendaryActionsPerTurn,
+
+		ImageURL:    req.ImageURL,
+		Description: req.Description,
+		FlavorText:  req.FlavorText,
+		Environment: req.Environment,
+		Source:      req.Source,
+		Active:      true,
+	}
+
+	err := s.dbClient.Monster().Create(ctx, monster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, monster)
+}
+
+func (s *server) updateMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	var req CreateMonsterRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// First, get the existing monster to preserve ID and timestamps
+	existingMonster, err := s.dbClient.Monster().GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update the monster with new data
+	existingMonster.Name = req.Name
+	existingMonster.Size = req.Size
+	existingMonster.Type = req.Type
+	existingMonster.Subtype = req.Subtype
+	existingMonster.Alignment = req.Alignment
+	existingMonster.ArmorClass = req.ArmorClass
+	existingMonster.HitPoints = req.HitPoints
+	existingMonster.HitDice = req.HitDice
+	existingMonster.Speed = req.Speed
+	existingMonster.SpeedModifiers = req.SpeedModifiers
+	existingMonster.Strength = req.Strength
+	existingMonster.Dexterity = req.Dexterity
+	existingMonster.Constitution = req.Constitution
+	existingMonster.Intelligence = req.Intelligence
+	existingMonster.Wisdom = req.Wisdom
+	existingMonster.Charisma = req.Charisma
+	existingMonster.ProficiencyBonus = req.ProficiencyBonus
+	existingMonster.ChallengeRating = req.ChallengeRating
+	existingMonster.ExperiencePoints = req.ExperiencePoints
+	existingMonster.SavingThrowProficiencies = req.SavingThrowProficiencies
+	existingMonster.SkillProficiencies = req.SkillProficiencies
+	existingMonster.DamageVulnerabilities = req.DamageVulnerabilities
+	existingMonster.DamageResistances = req.DamageResistances
+	existingMonster.DamageImmunities = req.DamageImmunities
+	existingMonster.ConditionImmunities = req.ConditionImmunities
+	existingMonster.Blindsight = req.Blindsight
+	existingMonster.Darkvision = req.Darkvision
+	existingMonster.Tremorsense = req.Tremorsense
+	existingMonster.Truesight = req.Truesight
+	existingMonster.PassivePerception = req.PassivePerception
+	existingMonster.Languages = req.Languages
+	existingMonster.LegendaryActionsPerTurn = req.LegendaryActionsPerTurn
+	existingMonster.ImageURL = req.ImageURL
+	existingMonster.Description = req.Description
+	existingMonster.FlavorText = req.FlavorText
+	existingMonster.Environment = req.Environment
+	existingMonster.Source = req.Source
+
+	err = s.dbClient.Monster().Update(ctx, existingMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, existingMonster)
+}
+
+func (s *server) deleteMonster(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	err = s.dbClient.Monster().Delete(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "monster deleted successfully"})
+}
+
+func (s *server) searchMonsters(ctx *gin.Context) {
+	query := ctx.Query("q")
+	if query == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "query parameter 'q' is required"})
+		return
+	}
+
+	monsters, err := s.dbClient.Monster().Search(ctx, query)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, monsters)
+}
+
+// Monster Action endpoints
+
+func (s *server) getMonsterActions(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	monsterID, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	actions, err := s.dbClient.MonsterAction().GetByMonsterID(ctx, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, actions)
+}
+
+type CreateMonsterActionRequest struct {
+	ActionType            string  `json:"actionType" binding:"required"`
+	Name                  string  `json:"name" binding:"required"`
+	Description           string  `json:"description" binding:"required"`
+	AttackBonus           *int    `json:"attackBonus"`
+	DamageDice            *string `json:"damageDice"`
+	DamageType            *string `json:"damageType"`
+	AdditionalDamageDice  *string `json:"additionalDamageDice"`
+	AdditionalDamageType  *string `json:"additionalDamageType"`
+	SaveDC                *int    `json:"saveDC"`
+	SaveAbility           *string `json:"saveAbility"`
+	SaveEffectHalfDamage  bool    `json:"saveEffectHalfDamage"`
+	RangeReach            *int    `json:"rangeReach"`
+	RangeLong             *int    `json:"rangeLong"`
+	AreaType              *string `json:"areaType"`
+	AreaSize              *int    `json:"areaSize"`
+	Recharge              *string `json:"recharge"`
+	UsesPerDay            *int    `json:"usesPerDay"`
+	SpecialEffects        *string `json:"specialEffects"`
+	LegendaryCost         int     `json:"legendaryCost"`
+}
+
+func (s *server) createMonsterAction(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	monsterID, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	var req CreateMonsterActionRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate action type
+	validTypes := []string{"action", "special_ability", "legendary_action", "reaction"}
+	isValidType := false
+	for _, validType := range validTypes {
+		if req.ActionType == validType {
+			isValidType = true
+			break
+		}
+	}
+	if !isValidType {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid action type. Must be one of: action, special_ability, legendary_action, reaction"})
+		return
+	}
+
+	// Get next order index
+	orderIndex, err := s.dbClient.MonsterAction().GetNextOrderIndex(ctx, monsterID, req.ActionType)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get order index: " + err.Error()})
+		return
+	}
+
+	action := &models.MonsterAction{
+		MonsterID:             monsterID,
+		ActionType:            req.ActionType,
+		OrderIndex:            orderIndex,
+		Name:                  req.Name,
+		Description:           req.Description,
+		AttackBonus:           req.AttackBonus,
+		DamageDice:            req.DamageDice,
+		DamageType:            req.DamageType,
+		AdditionalDamageDice:  req.AdditionalDamageDice,
+		AdditionalDamageType:  req.AdditionalDamageType,
+		SaveDC:                req.SaveDC,
+		SaveAbility:           req.SaveAbility,
+		SaveEffectHalfDamage:  req.SaveEffectHalfDamage,
+		RangeReach:            req.RangeReach,
+		RangeLong:             req.RangeLong,
+		AreaType:              req.AreaType,
+		AreaSize:              req.AreaSize,
+		Recharge:              req.Recharge,
+		UsesPerDay:            req.UsesPerDay,
+		SpecialEffects:        req.SpecialEffects,
+		LegendaryCost:         req.LegendaryCost,
+		Active:                true,
+	}
+
+	err = s.dbClient.MonsterAction().Create(ctx, action)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, action)
+}
+
+func (s *server) updateMonsterAction(ctx *gin.Context) {
+	actionIDStr := ctx.Param("actionId")
+	actionID, err := uuid.Parse(actionIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid action ID"})
+		return
+	}
+
+	var req CreateMonsterActionRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get existing action
+	existingAction, err := s.dbClient.MonsterAction().GetByID(ctx, actionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "action not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update action with new data
+	existingAction.ActionType = req.ActionType
+	existingAction.Name = req.Name
+	existingAction.Description = req.Description
+	existingAction.AttackBonus = req.AttackBonus
+	existingAction.DamageDice = req.DamageDice
+	existingAction.DamageType = req.DamageType
+	existingAction.AdditionalDamageDice = req.AdditionalDamageDice
+	existingAction.AdditionalDamageType = req.AdditionalDamageType
+	existingAction.SaveDC = req.SaveDC
+	existingAction.SaveAbility = req.SaveAbility
+	existingAction.SaveEffectHalfDamage = req.SaveEffectHalfDamage
+	existingAction.RangeReach = req.RangeReach
+	existingAction.RangeLong = req.RangeLong
+	existingAction.AreaType = req.AreaType
+	existingAction.AreaSize = req.AreaSize
+	existingAction.Recharge = req.Recharge
+	existingAction.UsesPerDay = req.UsesPerDay
+	existingAction.SpecialEffects = req.SpecialEffects
+	existingAction.LegendaryCost = req.LegendaryCost
+
+	err = s.dbClient.MonsterAction().Update(ctx, existingAction)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, existingAction)
+}
+
+func (s *server) deleteMonsterAction(ctx *gin.Context) {
+	actionIDStr := ctx.Param("actionId")
+	actionID, err := uuid.Parse(actionIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid action ID"})
+		return
+	}
+
+	err = s.dbClient.MonsterAction().Delete(ctx, actionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "action deleted successfully"})
+}
+
+func (s *server) reorderMonsterActions(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	monsterID, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	var req struct {
+		ActionType string      `json:"actionType" binding:"required"`
+		ActionIDs  []uuid.UUID `json:"actionIds" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.dbClient.MonsterAction().UpdateOrderIndexes(ctx, monsterID, req.ActionType, req.ActionIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "actions reordered successfully"})
 }
