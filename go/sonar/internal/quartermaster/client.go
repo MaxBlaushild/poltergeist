@@ -17,14 +17,14 @@ type client struct {
 
 type Quartermaster interface {
 	UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, metadata *UseItemMetadata) error
-	GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (models.InventoryItem, error)
-	FindItemForItemID(itemID int) (models.InventoryItem, error)
-	GetInventoryItems() []models.InventoryItem
+	GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (*models.InventoryItem, error)
+	FindItemForItemID(ctx context.Context, itemID uuid.UUID) (*models.InventoryItem, error)
+	GetInventoryItems() ([]models.InventoryItem, error)
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
-	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (models.InventoryItem, error)
+	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID uuid.UUID) (*models.InventoryItem, error)
 	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
 	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
-	GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
+	GetUserEquipment(ctx context.Context, userID uuid.UUID) (*models.UserEquipment, error)
 }
 
 type UseItemMetadata struct {
@@ -55,17 +55,17 @@ func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UU
 		return nil, err
 	}
 
-	return item, nil
+	return &item, nil
 }
 
-func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID uuid.UUID) (*mod	els.InventoryItem, error) {
+func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID uuid.UUID) (*models.InventoryItem, error) {
 	item, err := c.FindItemForItemID(ctx, itemID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := c.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
-		return InventoryItem{}, err
+		return nil, err
 	}
 
 	return item, nil
@@ -88,43 +88,22 @@ func (c *client) UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, me
 	return nil
 }
 
-func (c *client) getRandomItem() (InventoryItem, error) {
+func (c *client) getRandomItem() (models.InventoryItem, error) {
 	rand.Seed(uint64(time.Now().UnixNano()))
 
-	const (
-		weightCommon       = 50
-		weightUncommon     = 30
-		weightEpic         = 15
-		weightMythic       = 5
-		weightNotDroppable = 0
-	)
-
-	rarityWeights := map[Rarity]int{
-		RarityCommon:   weightCommon,
-		RarityUncommon: weightUncommon,
-		RarityEpic:     weightEpic,
-		RarityMythic:   weightMythic,
-		NotDroppable:   weightNotDroppable,
-	}
-
 	// Get items from database or fallback to hardcoded
-	items := c.GetInventoryItems()
-
-	totalWeight := 0
-	for _, item := range items {
-		totalWeight += rarityWeights[item.RarityTier]
+	items, err := c.GetInventoryItems()
+	if err != nil {
+		return models.InventoryItem{}, err
 	}
 
-	for {
-		randWeight := rand.Intn(totalWeight + 1)
-
-		for _, item := range items {
-			randWeight -= rarityWeights[item.RarityTier]
-			if randWeight < 0 {
-				return item, nil
-			}
-		}
+	if len(items) == 0 {
+		return models.InventoryItem{}, fmt.Errorf("no items found")
 	}
+
+	// Get random index
+	randomIndex := rand.Intn(len(items))
+	return items[randomIndex], nil
 }
 
 func (c *client) EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error {
@@ -140,19 +119,18 @@ func (c *client) EquipItem(ctx context.Context, userID uuid.UUID, ownedInventory
 	}
 
 	// Get the item definition to check if it's equippable
-	item, err := c.FindItemForItemID(ownedItem.InventoryItemID)
+	item, err := c.FindItemForItemID(ctx, ownedItem.InventoryItemID)
 	if err != nil {
 		return fmt.Errorf("failed to find item definition: %w", err)
 	}
 
 	// Check if the item is equippable
-	if item.ItemType != ItemTypeEquippable {
+	if item.EquipmentSlot == nil {
 		return fmt.Errorf("item is not equippable")
 	}
 
 	// Equip the item
-	_, err = c.db.UserEquipment().EquipItem(ctx, userID, ownedInventoryItemID, string(item.EquipmentSlot))
-	if err != nil {
+	if err := c.db.UserEquipment().EquipItem(ctx, userID, ownedInventoryItemID, *item.EquipmentSlot); err != nil {
 		return fmt.Errorf("failed to equip item: %w", err)
 	}
 
@@ -167,7 +145,7 @@ func (c *client) UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlo
 	return nil
 }
 
-func (c *client) GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error) {
+func (c *client) GetUserEquipment(ctx context.Context, userID uuid.UUID) (*models.UserEquipment, error) {
 	equipment, err := c.db.UserEquipment().GetUserEquipment(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user equipment: %w", err)

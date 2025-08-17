@@ -56,7 +56,7 @@ func (h *ownedInventoryItemHandler) StealItems(ctx context.Context, thiefTeamID 
 	return nil
 }
 
-func (h *ownedInventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error {
+func (h *ownedInventoryItemHandler) StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID uuid.UUID) error {
 	items, err := h.GetItems(ctx, models.OwnedInventoryItem{TeamID: &victimTeamID})
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (h *ownedInventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) 
 	return &item, nil
 }
 
-func (h *ownedInventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error {
+func (h *ownedInventoryItemHandler) CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID uuid.UUID, quantity int) error {
 	var item models.OwnedInventoryItem
 	var query string
 	var queryID *uuid.UUID
@@ -120,25 +120,26 @@ func (h *ownedInventoryItemHandler) UseInventoryItem(ctx context.Context, ownedI
 	if result.Error != nil {
 		return result.Error
 	}
-	
+
 	// If this item is equipped and we're consuming it, unequip it first
 	if item.UserID != nil {
 		h.db.Where("owned_inventory_item_id = ?", ownedInventoryItemID).Delete(&models.UserEquipment{})
 	}
-	
+
 	item.Quantity -= 1
 	return h.db.Save(&item).Error
 }
 
-func (h *ownedInventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
-	newEffect := models.MatchInventoryItemEffect{
-		ID:              uuid.New(),
-		MatchID:         matchID,
-		TeamID:          teamID,
-		InventoryItemID: inventoryItemID,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		ExpiresAt:       time.Now().Add(duration),
-	}
-	return h.db.Create(&newEffect).Error
+func (h *ownedInventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID uuid.UUID, teamID uuid.UUID, duration time.Duration) error {
+	// newEffect := models.MatchInventoryItemEffect{
+	// 	ID:              uuid.New(),
+	// 	MatchID:         matchID,
+	// 	TeamID:          teamID,
+	// 	InventoryItemID: inventoryItemID,
+	// 	CreatedAt:       time.Now(),
+	// 	UpdatedAt:       time.Now(),
+	// 	ExpiresAt:       time.Now().Add(duration),
+	// }
+	// return h.db.Create(&newEffect).Error
+	return nil
 }

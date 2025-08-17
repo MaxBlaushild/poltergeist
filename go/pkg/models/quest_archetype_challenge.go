@@ -12,7 +12,7 @@ type QuestArchetypeChallenge struct {
 	CreatedAt      time.Time           `json:"createdAt"`
 	UpdatedAt      time.Time           `json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt      `json:"deletedAt"`
-	Reward         int                 `json:"reward"`
+	Reward         uuid.UUID           `json:"reward"`
 	UnlockedNodeID *uuid.UUID          `json:"unlockedNodeId"`
 	UnlockedNode   *QuestArchetypeNode `json:"unlockedNode"`
 }

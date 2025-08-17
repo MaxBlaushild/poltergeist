@@ -225,13 +225,13 @@ type InventoryItemHandle interface {
 }
 
 type OwnedInventoryItemHandle interface {
-	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
+	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID uuid.UUID, quantity int) error
 	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
-	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error
+	ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID uuid.UUID, teamID uuid.UUID, duration time.Duration) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.OwnedInventoryItem, error)
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
-	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
+	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID uuid.UUID) error
 }
 
 type AuditItemHandle interface {

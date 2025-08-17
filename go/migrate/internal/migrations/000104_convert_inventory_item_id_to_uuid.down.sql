@@ -1,0 +1,3 @@
+alter table point_of_interest_challenges drop constraint fk_point_of_interest_challenges_inventory_item_id;
+alter table point_of_interest_challenges drop column inventory_item_id;
+alter table point_of_interest_challenges add column inventory_item_id integer;
