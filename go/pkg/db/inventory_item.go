@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -17,24 +18,9 @@ func (h *inventoryItemHandler) FindAll(ctx context.Context) ([]models.InventoryI
 	return items, result.Error
 }
 
-func (h *inventoryItemHandler) FindAllWithStats(ctx context.Context) ([]models.InventoryItem, error) {
-	var items []models.InventoryItem
-	result := h.db.WithContext(ctx).Preload("Stats").Order("id").Find(&items)
-	return items, result.Error
-}
-
-func (h *inventoryItemHandler) FindByID(ctx context.Context, id int) (*models.InventoryItem, error) {
+func (h *inventoryItemHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.InventoryItem, error) {
 	var item models.InventoryItem
 	result := h.db.WithContext(ctx).Where("id = ?", id).First(&item)
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	return &item, nil
-}
-
-func (h *inventoryItemHandler) FindByIDWithStats(ctx context.Context, id int) (*models.InventoryItem, error) {
-	var item models.InventoryItem
-	result := h.db.WithContext(ctx).Preload("Stats").Where("id = ?", id).First(&item)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -49,6 +35,6 @@ func (h *inventoryItemHandler) Update(ctx context.Context, item *models.Inventor
 	return h.db.WithContext(ctx).Save(item).Error
 }
 
-func (h *inventoryItemHandler) Delete(ctx context.Context, id int) error {
+func (h *inventoryItemHandler) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.InventoryItem{}, id).Error
 }

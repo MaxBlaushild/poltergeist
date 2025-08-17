@@ -1,0 +1,4 @@
+truncate table owned_inventory_items;
+alter table owned_inventory_items drop column inventory_item_id;
+alter table owned_inventory_items add column inventory_item_id uuid;
+alter table owned_inventory_items add constraint fk_owned_inventory_items_inventory_item_id foreign key (inventory_item_id) references inventory_items(id);

@@ -32,7 +32,6 @@ type DbClient interface {
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	InventoryItem() InventoryItemHandle
-	InventoryItemStats() InventoryItemStatsHandle
 	OwnedInventoryItem() OwnedInventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
@@ -219,21 +218,10 @@ type PointOfInterestChallengeHandle interface {
 
 type InventoryItemHandle interface {
 	FindAll(ctx context.Context) ([]models.InventoryItem, error)
-	FindByID(ctx context.Context, id int) (*models.InventoryItem, error)
-	FindAllWithStats(ctx context.Context) ([]models.InventoryItem, error)
-	FindByIDWithStats(ctx context.Context, id int) (*models.InventoryItem, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.InventoryItem, error)
 	Create(ctx context.Context, item *models.InventoryItem) error
 	Update(ctx context.Context, item *models.InventoryItem) error
-	Delete(ctx context.Context, id int) error
-}
-
-type InventoryItemStatsHandle interface {
-	FindByInventoryItemID(ctx context.Context, inventoryItemID int) (*models.InventoryItemStats, error)
-	Create(ctx context.Context, stats *models.InventoryItemStats) error
-	Update(ctx context.Context, stats *models.InventoryItemStats) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	DeleteByInventoryItemID(ctx context.Context, inventoryItemID int) error
-	CreateOrUpdate(ctx context.Context, stats *models.InventoryItemStats) error
 }
 
 type OwnedInventoryItemHandle interface {
@@ -390,11 +378,10 @@ type UserZoneReputationHandle interface {
 }
 
 type UserEquipmentHandle interface {
-	GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
-	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID, equipmentSlot string) (*models.UserEquipment, error)
+	GetUserEquipment(ctx context.Context, userID uuid.UUID) (*models.UserEquipment, error)
+	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID, equipmentSlot string) error
 	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
 	UnequipItemByOwnedInventoryItemID(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
-	GetEquippedItemInSlot(ctx context.Context, userID uuid.UUID, equipmentSlot string) (*models.UserEquipment, error)
 }
 
 type UserStatsHandle interface {

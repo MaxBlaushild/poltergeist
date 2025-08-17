@@ -17,11 +17,11 @@ type client struct {
 
 type Quartermaster interface {
 	UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, metadata *UseItemMetadata) error
-	GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (InventoryItem, error)
-	FindItemForItemID(itemID int) (InventoryItem, error)
-	GetInventoryItems() []InventoryItem
+	GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (models.InventoryItem, error)
+	FindItemForItemID(itemID int) (models.InventoryItem, error)
+	GetInventoryItems() []models.InventoryItem
 	ApplyInventoryItemEffects(ctx context.Context, userID uuid.UUID, match *models.Match) error
-	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (InventoryItem, error)
+	GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (models.InventoryItem, error)
 	EquipItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
 	UnequipItem(ctx context.Context, userID uuid.UUID, equipmentSlot string) error
 	GetUserEquipment(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
@@ -37,86 +37,31 @@ func NewClient(db db.DbClient) Quartermaster {
 	return &client{db: db}
 }
 
-func (c *client) GetInventoryItems() []InventoryItem {
-	// Get items from database
-	dbItems, err := c.db.InventoryItem().FindAll(context.Background())
-	if err != nil {
-		// Fallback to hardcoded items if database fails
-		return PreDefinedItems
-	}
-	
-	// Convert database models to quartermaster models
-	items := make([]InventoryItem, len(dbItems))
-	for i, dbItem := range dbItems {
-		equipmentSlot := EquipmentSlot("")
-		if dbItem.EquipmentSlot != nil {
-			equipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
-		}
-		
-		items[i] = InventoryItem{
-			ID:            dbItem.ID,
-			Name:          dbItem.Name,
-			ImageURL:      dbItem.ImageURL,
-			FlavorText:    dbItem.FlavorText,
-			EffectText:    dbItem.EffectText,
-			RarityTier:    Rarity(dbItem.RarityTier),
-			IsCaptureType: dbItem.IsCaptureType,
-			ItemType:      ItemType(dbItem.ItemType),
-			EquipmentSlot: equipmentSlot,
-		}
-	}
-	return items
+func (c *client) GetInventoryItems() ([]models.InventoryItem, error) {
+	return c.db.InventoryItem().FindAll(context.Background())
 }
 
-func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
-	// Try to get item from database first
-	dbItem, err := c.db.InventoryItem().FindByID(context.Background(), itemID)
-	if err == nil {
-		equipmentSlot := EquipmentSlot("")
-		if dbItem.EquipmentSlot != nil {
-			equipmentSlot = EquipmentSlot(*dbItem.EquipmentSlot)
-		}
-		
-		return InventoryItem{
-			ID:            dbItem.ID,
-			Name:          dbItem.Name,
-			ImageURL:      dbItem.ImageURL,
-			FlavorText:    dbItem.FlavorText,
-			EffectText:    dbItem.EffectText,
-			RarityTier:    Rarity(dbItem.RarityTier),
-			IsCaptureType: dbItem.IsCaptureType,
-			ItemType:      ItemType(dbItem.ItemType),
-			EquipmentSlot: equipmentSlot,
-		}, nil
-	}
-	
-	// Fallback to hardcoded items if database fails
-	for _, item := range PreDefinedItems {
-		if item.ID == itemID {
-			return item, nil
-		}
-	}
-
-	return InventoryItem{}, fmt.Errorf("item not found")
+func (c *client) FindItemForItemID(ctx context.Context, itemID uuid.UUID) (*models.InventoryItem, error) {
+	return c.db.InventoryItem().FindByID(context.Background(), itemID)
 }
 
-func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (InventoryItem, error) {
+func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (*models.InventoryItem, error) {
 	item, err := c.getRandomItem()
 	if err != nil {
-		return InventoryItem{}, err
+		return nil, err
 	}
 
 	if err := c.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {
-		return InventoryItem{}, err
+		return nil, err
 	}
 
 	return item, nil
 }
 
-func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID int) (InventoryItem, error) {
-	item, err := c.FindItemForItemID(itemID)
+func (c *client) GetItemSpecificItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, itemID uuid.UUID) (*mod	els.InventoryItem, error) {
+	item, err := c.FindItemForItemID(ctx, itemID)
 	if err != nil {
-		return InventoryItem{}, err
+		return nil, err
 	}
 
 	if err := c.db.OwnedInventoryItem().CreateOrIncrementInventoryItem(ctx, teamID, userID, item.ID, 1); err != nil {

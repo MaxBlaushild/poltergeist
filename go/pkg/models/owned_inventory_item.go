@@ -12,7 +12,7 @@ type OwnedInventoryItem struct {
 	Team            *Team      `json:"team"`
 	UserID          *uuid.UUID `json:"userId"`
 	User            *User      `json:"user"`
-	InventoryItemID int        `json:"inventoryItemId"`
+	InventoryItemID uuid.UUID  `json:"inventoryItemId"`
 	Quantity        int        `json:"quantity"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`

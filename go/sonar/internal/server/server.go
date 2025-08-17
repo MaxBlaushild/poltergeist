@@ -149,9 +149,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.createInventoryItem))
 	r.PUT("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.updateInventoryItem))
 	r.DELETE("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.deleteInventoryItem))
-	r.GET("/sonar/admin/items", middleware.WithAuthentication(s.authClient, s.getInventoryItemsWithStats))
-	r.GET("/sonar/admin/items/:id", middleware.WithAuthentication(s.authClient, s.getInventoryItemByIdWithStats))
-	
+
 	// Monster endpoints
 	r.GET("/sonar/admin/monsters", middleware.WithAuthentication(s.authClient, s.getMonsters))
 	r.GET("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.getMonster))
@@ -159,7 +157,7 @@ func (s *server) ListenAndServe(port string) {
 	r.PUT("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.updateMonster))
 	r.DELETE("/sonar/admin/monsters/:id", middleware.WithAuthentication(s.authClient, s.deleteMonster))
 	r.GET("/sonar/admin/monsters/search", middleware.WithAuthentication(s.authClient, s.searchMonsters))
-	
+
 	// Monster Action endpoints
 	r.GET("/sonar/admin/monsters/:id/actions", middleware.WithAuthentication(s.authClient, s.getMonsterActions))
 	r.POST("/sonar/admin/monsters/:id/actions", middleware.WithAuthentication(s.authClient, s.createMonsterAction))
@@ -1322,7 +1320,7 @@ func (s *server) giveItem(ctx *gin.Context) {
 		return
 	}
 
-			if err := s.dbClient.OwnedInventoryItem().CreateOrIncrementInventoryItem(
+	if err := s.dbClient.OwnedInventoryItem().CreateOrIncrementInventoryItem(
 		ctx,
 		requestBody.TeamID,
 		requestBody.UserID,
@@ -2232,11 +2230,6 @@ func (s *server) getTeamsInventory(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, inventory)
-}
-
-func (s *server) getInventoryItems(ctx *gin.Context) {
-	items := s.quartermaster.GetInventoryItems()
-	ctx.JSON(http.StatusOK, items)
 }
 
 func (s *server) editTeamName(ctx *gin.Context) {
@@ -3244,8 +3237,8 @@ func (s *server) health(ctx *gin.Context) {
 	})
 }
 
-func (s *server) getInventoryItemsWithStats(ctx *gin.Context) {
-	items, err := s.dbClient.InventoryItem().FindAllWithStats(ctx)
+func (s *server) getInventoryItems(ctx *gin.Context) {
+	items, err := s.dbClient.InventoryItem().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -3253,15 +3246,11 @@ func (s *server) getInventoryItemsWithStats(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, items)
 }
 
-func (s *server) getInventoryItemByIdWithStats(ctx *gin.Context) {
+func (s *server) getInventoryItemById(ctx *gin.Context) {
 	idStr := ctx.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
-		return
-	}
+	id, err := uuid.Parse(idStr)
 
-	item, err := s.dbClient.InventoryItem().FindByIDWithStats(ctx, id)
+	item, err := s.dbClient.InventoryItem().FindByID(ctx, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -3281,9 +3270,55 @@ type CreateInventoryItemRequest struct {
 	FlavorText    string  `json:"flavorText"`
 	EffectText    string  `json:"effectText"`
 	RarityTier    string  `json:"rarityTier" binding:"required"`
-	IsCaptureType bool    `json:"isCaptureType"`
-	ItemType      string  `json:"itemType" binding:"required"`
 	EquipmentSlot *string `json:"equipmentSlot,omitempty"`
+
+	// Combat Stats
+	MinDamage   *int    `json:"minDamage,omitempty"`
+	MaxDamage   *int    `json:"maxDamage,omitempty"`
+	Defense     *int    `json:"defense,omitempty"`
+	Health      *int    `json:"health,omitempty"`
+	Speed       *int    `json:"speed,omitempty"`
+	CritChance  *int    `json:"critChance,omitempty"`
+	CritDamage  *int    `json:"critDamage,omitempty"`
+	AttackRange *int    `json:"attackRange,omitempty"`
+	DamageType  *string `json:"damageType,omitempty"`
+
+	// Attribute Bonuses
+	PlusStrength     *int `json:"plusStrength,omitempty"`
+	PlusAgility      *int `json:"plusAgility,omitempty"`
+	PlusIntelligence *int `json:"plusIntelligence,omitempty"`
+	PlusWisdom       *int `json:"plusWisdom,omitempty"`
+	PlusConstitution *int `json:"plusConstitution,omitempty"`
+	PlusCharisma     *int `json:"plusCharisma,omitempty"`
+
+	// Item Properties
+	Weight           *float64 `json:"weight,omitempty"`
+	Value            *int     `json:"value,omitempty"`
+	Durability       *int     `json:"durability,omitempty"`
+	MaxDurability    *int     `json:"maxDurability,omitempty"`
+	LevelRequirement *int     `json:"levelRequirement,omitempty"`
+	Stackable        *bool    `json:"stackable,omitempty"`
+	MaxStackSize     *int     `json:"maxStackSize,omitempty"`
+	Tradeable        *bool    `json:"tradeable,omitempty"`
+	Cooldown         *int     `json:"cooldown,omitempty"`
+	Charges          *int     `json:"charges,omitempty"`
+	MaxCharges       *int     `json:"maxCharges,omitempty"`
+	QuestRelated     *bool    `json:"questRelated,omitempty"`
+
+	// Special Properties
+	PermanantIdentifier *string                 `json:"permanantIdentifier,omitempty"`
+	CraftingIngredients *map[string]interface{} `json:"craftingIngredients,omitempty"`
+	SpecialAbilities    *map[string]interface{} `json:"specialAbilities,omitempty"`
+	BonusStats          *map[string]interface{} `json:"bonusStats,omitempty"`
+
+	// Visual & Audio
+	ItemColor        *string `json:"itemColor,omitempty"`
+	AnimationEffects *string `json:"animationEffects,omitempty"`
+	SoundEffects     *string `json:"soundEffects,omitempty"`
+
+	// Legacy fields (kept for backward compatibility)
+	IsCaptureType bool   `json:"isCaptureType"`
+	ItemType      string `json:"itemType" binding:"required"`
 	Stats         *struct {
 		StrengthBonus     int `json:"strengthBonus"`
 		DexterityBonus    int `json:"dexterityBonus"`
@@ -3361,9 +3396,134 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		FlavorText:    req.FlavorText,
 		EffectText:    req.EffectText,
 		RarityTier:    req.RarityTier,
-		IsCaptureType: req.IsCaptureType,
-		ItemType:      req.ItemType,
 		EquipmentSlot: req.EquipmentSlot,
+	}
+
+	// Set optional properties only if they are provided
+	if req.MinDamage != nil {
+		item.MinDamage = *req.MinDamage
+	}
+	if req.MaxDamage != nil {
+		item.MaxDamage = *req.MaxDamage
+	}
+	if req.Defense != nil {
+		item.Defense = *req.Defense
+	}
+	if req.Health != nil {
+		item.Health = *req.Health
+	}
+	if req.Speed != nil {
+		item.Speed = *req.Speed
+	}
+	if req.CritChance != nil {
+		item.CritChance = *req.CritChance
+	}
+	if req.CritDamage != nil {
+		item.CritDamage = *req.CritDamage
+	}
+	if req.AttackRange != nil {
+		item.AttackRange = *req.AttackRange
+	}
+	if req.DamageType != nil {
+		item.DamageType = *req.DamageType
+	}
+
+	// Attribute Bonuses
+	if req.PlusStrength != nil {
+		item.PlusStrength = *req.PlusStrength
+	}
+	if req.PlusAgility != nil {
+		item.PlusAgility = *req.PlusAgility
+	}
+	if req.PlusIntelligence != nil {
+		item.PlusIntelligence = *req.PlusIntelligence
+	}
+	if req.PlusWisdom != nil {
+		item.PlusWisdom = *req.PlusWisdom
+	}
+	if req.PlusConstitution != nil {
+		item.PlusConstitution = *req.PlusConstitution
+	}
+	if req.PlusCharisma != nil {
+		item.PlusCharisma = *req.PlusCharisma
+	}
+
+	// Item Properties
+	if req.Weight != nil {
+		item.Weight = *req.Weight
+	}
+	if req.Value != nil {
+		item.Value = *req.Value
+	}
+	if req.Durability != nil {
+		item.Durability = *req.Durability
+	}
+	if req.MaxDurability != nil {
+		item.MaxDurability = *req.MaxDurability
+	}
+	if req.LevelRequirement != nil {
+		item.LevelRequirement = *req.LevelRequirement
+	}
+	if req.Stackable != nil {
+		item.Stackable = *req.Stackable
+	}
+	if req.MaxStackSize != nil {
+		item.MaxStackSize = *req.MaxStackSize
+	}
+	if req.Tradeable != nil {
+		item.Tradeable = *req.Tradeable
+	}
+	if req.Cooldown != nil {
+		item.Cooldown = *req.Cooldown
+	}
+	if req.Charges != nil {
+		item.Charges = *req.Charges
+	}
+	if req.MaxCharges != nil {
+		item.MaxCharges = *req.MaxCharges
+	}
+	if req.QuestRelated != nil {
+		item.QuestRelated = *req.QuestRelated
+	}
+
+	// Special Properties
+	if req.PermanantIdentifier != nil {
+		item.PermanentID = *req.PermanantIdentifier
+	}
+	if req.CraftingIngredients != nil {
+		craftIngredientsJSON, err := json.Marshal(req.CraftingIngredients)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid crafting ingredients format"})
+			return
+		}
+		item.CraftIngredients = craftIngredientsJSON
+	}
+	if req.SpecialAbilities != nil {
+		specialAbilitiesJSON, err := json.Marshal(req.SpecialAbilities)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid special abilities format"})
+			return
+		}
+		item.SpecialAbilities = specialAbilitiesJSON
+	}
+	if req.BonusStats != nil {
+		bonusStatsJSON, err := json.Marshal(req.BonusStats)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid bonus stats format"})
+			return
+		}
+		item.BonusStats = bonusStatsJSON
+	}
+
+	// Visual & Audio
+	if req.ItemColor != nil {
+		item.ItemColor = *req.ItemColor
+	}
+	if req.AnimationEffects != nil {
+		item.AnimationEffects = *req.AnimationEffects
+	}
+	if req.SoundEffects != nil {
+		item.SoundEffects = *req.SoundEffects
 	}
 
 	if err := s.dbClient.InventoryItem().Create(ctx, item); err != nil {
@@ -3371,33 +3531,12 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	// Create stats if provided
-	if req.Stats != nil && (req.Stats.StrengthBonus != 0 || req.Stats.DexterityBonus != 0 || req.Stats.ConstitutionBonus != 0 || req.Stats.IntelligenceBonus != 0 || req.Stats.WisdomBonus != 0 || req.Stats.CharismaBonus != 0) {
-		stats := &models.InventoryItemStats{
-			InventoryItemID:   item.ID,
-			StrengthBonus:     req.Stats.StrengthBonus,
-			DexterityBonus:    req.Stats.DexterityBonus,
-			ConstitutionBonus: req.Stats.ConstitutionBonus,
-			IntelligenceBonus: req.Stats.IntelligenceBonus,
-			WisdomBonus:       req.Stats.WisdomBonus,
-			CharismaBonus:     req.Stats.CharismaBonus,
-		}
-
-		if err := s.dbClient.InventoryItemStats().Create(ctx, stats); err != nil {
-			// If stats creation fails, we should delete the item to maintain consistency
-			s.dbClient.InventoryItem().Delete(ctx, item.ID)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create item stats: " + err.Error()})
-			return
-		}
-		item.Stats = stats
-	}
-
 	ctx.JSON(http.StatusCreated, item)
 }
 
 func (s *server) updateInventoryItem(ctx *gin.Context) {
 	idStr := ctx.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
 		return
@@ -3481,10 +3620,135 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		FlavorText:    req.FlavorText,
 		EffectText:    req.EffectText,
 		RarityTier:    req.RarityTier,
-		IsCaptureType: req.IsCaptureType,
-		ItemType:      req.ItemType,
 		EquipmentSlot: req.EquipmentSlot,
 		CreatedAt:     existingItem.CreatedAt,
+	}
+
+	// Set optional properties only if they are provided
+	if req.MinDamage != nil {
+		item.MinDamage = *req.MinDamage
+	}
+	if req.MaxDamage != nil {
+		item.MaxDamage = *req.MaxDamage
+	}
+	if req.Defense != nil {
+		item.Defense = *req.Defense
+	}
+	if req.Health != nil {
+		item.Health = *req.Health
+	}
+	if req.Speed != nil {
+		item.Speed = *req.Speed
+	}
+	if req.CritChance != nil {
+		item.CritChance = *req.CritChance
+	}
+	if req.CritDamage != nil {
+		item.CritDamage = *req.CritDamage
+	}
+	if req.AttackRange != nil {
+		item.AttackRange = *req.AttackRange
+	}
+	if req.DamageType != nil {
+		item.DamageType = *req.DamageType
+	}
+
+	// Attribute Bonuses
+	if req.PlusStrength != nil {
+		item.PlusStrength = *req.PlusStrength
+	}
+	if req.PlusAgility != nil {
+		item.PlusAgility = *req.PlusAgility
+	}
+	if req.PlusIntelligence != nil {
+		item.PlusIntelligence = *req.PlusIntelligence
+	}
+	if req.PlusWisdom != nil {
+		item.PlusWisdom = *req.PlusWisdom
+	}
+	if req.PlusConstitution != nil {
+		item.PlusConstitution = *req.PlusConstitution
+	}
+	if req.PlusCharisma != nil {
+		item.PlusCharisma = *req.PlusCharisma
+	}
+
+	// Item Properties
+	if req.Weight != nil {
+		item.Weight = *req.Weight
+	}
+	if req.Value != nil {
+		item.Value = *req.Value
+	}
+	if req.Durability != nil {
+		item.Durability = *req.Durability
+	}
+	if req.MaxDurability != nil {
+		item.MaxDurability = *req.MaxDurability
+	}
+	if req.LevelRequirement != nil {
+		item.LevelRequirement = *req.LevelRequirement
+	}
+	if req.Stackable != nil {
+		item.Stackable = *req.Stackable
+	}
+	if req.MaxStackSize != nil {
+		item.MaxStackSize = *req.MaxStackSize
+	}
+	if req.Tradeable != nil {
+		item.Tradeable = *req.Tradeable
+	}
+	if req.Cooldown != nil {
+		item.Cooldown = *req.Cooldown
+	}
+	if req.Charges != nil {
+		item.Charges = *req.Charges
+	}
+	if req.MaxCharges != nil {
+		item.MaxCharges = *req.MaxCharges
+	}
+	if req.QuestRelated != nil {
+		item.QuestRelated = *req.QuestRelated
+	}
+
+	// Special Properties
+	if req.PermanantIdentifier != nil {
+		item.PermanentID = *req.PermanantIdentifier
+	}
+	if req.CraftingIngredients != nil {
+		craftIngredientsJSON, err := json.Marshal(req.CraftingIngredients)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid crafting ingredients format"})
+			return
+		}
+		item.CraftIngredients = craftIngredientsJSON
+	}
+	if req.SpecialAbilities != nil {
+		specialAbilitiesJSON, err := json.Marshal(req.SpecialAbilities)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid special abilities format"})
+			return
+		}
+		item.SpecialAbilities = specialAbilitiesJSON
+	}
+	if req.BonusStats != nil {
+		bonusStatsJSON, err := json.Marshal(req.BonusStats)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid bonus stats format"})
+			return
+		}
+		item.BonusStats = bonusStatsJSON
+	}
+
+	// Visual & Audio
+	if req.ItemColor != nil {
+		item.ItemColor = *req.ItemColor
+	}
+	if req.AnimationEffects != nil {
+		item.AnimationEffects = *req.AnimationEffects
+	}
+	if req.SoundEffects != nil {
+		item.SoundEffects = *req.SoundEffects
 	}
 
 	if err := s.dbClient.InventoryItem().Update(ctx, item); err != nil {
@@ -3492,37 +3756,12 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	// Update or create stats if provided
-	if req.Stats != nil {
-		stats := &models.InventoryItemStats{
-			InventoryItemID:   item.ID,
-			StrengthBonus:     req.Stats.StrengthBonus,
-			DexterityBonus:    req.Stats.DexterityBonus,
-			ConstitutionBonus: req.Stats.ConstitutionBonus,
-			IntelligenceBonus: req.Stats.IntelligenceBonus,
-			WisdomBonus:       req.Stats.WisdomBonus,
-			CharismaBonus:     req.Stats.CharismaBonus,
-		}
-
-		if err := s.dbClient.InventoryItemStats().CreateOrUpdate(ctx, stats); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update item stats: " + err.Error()})
-			return
-		}
-		item.Stats = stats
-	} else {
-		// Remove stats if none provided
-		if err := s.dbClient.InventoryItemStats().DeleteByInventoryItemID(ctx, item.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove item stats: " + err.Error()})
-			return
-		}
-	}
-
 	ctx.JSON(http.StatusOK, item)
 }
 
 func (s *server) deleteInventoryItem(ctx *gin.Context) {
 	idStr := ctx.Param("id")
-	id, err := strconv.Atoi(idStr)
+	id, err := uuid.Parse(idStr)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid item ID"})
 		return
@@ -3586,11 +3825,11 @@ type CreateMonsterRequest struct {
 	Subtype   *string `json:"subtype"`
 	Alignment string  `json:"alignment" binding:"required"`
 
-	ArmorClass     int                        `json:"armorClass" binding:"required"`
-	HitPoints      int                        `json:"hitPoints" binding:"required"`
-	HitDice        *string                    `json:"hitDice"`
-	Speed          int                        `json:"speed" binding:"required"`
-	SpeedModifiers models.SpeedModifiers      `json:"speedModifiers"`
+	ArmorClass     int                   `json:"armorClass" binding:"required"`
+	HitPoints      int                   `json:"hitPoints" binding:"required"`
+	HitDice        *string               `json:"hitDice"`
+	Speed          int                   `json:"speed" binding:"required"`
+	SpeedModifiers models.SpeedModifiers `json:"speedModifiers"`
 
 	Strength     int `json:"strength" binding:"required"`
 	Dexterity    int `json:"dexterity" binding:"required"`
@@ -3599,12 +3838,12 @@ type CreateMonsterRequest struct {
 	Wisdom       int `json:"wisdom" binding:"required"`
 	Charisma     int `json:"charisma" binding:"required"`
 
-	ProficiencyBonus  int     `json:"proficiencyBonus" binding:"required"`
-	ChallengeRating   float64 `json:"challengeRating" binding:"required"`
-	ExperiencePoints  int     `json:"experiencePoints" binding:"required"`
+	ProficiencyBonus int     `json:"proficiencyBonus" binding:"required"`
+	ChallengeRating  float64 `json:"challengeRating" binding:"required"`
+	ExperiencePoints int     `json:"experiencePoints" binding:"required"`
 
-	SavingThrowProficiencies pq.StringArray             `json:"savingThrowProficiencies"`
-	SkillProficiencies      models.SkillProficiencies  `json:"skillProficiencies"`
+	SavingThrowProficiencies pq.StringArray            `json:"savingThrowProficiencies"`
+	SkillProficiencies       models.SkillProficiencies `json:"skillProficiencies"`
 
 	DamageVulnerabilities pq.StringArray `json:"damageVulnerabilities"`
 	DamageResistances     pq.StringArray `json:"damageResistances"`
@@ -3660,7 +3899,7 @@ func (s *server) createMonster(ctx *gin.Context) {
 		ExperiencePoints: req.ExperiencePoints,
 
 		SavingThrowProficiencies: req.SavingThrowProficiencies,
-		SkillProficiencies:      req.SkillProficiencies,
+		SkillProficiencies:       req.SkillProficiencies,
 
 		DamageVulnerabilities: req.DamageVulnerabilities,
 		DamageResistances:     req.DamageResistances,
@@ -3820,25 +4059,25 @@ func (s *server) getMonsterActions(ctx *gin.Context) {
 }
 
 type CreateMonsterActionRequest struct {
-	ActionType            string  `json:"actionType" binding:"required"`
-	Name                  string  `json:"name" binding:"required"`
-	Description           string  `json:"description" binding:"required"`
-	AttackBonus           *int    `json:"attackBonus"`
-	DamageDice            *string `json:"damageDice"`
-	DamageType            *string `json:"damageType"`
-	AdditionalDamageDice  *string `json:"additionalDamageDice"`
-	AdditionalDamageType  *string `json:"additionalDamageType"`
-	SaveDC                *int    `json:"saveDC"`
-	SaveAbility           *string `json:"saveAbility"`
-	SaveEffectHalfDamage  bool    `json:"saveEffectHalfDamage"`
-	RangeReach            *int    `json:"rangeReach"`
-	RangeLong             *int    `json:"rangeLong"`
-	AreaType              *string `json:"areaType"`
-	AreaSize              *int    `json:"areaSize"`
-	Recharge              *string `json:"recharge"`
-	UsesPerDay            *int    `json:"usesPerDay"`
-	SpecialEffects        *string `json:"specialEffects"`
-	LegendaryCost         int     `json:"legendaryCost"`
+	ActionType           string  `json:"actionType" binding:"required"`
+	Name                 string  `json:"name" binding:"required"`
+	Description          string  `json:"description" binding:"required"`
+	AttackBonus          *int    `json:"attackBonus"`
+	DamageDice           *string `json:"damageDice"`
+	DamageType           *string `json:"damageType"`
+	AdditionalDamageDice *string `json:"additionalDamageDice"`
+	AdditionalDamageType *string `json:"additionalDamageType"`
+	SaveDC               *int    `json:"saveDC"`
+	SaveAbility          *string `json:"saveAbility"`
+	SaveEffectHalfDamage bool    `json:"saveEffectHalfDamage"`
+	RangeReach           *int    `json:"rangeReach"`
+	RangeLong            *int    `json:"rangeLong"`
+	AreaType             *string `json:"areaType"`
+	AreaSize             *int    `json:"areaSize"`
+	Recharge             *string `json:"recharge"`
+	UsesPerDay           *int    `json:"usesPerDay"`
+	SpecialEffects       *string `json:"specialEffects"`
+	LegendaryCost        int     `json:"legendaryCost"`
 }
 
 func (s *server) createMonsterAction(ctx *gin.Context) {
@@ -3877,28 +4116,28 @@ func (s *server) createMonsterAction(ctx *gin.Context) {
 	}
 
 	action := &models.MonsterAction{
-		MonsterID:             monsterID,
-		ActionType:            req.ActionType,
-		OrderIndex:            orderIndex,
-		Name:                  req.Name,
-		Description:           req.Description,
-		AttackBonus:           req.AttackBonus,
-		DamageDice:            req.DamageDice,
-		DamageType:            req.DamageType,
-		AdditionalDamageDice:  req.AdditionalDamageDice,
-		AdditionalDamageType:  req.AdditionalDamageType,
-		SaveDC:                req.SaveDC,
-		SaveAbility:           req.SaveAbility,
-		SaveEffectHalfDamage:  req.SaveEffectHalfDamage,
-		RangeReach:            req.RangeReach,
-		RangeLong:             req.RangeLong,
-		AreaType:              req.AreaType,
-		AreaSize:              req.AreaSize,
-		Recharge:              req.Recharge,
-		UsesPerDay:            req.UsesPerDay,
-		SpecialEffects:        req.SpecialEffects,
-		LegendaryCost:         req.LegendaryCost,
-		Active:                true,
+		MonsterID:            monsterID,
+		ActionType:           req.ActionType,
+		OrderIndex:           orderIndex,
+		Name:                 req.Name,
+		Description:          req.Description,
+		AttackBonus:          req.AttackBonus,
+		DamageDice:           req.DamageDice,
+		DamageType:           req.DamageType,
+		AdditionalDamageDice: req.AdditionalDamageDice,
+		AdditionalDamageType: req.AdditionalDamageType,
+		SaveDC:               req.SaveDC,
+		SaveAbility:          req.SaveAbility,
+		SaveEffectHalfDamage: req.SaveEffectHalfDamage,
+		RangeReach:           req.RangeReach,
+		RangeLong:            req.RangeLong,
+		AreaType:             req.AreaType,
+		AreaSize:             req.AreaSize,
+		Recharge:             req.Recharge,
+		UsesPerDay:           req.UsesPerDay,
+		SpecialEffects:       req.SpecialEffects,
+		LegendaryCost:        req.LegendaryCost,
+		Active:               true,
 	}
 
 	err = s.dbClient.MonsterAction().Create(ctx, action)
