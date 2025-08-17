@@ -1,37 +1,117 @@
 -- Update inventory_items table structure to match the hardcoded items
-ALTER TABLE inventory_items DROP CONSTRAINT inventory_items_pkey;
-ALTER TABLE inventory_items DROP COLUMN id;
-ALTER TABLE inventory_items ADD COLUMN id SERIAL PRIMARY KEY;
-ALTER TABLE inventory_items ADD COLUMN rarity_tier TEXT NOT NULL DEFAULT 'Common';
-ALTER TABLE inventory_items ADD COLUMN is_capture_type BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE inventory_items ADD COLUMN item_type TEXT NOT NULL DEFAULT 'consumable';
-ALTER TABLE inventory_items ADD COLUMN equipment_slot TEXT;
+-- Create enum for equipment slots
 
--- Update owned_inventory_items to use INTEGER instead of UUID for inventory_item_id
--- (This should already be correct based on the existing model)
+CREATE TYPE rarity_tier_type AS ENUM (
+    'Common',
+    'Uncommon',
+    'Rare',
+    'Epic',
+    'Legendary',
+    'Mythic'
+);
 
--- Seed the table with the current hardcoded items
-INSERT INTO inventory_items (id, created_at, updated_at, name, image_url, flavor_text, effect_text, rarity_tier, is_capture_type, item_type, equipment_slot) VALUES
-(1, NOW(), NOW(), 'Cipher of the Laughing Monkey', 'https://crew-points-of-interest.s3.amazonaws.com/cipher.png', 'Unearthed in the heart of a dense jungle, this mysterious item lay among countless laughing skeletons.', 'Deploy to sow confusion among your rivals by warping their clue texts into bewildering riddles.', 'Uncommon', false, 'consumable', NULL),
-(2, NOW(), NOW(), 'Golden Telescope', 'https://crew-points-of-interest.s3.amazonaws.com/telescope-better.png', 'Legend has it that a artificer parted with his sight to create this so that others might see the stars.', 'Instantly reveals a hidden point on the map. Tap this icon next to the "I''m here!" button on a hidden points of interest to use it.', 'Uncommon', false, 'consumable', NULL),
-(3, NOW(), NOW(), 'Flawed Ruby', 'https://crew-points-of-interest.s3.amazonaws.com/flawed-ruby.png', 'This gem is chipped and disfigured, but will still fetch a decent price at market.', 'Instantly captures a tier one challenge. Tap this icon next to the "Submit Answer" button on any unlocked tier one challenge to use it.', 'Uncommon', true, 'consumable', NULL),
-(4, NOW(), NOW(), 'Ruby', 'https://crew-points-of-interest.s3.amazonaws.com/ruby.png', 'A gem, sparkling more red than the blood you had to spill to procure it.', 'Instantly captures a tier two challenge. Tap this icon next to the "Submit Answer" button on any unlocked tier two challenge to use it.', 'Epic', true, 'consumable', NULL),
-(5, NOW(), NOW(), 'Brilliant Ruby', 'https://crew-points-of-interest.s3.amazonaws.com/brilliant-ruby.png', 'You''ve hit the motherload! This gem will fetch a pirate''s ransom.', 'Instantly captures a tier three challenge. Tap this icon next to the "Submit Answer" button on any unlocked tier three challenge to use it.', 'Mythic', true, 'consumable', NULL),
-(6, NOW(), NOW(), 'Cortez''s Cutlass', 'https://crew-points-of-interest.s3.amazonaws.com/cortez-cutlass.png', 'A relic of the high seas, its blade still sharp enough to cut through the thickest of hides.', 'Steal all of another team''s items.', 'Not Droppable', false, 'equippable', 'right_hand'),
-(7, NOW(), NOW(), 'Rusted Musket', 'https://crew-points-of-interest.s3.amazonaws.com/rusted-musket.png', 'Found in a shipwreck, its barrel rusted and its stock worn.', 'Use on an opponent to lower their score by 2.', 'Common', false, 'consumable', NULL),
-(8, NOW(), NOW(), 'Gold Coin', 'https://crew-points-of-interest.s3.amazonaws.com/gold-coin.png', 'A coin of pure gold. The currency of the high seas.', 'Hold in your inventory to increase your score by 1.', 'Common', false, 'passive', NULL),
-(9, NOW(), NOW(), 'Dagger', 'https://crew-points-of-interest.s3.amazonaws.com/dagger.png', 'A small, sharp blade. It''s not much, but it''s better than nothing.', 'Steal one item from an opponent at random.', 'Epic', false, 'equippable', 'left_hand'),
-(10, NOW(), NOW(), 'Damage', 'https://crew-points-of-interest.s3.amazonaws.com/bullet-hole.png', 'You''ve been shot! Some ale will help.', 'Decreases score by 2 while held in inventory.', 'Not Droppable', false, 'passive', NULL),
-(11, NOW(), NOW(), 'Entseed', 'https://crew-points-of-interest.s3.amazonaws.com/entseed.png', 'This seed will grow into an Ent one day. For now, you can just bask in it''s life energy.', 'Increase score by 3 and neutralize the effects of Damage while held in inventory.', 'Not Droppable', false, 'passive', NULL),
-(12, NOW(), NOW(), 'Ale', 'https://crew-points-of-interest.s3.amazonaws.com/ale.png', 'A hearty brew, made from the finest ingredients.', 'Removes one damage when drank.', 'Uncommon', false, 'consumable', NULL),
-(13, NOW(), NOW(), 'Witchflame', 'https://crew-points-of-interest.s3.us-east-1.amazonaws.com/witchflame.png', 'A flame that burns with a sinister glow.', 'Removes all damage when held. Also increases score by 1 when held.', 'Not Droppable', false, 'passive', NULL),
-(14, NOW(), NOW(), 'Wicked Spellbook', 'https://crew-points-of-interest.s3.us-east-1.amazonaws.com/wicked-spellbook.png', 'The spellbook whispers to you. Ignore it.', 'Steal all of another team''s items.', 'Not Droppable', false, 'equippable', 'left_hand'),
-(15, NOW(), NOW(), 'The Compass of Peace', 'https://crew-points-of-interest.s3.us-east-1.amazonaws.com/compass-of-peace.png', 'Given to you by Shalimar the Merchant. The compass is said to point towards what the wearer needs most to heal.', 'Negate up to 3 damage when held.', 'Not Droppable', false, 'equippable', 'neck'),
-(16, NOW(), NOW(), 'Pirate''s Tricorn Hat', 'https://crew-points-of-interest.s3.amazonaws.com/tricorn-hat.png', 'A weathered hat that has seen many adventures on the high seas. Its feathers still dance in the wind.', 'Increases treasure finding by 10% when worn.', 'Uncommon', false, 'equippable', 'head'),
-(17, NOW(), NOW(), 'Captain''s Coat', 'https://crew-points-of-interest.s3.amazonaws.com/captains-coat.png', 'A noble coat worn by a captain of renown. Its brass buttons still gleam despite the salt and spray.', 'Provides +5 defense against damage when worn.', 'Epic', false, 'equippable', 'chest'),
-(18, NOW(), NOW(), 'Seafarer''s Boots', 'https://crew-points-of-interest.s3.amazonaws.com/seafarer-boots.png', 'Sturdy boots made for walking on both deck and shore. They''ve never failed their wearer.', 'Increases movement speed by 15% when worn.', 'Common', false, 'equippable', 'feet'),
-(19, NOW(), NOW(), 'Enchanted Ring of Fortune', 'https://crew-points-of-interest.s3.amazonaws.com/fortune-ring.png', 'A mysterious ring that pulses with magical energy. Those who wear it speak of incredible luck.', 'Doubles reward chances for treasure hunting when worn.', 'Mythic', false, 'equippable', 'ring'),
-(20, NOW(), NOW(), 'Leather Sailing Gloves', 'https://crew-points-of-interest.s3.amazonaws.com/sailing-gloves.png', 'Well-worn gloves that have handled countless ropes and rigging. They fit like a second skin.', 'Improves grip and handling, reducing chance of dropping items by 50%.', 'Common', false, 'equippable', 'gloves');
+CREATE TYPE equipment_slot_type AS ENUM (
+    'head',
+    'chest', 
+    'left_hand',
+    'right_hand',
+    'feet',
+    'gloves',
+    'neck',
+    'left_ring',
+    'right_ring',
+    'legs',
+    'consumable',
+    'passive',
+    'equippable'
+);
 
--- Reset the sequence for the id column to start from 21 for new items
-SELECT setval('inventory_items_id_seq', (SELECT MAX(id) FROM inventory_items) + 1);
+ALTER TABLE inventory_items ADD COLUMN rarity_tier rarity_tier_type NOT NULL DEFAULT 'Common';
+ALTER TABLE inventory_items ADD COLUMN equipment_slot equipment_slot_type;
+ALTER TABLE inventory_items ADD COLUMN min_damage INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN max_damage INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN defense INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN health INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN speed INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN crit_chance INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN crit_damage INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN attack_range INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN damage_type TEXT DEFAULT 'physical';
+ALTER TABLE inventory_items ADD COLUMN plus_strength INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN plus_agility INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN plus_intelligence INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN plus_wisdom INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN plus_constitution INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN plus_charisma INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN permanant_identifier TEXT DEFAULT NULL;
+
+-- Add missing properties for comprehensive item system
+ALTER TABLE inventory_items ADD COLUMN weight DECIMAL(5,2) DEFAULT 0.0;
+ALTER TABLE inventory_items ADD COLUMN value INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN durability INTEGER DEFAULT 100;
+ALTER TABLE inventory_items ADD COLUMN max_durability INTEGER DEFAULT 100;
+ALTER TABLE inventory_items ADD COLUMN level_requirement INTEGER DEFAULT 1;
+ALTER TABLE inventory_items ADD COLUMN stackable BOOLEAN DEFAULT false;
+ALTER TABLE inventory_items ADD COLUMN max_stack_size INTEGER DEFAULT 1;
+ALTER TABLE inventory_items ADD COLUMN tradeable BOOLEAN DEFAULT true;
+ALTER TABLE inventory_items ADD COLUMN cooldown INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN charges INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN max_charges INTEGER DEFAULT 0;
+ALTER TABLE inventory_items ADD COLUMN quest_related BOOLEAN DEFAULT false;
+ALTER TABLE inventory_items ADD COLUMN crafting_ingredients JSONB DEFAULT NULL;
+ALTER TABLE inventory_items ADD COLUMN special_abilities JSONB DEFAULT NULL;
+ALTER TABLE inventory_items ADD COLUMN item_color TEXT DEFAULT NULL;
+ALTER TABLE inventory_items ADD COLUMN animation_effects TEXT DEFAULT NULL;
+ALTER TABLE inventory_items ADD COLUMN sound_effects TEXT DEFAULT NULL;
+ALTER TABLE inventory_items ADD COLUMN bonus_stats JSONB DEFAULT NULL;
+
+-- Insert sample items with enhanced properties
+INSERT INTO inventory_items (
+    id, created_at, updated_at, name, image_url, flavor_text, effect_text, 
+    rarity_tier, equipment_slot, min_damage, max_damage, defense, health, 
+    speed, crit_chance, crit_damage, attack_range, damage_type, 
+    plus_strength, plus_agility, plus_intelligence, plus_wisdom, 
+    plus_constitution, plus_charisma, permanant_identifier, weight, value, 
+    durability, max_durability, level_requirement, stackable, max_stack_size, 
+    tradeable, cooldown, charges, max_charges, quest_related, 
+    crafting_ingredients, special_abilities, item_color, animation_effects, 
+    sound_effects, bonus_stats
+) VALUES 
+(14, NOW(), NOW(), 'Wicked Spellbook', 'https://crew-points-of-interest.s3.us-east-1.amazonaws.com/wicked-spellbook.png', 'The spellbook whispers to you. Ignore it.', 'Steal all of another team''s items.', 'Epic', 'left_hand', 0, 0, 0, 0, 0, 0, 0, 0, 'magical', 0, 0, 5, 0, 0, 0, 'wicked_spellbook_001', 2.5, 1500, 100, 100, 10, false, 1, true, 300, 0, 0, false, NULL, '{"steal_items": true, "whispers": true}', 'purple', 'whispering_pages', 'dark_whispers', '{"intelligence": 5, "magic_power": 10}'),
+(15, NOW(), NOW(), 'The Compass of Peace', 'https://crew-points-of-interest.s3.us-east-1.amazonaws.com/compass-of-peace.png', 'Given to you by Shalimar the Merchant. The compass is said to point towards what the wearer needs most to heal.', 'Negate up to 3 damage when held.', 'Rare', 'neck', 0, 0, 3, 0, 0, 0, 0, 0, 'none', 0, 0, 0, 2, 0, 0, 'compass_peace_001', 1.0, 800, 100, 100, 5, false, 1, true, 0, 0, 0, false, NULL, '{"damage_negation": 3, "healing_guidance": true}', 'gold', 'gentle_glow', 'soft_chime', '{"wisdom": 2, "healing": 3}'),
+(16, NOW(), NOW(), 'Pirate''s Tricorn Hat', 'https://crew-points-of-interest.s3.amazonaws.com/tricorn-hat.png', 'A weathered hat that has seen many adventures on the high seas. Its feathers still dance in the wind.', 'Increases treasure finding by 10% when worn.', 'Uncommon', 'head', 0, 0, 2, 0, 0, 0, 0, 0, 'none', 0, 1, 0, 0, 0, 0, 'tricorn_hat_001', 0.8, 250, 85, 100, 3, false, 1, true, 0, 0, 0, false, NULL, '{"treasure_finding": 10}', 'brown', 'feathers_dance', 'wind_rustle', '{"agility": 1, "luck": 5}'),
+(17, NOW(), NOW(), 'Captain''s Coat', 'https://crew-points-of-interest.s3.amazonaws.com/captains-coat.png', 'A noble coat worn by a captain of renown. Its brass buttons still gleam despite the salt and spray.', 'Provides +5 defense against damage when worn.', 'Epic', 'chest', 0, 0, 5, 0, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 2, 0, 'captains_coat_001', 3.2, 1200, 90, 100, 8, false, 1, true, 0, 0, 0, false, NULL, '{"defense_boost": 5, "captain_aura": true}', 'navy_blue', 'brass_shine', 'fabric_swish', '{"constitution": 2, "defense": 5}');
+
+-- Starter Equipment Items
+INSERT INTO inventory_items (
+    id, created_at, updated_at, name, image_url, flavor_text, effect_text, 
+    rarity_tier, equipment_slot, min_damage, max_damage, defense, health, 
+    speed, crit_chance, crit_damage, attack_range, damage_type, 
+    plus_strength, plus_agility, plus_intelligence, plus_wisdom, 
+    plus_constitution, plus_charisma, permanant_identifier, weight, value, 
+    durability, max_durability, level_requirement, stackable, max_stack_size, 
+    tradeable, cooldown, charges, max_charges, quest_related, 
+    crafting_ingredients, special_abilities, item_color, animation_effects, 
+    sound_effects, bonus_stats
+) VALUES 
+-- Weapons
+(18, NOW(), NOW(), 'Rusty Dagger', 'https://crew-points-of-interest.s3.amazonaws.com/rusty-dagger.png', 'A simple iron dagger with a worn leather grip. Not much to look at, but it gets the job done.', 'Deals 2-4 damage to enemies.', 'Common', 'right_hand', 2, 4, 0, 0, 0, 5, 0, 1, 'physical', 0, 0, 0, 0, 0, 0, 'rusty_dagger_001', 1.2, 50, 75, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"quick_strike": true}', 'iron', 'metal_shine', 'blade_swish', '{"agility": 1}'),
+(19, NOW(), NOW(), 'Wooden Staff', 'https://crew-points-of-interest.s3.amazonaws.com/wooden-staff.png', 'A sturdy oak staff, carved with simple runes. Perfect for channeling magical energy.', 'Deals 1-3 damage and +2 intelligence.', 'Common', 'left_hand', 1, 3, 0, 0, 0, 0, 0, 2, 'magical', 0, 0, 2, 0, 0, 0, 'wooden_staff_001', 2.8, 75, 90, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"magic_channel": true}', 'brown', 'rune_glow', 'wooden_thud', '{"intelligence": 2, "magic_power": 3}'),
+(20, NOW(), NOW(), 'Training Bow', 'https://crew-points-of-interest.s3.amazonaws.com/training-bow.png', 'A simple yew bow used by novice archers. The string is well-worn but reliable.', 'Deals 3-5 damage with increased range.', 'Common', 'left_hand', 3, 5, 0, 0, 0, 8, 0, 3, 'physical', 0, 2, 0, 0, 0, 0, 'training_bow_001', 1.5, 60, 80, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"extended_range": true}', 'brown', 'string_twang', 'arrow_whistle', '{"agility": 2, "range": 3}'),
+
+-- Armor
+(21, NOW(), NOW(), 'Leather Jerkin', 'https://crew-points-of-interest.s3.amazonaws.com/leather-jerkin.png', 'A simple leather vest that provides basic protection without restricting movement.', 'Provides +2 defense and +1 agility.', 'Common', 'chest', 0, 0, 2, 0, 0, 0, 0, 0, 'none', 0, 1, 0, 0, 0, 0, 'leather_jerkin_001', 2.0, 80, 85, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"light_armor": true}', 'brown', 'leather_shine', 'soft_rustle', '{"defense": 2, "agility": 1}'),
+(22, NOW(), NOW(), 'Cloth Robes', 'https://crew-points-of-interest.s3.amazonaws.com/cloth-robes.png', 'Simple robes made of sturdy cotton. They offer little protection but are comfortable for spellcasting.', 'Provides +1 defense and +2 intelligence.', 'Common', 'chest', 0, 0, 1, 0, 0, 0, 0, 0, 'none', 0, 0, 2, 0, 0, 0, 'cloth_robes_001', 1.5, 45, 90, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"spellcasting_focus": true}', 'white', 'fabric_flow', 'soft_swish', '{"defense": 1, "intelligence": 2}'),
+(23, NOW(), NOW(), 'Iron Gauntlets', 'https://crew-points-of-interest.s3.amazonaws.com/iron-gauntlets.png', 'Heavy iron gauntlets that protect your hands in combat. They''re a bit cumbersome but very protective.', 'Provides +3 defense and +1 strength.', 'Common', 'gloves', 0, 0, 3, 0, 0, 0, 0, 0, 'none', 1, 0, 0, 0, 0, 0, 'iron_gauntlets_001', 2.5, 120, 95, 100, 2, false, 1, true, 0, 0, 0, false, NULL, '{"hand_protection": true}', 'iron', 'metal_clank', 'iron_thud', '{"defense": 3, "strength": 1}'),
+(24, NOW(), NOW(), 'Leather Boots', 'https://crew-points-of-interest.s3.amazonaws.com/leather-boots.png', 'Well-made leather boots that provide good traction and basic foot protection.', 'Provides +1 defense and +2 speed.', 'Common', 'feet', 0, 0, 1, 0, 2, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'leather_boots_001', 1.8, 65, 90, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"good_traction": true}', 'brown', 'leather_shine', 'soft_thud', '{"defense": 1, "speed": 2}'),
+(25, NOW(), NOW(), 'Copper Ring', 'https://crew-points-of-interest.s3.amazonaws.com/copper-ring.png', 'A simple copper ring with a small gemstone. It provides a minor magical boost.', 'Provides +1 to all stats.', 'Common', 'left_ring', 0, 0, 0, 0, 0, 0, 0, 0, 'none', 1, 1, 1, 1, 1, 1, 'copper_ring_001', 0.1, 100, 100, 100, 1, false, 1, true, 0, 0, 0, false, NULL, '{"minor_boost": true}', 'copper', 'gem_sparkle', 'metal_clink', '{"all_stats": 1}'),
+
+-- Consumable Items
+(26, NOW(), NOW(), 'Health Potion', 'https://crew-points-of-interest.s3.amazonaws.com/health-potion.png', 'A red liquid that bubbles gently. It smells sweet and restorative.', 'Restores 25 health points when consumed.', 'Common', 'consumable', 0, 0, 0, 25, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'health_potion_001', 0.5, 25, 100, 100, 1, true, 10, true, 0, 1, 1, false, NULL, '{"healing": 25}', 'red', 'bubbling', 'liquid_slosh', '{"healing": 25}'),
+(27, NOW(), NOW(), 'Mana Potion', 'https://crew-points-of-interest.s3.amazonaws.com/mana-potion.png', 'A blue liquid that glows with magical energy. It tingles when you touch it.', 'Restores 30 mana points when consumed.', 'Common', 'consumable', 0, 0, 0, 0, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'mana_potion_001', 0.5, 30, 100, 100, 1, true, 10, true, 0, 1, 1, false, NULL, '{"mana_restore": 30}', 'blue', 'magical_glow', 'magical_hum', '{"mana": 30}'),
+(28, NOW(), NOW(), 'Bread Loaf', 'https://crew-points-of-interest.s3.amazonaws.com/bread-loaf.png', 'A fresh loaf of bread with a golden crust. It smells warm and comforting.', 'Restores 15 health and provides temporary +1 constitution.', 'Common', 'consumable', 0, 0, 0, 15, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 1, 0, 'bread_loaf_001', 0.8, 5, 100, 100, 1, true, 5, true, 0, 1, 1, false, NULL, '{"nourishment": true}', 'golden', 'steam_rise', 'soft_crunch', '{"health": 15, "constitution": 1}'),
+(29, NOW(), NOW(), 'Antidote', 'https://crew-points-of-interest.s3.amazonaws.com/antidote.png', 'A clear liquid with a bitter taste. It neutralizes most common poisons.', 'Removes poison effects and provides poison resistance for 1 hour.', 'Uncommon', 'consumable', 0, 0, 0, 0, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'antidote_001', 0.3, 75, 100, 100, 3, true, 5, true, 0, 1, 1, false, NULL, '{"poison_removal": true, "poison_resistance": 3600}', 'clear', 'gentle_glow', 'liquid_slosh', '{"poison_resistance": 3600}'),
+(30, NOW(), NOW(), 'Invisibility Potion', 'https://crew-points-of-interest.s3.amazonaws.com/invisibility-potion.png', 'A shimmering potion that seems to bend light around it. It makes you feel lighter.', 'Makes you invisible for 30 seconds.', 'Rare', 'consumable', 0, 0, 0, 0, 0, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'invisibility_potion_001', 0.4, 200, 100, 100, 5, true, 3, true, 300, 1, 1, false, NULL, '{"invisibility": 30}', 'shimmering', 'light_bend', 'magical_whisper', '{"stealth": 30}'),
+(31, NOW(), NOW(), 'Strength Elixir', 'https://crew-points-of-interest.s3.amazonaws.com/strength-elixir.png', 'A thick, red liquid that tastes like iron and fire. It makes your muscles feel like steel.', 'Provides +5 strength for 1 hour.', 'Uncommon', 'consumable', 0, 0, 0, 0, 0, 0, 0, 0, 'none', 5, 0, 0, 0, 0, 0, 'strength_elixir_001', 0.6, 150, 100, 100, 4, true, 3, true, 600, 1, 1, false, NULL, '{"strength_boost": 3600}', 'red', 'muscle_glow', 'powerful_roar', '{"strength": 5}'),
+(32, NOW(), NOW(), 'Speed Draught', 'https://crew-points-of-interest.s3.amazonaws.com/speed-draught.png', 'A fizzy, green liquid that bubbles and pops. It makes you feel incredibly light and fast.', 'Provides +4 speed for 30 minutes.', 'Uncommon', 'consumable', 0, 0, 0, 0, 4, 0, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'speed_draught_001', 0.4, 120, 100, 100, 3, true, 3, true, 0, 1, 1, false, NULL, '{"speed_boost": 1800}', 'green', 'speed_trails', 'wind_whistle', '{"speed": 4}'),
+(33, NOW(), NOW(), 'Lucky Charm', 'https://crew-points-of-interest.s3.amazonaws.com/lucky-charm.png', 'A small, four-leaf clover preserved in resin. It seems to glow with good fortune.', 'Increases luck and critical hit chance for 1 hour.', 'Rare', 'consumable', 0, 0, 0, 0, 0, 10, 0, 0, 'none', 0, 0, 0, 0, 0, 0, 'lucky_charm_001', 0.2, 300, 100, 100, 6, true, 1, true, 3600, 1, 1, false, NULL, '{"luck_boost": 3600, "crit_boost": 3600}', 'green', 'fortune_glow', 'lucky_chime', '{"luck": 10, "crit_chance": 10}');
