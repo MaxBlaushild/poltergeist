@@ -27,15 +27,15 @@ type Submission struct {
 }
 
 type SubmissionResult struct {
-	Successful        bool                          `json:"successful"`
-	Reason            string                        `json:"reason"`
-	QuestCompleted    bool                          `json:"questCompleted"`
-	ItemsAwarded      []quartermaster.InventoryItem `json:"itemsAwarded"`
-	ExperienceAwarded int                           `json:"experienceAwarded"`
-	ReputationAwarded int                           `json:"reputationAwarded"`
-	ZoneID            uuid.UUID                     `json:"zoneID"`
-	LevelUp           bool                          `json:"levelUp"`
-	ReputationUp      bool                          `json:"reputationUp"`
+	Successful        bool                   `json:"successful"`
+	Reason            string                 `json:"reason"`
+	QuestCompleted    bool                   `json:"questCompleted"`
+	ItemsAwarded      []models.InventoryItem `json:"itemsAwarded"`
+	ExperienceAwarded int                    `json:"experienceAwarded"`
+	ReputationAwarded int                    `json:"reputationAwarded"`
+	ZoneID            uuid.UUID              `json:"zoneID"`
+	LevelUp           bool                   `json:"levelUp"`
+	ReputationUp      bool                   `json:"reputationUp"`
 }
 
 type GameEngineClient interface {
@@ -126,21 +126,21 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 }
 
 func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge, submissionResult *SubmissionResult) error {
-	if challenge.InventoryItemID == 0 {
+	if challenge.InventoryItemID == nil {
 		item, err := c.quartermaster.GetItem(ctx, submission.TeamID, submission.UserID)
 		if err != nil {
 			return err
 		}
 
-		submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, item)
+		submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, *item)
 	}
 
-	item, err := c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, submission.UserID, challenge.InventoryItemID)
+	item, err := c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, submission.UserID, *challenge.InventoryItemID)
 	if err != nil {
 		return err
 	}
 
-	submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, item)
+	submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, *item)
 
 	return nil
 }

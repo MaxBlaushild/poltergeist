@@ -43,8 +43,8 @@ func (c *client) makePointOfInterestName(id uuid.UUID) string {
 	return fmt.Sprintf("{PointOfInterest|%s}", id)
 }
 
-func (c *client) makeInventoryItemName(id int) string {
-	return fmt.Sprintf("{InventoryItem|%d}", id)
+func (c *client) makeInventoryItemName(id uuid.UUID) string {
+	return fmt.Sprintf("{InventoryItem|%s}", id)
 }
 
 func (c *client) makeChallengeTierName(tier int) string {
@@ -200,7 +200,7 @@ func (c *client) addUseItemMessageForTeam(ctx context.Context, ownedInventoryIte
 		return err
 	}
 
-	item, err := c.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	item, err := c.quartermaster.FindItemForItemID(ctx, ownedInventoryItem.InventoryItemID)
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (c *client) addUseItemMessageForUser(ctx context.Context, ownedInventoryIte
 		return nil
 	}
 
-	item, err := c.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	item, err := c.quartermaster.FindItemForItemID(ctx, ownedInventoryItem.InventoryItemID)
 	if err != nil {
 		return err
 	}

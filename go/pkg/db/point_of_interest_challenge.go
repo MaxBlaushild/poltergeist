@@ -41,7 +41,7 @@ func (p *pointOfInterestChallengeHandle) DeleteAllForPointOfInterest(ctx context
 	return nil
 }
 
-func (p *pointOfInterestChallengeHandle) Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID int, tier int) (*models.PointOfInterestChallenge, error) {
+func (p *pointOfInterestChallengeHandle) Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID *uuid.UUID, tier int) (*models.PointOfInterestChallenge, error) {
 	challenge := models.PointOfInterestChallenge{
 		Question:        question,
 		InventoryItemID: inventoryItemID,
@@ -61,7 +61,7 @@ func (p *pointOfInterestChallengeHandle) Create(
 	pointOfInterestID uuid.UUID,
 	tier int,
 	question string,
-	inventoryItemID int,
+	inventoryItemID *uuid.UUID,
 	pointOfInterestGroupID *uuid.UUID,
 ) (*models.PointOfInterestChallenge, error) {
 	challenge := models.PointOfInterestChallenge{

@@ -14,7 +14,7 @@ type QuestObjective struct {
 	IsCompleted bool                                        `json:"isCompleted"`
 	Submissions []models.PointOfInterestChallengeSubmission `json:"submissions"`
 	NextNode    *QuestNode                                  `json:"nextNode"`
-	Reward      int                                         `json:"reward"`
+	Reward      *uuid.UUID                                  `json:"reward"`
 }
 
 type QuestNode struct {

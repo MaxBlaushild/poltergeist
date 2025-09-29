@@ -645,7 +645,7 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Reward              int        `json:"reward"`
+		Reward              *uuid.UUID `json:"reward"`
 		LocationArchetypeID *uuid.UUID `json:"locationArchetypeID"`
 	}
 
@@ -1311,7 +1311,7 @@ func (s *server) giveItem(ctx *gin.Context) {
 	var requestBody struct {
 		UserID   *uuid.UUID `json:"userID"`
 		TeamID   *uuid.UUID `json:"teamID"`
-		ItemID   int        `binding:"required" json:"itemID"`
+		ItemID   uuid.UUID  `binding:"required" json:"itemID"`
 		Quantity int        `binding:"required" json:"quantity"`
 	}
 
@@ -1689,11 +1689,11 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 
 func (s *server) createPointOfInterestChallenge(ctx *gin.Context) {
 	var requestBody struct {
-		PointOfInterestID      uuid.UUID `binding:"required" json:"pointOfInterestId"`
-		Tier                   int       `binding:"required" json:"tier"`
-		Question               string    `binding:"required" json:"question"`
-		InventoryItemID        int       `binding:"required" json:"inventoryItemId"`
-		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupId"`
+		PointOfInterestID      uuid.UUID  `binding:"required" json:"pointOfInterestId"`
+		Tier                   int        `binding:"required" json:"tier"`
+		Question               string     `binding:"required" json:"question"`
+		InventoryItemID        *uuid.UUID `binding:"required" json:"inventoryItemId"`
+		PointOfInterestGroupID uuid.UUID  `json:"pointOfInterestGroupId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1733,9 +1733,9 @@ func (s *server) editPointOfInterestChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Question        string `binding:"required" json:"question"`
-		InventoryItemID int    `binding:"required" json:"inventoryItemId"`
-		Tier            int    `binding:"required" json:"tier"`
+		Question        string     `binding:"required" json:"question"`
+		InventoryItemID *uuid.UUID `binding:"required" json:"inventoryItemId"`
+		Tier            int        `binding:"required" json:"tier"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2165,39 +2165,39 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
-	inventoryItem, err := s.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
+	// inventoryItem, err := s.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	// if err != nil {
+	// 	ctx.JSON(http.StatusInternalServerError, gin.H{
+	// 		"error": err.Error(),
+	// 	})
+	// 	return
+	// }
 
-	if inventoryItem.IsCaptureType {
-		challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, request.ChallengeID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
-		result, err := s.gameEngineClient.ProcessSuccessfulSubmission(ctx, gameengine.Submission{
-			TeamID:      ownedInventoryItem.TeamID,
-			UserID:      ownedInventoryItem.UserID,
-			ChallengeID: challenge.ID,
-			Text:        "",
-			ImageURL:    "",
-		}, challenge)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
-			})
-			return
-		}
+	// if inventoryItem.IsCaptureType {
+	// 	challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, request.ChallengeID)
+	// 	if err != nil {
+	// 		ctx.JSON(http.StatusInternalServerError, gin.H{
+	// 			"error": err.Error(),
+	// 		})
+	// 		return
+	// 	}
+	// 	result, err := s.gameEngineClient.ProcessSuccessfulSubmission(ctx, gameengine.Submission{
+	// 		TeamID:      ownedInventoryItem.TeamID,
+	// 		UserID:      ownedInventoryItem.UserID,
+	// 		ChallengeID: challenge.ID,
+	// 		Text:        "",
+	// 		ImageURL:    "",
+	// 	}, challenge)
+	// 	if err != nil {
+	// 		ctx.JSON(http.StatusInternalServerError, gin.H{
+	// 			"error": err.Error(),
+	// 		})
+	// 		return
+	// 	}
 
-		ctx.JSON(http.StatusOK, result)
-		return
-	}
+	// 	ctx.JSON(http.StatusOK, result)
+	// 	return
+	// }
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "item used successfully",

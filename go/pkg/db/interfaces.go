@@ -204,12 +204,12 @@ type PointOfInterestGroupHandle interface {
 }
 
 type PointOfInterestChallengeHandle interface {
-	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID int, pointOfInterestGroupID *uuid.UUID) (*models.PointOfInterestChallenge, error)
+	Create(ctx context.Context, pointOfInterestID uuid.UUID, tier int, question string, inventoryItemID *uuid.UUID, pointOfInterestGroupID *uuid.UUID) (*models.PointOfInterestChallenge, error)
 	SubmitAnswerForChallenge(ctx context.Context, challengeID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID, text string, imageURL string, isCorrect bool) (*models.PointOfInterestChallengeSubmission, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestChallenge, error)
 	GetChallengeForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID int, tier int) (*models.PointOfInterestChallenge, error)
+	Edit(ctx context.Context, id uuid.UUID, question string, inventoryItemID *uuid.UUID, tier int) (*models.PointOfInterestChallenge, error)
 	GetSubmissionsForMatch(ctx context.Context, matchID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	DeleteAllForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) error

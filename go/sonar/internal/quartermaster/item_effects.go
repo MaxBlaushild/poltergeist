@@ -15,10 +15,10 @@ const (
 )
 
 func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata *UseItemMetadata) error {
-	item, err := q.FindItemForItemID(ctx, ownedInventoryItem.InventoryItemID)
-	if err != nil {
-		return err
-	}
+	// item, err := q.FindItemForItemID(ctx, ownedInventoryItem.InventoryItemID)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 

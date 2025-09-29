@@ -71,7 +71,7 @@ function App() {
                               >
                                 <RouterProvider router={router} />
                                 <LocationError />
-                                <LowLatencyWarning />
+                                {/* <LowLatencyWarning /> */}
                               </DndProvider>
                           </SubmissionsContextProvider>
                         </DiscoveriesContextProvider>

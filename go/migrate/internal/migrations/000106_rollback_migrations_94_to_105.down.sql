@@ -1,0 +1,4 @@
+-- This migration rolls back migrations 94-105, so the down migration would re-apply them
+-- However, since this is a rollback migration, the down migration should not be used
+-- as it would re-apply potentially problematic changes
+-- This file is intentionally left empty to prevent accidental re-application 

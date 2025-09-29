@@ -151,7 +151,7 @@ export const Monsters = () => {
   };
 
   const deleteMonster = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this monster?')) return;
+    if (!window.confirm('Are you sure you want to delete this monster?')) return;
     
     try {
       await apiClient.delete(`/sonar/admin/monsters/${id}`);
