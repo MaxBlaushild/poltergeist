@@ -61,7 +61,7 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
             setIsWaitingOnVerificationCode(false);
         }
     });
-    const logister = (phoneNumber, verificationCode, name) => __awaiter(void 0, void 0, void 0, function* () {
+    const logister = (phoneNumber, verificationCode) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/login`, { phoneNumber, code: verificationCode });
             const { user, token } = response.data;
@@ -70,9 +70,10 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
         }
         catch (e) {
             try {
-                const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/register`, { phoneNumber, code: verificationCode, name });
+                const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/register`, { phoneNumber, code: verificationCode });
                 const { user, token } = response.data;
                 localStorage.setItem(tokenKey, token);
+                setIsRegister(true);
                 setUser(user);
             }
             catch (e) {

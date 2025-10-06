@@ -13,6 +13,7 @@ type DeepPriest interface {
 	PetitionTheFount(*Question) (*Answer, error)
 	PetitionTheFountWithImage(*QuestionWithImage) (*Answer, error)
 	GenerateImage(request GenerateImageRequest) (string, error)
+	EditImage(request EditImageRequest) (string, error)
 }
 
 type GenerateImageRequest struct {
@@ -24,6 +25,18 @@ type GenerateImageRequest struct {
 	Style          string `json:"style,omitempty"`
 	ResponseFormat string `json:"response_format,omitempty"`
 	User           string `json:"user,omitempty"`
+}
+
+type EditImageRequest struct {
+	Prompt         string `json:"prompt,omitempty"`
+	Model          string `json:"model,omitempty"`
+	N              int    `json:"n,omitempty"`
+	Quality        string `json:"quality,omitempty"`
+	Size           string `json:"size,omitempty"`
+	Style          string `json:"style,omitempty"`
+	ResponseFormat string `json:"response_format,omitempty"`
+	User           string `json:"user,omitempty"`
+	ImageUrl       string `json:"image_url,omitempty"`
 }
 
 type Question struct {
@@ -110,6 +123,32 @@ func (d *deepPriest) GenerateImage(request GenerateImageRequest) (string, error)
 	}
 
 	resp, err := http.Post(baseUrl+"/generateImage", "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var response ImageGenerationResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return "", err
+	}
+
+	return response.ImageUrl, nil
+}
+
+func (d *deepPriest) EditImage(request EditImageRequest) (string, error) {
+	jsonBody, err := json.Marshal(request)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.Post(baseUrl+"/editImage", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", err
 	}

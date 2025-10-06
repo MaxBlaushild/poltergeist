@@ -110,3 +110,8 @@ func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
 
 	return R * c
 }
+
+func ValidateUsername(username string) bool {
+	r := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+	return r.MatchString(username)
+}

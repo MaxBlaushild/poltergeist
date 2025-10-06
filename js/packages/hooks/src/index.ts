@@ -8,3 +8,4 @@ export * from './useRelevantTagsSearch';
 export * from './useActiveQuest';
 export * from './useUserLevel';
 export * from './useUserZoneReputation';
+export * from './usePartyMembers';

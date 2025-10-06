@@ -34,3 +34,5 @@ export * from './point';
 export * from './submissionResult';
 export * from './userLevel';
 export * from './userZoneReputation';
+export * from './friend';
+export * from './friendInvite';

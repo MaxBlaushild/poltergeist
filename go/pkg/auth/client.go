@@ -19,6 +19,7 @@ type RegisterByTextRequest struct {
 	Code        string  `json:"code" binding:"required"`
 	Name        string  `json:"name"`
 	UserID      *string `json:"userId"`
+	Username    *string `json:"username"`
 }
 
 type LoginByTextRequest struct {

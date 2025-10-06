@@ -2,7 +2,9 @@ package open_ai
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	openai "github.com/sashabaranov/go-openai"
@@ -77,6 +79,45 @@ func (c *client) GenerateImage(ctx context.Context, request deep_priest.Generate
 
 	log.Printf("Successfully generated image with URL: %s", resp.Data[0].B64JSON)
 	return resp.Data[0].B64JSON, nil
+}
+
+func (c *client) EditImage(ctx context.Context, request deep_priest.EditImageRequest) (string, error) {
+	log.Printf("Editing image with prompt: %s", request.Prompt)
+
+	resp, err := http.Get(request.ImageUrl)
+	if err != nil {
+		log.Printf("Error downloading image: %v", err)
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("Error downloading image: status code %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to download image: status code %d", resp.StatusCode)
+	}
+
+	newImage, err := c.ai.CreateEditImage(
+		ctx,
+		openai.ImageEditRequest{
+			Prompt:         request.Prompt,
+			Image:          resp.Body,
+			Model:          request.Model,
+			N:              request.N,
+			Quality:        request.Quality,
+			Size:           request.Size,
+			ResponseFormat: request.ResponseFormat,
+			User:           request.User,
+		},
+	)
+
+	if err != nil {
+		log.Printf("Error editing image: %v", err)
+		return "", err
+	}
+	log.Printf("Image edit response: %+v", newImage)
+
+	log.Printf("Successfully edited image with URL: %s", newImage.Data[0].B64JSON)
+	return newImage.Data[0].B64JSON, nil
 }
 
 func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error) {

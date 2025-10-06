@@ -90,7 +90,6 @@ export const AuthProvider = ({
   const logister = async (
     phoneNumber: string,
     verificationCode: string,
-    name: string
   ) => {
     try {
       const response = await axios.post(
@@ -106,12 +105,12 @@ export const AuthProvider = ({
       try {
         const response = await axios.post(
           `${process.env.REACT_APP_API_URL}${uriPrefix}/register`,
-          { phoneNumber, code: verificationCode, name }
+          { phoneNumber, code: verificationCode }
         );
         const { user, token } = response.data;
 
         localStorage.setItem(tokenKey, token);
-
+        setIsRegister(true);
         setUser(user);
       } catch (e) {
         setError(e);

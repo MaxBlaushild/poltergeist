@@ -50,6 +50,9 @@ type client struct {
 	pointHandle                       *pointHandler
 	userLevelHandle                   *userLevelHandler
 	userZoneReputationHandle          *userZoneReputationHandler
+	partyHandle                       *partyHandle
+	friendHandle                      *friendHandle
+	friendInviteHandle                *friendInviteHandle
 }
 
 type ClientConfig struct {
@@ -117,7 +120,22 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		pointHandle:                       &pointHandler{db: db},
 		userLevelHandle:                   &userLevelHandler{db: db},
 		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
+		partyHandle:                       &partyHandle{db: db},
+		friendHandle:                      &friendHandle{db: db},
+		friendInviteHandle:                &friendInviteHandle{db: db},
 	}, nil
+}
+
+func (c *client) FriendInvite() FriendInviteHandle {
+	return c.friendInviteHandle
+}
+
+func (c *client) Friend() FriendHandle {
+	return c.friendHandle
+}
+
+func (c *client) Party() PartyHandle {
+	return c.partyHandle
 }
 
 func (c *client) UserZoneReputation() UserZoneReputationHandle {

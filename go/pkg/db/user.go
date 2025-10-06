@@ -12,10 +12,38 @@ type userHandle struct {
 	db *gorm.DB
 }
 
-func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID) (*models.User, error) {
+func (h *userHandle) Update(ctx context.Context, userID uuid.UUID, updates models.User) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+}
+
+func (h *userHandle) SetUsername(ctx context.Context, userID uuid.UUID, username string) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("username", username).Error
+}
+
+func (h *userHandle) FindLikeByUsername(ctx context.Context, username string) (*models.User, error) {
+	var user models.User
+	if err := h.db.WithContext(ctx).Where("username LIKE ?", "%"+username+"%").First(&user).Error; err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (h *userHandle) FindByUsername(ctx context.Context, username string) (*models.User, error) {
+	var user models.User
+	if err := h.db.WithContext(ctx).Where(&models.User{Username: &username}).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string) (*models.User, error) {
 	user := models.User{
 		Name:        name,
 		PhoneNumber: phoneNumber,
+		Username:    username,
 	}
 
 	if id != nil {
@@ -85,4 +113,67 @@ func (h *userHandle) UpdateProfilePictureUrl(ctx context.Context, userID uuid.UU
 
 func (h *userHandle) UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error {
 	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("has_seen_tutorial", hasSeenTutorial).Error
+}
+
+func (h *userHandle) JoinParty(ctx context.Context, inviterID uuid.UUID, inviteeID uuid.UUID) error {
+	inviter, err := h.FindByID(ctx, inviterID)
+	if err != nil {
+		return err
+	}
+
+	partyID := inviter.PartyID
+	partyExisted := partyID != nil
+
+	if partyID == nil {
+		party := &models.Party{}
+		if err := h.db.WithContext(ctx).Create(&party).Error; err != nil {
+			return err
+		}
+		partyID = &party.ID
+	}
+
+	partyMembers := []models.User{}
+
+	if err := h.db.WithContext(ctx).Where("party_id = ?", inviter.PartyID).Find(&partyMembers).Error; err != nil {
+		return err
+	}
+
+	if len(partyMembers) >= MaxPartySize {
+		return ErrMaxPartySizeReached
+	}
+
+	if err := h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", inviteeID).Update("party_id", partyID).Error; err != nil {
+		return err
+	}
+
+	if partyExisted {
+		if err := h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", inviterID).Update("party_id", partyID).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (h *userHandle) FindPartyMembers(ctx context.Context, userID uuid.UUID) ([]models.User, error) {
+	var foundUsers []models.User
+	var users []models.User
+
+	user, err := h.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.db.WithContext(ctx).Where("party_id = ?", user.PartyID).Find(&foundUsers).Error; err != nil {
+		return nil, err
+	}
+
+	for _, user := range foundUsers {
+		if user.ID == userID {
+			continue
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
 }

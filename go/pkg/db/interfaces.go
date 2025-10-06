@@ -47,6 +47,9 @@ type DbClient interface {
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserZoneReputation() UserZoneReputationHandle
+	Friend() FriendHandle
+	Party() PartyHandle
+	FriendInvite() FriendInviteHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -71,7 +74,7 @@ type HowManyQuestionHandle interface {
 }
 
 type UserHandle interface {
-	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID) (*models.User, error)
+	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string) (*models.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
 	FindUsersByIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.User, error)
@@ -80,6 +83,12 @@ type UserHandle interface {
 	DeleteAll(ctx context.Context) error
 	UpdateProfilePictureUrl(ctx context.Context, userID uuid.UUID, url string) error
 	UpdateHasSeenTutorial(ctx context.Context, userID uuid.UUID, hasSeenTutorial bool) error
+	JoinParty(ctx context.Context, inviterID uuid.UUID, inviteeID uuid.UUID) error
+	FindPartyMembers(ctx context.Context, userID uuid.UUID) ([]models.User, error)
+	FindByUsername(ctx context.Context, username string) (*models.User, error)
+	FindLikeByUsername(ctx context.Context, username string) (*models.User, error)
+	SetUsername(ctx context.Context, userID uuid.UUID, username string) error
+	Update(ctx context.Context, userID uuid.UUID, updates models.User) error
 }
 
 type TeamHandle interface {
@@ -359,4 +368,20 @@ type UserLevelHandle interface {
 type UserZoneReputationHandle interface {
 	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
 	FindOrCreateForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (*models.UserZoneReputation, error)
+}
+
+type PartyHandle interface {
+	Create(ctx context.Context) (*models.Party, error)
+}
+
+type FriendHandle interface {
+	Create(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (*models.Friend, error)
+	FindAllFriends(ctx context.Context, userID uuid.UUID) ([]models.User, error)
+}
+
+type FriendInviteHandle interface {
+	Create(ctx context.Context, inviterID uuid.UUID, inviteeID uuid.UUID) (*models.FriendInvite, error)
+	FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.FriendInvite, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
