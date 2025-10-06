@@ -26,8 +26,6 @@ export function Logister(props: LogisterProps) {
   } = props;
   const [code, setCode] = useState('');
   const [phoneNumber, setPhoneNumber] = useState<string | undefined>(undefined);
-  const [name, setName] = useState<string>('');
-  const [profilePictureUrl, setProfilePictureUrl] = useState<string | undefined>(undefined);
 
   const validPhoneNumber =
     typeof phoneNumber === 'string' && isValidPhoneNumber(phoneNumber);
@@ -49,19 +47,6 @@ export function Logister(props: LogisterProps) {
             </p>
           )}
         </div>
-        {isRegister && isWaitingOnVerificationCode && (
-          <div>
-            <input
-              placeholder="Name"
-              type="text"
-              value={name}
-              onChange={(e) => {
-                const inputValue = e.target.value;
-                setName(inputValue);
-              }}
-            />
-          </div>
-        )}
         {isWaitingOnVerificationCode && (
           <div>
             <input
@@ -94,8 +79,8 @@ export function Logister(props: LogisterProps) {
         ) : null}
         {isWaitingOnVerificationCode ? (
           <button
-            onClick={() => logister(phoneNumber!, code, name, isRegister)}
-            disabled={code.length !== 6 || (isRegister && name.length === 0)}
+            onClick={() => logister(phoneNumber!, code, isRegister)}
+            disabled={code.length !== 6}
             className="Logister__button"
           >
             {isRegister ? 'Register' : 'Login'}

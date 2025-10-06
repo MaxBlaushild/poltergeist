@@ -220,8 +220,241 @@ func (s *server) ListenAndServe(port string) {
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.getLevel))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.getZoneReputation))
-
+	r.POST("/sonar/party/join", middleware.WithAuthentication(s.authClient, s.joinParty))
+	r.GET("/sonar/party/members", middleware.WithAuthentication(s.authClient, s.getPartyMembers))
+	r.GET("/sonar/username/validate", s.validateUsername)
+	r.GET("/sonar/users/:username", s.getUserByUsername)
+	r.GET("/sonar/users/search", s.searchUsers)
+	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.acceptFriendInvite))
+	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.createFriendInvite))
+	r.GET("/sonar/friendInvites", middleware.WithAuthentication(s.authClient, s.getFriendInvites))
+	r.GET("/sonar/friends", middleware.WithAuthentication(s.authClient, s.getFriends))
+	r.POST("/sonar/profile")
 	r.Run(":8042")
+}
+
+func (s *server) setProfile(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		Username          string `json:"username"`
+		ProfilePictureUrl string `json:"profilePictureUrl"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.CreateProfilePictureTaskPayload{
+		UserID:            user.ID,
+		ProfilePictureUrl: requestBody.ProfilePictureUrl,
+	})
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.CreateProfilePictureTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.User().Update(ctx, user.ID, models.User{
+		Username:          &requestBody.Username,
+		ProfilePictureUrl: models.LoadingProfilePictureUrl,
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "profile set successfully"})
+}
+
+func (s *server) searchUsers(ctx *gin.Context) {
+	query := ctx.Query("query")
+
+	users, err := s.dbClient.User().FindLikeByUsername(ctx, query)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, users)
+}
+
+func (s *server) getUserByUsername(ctx *gin.Context) {
+	usernameQuery := ctx.Param("username")
+
+	user, err := s.dbClient.User().FindByUsername(ctx, usernameQuery)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *server) validateUsername(ctx *gin.Context) {
+	usernameQuery := ctx.Query("username")
+
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindLikeByUsername(ctx, usernameQuery)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if user != nil {
+		ctx.JSON(http.StatusOK, gin.H{"valid": false, "message": "Username already taken."})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"valid": true})
+}
+
+func (s *server) getFriends(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	friends, err := s.dbClient.Friend().FindAllFriends(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, friends)
+}
+
+func (s *server) getFriendInvites(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	invites, err := s.dbClient.FriendInvite().FindAllInvites(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invites)
+}
+
+func (s *server) createFriendInvite(ctx *gin.Context) {
+	var requestBody struct {
+		InviteeID uuid.UUID `json:"inviteeID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	if _, err = s.dbClient.FriendInvite().Create(ctx, user.ID, requestBody.InviteeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "friend invite created successfully"})
+}
+
+func (s *server) acceptFriendInvite(ctx *gin.Context) {
+	var requestBody struct {
+		InviteID uuid.UUID `json:"inviteId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	invite, err := s.dbClient.FriendInvite().FindByID(ctx, requestBody.InviteID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if invite.InviteeID != user.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite"})
+		return
+	}
+
+	if _, err = s.dbClient.Friend().Create(ctx, invite.InviterID, user.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err = s.dbClient.FriendInvite().Delete(ctx, requestBody.InviteID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "friend invite accepted successfully"})
+}
+
+func (s *server) getPartyMembers(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	members, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, members)
+}
+
+func (s *server) joinParty(ctx *gin.Context) {
+	var requestBody struct {
+		InviterID uuid.UUID `json:"inviterID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	err = s.dbClient.User().JoinParty(ctx, requestBody.InviterID, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party created successfully"})
 }
 
 func (s *server) getLevel(ctx *gin.Context) {
@@ -1858,7 +2091,6 @@ func (s *server) getCompleteGenerationsForUser(ctx *gin.Context) {
 func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 	var requestBody struct {
 		ProfilePictureUrl string `binding:"required" json:"profilePictureUrl"`
-		Gender            string `binding:"required" json:"gender"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1876,11 +2108,27 @@ func (s *server) generateProfilePictureOptions(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.charicturist.CreateCharacter(ctx, charicturist.CreateCharacterRequest{
+	if err := s.dbClient.User().UpdateProfilePictureUrl(ctx, user.ID, models.LoadingProfilePictureUrl); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	createProfilePayload := jobs.CreateProfilePictureTaskPayload{
+		UserID:            user.ID,
 		ProfilePictureUrl: requestBody.ProfilePictureUrl,
-		UserId:            user.ID,
-		Gender:            requestBody.Gender,
-	}); err != nil {
+	}
+
+	payloadBytes, err := json.Marshal(createProfilePayload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.CreateProfilePictureTaskType, payloadBytes)); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -2659,6 +2907,13 @@ func (s *server) register(ctx *gin.Context) {
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
+		})
+		return
+	}
+
+	if requestBody.Username != nil && !util.ValidateUsername(*requestBody.Username) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid username",
 		})
 		return
 	}

@@ -18,7 +18,7 @@ replace (
 
 require (
 	github.com/gin-gonic/gin v1.9.0
-	github.com/sashabaranov/go-openai v1.28.1
+	github.com/sashabaranov/go-openai v1.41.2
 	github.com/spf13/viper v1.16.0
 )
 

@@ -23,6 +23,8 @@ export function Home() {
     isRegister,
   } = useAuth();
 
+  console.log('isRegister', isRegister);
+
   const [isLogistering, setIsLogistering] = useState<boolean>(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [shouldSetProfilePicture, setShouldSetProfilePicture] =
@@ -34,9 +36,10 @@ export function Home() {
   const queryParams = new URLSearchParams(search);
   const from = queryParams.get('from');
   const unescapedFrom = from ? decodeURIComponent(from) : undefined;
+  const [username, setUsername] = useState<string | undefined>(undefined);
   const { apiClient } = useAPI();
 
-  const uploadProfilePicture = useCallback(
+  const setProfile = useCallback(
     async (): Promise<SubmitProfilePictureResponse | undefined> => {
       const user = await apiClient.get<User>('/sonar/whoami');
       let timestamp = new Date().getTime().toString();
@@ -57,16 +60,16 @@ export function Home() {
       }
 
       apiClient.post<SubmitProfilePictureResponse>(
-        `/sonar/generateProfilePictureOptions`,
+        `/sonar/profile`,
         {
           profilePictureUrl: imageUrl,
-          gender,
+          username,
         }
       );
 
       navigate(unescapedFrom || '/dashboard');
     },
-    [navigate, file, gender]
+    [navigate, file, username]
   );
 
   return (
@@ -93,12 +96,18 @@ export function Home() {
             <div className="flex flex-col items-center gap-4 w-full">
               <h2 className="Login__title">Sign in or sign up</h2>
               <Logister
-                logister={async (one, two, three, isRegister) => {
+                logister={async (one, two, three) => {
                   try {
                     await logister(one, two, three);
                     if (isRegister) {
+                      console.log('one', one);
+                      console.log('two', two);
+                      console.log('three', three);
                       setShouldSetProfilePicture(true);
                     } else {
+                      console.log('one', one);
+                      console.log('two', two);
+                      console.log('three', three);
                       navigate(unescapedFrom || '/dashboard');
                     }
                   } catch (e) {
@@ -113,41 +122,31 @@ export function Home() {
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 w-full">
-              <h2 className="Login__title">Take a selfie and get piratified</h2>
-              <p className="text-lg font-bold">
-                Upload a selfie and we'll generate a profile picture for you. It
-                will take a few seconds, so don't sweat it when it doesn't show
-                up immediately.
-              </p>
+              <h2 className="Login__title">Set up your profile</h2>
+              <label>Choose your username</label>
+              <input
+                type="text"
+                name="name"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full p-2 border rounded"
+                required
+              />
+              <label htmlFor="file" className="text-lg font-bold">
+                Upload your profile 
+              </label>
               <input
                 id="file"
                 type="file"
                 className="w-full"
                 onChange={(e) => setFile(e.target.files?.[0])}
               />
-              <div className="flex flex-col gap-2 w-full">
-                <label htmlFor="gender" className="text-lg font-bold">
-                  Select your gender for a more personalized pirate avatar:
-                </label>
-                <select
-                  id="gender"
-                  className="p-2 rounded border border-gray-300"
-                  onChange={(e) => setGender(e.target.value)}
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Choose your gender
-                  </option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
+
               <Button
-                title="Generate profile picture"
+                title="Set profile"
                 buttonSize={ButtonSize.LARGE}
-                disabled={!file || !gender}
-                onClick={() => uploadProfilePicture()}
+                disabled={!file || (!!username && username.length < 2)}
+                onClick={() => setProfile()}
               />
             </div>
           )}

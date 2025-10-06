@@ -12,6 +12,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -293,6 +294,13 @@ func main() {
 			return
 		}
 
+		if requestBody.Username != nil && !util.ValidateUsername(*requestBody.Username) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid username",
+			})
+			return
+		}
+
 		code, err := dbClient.TextVerificationCode().Find(c, requestBody.PhoneNumber, requestBody.Code)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -321,7 +329,7 @@ func main() {
 			userId = &id
 		}
 
-		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId)
+		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId, requestBody.Username)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": errors.Wrap(err, "inserting user error").Error(),
