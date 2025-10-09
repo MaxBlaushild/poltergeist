@@ -10,4 +10,7 @@ type Party struct {
 	ID        uuid.UUID `gorm:"type:uuid;primary_key;"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	LeaderID  uuid.UUID
+	Leader    User   `gorm:"foreignKey:LeaderID"`
+	Members   []User `gorm:"foreignKey:PartyID"`
 }

@@ -89,5 +89,24 @@ func main() {
 		ctx.JSON(http.StatusOK, gin.H{"imageUrl": imageUrl})
 	})
 
+	router.POST("/editImage", func(ctx *gin.Context) {
+		var editImageRequest deep_priest.EditImageRequest
+
+		if err := ctx.Bind(&editImageRequest); err != nil {
+			log.Printf("Error binding request: %v", err)
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "question must be included"})
+			return
+		}
+
+		imageUrl, err := openApiClient.EditImage(ctx, editImageRequest)
+		if err != nil {
+			log.Printf("Error editing image: %v", err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"imageUrl": imageUrl})
+	})
+
 	router.Run(":8081")
 }

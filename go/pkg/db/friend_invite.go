@@ -19,6 +19,7 @@ func (h *friendInviteHandle) Create(ctx context.Context, inviterID uuid.UUID, in
 		InviteeID: inviteeID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+		ID:        uuid.New(),
 	}
 
 	if err := h.db.WithContext(ctx).Create(friendInvite).Error; err != nil {
@@ -30,7 +31,7 @@ func (h *friendInviteHandle) Create(ctx context.Context, inviterID uuid.UUID, in
 
 func (h *friendInviteHandle) FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.FriendInvite, error) {
 	var friendInvites []models.FriendInvite
-	if err := h.db.WithContext(ctx).Where("invitee_id = ? OR inviter_id = ?", userID, userID).Find(&friendInvites).Error; err != nil {
+	if err := h.db.Preload("Invitee").Preload("Inviter").WithContext(ctx).Where("invitee_id = ? OR inviter_id = ?", userID, userID).Find(&friendInvites).Error; err != nil {
 		return nil, err
 	}
 
@@ -39,7 +40,7 @@ func (h *friendInviteHandle) FindAllInvites(ctx context.Context, userID uuid.UUI
 
 func (h *friendInviteHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error) {
 	var friendInvite models.FriendInvite
-	if err := h.db.WithContext(ctx).Where("id = ?", id).First(&friendInvite).Error; err != nil {
+	if err := h.db.Preload("Invitee").Preload("Inviter").WithContext(ctx).Where("id = ?", id).First(&friendInvite).Error; err != nil {
 		return nil, err
 	}
 

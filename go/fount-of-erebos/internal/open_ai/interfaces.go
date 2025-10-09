@@ -10,4 +10,6 @@ type OpenAiClient interface {
 	GetAnswer(ctx context.Context, q string) (string, error)
 	GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error)
 	GenerateImage(ctx context.Context, request deep_priest.GenerateImageRequest) (string, error)
+	EditImage(ctx context.Context, request deep_priest.EditImageRequest) (string, error)
+	// GenerateImageWithImage(ctx context.Context, request deep_priest.EditImageRequest) (string, error)
 }

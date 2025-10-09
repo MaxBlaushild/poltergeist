@@ -6,4 +6,5 @@ export type User = {
   id: string;
   profilePictureUrl: string;
   partyId: string | null;
+  username: string;
 };
