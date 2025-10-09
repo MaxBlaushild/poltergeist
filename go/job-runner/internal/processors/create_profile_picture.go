@@ -18,7 +18,13 @@ import (
 )
 
 const prompt = `
-	Pixelated retro video game profile picture of this person’s selfie. 8-bit/16-bit RPG style with bold outlines, blocky shading, and a nostalgic arcade look. Make the character feel like a classic RPG protagonist: confident expression, stylized but recognizable likeness. Outfit should be generic adventurer gear (tunic, jacket, or armor elements) instead of modern clothing. Keep colors slightly muted but vibrant, with a retro palette. Background simple or transparent. Stylized, not realistic — looks like a character avatar from a classic fantasy adventure game.
+Re-create this selfie as a pixelated retro video-game profile portrait, keeping the same face structure, expression, pose, and framing as the original photo.
+Maintain recognizable likeness and proportions of the person.
+Render in 8-bit or 16-bit RPG style with bold outlines, blocky shading, and a limited color palette reminiscent of classic SNES-era fantasy RPGs.
+Replace modern clothing with generic adventurer gear such as a tunic, cloak, or light armor.
+Keep lighting direction and general composition consistent with the input image.
+Background should be simple or transparent.
+The final result should look like a stylized, non-photorealistic pixel-art avatar, clean and crisp, with no smooth gradients or painterly details.
 `
 
 type CreateProfilePictureProcessor struct {
@@ -55,14 +61,14 @@ func (p *CreateProfilePictureProcessor) ProcessTask(ctx context.Context, task *a
 
 	log.Printf("Generating profile picture for user ID: %v", payload.UserID)
 	base64JSON, err := p.deepPriestClient.EditImage(deep_priest.EditImageRequest{
-		Prompt:   prompt,
-		ImageUrl: payload.ProfilePictureUrl,
-		Model:    "dall-e-3",
-		N:        1,
-		Quality:  "standard",
-		Size:     "1024x1024",
-		Style:    "pixelated",
-		User:     "poltergeist",
+		Prompt:         prompt,
+		ImageUrl:       payload.ProfilePictureUrl,
+		Model:          "gpt-image-1",
+		N:              1,
+		Quality:        "standard",
+		Size:           "1024x1024",
+		User:           "poltergeist",
+		ResponseFormat: "b64_json",
 	})
 	if err != nil {
 		log.Printf("Failed to generate profile picture: %v", err)

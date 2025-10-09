@@ -67,7 +67,7 @@ export function Home() {
         }
       );
 
-      navigate(unescapedFrom || '/dashboard');
+      navigate(unescapedFrom || '/single-player');
     },
     [navigate, file, username]
   );

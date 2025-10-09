@@ -5,12 +5,9 @@ import (
 )
 
 const (
-	PollImageGenerationTaskType      = "poll_image_generation"
-	PollImageUpscaleTaskType         = "upscale_image"
-	QueuePollImageGenerationTaskType = "queue_poll_image_generation"
-	GenerateQuestForZoneTaskType     = "generate_quest_for_zone"
-	QueueQuestGenerationsTaskType    = "queue_quest_generations"
-	CreateProfilePictureTaskType     = "create_profile_picture"
+	GenerateQuestForZoneTaskType  = "generate_quest_for_zone"
+	QueueQuestGenerationsTaskType = "queue_quest_generations"
+	CreateProfilePictureTaskType  = "create_profile_picture"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
@@ -19,6 +16,6 @@ type GenerateQuestForZoneTaskPayload struct {
 }
 
 type CreateProfilePictureTaskPayload struct {
-	UserID            uuid.UUID `json:"user_id"`
-	ProfilePictureUrl string    `json:"profile_picture_url"`
+	UserID            uuid.UUID `json:"userId"`
+	ProfilePictureUrl string    `json:"profilePictureUrl"`
 }

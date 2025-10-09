@@ -1,0 +1,1 @@
+drop table party_invites;

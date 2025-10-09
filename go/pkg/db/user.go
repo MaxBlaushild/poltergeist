@@ -12,6 +12,10 @@ type userHandle struct {
 	db *gorm.DB
 }
 
+func (h *userHandle) LeaveParty(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("party_id", nil).Error
+}
+
 func (h *userHandle) Update(ctx context.Context, userID uuid.UUID, updates models.User) error {
 	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }
@@ -20,12 +24,12 @@ func (h *userHandle) SetUsername(ctx context.Context, userID uuid.UUID, username
 	return h.db.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("username", username).Error
 }
 
-func (h *userHandle) FindLikeByUsername(ctx context.Context, username string) (*models.User, error) {
-	var user models.User
-	if err := h.db.WithContext(ctx).Where("username LIKE ?", "%"+username+"%").First(&user).Error; err != nil {
+func (h *userHandle) FindLikeByUsername(ctx context.Context, username string) ([]*models.User, error) {
+	var users []*models.User
+	if err := h.db.WithContext(ctx).Where("username LIKE ?", "%"+username+"%").Find(&users).Error; err != nil {
 		return nil, err
 	}
-	return &user, nil
+	return users, nil
 }
 
 func (h *userHandle) FindByUsername(ctx context.Context, username string) (*models.User, error) {

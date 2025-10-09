@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type FriendInvite struct {
+type PartyInvite struct {
 	ID        uuid.UUID `gorm:"primaryKey" json:"id"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

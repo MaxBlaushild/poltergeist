@@ -220,17 +220,228 @@ func (s *server) ListenAndServe(port string) {
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.getLevel))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.getZoneReputation))
-	r.POST("/sonar/party/join", middleware.WithAuthentication(s.authClient, s.joinParty))
-	r.GET("/sonar/party/members", middleware.WithAuthentication(s.authClient, s.getPartyMembers))
+	r.POST("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.inviteToParty))
+	r.GET("/sonar/party", middleware.WithAuthentication(s.authClient, s.getParty))
+	r.POST("/sonar/party/leave", middleware.WithAuthentication(s.authClient, s.leaveParty))
+	r.POST("/sonar/party/setLeader", middleware.WithAuthentication(s.authClient, s.setPartyLeader))
+	r.POST("/sonar/partyInvites/accept", middleware.WithAuthentication(s.authClient, s.acceptPartyInvite))
+	r.POST("/sonar/partyInvites/reject", middleware.WithAuthentication(s.authClient, s.rejectPartyInvite))
 	r.GET("/sonar/username/validate", s.validateUsername)
 	r.GET("/sonar/users/:username", s.getUserByUsername)
 	r.GET("/sonar/users/search", s.searchUsers)
 	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.acceptFriendInvite))
 	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.createFriendInvite))
+	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.getPartyInvites))
 	r.GET("/sonar/friendInvites", middleware.WithAuthentication(s.authClient, s.getFriendInvites))
+	r.DELETE("/sonar/friendInvites/:id", middleware.WithAuthentication(s.authClient, s.deleteFriendInvite))
 	r.GET("/sonar/friends", middleware.WithAuthentication(s.authClient, s.getFriends))
-	r.POST("/sonar/profile")
+	r.POST("/sonar/profile", middleware.WithAuthentication(s.authClient, s.setProfile))
 	r.Run(":8042")
+}
+
+func (s *server) setPartyLeader(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		LeaderID string `json:"leaderID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	leaderID, err := uuid.Parse(requestBody.LeaderID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid leader ID"})
+		return
+	}
+
+	err = s.dbClient.Party().SetLeader(ctx, *user.PartyID, leaderID, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party leader set successfully"})
+}
+
+func (s *server) getParty(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	party, err := s.dbClient.Party().FindUsersParty(ctx, *user.PartyID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, party)
+}
+
+func (s *server) leaveParty(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	err = s.dbClient.Party().LeaveParty(ctx, user)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party left successfully"})
+}
+
+func (s *server) getPartyInvites(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	invites, err := s.dbClient.PartyInvite().FindAllInvites(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invites)
+}
+
+func (s *server) acceptPartyInvite(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		InviteID string `json:"inviteID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	inviteID, err := uuid.Parse(requestBody.InviteID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	invite, err := s.dbClient.PartyInvite().Accept(ctx, inviteID, user)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invite)
+}
+
+func (s *server) rejectPartyInvite(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		InviteID string `json:"inviteID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	inviteID, err := uuid.Parse(requestBody.InviteID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	err = s.dbClient.PartyInvite().Reject(ctx, inviteID, user)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party invite rejected successfully"})
+}
+
+func (s *server) inviteToParty(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		InviteeID string `json:"inviteeID"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	inviteeID, err := uuid.Parse(requestBody.InviteeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invitee ID"})
+		return
+	}
+
+	invite, err := s.dbClient.PartyInvite().Create(ctx, user, inviteeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, invite)
+}
+
+func (s *server) deleteFriendInvite(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	id := ctx.Param("id")
+	inviteID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invite ID"})
+		return
+	}
+
+	invite, err := s.dbClient.FriendInvite().FindByID(ctx, inviteID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if invite.InviteeID != user.ID && invite.InviterID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "you are not the invitee or inviter"})
+		return
+	}
+
+	err = s.dbClient.FriendInvite().Delete(ctx, inviteID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "friend invite deleted successfully"})
 }
 
 func (s *server) setProfile(ctx *gin.Context) {

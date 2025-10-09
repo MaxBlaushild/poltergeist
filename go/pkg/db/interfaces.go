@@ -50,6 +50,7 @@ type DbClient interface {
 	Friend() FriendHandle
 	Party() PartyHandle
 	FriendInvite() FriendInviteHandle
+	PartyInvite() PartyInviteHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -86,9 +87,10 @@ type UserHandle interface {
 	JoinParty(ctx context.Context, inviterID uuid.UUID, inviteeID uuid.UUID) error
 	FindPartyMembers(ctx context.Context, userID uuid.UUID) ([]models.User, error)
 	FindByUsername(ctx context.Context, username string) (*models.User, error)
-	FindLikeByUsername(ctx context.Context, username string) (*models.User, error)
+	FindLikeByUsername(ctx context.Context, username string) ([]*models.User, error)
 	SetUsername(ctx context.Context, userID uuid.UUID, username string) error
 	Update(ctx context.Context, userID uuid.UUID, updates models.User) error
+	LeaveParty(ctx context.Context, userID uuid.UUID) error
 }
 
 type TeamHandle interface {
@@ -372,6 +374,9 @@ type UserZoneReputationHandle interface {
 
 type PartyHandle interface {
 	Create(ctx context.Context) (*models.Party, error)
+	SetLeader(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID, userID uuid.UUID) error
+	LeaveParty(ctx context.Context, user *models.User) error
+	FindUsersParty(ctx context.Context, partyID uuid.UUID) (*models.Party, error)
 }
 
 type FriendHandle interface {
@@ -384,4 +389,12 @@ type FriendInviteHandle interface {
 	FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.FriendInvite, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type PartyInviteHandle interface {
+	Create(ctx context.Context, inviter *models.User, inviteeID uuid.UUID) (*models.PartyInvite, error)
+	FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.PartyInvite, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PartyInvite, error)
+	Accept(ctx context.Context, id uuid.UUID, user *models.User) (*models.PartyInvite, error)
+	Reject(ctx context.Context, id uuid.UUID, user *models.User) error
 }

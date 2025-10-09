@@ -3,6 +3,7 @@ package deep_priest
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 )
@@ -145,24 +146,24 @@ func (d *deepPriest) GenerateImage(request GenerateImageRequest) (string, error)
 func (d *deepPriest) EditImage(request EditImageRequest) (string, error) {
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	resp, err := http.Post(baseUrl+"/editImage", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	var response ImageGenerationResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
 	return response.ImageUrl, nil
