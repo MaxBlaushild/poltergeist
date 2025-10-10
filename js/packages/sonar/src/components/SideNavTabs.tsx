@@ -3,11 +3,17 @@ import { Character } from './Character.tsx';
 import { Friends } from './Friends.tsx';
 import { FriendContextProvider } from '../contexts/FriendContext.tsx';
 import { Party } from './Party.tsx';
+import { useUserContext } from '../contexts/UserContext.tsx';
 
 type TabType = 'character' | 'friends' | 'party';
 
 export function SideNavTabs() {
   const [activeTab, setActiveTab] = useState<TabType>('character');
+  const { user } = useUserContext();
+
+  if (user) {
+    return null;
+  }
 
   return (
     <>

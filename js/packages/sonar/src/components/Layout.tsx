@@ -15,6 +15,8 @@ import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
 import useLeaveMatch from '../hooks/useLeaveMatch.ts';
 import { useUserLevel } from '@poltergeist/hooks';
 import { SideNavTabs } from './SideNavTabs.tsx';
+import { UserContextProvider } from '../contexts/UserContext.tsx';
+import Profile from './Profile.tsx';
 
 export function Layout() {
   const [isNavOpen, setIsNavOpen] = useState(false);
@@ -25,10 +27,12 @@ export function Layout() {
   const { hasCurrentMatch, matchID } = useHasCurrentMatch();
   const { leaveMatch } = useLeaveMatch();
   const { userLevel } = useUserLevel();
+  const [username, setUsername] = useState<string | null>(null);
 
   const toggleNav = () => {
     setIsNavOpen(!isNavOpen);
     setShowProfilePicture(false);
+    setUsername(null);
   };
 
   return (
@@ -84,7 +88,10 @@ export function Layout() {
           <XMarkIcon className="h-8 w-8 mt-3 ml-3" />
         </button>
 
-        <SideNavTabs />
+        <UserContextProvider>
+          <Profile showBackButton={true} />
+          <SideNavTabs />
+        </UserContextProvider>
 
         {hasCurrentMatch ? (
           <div className="m-4 mb-6">

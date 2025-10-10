@@ -29,6 +29,7 @@ import { MatchContextProvider } from './contexts/MatchContext.tsx';
 import { TagProvider } from '@poltergeist/contexts';
 import { ZoneProvider } from '@poltergeist/contexts';
 import { CompletedTaskProvider } from './contexts/CompletedTaskContext.tsx';
+import { PartyProvider } from './contexts/PartyContext.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -50,7 +51,11 @@ export const router = createBrowserRouter([
   {
     id: 'root',
     path: '/',
-    Component: Layout,
+    Component: () => (
+      <PartyProvider>
+        <Layout />
+      </PartyProvider>
+    ),
     children: [
       {
         index: true,

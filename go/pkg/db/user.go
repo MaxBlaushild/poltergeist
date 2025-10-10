@@ -34,7 +34,7 @@ func (h *userHandle) FindLikeByUsername(ctx context.Context, username string) ([
 
 func (h *userHandle) FindByUsername(ctx context.Context, username string) (*models.User, error) {
 	var user models.User
-	if err := h.db.WithContext(ctx).Where(&models.User{Username: &username}).First(&user).Error; err != nil {
+	if err := h.db.WithContext(ctx).Where("LOWER(username) = LOWER(?)", username).First(&user).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
