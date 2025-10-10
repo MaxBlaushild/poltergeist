@@ -3,6 +3,7 @@ import { useFriendContext } from '../contexts/FriendContext.tsx';
 import { ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon } from '@heroicons/react/20/solid';
 import { Button, ButtonSize } from './shared/Button.tsx';
 import { useAuth } from '@poltergeist/contexts';
+import { useUserContext } from '../contexts/UserContext.tsx';
 
 export const Friends: React.FC = () => {
   const { friends, friendInvites, searchResults, fetchFriends, fetchFriendInvites, acceptFriendInvite, searchForFriends, createFriendInvite, deleteFriendInvite } = useFriendContext();
@@ -15,9 +16,8 @@ export const Friends: React.FC = () => {
   const [acceptingInvites, setAcceptingInvites] = useState<Set<string>>(new Set());
   const [rejectingInvites, setRejectingInvites] = useState<Set<string>>(new Set());
   const [sendingInvites, setSendingInvites] = useState<Set<string>>(new Set());
+  const { setUsername } = useUserContext();
 
-  // Separate received and sent invites
-  console.log('friendInvites', friendInvites);
   const receivedInvites = friendInvites.filter(invite => invite.inviteeId === user?.id);
   const sentInvites = friendInvites.filter(invite => invite.inviterId === user?.id);
 
@@ -310,6 +310,7 @@ export const Friends: React.FC = () => {
                   <div
                     key={friend.id}
                     className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
+                    onClick={() => setUsername(friend.username)}
                   >
                     <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
                       <img
