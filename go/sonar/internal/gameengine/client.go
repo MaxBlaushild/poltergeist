@@ -2,6 +2,7 @@ package gameengine
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -27,15 +28,9 @@ type Submission struct {
 }
 
 type SubmissionResult struct {
-	Successful        bool                          `json:"successful"`
-	Reason            string                        `json:"reason"`
-	QuestCompleted    bool                          `json:"questCompleted"`
-	ItemsAwarded      []quartermaster.InventoryItem `json:"itemsAwarded"`
-	ExperienceAwarded int                           `json:"experienceAwarded"`
-	ReputationAwarded int                           `json:"reputationAwarded"`
-	ZoneID            uuid.UUID                     `json:"zoneID"`
-	LevelUp           bool                          `json:"levelUp"`
-	ReputationUp      bool                          `json:"reputationUp"`
+	Successful     bool   `json:"successful"`
+	Reason         string `json:"reason"`
+	QuestCompleted bool   `json:"questCompleted"`
 }
 
 type GameEngineClient interface {
@@ -57,6 +52,26 @@ func NewGameEngineClient(
 	chatClient chat.Client,
 ) GameEngineClient {
 	return &gameEngineClient{db: db, judge: judge, quartermaster: quartermaster, chatClient: chatClient}
+}
+
+// getPartyMembers returns all party members if the user is in a party, otherwise returns just the user
+func (c *gameEngineClient) getPartyMembers(ctx context.Context, userID *uuid.UUID) ([]models.User, error) {
+	if userID == nil {
+		return []models.User{}, nil
+	}
+
+	user, err := c.db.User().FindByID(ctx, *userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// If user is in a party, return all party members
+	if user.PartyID != nil {
+		return c.db.User().FindPartyMembers(ctx, *userID)
+	}
+
+	// If not in a party, return just this user
+	return []models.User{*user}, nil
 }
 
 func (c *gameEngineClient) ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error) {
@@ -96,6 +111,14 @@ func (c *gameEngineClient) judgeSubmission(ctx context.Context, submission Submi
 }
 
 func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error) {
+	var partyID *uuid.UUID
+	if submission.UserID != nil {
+		user, err := c.db.User().FindByID(ctx, *submission.UserID)
+		if err == nil && user.PartyID != nil {
+			partyID = user.PartyID
+		}
+	}
+
 	questCompleted, err := c.HasCompletedQuest(ctx, challenge)
 	if err != nil {
 		return nil, err
@@ -104,17 +127,47 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	submissionResult := SubmissionResult{
 		QuestCompleted: questCompleted,
 		Successful:     true,
+		Reason:         "Challenge completed successfully!",
 	}
 
-	if err = c.awardItems(ctx, submission, challenge, &submissionResult); err != nil {
+	// Create activity for challenge completed
+	challengeActivityData, err := json.Marshal(models.ChallengeCompletedActivity{
+		ChallengeID: challenge.ID,
+		Successful:  true,
+		Reason:      "Challenge completed successfully!",
+		SubmitterID: submission.UserID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := c.db.Activity().CreateActivitiesForPartyMembers(ctx, partyID, submission.UserID, models.ActivityTypeChallengeCompleted, challengeActivityData); err != nil {
 		return nil, err
 	}
 
-	if err = c.awardExperiencePoints(ctx, submission, &submissionResult); err != nil {
+	// Create activity for quest completed if applicable
+	if questCompleted {
+		// For now, use the challenge ID as a placeholder for quest ID
+		// In a more complete implementation, we'd look up the actual quest ID
+		questActivityData, err := json.Marshal(models.QuestCompletedActivity{
+			QuestID: challenge.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := c.db.Activity().CreateActivitiesForPartyMembers(ctx, partyID, submission.UserID, models.ActivityTypeQuestCompleted, questActivityData); err != nil {
+			return nil, err
+		}
+	}
+
+	if err = c.awardItems(ctx, submission, challenge); err != nil {
 		return nil, err
 	}
 
-	if err = c.awardReputationPoints(ctx, submission, challenge, &submissionResult); err != nil {
+	if err = c.awardExperiencePoints(ctx, submission, questCompleted); err != nil {
+		return nil, err
+	}
+
+	if err = c.awardReputationPoints(ctx, submission, challenge, questCompleted); err != nil {
 		return nil, err
 	}
 
@@ -125,22 +178,63 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	return &submissionResult, nil
 }
 
-func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge, submissionResult *SubmissionResult) error {
-	if challenge.InventoryItemID == 0 {
-		item, err := c.quartermaster.GetItem(ctx, submission.TeamID, submission.UserID)
-		if err != nil {
-			return err
-		}
-
-		submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, item)
-	}
-
-	item, err := c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, submission.UserID, challenge.InventoryItemID)
+func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) error {
+	// Get all party members or just the submitter
+	partyMembers, err := c.getPartyMembers(ctx, submission.UserID)
 	if err != nil {
 		return err
 	}
 
-	submissionResult.ItemsAwarded = append(submissionResult.ItemsAwarded, item)
+	// Award items to each party member
+	for _, member := range partyMembers {
+		memberID := member.ID
+
+		if challenge.InventoryItemID == 0 {
+			item, err := c.quartermaster.GetItem(ctx, submission.TeamID, &memberID)
+			if err != nil {
+				return err
+			}
+
+			// Create activity for item received for this specific member
+			activityData, err := json.Marshal(models.ItemReceivedActivity{
+				ItemID:   item.ID,
+				ItemName: item.Name,
+			})
+			if err != nil {
+				return err
+			}
+			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+				UserID:       memberID,
+				ActivityType: models.ActivityTypeItemReceived,
+				Data:         activityData,
+				Seen:         false,
+			}); err != nil {
+				return err
+			}
+		}
+
+		item, err := c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, &memberID, challenge.InventoryItemID)
+		if err != nil {
+			return err
+		}
+
+		// Create activity for item received for this specific member
+		activityData, err := json.Marshal(models.ItemReceivedActivity{
+			ItemID:   item.ID,
+			ItemName: item.Name,
+		})
+		if err != nil {
+			return err
+		}
+		if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+			UserID:       memberID,
+			ActivityType: models.ActivityTypeItemReceived,
+			Data:         activityData,
+			Seen:         false,
+		}); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -165,49 +259,97 @@ func (c *gameEngineClient) addTaskCompleteMessage(ctx context.Context, submissio
 	return nil
 }
 
-func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission Submission, submissionResult *SubmissionResult) error {
+func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission Submission, questCompleted bool) error {
+	// Get all party members or just the submitter
+	partyMembers, err := c.getPartyMembers(ctx, submission.UserID)
+	if err != nil {
+		return err
+	}
+
 	experiencePoints := BaseExperiencePointsAwardedForSuccessfulSubmission
-	if submissionResult.QuestCompleted {
+	if questCompleted {
 		experiencePoints += BaseExperiencePointsAwardedForFinishedQuest
 	}
 
-	submissionResult.ExperienceAwarded = experiencePoints
-
-	if submission.UserID != nil {
-		userLevel, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, *submission.UserID, experiencePoints)
+	// Award experience points to each party member
+	for _, member := range partyMembers {
+		userLevel, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, member.ID, experiencePoints)
 		if err != nil {
 			return err
 		}
 
-		submissionResult.LevelUp = userLevel.LevelsGained > 0
+		// Only create level-up activity for this member if they actually leveled up
+		if userLevel.LevelsGained > 0 {
+			activityData, err := json.Marshal(models.LevelUpActivity{
+				NewLevel: userLevel.Level,
+			})
+			if err != nil {
+				return err
+			}
+			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+				UserID:       member.ID,
+				ActivityType: models.ActivityTypeLevelUp,
+				Data:         activityData,
+				Seen:         false,
+			}); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-func (c *gameEngineClient) awardReputationPoints(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge, submissionResult *SubmissionResult) error {
-	reputationPoints := BaseReputationPointsAwardedForSuccessfulSubmission
-	if submissionResult.QuestCompleted {
-		reputationPoints += BaseReputationPointsAwardedForFinishedQuest
+func (c *gameEngineClient) awardReputationPoints(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge, questCompleted bool) error {
+	// Get all party members or just the submitter
+	partyMembers, err := c.getPartyMembers(ctx, submission.UserID)
+	if err != nil {
+		return err
 	}
 
-	submissionResult.ReputationAwarded = reputationPoints
+	reputationPoints := BaseReputationPointsAwardedForSuccessfulSubmission
+	if questCompleted {
+		reputationPoints += BaseReputationPointsAwardedForFinishedQuest
+	}
 
 	zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, challenge.PointOfInterestID)
 	if err != nil {
 		return err
 	}
 
-	if submission.UserID != nil {
-		userZoneReputation, err := c.db.UserZoneReputation().ProcessReputationPointAdditions(ctx, *submission.UserID, zone.ZoneID, reputationPoints)
+	// Award reputation points to each party member
+	for _, member := range partyMembers {
+		userZoneReputation, err := c.db.UserZoneReputation().ProcessReputationPointAdditions(ctx, member.ID, zone.ZoneID, reputationPoints)
 		if err != nil {
 			return err
 		}
 
-		submissionResult.ReputationUp = userZoneReputation.LevelsGained > 0
-	}
+		// Only create reputation-up activity for this member if they actually gained reputation levels
+		if userZoneReputation.LevelsGained > 0 {
+			// Get full zone details
+			fullZone, err := c.db.Zone().FindByID(ctx, zone.ZoneID)
+			if err != nil {
+				return err
+			}
 
-	submissionResult.ZoneID = zone.ZoneID
+			activityData, err := json.Marshal(models.ReputationUpActivity{
+				NewLevel: userZoneReputation.Level,
+				ZoneName: fullZone.Name,
+				ZoneID:   zone.ZoneID,
+			})
+			if err != nil {
+				return err
+			}
+			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+				UserID:       member.ID,
+				ActivityType: models.ActivityTypeReputationUp,
+				Data:         activityData,
+				Seen:         false,
+			}); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }

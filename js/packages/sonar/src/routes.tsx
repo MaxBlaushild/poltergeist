@@ -30,6 +30,7 @@ import { TagProvider } from '@poltergeist/contexts';
 import { ZoneProvider } from '@poltergeist/contexts';
 import { CompletedTaskProvider } from './contexts/CompletedTaskContext.tsx';
 import { PartyProvider } from './contexts/PartyContext.tsx';
+import { ActivityFeedProvider } from './contexts/ActivityFeedContext.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -146,9 +147,11 @@ export const router = createBrowserRouter([
             <MapProvider>
               <ZoneProvider>
                 <QuestLogContextProvider>
-                  <CompletedTaskProvider>
-                    <SinglePlayer />
-                  </CompletedTaskProvider>
+                  <ActivityFeedProvider>
+                    <CompletedTaskProvider>
+                      <SinglePlayer />
+                    </CompletedTaskProvider>
+                  </ActivityFeedProvider>
                 </QuestLogContextProvider>
               </ZoneProvider>
             </MapProvider>

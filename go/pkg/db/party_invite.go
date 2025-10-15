@@ -26,9 +26,7 @@ func (h *partyInviteHandle) Create(ctx context.Context, inviter *models.User, in
 		return nil, errors.New("party is full")
 	}
 
-	partyID := inviter.PartyID
-
-	if partyID == nil {
+	if inviter.PartyID == nil {
 		party := &models.Party{
 			ID:        uuid.New(),
 			CreatedAt: time.Now(),
@@ -38,7 +36,6 @@ func (h *partyInviteHandle) Create(ctx context.Context, inviter *models.User, in
 		if err := h.db.WithContext(ctx).Create(&party).Error; err != nil {
 			return nil, err
 		}
-		partyID = &party.ID
 	}
 
 	partyInvite := &models.PartyInvite{
@@ -58,7 +55,7 @@ func (h *partyInviteHandle) Create(ctx context.Context, inviter *models.User, in
 
 func (h *partyInviteHandle) FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.PartyInvite, error) {
 	var partyInvites []models.PartyInvite
-	if err := h.db.WithContext(ctx).Where("invitee_id = ? OR inviter_id = ?", userID, userID).Find(&partyInvites).Error; err != nil {
+	if err := h.db.WithContext(ctx).Preload("Invitee").Preload("Inviter").Where("invitee_id = ? OR inviter_id = ?", userID, userID).Find(&partyInvites).Error; err != nil {
 		return nil, err
 	}
 

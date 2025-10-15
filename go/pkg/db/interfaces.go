@@ -51,6 +51,8 @@ type DbClient interface {
 	Party() PartyHandle
 	FriendInvite() FriendInviteHandle
 	PartyInvite() PartyInviteHandle
+	Activity() ActivityHandle
+	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -397,4 +399,16 @@ type PartyInviteHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PartyInvite, error)
 	Accept(ctx context.Context, id uuid.UUID, user *models.User) (*models.PartyInvite, error)
 	Reject(ctx context.Context, id uuid.UUID, user *models.User) error
+}
+
+type ActivityHandle interface {
+	GetFeed(ctx context.Context, userID uuid.UUID) ([]models.Activity, error)
+	MarkAsSeen(ctx context.Context, activityIDs []uuid.UUID) error
+	CreateActivity(ctx context.Context, activity models.Activity) error
+	CreateActivitiesForPartyMembers(ctx context.Context, partyID *uuid.UUID, userID *uuid.UUID, activityType models.ActivityType, data []byte) error
+}
+
+type PointOfInterestGroupMemberHandle interface {
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroupMember, error)
+	FindByPointOfInterestAndGroup(ctx context.Context, pointOfInterestID uuid.UUID, groupID uuid.UUID) (*models.PointOfInterestGroupMember, error)
 }

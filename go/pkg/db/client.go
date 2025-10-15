@@ -54,6 +54,8 @@ type client struct {
 	friendHandle                      *friendHandle
 	friendInviteHandle                *friendInviteHandle
 	partyInviteHandle                 *partyInviteHandle
+	activityHandle                    *activityHandle
+	pointOfInterestGroupMemberHandle  *pointOfInterestGroupMemberHandle
 }
 
 type ClientConfig struct {
@@ -125,7 +127,17 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		friendHandle:                      &friendHandle{db: db},
 		friendInviteHandle:                &friendInviteHandle{db: db},
 		partyInviteHandle:                 &partyInviteHandle{db: db},
+		activityHandle:                    &activityHandle{db: db},
+		pointOfInterestGroupMemberHandle:  &pointOfInterestGroupMemberHandle{db: db},
 	}, nil
+}
+
+func (c *client) Activity() ActivityHandle {
+	return c.activityHandle
+}
+
+func (c *client) PointOfInterestGroupMember() PointOfInterestGroupMemberHandle {
+	return c.pointOfInterestGroupMemberHandle
 }
 
 func (c *client) PartyInvite() PartyInviteHandle {

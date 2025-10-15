@@ -15,6 +15,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
@@ -61,6 +62,7 @@ type server struct {
 	redisClient      *redis.Client
 	searchClient     search.SearchClient
 	gameEngineClient gameengine.GameEngineClient
+	livenessClient   liveness.LivenessClient
 }
 
 type Server interface {
@@ -86,6 +88,7 @@ func NewServer(
 	redisClient *redis.Client,
 	searchClient search.SearchClient,
 	gameEngineClient gameengine.GameEngineClient,
+	livenessClient liveness.LivenessClient,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -106,6 +109,7 @@ func NewServer(
 		redisClient:      redisClient,
 		searchClient:     searchClient,
 		gameEngineClient: gameEngineClient,
+		livenessClient:   livenessClient,
 	}
 }
 
@@ -115,128 +119,171 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/register", s.register)
 	r.POST("/sonar/login", s.login)
 
-	r.GET("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.getSurverys))
-	r.POST("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.newSurvey))
-	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.getSubmissionForSurvey))
-	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.getSubmission))
-	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.whoami))
-	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.createCategory))
-	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.createActivity))
-	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.deleteCategory))
-	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.deleteActivity))
-	r.GET("/sonar/teams", middleware.WithAuthentication(s.authClient, s.getTeams))
+	r.GET("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSurverys))
+	r.POST("/sonar/surveys", middleware.WithAuthentication(s.authClient, s.livenessClient, s.newSurvey))
+	r.GET("sonar/surveys/:id/submissions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSubmissionForSurvey))
+	r.GET("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSubmission))
+	r.GET("/sonar/whoami", middleware.WithAuthentication(s.authClient, s.livenessClient, s.whoami))
+	r.POST("/sonar/categories", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCategory))
+	r.POST("/sonar/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createActivity))
+	r.DELETE("/sonar/categories/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCategory))
+	r.DELETE("/sonar/activities/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteActivity))
+	r.GET("/sonar/teams", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeams))
 	r.POST("/sonar/pointsOfInterest", s.createPointOfInterest)
-	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterest))
-	r.POST("/sonar/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterest))
-	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.createNeighbor))
-	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.getNeighbors))
-	r.POST("/sonar/matches/:id/start", middleware.WithAuthentication(s.authClient, s.startMatch))
-	r.POST("/sonar/matches/:id/end", middleware.WithAuthentication(s.authClient, s.endMatch))
-	r.POST("/sonar/matches", middleware.WithAuthentication(s.authClient, s.createMatch))
-	r.GET("/sonar/matchesById/:id", middleware.WithAuthentication(s.authClient, s.getMatch))
-	r.POST("/sonar/matches/:id/leave", middleware.WithAuthentication(s.authClient, s.leaveMatch))
-	r.POST("/sonar/matches/:id/teams", middleware.WithAuthentication(s.authClient, s.createTeamForMatch))
-	r.POST("/sonar/teams/:teamID", middleware.WithAuthentication(s.authClient, s.addUserToTeam))
+	r.GET("/sonar/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterest))
+	r.POST("/sonar/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockPointOfInterest))
+	r.POST("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createNeighbor))
+	r.GET("/sonar/neighbors", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getNeighbors))
+	r.POST("/sonar/matches/:id/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMatch))
+	r.POST("/sonar/matches/:id/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMatch))
+	r.POST("/sonar/matches", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMatch))
+	r.GET("/sonar/matchesById/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMatch))
+	r.POST("/sonar/matches/:id/leave", middleware.WithAuthentication(s.authClient, s.livenessClient, s.leaveMatch))
+	r.POST("/sonar/matches/:id/teams", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTeamForMatch))
+	r.POST("/sonar/teams/:teamID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addUserToTeam))
 	r.GET("/sonar/pointsOfInterest/group/:id", s.getPointOfInterestGroup)
 	r.POST("/sonar/pointsOfInterest/group", s.createPointOfInterestGroup)
 	r.GET("/sonar/pointsOfInterest/groups", s.getPointsOfInterestGroups)
-	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.getCurrentMatch))
-	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.getPresignedUploadUrl))
-	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.submitAnswerPointOfInterestChallenge))
-	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.editTeamName))
+	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentMatch))
+	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPresignedUploadUrl))
+	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitAnswerPointOfInterestChallenge))
+	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
-	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.getTeamsInventory))
-	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.useItem))
-	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.getChat))
+	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeamsInventory))
+	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
+	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
-	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.unlockPointOfInterestForTeam))
-	r.POST("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.createPointOfInterest))
-	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.generateProfilePictureOptions))
-	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.getCompleteGenerationsForUser))
-	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.setProfilePicture))
+	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockPointOfInterestForTeam))
+	r.POST("/sonar/pointsOfInterest/group/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createPointOfInterest))
+	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateProfilePictureOptions))
+	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCompleteGenerationsForUser))
+	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfilePicture))
 	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
 	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
-	r.DELETE("/sonar/pointsOfInterest/challenge/:id", s.deletePointOfInterestChallenge)
-	r.PATCH("/sonar/pointsOfInterest/challenge/:id", s.editPointOfInterestChallenge)
-	r.POST("/sonar/pointsOfInterest/challenge", s.createPointOfInterestChallenge)
+	r.DELETE("/sonar/pointsOfInterest/challenge/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePointOfInterestChallenge))
+	r.PATCH("/sonar/pointsOfInterest/challenge/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editPointOfInterestChallenge))
+	r.POST("/sonar/pointsOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createPointOfInterestChallenge))
 	r.PATCH("/sonar/pointsOfInterest/:id", s.editPointOfInterest)
 	r.DELETE("/sonar/pointsOfInterest/:id", s.deletePointOfInterest)
 	r.PATCH("/sonar/pointsofInterest/group/imageUrl/:id", s.editPointOfInterestGroupImageUrl)
 	r.PATCH("/sonar/pointsofInterest/imageUrl/:id", s.editPointOfInterestImageUrl)
-	r.POST("/sonar/pointOfInterest/children", middleware.WithAuthentication(s.authClient, s.createPointOfInterestChildren))
-	r.DELETE("/sonar/pointOfInterest/children/:id", middleware.WithAuthentication(s.authClient, s.deletePointOfInterestChildren))
-	r.GET("/sonar/pointsOfInterest/discoveries", middleware.WithAuthentication(s.authClient, s.getPointOfInterestDiscoveries))
-	r.GET("/sonar/pointsOfInterest/challenges/submissions", middleware.WithAuthentication(s.authClient, s.getPointOfInterestChallengeSubmissions))
-	r.GET("/sonar/ownedInventoryItems", middleware.WithAuthentication(s.authClient, s.getOwnedInventoryItems))
-	r.POST("/sonar/matches/:id/invite", middleware.WithAuthentication(s.authClient, s.inviteToMatch))
-	r.GET("/sonar/matches/:id/users", middleware.WithAuthentication(s.authClient, s.getMatch))
+	r.POST("/sonar/pointOfInterest/children", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createPointOfInterestChildren))
+	r.DELETE("/sonar/pointOfInterest/children/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePointOfInterestChildren))
+	r.GET("/sonar/pointsOfInterest/discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestDiscoveries))
+	r.GET("/sonar/pointsOfInterest/challenges/submissions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestChallengeSubmissions))
+	r.GET("/sonar/ownedInventoryItems", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOwnedInventoryItems))
+	r.POST("/sonar/matches/:id/invite", middleware.WithAuthentication(s.authClient, s.livenessClient, s.inviteToMatch))
+	r.GET("/sonar/matches/:id/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMatch))
 	r.GET("/sonar/mapbox/places", s.getMapboxPlaces)
-	r.GET("/sonar/questlog", middleware.WithAuthentication(s.authClient, s.getQuestLog))
-	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.hasCurrentMatch))
-	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.getAllUsers))
-	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.giveItem))
-	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.getTags))
-	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.getTagGroups))
-	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.addTagToPointOfInterest))
-	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.removeTagFromPointOfInterest))
-	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.getZones))
-	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.getZone))
-	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.createZone))
-	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.getPointsOfInterestForZone))
-	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.generatePointsOfInterestForZone))
-	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.getPlaceTypes))
-	r.DELETE("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.deleteZone))
-	r.POST("/sonar/pointOfInterest/import", middleware.WithAuthentication(s.authClient, s.importPointOfInterest))
-	r.POST("/sonar/pointOfInterest/refresh", middleware.WithAuthentication(s.authClient, s.refreshPointOfInterest))
-	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.refreshPointOfInterestImage))
-	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.getGooglePlaces))
-	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.getGooglePlace))
-	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.generateQuest))
-	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.moveTagToTagGroup))
-	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.createTagGroup))
-	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.getLocationArchetypes))
-	r.GET("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.getLocationArchetype))
-	r.POST("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.createLocationArchetype))
-	r.DELETE("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteLocationArchetype))
-	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.updateLocationArchetype))
-	r.GET("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.getQuestArchetypes))
-	r.GET("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.getQuestArchetype))
-	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.createQuestArchetype))
-	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteQuestArchetype))
-	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.updateQuestArchetype))
-	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.createQuestArchetypeNode))
-	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.generateQuestArchetypeChallenge))
-	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.getQuestArchetypeChallenges))
-	r.POST("/sonar/zones/:id/questArchetypes", middleware.WithAuthentication(s.authClient, s.generateQuestArchetypesForZone))
-	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.getZoneQuestArchetypes))
-	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.createZoneQuestArchetype))
-	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.deleteZoneQuestArchetype))
-	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.getRelevantTags))
-	r.POST("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.createTrackedPointOfInterestGroup))
-	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.getTrackedPointOfInterestGroups))
-	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.deleteTrackedPointOfInterestGroup))
-	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.deleteAllTrackedPointOfInterestGroups))
-	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.upsertZoneBoundary))
-	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.editZone))
-	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.getLevel))
-	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.getZoneReputation))
-	r.POST("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.inviteToParty))
-	r.GET("/sonar/party", middleware.WithAuthentication(s.authClient, s.getParty))
-	r.POST("/sonar/party/leave", middleware.WithAuthentication(s.authClient, s.leaveParty))
-	r.POST("/sonar/party/setLeader", middleware.WithAuthentication(s.authClient, s.setPartyLeader))
-	r.POST("/sonar/partyInvites/accept", middleware.WithAuthentication(s.authClient, s.acceptPartyInvite))
-	r.POST("/sonar/partyInvites/reject", middleware.WithAuthentication(s.authClient, s.rejectPartyInvite))
+	r.GET("/sonar/questlog", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestLog))
+	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.livenessClient, s.hasCurrentMatch))
+	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllUsers))
+	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
+	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTags))
+	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTagGroups))
+	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addTagToPointOfInterest))
+	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removeTagFromPointOfInterest))
+	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
+	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
+	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
+	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
+	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
+	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
+	r.DELETE("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZone))
+	r.POST("/sonar/pointOfInterest/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importPointOfInterest))
+	r.POST("/sonar/pointOfInterest/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterest))
+	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterestImage))
+	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlaces))
+	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlace))
+	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuest))
+	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
+	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
+	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetypes))
+	r.GET("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetype))
+	r.POST("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createLocationArchetype))
+	r.DELETE("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteLocationArchetype))
+	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateLocationArchetype))
+	r.GET("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypes))
+	r.GET("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetype))
+	r.POST("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetype))
+	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
+	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
+	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeNode))
+	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeChallenge))
+	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeChallenges))
+	r.POST("/sonar/zones/:id/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypesForZone))
+	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneQuestArchetypes))
+	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneQuestArchetype))
+	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneQuestArchetype))
+	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRelevantTags))
+	r.POST("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTrackedPointOfInterestGroup))
+	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
+	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
+	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
+	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
+	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
+	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
+	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneReputation))
+	r.POST("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.inviteToParty))
+	r.GET("/sonar/party", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getParty))
+	r.POST("/sonar/party/leave", middleware.WithAuthentication(s.authClient, s.livenessClient, s.leaveParty))
+	r.POST("/sonar/party/setLeader", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setPartyLeader))
+	r.POST("/sonar/partyInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptPartyInvite))
+	r.POST("/sonar/partyInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectPartyInvite))
 	r.GET("/sonar/username/validate", s.validateUsername)
 	r.GET("/sonar/users/:username", s.getUserByUsername)
 	r.GET("/sonar/users/search", s.searchUsers)
-	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.acceptFriendInvite))
-	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.createFriendInvite))
-	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.getPartyInvites))
-	r.GET("/sonar/friendInvites", middleware.WithAuthentication(s.authClient, s.getFriendInvites))
-	r.DELETE("/sonar/friendInvites/:id", middleware.WithAuthentication(s.authClient, s.deleteFriendInvite))
-	r.GET("/sonar/friends", middleware.WithAuthentication(s.authClient, s.getFriends))
-	r.POST("/sonar/profile", middleware.WithAuthentication(s.authClient, s.setProfile))
+	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptFriendInvite))
+	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createFriendInvite))
+	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPartyInvites))
+	r.GET("/sonar/friendInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getFriendInvites))
+	r.DELETE("/sonar/friendInvites/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteFriendInvite))
+	r.GET("/sonar/friends", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getFriends))
+	r.POST("/sonar/profile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfile))
+	r.GET("/sonar/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getActivities))
+	r.POST("/sonar/activities/markAsSeen", middleware.WithAuthentication(s.authClient, s.livenessClient, s.markActivitiesAsSeen))
 	r.Run(":8042")
+}
+
+func (s *server) getActivities(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	activities, err := s.dbClient.Activity().GetFeed(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, activities)
+}
+
+func (s *server) markActivitiesAsSeen(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	var requestBody struct {
+		ActivityIDs []uuid.UUID `json:"activityIDs"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	err = s.dbClient.Activity().MarkAsSeen(ctx, requestBody.ActivityIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "activities marked as seen successfully"})
 }
 
 func (s *server) setPartyLeader(ctx *gin.Context) {
@@ -276,6 +323,12 @@ func (s *server) getParty(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
 		return
 	}
+
+	if user.PartyID == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user is not in a party"})
+		return
+	}
+
 	party, err := s.dbClient.Party().FindUsersParty(ctx, *user.PartyID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -505,6 +558,11 @@ func (s *server) getUserByUsername(ctx *gin.Context) {
 		return
 	}
 
+	isActive, err := s.livenessClient.IsActive(ctx, user.ID)
+	if err == nil {
+		user.IsActive = &isActive
+	}
+
 	ctx.JSON(http.StatusOK, user)
 }
 
@@ -542,6 +600,13 @@ func (s *server) getFriends(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	for i, friend := range friends {
+		isActive, err := s.livenessClient.IsActive(ctx, friend.ID)
+		if err == nil {
+			friends[i].IsActive = &isActive
+		}
 	}
 
 	ctx.JSON(http.StatusOK, friends)
@@ -1836,7 +1901,21 @@ func (s *server) createPointOfInterestChildren(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterestChildren().Create(ctx, requestBody.PointOfInterestGroupMemberID, requestBody.PointOfInterestID, requestBody.PointOfInterestChallengeID); err != nil {
+	// Get the current group member to find the group ID
+	currentGroupMember, err := s.dbClient.PointOfInterestGroupMember().FindByID(ctx, requestBody.PointOfInterestGroupMemberID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find current group member: " + err.Error()})
+		return
+	}
+
+	// Find the group member for the next point of interest
+	nextGroupMember, err := s.dbClient.PointOfInterestGroupMember().FindByPointOfInterestAndGroup(ctx, requestBody.PointOfInterestID, currentGroupMember.PointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find next point group member: " + err.Error()})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChildren().Create(ctx, requestBody.PointOfInterestGroupMemberID, nextGroupMember.ID, requestBody.PointOfInterestChallengeID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

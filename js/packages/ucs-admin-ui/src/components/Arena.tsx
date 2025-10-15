@@ -1,6 +1,6 @@
 import { useAPI, useArena, useInventory, useMediaContext } from '@poltergeist/contexts';
 import { usePointOfInterestGroups } from '@poltergeist/hooks';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { AddNewPointOfInterest } from './AddNewPointOfInterest.tsx';
 import { PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
@@ -54,6 +54,7 @@ export const Arena = () => {
     tier: 1,
     id: '',
     pointOfInterestId: '',
+    pointOfInterestGroupId: arena?.id || '',
     pointOfInterestChallengeSubmissions: [],
     createdAt: new Date(),
     updatedAt: new Date()
@@ -69,6 +70,16 @@ export const Arena = () => {
   });
 
   const tags = tagGroups.flatMap(group => group.tags);
+
+  // Update newChallenge when arena loads to ensure pointOfInterestGroupId is set correctly
+  useEffect(() => {
+    if (arena?.id) {
+      setNewChallenge(prev => ({
+        ...prev,
+        pointOfInterestGroupId: arena.id
+      }));
+    }
+  }, [arena?.id]);
 
   if (loading) {
     return <div className="p-4">Loading...</div>;
@@ -174,7 +185,7 @@ export const Arena = () => {
 
   const handleNewChallengeSave = async () => {
     try {
-      if (!selectedPointId) return;
+      if (!selectedPointId || !arena?.id) return;
       await createPointOfInterestChallenge(selectedPointId, newChallenge);
       setShowNewChallengeModal(false);
       setSelectedPointId(null);
@@ -184,6 +195,7 @@ export const Arena = () => {
         tier: 1,
         id: '',
         pointOfInterestId: '',
+        pointOfInterestGroupId: arena.id,
         pointOfInterestChallengeSubmissions: [],
         createdAt: new Date(),
         updatedAt: new Date()
@@ -458,8 +470,13 @@ export const Arena = () => {
                           ))}
                         </select>
                         <button
-                          onClick={() => addTagToPointOfInterest(selectedTagId, point.id)}
-                          className="bg-green-500 text-white px-3 py-1 rounded text-sm"
+                          onClick={() => selectedTagId && addTagToPointOfInterest(selectedTagId, point.id)}
+                          disabled={!selectedTagId}
+                          className={`px-3 py-1 rounded text-sm ${
+                            selectedTagId 
+                              ? 'bg-green-500 text-white hover:bg-green-600' 
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
                         >
                           Add Tag
                         </button>

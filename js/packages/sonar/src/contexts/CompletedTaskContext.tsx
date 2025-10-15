@@ -1,7 +1,16 @@
 import React from 'react';
-import { PointOfInterestChallenge, Quest, QuestNode, SubmissionResult, Zone } from '@poltergeist/types';
-import { createContext, useContext, useState } from 'react';
+import { 
+  PointOfInterestChallenge, 
+  Quest, 
+  QuestNode, 
+  SubmissionResult,
+  isLevelUpActivity,
+  isReputationUpActivity,
+  ReputationUpActivityData
+} from '@poltergeist/types';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { useQuestLogContext } from './QuestLogContext.tsx';
+import { useActivityFeedContext } from './ActivityFeedContext.tsx';
 
 export interface CompletedTask {
   quest: Quest;
@@ -18,6 +27,8 @@ interface CompletedTaskContextType {
   reputationUp: boolean;
   setReputationUp: (reputationUp: boolean) => void;
   zoneId: string | null;
+  zoneName: string | null;
+  newReputationLevel: number | null;
   setZoneId: (zoneId: string | null) => void;
 }
 
@@ -30,15 +41,43 @@ export const CompletedTaskContext = createContext<CompletedTaskContextType>({
   reputationUp: false,
   setReputationUp: () => {},
   zoneId: null,
+  zoneName: null,
+  newReputationLevel: null,
   setZoneId: () => {},
 });
 
 export const CompletedTaskProvider = ({ children }: { children: React.ReactNode }) => {
   const { quests } = useQuestLogContext();
+  const { unseenActivities, markActivitiesAsSeen } = useActivityFeedContext();
   const [completedTask, _setCompletedTask] = useState<CompletedTask | null>(null);
   const [levelUp, setLevelUp] = useState(false);
   const [reputationUp, setReputationUp] = useState(false);
   const [zoneId, setZoneId] = useState<string | null>(null);
+  const [zoneName, setZoneName] = useState<string | null>(null);
+  const [newReputationLevel, setNewReputationLevel] = useState<number | null>(null);
+
+  // Listen to activity feed for level ups and reputation changes
+  useEffect(() => {
+    for (const activity of unseenActivities) {
+      if (isLevelUpActivity(activity)) {
+        setLevelUp(true);
+        // Mark as seen after a delay to allow modal to show
+        setTimeout(() => {
+          markActivitiesAsSeen([activity.id]);
+        }, 3000);
+      } else if (isReputationUpActivity(activity)) {
+        const data = activity.data as ReputationUpActivityData;
+        setReputationUp(true);
+        setZoneId(data.zoneId);
+        setZoneName(data.zoneName);
+        setNewReputationLevel(data.newLevel);
+        // Mark as seen after a delay to allow modal to show
+        setTimeout(() => {
+          markActivitiesAsSeen([activity.id]);
+        }, 3000);
+      }
+    }
+  }, [unseenActivities, markActivitiesAsSeen]);
 
   const setCompletedTask = (challenge: PointOfInterestChallenge, result: SubmissionResult) => {
     const searchNodeForChallenge = (quest: Quest, node: QuestNode): Quest | null => {
@@ -62,7 +101,6 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
       const completedQuest = searchNodeForChallenge(quest, quest.rootNode);
       if (completedQuest) {
         _setCompletedTask({ quest: completedQuest, challenge, result });
-        setZoneId(result.zoneID);
         return;
       }
     }
@@ -82,6 +120,8 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
       reputationUp, 
       setReputationUp,
       zoneId,
+      zoneName,
+      newReputationLevel,
       setZoneId,
     }}>
       {children}

@@ -80,7 +80,7 @@ func (h *partyHandle) LeaveParty(ctx context.Context, user *models.User) error {
 
 func (h *partyHandle) FindUsersParty(ctx context.Context, partyID uuid.UUID) (*models.Party, error) {
 	var party *models.Party
-	if err := h.db.Preload("Members").WithContext(ctx).Where("party_id = ?", partyID).Find(&party).Error; err != nil {
+	if err := h.db.Preload("Members").Preload("Leader").WithContext(ctx).Where("id = ?", partyID).Find(&party).Error; err != nil {
 		return nil, err
 	}
 	return party, nil
