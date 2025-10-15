@@ -7,10 +7,10 @@ import (
 )
 
 type Party struct {
-	ID        uuid.UUID `gorm:"type:uuid;primary_key;"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	LeaderID  uuid.UUID
-	Leader    User   `gorm:"foreignKey:LeaderID"`
-	Members   []User `gorm:"foreignKey:PartyID"`
+	ID        uuid.UUID `gorm:"type:uuid;primary_key;" json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	LeaderID  uuid.UUID `json:"leaderId"`
+	Leader    User      `gorm:"foreignKey:LeaderID" json:"leader"`
+	Members   []User    `gorm:"foreignKey:PartyID" json:"members"`
 }

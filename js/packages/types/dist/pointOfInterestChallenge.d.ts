@@ -2,6 +2,7 @@ import { PointOfInterestChallengeSubmission } from "./pointOfInterestChallengeSu
 export interface PointOfInterestChallenge {
     id: string;
     pointOfInterestId: string;
+    pointOfInterestGroupId?: string;
     pointOfInterestChallengeSubmissions: PointOfInterestChallengeSubmission[];
     question: string;
     tier: number;

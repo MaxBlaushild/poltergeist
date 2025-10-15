@@ -5,4 +5,5 @@ export type User = {
     profilePictureUrl: string;
     partyId: string | null;
     username: string;
+    isActive: boolean | null;
 };

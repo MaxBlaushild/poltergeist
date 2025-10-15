@@ -7,6 +7,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
@@ -63,6 +64,7 @@ func main() {
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
 	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient)
+	livenessClient := liveness.NewClient(redisClient)
 	s := server.NewServer(
 		authClient,
 		texterClient,
@@ -82,6 +84,7 @@ func main() {
 		redisClient,
 		searchClient,
 		gameEngineClient,
+		livenessClient,
 	)
 
 	s.ListenAndServe("8042")

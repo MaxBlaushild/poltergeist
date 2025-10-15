@@ -129,12 +129,15 @@ export const Friends: React.FC = () => {
                       className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
-                          <img
-                            src={searchUser.profilePictureUrl || '/blank-avatar.webp'}
-                            alt={searchUser.username}
-                            className="w-full h-full object-cover"
-                          />
+                        <div className="relative w-10 h-10">
+                          <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
+                            <img
+                              src={searchUser.profilePictureUrl || '/blank-avatar.webp'}
+                              alt={searchUser.username}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${searchUser.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
                         </div>
                         <div>
                           <p className="font-medium">{searchUser.username}</p>
@@ -198,8 +201,11 @@ export const Friends: React.FC = () => {
                     className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
-                        <img src={invite.inviter.profilePictureUrl || '/blank-avatar.webp'} alt={invite.inviter.username} className="w-full h-full object-cover rounded-full" />
+                      <div className="relative w-10 h-10">
+                        <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
+                          <img src={invite.inviter.profilePictureUrl || '/blank-avatar.webp'} alt={invite.inviter.username} className="w-full h-full object-cover" />
+                        </div>
+                        <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${invite.inviter.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
                       </div>
                       <div>
                         <p className="font-medium text-sm">{invite.inviter.username}</p>
@@ -258,8 +264,15 @@ export const Friends: React.FC = () => {
                     className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center rounded-full">
-                        <span className="text-gray-600 text-sm">{invite.invitee.profilePictureUrl ? <img src={invite.invitee.profilePictureUrl} alt={invite.invitee.username} className="w-full h-full object-cover rounded-full" /> : <span className="text-gray-600 text-sm">👤</span>}</span>
+                      <div className="relative w-10 h-10">
+                        <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center overflow-hidden">
+                          {invite.invitee.profilePictureUrl ? (
+                            <img src={invite.invitee.profilePictureUrl} alt={invite.invitee.username} className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-gray-600 text-sm">👤</span>
+                          )}
+                        </div>
+                        <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${invite.invitee.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
                       </div>
                       <div>
                         <p className="font-medium text-sm">{invite.invitee.username}</p>
@@ -312,12 +325,15 @@ export const Friends: React.FC = () => {
                     className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
                     onClick={() => setUsername(friend.username)}
                   >
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
-                      <img
-                        src={friend.profilePictureUrl || '/blank-avatar.webp'}
-                        alt={friend.username}
-                        className="w-full h-full object-cover"
-                      />
+                    <div className="relative w-10 h-10">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
+                        <img
+                          src={friend.profilePictureUrl || '/blank-avatar.webp'}
+                          alt={friend.username}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${friend.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
                     </div>
                     <div className="flex-1">
                       <p className="font-medium">{friend.username}</p>

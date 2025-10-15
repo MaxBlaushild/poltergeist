@@ -1,21 +1,11 @@
 import React from 'react';
 import { Modal, ModalSize } from './shared/Modal.tsx';
-import { Zone } from '@poltergeist/types';
-import { useUserZoneReputation } from '@poltergeist/hooks';
-import { useZoneContext } from '@poltergeist/contexts';
 import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
 
 export const ReputationUpModal = () => {
-  const { zones } = useZoneContext();
-  const { reputationUp, setReputationUp, completedTask, zoneId, levelUp } = useCompletedTaskContext();
-  const { userZoneReputation } = useUserZoneReputation(zoneId ?? undefined);
-  const zone = zones.find((zone) => zone.id === zoneId);
-  console.log('zone', zone);
-  console.log('userZoneReputation', userZoneReputation);
-  console.log('reputationUp', reputationUp);
+  const { reputationUp, setReputationUp, zoneName, newReputationLevel, levelUp } = useCompletedTaskContext();
 
-  if (!reputationUp || !zone || !userZoneReputation || levelUp) return null;
-  console.log('reputation up modal');
+  if (!reputationUp || !zoneName || newReputationLevel === null || levelUp) return null;
 
   return (
     <Modal onClose={() => {
@@ -30,7 +20,7 @@ export const ReputationUpModal = () => {
                 Congratulations!
               </p>
               <p className="text-sm text-gray-600">
-                You have become {userZoneReputation?.name} in {zone.name}.
+                You reached level {newReputationLevel} in {zoneName}!
               </p>
             </div>
           </div>

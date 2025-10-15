@@ -110,7 +110,7 @@ const Profile: React.FC<ProfileProps> = ({ isOwnProfile = false, showBackButton 
           <div className="relative px-6 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-end gap-4">
               {/* Profile Picture */}
-              <div className="-mt-16 relative">
+              <div className="-mt-16 relative w-32 h-32">
                 <div className="w-32 h-32 rounded-full border-4 border-white shadow-xl overflow-hidden bg-gray-200">
                   {user.profilePictureUrl ? (
                     <img
@@ -124,6 +124,7 @@ const Profile: React.FC<ProfileProps> = ({ isOwnProfile = false, showBackButton 
                     </div>
                   )}
                 </div>
+                <div className={`absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-white ${user.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
               </div>
 
               {/* Username and Level */}

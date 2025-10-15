@@ -21,4 +21,5 @@ type User struct {
 	Party             *Party     `json:"party" gorm:"foreignKey:ID"`
 	PartyID           *uuid.UUID `json:"partyId" gorm:"type:uuid;default:null"`
 	Username          *string    `json:"username" gorm:"unique"`
+	IsActive          *bool      `json:"isActive" gorm:"-"`
 }

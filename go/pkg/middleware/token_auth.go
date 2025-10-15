@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"log"
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/http"
+	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/gin-gonic/gin"
 )
 
@@ -12,7 +14,7 @@ const (
 	bearer = "Bearer"
 )
 
-func WithAuthentication(authClient auth.Client, next gin.HandlerFunc) gin.HandlerFunc {
+func WithAuthentication(authClient auth.Client, livenessClient liveness.LivenessClient, next gin.HandlerFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authorizationHeader := ctx.Request.Header.Get("Authorization")
 		headerParts := strings.Split(authorizationHeader, " ")
@@ -32,6 +34,10 @@ func WithAuthentication(authClient auth.Client, next gin.HandlerFunc) gin.Handle
 				Error: "authorization header not valid",
 			})
 			return
+		}
+
+		if err = livenessClient.SetLastActive(ctx, user.ID); err != nil {
+			log.Println("error setting last active", err)
 		}
 
 		ctx.Set("user", user)

@@ -114,6 +114,9 @@ func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID
 // preloadPointOfInterestGroupRelations preloads all common relations for a PointOfInterestGroup query
 func (c *pointOfInterestGroupHandle) preloadPointOfInterestGroupRelations(query *gorm.DB) *gorm.DB {
 	return query.
+		Preload("PointsOfInterest").
+		Preload("PointsOfInterest.Tags").
+		Preload("PointsOfInterest.PointOfInterestChallenges").
 		Preload("GroupMembers").
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
