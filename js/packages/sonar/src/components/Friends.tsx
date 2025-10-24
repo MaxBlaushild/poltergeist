@@ -21,9 +21,22 @@ export const Friends: React.FC = () => {
   const receivedInvites = friendInvites.filter(invite => invite.inviteeId === user?.id);
   const sentInvites = friendInvites.filter(invite => invite.inviterId === user?.id);
 
+  // Add polling for real-time updates
   useEffect(() => {
+    // Initial fetch
     fetchFriends();
     fetchFriendInvites();
+
+    // Set up polling interval (every 5 seconds)
+    const pollingInterval = setInterval(() => {
+      fetchFriends();
+      fetchFriendInvites();
+    }, 5000);
+
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(pollingInterval);
+    };
   }, [fetchFriends, fetchFriendInvites]);
 
   const handleAcceptInvite = async (inviteId: string) => {

@@ -22,7 +22,7 @@ export const useUser = (username) => {
                 return;
             }
             try {
-                const fetchedUser = yield apiClient.get(`/sonar/users/${username}`);
+                const fetchedUser = yield apiClient.get(`/sonar/users/byUsername/${username}`);
                 setUser(fetchedUser);
             }
             catch (error) {

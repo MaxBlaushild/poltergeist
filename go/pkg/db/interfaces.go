@@ -64,6 +64,7 @@ type ScoreHandle interface {
 type HowManyAnswerHandle interface {
 	FindByQuestionIDAndUserID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (*models.HowManyAnswer, error)
 	Insert(ctx context.Context, a *models.HowManyAnswer) (*models.HowManyAnswer, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type HowManyQuestionHandle interface {
@@ -105,7 +106,9 @@ type TeamHandle interface {
 	GetByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.Team, error)
 }
 
-type UserTeamHandle interface{}
+type UserTeamHandle interface {
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
 
 type PointOfInterestHandle interface {
 	FindAll(ctx context.Context) ([]models.PointOfInterest, error)
@@ -121,6 +124,8 @@ type PointOfInterestHandle interface {
 	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)
 	Update(ctx context.Context, pointOfInterestID uuid.UUID, updates *models.PointOfInterest) error
 	FindZoneForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) (*models.PointOfInterestZone, error)
+	UpdateLastUsedInQuest(ctx context.Context, pointOfInterestID uuid.UUID) error
+	FindRecentlyUsedInZone(ctx context.Context, zoneID uuid.UUID, since time.Time) (map[string]bool, error)
 }
 
 type NeighboringPointsOfInterestHandle interface {
@@ -146,6 +151,7 @@ type HowManySubscriptionHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.HowManySubscription, error)
 	SetSubscribed(ctx context.Context, userID uuid.UUID, stripeID string) error
 	DeleteByStripeID(ctx context.Context, stripeID string) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type SonarSurveyHandle interface {
@@ -159,6 +165,7 @@ type SonarSurveySubmissionHandle interface {
 	GetUserSubmissionForSurvey(ctx context.Context, userID uuid.UUID, surveyID uuid.UUID) (*models.SonarSurveySubmission, error)
 	GetAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.SonarSurveySubmission, error)
 	GetSubmissionByID(ctx context.Context, submissionID uuid.UUID) (*models.SonarSurveySubmission, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type SonarActivityHandle interface {
@@ -219,6 +226,8 @@ type PointOfInterestChallengeHandle interface {
 	GetSubmissionsForUser(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestChallengeSubmission, error)
 	DeleteAllForPointOfInterest(ctx context.Context, pointOfInterestID uuid.UUID) error
 	GetChildrenForChallenge(ctx context.Context, challengeID uuid.UUID) ([]models.PointOfInterestChildren, error)
+	DeleteSubmission(ctx context.Context, submissionID uuid.UUID) error
+	DeleteAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type InventoryItemHandle interface {
@@ -229,12 +238,14 @@ type InventoryItemHandle interface {
 	StealItems(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID) error
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type AuditItemHandle interface {
 	Create(ctx context.Context, matchID *uuid.UUID, userID *uuid.UUID, message string) error
 	GetAuditItemsForMatch(ctx context.Context, matchID uuid.UUID) ([]*models.AuditItem, error)
 	GetAuditItemsForUser(ctx context.Context, userID uuid.UUID) ([]*models.AuditItem, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type ImageGenerationHandle interface {
@@ -246,6 +257,7 @@ type ImageGenerationHandle interface {
 	SetOptions(ctx context.Context, imageGenerationID uuid.UUID, options []string) error
 	Updates(ctx context.Context, imageGenerationID uuid.UUID, updates *models.ImageGeneration) error
 	GetCompleteGenerationsForUser(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type PointOfInterestChildrenHandle interface {
@@ -256,12 +268,16 @@ type PointOfInterestChildrenHandle interface {
 type PointOfInterestDiscoveryHandle interface {
 	GetDiscoveriesForTeam(teamID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
 	GetDiscoveriesForUser(userID uuid.UUID) ([]models.PointOfInterestDiscovery, error)
+	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
+	DeleteByID(ctx context.Context, id uuid.UUID) error
+	Create(ctx context.Context, discovery *models.PointOfInterestDiscovery) error
 }
 
 type MatchUserHandle interface {
 	Create(ctx context.Context, matchUser *models.MatchUser) error
 	FindByMatchID(ctx context.Context, matchID uuid.UUID) ([]models.MatchUser, error)
 	FindUsersForMatch(ctx context.Context, matchID uuid.UUID) ([]models.User, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type TagHandle interface {
@@ -293,6 +309,7 @@ type ZoneHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 	Delete(ctx context.Context, zoneID uuid.UUID) error
 	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
+	RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
 	UpdateNameAndDescription(ctx context.Context, zoneID uuid.UUID, name string, description string) error
 	FindByPointOfInterestID(ctx context.Context, pointOfInterestID uuid.UUID) (*models.Zone, error)
@@ -367,11 +384,13 @@ type UserLevelHandle interface {
 	FindOrCreateForUser(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
 	Create(ctx context.Context, userLevel *models.UserLevel) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type UserZoneReputationHandle interface {
 	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
 	FindOrCreateForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (*models.UserZoneReputation, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type PartyHandle interface {
@@ -379,11 +398,13 @@ type PartyHandle interface {
 	SetLeader(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID, userID uuid.UUID) error
 	LeaveParty(ctx context.Context, user *models.User) error
 	FindUsersParty(ctx context.Context, partyID uuid.UUID) (*models.Party, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type FriendHandle interface {
 	Create(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (*models.Friend, error)
 	FindAllFriends(ctx context.Context, userID uuid.UUID) ([]models.User, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type FriendInviteHandle interface {
@@ -391,6 +412,7 @@ type FriendInviteHandle interface {
 	FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.FriendInvite, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type PartyInviteHandle interface {
@@ -399,6 +421,7 @@ type PartyInviteHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PartyInvite, error)
 	Accept(ctx context.Context, id uuid.UUID, user *models.User) (*models.PartyInvite, error)
 	Reject(ctx context.Context, id uuid.UUID, user *models.User) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type ActivityHandle interface {
@@ -406,6 +429,8 @@ type ActivityHandle interface {
 	MarkAsSeen(ctx context.Context, activityIDs []uuid.UUID) error
 	CreateActivity(ctx context.Context, activity models.Activity) error
 	CreateActivitiesForPartyMembers(ctx context.Context, partyID *uuid.UUID, userID *uuid.UUID, activityType models.ActivityType, data []byte) error
+	DeleteByID(ctx context.Context, id uuid.UUID) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type PointOfInterestGroupMemberHandle interface {

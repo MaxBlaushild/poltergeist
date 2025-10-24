@@ -173,45 +173,192 @@ func (c *client) RefreshPointOfInterestImage(ctx context.Context, poi *models.Po
 	return nil
 }
 
+// haversineDistance calculates the distance in meters between two lat/lng points
+func haversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadius = 6371000 // Earth's radius in meters
+
+	dLat := (lat2 - lat1) * math.Pi / 180.0
+	dLng := (lng2 - lng1) * math.Pi / 180.0
+
+	lat1Rad := lat1 * math.Pi / 180.0
+	lat2Rad := lat2 * math.Pi / 180.0
+
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Sin(dLng/2)*math.Sin(dLng/2)*math.Cos(lat1Rad)*math.Cos(lat2Rad)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadius * c
+}
+
+// selectPlaceByDistanceWeight selects a place from the list using distance-based weighted random selection.
+// Places closer to the search center have exponentially higher probability of being selected.
+func selectPlaceByDistanceWeight(places []googlemaps.Place, centerLat, centerLng, radius float64) *googlemaps.Place {
+	if len(places) == 0 {
+		return nil
+	}
+
+	if len(places) == 1 {
+		return &places[0]
+	}
+
+	// Calculate weights based on distance (closer = higher weight)
+	weights := make([]float64, len(places))
+	totalWeight := 0.0
+
+	for i, place := range places {
+		distance := haversineDistance(centerLat, centerLng, place.Location.Latitude, place.Location.Longitude)
+		// Use exponential decay: weight = e^(-distance/radius)
+		// This gives much higher weight to closer places
+		weight := math.Exp(-distance / radius)
+		weights[i] = weight
+		totalWeight += weight
+	}
+
+	// Select randomly based on cumulative probability
+	randValue := rand.Float64() * totalWeight
+	cumulative := 0.0
+
+	for i, weight := range weights {
+		cumulative += weight
+		if randValue <= cumulative {
+			return &places[i]
+		}
+	}
+
+	// Fallback (should rarely happen due to floating point precision)
+	return &places[len(places)-1]
+}
+
 func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]googlemaps.Place, error) {
 	var placesInZone []googlemaps.Place
+	seenPlaceIDs := make(map[string]bool)
 	attempts := 0
-	maxAttempts := 2
+	maxAttempts := 20
+	totalPlacesFound := 0
+	totalPlacesInBoundary := 0
+
+	// Request 3x the needed places to account for boundary filtering and weighted selection
+	requestCount := numberOfPlaces * 3
+	if requestCount > 20 {
+		requestCount = 20 // Google Maps API typically limits to 20 results
+	}
+
+	// Get recently used places with fallback windows (7 days, 3 days, 1 day)
+	exclusionWindows := []time.Duration{
+		7 * 24 * time.Hour,
+		3 * 24 * time.Hour,
+		1 * 24 * time.Hour,
+	}
+
+	var recentlyUsed map[string]bool
+	var err error
+	for _, window := range exclusionWindows {
+		since := time.Now().Add(-window)
+		recentlyUsed, err = c.dbClient.PointOfInterest().FindRecentlyUsedInZone(ctx, zone.ID, since)
+		if err != nil {
+			log.Printf("Error finding recently used places: %v", err)
+			recentlyUsed = make(map[string]bool)
+			break
+		}
+
+		// If we have few recently used places, this window is good
+		if len(recentlyUsed) < 10 {
+			log.Printf("Using %d day exclusion window, found %d recently used places", int(window.Hours()/24), len(recentlyUsed))
+			break
+		}
+	}
+
+	log.Printf("Starting search for %d places (requesting %d per attempt, max %d attempts, excluding %d recently used)",
+		numberOfPlaces, requestCount, maxAttempts, len(recentlyUsed))
 
 	for attempts < maxAttempts && int32(len(placesInZone)) < numberOfPlaces {
 		randomPoint := zone.GetRandomPoint()
-		log.Printf("Attempt %d - Fuzzed latitude: %f, longitude: %f, radius: %f", attempts+1, randomPoint.Y(), randomPoint.X(), zone.Radius)
+		centerLat := randomPoint.Y()
+		centerLng := randomPoint.X()
+
+		log.Printf("Attempt %d/%d - Searching at lat: %f, lng: %f, radius: %f", attempts+1, maxAttempts, centerLat, centerLng, zone.Radius)
 
 		places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
-			Lat:            randomPoint.Y(),
-			Long:           randomPoint.X(),
+			Lat:            centerLat,
+			Long:           centerLng,
 			Radius:         zone.Radius,
 			IncludedTypes:  includedTypes,
 			ExcludedTypes:  excludedTypes,
-			MaxResultCount: numberOfPlaces,
+			MaxResultCount: requestCount,
 		})
 		if err != nil {
-			log.Printf("Error finding places: %v", err)
+			log.Printf("Error finding places on attempt %d: %v", attempts+1, err)
 			return nil, err
 		}
 
+		totalPlacesFound += len(places)
+		newPlacesThisAttempt := 0
+		duplicatesThisAttempt := 0
+		recentlyUsedSkipped := 0
+
+		// Filter places to only include valid candidates
+		var validPlaces []googlemaps.Place
 		for _, place := range places {
+			// Skip if we've already seen this place
+			if seenPlaceIDs[place.ID] {
+				duplicatesThisAttempt++
+				continue
+			}
+
+			// Skip if recently used in a quest
+			if recentlyUsed[place.ID] {
+				recentlyUsedSkipped++
+				continue
+			}
+
+			// Check if place is within zone boundary
 			if zone.IsPointInBoundary(place.Location.Latitude, place.Location.Longitude) {
-				placesInZone = append(placesInZone, place)
-				if int32(len(placesInZone)) >= numberOfPlaces {
-					break
+				validPlaces = append(validPlaces, place)
+			}
+		}
+
+		// Use weighted random selection to pick from valid places
+		for int32(len(placesInZone)) < numberOfPlaces && len(validPlaces) > 0 {
+			selectedPlace := selectPlaceByDistanceWeight(validPlaces, centerLat, centerLng, zone.Radius)
+			if selectedPlace == nil {
+				break
+			}
+
+			seenPlaceIDs[selectedPlace.ID] = true
+			placesInZone = append(placesInZone, *selectedPlace)
+			totalPlacesInBoundary++
+			newPlacesThisAttempt++
+
+			// Remove the selected place from valid places
+			newValidPlaces := make([]googlemaps.Place, 0, len(validPlaces)-1)
+			for _, p := range validPlaces {
+				if p.ID != selectedPlace.ID {
+					newValidPlaces = append(newValidPlaces, p)
 				}
 			}
+			validPlaces = newValidPlaces
+		}
+
+		log.Printf("Attempt %d: Found %d API results, %d new unique places added (%d duplicates, %d recently used, %d outside boundary). Total progress: %d/%d",
+			attempts+1, len(places), newPlacesThisAttempt, duplicatesThisAttempt, recentlyUsedSkipped,
+			len(places)-newPlacesThisAttempt-duplicatesThisAttempt-recentlyUsedSkipped, len(placesInZone), numberOfPlaces)
+
+		if int32(len(placesInZone)) >= numberOfPlaces {
+			log.Printf("Success! Found %d unique places in zone after %d attempts (total API results: %d, in boundary: %d, duplicates: %d, recently used filtered: %d)",
+				len(placesInZone), attempts+1, totalPlacesFound, totalPlacesInBoundary, len(seenPlaceIDs)-totalPlacesInBoundary, recentlyUsedSkipped)
+			return placesInZone, nil
 		}
 
 		attempts++
 	}
 
+	// If we still don't have enough places, return an error with detailed stats
 	if int32(len(placesInZone)) < numberOfPlaces {
-		return nil, fmt.Errorf("could not find enough places in zone after %d attempts. Found %d places, needed %d", attempts, len(placesInZone), numberOfPlaces)
+		return nil, fmt.Errorf("could not find enough places in zone after %d attempts. Found %d/%d places (total API results: %d, unique places seen: %d, in boundary: %d)",
+			attempts, len(placesInZone), numberOfPlaces, totalPlacesFound, len(seenPlaceIDs), totalPlacesInBoundary)
 	}
 
-	log.Printf("Found %d places in zone after %d attempts", len(placesInZone), attempts)
+	log.Printf("Found %d places in zone after %d attempts (total API results: %d)", len(placesInZone), attempts, totalPlacesFound)
 	return placesInZone, nil
 }
 
@@ -254,22 +401,6 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 
 	log.Printf("Successfully generated %d points of interest", len(pointsOfInterest))
 	return pointsOfInterest, nil
-}
-
-func (c *client) fuzzCoordinates(lat float64, lng float64, radius float64) (float64, float64, float64) {
-	// Convert radius from meters to degrees (approximate)
-	radiusDegrees := radius / 111000.0 // 111km per degree
-
-	// Generate random angle and distance within radius
-	angle := rand.Float64() * 2 * math.Pi
-	distance := rand.Float64() * radiusDegrees
-
-	// Calculate new coordinates
-	newLat := lat + (distance * math.Cos(angle))
-	newLng := lng + (distance * math.Sin(angle))
-
-	// Calculate what percentage of the radius was used
-	return newLat, newLng, radius
 }
 
 func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.Place, zone *models.Zone) (*models.PointOfInterest, error) {

@@ -151,3 +151,11 @@ func (p *pointOfInterestChallengeHandle) GetChildrenForChallenge(ctx context.Con
 	}
 	return children, nil
 }
+
+func (p *pointOfInterestChallengeHandle) DeleteSubmission(ctx context.Context, submissionID uuid.UUID) error {
+	return p.db.WithContext(ctx).Where("id = ?", submissionID).Delete(&models.PointOfInterestChallengeSubmission{}).Error
+}
+
+func (p *pointOfInterestChallengeHandle) DeleteAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) error {
+	return p.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.PointOfInterestChallengeSubmission{}).Error
+}

@@ -40,6 +40,15 @@ func WithAuthentication(authClient auth.Client, livenessClient liveness.Liveness
 			log.Println("error setting last active", err)
 		}
 
+		// Extract and save user location if provided
+		locationHeader := ctx.Request.Header.Get("X-User-Location")
+		log.Printf("[DEBUG] Location header: %s", locationHeader)
+		if locationHeader != "" {
+			if err = livenessClient.SetUserLocation(ctx, user.ID, locationHeader); err != nil {
+				log.Println("error setting user location", err)
+			}
+		}
+
 		ctx.Set("user", user)
 
 		next(ctx)

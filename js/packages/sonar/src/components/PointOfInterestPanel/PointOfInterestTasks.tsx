@@ -28,8 +28,12 @@ export const PointOfInterestTasks = ({ pointOfInterest, onClose }: PointOfIntere
             challenge={selectedTask}
             pointOfInterest={pointOfInterest}
             onSubmit={(immediate) => {
-              setSelectedTask(null);
-              onClose(immediate);
+              if (immediate) {
+                onClose(immediate);
+              } else {
+                setSelectedTask(null);
+                onClose(immediate);
+              }
             }}
           />
         </div>

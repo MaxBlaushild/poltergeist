@@ -10,6 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useAPI } from './api';
+import { useAuth } from './auth';
 ;
 const InventoryContext = createContext({
     inventoryItems: [],
@@ -30,6 +31,7 @@ const InventoryContext = createContext({
 export const useInventory = () => useContext(InventoryContext);
 export const InventoryProvider = ({ children }) => {
     const { apiClient } = useAPI();
+    const { user } = useAuth();
     const [inventoryItems, setInventoryItems] = useState([]);
     const [inventoryItemsAreLoading, setInventoryItemsAreLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -41,6 +43,7 @@ export const InventoryProvider = ({ children }) => {
     const [ownedInventoryItemsAreLoading, setOwnedInventoryItemsAreLoading] = useState(false);
     const [ownedInventoryItemsError, setOwnedInventoryItemsError] = useState(null);
     const fetchInventoryItems = () => __awaiter(void 0, void 0, void 0, function* () {
+        var _a, _b;
         setInventoryItemsAreLoading(true);
         setError(null);
         try {
@@ -48,6 +51,11 @@ export const InventoryProvider = ({ children }) => {
             setInventoryItems(response);
         }
         catch (err) {
+            // Silently handle auth errors
+            if (((_a = err === null || err === void 0 ? void 0 : err.response) === null || _a === void 0 ? void 0 : _a.status) === 401 || ((_b = err === null || err === void 0 ? void 0 : err.response) === null || _b === void 0 ? void 0 : _b.status) === 403) {
+                setInventoryItems([]);
+                return;
+            }
             setError(err instanceof Error ? err.message : 'Failed to fetch inventory items');
         }
         finally {
@@ -55,6 +63,7 @@ export const InventoryProvider = ({ children }) => {
         }
     });
     const fetchOwnedInventoryItems = () => __awaiter(void 0, void 0, void 0, function* () {
+        var _c, _d;
         setOwnedInventoryItemsAreLoading(true);
         setOwnedInventoryItemsError(null);
         try {
@@ -62,6 +71,11 @@ export const InventoryProvider = ({ children }) => {
             setOwnedInventoryItems(response.filter((item) => item.quantity > 0));
         }
         catch (err) {
+            // Silently handle auth errors
+            if (((_c = err === null || err === void 0 ? void 0 : err.response) === null || _c === void 0 ? void 0 : _c.status) === 401 || ((_d = err === null || err === void 0 ? void 0 : err.response) === null || _d === void 0 ? void 0 : _d.status) === 403) {
+                setOwnedInventoryItems([]);
+                return;
+            }
             setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');
         }
         finally {
@@ -69,9 +83,15 @@ export const InventoryProvider = ({ children }) => {
         }
     });
     useEffect(() => {
+        if (!user) {
+            // Clear data when not authenticated
+            setInventoryItems([]);
+            setOwnedInventoryItems([]);
+            return;
+        }
         fetchInventoryItems();
         fetchOwnedInventoryItems();
-    }, []);
+    }, [user]);
     const consumeItem = (ownedInventoryItemId, metadata = {}) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             setIsUsingItem(true);

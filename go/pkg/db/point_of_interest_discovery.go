@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -24,4 +26,16 @@ func (h *pointOfInterestDiscoveryHandle) GetDiscoveriesForUser(userID uuid.UUID)
 		return nil, err
 	}
 	return discoveries, nil
+}
+
+func (h *pointOfInterestDiscoveryHandle) DeleteByUserID(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.PointOfInterestDiscovery{}).Error
+}
+
+func (h *pointOfInterestDiscoveryHandle) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("id = ?", id).Delete(&models.PointOfInterestDiscovery{}).Error
+}
+
+func (h *pointOfInterestDiscoveryHandle) Create(ctx context.Context, discovery *models.PointOfInterestDiscovery) error {
+	return h.db.WithContext(ctx).Create(discovery).Error
 }

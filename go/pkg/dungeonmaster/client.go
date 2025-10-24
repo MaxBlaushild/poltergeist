@@ -174,6 +174,12 @@ func (c *client) processNode(
 	}
 	log.Printf("Found point of interest: %s", pointOfInterest.Name)
 
+	// Mark this POI as used in a quest
+	if err := c.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, pointOfInterest.ID); err != nil {
+		log.Printf("Warning: failed to update last_used_in_quest_at for POI %s: %v", pointOfInterest.ID, err)
+		// Don't fail the quest generation for this, just log the warning
+	}
+
 	newMember, err := c.dbClient.PointOfInterestGroup().AddMember(ctx, pointOfInterest.ID, quest.ID)
 	if err != nil {
 		log.Printf("Error adding member to group: %v", err)

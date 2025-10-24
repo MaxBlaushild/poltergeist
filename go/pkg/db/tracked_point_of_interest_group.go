@@ -14,6 +14,19 @@ type trackedPointOfInterestGroupHandle struct {
 }
 
 func (h *trackedPointOfInterestGroupHandle) Create(ctx context.Context, pointOfInterestGroupID uuid.UUID, userID uuid.UUID) error {
+	// Check if already exists to make this idempotent
+	var existing models.TrackedPointOfInterestGroup
+	err := h.db.WithContext(ctx).Where("user_id = ? AND point_of_interest_group_id = ?", userID, pointOfInterestGroupID).First(&existing).Error
+	if err == nil {
+		// Already exists, return nil (no error)
+		return nil
+	}
+	if err != gorm.ErrRecordNotFound {
+		// Some other error occurred
+		return err
+	}
+
+	// Create new record
 	return h.db.Create(&models.TrackedPointOfInterestGroup{
 		ID:                     uuid.New(),
 		UserID:                 userID,

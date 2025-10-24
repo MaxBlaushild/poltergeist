@@ -50,3 +50,7 @@ func (h *friendHandle) FindAllFriends(ctx context.Context, userID uuid.UUID) ([]
 
 	return users, nil
 }
+
+func (h *friendHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("first_user_id = ? OR second_user_id = ?", userID, userID).Delete(&models.Friend{}).Error
+}

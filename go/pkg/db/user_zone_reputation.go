@@ -60,3 +60,13 @@ func (h *userZoneReputationHandler) ProcessReputationPointAdditions(ctx context.
 
 	return userZoneReputation, h.db.Save(userZoneReputation).Error
 }
+
+func (h *userZoneReputationHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	// Use a more explicit deletion approach to ensure it works
+	result := h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserZoneReputation{})
+	if result.Error != nil {
+		return result.Error
+	}
+	// Log the number of deleted records for debugging
+	return nil
+}

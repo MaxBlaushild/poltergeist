@@ -136,3 +136,8 @@ func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID u
 	}
 	return h.db.Create(&newEffect).Error
 }
+
+func (h *inventoryItemHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	// Delete using both direct comparison and IS NOT NULL check to ensure we get all user items
+	return h.db.WithContext(ctx).Where("user_id = ? AND user_id IS NOT NULL", userID).Delete(&models.OwnedInventoryItem{}).Error
+}

@@ -17,6 +17,7 @@ export const TabNav = ({ tabs, children }: TabNavProps) => {
       <TabList className="flex gap-4 w-full">
         {tabs.map((tab, i) => (
           <Tab
+            key={`tab-${i}`}
             className="rounded-full py-1 px-3 text-sm/6 font-semibold text-black focus:outline-none data-[selected]:bg-black/10 data-[hover]:bg-black/5 data-[selected]:data-[hover]:bg-black/10 data-[focus]:outline-1 data-[focus]:outline-black"
         >
           {tab}

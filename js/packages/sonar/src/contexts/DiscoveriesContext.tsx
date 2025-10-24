@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { useAPI, useLocation } from '@poltergeist/contexts';
+import { useAPI, useAuth, useLocation } from '@poltergeist/contexts';
 import { PointOfInterestDiscovery } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 
@@ -42,6 +42,7 @@ export const DiscoveriesContextProvider: React.FC<
   DiscoveriesContextProviderProps
 > = ({ children }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const { currentUser } = useUserProfiles();
   const { location } = useLocation();
   const [discoveries, setDiscoveries] = useState<PointOfInterestDiscovery[]>(
@@ -54,7 +55,12 @@ export const DiscoveriesContextProvider: React.FC<
         `/sonar/pointsOfInterest/discoveries`
       );
       setDiscoveries(response);
-    } catch (error) {
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setDiscoveries([]);
+        return;
+      }
       console.error('Failed to fetch discoveries:', error);
     }
   }, [apiClient]);
@@ -83,8 +89,14 @@ export const DiscoveriesContextProvider: React.FC<
   };
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setDiscoveries([]);
+      return;
+    }
+
     fetchDiscoveries();
-  }, []);
+  }, [fetchDiscoveries, user]);
 
   return (
     <DiscoveriesContext.Provider

@@ -63,8 +63,8 @@ func main() {
 	})
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
-	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient)
 	livenessClient := liveness.NewClient(redisClient)
+	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient, livenessClient)
 	s := server.NewServer(
 		authClient,
 		texterClient,

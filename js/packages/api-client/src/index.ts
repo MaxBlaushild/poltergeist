@@ -1,22 +1,75 @@
 import axios, { AxiosInstance } from 'axios';
 
+interface Location {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+}
+
 export class APIClient {
   private client: AxiosInstance;
+  private getLocation?: () => Location | null;
 
-  constructor(baseURL: string) {
+  constructor(baseURL: string, getLocation?: () => Location | null) {
+    console.log('[DEBUG] API Client - Constructor called with getLocation:', !!getLocation);
+    this.getLocation = getLocation;
     this.client = axios.create({
       baseURL,
     });
 
     this.client.interceptors.request.use(
       (config) => {
+        console.log('[DEBUG] API Client - Request interceptor called for URL:', config.url);
         const token = localStorage.getItem('token');
         if (token) {
           config.headers['Authorization'] = `Bearer ${token}`;
         }
+        
+        // Add location header if location is available
+        if (this.getLocation) {
+          const location = this.getLocation();
+          console.log('[DEBUG] API Client - Location check:', { 
+            location, 
+            hasLocation: !!location, 
+            hasCoords: !!(location?.latitude && location?.longitude),
+            latitude: location?.latitude,
+            longitude: location?.longitude,
+            accuracy: location?.accuracy
+          });
+          if (location && location.latitude && location.longitude) {
+            const locationHeader = `${location.latitude},${location.longitude},${location.accuracy || 0}`;
+            config.headers['X-User-Location'] = locationHeader;
+            console.log('[DEBUG] API Client - Added location header:', locationHeader);
+          } else {
+            console.log('[DEBUG] API Client - No location data available, location:', location);
+          }
+        } else {
+          console.log('[DEBUG] API Client - No getLocation function provided');
+        }
+        
         return config;
       },
       (error) => Promise.reject(error)
+    );
+
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          // Clear invalid token
+          localStorage.removeItem('token');
+          
+          // Get current path
+          const currentPath = window.location.pathname;
+          
+          // Don't redirect if already on login or home page (prevent loops)
+          if (currentPath !== '/login' && currentPath !== '/') {
+            // Redirect to login with return URL
+            window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
+          }
+        }
+        return Promise.reject(error);
+      }
     );
   }
 
@@ -35,8 +88,8 @@ export class APIClient {
     return response.data;
   }
   
-  async delete<T>(url: string): Promise<T> {
-    const response = await this.client.delete<T>(url);
+  async delete<T>(url: string, data?: any): Promise<T> {
+    const response = await this.client.delete<T>(url, { data });
     return response.data;
   }
 }

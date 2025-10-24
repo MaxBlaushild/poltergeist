@@ -124,7 +124,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
         setTrackedPointOfInterestIds(trackedPointsOfInterestIds);
         
         // Update last fetch state
-        lastFetchZoneID.current = selectedZone.id;
+        lastFetchZoneID.current = selectedZone?.id ?? null;
         lastFetchTags.current = selectedTags.map(tag => tag.name);
       })();
 

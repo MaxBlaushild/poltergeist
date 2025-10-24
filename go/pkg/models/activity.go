@@ -23,11 +23,33 @@ type LevelUpActivity struct {
 	NewLevel int `json:"newLevel"`
 }
 
+type ItemAwarded struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	ImageURL string `json:"imageUrl"`
+}
+
+type POIInfo struct {
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	ImageURL string    `json:"imageURL"`
+}
+
 type ChallengeCompletedActivity struct {
-	ChallengeID uuid.UUID  `json:"challengeId"`
-	Successful  bool       `json:"successful"`
-	Reason      string     `json:"reason"`
-	SubmitterID *uuid.UUID `json:"submitterId,omitempty"`
+	ChallengeID       uuid.UUID     `json:"challengeId"`
+	Successful        bool          `json:"successful"`
+	Reason            string        `json:"reason"`
+	SubmitterID       *uuid.UUID    `json:"submitterId,omitempty"`
+	ExperienceAwarded int           `json:"experienceAwarded"`
+	ReputationAwarded int           `json:"reputationAwarded"`
+	ItemsAwarded      []ItemAwarded `json:"itemsAwarded"`
+	QuestID           uuid.UUID     `json:"questId"`
+	QuestName         string        `json:"questName"`
+	QuestCompleted    bool          `json:"questCompleted"`
+	CurrentPOI        POIInfo       `json:"currentPOI"`
+	NextPOI           *POIInfo      `json:"nextPOI,omitempty"`
+	ZoneID            uuid.UUID     `json:"zoneId"`
+	ZoneName          string        `json:"zoneName"`
 }
 
 type QuestCompletedActivity struct {

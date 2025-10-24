@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { Tag, TagGroup } from '@poltergeist/types';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 
 type TagContextType = {
   tagGroups: TagGroup[];
@@ -20,6 +20,7 @@ export const TagContext = createContext<TagContextType>({
 
 export const TagProvider = ({ children }: { children: React.ReactNode }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [tags, setTags] = useState<Tag[]>([]);
   const [tagGroups, setTagGroups] = useState<TagGroup[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
@@ -40,8 +41,12 @@ export const TagProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
+    if (!user) {
+      setTagGroups([]);
+      return;
+    }
     fetchTagGroups();
-  }, []);
+  }, [user]);
 
   return (
     <TagContext.Provider value={{ tagGroups, selectedTags, setSelectedTags, createTagGroup, moveTagToTagGroup }}>

@@ -176,11 +176,6 @@ export const QuestLog: React.FC<QuestLogProps> = ({ onClose }) => {
     );
   }
 
-  console.log(tagGroups);
-  Object.entries(tagGroupBuckets).forEach(([groupId, quests]) => {
-    console.log(`Tag group ${groupId}:`, quests);
-  });
-
   return (
     <div className="flex flex-col gap-4 p-4 pt-0 w-full">
       <h2 className="text-2xl font-bold">Quest Log</h2>

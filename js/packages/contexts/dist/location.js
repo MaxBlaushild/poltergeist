@@ -42,7 +42,6 @@ export const LocationProvider = ({ children }) => {
     };
     const getLocation = (options = {}) => {
         return new Promise((resolve, reject) => {
-            console.log('getLocation', navigator.geolocation);
             if (!navigator.geolocation) {
                 reject(new Error('Geolocation is not supported by this browser'));
                 return;
@@ -89,11 +88,13 @@ export const LocationProvider = ({ children }) => {
                 const status = yield navigator.permissions.query({ name: 'geolocation' });
                 setPermissionStatus(status.state);
                 if (status.state === 'denied') {
+                    console.log('[DEBUG] Location Provider - Location access denied');
                     setError(`Location access is denied. ${getSettingsInstructions()}`);
                     setIsLoading(false);
                     return;
                 }
                 if (status.state === 'granted' || status.state === 'prompt') {
+                    console.log('[DEBUG] Location Provider - Permission granted, getting location...');
                     try {
                         const position = yield getLocation();
                         const newLocation = {
@@ -101,10 +102,10 @@ export const LocationProvider = ({ children }) => {
                             longitude: (_b = position === null || position === void 0 ? void 0 : position.coords) === null || _b === void 0 ? void 0 : _b.longitude,
                             accuracy: (_c = position === null || position === void 0 ? void 0 : position.coords) === null || _c === void 0 ? void 0 : _c.accuracy,
                         };
+                        console.log('[DEBUG] Location Provider - Got location:', newLocation);
                         if (shouldUpdateLocation(newLocation, location)) {
-                            console.log('updating location', newLocation);
-                            console.log('location', location);
                             setLocation(newLocation);
+                            console.log('[DEBUG] Location Provider - Location updated:', newLocation);
                         }
                         setError(null);
                     }
@@ -167,6 +168,7 @@ export const LocationProvider = ({ children }) => {
     const acknowledgeError = () => {
         setError(null);
     };
+    console.log('[DEBUG] Location Provider - Current state:', { location, error, isLoading, message });
     return (_jsx(LocationContext.Provider, Object.assign({ value: { location, error, isLoading, message, acknowledgeError } }, { children: children })));
 };
 export const useLocation = () => {

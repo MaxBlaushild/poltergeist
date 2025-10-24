@@ -8,13 +8,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { useState, useEffect } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 export const usePointOfInterestGroups = (type) => {
     const { apiClient } = useAPI();
+    const { user } = useAuth();
     const [pointOfInterestGroups, setPointOfInterestGroups] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     useEffect(() => {
+        if (!user) {
+            setPointOfInterestGroups([]);
+            setLoading(false);
+            return;
+        }
         const fetchPointOfInterestGroups = () => __awaiter(void 0, void 0, void 0, function* () {
             try {
                 const fetchedPointOfInterestGroups = yield apiClient.get(`/sonar/pointsOfInterest/groups${type ? `?type=${type}` : ''}`);
@@ -28,7 +34,7 @@ export const usePointOfInterestGroups = (type) => {
             }
         });
         fetchPointOfInterestGroups();
-    }, [apiClient, type]);
+    }, [user, type]);
     return {
         pointOfInterestGroups,
         loading,

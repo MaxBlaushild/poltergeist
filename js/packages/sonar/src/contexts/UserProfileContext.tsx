@@ -27,7 +27,12 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
       try {
         const fetchedUser = await apiClient.get<User>('/sonar/whoami');
         setCurrentUser(fetchedUser);
-      } catch (error) {
+      } catch (error: any) {
+        // Silently handle auth errors
+        if (error?.response?.status === 401 || error?.response?.status === 403) {
+          setCurrentUser(null);
+          return;
+        }
         setCurrentUserError(error);
       } finally {
         setCurrentUserLoading(false);
@@ -35,6 +40,13 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
     };
 
   useEffect(() => {
+    console.log('user', user);
+    if (!user) {
+      // Clear data when not authenticated
+      setCurrentUser(null);
+      setCurrentUserLoading(false);
+    }
+
     fetchCurrentUser();
   }, [apiClient, user]);
 

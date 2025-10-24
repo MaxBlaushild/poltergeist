@@ -179,6 +179,17 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.livenessClient, s.hasCurrentMatch))
 	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllUsers))
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
+	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
+	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
+	r.GET("/sonar/users/:id/discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserDiscoveries))
+	r.POST("/sonar/users/:id/discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createUserDiscoveries))
+	r.DELETE("/sonar/users/:id/discoveries/:discoveryId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUserDiscovery))
+	r.DELETE("/sonar/users/:id/discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllUserDiscoveries))
+	r.GET("/sonar/users/:id/submissions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserSubmissions))
+	r.DELETE("/sonar/submissions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteSubmission))
+	r.DELETE("/sonar/users/:id/submissions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllUserSubmissions))
+	r.GET("/sonar/users/:id/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserActivities))
+	r.DELETE("/sonar/users/:id/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllUserActivities))
 	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTags))
 	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTagGroups))
 	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addTagToPointOfInterest))
@@ -190,6 +201,9 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
 	r.DELETE("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZone))
+	r.POST("/sonar/zones/:id/pointOfInterest/:pointOfInterestId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addPointOfInterestToZone))
+	r.DELETE("/sonar/zones/:id/pointOfInterest/:pointOfInterestId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removePointOfInterestFromZone))
+	r.GET("/sonar/pointOfInterest/:id/zone", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneForPointOfInterest))
 	r.POST("/sonar/pointOfInterest/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importPointOfInterest))
 	r.POST("/sonar/pointOfInterest/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterest))
 	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterestImage))
@@ -231,8 +245,8 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/partyInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptPartyInvite))
 	r.POST("/sonar/partyInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectPartyInvite))
 	r.GET("/sonar/username/validate", s.validateUsername)
-	r.GET("/sonar/users/:username", s.getUserByUsername)
 	r.GET("/sonar/users/search", s.searchUsers)
+	r.GET("/sonar/users/byUsername/:username", s.getUserByUsername)
 	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptFriendInvite))
 	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createFriendInvite))
 	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPartyInvites))
@@ -1603,6 +1617,63 @@ func (s *server) getZones(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, zones)
 }
 
+func (s *server) addPointOfInterestToZone(ctx *gin.Context) {
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(ctx.Param("pointOfInterestId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest ID"})
+		return
+	}
+
+	err = s.dbClient.Zone().AddPointOfInterestToZone(ctx, zoneID, pointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "point of interest added to zone successfully"})
+}
+
+func (s *server) removePointOfInterestFromZone(ctx *gin.Context) {
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	pointOfInterestID, err := uuid.Parse(ctx.Param("pointOfInterestId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest ID"})
+		return
+	}
+
+	err = s.dbClient.Zone().RemovePointOfInterestFromZone(ctx, zoneID, pointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "point of interest removed from zone successfully"})
+}
+
+func (s *server) getZoneForPointOfInterest(ctx *gin.Context) {
+	pointOfInterestID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest ID"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByPointOfInterestID(ctx, pointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found for this point of interest"})
+		return
+	}
+	ctx.JSON(http.StatusOK, zone)
+}
+
 func (s *server) addTagToPointOfInterest(ctx *gin.Context) {
 	var requestBody struct {
 		TagID             uuid.UUID `json:"tagID"`
@@ -2950,6 +3021,19 @@ func (s *server) deleteActivity(ctx *gin.Context) {
 		})
 		return
 	}
+
+	id, err := uuid.Parse(activityID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid activity ID"})
+		return
+	}
+
+	if err := s.dbClient.Activity().DeleteByID(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "activity deleted successfully"})
 }
 
 func (s *server) createCategory(ctx *gin.Context) {
@@ -3561,4 +3645,426 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"message": "everything cool",
 	})
+}
+
+// User management endpoints
+func (s *server) deleteUser(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	// Delete all dependent data before deleting the user
+	// 1. Delete all discoveries
+	if err := s.dbClient.PointOfInterestDiscovery().DeleteByUserID(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete discoveries: " + err.Error()})
+		return
+	}
+
+	// 2. Delete all submissions
+	if err := s.dbClient.PointOfInterestChallenge().DeleteAllSubmissionsForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions: " + err.Error()})
+		return
+	}
+
+	// 3. Delete all activities
+	if err := s.dbClient.Activity().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete activities: " + err.Error()})
+		return
+	}
+
+	// 4. Delete all tracked point of interest groups
+	if err := s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete tracked groups: " + err.Error()})
+		return
+	}
+
+	// 5. Delete all friend relationships
+	if err := s.dbClient.Friend().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete friends: " + err.Error()})
+		return
+	}
+
+	// 6. Delete all friend invites
+	if err := s.dbClient.FriendInvite().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete friend invites: " + err.Error()})
+		return
+	}
+
+	// 7. Delete all party invites
+	if err := s.dbClient.PartyInvite().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete party invites: " + err.Error()})
+		return
+	}
+
+	// 8. Delete all image generations
+	if err := s.dbClient.ImageGeneration().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete image generations: " + err.Error()})
+		return
+	}
+
+	// 9. Delete all audit items
+	if err := s.dbClient.AuditItem().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete audit items: " + err.Error()})
+		return
+	}
+
+	// 10. Delete all how many answers
+	if err := s.dbClient.HowManyAnswer().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete how many answers: " + err.Error()})
+		return
+	}
+
+	// 11. Delete all how many subscriptions
+	if err := s.dbClient.HowManySubscription().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete how many subscriptions: " + err.Error()})
+		return
+	}
+
+	// 12. Delete all sonar survey submissions
+	if err := s.dbClient.SonarSurveySubmission().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete sonar survey submissions: " + err.Error()})
+		return
+	}
+
+	// 13. Delete all match users
+	if err := s.dbClient.MatchUser().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete match users: " + err.Error()})
+		return
+	}
+
+	// 14. Delete all user levels
+	if err := s.dbClient.UserLevel().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user levels: " + err.Error()})
+		return
+	}
+
+	// 15. Delete all user zone reputations
+	if err := s.dbClient.UserZoneReputation().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user zone reputations: " + err.Error()})
+		return
+	}
+
+	// 16. Delete all owned inventory items
+	if err := s.dbClient.InventoryItem().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete owned inventory items: " + err.Error()})
+		return
+	}
+
+	// 17. Delete all user team relationships
+	if err := s.dbClient.UserTeam().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user team relationships: " + err.Error()})
+		return
+	}
+
+	// 18. Delete all parties where user is leader
+	if err := s.dbClient.Party().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete parties: " + err.Error()})
+		return
+	}
+
+	// 19. Finally, delete the user
+	if err := s.dbClient.User().Delete(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "user deleted successfully"})
+}
+
+func (s *server) getUserDiscoveries(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForUser(userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, discoveries)
+}
+
+func (s *server) createUserDiscoveries(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	var requestBody struct {
+		PointOfInterestIDs []uuid.UUID `json:"pointOfInterestIds" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create discoveries for each POI
+	for _, poiID := range requestBody.PointOfInterestIDs {
+		discovery := &models.PointOfInterestDiscovery{
+			UserID:            &userID,
+			PointOfInterestID: poiID,
+		}
+		if err := s.dbClient.PointOfInterestDiscovery().Create(ctx, discovery); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "discoveries created successfully"})
+}
+
+func (s *server) deleteUserDiscovery(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	discoveryID, err := uuid.Parse(ctx.Param("discoveryId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid discovery ID"})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestDiscovery().DeleteByID(ctx, discoveryID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "discovery deleted successfully"})
+}
+
+func (s *server) deleteAllUserDiscoveries(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestDiscovery().DeleteByUserID(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "all discoveries deleted successfully"})
+}
+
+func (s *server) getUserSubmissions(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	submissions, err := s.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, submissions)
+}
+
+func (s *server) deleteSubmission(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	submissionID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission ID"})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChallenge().DeleteSubmission(ctx, submissionID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "submission deleted successfully"})
+}
+
+func (s *server) deleteAllUserSubmissions(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := s.dbClient.PointOfInterestChallenge().DeleteAllSubmissionsForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "all submissions deleted successfully"})
+}
+
+func (s *server) getUserActivities(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	activities, err := s.dbClient.Activity().GetFeed(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, activities)
+}
+
+func (s *server) deleteAllUserActivities(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := s.dbClient.Activity().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "all activities deleted successfully"})
+}
+
+func (s *server) deleteUsers(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		UserIDs []uuid.UUID `json:"userIds" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(requestBody.UserIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "no user IDs provided"})
+		return
+	}
+
+	// Delete each user with all their dependencies
+	for _, userID := range requestBody.UserIDs {
+		// Delete all dependent data for this user
+		// 1. Delete all discoveries
+		if err := s.dbClient.PointOfInterestDiscovery().DeleteByUserID(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete discoveries for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 2. Delete all submissions
+		if err := s.dbClient.PointOfInterestChallenge().DeleteAllSubmissionsForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete submissions for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 3. Delete all activities
+		if err := s.dbClient.Activity().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete activities for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 4. Delete all tracked point of interest groups
+		if err := s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete tracked groups for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 5. Delete all friend relationships
+		if err := s.dbClient.Friend().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete friends for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 6. Delete all friend invites
+		if err := s.dbClient.FriendInvite().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete friend invites for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 7. Delete all party invites
+		if err := s.dbClient.PartyInvite().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete party invites for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 8. Delete all image generations
+		if err := s.dbClient.ImageGeneration().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete image generations for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 9. Finally, delete the user
+		if err := s.dbClient.User().Delete(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user " + userID.String() + ": " + err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("successfully deleted %d users", len(requestBody.UserIDs))})
 }

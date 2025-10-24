@@ -24,6 +24,7 @@ type PointOfInterest struct {
 	Geometry                  string                     `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Tags                      []Tag                      `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
 	GoogleMapsPlaceID         *string                    `json:"googleMapsPlaceId"`
+	LastUsedInQuestAt         *time.Time                 `json:"lastUsedInQuestAt,omitempty"`
 }
 
 func (p *PointOfInterest) TableName() string {

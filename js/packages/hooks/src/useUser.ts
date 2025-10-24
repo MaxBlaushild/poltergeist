@@ -23,7 +23,7 @@ export const useUser = (username: string | null): UseUserResult => {
       }
       
       try {
-        const fetchedUser = await apiClient.get<User>(`/sonar/users/${username}`);
+        const fetchedUser = await apiClient.get<User>(`/sonar/users/byUsername/${username}`);
         setUser(fetchedUser);
       } catch (error) {
         setError(error as Error);
