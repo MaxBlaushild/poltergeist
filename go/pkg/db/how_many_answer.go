@@ -32,3 +32,7 @@ func (h *howManyAnswerHandle) Insert(ctx context.Context, a *models.HowManyAnswe
 
 	return a, nil
 }
+
+func (h *howManyAnswerHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.HowManyAnswer{}).Error
+}

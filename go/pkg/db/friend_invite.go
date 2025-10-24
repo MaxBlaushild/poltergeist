@@ -54,3 +54,7 @@ func (h *friendInviteHandle) Delete(ctx context.Context, id uuid.UUID) error {
 
 	return nil
 }
+
+func (h *friendInviteHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("inviter_id = ? OR invitee_id = ?", userID, userID).Delete(&models.FriendInvite{}).Error
+}

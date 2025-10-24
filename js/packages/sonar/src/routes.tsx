@@ -10,7 +10,6 @@ import { AnswerSurvey } from './components/AnswerSurvey.tsx';
 import { Survey } from './components/Survey.tsx';
 import { Thanks } from './components/Thanks.tsx';
 import { AssembleCrew } from './components/AssembleCrew.tsx';
-import { Dashboard } from './components/Dashboard.tsx';
 import { Submission } from './components/Submission.tsx';
 import { SelectBattleArena } from './components/SelectBattleArena.tsx';
 import { Match } from './components/Match.tsx';
@@ -74,11 +73,6 @@ export const router = createBrowserRouter([
         Component: NewSurvey,
       },
       {
-        path: 'dashboard',
-        loader: onlyAuthenticated,
-        Component: Dashboard,
-      },
-      {
         path: 'submit-answer/:id',
         loader: onlyAuthenticated,
         Component: AnswerSurvey,
@@ -115,29 +109,6 @@ export const router = createBrowserRouter([
             </PointOfInterestContextProvider>
           </MatchContextProvider>
         ),
-      },
-      {
-        path: 'match/:id',
-        Component: MatchById,
-        loader: onlyAuthenticated,
-      },
-      {
-        path: 'match/in-progress',
-        loader: onlyAuthenticated,
-        Component: () => (
-          <MatchContextProvider>
-            <MapProvider>
-              <PointOfInterestContextProvider>
-                <MatchInProgress />
-              </PointOfInterestContextProvider>
-            </MapProvider>
-          </MatchContextProvider>
-        ),
-      },
-      {
-        path: 'match/lobby',
-        loader: onlyAuthenticated,
-        Component: MatchLobby,
       },
       {
         path: 'single-player',

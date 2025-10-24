@@ -117,35 +117,49 @@ func (z *Zone) GetRandomPoint() orb.Point {
 		return orb.Point{}
 	}
 
-	// Create a truly random seed using crypto/rand
+	// Create a new random generator with crypto/rand seed for each call
+	// This ensures true randomness across different program runs
 	var seed int64
-	err := binary.Read(rand.Reader, binary.BigEndian, &seed)
-	if err != nil {
-		log.Printf("Error generating random seed: %v", err)
-		return orb.Point{}
+	if err := binary.Read(rand.Reader, binary.BigEndian, &seed); err != nil {
+		log.Printf("Error generating crypto random seed: %v, falling back to time-based seed", err)
+		seed = time.Now().UnixNano()
 	}
-	log.Printf("Generated random seed: %d", seed)
-	r := mathrand.New(mathrand.NewSource(seed))
+	rng := mathrand.New(mathrand.NewSource(seed))
 
-	// Try up to 1000 times to find a point inside the polygon
-	for i := 0; i < 1000; i++ {
-		// Generate a random point within the bounds
+	// Try up to 5000 times to find a point inside the polygon
+	maxAttempts := 5000
+	for i := 0; i < maxAttempts; i++ {
+		// Generate a random point within the bounds using crypto-seeded RNG
 		// Note: X is longitude, Y is latitude in geographic coordinates
-		lng := bounds.Min.X() + (bounds.Max.X()-bounds.Min.X())*r.Float64()
-		lat := bounds.Min.Y() + (bounds.Max.Y()-bounds.Min.Y())*r.Float64()
-
-		log.Printf("Attempt %d: Generated random point lat=%f, lng=%f", i+1, lat, lng)
+		lng := bounds.Min.X() + (bounds.Max.X()-bounds.Min.X())*rng.Float64()
+		lat := bounds.Min.Y() + (bounds.Max.Y()-bounds.Min.Y())*rng.Float64()
 
 		// Check if the point is inside the polygon using ray casting algorithm
 		if z.IsPointInBoundary(lat, lng) {
-			log.Printf("Found valid point inside boundary on attempt %d", i+1)
+			log.Printf("Found valid random point inside boundary on attempt %d (lat=%f, lng=%f)", i+1, lat, lng)
 			return orb.Point{lng, lat}
 		}
 	}
 
-	// If we couldn't find a point after 1000 tries, return the centroid
-	log.Printf("Failed to find point inside boundary after 1000 attempts, falling back to centroid")
-	return calculateCentroid(polygon)
+	// If we couldn't find a point after many tries, use centroid with random offset
+	// This ensures we don't always return the exact same point
+	log.Printf("Failed to find point inside boundary after %d attempts, using centroid with random offset", maxAttempts)
+	centroid := calculateCentroid(polygon)
+
+	// Add small random offset to centroid (within 10% of bounds size)
+	offsetLng := (bounds.Max.X() - bounds.Min.X()) * 0.1 * (rng.Float64() - 0.5)
+	offsetLat := (bounds.Max.Y() - bounds.Min.Y()) * 0.1 * (rng.Float64() - 0.5)
+
+	offsetPoint := orb.Point{centroid.X() + offsetLng, centroid.Y() + offsetLat}
+
+	// Check if offset point is valid, otherwise use centroid
+	if z.IsPointInBoundary(offsetPoint.Y(), offsetPoint.X()) {
+		log.Printf("Using offset centroid point (lat=%f, lng=%f)", offsetPoint.Y(), offsetPoint.X())
+		return offsetPoint
+	}
+
+	log.Printf("Using exact centroid as fallback (lat=%f, lng=%f)", centroid.Y(), centroid.X())
+	return centroid
 }
 
 // isPointInPolygon uses the ray casting algorithm to determine if a point is inside a polygon

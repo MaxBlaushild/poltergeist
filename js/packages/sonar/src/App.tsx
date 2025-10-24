@@ -49,12 +49,12 @@ const HTML5toTouch = {
 
 function App() {
   return (
-    <APIProvider>
-      <MediaContextProvider>
-        <UserProfileProvider>
-          <InventoryProvider>
-              <AuthProvider appName="Sonar" uriPrefix="/sonar">
-                <LocationProvider>
+    <LocationProvider>
+      <APIProvider>
+        <MediaContextProvider>
+          <UserProfileProvider>
+            <InventoryProvider>
+                <AuthProvider appName="Sonar" uriPrefix="/sonar">
                     <LogContextProvider>
                       <DiscoveriesContextProvider>
                         <SubmissionsContextProvider>
@@ -72,12 +72,12 @@ function App() {
                         </SubmissionsContextProvider>
                       </DiscoveriesContextProvider>
                     </LogContextProvider>
-                </LocationProvider>
-              </AuthProvider>
-          </InventoryProvider>
-        </UserProfileProvider>
-      </MediaContextProvider>
-    </APIProvider>
+                </AuthProvider>
+            </InventoryProvider>
+          </UserProfileProvider>
+        </MediaContextProvider>
+      </APIProvider>
+    </LocationProvider>
   );
 }
 

@@ -11,7 +11,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import RBush from 'rbush';
 import * as turf from '@turf/turf';
-import { useAPI, useLocation } from '@poltergeist/contexts';
+import { useAPI, useLocation, useAuth } from '@poltergeist/contexts';
 export const calculateDistance = (poi1, poi2) => {
     const R = 6371e3; // Earth radius in meters
     const lat1 = (poi1.lat * Math.PI) / 180;
@@ -33,6 +33,7 @@ export const isXMetersAway = (poi1, poi2, x) => {
 const ZoneContext = createContext(null);
 export const ZoneProvider = ({ children }) => {
     const { apiClient } = useAPI();
+    const { user } = useAuth();
     const [zones, setZones] = useState([]);
     const [selectedZone, setSelectedZone] = useState(null);
     const [spatialIndex] = useState(() => new RBush());
@@ -40,6 +41,10 @@ export const ZoneProvider = ({ children }) => {
     const previousLocation = useRef(location);
     // Fetch zones on mount
     useEffect(() => {
+        if (!user) {
+            setZones([]);
+            return;
+        }
         const fetchZones = () => __awaiter(void 0, void 0, void 0, function* () {
             try {
                 const response = yield apiClient.get('/sonar/zones');
@@ -50,7 +55,7 @@ export const ZoneProvider = ({ children }) => {
             }
         });
         fetchZones();
-    }, []);
+    }, [user]);
     // Update spatial index when zones change
     useEffect(() => {
         // Clear existing data
@@ -95,7 +100,6 @@ export const ZoneProvider = ({ children }) => {
             maxX: lng,
             maxY: lat
         });
-        console.log('Found candidates:', candidates);
         // Then check which of these zones actually contain the point
         for (const candidate of candidates) {
             const polygon = turf.polygon([[

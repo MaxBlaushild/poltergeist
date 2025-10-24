@@ -47,7 +47,6 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
 
   const getLocation = (options = {}) => {
     return new Promise((resolve, reject) => {
-      console.log('getLocation', navigator.geolocation);
       if (!navigator.geolocation) {
         reject(new Error('Geolocation is not supported by this browser'));
         return;
@@ -115,12 +114,14 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
         setPermissionStatus(status.state);
 
         if (status.state === 'denied') {
+          console.log('[DEBUG] Location Provider - Location access denied');
           setError(`Location access is denied. ${getSettingsInstructions()}`);
           setIsLoading(false);
           return;
         }
 
         if (status.state === 'granted' || status.state === 'prompt') {
+          console.log('[DEBUG] Location Provider - Permission granted, getting location...');
           try {
             const position = await getLocation();
             const newLocation = {
@@ -128,10 +129,10 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
               longitude: position?.coords?.longitude,
               accuracy: position?.coords?.accuracy,
             };
+            console.log('[DEBUG] Location Provider - Got location:', newLocation);
             if (shouldUpdateLocation(newLocation, location)) {
-              console.log('updating location', newLocation);
-              console.log('location', location);
               setLocation(newLocation);
+              console.log('[DEBUG] Location Provider - Location updated:', newLocation);
             }
             setError(null);
           } catch (locationError) {
@@ -199,6 +200,8 @@ export const LocationProvider = ({ children }: { children: ReactNode }) => {
     setError(null);
   };
 
+  console.log('[DEBUG] Location Provider - Current state:', { location, error, isLoading, message });
+  
   return (
     <LocationContext.Provider value={{ location, error, isLoading, message, acknowledgeError }}>
       {children}

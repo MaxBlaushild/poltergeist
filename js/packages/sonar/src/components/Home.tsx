@@ -108,7 +108,7 @@ export function Home() {
                       console.log('one', one);
                       console.log('two', two);
                       console.log('three', three);
-                      navigate(unescapedFrom || '/dashboard');
+                      navigate(unescapedFrom || '/single-player');
                     }
                   } catch (e) {
                     setError('Something went wrong. Please try again later');

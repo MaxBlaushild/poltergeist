@@ -9,7 +9,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useState, useEffect, useContext } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 export const TagContext = createContext({
     tagGroups: [],
     selectedTags: [],
@@ -19,6 +19,7 @@ export const TagContext = createContext({
 });
 export const TagProvider = ({ children }) => {
     const { apiClient } = useAPI();
+    const { user } = useAuth();
     const [tags, setTags] = useState([]);
     const [tagGroups, setTagGroups] = useState([]);
     const [selectedTags, setSelectedTags] = useState([]);
@@ -35,8 +36,12 @@ export const TagProvider = ({ children }) => {
         fetchTagGroups();
     });
     useEffect(() => {
+        if (!user) {
+            setTagGroups([]);
+            return;
+        }
         fetchTagGroups();
-    }, []);
+    }, [user]);
     return (_jsx(TagContext.Provider, Object.assign({ value: { tagGroups, selectedTags, setSelectedTags, createTagGroup, moveTagToTagGroup } }, { children: children })));
 };
 export const useTagContext = () => {

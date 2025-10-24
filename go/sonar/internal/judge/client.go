@@ -74,6 +74,26 @@ func NewClient(aws aws.AWSClient, db db.DbClient, deepPriest deep_priest.DeepPri
 	}
 }
 
+// getPartyMembers returns all party members if the user is in a party, otherwise returns just the user
+func (c *client) getPartyMembers(ctx context.Context, userID *uuid.UUID) ([]models.User, error) {
+	if userID == nil {
+		return []models.User{}, nil
+	}
+
+	user, err := c.db.User().FindByID(ctx, *userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// If user is in a party, return all party members
+	if user.PartyID != nil {
+		return c.db.User().FindPartyMembers(ctx, *userID)
+	}
+
+	// If not in a party, return just this user
+	return []models.User{*user}, nil
+}
+
 func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionRequest) (*JudgeSubmissionResponse, error) {
 	prompt := c.makeJudgementMessage(request.Challenge, request)
 
@@ -99,9 +119,32 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 		return nil, fmt.Errorf("error decoding judgement response (%s): %w", answer.Answer, err)
 	}
 
-	challengeSubmission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.Challenge.ID, request.TeamID, request.UserID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
+	// Get all party members (or just the user if not in a party)
+	partyMembers, err := c.getPartyMembers(ctx, request.UserID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Create submission records for all party members
+	var challengeSubmission *models.PointOfInterestChallengeSubmission
+	for _, member := range partyMembers {
+		submission, err := c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.Challenge.ID, request.TeamID, &member.ID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
+		if err != nil {
+			return nil, err
+		}
+
+		// Keep the original submitter's submission as the response
+		if request.UserID != nil && member.ID == *request.UserID {
+			challengeSubmission = submission
+		}
+	}
+
+	// If no party members found, create a submission for the original user
+	if challengeSubmission == nil && request.UserID != nil {
+		challengeSubmission, err = c.db.PointOfInterestChallenge().SubmitAnswerForChallenge(ctx, request.Challenge.ID, request.TeamID, request.UserID, request.TextSubmission, request.ImageSubmissionUrl, judgementResult.Judgement)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &JudgeSubmissionResponse{

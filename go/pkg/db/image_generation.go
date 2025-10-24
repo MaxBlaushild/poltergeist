@@ -80,3 +80,7 @@ func (h *imageGenerationHandle) GetCompleteGenerationsForUser(ctx context.Contex
 	}
 	return imageGenerations, nil
 }
+
+func (h *imageGenerationHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.ImageGeneration{}).Error
+}

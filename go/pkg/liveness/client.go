@@ -3,6 +3,7 @@ package liveness
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,13 +11,17 @@ import (
 )
 
 const (
-	activeKey = "last_active:%s"
-	ttl       = 1 * time.Minute
+	activeKey   = "last_active:%s"
+	locationKey = "user_location:%s"
+	ttl         = 1 * time.Minute
+	locationTTL = 5 * time.Minute
 )
 
 type LivenessClient interface {
 	IsActive(ctx context.Context, userID uuid.UUID) (bool, error)
 	SetLastActive(ctx context.Context, userID uuid.UUID) error
+	SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error
+	GetUserLocation(ctx context.Context, userID uuid.UUID) (string, error)
 }
 
 type livenessClient struct {
@@ -42,6 +47,26 @@ func (c *livenessClient) SetLastActive(ctx context.Context, userID uuid.UUID) er
 	return c.redisClient.Set(ctx, c.makeKey(userID), time.Now().Unix(), ttl).Err()
 }
 
+func (c *livenessClient) SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error {
+	log.Printf("[DEBUG] Setting user location for user %s: %s", userID, location)
+	return c.redisClient.Set(ctx, c.makeLocationKey(userID), location, locationTTL).Err()
+}
+
+func (c *livenessClient) GetUserLocation(ctx context.Context, userID uuid.UUID) (string, error) {
+	result, err := c.redisClient.Get(ctx, c.makeLocationKey(userID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", nil // Return empty string if no location found
+		}
+		return "", err
+	}
+	return result, nil
+}
+
 func (c *livenessClient) makeKey(userID uuid.UUID) string {
 	return fmt.Sprintf(activeKey, userID.String())
+}
+
+func (c *livenessClient) makeLocationKey(userID uuid.UUID) string {
+	return fmt.Sprintf(locationKey, userID.String())
 }

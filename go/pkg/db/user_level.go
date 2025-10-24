@@ -61,3 +61,7 @@ func (h *userLevelHandler) ProcessExperiencePointAdditions(ctx context.Context, 
 
 	return userLevel, h.db.Save(userLevel).Error
 }
+
+func (h *userLevelHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserLevel{}).Error
+}

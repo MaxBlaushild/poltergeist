@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -25,6 +26,15 @@ func (h *activityHandle) MarkAsSeen(ctx context.Context, activityIDs []uuid.UUID
 }
 
 func (h *activityHandle) CreateActivity(ctx context.Context, activity models.Activity) error {
+	if activity.CreatedAt.IsZero() {
+		activity.CreatedAt = time.Now()
+	}
+	if activity.UpdatedAt.IsZero() {
+		activity.UpdatedAt = time.Now()
+	}
+	if activity.ID == uuid.Nil {
+		activity.ID = uuid.New()
+	}
 	return h.db.WithContext(ctx).Create(&activity).Error
 }
 
@@ -54,6 +64,9 @@ func (h *activityHandle) CreateActivitiesForPartyMembers(ctx context.Context, pa
 			ActivityType: activityType,
 			Data:         data,
 			Seen:         false,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+			ID:           uuid.New(),
 		}
 		if err := h.db.WithContext(ctx).Create(&activity).Error; err != nil {
 			return err
@@ -61,4 +74,12 @@ func (h *activityHandle) CreateActivitiesForPartyMembers(ctx context.Context, pa
 	}
 
 	return nil
+}
+
+func (h *activityHandle) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("id = ?", id).Delete(&models.Activity{}).Error
+}
+
+func (h *activityHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.Activity{}).Error
 }

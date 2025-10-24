@@ -23,6 +23,7 @@ import LocationArchetypes from './components/LocationArchetypes.tsx';
 import { QuestArchetypesProvider } from './contexts/questArchetypes.tsx';
 import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
+import { Users } from './components/Users.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -65,6 +66,7 @@ const Navigation = () => {
         <Link to="/location-archetypes" className="text-white hover:text-gray-300">Location Archetypes</Link>
         <Link to="/quest-archetypes" className="text-white hover:text-gray-300">Quest Archetypes</Link>
         <Link to="/zone-quest-archetypes" className="text-white hover:text-gray-300">Zone Quest Archetypes</Link>
+        <Link to="/users" className="text-white hover:text-gray-300">Users</Link>
       </div>
     </nav>
   );
@@ -150,34 +152,39 @@ const router = createBrowserRouter([
         element: <ZoneQuestArchetypes />,
         loader: onlyAuthenticated,
       },
+      {
+        path: "/users",
+        element: <Users />,
+        loader: onlyAuthenticated,
+      },
     ]
   }
 ]);
 
 const App = () => {
   return (
-    <APIProvider>
-      <TagProvider>
-        <ZoneProvider>
-          <LocationProvider>
-            <MapProvider>
-              <QuestArchetypesProvider>
-                <MediaContextProvider>
-                <AuthProvider
-                appName="UCS Admin Dashboard"
-                uriPrefix="/sonar"
-              >
-              <InventoryProvider>
-                <RouterProvider router={router} />
-              </InventoryProvider>
-              </AuthProvider>
-              </MediaContextProvider>
-            </QuestArchetypesProvider>
-          </MapProvider>
-        </LocationProvider>
-      </ZoneProvider>
-      </TagProvider>
-    </APIProvider>
+    <LocationProvider>
+      <APIProvider>
+        <AuthProvider
+          appName="UCS Admin Dashboard"
+          uriPrefix="/sonar"
+        >
+          <MediaContextProvider>
+            <TagProvider>
+              <ZoneProvider>
+                <MapProvider>
+                  <QuestArchetypesProvider>
+                    <InventoryProvider>
+                      <RouterProvider router={router} />
+                    </InventoryProvider>
+                  </QuestArchetypesProvider>
+                </MapProvider>
+              </ZoneProvider>
+            </TagProvider>
+          </MediaContextProvider>
+        </AuthProvider>
+      </APIProvider>
+    </LocationProvider>
   );
 };
 

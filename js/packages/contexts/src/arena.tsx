@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import { PointOfInterestGroup, PointOfInterest, PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
 import { useMediaContext } from './media';
 import { useAPI } from './api';
+import { useAuth } from './auth';
 
 interface ArenaContextType {
   arena: PointOfInterestGroup | null;
@@ -27,6 +28,10 @@ interface ArenaContextType {
   deletePointOfInterestChildren: (id: string) => Promise<void>;
   addTagToPointOfInterest: (tagId: string, pointOfInterestId: string) => Promise<void>;
   removeTagFromPointOfInterest: (tagId: string, pointOfInterestId: string) => Promise<void>;
+  getZoneForPointOfInterest: (pointOfInterestId: string) => Promise<any>;
+  addPointOfInterestToZone: (zoneId: string, pointOfInterestId: string) => Promise<void>;
+  removePointOfInterestFromZone: (zoneId: string, pointOfInterestId: string) => Promise<void>;
+  pointOfInterestZones: Record<string, any>;
 }
 
 interface ArenaProviderProps {
@@ -39,6 +44,7 @@ const ArenaContext = createContext<ArenaContextType | undefined>(undefined);
 export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId }) => {
   const [arena, setArena] = useState<PointOfInterestGroup | null>(null);
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const mediaContext = useMediaContext();
   if (!mediaContext) {
     throw new Error('ArenaProvider must be wrapped in a MediaProvider');
@@ -46,6 +52,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
   const { uploadMedia, getPresignedUploadURL } = mediaContext;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [pointOfInterestZones, setPointOfInterestZones] = useState<Record<string, any>>({});
 
   const fetchArena = async (arenaId: string) => {
     setLoading(true);
@@ -309,11 +316,58 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     }
   };
 
-  useEffect(() => {
-    if (arenaId) {
-      fetchArena(arenaId);
+  const getZoneForPointOfInterest = async (pointOfInterestId: string) => {
+    try {
+      const response = await apiClient.get(`/sonar/pointOfInterest/${pointOfInterestId}/zone`);
+      setPointOfInterestZones(prev => ({
+        ...prev,
+        [pointOfInterestId]: response
+      }));
+      return response;
+    } catch (err) {
+      // POI might not be in any zone, which is fine
+      console.log('POI not in any zone or error fetching zone:', err);
+      return null;
     }
-  }, [arenaId]);
+  };
+
+  const addPointOfInterestToZone = async (zoneId: string, pointOfInterestId: string) => {
+    setLoading(true);
+    try {
+      await apiClient.post(`/sonar/zones/${zoneId}/pointOfInterest/${pointOfInterestId}`);
+      await getZoneForPointOfInterest(pointOfInterestId);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removePointOfInterestFromZone = async (zoneId: string, pointOfInterestId: string) => {
+    setLoading(true);
+    try {
+      await apiClient.delete(`/sonar/zones/${zoneId}/pointOfInterest/${pointOfInterestId}`);
+      setPointOfInterestZones(prev => {
+        const newZones = { ...prev };
+        delete newZones[pointOfInterestId];
+        return newZones;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('An error occurred'));
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !arenaId) {
+      setArena(null);
+      return;
+    }
+    fetchArena(arenaId);
+  }, [arenaId, user]);
 
   return (
     <ArenaContext.Provider
@@ -334,6 +388,10 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         deletePointOfInterestChildren,
         addTagToPointOfInterest,
         removeTagFromPointOfInterest,
+        getZoneForPointOfInterest,
+        addPointOfInterestToZone,
+        removePointOfInterestFromZone,
+        pointOfInterestZones,
       }}
     >
       {children}

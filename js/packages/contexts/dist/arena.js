@@ -11,10 +11,12 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useMediaContext } from './media';
 import { useAPI } from './api';
+import { useAuth } from './auth';
 const ArenaContext = createContext(undefined);
 export const ArenaProvider = ({ children, arenaId }) => {
     const [arena, setArena] = useState(null);
     const { apiClient } = useAPI();
+    const { user } = useAuth();
     const mediaContext = useMediaContext();
     if (!mediaContext) {
         throw new Error('ArenaProvider must be wrapped in a MediaProvider');
@@ -22,6 +24,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
     const { uploadMedia, getPresignedUploadURL } = mediaContext;
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [pointOfInterestZones, setPointOfInterestZones] = useState({});
     const fetchArena = (arenaId) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         try {
@@ -263,11 +266,57 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
-    useEffect(() => {
-        if (arenaId) {
-            fetchArena(arenaId);
+    const getZoneForPointOfInterest = (pointOfInterestId) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            const response = yield apiClient.get(`/sonar/pointOfInterest/${pointOfInterestId}/zone`);
+            setPointOfInterestZones(prev => (Object.assign(Object.assign({}, prev), { [pointOfInterestId]: response })));
+            return response;
         }
-    }, [arenaId]);
+        catch (err) {
+            // POI might not be in any zone, which is fine
+            console.log('POI not in any zone or error fetching zone:', err);
+            return null;
+        }
+    });
+    const addPointOfInterestToZone = (zoneId, pointOfInterestId) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            yield apiClient.post(`/sonar/zones/${zoneId}/pointOfInterest/${pointOfInterestId}`);
+            yield getZoneForPointOfInterest(pointOfInterestId);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+            throw err;
+        }
+        finally {
+            setLoading(false);
+        }
+    });
+    const removePointOfInterestFromZone = (zoneId, pointOfInterestId) => __awaiter(void 0, void 0, void 0, function* () {
+        setLoading(true);
+        try {
+            yield apiClient.delete(`/sonar/zones/${zoneId}/pointOfInterest/${pointOfInterestId}`);
+            setPointOfInterestZones(prev => {
+                const newZones = Object.assign({}, prev);
+                delete newZones[pointOfInterestId];
+                return newZones;
+            });
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('An error occurred'));
+            throw err;
+        }
+        finally {
+            setLoading(false);
+        }
+    });
+    useEffect(() => {
+        if (!user || !arenaId) {
+            setArena(null);
+            return;
+        }
+        fetchArena(arenaId);
+    }, [arenaId, user]);
     return (_jsx(ArenaContext.Provider, Object.assign({ value: {
             arena,
             loading,
@@ -285,6 +334,10 @@ export const ArenaProvider = ({ children, arenaId }) => {
             deletePointOfInterestChildren,
             addTagToPointOfInterest,
             removeTagFromPointOfInterest,
+            getZoneForPointOfInterest,
+            addPointOfInterestToZone,
+            removePointOfInterestFromZone,
+            pointOfInterestZones,
         } }, { children: children })));
 };
 export const useArena = () => {

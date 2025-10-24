@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 import { PointOfInterest } from '@poltergeist/types';
 
 
 export const useZonePointsOfInterest = (zoneId: string) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    if (!user || !zoneId) {
+      setPointsOfInterest([]);
+      setLoading(false);
+      return;
+    }
+
     const fetchPointsOfInterest = async () => {
       try {
         const response = await apiClient.get<PointOfInterest[]>(`/sonar/zones/${zoneId}/pointsOfInterest`);
@@ -22,7 +29,7 @@ export const useZonePointsOfInterest = (zoneId: string) => {
     };
 
     fetchPointsOfInterest();
-  }, []);
+  }, [user, zoneId]);
 
   return { pointsOfInterest, loading, error };
 };

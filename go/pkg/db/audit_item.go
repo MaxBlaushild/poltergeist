@@ -40,3 +40,7 @@ func (h *auditItemHandler) GetAuditItemsForUser(ctx context.Context, userID uuid
 	}
 	return auditItems, nil
 }
+
+func (h *auditItemHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.AuditItem{}).Error
+}

@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 import { AuditItem } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
 
@@ -36,6 +36,7 @@ export const LogContextProvider: React.FC<LogContextProviderProps> = ({
   children,
 }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const { currentUser } = useUserProfiles();
   const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
 
@@ -45,14 +46,25 @@ export const LogContextProvider: React.FC<LogContextProviderProps> = ({
         `/sonar/chat`
       );
       setAuditItems(response);
-    } catch (error) {
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setAuditItems([]);
+        return;
+      }
       console.error('Failed to fetch audit items:', error);
     }
   }, [apiClient]);
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setAuditItems([]);
+      return;
+    }
+
     fetchAuditItems();
-  }, []);
+  }, [fetchAuditItems, user]);
 
   return (
     <LogContext.Provider

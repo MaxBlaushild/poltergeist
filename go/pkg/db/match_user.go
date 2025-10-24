@@ -41,3 +41,7 @@ func (h *matchUserHandle) FindUsersForMatch(ctx context.Context, matchID uuid.UU
 	}
 	return users, nil
 }
+
+func (h *matchUserHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.MatchUser{}).Error
+}

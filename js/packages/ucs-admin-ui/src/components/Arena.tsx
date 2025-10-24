@@ -1,4 +1,4 @@
-import { useAPI, useArena, useInventory, useMediaContext } from '@poltergeist/contexts';
+import { useAPI, useArena, useInventory, useMediaContext, useZoneContext } from '@poltergeist/contexts';
 import { usePointOfInterestGroups } from '@poltergeist/hooks';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
@@ -23,9 +23,15 @@ export const Arena = () => {
     createPointOfInterestChildren,
     deletePointOfInterestChildren,
     addTagToPointOfInterest,
-    removeTagFromPointOfInterest
+    removeTagFromPointOfInterest,
+    getZoneForPointOfInterest,
+    addPointOfInterestToZone,
+    removePointOfInterestFromZone,
+    pointOfInterestZones = {}
   } = useArena();
+  const { zones } = useZoneContext();
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [selectedZoneIds, setSelectedZoneIds] = useState<Record<string, string>>({});
   const { inventoryItems } = useInventory();
   const [editingArena, setEditingArena] = useState(false);
   const [editingArenaImage, setEditingArenaImage] = useState(false);
@@ -80,6 +86,38 @@ export const Arena = () => {
       }));
     }
   }, [arena?.id]);
+
+  // Fetch zones for each POI when arena loads
+  useEffect(() => {
+    if (arena?.groupMembers) {
+      arena.groupMembers.forEach(member => {
+        getZoneForPointOfInterest(member.pointOfInterest.id);
+      });
+    }
+  }, [arena?.groupMembers]);
+
+  const handleAddToZone = async (pointId: string) => {
+    const zoneId = selectedZoneIds[pointId];
+    if (!zoneId) return;
+    
+    try {
+      await addPointOfInterestToZone(zoneId, pointId);
+      setSelectedZoneIds(prev => ({ ...prev, [pointId]: '' }));
+    } catch (error) {
+      console.error('Error adding POI to zone:', error);
+    }
+  };
+
+  const handleRemoveFromZone = async (pointId: string) => {
+    const zone = pointOfInterestZones[pointId];
+    if (!zone?.id) return;
+    
+    try {
+      await removePointOfInterestFromZone(zone.id, pointId);
+    } catch (error) {
+      console.error('Error removing POI from zone:', error);
+    }
+  };
 
   if (loading) {
     return <div className="p-4">Loading...</div>;
@@ -481,6 +519,48 @@ export const Arena = () => {
                           Add Tag
                         </button>
                       </div>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-sm text-gray-600 mb-1">
+                        Zone: {pointOfInterestZones[point.id]?.name || 'Not assigned to any zone'}
+                      </p>
+                      {pointOfInterestZones[point.id] ? (
+                        <button
+                          onClick={() => handleRemoveFromZone(point.id)}
+                          className="bg-orange-500 text-white px-3 py-1 rounded text-sm hover:bg-orange-600"
+                        >
+                          Remove from Zone
+                        </button>
+                      ) : (
+                        <div className="flex gap-2 items-center">
+                          <select
+                            className="border rounded px-2 py-1 text-sm"
+                            value={selectedZoneIds[point.id] || ''}
+                            onChange={(e) => setSelectedZoneIds(prev => ({
+                              ...prev,
+                              [point.id]: e.target.value
+                            }))}
+                          >
+                            <option value="">Select a zone...</option>
+                            {zones.map((zone) => (
+                              <option key={zone.id} value={zone.id}>
+                                {zone.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleAddToZone(point.id)}
+                            disabled={!selectedZoneIds[point.id]}
+                            className={`px-3 py-1 rounded text-sm ${
+                              selectedZoneIds[point.id]
+                                ? 'bg-purple-500 text-white hover:bg-purple-600' 
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            Add to Zone
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2 mt-2">
                       <button

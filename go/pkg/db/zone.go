@@ -57,6 +57,12 @@ func (h *zoneHandler) AddPointOfInterestToZone(ctx context.Context, zoneID uuid.
 	}).Error
 }
 
+func (h *zoneHandler) RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error {
+	return h.db.WithContext(ctx).
+		Where("zone_id = ? AND point_of_interest_id = ?", zoneID, pointOfInterestID).
+		Delete(&models.PointOfInterestZone{}).Error
+}
+
 func (h *zoneHandler) UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error {
 	// Create a PostGIS Polygon WKT string
 	// Format: POLYGON((lng1 lat1, lng2 lat2, ...))

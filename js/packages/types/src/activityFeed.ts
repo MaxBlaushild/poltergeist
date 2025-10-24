@@ -14,6 +14,16 @@ export interface ChallengeCompletedActivityData {
   successful: boolean;
   reason: string;
   submitterId?: string;
+  experienceAwarded: number;
+  reputationAwarded: number;
+  itemsAwarded: Array<{ id: number; name: string; imageUrl: string }>;
+  questId: string;
+  questName: string;
+  questCompleted: boolean;
+  currentPOI: { id: string; name: string; imageURL: string };
+  nextPOI?: { id: string; name: string; imageURL: string };
+  zoneId: string;
+  zoneName: string;
 }
 
 export interface QuestCompletedActivityData {

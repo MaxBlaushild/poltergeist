@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { Party, PartyInvite, User } from "@poltergeist/types";
-import { useAPI } from "@poltergeist/contexts";
+import { useAPI, useAuth } from "@poltergeist/contexts";
 
 interface PartyContextType {
   party: Party | null;
@@ -23,6 +23,7 @@ export const PartyProvider = ({ children }: { children: React.ReactNode }) => {
   const [party, setParty] = useState<Party | null>(null);
   const [partyInvites, setPartyInvites] = useState<PartyInvite[]>([]);
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -30,7 +31,12 @@ export const PartyProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const party = await apiClient.get<Party>('/sonar/party');
       setParty(party);
-    } catch (error) {
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setParty(null);
+        return;
+      }
       setError(error as Error);
     } finally {
       setLoading(false);
@@ -38,11 +44,27 @@ export const PartyProvider = ({ children }: { children: React.ReactNode }) => {
   }, [apiClient]);
 
   const fetchPartyInvites = useCallback(async () => {
-    const response = await apiClient.get<PartyInvite[]>(`/sonar/partyInvites`);
-    setPartyInvites(response);
+    try {
+      const response = await apiClient.get<PartyInvite[]>(`/sonar/partyInvites`);
+      setPartyInvites(response);
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setPartyInvites([]);
+        return;
+      }
+      console.error('Failed to fetch party invites:', error);
+    }
   }, [apiClient]);
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setParty(null);
+      setPartyInvites([]);
+      return;
+    }
+
     fetchParty();
     fetchPartyInvites();
 
@@ -52,7 +74,7 @@ export const PartyProvider = ({ children }: { children: React.ReactNode }) => {
     }, 5000);
 
     return () => clearInterval(pollInterval);
-  }, [fetchParty, fetchPartyInvites]);
+  }, [fetchParty, fetchPartyInvites, user]);
 
   const setLeader = async (leader: User) => {
     try {

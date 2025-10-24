@@ -85,3 +85,8 @@ func (h *partyHandle) FindUsersParty(ctx context.Context, partyID uuid.UUID) (*m
 	}
 	return party, nil
 }
+
+func (h *partyHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	// Delete parties where the user is the leader
+	return h.db.WithContext(ctx).Where("leader_id = ?", userID).Delete(&models.Party{}).Error
+}

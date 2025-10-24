@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useContext } from "react";
 import { QuestArchetype, LocationArchetype, QuestArchetypeChallenge, QuestArchetypeNode, ZoneQuestArchetype } from "@poltergeist/types";
-import { useAPI } from "@poltergeist/contexts";
+import { useAPI, useAuth } from "@poltergeist/contexts";
 
 type QuestArchetypesContextType = {
   placeTypes: string[];
@@ -36,6 +36,7 @@ export const QuestArchetypesContext = React.createContext<QuestArchetypesContext
 
 export const QuestArchetypesProvider = ({ children }: { children: React.ReactNode }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [questArchetypes, setQuestArchetypes] = useState<QuestArchetype[]>([]);
   const [locationArchetypes, setLocationArchetypes] = useState<LocationArchetype[]>([]);
   const [placeTypes, setPlaceTypes] = useState<string[]>([]);
@@ -77,6 +78,14 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
   };
 
   useEffect(() => {
+    if (!user) {
+      setQuestArchetypes([]);
+      setLocationArchetypes([]);
+      setPlaceTypes([]);
+      setZoneQuestArchetypes([]);
+      return;
+    }
+    
     const fetchData = async () => {
       await Promise.all([
         fetchQuestArchetypes(),
@@ -86,7 +95,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       ]);
     };
     fetchData();
-  }, []); // Remove function dependencies since they're defined in component scope
+  }, [user]); // Remove function dependencies since they're defined in component scope
 
   const createLocationArchetype = async (locationArchetype: LocationArchetype) => {
     const newLocationArchetype = await apiClient.post<LocationArchetype>("/sonar/locationArchetypes", locationArchetype);

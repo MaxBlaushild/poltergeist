@@ -67,3 +67,7 @@ func (h *howManySubscriptionHandle) SetSubscribed(ctx context.Context, userID uu
 func (h *howManySubscriptionHandle) DeleteByStripeID(ctx context.Context, stripeID string) error {
 	return h.db.WithContext(ctx).Where("stripe_id = ?", stripeID).Delete(&models.HowManySubscription{}).Error
 }
+
+func (h *howManySubscriptionHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.HowManySubscription{}).Error
+}

@@ -155,3 +155,7 @@ func (h *partyInviteHandle) Reject(ctx context.Context, id uuid.UUID, user *mode
 
 	return nil
 }
+
+func (h *partyInviteHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("inviter_id = ? OR invitee_id = ?", userID, userID).Delete(&models.PartyInvite{}).Error
+}

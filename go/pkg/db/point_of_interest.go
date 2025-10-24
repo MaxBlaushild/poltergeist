@@ -242,3 +242,36 @@ func (c *pointOfInterestHandle) FindZoneForPointOfInterest(ctx context.Context, 
 	}
 	return &pointOfInterestZone, nil
 }
+
+func (c *pointOfInterestHandle) UpdateLastUsedInQuest(ctx context.Context, pointOfInterestID uuid.UUID) error {
+	now := time.Now()
+	return c.db.WithContext(ctx).Model(&models.PointOfInterest{}).Where("id = ?", pointOfInterestID).Update("last_used_in_quest_at", now).Error
+}
+
+func (c *pointOfInterestHandle) FindRecentlyUsedInZone(ctx context.Context, zoneID uuid.UUID, since time.Time) (map[string]bool, error) {
+	var pointOfInterestZones []models.PointOfInterestZone
+	if err := c.db.WithContext(ctx).Where("zone_id = ?", zoneID).Find(&pointOfInterestZones).Error; err != nil {
+		return nil, err
+	}
+
+	var pointOfInterestIDs []uuid.UUID
+	for _, pointOfInterestZone := range pointOfInterestZones {
+		pointOfInterestIDs = append(pointOfInterestIDs, pointOfInterestZone.PointOfInterestID)
+	}
+
+	var pointsOfInterest []models.PointOfInterest
+	if err := c.db.WithContext(ctx).
+		Where("id IN (?) AND last_used_in_quest_at > ?", pointOfInterestIDs, since).
+		Find(&pointsOfInterest).Error; err != nil {
+		return nil, err
+	}
+
+	recentlyUsed := make(map[string]bool)
+	for _, poi := range pointsOfInterest {
+		if poi.GoogleMapsPlaceID != nil {
+			recentlyUsed[*poi.GoogleMapsPlaceID] = true
+		}
+	}
+
+	return recentlyUsed, nil
+}

@@ -5,6 +5,7 @@ import {
   XMarkIcon,
   CheckBadgeIcon,
   XCircleIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/20/solid';
 import Divider from '../shared/Divider.tsx';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
@@ -28,7 +29,6 @@ import {
 import { mapCaptureTiers } from '../../utils/mapCaptureTiers.ts';
 import { useUserProfiles } from '../../contexts/UserProfileContext.tsx';
 import { useQuestLogContext } from '../../contexts/QuestLogContext.tsx';
-import { useCompletedTaskContext } from '../../contexts/CompletedTaskContext.tsx';
 
 type SubmitAnswerForChallengeProps = {
   pointOfInterest: PointOfInterest;
@@ -42,7 +42,6 @@ export const SubmitAnswerForChallenge = (
   props: SubmitAnswerForChallengeProps
 ) => {
   const { submissions, setSubmissions } = useSubmissionsContext();
-  const { setCompletedTask } = useCompletedTaskContext();
   const { currentUser } = useUserProfiles();
   const { location } = useLocation();
   const { inventoryItems, consumeItem, setUsedItem, ownedInventoryItems, getInventoryItemById } =
@@ -76,7 +75,7 @@ export const SubmitAnswerForChallenge = (
   );
 
   // Calculate distance between user and POI using Haversine formula
-  const isWithinRange = location?.latitude && location?.longitude && props.pointOfInterest.lat && props.pointOfInterest.lng ? (() => {
+  const distanceInfo = location?.latitude && location?.longitude && props.pointOfInterest.lat && props.pointOfInterest.lng ? (() => {
     const R = 6371e3; // Earth's radius in meters
     const φ1 = location?.latitude * Math.PI/180;
     const φ2 = parseFloat(props.pointOfInterest.lat) * Math.PI/180;
@@ -89,8 +88,13 @@ export const SubmitAnswerForChallenge = (
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     const distance = R * c;
 
-    return distance <= 100; // Within 100 meters
-  })() : false;
+    return {
+      distance: Math.round(distance),
+      isWithinRange: distance <= 100
+    };
+  })() : null;
+
+  const isWithinRange = distanceInfo?.isWithinRange ?? false;
 
   const onSubmit = async (result: SubmissionResult) => {
     setCorrectness(result?.successful ?? false);
@@ -110,7 +114,7 @@ export const SubmitAnswerForChallenge = (
           updatedAt: new Date(),
         }]);
         props.onSubmit(true);
-        setCompletedTask(props.challenge, result);
+        // CompletedTaskModal will automatically show via activity feed
         try {
           refreshQuestLog();
         } catch (e) {
@@ -128,6 +132,25 @@ export const SubmitAnswerForChallenge = (
     <div className="w-full rounded-xl flex flex-col gap-3">
       {correctness === undefined && !isLoading && (
         <>
+          {/* Distance indicator */}
+          {distanceInfo && (
+            <div className={`flex items-center gap-2 p-3 rounded-lg border ${
+              isWithinRange 
+                ? 'bg-green-50 border-green-200 text-green-800' 
+                : 'bg-red-50 border-red-200 text-red-800'
+            }`}>
+              <ExclamationTriangleIcon className={`h-5 w-5 ${
+                isWithinRange ? 'text-green-600' : 'text-red-600'
+              }`} />
+              <span className="text-sm font-medium">
+                {isWithinRange 
+                  ? `✓ Within range (${distanceInfo.distance}m from location)`
+                  : `⚠ Too far away (${distanceInfo.distance}m from location)`
+                }
+              </span>
+            </div>
+          )}
+          
           <p className="text-md text-left">
             {isGoldenMonkeyActive
               ? scrambleAndObscureWords(
@@ -152,7 +175,7 @@ export const SubmitAnswerForChallenge = (
               title={
                 isWithinRange ?
                   'Submit Answer' :
-                  'Too Far Away'
+                  `Move Closer (${distanceInfo?.distance}m away)`
               }
               disabled={
                 !isWithinRange ||
@@ -171,8 +194,13 @@ export const SubmitAnswerForChallenge = (
                     props.usersTeam ? undefined : currentUser?.id
                   );
                   onSubmit(result!);
-                } catch (e) {
+                } catch (e: any) {
                   console.log(e);
+                  // Handle backend validation errors
+                  if (e?.response?.data?.reason) {
+                    setCorrectness(false);
+                    setReason(e.response.data.reason);
+                  }
                 } finally {
                   setIsLoading(false);
                 }

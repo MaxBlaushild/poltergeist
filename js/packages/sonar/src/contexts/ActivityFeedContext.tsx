@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useAuth } from '@poltergeist/contexts';
 import { ActivityFeed } from '@poltergeist/types';
 
 interface ActivityFeedContextType {
@@ -25,6 +25,7 @@ interface ActivityFeedProviderProps {
 
 export const ActivityFeedProvider: React.FC<ActivityFeedProviderProps> = ({ children }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [activities, setActivities] = useState<ActivityFeed[]>([]);
   const [unseenActivities, setUnseenActivities] = useState<ActivityFeed[]>([]);
 
@@ -33,7 +34,13 @@ export const ActivityFeedProvider: React.FC<ActivityFeedProviderProps> = ({ chil
       const response = await apiClient.get<ActivityFeed[]>('/sonar/activities');
       setActivities(response);
       setUnseenActivities(response.filter(activity => !activity.seen));
-    } catch (error) {
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setActivities([]);
+        setUnseenActivities([]);
+        return;
+      }
       console.error('Failed to fetch activities:', error);
     }
   }, [apiClient]);
@@ -55,6 +62,13 @@ export const ActivityFeedProvider: React.FC<ActivityFeedProviderProps> = ({ chil
   }, [apiClient]);
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setActivities([]);
+      setUnseenActivities([]);
+      return;
+    }
+
     refetchActivities();
     
     // Poll for new activities every 3 seconds
@@ -63,7 +77,7 @@ export const ActivityFeedProvider: React.FC<ActivityFeedProviderProps> = ({ chil
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [refetchActivities]);
+  }, [refetchActivities, user]);
 
   return (
     <ActivityFeedContext.Provider

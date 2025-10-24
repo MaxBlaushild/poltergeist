@@ -79,3 +79,7 @@ func (h *sonarSurveySubmissionHandle) GetSubmissionByID(ctx context.Context, sub
 	}
 	return &submission, nil
 }
+
+func (h *sonarSurveySubmissionHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.SonarSurveySubmission{}).Error
+}

@@ -15,7 +15,6 @@ import React, { useState } from 'react';
 import { useMatchContext } from '../../contexts/MatchContext.tsx';
 import { PointOfInterestChallenge } from '@poltergeist/types/dist/pointOfInterestChallenge';
 import { TabItem, TabNav } from '../shared/TabNav.tsx';
-import { SubmitAnswerForChallenge } from './SubmitAnswerForChallenge.tsx';
 import { Button } from '../shared/Button.tsx';
 import { LockClosedIcon, LockOpenIcon } from '@heroicons/react/20/solid';
 import { StatusIndicator } from '../shared/StatusIndicator.tsx';

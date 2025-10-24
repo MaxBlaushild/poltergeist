@@ -21,11 +21,9 @@ import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import { usePointsOfInterest } from '@poltergeist/hooks';
 import { ActivityQuestionnaire } from './ActivityQuestionnaire.tsx';
 import { TrackedQuests } from './TrackedQuests.tsx';
-import { CompletedTaskModal } from './CompletedTaskModal.tsx';
+import { CelebrationModalManager } from './CelebrationModalManager.tsx';
 import { useCompletedTaskContext } from '../contexts/CompletedTaskContext.tsx';
 import { ZoneWidget } from './ZoneWidget.tsx';
-import { LevelUpModal } from './LevelUpModal.tsx';
-import { ReputationUpModal } from './ReputationUpModal.tsx';
 
 const MemoizedMap = React.memo(Map);
 
@@ -201,11 +199,9 @@ export const SinglePlayer = () => {
           }
         }} />}
       </Drawer>
-      <CompletedTaskModal />
+      <CelebrationModalManager />
       <NewItemModal />
       <UsedItemModal />
-      <LevelUpModal />
-      <ReputationUpModal />
     </MemoizedMap>
   );
 };

@@ -70,7 +70,7 @@ export function Layout() {
               <Button
                 buttonSize={ButtonSize.SMALL}
                 title="Log in"
-                onClick={() => navigate('/?from=/dashboard')}
+                onClick={() => navigate('/?from=/single-player')}
               />
             ) : null}
           </div>
@@ -99,7 +99,7 @@ export function Layout() {
               title="Leave match"
               onClick={async () => {
                 await leaveMatch(matchID);
-                navigate('/dashboard');
+                navigate('/single-player');
                 window.location.reload();
               }}
             />

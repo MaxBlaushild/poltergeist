@@ -5,7 +5,7 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
-import { useAPI, useInventory, useMediaContext } from '@poltergeist/contexts';
+import { useAPI, useAuth, useInventory, useMediaContext } from '@poltergeist/contexts';
 import { PointOfInterestChallengeSubmission } from '@poltergeist/types/dist/pointOfInterestChallengeSubmission';
 import { InventoryItem, SubmissionResult } from '@poltergeist/types';
 import { useUserProfiles } from './UserProfileContext.tsx';
@@ -46,6 +46,7 @@ export const SubmissionsContextProvider: React.FC<
   SubmissionsContextProviderProps
 > = ({ children }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [submissions, setSubmissions] = useState<PointOfInterestChallengeSubmission[]>(
     []
   );
@@ -57,7 +58,12 @@ export const SubmissionsContextProvider: React.FC<
           `/sonar/pointsOfInterest/challenges/submissions`
       );
       setSubmissions(response);
-    } catch (error) {
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setSubmissions([]);
+        return;
+      }
       console.error('Failed to fetch submissions:', error);
     }
   }, [apiClient]);
@@ -93,13 +99,19 @@ export const SubmissionsContextProvider: React.FC<
   }, [apiClient, getPresignedUploadURL, uploadMedia, setPresentedInventoryItem]);
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setSubmissions([]);
+      return;
+    }
+
     fetchSubmissions();
     const interval = setInterval(() => {
       fetchSubmissions();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [fetchSubmissions]);
+  }, [fetchSubmissions, user]);
 
   return (
     <SubmissionsContext.Provider

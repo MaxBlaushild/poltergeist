@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAPI } from './api';
+import { useAuth } from './auth';
 import { Category, Activity, InventoryItem, OwnedInventoryItem, SubmissionResult } from '@poltergeist/types';
 
 interface InventoryContextType {
@@ -46,6 +47,7 @@ export const useInventory = () => useContext(InventoryContext);
 
 export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const { apiClient } = useAPI();
+  const { user } = useAuth();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryItemsAreLoading, setInventoryItemsAreLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +65,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     try {
       const response = await apiClient.get<InventoryItem[]>('/sonar/items');
       setInventoryItems(response);
-    } catch (err) {
+    } catch (err: any) {
+      // Silently handle auth errors
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        setInventoryItems([]);
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to fetch inventory items');
     } finally {
       setInventoryItemsAreLoading(false);
@@ -76,7 +83,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     try {
       const response = await apiClient.get<OwnedInventoryItem[]>('/sonar/ownedInventoryItems');
       setOwnedInventoryItems(response.filter((item) => item.quantity > 0));
-    } catch (err) {
+    } catch (err: any) {
+      // Silently handle auth errors
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        setOwnedInventoryItems([]);
+        return;
+      }
       setOwnedInventoryItemsError(err instanceof Error ? err.message : 'Failed to fetch owned inventory items');
     } finally {
       setOwnedInventoryItemsAreLoading(false);
@@ -84,9 +96,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    if (!user) {
+      // Clear data when not authenticated
+      setInventoryItems([]);
+      setOwnedInventoryItems([]);
+      return;
+    }
+
     fetchInventoryItems();
     fetchOwnedInventoryItems();
-  }, []);
+  }, [user]);
 
   const consumeItem = async (ownedInventoryItemId: string, metadata: UseItemMetadata = {}) : Promise<SubmissionResult | undefined> => {
     try {
