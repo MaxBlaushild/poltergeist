@@ -24,6 +24,10 @@ func main() {
 		ApiKey: cfg.Secret.OpenAIKey,
 	})
 
+	// grokClient := grok.NewClient(grok.ClientConfig{
+	// 	ApiKey: cfg.Secret.GrokApiKey,
+	// })
+
 	router.GET("/", func(c *gin.Context) {
 		c.String(200, "Goodbye, World!")
 	})
@@ -77,7 +81,7 @@ func main() {
 			return
 		}
 
-		log.Printf("Generating image with prompt: %s", generateImageRequest.Prompt)
+		log.Printf("Generating image with Grok. Prompt: %s", generateImageRequest.Prompt)
 		imageUrl, err := openApiClient.GenerateImage(ctx, generateImageRequest)
 		if err != nil {
 			log.Printf("Error generating image: %v", err)
@@ -85,7 +89,6 @@ func main() {
 			return
 		}
 
-		log.Printf("Successfully generated image with URL: %s", imageUrl)
 		ctx.JSON(http.StatusOK, gin.H{"imageUrl": imageUrl})
 	})
 

@@ -231,6 +231,7 @@ func selectPlaceByDistanceWeight(places []googlemaps.Place, centerLat, centerLng
 
 func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, includedTypes []googlemaps.PlaceType, excludedTypes []googlemaps.PlaceType, numberOfPlaces int32) ([]googlemaps.Place, error) {
 	var placesInZone []googlemaps.Place
+	var recentlyUsedPlaces []googlemaps.Place
 	seenPlaceIDs := make(map[string]bool)
 	attempts := 0
 	maxAttempts := 20
@@ -281,10 +282,11 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 		places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
 			Lat:            centerLat,
 			Long:           centerLng,
-			Radius:         zone.Radius,
+			Radius:         1000,
 			IncludedTypes:  includedTypes,
 			ExcludedTypes:  excludedTypes,
 			MaxResultCount: requestCount,
+			RankPreference: googlemaps.RankPreferenceDistance,
 		})
 		if err != nil {
 			log.Printf("Error finding places on attempt %d: %v", attempts+1, err)
@@ -299,15 +301,20 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 		// Filter places to only include valid candidates
 		var validPlaces []googlemaps.Place
 		for _, place := range places {
+			log.Printf("Place: %s", place.Name)
 			// Skip if we've already seen this place
 			if seenPlaceIDs[place.ID] {
 				duplicatesThisAttempt++
 				continue
 			}
 
-			// Skip if recently used in a quest
+			// Skip if recently used in a quest, but store it for potential fallback
 			if recentlyUsed[place.ID] {
 				recentlyUsedSkipped++
+				// Store this place in case we need it later
+				if zone.IsPointInBoundary(place.Location.Latitude, place.Location.Longitude) {
+					recentlyUsedPlaces = append(recentlyUsedPlaces, place)
+				}
 				continue
 			}
 
@@ -352,10 +359,28 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 		attempts++
 	}
 
-	// If we still don't have enough places, return an error with detailed stats
+	// If we still don't have enough places, try using recently used ones
 	if int32(len(placesInZone)) < numberOfPlaces {
-		return nil, fmt.Errorf("could not find enough places in zone after %d attempts. Found %d/%d places (total API results: %d, unique places seen: %d, in boundary: %d)",
-			attempts, len(placesInZone), numberOfPlaces, totalPlacesFound, len(seenPlaceIDs), totalPlacesInBoundary)
+		needed := int(numberOfPlaces) - len(placesInZone)
+		log.Printf("Could not find enough fresh places. Need %d more. Attempting to use recently used places (%d available)", needed, len(recentlyUsedPlaces))
+
+		if len(recentlyUsedPlaces) == 0 {
+			return nil, fmt.Errorf("could not find enough places in zone after %d attempts. Found %d/%d places and no recently used places available as fallback", attempts, len(placesInZone), numberOfPlaces)
+		}
+
+		// Randomly shuffle and select from recently used places
+		rand.Shuffle(len(recentlyUsedPlaces), func(i, j int) {
+			recentlyUsedPlaces[i], recentlyUsedPlaces[j] = recentlyUsedPlaces[j], recentlyUsedPlaces[i]
+		})
+
+		for i := 0; i < needed && i < len(recentlyUsedPlaces); i++ {
+			if !seenPlaceIDs[recentlyUsedPlaces[i].ID] {
+				placesInZone = append(placesInZone, recentlyUsedPlaces[i])
+				seenPlaceIDs[recentlyUsedPlaces[i].ID] = true
+			}
+		}
+
+		log.Printf("Added %d recently used places as fallback. Total: %d/%d", len(placesInZone)-int(numberOfPlaces)+needed, len(placesInZone), numberOfPlaces)
 	}
 
 	log.Printf("Found %d places in zone after %d attempts (total API results: %d)", len(placesInZone), attempts, totalPlacesFound)

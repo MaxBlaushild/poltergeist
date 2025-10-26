@@ -30,6 +30,8 @@ const premise = `
 
 	Name: %s
 	Description: %s
+
+	Do not use the location's name in your response.
 `
 
 const generatePointOfInterestPromptTemplate = premise + `

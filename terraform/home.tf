@@ -35,6 +35,21 @@ resource "aws_secretsmanager_secret_version" "auth_private_key" {
   secret_string = var.auth_private_key
 }
 
+
+resource "aws_secretsmanager_secret" "grok_api_key" {
+  name = "GROK_API_KEY"
+}
+
+variable "grok_api_key" {
+  description = "Grok API Key"
+  type        = string
+}
+
+resource "aws_secretsmanager_secret_version" "grok_api_key" {
+  secret_id     = aws_secretsmanager_secret.grok_api_key.id
+  secret_string = var.grok_api_key
+}
+
 resource "aws_secretsmanager_secret" "open_ai_key" {
   name = "OPEN_AI_KEY"
 }
@@ -368,6 +383,9 @@ module "ecs" {
           secrets = [{
             name      = "OPEN_AI_KEY",
             valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
+          }, {
+            name      = "GROK_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.grok_api_key.arn}"
           }]
           image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
           port_mappings = [
@@ -506,111 +524,111 @@ module "ecs" {
         }
     }
 
-    poltergeist_core = {
-      cpu    = 1024
-      memory = 2048
+    # poltergeist_core = {
+    #   cpu    = 1024
+    #   memory = 2048
 
-      # Container definition(s)
-      container_definitions = {
-        "core" = {
-          cpu       = 256
-          memory    = 512
-          essential = true
-          image     = "${aws_ecr_repository.core.repository_url}:latest"
-          port_mappings = [
-            {
-              name          = local.core_container_name
-              containerPort = local.core_container_port
-              hostPort      = local.core_container_port
-              protocol      = "tcp"
-            }
-          ]
-        }
+    #   # Container definition(s)
+    #   container_definitions = {
+    #     "core" = {
+    #       cpu       = 256
+    #       memory    = 512
+    #       essential = true
+    #       image     = "${aws_ecr_repository.core.repository_url}:latest"
+    #       port_mappings = [
+    #         {
+    #           name          = local.core_container_name
+    #           containerPort = local.core_container_port
+    #           hostPort      = local.core_container_port
+    #           protocol      = "tcp"
+    #         }
+    #       ]
+    #     }
 
-        "fount-of-erebos" = {
-          cpu       = 256
-          memory    = 512
-          essential = true
-          secrets = [{
-            name      = "OPEN_AI_KEY",
-            valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
-          }]
-          image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
-          port_mappings = [
-            {
-              name          = "fount-of-erebos"
-              containerPort = 8081
-              hostPort      = 8081
-              protocol      = "tcp"
-            }
-          ]
-        }
+    #     "fount-of-erebos" = {
+    #       cpu       = 256
+    #       memory    = 512
+    #       essential = true
+    #       secrets = [{
+    #         name      = "OPEN_AI_KEY",
+    #         valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
+    #       }]
+    #       image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
+    #       port_mappings = [
+    #         {
+    #           name          = "fount-of-erebos"
+    #           containerPort = 8081
+    #           hostPort      = 8081
+    #           protocol      = "tcp"
+        #     }
+        #   ]
+        # }
 
-        "trivai" = {
-          cpu       = 256
-          memory    = 512
-          essential = true
-          secrets = [{
-            name      = "DB_PASSWORD",
-            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-            }, {
-            name      = "SENDGRID_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.sendgrid_api_key.arn}"
-            }, {
-            name      = "GUESS_HOW_MANY_PHONE_NUMBER",
-            valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
-          }]
-          image = "${aws_ecr_repository.trivai.repository_url}:latest"
-          port_mappings = [
-            {
-              name          = "trivai"
-              containerPort = 8082
-              hostPort      = 8082
-              protocol      = "tcp"
-            }
-          ]
-        }
-      }
+        # "trivai" = {
+        #   cpu       = 256
+        #   memory    = 512
+        #   essential = true
+        #   secrets = [{
+        #     name      = "DB_PASSWORD",
+        #     valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+        #     }, {
+        #     name      = "SENDGRID_API_KEY",
+        #     valueFrom = "${aws_secretsmanager_secret.sendgrid_api_key.arn}"
+        #     }, {
+        #     name      = "GUESS_HOW_MANY_PHONE_NUMBER",
+        #     valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
+        #   }]
+      #     image = "${aws_ecr_repository.trivai.repository_url}:latest"
+      #     port_mappings = [
+      #       {
+      #         name          = "trivai"
+      #         containerPort = 8082
+      #         hostPort      = 8082
+      #         protocol      = "tcp"
+      #       }
+      #     ]
+      #   }
+      # }
 
-      service_connect_configuration = {
-        namespace = aws_service_discovery_http_namespace.this.arn
-        service = {
-          client_alias = {
-            port     = local.core_container_port
-            dns_name = local.core_container_name
-          }
-          port_name      = local.core_container_name
-          discovery_name = local.core_container_name
-        }
-      }
+      # service_connect_configuration = {
+      #   namespace = aws_service_discovery_http_namespace.this.arn
+      #   service = {
+      #     client_alias = {
+      #       port     = local.core_container_port
+      #       dns_name = local.core_container_name
+      #     }
+      #     port_name      = local.core_container_name
+      #     discovery_name = local.core_container_name
+      #   }
+      # }
 
-      load_balancer = {
-        service = {
-          target_group_arn = element(module.alb.target_group_arns, 0)
-          container_name   = local.core_container_name
-          container_port   = local.core_container_port
-        }
-      }
+    #   load_balancer = {
+    #     service = {
+    #       target_group_arn = element(module.alb.target_group_arns, 0)
+    #       container_name   = local.core_container_name
+    #       container_port   = local.core_container_port
+    #     }
+    #   }
 
-      subnet_ids = module.vpc.private_subnets
-      security_group_rules = {
-        alb_ingress_8080 = {
-          type                     = "ingress"
-          from_port                = 0
-          to_port                  = local.core_container_port
-          protocol                 = "tcp"
-          description              = "Service port"
-          source_security_group_id = module.alb_sg.security_group_id
-        }
-        egress_all = {
-          type        = "egress"
-          from_port   = 0
-          to_port     = 0
-          protocol    = "-1"
-          cidr_blocks = ["0.0.0.0/0"]
-        }
-      }
-    }
+    #   subnet_ids = module.vpc.private_subnets
+    #   security_group_rules = {
+    #     alb_ingress_8080 = {
+    #       type                     = "ingress"
+    #       from_port                = 0
+    #       to_port                  = local.core_container_port
+    #       protocol                 = "tcp"
+    #       description              = "Service port"
+    #       source_security_group_id = module.alb_sg.security_group_id
+    #     }
+    #     egress_all = {
+    #       type        = "egress"
+    #       from_port   = 0
+    #       to_port     = 0
+    #       protocol    = "-1"
+    #       cidr_blocks = ["0.0.0.0/0"]
+    #     }
+    #   }
+    # }
   }
 }
 
@@ -915,7 +933,7 @@ resource "aws_security_group" "db_sg" {
 resource "aws_db_instance" "poltergeist-db" {
   identifier             = "poltergeist"
   engine                 = "postgres"
-  engine_version         = "15.7"
+  engine_version         = "15.12"
   instance_class         = "db.t3.micro"
   allocated_storage      = 20
   db_name                = "poltergeist"
