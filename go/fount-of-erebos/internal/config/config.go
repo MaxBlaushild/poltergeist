@@ -9,6 +9,7 @@ import (
 
 type SecretConfig struct {
 	OpenAIKey      string
+	GrokApiKey     string
 	DbPassword     string
 	SendgridApiKey string
 }
@@ -60,6 +61,7 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 	return &Config{
 		Secret: SecretConfig{
 			OpenAIKey:      os.Getenv("OPEN_AI_KEY"),
+			GrokApiKey:     os.Getenv("GROK_API_KEY"),
 			DbPassword:     os.Getenv("ROBOT_DB_PASSWORD"),
 			SendgridApiKey: os.Getenv("SENDGRID_API_KEY"),
 		},

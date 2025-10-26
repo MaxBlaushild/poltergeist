@@ -5,8 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+)
+
+type RankPreference string
+
+const (
+	RankPreferenceDistance   RankPreference = "DISTANCE"
+	RankPreferencePopularity RankPreference = "POPULARITY"
 )
 
 const (
@@ -44,6 +52,7 @@ type PlaceQuery struct {
 	MaxResultCount int32
 	IncludedTypes  []PlaceType
 	ExcludedTypes  []PlaceType
+	RankPreference RankPreference
 }
 
 type searchNearbyRequest struct {
@@ -56,9 +65,10 @@ type searchNearbyRequest struct {
 			Radius float64 `json:"radius"`
 		} `json:"circle"`
 	} `json:"locationRestriction"`
-	IncludedTypes  []PlaceType `json:"includedTypes,omitempty"`
-	ExcludedTypes  []PlaceType `json:"excludedTypes,omitempty"`
-	MaxResultCount int32       `json:"maxResultCount,omitempty"`
+	IncludedTypes  []PlaceType    `json:"includedTypes,omitempty"`
+	ExcludedTypes  []PlaceType    `json:"excludedTypes,omitempty"`
+	MaxResultCount int32          `json:"maxResultCount,omitempty"`
+	RankPreference RankPreference `json:"rankPreference,omitempty"`
 }
 
 func (c *client) FindCandidatesByQuery(query string) ([]Candidate, error) {
@@ -130,11 +140,14 @@ func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
 	reqBody.IncludedTypes = query.IncludedTypes
 	reqBody.ExcludedTypes = query.ExcludedTypes
 	reqBody.MaxResultCount = query.MaxResultCount
+	reqBody.RankPreference = RankPreferenceDistance
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling request: %w", err)
 	}
+
+	log.Printf("Request body: %s", string(jsonBody))
 
 	req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
