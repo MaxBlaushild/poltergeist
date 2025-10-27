@@ -247,6 +247,11 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/username/validate", s.validateUsername)
 	r.GET("/sonar/users/search", s.searchUsers)
 	r.GET("/sonar/users/byUsername/:username", s.getUserByUsername)
+	r.GET("/sonar/characters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacters))
+	r.GET("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacter))
+	r.POST("/sonar/characters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCharacter))
+	r.PUT("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacter))
+	r.DELETE("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacter))
 	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptFriendInvite))
 	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createFriendInvite))
 	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPartyInvites))
@@ -4067,4 +4072,202 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("successfully deleted %d users", len(requestBody.UserIDs))})
+}
+
+// Character handlers
+func (s *server) getCharacters(ctx *gin.Context) {
+	characters, err := s.dbClient.Character().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, characters)
+}
+
+func (s *server) getCharacter(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
+		return
+	}
+
+	character, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, character)
+}
+
+func (s *server) createCharacter(ctx *gin.Context) {
+	var requestBody struct {
+		Name             string    `json:"name" binding:"required"`
+		Description      string    `json:"description"`
+		MapIconUrl       string    `json:"mapIconUrl"`
+		DialogueImageUrl string    `json:"dialogueImageUrl"`
+		LocationID       uuid.UUID `json:"locationId" binding:"required"`
+		MovementPattern  struct {
+			MovementPatternType models.MovementPatternType `json:"movementPatternType" binding:"required"`
+			ZoneID              *uuid.UUID                 `json:"zoneId"`
+			StartingLatitude    float64                    `json:"startingLatitude"`
+			StartingLongitude   float64                    `json:"startingLongitude"`
+			Path                []models.Location          `json:"path"`
+		} `json:"movementPattern" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// First create the movement pattern
+	movementPattern := &models.MovementPattern{
+		MovementPatternType: requestBody.MovementPattern.MovementPatternType,
+		ZoneID:              requestBody.MovementPattern.ZoneID,
+		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
+		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
+		Path:                requestBody.MovementPattern.Path,
+	}
+
+	if err := s.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create movement pattern: " + err.Error()})
+		return
+	}
+
+	// Then create the character
+	character := &models.Character{
+		Name:              requestBody.Name,
+		Description:       requestBody.Description,
+		MapIconURL:        requestBody.MapIconUrl,
+		DialogueImageURL:  requestBody.DialogueImageUrl,
+		LocationID:        requestBody.LocationID,
+		MovementPatternID: movementPattern.ID,
+		MovementPattern:   *movementPattern,
+	}
+
+	if err := s.dbClient.Character().Create(ctx, character); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create character: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, character)
+}
+
+func (s *server) updateCharacter(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
+		return
+	}
+
+	// Check if character exists
+	existingCharacter, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingCharacter == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	var requestBody struct {
+		Name             string    `json:"name"`
+		Description      string    `json:"description"`
+		MapIconUrl       string    `json:"mapIconUrl"`
+		DialogueImageUrl string    `json:"dialogueImageUrl"`
+		LocationID       uuid.UUID `json:"locationId"`
+		MovementPattern  struct {
+			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
+			ZoneID              *uuid.UUID                 `json:"zoneId"`
+			StartingLatitude    float64                    `json:"startingLatitude"`
+			StartingLongitude   float64                    `json:"startingLongitude"`
+			Path                []models.Location          `json:"path"`
+		} `json:"movementPattern"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update the movement pattern first
+	movementPatternUpdates := &models.MovementPattern{
+		MovementPatternType: requestBody.MovementPattern.MovementPatternType,
+		ZoneID:              requestBody.MovementPattern.ZoneID,
+		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
+		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
+		Path:                requestBody.MovementPattern.Path,
+	}
+
+	if err := s.dbClient.MovementPattern().Update(ctx, existingCharacter.MovementPatternID, movementPatternUpdates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update movement pattern: " + err.Error()})
+		return
+	}
+
+	// Update the character
+	characterUpdates := &models.Character{
+		Name:             requestBody.Name,
+		Description:      requestBody.Description,
+		MapIconURL:       requestBody.MapIconUrl,
+		DialogueImageURL: requestBody.DialogueImageUrl,
+		LocationID:       requestBody.LocationID,
+	}
+
+	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update character: " + err.Error()})
+		return
+	}
+
+	// Fetch the updated character with movement pattern
+	updatedCharacter, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedCharacter)
+}
+
+func (s *server) deleteCharacter(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
+		return
+	}
+
+	// Check if character exists and get its movement pattern ID
+	existingCharacter, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingCharacter == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	// Delete the character first (due to foreign key constraint)
+	if err := s.dbClient.Character().Delete(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete character: " + err.Error()})
+		return
+	}
+
+	// Then delete the movement pattern
+	if err := s.dbClient.MovementPattern().Delete(ctx, existingCharacter.MovementPatternID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete movement pattern: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "character deleted successfully"})
 }

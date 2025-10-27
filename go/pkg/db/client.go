@@ -129,6 +129,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		partyInviteHandle:                 &partyInviteHandle{db: db},
 		activityHandle:                    &activityHandle{db: db},
 		pointOfInterestGroupMemberHandle:  &pointOfInterestGroupMemberHandle{db: db},
+		characterHandle:                   &characterHandler{db: db},
+		movementPatternHandle:             &movementPatternHandler{db: db},
 	}, nil
 }
 
@@ -310,4 +312,12 @@ func (c *client) SonarCategory() SonarCategoryHandle {
 
 func (c *client) ImageGeneration() ImageGenerationHandle {
 	return c.imageGenerationHandle
+}
+
+func (c *client) Character() CharacterHandle {
+	return c.characterHandle
+}
+
+func (c *client) MovementPattern() MovementPatternHandle {
+	return c.movementPatternHandle
 }

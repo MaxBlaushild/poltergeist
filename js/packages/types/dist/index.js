@@ -39,3 +39,5 @@ export * from './friendInvite';
 export * from './party';
 export * from './partyInvite';
 export * from './activityFeed';
+export * from './movementPattern';
+export * from './character';
