@@ -118,8 +118,6 @@ export const Characters = () => {
   };
 
   const handleDeleteCharacter = async (character: Character) => {
-    if (!confirm(`Are you sure you want to delete ${character.name}?`)) return;
-    
     try {
       await apiClient.delete(`/sonar/characters/${character.id}`);
       setCharacters(characters.filter(c => c.id !== character.id));

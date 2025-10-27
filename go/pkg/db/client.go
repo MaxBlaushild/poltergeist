@@ -56,6 +56,8 @@ type client struct {
 	partyInviteHandle                 *partyInviteHandle
 	activityHandle                    *activityHandle
 	pointOfInterestGroupMemberHandle  *pointOfInterestGroupMemberHandle
+	characterHandle                   *characterHandler
+	movementPatternHandle             *movementPatternHandler
 }
 
 type ClientConfig struct {
