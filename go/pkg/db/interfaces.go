@@ -53,6 +53,8 @@ type DbClient interface {
 	PartyInvite() PartyInviteHandle
 	Activity() ActivityHandle
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
+	Character() CharacterHandle
+	MovementPattern() MovementPatternHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -436,4 +438,24 @@ type ActivityHandle interface {
 type PointOfInterestGroupMemberHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestGroupMember, error)
 	FindByPointOfInterestAndGroup(ctx context.Context, pointOfInterestID uuid.UUID, groupID uuid.UUID) (*models.PointOfInterestGroupMember, error)
+}
+
+type CharacterHandle interface {
+	Create(ctx context.Context, character *models.Character) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error)
+	FindAll(ctx context.Context) ([]*models.Character, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	FindByLocationID(ctx context.Context, locationID uuid.UUID) ([]*models.Character, error)
+	FindByMovementPatternType(ctx context.Context, patternType models.MovementPatternType) ([]*models.Character, error)
+}
+
+type MovementPatternHandle interface {
+	Create(ctx context.Context, movementPattern *models.MovementPattern) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MovementPattern, error)
+	FindAll(ctx context.Context) ([]*models.MovementPattern, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.MovementPattern) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	FindByType(ctx context.Context, patternType models.MovementPatternType) ([]*models.MovementPattern, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]*models.MovementPattern, error)
 }
