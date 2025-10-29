@@ -1,0 +1,4 @@
+ALTER TABLE point_of_interest_groups
+ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0;
+
+

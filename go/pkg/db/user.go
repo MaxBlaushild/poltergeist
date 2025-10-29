@@ -6,6 +6,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type userHandle struct {
@@ -180,4 +181,16 @@ func (h *userHandle) FindPartyMembers(ctx context.Context, userID uuid.UUID) ([]
 	}
 
 	return users, nil
+}
+
+func (h *userHandle) AddGold(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		// Disallow negative increments here; use Update if debit needed later
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		UpdateColumn("gold", gorm.Expr("gold + ?", amount)).Error
 }

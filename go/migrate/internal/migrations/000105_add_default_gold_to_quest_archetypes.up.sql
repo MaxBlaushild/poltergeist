@@ -1,0 +1,4 @@
+ALTER TABLE quest_archetypes
+ADD COLUMN IF NOT EXISTS default_gold INTEGER NOT NULL DEFAULT 0;
+
+

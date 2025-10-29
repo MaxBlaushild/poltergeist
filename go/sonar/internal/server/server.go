@@ -1142,7 +1142,8 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 		return
 	}
 	var requestBody struct {
-		Name string `json:"name"`
+		Name        string `json:"name"`
+		DefaultGold *int   `json:"defaultGold"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1157,6 +1158,9 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	}
 
 	questArchetype.Name = requestBody.Name
+	if requestBody.DefaultGold != nil {
+		questArchetype.DefaultGold = *requestBody.DefaultGold
+	}
 
 	err = s.dbClient.QuestArchetype().Update(ctx, questArchetype)
 	if err != nil {
@@ -1301,8 +1305,9 @@ func (s *server) getQuestArchetype(ctx *gin.Context) {
 
 func (s *server) createQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name   string    `json:"name"`
-		RootID uuid.UUID `json:"rootID"`
+		Name        string    `json:"name"`
+		RootID      uuid.UUID `json:"rootID"`
+		DefaultGold *int      `json:"defaultGold"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1316,6 +1321,9 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+	if requestBody.DefaultGold != nil {
+		questArchType.DefaultGold = *requestBody.DefaultGold
 	}
 
 	err := s.dbClient.QuestArchetype().Create(ctx, questArchType)
@@ -2331,6 +2339,7 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 		Name        string `binding:"required" json:"name"`
 		Description string `binding:"required" json:"description"`
 		Type        int    `binding:"required" json:"type"`
+		Gold        *int   `json:"gold"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2342,7 +2351,15 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 
 	typeValue := models.PointOfInterestGroupType(requestBody.Type)
 
-	if err := s.dbClient.PointOfInterestGroup().Edit(ctx, pointOfInterestGroupID, requestBody.Name, requestBody.Description, typeValue); err != nil {
+	updates := &models.PointOfInterestGroup{
+		Name:        requestBody.Name,
+		Description: requestBody.Description,
+		Type:        typeValue,
+	}
+	if requestBody.Gold != nil {
+		updates.Gold = *requestBody.Gold
+	}
+	if err := s.dbClient.PointOfInterestGroup().Update(ctx, pointOfInterestGroupID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -2929,6 +2946,7 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		Description string `binding:"required" json:"description"`
 		ImageUrl    string `binding:"required" json:"imageUrl"`
 		Type        int    `binding:"required" json:"type"`
+		Gold        *int   `json:"gold"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2944,6 +2962,15 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	if requestBody.Gold != nil {
+		// Update the group with provided gold value
+		if err := s.dbClient.PointOfInterestGroup().Update(ctx, group.ID, &models.PointOfInterestGroup{Gold: *requestBody.Gold}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		group.Gold = *requestBody.Gold
 	}
 
 	ctx.JSON(http.StatusOK, group)
@@ -4134,7 +4161,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		ZoneID:              requestBody.MovementPattern.ZoneID,
 		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
 		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
-		Path:                requestBody.MovementPattern.Path,
+		Path:                models.LocationPath(requestBody.MovementPattern.Path),
 	}
 
 	if err := s.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
@@ -4206,7 +4233,7 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		ZoneID:              requestBody.MovementPattern.ZoneID,
 		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
 		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
-		Path:                requestBody.MovementPattern.Path,
+		Path:                models.LocationPath(requestBody.MovementPattern.Path),
 	}
 
 	if err := s.dbClient.MovementPattern().Update(ctx, existingCharacter.MovementPatternID, movementPatternUpdates); err != nil {

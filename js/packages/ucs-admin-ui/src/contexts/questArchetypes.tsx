@@ -7,7 +7,7 @@ type QuestArchetypesContextType = {
   locationArchetypes: LocationArchetype[];
   questArchetypes: QuestArchetype[];
   zoneQuestArchetypes: ZoneQuestArchetype[];
-  createQuestArchetype: (name: string, locationArchetypeId: string) => void;
+  createQuestArchetype: (name: string, locationArchetypeId: string, defaultGold?: number) => void;
   addChallengeToQuestArchetype: (questArchetypeId: string, rewardPoints: number, unlockedLocationArchetypeId?: string | null) => void;
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
@@ -102,13 +102,14 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     setLocationArchetypes([...locationArchetypes, newLocationArchetype]);
   };
 
-  const createQuestArchetype = async (name: string, locationArchetypeID: string) => {
+  const createQuestArchetype = async (name: string, locationArchetypeID: string, defaultGold?: number) => {
     const node = await apiClient.post<QuestArchetypeNode>("/sonar/questArchetypeNodes", {
       locationArchetypeID,
     });
     const questArchetype = await apiClient.post<QuestArchetype>("/sonar/questArchetypes", {
       name,
       rootId: node.id,
+      defaultGold,
     });
     setQuestArchetypes([...questArchetypes, questArchetype]);
   };

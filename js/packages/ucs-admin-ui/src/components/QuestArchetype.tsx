@@ -75,6 +75,7 @@ export const QuestArchetypeComponent = () => {
   const [selectedQuestArchetype, setSelectedQuestArchetype] = useState<QuestArchetype | null>(null);
   const [name, setName] = useState("");
   const [locationArchetypeId, setLocationArchetypeId] = useState("");
+  const [defaultGold, setDefaultGold] = useState<number>(0);
   const [ selectedNode, setSelectedNode ] = useState<QuestArchetypeNode | null>(null);
   const [ reward, setReward ] = useState<number>(0);
   const [ unlockedLocationArchetypeId, setUnlockedLocationArchetypeId ] = useState<string>("");
@@ -227,7 +228,7 @@ export const QuestArchetypeComponent = () => {
           <h2 className="text-xl font-bold mb-4">Create Quest Archetype</h2>
           <form onSubmit={(e) => {
             e.preventDefault();
-            createQuestArchetype(name, locationArchetypeId);
+            createQuestArchetype(name, locationArchetypeId, defaultGold);
             setShouldShowModal(false);
           }}>
             <div className="mb-4">
@@ -258,6 +259,19 @@ export const QuestArchetypeComponent = () => {
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Default Gold
+              </label>
+              <input
+                type="number"
+                min={0}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                value={defaultGold}
+                onChange={(e) => setDefaultGold(parseInt(e.target.value) || 0)}
+              />
             </div>
 
             <div className="flex justify-end gap-2">

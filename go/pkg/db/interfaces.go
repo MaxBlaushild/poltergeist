@@ -96,6 +96,7 @@ type UserHandle interface {
 	SetUsername(ctx context.Context, userID uuid.UUID, username string) error
 	Update(ctx context.Context, userID uuid.UUID, updates models.User) error
 	LeaveParty(ctx context.Context, userID uuid.UUID) error
+	AddGold(ctx context.Context, userID uuid.UUID, amount int) error
 }
 
 type TeamHandle interface {

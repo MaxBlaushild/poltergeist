@@ -8,4 +8,5 @@ export type User = {
   partyId: string | null;
   username: string;
   isActive: boolean | null;
+  gold: number;
 };

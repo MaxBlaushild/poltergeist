@@ -413,6 +413,15 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	// Collect items awarded (will be populated during award process)
 	itemsAwarded := []models.ItemAwarded{}
 
+	// Determine gold to be awarded for this completion (only when quest completes)
+	goldAwarded := 0
+	if questCompleted && challenge.PointOfInterestGroupID != nil {
+		group, err := c.db.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
+		if err == nil && group.Gold > 0 {
+			goldAwarded = group.Gold
+		}
+	}
+
 	// Create activity for challenge completed with full context
 	challengeActivityData, err := json.Marshal(models.ChallengeCompletedActivity{
 		ChallengeID:       challenge.ID,
@@ -422,6 +431,7 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		ExperienceAwarded: experiencePoints,
 		ReputationAwarded: reputationPoints,
 		ItemsAwarded:      itemsAwarded,
+		GoldAwarded:       goldAwarded,
 		QuestID:           questID,
 		QuestName:         questName,
 		QuestCompleted:    questCompleted,
@@ -458,7 +468,8 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	// Create activity for quest completed if applicable
 	if questCompleted {
 		questActivityData, err := json.Marshal(models.QuestCompletedActivity{
-			QuestID: questID,
+			QuestID:     questID,
+			GoldAwarded: goldAwarded,
 		})
 		if err != nil {
 			return nil, err
@@ -488,6 +499,13 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		return nil, err
 	}
 
+	// Award gold only when the quest is completed
+	if questCompleted {
+		if err = c.awardGold(ctx, submission, challenge); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := c.addTaskCompleteMessage(ctx, submission, challenge, &submissionResult); err != nil {
 		return nil, err
 	}
@@ -501,6 +519,42 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	}
 
 	return &submissionResult, nil
+}
+
+func (c *gameEngineClient) awardGold(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) error {
+	if challenge.PointOfInterestGroupID == nil {
+		return nil
+	}
+
+	// Determine gold from the quest group
+	group, err := c.db.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
+	if err != nil {
+		return err
+	}
+
+	gold := group.Gold
+	if gold <= 0 {
+		return nil
+	}
+
+	// Get zone for filtering party members
+	zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, challenge.PointOfInterestID)
+	if err != nil {
+		return err
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, submission.UserID, zone.ZoneID)
+	if err != nil {
+		return err
+	}
+
+	for _, member := range partyMembers {
+		if err := c.db.User().AddGold(ctx, member.ID, gold); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) error {
