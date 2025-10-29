@@ -14,6 +14,10 @@ import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useQuestLogContext } from './QuestLogContext.tsx';
 import { useActivityFeedContext } from './ActivityFeedContext.tsx';
 
+// Local extensions until shared types are rebuilt
+type ChallengeCompletedActivityDataWithGold = ChallengeCompletedActivityData & { goldAwarded?: number };
+type SubmissionResultWithGold = SubmissionResult & { goldAwarded?: number };
+
 export interface CompletedTask {
   quest: Quest;
   challenge: PointOfInterestChallenge;
@@ -122,7 +126,7 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
       }
 
       if (isChallengeCompletedActivity(activity)) {
-        const data = activity.data as ChallengeCompletedActivityData;
+        const data = activity.data as ChallengeCompletedActivityDataWithGold;
         
         // Find the quest matching the questId from activity
         const quest = quests.find(q => q.id === data.questId);
@@ -160,13 +164,14 @@ export const CompletedTaskProvider = ({ children }: { children: React.ReactNode 
         }
 
         // Construct SubmissionResult from activity data
-        const result: SubmissionResult = {
+        const result: SubmissionResultWithGold = {
           successful: data.successful,
           reason: data.reason,
           questCompleted: data.questCompleted,
           experienceAwarded: data.experienceAwarded,
           reputationAwarded: data.reputationAwarded,
           itemsAwarded: data.itemsAwarded,
+          goldAwarded: data.goldAwarded,
           zoneID: data.zoneId,
         };
 

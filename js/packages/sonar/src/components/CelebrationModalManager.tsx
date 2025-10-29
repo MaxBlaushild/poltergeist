@@ -143,6 +143,17 @@ export const CelebrationModalManager = () => {
                   </div>
                 </div>
               )}
+
+              {isFinished && (completedTask.result.goldAwarded || 0) > 0 && (
+                <div className="bg-white rounded-lg p-2 shadow-md">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg border border-amber-400 flex items-center justify-center">
+                      <span className="text-sm font-bold text-amber-600">GOLD</span>
+                    </div>
+                    <span className="text-sm font-bold">+{completedTask.result.goldAwarded}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {completedTask.result.itemsAwarded.length > 0 && (

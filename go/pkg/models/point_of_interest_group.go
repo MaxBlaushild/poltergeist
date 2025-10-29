@@ -25,6 +25,7 @@ type PointOfInterestGroup struct {
 	GroupMembers     []PointOfInterestGroupMember `json:"groupMembers" gorm:"foreignKey:PointOfInterestGroupID"`
 	PointsOfInterest []PointOfInterest            `json:"pointsOfInterest" gorm:"many2many:point_of_interest_group_members;associationForeignKey:PointOfInterestID;foreignKey:ID;joinForeignKey:PointOfInterestGroupID;joinReferences:PointOfInterestID"`
 	Type             PointOfInterestGroupType     `json:"type"`
+	Gold             int                          `json:"gold"`
 }
 
 func (p *PointOfInterestGroup) GetRootMember() *PointOfInterestGroupMember {

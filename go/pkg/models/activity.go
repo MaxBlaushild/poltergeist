@@ -43,6 +43,7 @@ type ChallengeCompletedActivity struct {
 	ExperienceAwarded int           `json:"experienceAwarded"`
 	ReputationAwarded int           `json:"reputationAwarded"`
 	ItemsAwarded      []ItemAwarded `json:"itemsAwarded"`
+	GoldAwarded       int           `json:"goldAwarded"`
 	QuestID           uuid.UUID     `json:"questId"`
 	QuestName         string        `json:"questName"`
 	QuestCompleted    bool          `json:"questCompleted"`
@@ -53,7 +54,8 @@ type ChallengeCompletedActivity struct {
 }
 
 type QuestCompletedActivity struct {
-	QuestID uuid.UUID `json:"questId"`
+	QuestID     uuid.UUID `json:"questId"`
+	GoldAwarded int       `json:"goldAwarded"`
 }
 
 type ItemReceivedActivity struct {

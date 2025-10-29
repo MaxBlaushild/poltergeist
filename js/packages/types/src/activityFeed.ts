@@ -17,6 +17,7 @@ export interface ChallengeCompletedActivityData {
   experienceAwarded: number;
   reputationAwarded: number;
   itemsAwarded: Array<{ id: number; name: string; imageUrl: string }>;
+  goldAwarded: number;
   questId: string;
   questName: string;
   questCompleted: boolean;
@@ -28,6 +29,7 @@ export interface ChallengeCompletedActivityData {
 
 export interface QuestCompletedActivityData {
   questId: string;
+  goldAwarded: number;
 }
 
 export interface ItemReceivedActivityData {
