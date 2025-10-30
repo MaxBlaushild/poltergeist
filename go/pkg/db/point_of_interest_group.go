@@ -187,6 +187,44 @@ func (c *pointOfInterestGroupHandle) Delete(ctx context.Context, id uuid.UUID) e
 	return tx.Commit().Error
 }
 
+func (c *pointOfInterestGroupHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	// Start a transaction since we'll be deleting multiple related records
+	tx := c.db.WithContext(ctx).Begin()
+	if err := tx.Error; err != nil {
+		return err
+	}
+
+	// First delete all child records associated with the group members
+	if err := tx.Where("point_of_interest_group_member_id IN (SELECT id FROM point_of_interest_group_members WHERE point_of_interest_group_id IN ?)", ids).
+		Delete(&models.PointOfInterestChildren{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Where("point_of_interest_group_id IN ?", ids).Delete(&models.PointOfInterestChallenge{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete related PointOfInterestGroupMember records
+	if err := tx.Where("point_of_interest_group_id IN ?", ids).Delete(&models.PointOfInterestGroupMember{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Delete the PointOfInterestGroups themselves
+	if err := tx.Where("id IN ?", ids).Delete(&models.PointOfInterestGroup{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
+}
+
 func (c *pointOfInterestGroupHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error {
 	return c.db.Model(&models.PointOfInterestGroup{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"image_url":  imageUrl,

@@ -3,7 +3,6 @@ package liveness
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,7 +47,6 @@ func (c *livenessClient) SetLastActive(ctx context.Context, userID uuid.UUID) er
 }
 
 func (c *livenessClient) SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error {
-	log.Printf("[DEBUG] Setting user location for user %s: %s", userID, location)
 	return c.redisClient.Set(ctx, c.makeLocationKey(userID), location, locationTTL).Err()
 }
 

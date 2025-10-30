@@ -8,7 +8,7 @@ interface ArenaContextType {
   arena: PointOfInterestGroup | null;
   loading: boolean;
   error: Error | null;
-  updateArena: (name: string, description: string, type: PointOfInterestGroupType, gold?: number) => Promise<void>;
+  updateArena: (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number) => Promise<void>;
   updateArenaImage: (id: string, image: File) => Promise<void>;
   createPointOfInterest: (
     name: string,
@@ -68,7 +68,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
   };
 
 
-  const updateArena = async (name: string, description: string, type: PointOfInterestGroupType, gold?: number) => {
+  const updateArena = async (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number) => {
     setLoading(true);
 
     if (!arena) {
@@ -81,6 +81,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         description,
         type,
         gold,
+        inventoryItemId,
       });
 
       setArena({
@@ -89,6 +90,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
         description,
         type,
         gold: gold ?? (arena as any).gold,
+        inventoryItemId: inventoryItemId ?? (arena as any).inventoryItemId,
       } as PointOfInterestGroup);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred'));
