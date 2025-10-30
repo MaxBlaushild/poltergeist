@@ -18,4 +18,5 @@ export type PointOfInterestGroup = {
   groupMembers: PointOfInterestGroupMember[];
   type: PointOfInterestGroupType;
   gold: number;
+  inventoryItemId?: number;
 };

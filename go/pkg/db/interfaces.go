@@ -208,6 +208,7 @@ type PointOfInterestGroupHandle interface {
 	FindAll(ctx context.Context) ([]*models.PointOfInterestGroup, error)
 	Edit(ctx context.Context, id uuid.UUID, name string, description string, typeValue models.PointOfInterestGroupType) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByIDs(ctx context.Context, ids []uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	FindByType(ctx context.Context, typeValue models.PointOfInterestGroupType) ([]*models.PointOfInterestGroup, error)
 	GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64, tags []string) ([]models.PointOfInterestGroup, error)

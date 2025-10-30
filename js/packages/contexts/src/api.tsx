@@ -26,21 +26,21 @@ export const APIProvider: React.FC<APIProviderProps> = ({ children }) => {
   const baseURL = process.env.REACT_APP_API_URL || '';
   const { location } = useLocation();
   
-  // Create stable getLocation function that always returns current location via closure
+  // Create stable getLocation function that always returns current location
   const getLocation = useCallback(() => {
     console.log('[DEBUG] API Provider - getLocation called, returning:', location);
     return location;
-  }, []); // Empty deps - closure captures latest location
+  }, [location]); // Include location in dependencies
   
   console.log('[DEBUG] API Provider - Current location:', location);
   
-  // Stable apiClient that only recreates on baseURL change
+  // Recreate apiClient when location changes
   const apiClient = useMemo(() => {
     console.log('[DEBUG] API Provider - Creating new API client with location:', location);
     const client = new APIClient(baseURL, getLocation);
     console.log('[DEBUG] API Provider - API client created:', client);
     return client;
-  }, [baseURL, getLocation]);
+  }, [baseURL, getLocation, location]);
 
   return (
     <APIContext.Provider value={{ apiClient }}>{children}</APIContext.Provider>

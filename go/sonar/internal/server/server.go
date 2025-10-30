@@ -160,6 +160,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfilePicture))
 	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
 	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
+	r.POST("/sonar/pointsOfInterest/group/bulk-delete", s.bulkDeletePointOfInterestGroups)
 	r.DELETE("/sonar/pointsOfInterest/challenge/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePointOfInterestChallenge))
 	r.PATCH("/sonar/pointsOfInterest/challenge/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editPointOfInterestChallenge))
 	r.POST("/sonar/pointsOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createPointOfInterestChallenge))
@@ -2318,6 +2319,50 @@ func (s *server) deletePointOfInterestGroup(ctx *gin.Context) {
 	})
 }
 
+func (s *server) bulkDeletePointOfInterestGroups(ctx *gin.Context) {
+	var request struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "ids array is required",
+		})
+		return
+	}
+
+	if len(request.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "ids array cannot be empty",
+		})
+		return
+	}
+
+	ids := make([]uuid.UUID, 0, len(request.IDs))
+	for _, idStr := range request.IDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid UUID: %s", idStr),
+			})
+			return
+		}
+		ids = append(ids, id)
+	}
+
+	if err := s.dbClient.PointOfInterestGroup().DeleteByIDs(ctx, ids); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("successfully deleted %d point of interest group(s)", len(ids)),
+		"deleted": len(ids),
+	})
+}
+
 func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	stringPointOfInterestGroupID := ctx.Param("id")
 	if stringPointOfInterestGroupID == "" {
@@ -2336,10 +2381,11 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name        string `binding:"required" json:"name"`
-		Description string `binding:"required" json:"description"`
-		Type        int    `binding:"required" json:"type"`
-		Gold        *int   `json:"gold"`
+		Name            string `binding:"required" json:"name"`
+		Description     string `binding:"required" json:"description"`
+		Type            int    `binding:"required" json:"type"`
+		Gold            *int   `json:"gold"`
+		InventoryItemID *int   `json:"inventoryItemId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2358,6 +2404,9 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	}
 	if requestBody.Gold != nil {
 		updates.Gold = *requestBody.Gold
+	}
+	if requestBody.InventoryItemID != nil {
+		updates.InventoryItemID = requestBody.InventoryItemID
 	}
 	if err := s.dbClient.PointOfInterestGroup().Update(ctx, pointOfInterestGroupID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -2942,11 +2991,12 @@ func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
 
 func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 	var requestBody struct {
-		Name        string `binding:"required" json:"name"`
-		Description string `binding:"required" json:"description"`
-		ImageUrl    string `binding:"required" json:"imageUrl"`
-		Type        int    `binding:"required" json:"type"`
-		Gold        *int   `json:"gold"`
+		Name            string `binding:"required" json:"name"`
+		Description     string `binding:"required" json:"description"`
+		ImageUrl        string `binding:"required" json:"imageUrl"`
+		Type            int    `binding:"required" json:"type"`
+		Gold            *int   `json:"gold"`
+		InventoryItemID *int   `json:"inventoryItemId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2964,13 +3014,21 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		return
 	}
 
-	if requestBody.Gold != nil {
-		// Update the group with provided gold value
-		if err := s.dbClient.PointOfInterestGroup().Update(ctx, group.ID, &models.PointOfInterestGroup{Gold: *requestBody.Gold}); err != nil {
+	if requestBody.Gold != nil || requestBody.InventoryItemID != nil {
+		// Update the group with provided gold value and/or inventory item
+		updateData := make(map[string]interface{})
+		if requestBody.Gold != nil {
+			updateData["gold"] = *requestBody.Gold
+			group.Gold = *requestBody.Gold
+		}
+		if requestBody.InventoryItemID != nil {
+			updateData["inventory_item_id"] = *requestBody.InventoryItemID
+			group.InventoryItemID = requestBody.InventoryItemID
+		}
+		if err := s.dbClient.PointOfInterestGroup().Update(ctx, group.ID, &models.PointOfInterestGroup{Gold: group.Gold, InventoryItemID: group.InventoryItemID}); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		group.Gold = *requestBody.Gold
 	}
 
 	ctx.JSON(http.StatusOK, group)

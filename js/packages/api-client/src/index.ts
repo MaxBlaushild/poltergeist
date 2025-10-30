@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
 
 interface Location {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
 }
 
 export class APIClient {

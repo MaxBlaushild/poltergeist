@@ -46,6 +46,7 @@ export const Arena = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [arenaType, setArenaType] = useState<PointOfInterestGroupType | undefined>(arena?.type);
   const [arenaGold, setArenaGold] = useState<number>(Number((arena as any)?.gold ?? 0));
+  const [arenaInventoryItemId, setArenaInventoryItemId] = useState<number | undefined>((arena as any)?.inventoryItemId);
   const [newChild, setNewChild] = useState({
     pointOfInterestId: '',
     pointOfInterestChallengeId: '',
@@ -135,6 +136,7 @@ export const Arena = () => {
     setArenaDescription(arena.description);
     setArenaType(arena.type);
     setArenaGold(Number((arena as any)?.gold ?? 0));
+    setArenaInventoryItemId((arena as any)?.inventoryItemId);
   };
 
   const handleArenaSave = async () => {
@@ -142,7 +144,7 @@ export const Arena = () => {
       if (!arenaName || !arenaDescription || !arenaType) {
         throw new Error('Name and description are required');
       }
-      await (updateArena as unknown as (a: any, b: any, c: any, d?: any) => Promise<void>)(arenaName, arenaDescription, arenaType!, arenaGold);
+      await (updateArena as unknown as (a: any, b: any, c: any, d?: any, e?: any) => Promise<void>)(arenaName, arenaDescription, arenaType!, arenaGold, arenaInventoryItemId);
       setEditingArena(false);
     } catch (error) {
       console.error('Error saving arena:', error);
@@ -317,16 +319,33 @@ export const Arena = () => {
                   <option value={PointOfInterestGroupType.Quest}>Quest</option>
                 </select>
                 {arenaType === PointOfInterestGroupType.Quest && (
-                  <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-bold mb-2">Gold</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={arenaGold}
-                      onChange={(e) => setArenaGold(parseInt(e.target.value) || 0)}
-                      className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
-                    />
-                  </div>
+                  <>
+                    <div className="mb-4">
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Gold</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={arenaGold}
+                        onChange={(e) => setArenaGold(parseInt(e.target.value) || 0)}
+                        className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
+                      />
+                    </div>
+                    <div className="mb-4">
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Reward Item</label>
+                      <select
+                        value={arenaInventoryItemId || ''}
+                        onChange={(e) => setArenaInventoryItemId(e.target.value ? parseInt(e.target.value) : undefined)}
+                        className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
+                      >
+                        <option value="">No item reward</option>
+                        {inventoryItems.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
                 <div className="flex gap-2">
                   <button
@@ -353,6 +372,18 @@ export const Arena = () => {
                 <p className="text-gray-600 text-lg mb-4">
                   Type: {arena.type ? PointOfInterestGroupType[arena.type] : 'Unknown'}
                 </p>
+                {arena.type === PointOfInterestGroupType.Quest && (
+                  <>
+                    <p className="text-gray-600 text-lg mb-4">
+                      Gold: {((arena as any)?.gold ?? 0)}
+                    </p>
+                    {(arena as any)?.inventoryItemId && (
+                      <p className="text-gray-600 text-lg mb-4">
+                        Reward Item: {inventoryItems?.find(item => item.id === (arena as any)?.inventoryItemId)?.name || 'Unknown Item'}
+                      </p>
+                    )}
+                  </>
+                )}
                 <button
                   onClick={handleArenaEdit}
                   className="bg-blue-500 text-white px-4 py-2 rounded"

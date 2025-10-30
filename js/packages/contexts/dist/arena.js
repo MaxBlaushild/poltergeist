@@ -39,7 +39,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
-    const updateArena = (name, description, type) => __awaiter(void 0, void 0, void 0, function* () {
+    const updateArena = (name, description, type, gold, inventoryItemId) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         if (!arena) {
             return;
@@ -49,10 +49,14 @@ export const ArenaProvider = ({ children, arenaId }) => {
                 name,
                 description,
                 type,
+                gold,
+                inventoryItemId,
             });
             setArena(Object.assign(Object.assign({}, arena), { name,
                 description,
-                type }));
+                type,
+                gold: gold !== null && gold !== void 0 ? gold : arena.gold,
+                inventoryItemId: inventoryItemId !== null && inventoryItemId !== void 0 ? inventoryItemId : arena.inventoryItemId }));
         }
         catch (err) {
             setError(err instanceof Error ? err : new Error('An error occurred'));
