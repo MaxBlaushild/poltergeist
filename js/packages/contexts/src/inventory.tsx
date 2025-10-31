@@ -18,6 +18,7 @@ interface InventoryContextType {
   ownedInventoryItemsAreLoading: boolean;
   ownedInventoryItemsError: string | null;
   getInventoryItemById: (id: number) => InventoryItem | null;
+  refreshOwnedInventoryItems: () => void;
 };
 
 interface UseItemMetadata {
@@ -41,6 +42,7 @@ const InventoryContext = createContext<InventoryContextType>({
   ownedInventoryItemsAreLoading: false,
   ownedInventoryItemsError: null,
   getInventoryItemById: (id: number) => null,
+  refreshOwnedInventoryItems: () => {},
 });
 
 export const useInventory = () => useContext(InventoryContext);
@@ -100,12 +102,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       // Clear data when not authenticated
       setInventoryItems([]);
       setOwnedInventoryItems([]);
-      return;
     }
 
     fetchInventoryItems();
     fetchOwnedInventoryItems();
-  }, [user]);
+  }, [user, apiClient]);
 
   const consumeItem = async (ownedInventoryItemId: string, metadata: UseItemMetadata = {}) : Promise<SubmissionResult | undefined> => {
     try {
@@ -142,6 +143,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       ownedInventoryItemsAreLoading,
       ownedInventoryItemsError,
       getInventoryItemById,
+      refreshOwnedInventoryItems: fetchOwnedInventoryItems,
     }}>
       {children}
     </InventoryContext.Provider>

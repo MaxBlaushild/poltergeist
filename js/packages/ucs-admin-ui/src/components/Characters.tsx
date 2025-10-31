@@ -1,5 +1,5 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, PointOfInterest, Zone, MovementPatternType, Location } from '@poltergeist/types';
+import { Character, Zone, MovementPatternType, Location } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 
 export const Characters = () => {
@@ -10,7 +10,6 @@ export const Characters = () => {
   const [loading, setLoading] = useState(true);
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
-  const [availablePOIs, setAvailablePOIs] = useState<PointOfInterest[]>([]);
   const [availableZones, setAvailableZones] = useState<Zone[]>([]);
 
   // Form state
@@ -19,7 +18,6 @@ export const Characters = () => {
     description: '',
     mapIconUrl: '',
     dialogueImageUrl: '',
-    locationId: '',
     movementPattern: {
       movementPatternType: 'static' as MovementPatternType,
       zoneId: '',
@@ -31,7 +29,6 @@ export const Characters = () => {
 
   useEffect(() => {
     fetchCharacters();
-    fetchPOIs();
     fetchZones();
   }, []);
 
@@ -58,15 +55,6 @@ export const Characters = () => {
     }
   };
 
-  const fetchPOIs = async () => {
-    try {
-      const response = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
-      setAvailablePOIs(response);
-    } catch (error) {
-      console.error('Error fetching POIs:', error);
-    }
-  };
-
   const fetchZones = async () => {
     try {
       const response = await apiClient.get<Zone[]>('/sonar/zones');
@@ -82,7 +70,6 @@ export const Characters = () => {
       description: '',
       mapIconUrl: '',
       dialogueImageUrl: '',
-      locationId: '',
       movementPattern: {
         movementPatternType: 'static',
         zoneId: '',
@@ -133,7 +120,6 @@ export const Characters = () => {
       description: character.description,
       mapIconUrl: character.mapIconUrl,
       dialogueImageUrl: character.dialogueImageUrl,
-      locationId: character.locationId,
       movementPattern: {
         movementPatternType: character.movementPattern.movementPatternType,
         zoneId: character.movementPattern.zoneId || '',
@@ -225,10 +211,17 @@ export const Characters = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Movement: {character.movementPattern.movementPatternType}
             </p>
-            
+
             <p style={{ margin: '5px 0', color: '#666' }}>
-              Location: {character.location?.name || 'Unknown'}
+              Dialogue Image URL: {character.dialogueImageUrl || '—'}
             </p>
+            {character.dialogueImageUrl && (
+              <img
+                src={character.dialogueImageUrl}
+                alt={`${character.name} dialogue`}
+                style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 4 }}
+              />
+            )}
 
             <div style={{ marginTop: '15px' }}>
               <button
@@ -318,20 +311,6 @@ export const Characters = () => {
                 onChange={(e) => setFormData({ ...formData, dialogueImageUrl: e.target.value })}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               />
-            </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Location:</label>
-              <select
-                value={formData.locationId}
-                onChange={(e) => setFormData({ ...formData, locationId: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-              >
-                <option value="">Select a location</option>
-                {availablePOIs.map(poi => (
-                  <option key={poi.id} value={poi.id}>{poi.name}</option>
-                ))}
-              </select>
             </div>
 
             {/* Movement Pattern Section */}

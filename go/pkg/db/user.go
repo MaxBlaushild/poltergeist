@@ -194,3 +194,13 @@ func (h *userHandle) AddGold(ctx context.Context, userID uuid.UUID, amount int) 
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		UpdateColumn("gold", gorm.Expr("gold + ?", amount)).Error
 }
+
+func (h *userHandle) SetGold(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("gold", amount).Error
+}

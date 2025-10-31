@@ -39,12 +39,7 @@ export const ZoneProvider = ({ children }) => {
     const [spatialIndex] = useState(() => new RBush());
     const { location } = useLocation();
     const previousLocation = useRef(location);
-    // Fetch zones on mount
     useEffect(() => {
-        if (!user) {
-            setZones([]);
-            return;
-        }
         const fetchZones = () => __awaiter(void 0, void 0, void 0, function* () {
             try {
                 const response = yield apiClient.get('/sonar/zones');

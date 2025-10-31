@@ -180,6 +180,7 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.livenessClient, s.hasCurrentMatch))
 	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllUsers))
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
+	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
 	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
 	r.GET("/sonar/users/:id/discoveries", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserDiscoveries))
@@ -239,6 +240,7 @@ func (s *server) ListenAndServe(port string) {
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneReputation))
+	r.GET("/sonar/reputations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getReputations))
 	r.POST("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.inviteToParty))
 	r.GET("/sonar/party", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getParty))
 	r.POST("/sonar/party/leave", middleware.WithAuthentication(s.authClient, s.livenessClient, s.leaveParty))
@@ -279,6 +281,22 @@ func (s *server) getActivities(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, activities)
+}
+
+func (s *server) getReputations(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	reputations, err := s.dbClient.UserZoneReputation().FindAllForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, reputations)
 }
 
 func (s *server) markActivitiesAsSeen(ctx *gin.Context) {
@@ -4077,6 +4095,48 @@ func (s *server) deleteAllUserActivities(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "all activities deleted successfully"})
 }
 
+func (s *server) updateUserGold(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	var requestBody struct {
+		Gold int `json:"gold" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Gold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "gold amount must be >= 0"})
+		return
+	}
+
+	if err := s.dbClient.User().SetGold(ctx, userID, requestBody.Gold); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update gold: " + err.Error()})
+		return
+	}
+
+	// Fetch and return updated user
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, user)
+}
+
 func (s *server) deleteUsers(ctx *gin.Context) {
 	_, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -4194,11 +4254,10 @@ func (s *server) getCharacter(ctx *gin.Context) {
 
 func (s *server) createCharacter(ctx *gin.Context) {
 	var requestBody struct {
-		Name             string    `json:"name" binding:"required"`
-		Description      string    `json:"description"`
-		MapIconUrl       string    `json:"mapIconUrl"`
-		DialogueImageUrl string    `json:"dialogueImageUrl"`
-		LocationID       uuid.UUID `json:"locationId" binding:"required"`
+		Name             string `json:"name" binding:"required"`
+		Description      string `json:"description"`
+		MapIconUrl       string `json:"mapIconUrl"`
+		DialogueImageUrl string `json:"dialogueImageUrl"`
 		MovementPattern  struct {
 			MovementPatternType models.MovementPatternType `json:"movementPatternType" binding:"required"`
 			ZoneID              *uuid.UUID                 `json:"zoneId"`
@@ -4227,13 +4286,12 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		return
 	}
 
-	// Then create the character
+	// Then create the character with geometry auto-populated from movement pattern
 	character := &models.Character{
 		Name:              requestBody.Name,
 		Description:       requestBody.Description,
 		MapIconURL:        requestBody.MapIconUrl,
 		DialogueImageURL:  requestBody.DialogueImageUrl,
-		LocationID:        requestBody.LocationID,
 		MovementPatternID: movementPattern.ID,
 		MovementPattern:   *movementPattern,
 	}
@@ -4266,11 +4324,10 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name             string    `json:"name"`
-		Description      string    `json:"description"`
-		MapIconUrl       string    `json:"mapIconUrl"`
-		DialogueImageUrl string    `json:"dialogueImageUrl"`
-		LocationID       uuid.UUID `json:"locationId"`
+		Name             string `json:"name"`
+		Description      string `json:"description"`
+		MapIconUrl       string `json:"mapIconUrl"`
+		DialogueImageUrl string `json:"dialogueImageUrl"`
 		MovementPattern  struct {
 			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
 			ZoneID              *uuid.UUID                 `json:"zoneId"`
@@ -4305,7 +4362,6 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		Description:      requestBody.Description,
 		MapIconURL:       requestBody.MapIconUrl,
 		DialogueImageURL: requestBody.DialogueImageUrl,
-		LocationID:       requestBody.LocationID,
 	}
 
 	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {

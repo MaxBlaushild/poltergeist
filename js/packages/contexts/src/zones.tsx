@@ -58,13 +58,7 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [spatialIndex] = useState(() => new RBush<ZoneIndexNode>());
   const { location } = useLocation();
   const previousLocation = useRef(location);
-  // Fetch zones on mount
   useEffect(() => {
-    if (!user) {
-      setZones([]);
-      return;
-    }
-    
     const fetchZones = async () => {
       try {
         const response = await apiClient.get<Zone[]>('/sonar/zones');

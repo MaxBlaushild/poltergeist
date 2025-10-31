@@ -14,6 +14,7 @@ export interface ChallengeCompletedActivityData {
         name: string;
         imageUrl: string;
     }>;
+    goldAwarded: number;
     questId: string;
     questName: string;
     questCompleted: boolean;
@@ -32,6 +33,12 @@ export interface ChallengeCompletedActivityData {
 }
 export interface QuestCompletedActivityData {
     questId: string;
+    goldAwarded: number;
+    itemAwarded?: {
+        id: number;
+        name: string;
+        imageUrl: string;
+    };
 }
 export interface ItemReceivedActivityData {
     itemId: number;

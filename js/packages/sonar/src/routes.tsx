@@ -26,7 +26,6 @@ import { MapProvider } from '@poltergeist/contexts';
 import { PointOfInterestContextProvider } from './contexts/PointOfInterestContext.tsx';
 import { MatchContextProvider } from './contexts/MatchContext.tsx';
 import { TagProvider } from '@poltergeist/contexts';
-import { ZoneProvider } from '@poltergeist/contexts';
 import { CompletedTaskProvider } from './contexts/CompletedTaskContext.tsx';
 import { PartyProvider } from './contexts/PartyContext.tsx';
 import { ActivityFeedProvider } from './contexts/ActivityFeedContext.tsx';
@@ -116,7 +115,6 @@ export const router = createBrowserRouter([
         Component: () => (
           <TagProvider>
             <MapProvider>
-              <ZoneProvider>
                 <QuestLogContextProvider>
                   <ActivityFeedProvider>
                     <CompletedTaskProvider>
@@ -124,7 +122,6 @@ export const router = createBrowserRouter([
                     </CompletedTaskProvider>
                   </ActivityFeedProvider>
                 </QuestLogContextProvider>
-              </ZoneProvider>
             </MapProvider>
           </TagProvider>
         ),

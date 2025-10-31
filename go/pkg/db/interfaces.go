@@ -97,6 +97,7 @@ type UserHandle interface {
 	Update(ctx context.Context, userID uuid.UUID, updates models.User) error
 	LeaveParty(ctx context.Context, userID uuid.UUID) error
 	AddGold(ctx context.Context, userID uuid.UUID, amount int) error
+	SetGold(ctx context.Context, userID uuid.UUID, amount int) error
 }
 
 type TeamHandle interface {
@@ -394,6 +395,7 @@ type UserLevelHandle interface {
 type UserZoneReputationHandle interface {
 	ProcessReputationPointAdditions(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, reputationPoints int) (*models.UserZoneReputation, error)
 	FindOrCreateForUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (*models.UserZoneReputation, error)
+	FindAllForUser(ctx context.Context, userID uuid.UUID) ([]*models.UserZoneReputation, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -448,7 +450,6 @@ type CharacterHandle interface {
 	FindAll(ctx context.Context) ([]*models.Character, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	FindByLocationID(ctx context.Context, locationID uuid.UUID) ([]*models.Character, error)
 	FindByMovementPatternType(ctx context.Context, patternType models.MovementPatternType) ([]*models.Character, error)
 }
 

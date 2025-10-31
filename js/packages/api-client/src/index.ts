@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { UserZoneReputation } from '@poltergeist/types';
 
 interface Location {
   latitude: number | null;
@@ -11,7 +12,6 @@ export class APIClient {
   private getLocation?: () => Location | null;
 
   constructor(baseURL: string, getLocation?: () => Location | null) {
-    console.log('[DEBUG] API Client - Constructor called with getLocation:', !!getLocation);
     this.getLocation = getLocation;
     this.client = axios.create({
       baseURL,
@@ -19,7 +19,6 @@ export class APIClient {
 
     this.client.interceptors.request.use(
       (config) => {
-        console.log('[DEBUG] API Client - Request interceptor called for URL:', config.url);
         const token = localStorage.getItem('token');
         if (token) {
           config.headers['Authorization'] = `Bearer ${token}`;
@@ -28,23 +27,12 @@ export class APIClient {
         // Add location header if location is available
         if (this.getLocation) {
           const location = this.getLocation();
-          console.log('[DEBUG] API Client - Location check:', { 
-            location, 
-            hasLocation: !!location, 
-            hasCoords: !!(location?.latitude && location?.longitude),
-            latitude: location?.latitude,
-            longitude: location?.longitude,
-            accuracy: location?.accuracy
-          });
           if (location && location.latitude && location.longitude) {
             const locationHeader = `${location.latitude},${location.longitude},${location.accuracy || 0}`;
             config.headers['X-User-Location'] = locationHeader;
-            console.log('[DEBUG] API Client - Added location header:', locationHeader);
           } else {
-            console.log('[DEBUG] API Client - No location data available, location:', location);
           }
         } else {
-          console.log('[DEBUG] API Client - No getLocation function provided');
         }
         
         return config;
@@ -83,6 +71,11 @@ export class APIClient {
     return response.data;
   }
 
+  async put<T>(url: string, data?: any): Promise<T> {
+    const response = await this.client.put<T>(url, data);
+    return response.data;
+  }
+
   async patch<T>(url: string, data?: any): Promise<T> {
     const response = await this.client.patch<T>(url, data);
     return response.data;
@@ -91,6 +84,10 @@ export class APIClient {
   async delete<T>(url: string, data?: any): Promise<T> {
     const response = await this.client.delete<T>(url, { data });
     return response.data;
+  }
+
+  async getUserReputations(): Promise<UserZoneReputation[]> {
+    return this.get<UserZoneReputation[]>('/sonar/reputations');
   }
 }
 

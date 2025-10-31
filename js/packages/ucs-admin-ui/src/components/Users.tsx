@@ -20,6 +20,8 @@ export const Users = () => {
   const [selectedPOIsToAdd, setSelectedPOIsToAdd] = useState<Set<string>>(new Set());
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [editingGold, setEditingGold] = useState(false);
+  const [goldInputValue, setGoldInputValue] = useState<string>('');
 
   useEffect(() => {
     fetchUsers();
@@ -61,6 +63,8 @@ export const Users = () => {
   const selectUser = async (user: User) => {
     setSelectedUser(user);
     setSelectedDiscoveries(new Set());
+    setEditingGold(false);
+    setGoldInputValue('');
     
     try {
       const [discoveriesRes, submissionsRes, activitiesRes] = await Promise.all([
@@ -74,6 +78,31 @@ export const Users = () => {
       setActivities(activitiesRes);
     } catch (error) {
       console.error('Error fetching user details:', error);
+    }
+  };
+
+  const updateUserGold = async () => {
+    if (!selectedUser) return;
+    
+    const goldAmount = parseInt(goldInputValue);
+    if (isNaN(goldAmount) || goldAmount < 0) {
+      alert('Please enter a valid gold amount (>= 0)');
+      return;
+    }
+    
+    try {
+      const updatedUser = await apiClient.patch<User>(`/sonar/users/${selectedUser.id}/gold`, {
+        gold: goldAmount
+      });
+      
+      // Update the user in the users list
+      setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
+      setSelectedUser(updatedUser);
+      setEditingGold(false);
+      setGoldInputValue('');
+    } catch (error) {
+      console.error('Error updating user gold:', error);
+      alert('Failed to update gold amount');
     }
   };
 
@@ -340,7 +369,12 @@ export const Users = () => {
                     className="flex-grow cursor-pointer"
                     onClick={() => selectUser(user)}
                   >
-                    <div className="font-semibold">{user.username || 'No username'}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-semibold">{user.username || 'No username'}</div>
+                      <div className="bg-amber-100 border border-amber-400 rounded px-2 py-0.5">
+                        <span className="text-xs font-bold text-amber-600">🪙 {user.gold}</span>
+                      </div>
+                    </div>
                     <div className="text-sm text-gray-600">{user.phoneNumber}</div>
                     <div className="text-xs text-gray-500">
                       Created: {new Date(user.createdAt).toLocaleDateString()}
@@ -372,6 +406,58 @@ export const Users = () => {
               </div>
 
               <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)]">
+                {/* Gold Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold">Gold</h3>
+                  </div>
+                  {!editingGold ? (
+                    <div className="flex items-center gap-4">
+                      <div className="bg-amber-100 border border-amber-400 rounded-lg p-4 flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg border border-amber-400 flex items-center justify-center">
+                          <span className="text-lg font-bold text-amber-600">GOLD</span>
+                        </div>
+                        <span className="text-3xl font-bold text-gray-900">{selectedUser.gold}</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingGold(true);
+                          setGoldInputValue(selectedUser.gold.toString());
+                        }}
+                        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={goldInputValue}
+                        onChange={(e) => setGoldInputValue(e.target.value)}
+                        className="px-4 py-2 border rounded-lg text-lg"
+                        placeholder="Enter gold amount"
+                      />
+                      <button
+                        onClick={updateUserGold}
+                        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingGold(false);
+                          setGoldInputValue('');
+                        }}
+                        className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* Discoveries Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">

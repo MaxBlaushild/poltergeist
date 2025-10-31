@@ -104,6 +104,57 @@ export const Friends: React.FC = () => {
 
   return (
     <div className="space-y-4">
+            {/* Friends Accordion */}
+            <div className="border border-gray-300 rounded-lg overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+          onClick={() => setIsFriendsOpen(!isFriendsOpen)}
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-lg">Friends</h3>
+            <span className="text-gray-600 text-sm">({friends.length})</span>
+          </div>
+          {isFriendsOpen ? (
+            <ChevronDownIcon className="h-5 w-5" />
+          ) : (
+            <ChevronRightIcon className="h-5 w-5" />
+          )}
+        </button>
+        {isFriendsOpen && (
+          <div className="p-4">
+            {friends.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-4">No friends yet</p>
+            ) : (
+              <div className="space-y-3">
+                {friends.map((friend) => (
+                  <div
+                    key={friend.id}
+                    className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
+                    onClick={() => setUsername(friend.username)}
+                  >
+                    <div className="relative w-10 h-10">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
+                        <img
+                          src={friend.profilePictureUrl || '/blank-avatar.webp'}
+                          alt={friend.username}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${friend.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{friend.username}</p>
+                      {friend.name && (
+                        <p className="text-sm text-gray-500">{friend.name}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       {/* Search Users Accordion */}
       <div className="border border-gray-300 rounded-lg overflow-hidden">
         <button
@@ -310,57 +361,7 @@ export const Friends: React.FC = () => {
         )}
       </div>
 
-      {/* Friends Accordion */}
-      <div className="border border-gray-300 rounded-lg overflow-hidden">
-        <button
-          className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
-          onClick={() => setIsFriendsOpen(!isFriendsOpen)}
-        >
-          <div className="flex items-center gap-2">
-            <h3 className="font-bold text-lg">Friends</h3>
-            <span className="text-gray-600 text-sm">({friends.length})</span>
-          </div>
-          {isFriendsOpen ? (
-            <ChevronDownIcon className="h-5 w-5" />
-          ) : (
-            <ChevronRightIcon className="h-5 w-5" />
-          )}
-        </button>
-        {isFriendsOpen && (
-          <div className="p-4">
-            {friends.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-4">No friends yet</p>
-            ) : (
-              <div className="space-y-3">
-                {friends.map((friend) => (
-                  <div
-                    key={friend.id}
-                    className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
-                    onClick={() => setUsername(friend.username)}
-                  >
-                    <div className="relative w-10 h-10">
-                      <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-300">
-                        <img
-                          src={friend.profilePictureUrl || '/blank-avatar.webp'}
-                          alt={friend.username}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${friend.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium">{friend.username}</p>
-                      {friend.name && (
-                        <p className="text-sm text-gray-500">{friend.name}</p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+
     </div>
   );
 };
