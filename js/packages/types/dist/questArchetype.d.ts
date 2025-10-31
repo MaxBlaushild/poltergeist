@@ -20,6 +20,7 @@ export interface QuestArchetypeNode {
 export interface QuestArchetype {
     id: string;
     name: string;
+    defaultGold: number;
     createdAt: Date;
     updatedAt: Date;
     deletedAt?: Date;

@@ -70,3 +70,14 @@ func (h *userZoneReputationHandler) DeleteAllForUser(ctx context.Context, userID
 	// Log the number of deleted records for debugging
 	return nil
 }
+
+func (h *userZoneReputationHandler) FindAllForUser(ctx context.Context, userID uuid.UUID) ([]*models.UserZoneReputation, error) {
+	var reputations []*models.UserZoneReputation
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ? AND total_reputation > 0", userID).
+		Order("updated_at DESC").
+		Find(&reputations).Error; err != nil {
+		return nil, err
+	}
+	return reputations, nil
+}

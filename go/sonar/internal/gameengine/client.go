@@ -413,12 +413,28 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 	// Collect items awarded (will be populated during award process)
 	itemsAwarded := []models.ItemAwarded{}
 
-	// Determine gold to be awarded for this completion (only when quest completes)
+	// Determine gold and item to be awarded for this completion (only when quest completes)
 	goldAwarded := 0
+	var itemAwarded *models.ItemAwarded
 	if questCompleted && challenge.PointOfInterestGroupID != nil {
 		group, err := c.db.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
-		if err == nil && group.Gold > 0 {
-			goldAwarded = group.Gold
+		if err == nil {
+			if group.Gold > 0 {
+				goldAwarded = group.Gold
+			}
+			// Get item information if a specific item is configured for the quest
+			if group.InventoryItemID != nil && *group.InventoryItemID > 0 {
+				item, err := c.quartermaster.FindItemForItemID(*group.InventoryItemID)
+				if err == nil {
+					itemAwarded = &models.ItemAwarded{
+						ID:       item.ID,
+						Name:     item.Name,
+						ImageURL: item.ImageURL,
+					}
+					// Add to itemsAwarded for challenge activity display
+					itemsAwarded = append(itemsAwarded, *itemAwarded)
+				}
+			}
 		}
 	}
 
@@ -470,6 +486,7 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		questActivityData, err := json.Marshal(models.QuestCompletedActivity{
 			QuestID:     questID,
 			GoldAwarded: goldAwarded,
+			ItemAwarded: itemAwarded,
 		})
 		if err != nil {
 			return nil, err
@@ -487,10 +504,6 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		}
 	}
 
-	if err = c.awardItems(ctx, submission, challenge); err != nil {
-		return nil, err
-	}
-
 	if err = c.awardExperiencePoints(ctx, submission, questCompleted); err != nil {
 		return nil, err
 	}
@@ -499,9 +512,12 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		return nil, err
 	}
 
-	// Award gold only when the quest is completed
+	// Award gold and items only when the quest is completed
 	if questCompleted {
 		if err = c.awardGold(ctx, submission, challenge); err != nil {
+			return nil, err
+		}
+		if err = c.awardItems(ctx, submission, challenge); err != nil {
 			return nil, err
 		}
 	}
@@ -558,6 +574,16 @@ func (c *gameEngineClient) awardGold(ctx context.Context, submission Submission,
 }
 
 func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) error {
+	if challenge.PointOfInterestGroupID == nil {
+		return nil
+	}
+
+	// Get the quest group to determine items to award
+	group, err := c.db.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
+	if err != nil {
+		return err
+	}
+
 	// Get zone for the challenge
 	zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, challenge.PointOfInterestID)
 	if err != nil {
@@ -574,33 +600,18 @@ func (c *gameEngineClient) awardItems(ctx context.Context, submission Submission
 	for _, member := range partyMembers {
 		memberID := member.ID
 
-		if challenge.InventoryItemID == 0 {
-			item, err := c.quartermaster.GetItem(ctx, submission.TeamID, &memberID)
+		var item quartermaster.InventoryItem
+		// Use quest's InventoryItemID if available, otherwise get random item
+		if group.InventoryItemID == nil || *group.InventoryItemID == 0 {
+			item, err = c.quartermaster.GetItem(ctx, submission.TeamID, &memberID)
 			if err != nil {
 				return err
 			}
-
-			// Create activity for item received for this specific member
-			activityData, err := json.Marshal(models.ItemReceivedActivity{
-				ItemID:   item.ID,
-				ItemName: item.Name,
-			})
+		} else {
+			item, err = c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, &memberID, *group.InventoryItemID)
 			if err != nil {
 				return err
 			}
-			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
-				UserID:       memberID,
-				ActivityType: models.ActivityTypeItemReceived,
-				Data:         activityData,
-				Seen:         false,
-			}); err != nil {
-				return err
-			}
-		}
-
-		item, err := c.quartermaster.GetItemSpecificItem(ctx, submission.TeamID, &memberID, challenge.InventoryItemID)
-		if err != nil {
-			return err
 		}
 
 		// Create activity for item received for this specific member

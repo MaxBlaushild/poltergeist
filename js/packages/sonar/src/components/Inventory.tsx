@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useInventory } from '@poltergeist/contexts';
+import { useInventory, useAuth } from '@poltergeist/contexts';
 import { useMatchContext } from '../contexts/MatchContext.tsx';
 import {
   InventoryItem,
@@ -23,6 +23,7 @@ type InventoryProps = {
 export const Inventory = ({ onClose, match, usersTeam }: InventoryProps) => {
   const { inventoryItems, ownedInventoryItems, ownedInventoryItemsAreLoading, consumeItem, setUsedItem } =
     useInventory();
+  const { user } = useAuth();
   const [selectedItem, setSelectedItem] = useState<
     OwnedInventoryItem | undefined
   >(undefined);
@@ -43,9 +44,21 @@ export const Inventory = ({ onClose, match, usersTeam }: InventoryProps) => {
           }}
         />
       ) : null}
-      <h2 className="text-2xl font-bold">
-        {selectedInventoryItem ? selectedInventoryItem?.name : 'Inventory'}
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">
+          {selectedInventoryItem ? selectedInventoryItem?.name : 'Inventory'}
+        </h2>
+        {user && (
+          <div className="bg-white rounded-lg p-2 shadow-md border border-amber-400">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg border border-amber-400 flex items-center justify-center">
+                <span className="text-xs font-bold text-amber-600">GOLD</span>
+              </div>
+              <span className="text-base font-bold text-gray-900">{user.gold ? user.gold : '0'}</span>
+            </div>
+          </div>
+        )}
+      </div>
       {!selectedItem && !itemBeingUsed ? (
         <div className="grid grid-cols-3 gap-2 mt-4">
           {Array.from({ length: 12 }).map((_, index) => {

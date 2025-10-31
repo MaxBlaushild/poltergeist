@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState, FC } from 'react';
 import { useUserContext } from '../contexts/UserContext.tsx';
 import { UserIcon, PhoneIcon, IdentificationIcon, UserGroupIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { useAuth, useAPI } from '@poltergeist/contexts';
+import { useZoneContext } from '@poltergeist/contexts';
+import { UserZoneReputation } from '@poltergeist/types';
 import { useUserLevel } from '@poltergeist/hooks';
 import { User } from '@poltergeist/types';
 import { useNavigate } from 'react-router-dom';
@@ -13,15 +15,33 @@ interface ProfileProps {
   onBack?: () => void;
 }
 
-const Profile: React.FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = false, onBack }) => {
-  const { user: contextUser, loading: contextLoading, error: contextError, setUsername } = useUserContext();
+const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = false, onBack }) => {
+  const userCtx = useUserContext();
+  const { user: contextUser, loading: contextLoading, error: contextError, setUsername } = userCtx || { user: null, loading: false, error: null, setUsername: () => {} } as any;
   const { user: authUser, logout } = useAuth();
   const { userLevel } = useUserLevel();
   const navigate = useNavigate();
   const { apiClient } = useAPI();
-  const [isInviting, setIsInviting] = React.useState(false);
-  const [inviteSuccess, setInviteSuccess] = React.useState(false);
+  const { zones } = useZoneContext();
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteSuccess, setInviteSuccess] = useState(false);
   const { inviteToParty } = useParty();
+  const [reputations, setReputations] = useState<UserZoneReputation[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await apiClient.getUserReputations();
+        if (mounted) setReputations(data || []);
+      } catch (e) {
+        console.error('Failed to load reputations', e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [apiClient]);
 
   // Use auth user for own profile, context user for viewing others
   const user = isOwnProfile ? authUser : contextUser;
@@ -157,11 +177,50 @@ const Profile: React.FC<ProfileProps> = ({ isOwnProfile = false, showBackButton 
                 </div>
               </div>
             )}
+
+            {/* Gold Display */}
+            <div className="mt-4">
+              <div className="bg-white rounded-lg p-3 shadow-md border border-amber-400">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg border border-amber-400 flex items-center justify-center">
+                    <span className="text-sm font-bold text-amber-600">GOLD</span>
+                  </div>
+                  <span className="text-lg font-bold text-gray-900">{user ? user.gold ? user.gold : '0' : '0'}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Details Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Zone Reputation */}
+          <div className="bg-white rounded-2xl shadow-lg border-3 border-gray-900 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Zone Reputation</h2>
+            </div>
+            <div className="p-6">
+              {reputations.length === 0 ? (
+                <p className="text-gray-600">No reputation yet.</p>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {reputations.map((rep) => {
+                    const zone = zones.find(z => z.id === rep.zoneId);
+                    console.log('zones', zones);
+                    console.log('zone', zone);
+                    console.log('rep', rep);
+                    const zoneName = zone?.name || rep.zoneId.substring(0, 8);
+                    return (
+                      <li key={rep.zoneId} className="py-3 flex items-center justify-between">
+                        <span className="font-medium text-gray-900">{zoneName}</span>
+                        <span className="text-gray-700">Level {rep.level}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Action Buttons */}

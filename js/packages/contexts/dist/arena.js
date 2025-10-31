@@ -54,9 +54,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
             });
             setArena(Object.assign(Object.assign({}, arena), { name,
                 description,
-                type,
-                gold: gold !== null && gold !== void 0 ? gold : arena.gold,
-                inventoryItemId: inventoryItemId !== null && inventoryItemId !== void 0 ? inventoryItemId : arena.inventoryItemId }));
+                type, gold: gold !== null && gold !== void 0 ? gold : arena.gold, inventoryItemId: inventoryItemId !== null && inventoryItemId !== void 0 ? inventoryItemId : arena.inventoryItemId }));
         }
         catch (err) {
             setError(err instanceof Error ? err : new Error('An error occurred'));

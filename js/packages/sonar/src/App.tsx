@@ -19,6 +19,7 @@ import {
   InventoryProvider,
   LocationProvider,
   MapProvider,
+  ZoneProvider,
 } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
 import { LogContextProvider } from './contexts/LogContext.tsx';
@@ -53,6 +54,7 @@ function App() {
       <APIProvider>
         <MediaContextProvider>
           <UserProfileProvider>
+            <ZoneProvider>
             <InventoryProvider>
                 <AuthProvider appName="Sonar" uriPrefix="/sonar">
                     <LogContextProvider>
@@ -74,6 +76,7 @@ function App() {
                     </LogContextProvider>
                 </AuthProvider>
             </InventoryProvider>
+            </ZoneProvider>
           </UserProfileProvider>
         </MediaContextProvider>
       </APIProvider>

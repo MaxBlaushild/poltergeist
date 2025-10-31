@@ -27,6 +27,7 @@ const InventoryContext = createContext({
     ownedInventoryItemsAreLoading: false,
     ownedInventoryItemsError: null,
     getInventoryItemById: (id) => null,
+    refreshOwnedInventoryItems: () => { },
 });
 export const useInventory = () => useContext(InventoryContext);
 export const InventoryProvider = ({ children }) => {
@@ -87,11 +88,10 @@ export const InventoryProvider = ({ children }) => {
             // Clear data when not authenticated
             setInventoryItems([]);
             setOwnedInventoryItems([]);
-            return;
         }
         fetchInventoryItems();
         fetchOwnedInventoryItems();
-    }, [user]);
+    }, [user, apiClient]);
     const consumeItem = (ownedInventoryItemId, metadata = {}) => __awaiter(void 0, void 0, void 0, function* () {
         try {
             setIsUsingItem(true);
@@ -124,5 +124,6 @@ export const InventoryProvider = ({ children }) => {
             ownedInventoryItemsAreLoading,
             ownedInventoryItemsError,
             getInventoryItemById,
+            refreshOwnedInventoryItems: fetchOwnedInventoryItems,
         } }, { children: children })));
 };

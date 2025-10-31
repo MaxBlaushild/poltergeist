@@ -10,13 +10,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 import axios from 'axios';
 export class APIClient {
     constructor(baseURL, getLocation) {
-        console.log('[DEBUG] API Client - Constructor called with getLocation:', !!getLocation);
         this.getLocation = getLocation;
         this.client = axios.create({
             baseURL,
         });
         this.client.interceptors.request.use((config) => {
-            console.log('[DEBUG] API Client - Request interceptor called for URL:', config.url);
             const token = localStorage.getItem('token');
             if (token) {
                 config.headers['Authorization'] = `Bearer ${token}`;
@@ -24,25 +22,14 @@ export class APIClient {
             // Add location header if location is available
             if (this.getLocation) {
                 const location = this.getLocation();
-                console.log('[DEBUG] API Client - Location check:', {
-                    location,
-                    hasLocation: !!location,
-                    hasCoords: !!((location === null || location === void 0 ? void 0 : location.latitude) && (location === null || location === void 0 ? void 0 : location.longitude)),
-                    latitude: location === null || location === void 0 ? void 0 : location.latitude,
-                    longitude: location === null || location === void 0 ? void 0 : location.longitude,
-                    accuracy: location === null || location === void 0 ? void 0 : location.accuracy
-                });
                 if (location && location.latitude && location.longitude) {
                     const locationHeader = `${location.latitude},${location.longitude},${location.accuracy || 0}`;
                     config.headers['X-User-Location'] = locationHeader;
-                    console.log('[DEBUG] API Client - Added location header:', locationHeader);
                 }
                 else {
-                    console.log('[DEBUG] API Client - No location data available, location:', location);
                 }
             }
             else {
-                console.log('[DEBUG] API Client - No getLocation function provided');
             }
             return config;
         }, (error) => Promise.reject(error));
@@ -74,6 +61,12 @@ export class APIClient {
             return response.data;
         });
     }
+    put(url, data) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = yield this.client.put(url, data);
+            return response.data;
+        });
+    }
     patch(url, data) {
         return __awaiter(this, void 0, void 0, function* () {
             const response = yield this.client.patch(url, data);
@@ -84,6 +77,11 @@ export class APIClient {
         return __awaiter(this, void 0, void 0, function* () {
             const response = yield this.client.delete(url, { data });
             return response.data;
+        });
+    }
+    getUserReputations() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.get('/sonar/reputations');
         });
     }
 }

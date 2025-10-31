@@ -10,3 +10,11 @@ export type User = {
   isActive: boolean | null;
   gold: number;
 };
+
+export type UserZoneReputationSummary = {
+  zoneId: string;
+  level: number;
+  totalReputation: number;
+  reputationOnLevel: number;
+  updatedAt: string;
+};

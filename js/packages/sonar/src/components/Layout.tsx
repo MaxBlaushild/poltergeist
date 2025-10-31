@@ -82,14 +82,14 @@ export function Layout() {
         </div>
       </div>
       <div
-        className={`Layout__sideNav fixed top-0 right-0 w-full h-full transform ${isNavOpen ? 'translate-x-0' : 'translate-x-full'} transition-transform duration-300 ease-in-out z-60`}
+        className={`Layout__sideNav fixed top-0 right-0 w-full h-full transform ${isNavOpen ? 'translate-x-0' : 'translate-x-full'} transition-transform duration-300 ease-in-out z-60 flex flex-col overflow-y-auto`}
       >
         <button onClick={toggleNav}>
           <XMarkIcon className="h-8 w-8 mt-3 ml-3" />
         </button>
 
         <UserContextProvider>
-          <Profile showBackButton={true} />
+            <Profile showBackButton={true} />
           <SideNavTabs />
         </UserContextProvider>
 

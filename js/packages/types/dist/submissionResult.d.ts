@@ -9,6 +9,7 @@ export type SubmissionResult = {
         name: string;
         imageUrl: string;
     }>;
+    goldAwarded?: number;
     zoneID?: string;
     levelUp?: boolean;
     reputationUp?: boolean;

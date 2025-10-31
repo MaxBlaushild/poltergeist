@@ -30,6 +30,7 @@ export interface ChallengeCompletedActivityData {
 export interface QuestCompletedActivityData {
   questId: string;
   goldAwarded: number;
+  itemAwarded?: { id: number; name: string; imageUrl: string };
 }
 
 export interface ItemReceivedActivityData {
