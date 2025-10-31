@@ -1,6 +1,7 @@
 import { useAPI } from '@poltergeist/contexts';
 import { Character, Zone, MovementPatternType, Location } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
+import { CharacterMapPicker } from './CharacterMapPicker.tsx';
 
 export const Characters = () => {
   const { apiClient } = useAPI();
@@ -310,6 +311,25 @@ export const Characters = () => {
                 value={formData.dialogueImageUrl}
                 onChange={(e) => setFormData({ ...formData, dialogueImageUrl: e.target.value })}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+            </div>
+
+            {/* Character Position Section */}
+            <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
+              <h3 style={{ margin: '0 0 15px 0' }}>Character Position</h3>
+              <CharacterMapPicker
+                latitude={formData.movementPattern.startingLatitude}
+                longitude={formData.movementPattern.startingLongitude}
+                onChange={(lat, lng) => {
+                  setFormData({
+                    ...formData,
+                    movementPattern: {
+                      ...formData.movementPattern,
+                      startingLatitude: lat,
+                      startingLongitude: lng
+                    }
+                  });
+                }}
               />
             </div>
 

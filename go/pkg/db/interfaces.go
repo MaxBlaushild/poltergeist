@@ -54,6 +54,7 @@ type DbClient interface {
 	Activity() ActivityHandle
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
 	Character() CharacterHandle
+	CharacterAction() CharacterActionHandle
 	MovementPattern() MovementPatternHandle
 	Exec(ctx context.Context, q string) error
 }
@@ -451,6 +452,15 @@ type CharacterHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByMovementPatternType(ctx context.Context, patternType models.MovementPatternType) ([]*models.Character, error)
+}
+
+type CharacterActionHandle interface {
+	Create(ctx context.Context, characterAction *models.CharacterAction) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.CharacterAction, error)
+	FindAll(ctx context.Context) ([]*models.CharacterAction, error)
+	FindByCharacterID(ctx context.Context, characterID uuid.UUID) ([]*models.CharacterAction, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.CharacterAction) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type MovementPatternHandle interface {

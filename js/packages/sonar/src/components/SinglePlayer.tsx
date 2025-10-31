@@ -4,6 +4,7 @@ import { useAuth } from '@poltergeist/contexts';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
 import { useZoneBoundaries } from '../hooks/useZoneBoundaries.ts';
+import { useCharacterMarkers } from '../hooks/useCharacterMarkers.tsx';
 import { PointOfInterest, PointOfInterestDiscovery, Zone } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
 import { TagFilter } from './TagFilter.tsx';
@@ -97,6 +98,7 @@ export const SinglePlayer = () => {
   });
 
   useZoneBoundaries();
+  useCharacterMarkers();
 
   const openPointOfInterestPanel = (pointOfInterest: PointOfInterest) => {
     if (pointOfInterest) {
