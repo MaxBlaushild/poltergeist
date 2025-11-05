@@ -17,5 +17,5 @@ INSERT INTO inventory_items (id, name, image_url, flavor_text, effect_text, rari
 ON CONFLICT (id) DO NOTHING;
 
 -- Reset the sequence to the max ID to ensure next inserts get proper IDs
-SELECT setval('inventory_items_id_seq', (SELECT MAX(id) FROM inventory_items));
+SELECT setval('inventory_items_id_seq', COALESCE((SELECT MAX(id) FROM inventory_items), 1), false);
 
