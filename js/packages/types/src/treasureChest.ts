@@ -21,6 +21,7 @@ export interface TreasureChest {
   zone: Zone;
   gold: number | null;
   geometry: string;
+  unlockTier: number | null;
   items: TreasureChestItem[];
 }
 

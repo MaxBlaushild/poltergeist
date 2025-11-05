@@ -19,6 +19,7 @@ export const TreasureChests = () => {
   const [editingChest, setEditingChest] = useState<TreasureChest | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [chestToDelete, setChestToDelete] = useState<TreasureChest | null>(null);
+  const [seeding, setSeeding] = useState(false);
 
   const [formData, setFormData] = useState({
     latitude: '',
@@ -123,6 +124,23 @@ export const TreasureChests = () => {
     } catch (error) {
       console.error('Error deleting treasure chest:', error);
       alert('Error deleting treasure chest.');
+    }
+  };
+
+  const handleSeedTreasureChests = async () => {
+    setSeeding(true);
+    try {
+      await apiClient.post('/sonar/admin/treasure-chests/seed');
+      alert('Treasure chest seeding job queued successfully!');
+      // Optionally refresh the chest list after a delay
+      setTimeout(() => {
+        fetchChests();
+      }, 2000);
+    } catch (error) {
+      console.error('Error queueing seed treasure chests job:', error);
+      alert('Error queueing seed treasure chests job.');
+    } finally {
+      setSeeding(false);
     }
   };
 
@@ -250,13 +268,22 @@ export const TreasureChests = () => {
         })}
       </div>
 
-      {/* Create Chest Button */}
-      <button
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-        onClick={() => setShowCreateChest(true)}
-      >
-        Create Treasure Chest
-      </button>
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+          onClick={() => setShowCreateChest(true)}
+        >
+          Create Treasure Chest
+        </button>
+        <button
+          className="bg-green-500 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleSeedTreasureChests}
+          disabled={seeding}
+        >
+          {seeding ? 'Queuing...' : 'Seed Treasure Chests'}
+        </button>
+      </div>
 
       {/* Create/Edit Chest Modal */}
       {(showCreateChest || editingChest) && (

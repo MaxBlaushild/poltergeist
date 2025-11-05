@@ -135,9 +135,8 @@ func (c *client) GenerateImage(ctx context.Context, request deep_priest.Generate
 		log.Printf("Error generating image: %v", err)
 		return "", err
 	}
-	log.Printf("Image generation response: %+v", resp)
 
-	log.Printf("Successfully generated image with URL: %s", resp.Data[0].B64JSON)
+	log.Printf("Successfully generated image")
 	return resp.Data[0].B64JSON, nil
 }
 

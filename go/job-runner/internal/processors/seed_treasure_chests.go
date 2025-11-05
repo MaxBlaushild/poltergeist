@@ -69,12 +69,20 @@ func (p *SeedTreasureChestsProcessor) ProcessTask(ctx context.Context, task *asy
 			// Generate random gold between 100-500
 			gold := 100 + rand.Intn(401) // 100 + [0-400] = 100-500
 
+			// Assign unlock_tier: 30% chance of tier 1, 70% chance of nil
+			var unlockTier *int
+			if rand.Intn(100) < 30 {
+				tier := 1
+				unlockTier = &tier
+			}
+
 			// Create the treasure chest
 			treasureChest := &models.TreasureChest{
 				Latitude:    randomPoint.Y(), // Y() is latitude
 				Longitude:   randomPoint.X(), // X() is longitude
 				ZoneID:      zone.ID,
 				Gold:        &gold,
+				UnlockTier:  unlockTier,
 				Invalidated: false,
 			}
 

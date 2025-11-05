@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
-import { TreasureChestMarker } from '../components/TreasureChestMarker';
-import { useMap } from '../contexts/MapContext';
+import { TreasureChestMarker } from '../components/TreasureChestMarker.tsx';
+import { useMap } from '@poltergeist/contexts';
 import { TreasureChest } from '@poltergeist/types';
 
 interface UseTreasureChestMarkersProps {

@@ -117,8 +117,6 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 		return "", err
 	}
 
-	log.Printf("Generated image: %s", base64Image)
-
 	imageUrl, err := c.UploadImage(ctx, base64Image)
 	if err != nil {
 		log.Printf("Error processing image: %v", err)
