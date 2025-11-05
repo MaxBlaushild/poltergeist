@@ -56,6 +56,7 @@ type DbClient interface {
 	Character() CharacterHandle
 	CharacterAction() CharacterActionHandle
 	MovementPattern() MovementPatternHandle
+	TreasureChest() TreasureChestHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -479,4 +480,16 @@ type MovementPatternHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByType(ctx context.Context, patternType models.MovementPatternType) ([]*models.MovementPattern, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]*models.MovementPattern, error)
+}
+
+type TreasureChestHandle interface {
+	Create(ctx context.Context, treasureChest *models.TreasureChest) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.TreasureChest, error)
+	FindAll(ctx context.Context) ([]models.TreasureChest, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.TreasureChest, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.TreasureChest) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	AddItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
+	RemoveItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int) error
+	UpdateItemQuantity(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
 }

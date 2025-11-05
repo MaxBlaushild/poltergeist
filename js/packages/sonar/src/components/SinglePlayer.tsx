@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Map } from './Map.tsx';
-import { useAuth } from '@poltergeist/contexts';
+import { useAuth, useAPI } from '@poltergeist/contexts';
+import { useZoneContext } from '@poltergeist/contexts/dist/zones';
 import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 import { usePointOfInterestMarkers } from '../hooks/usePointOfInterestMarkers.tsx';
 import { useZoneBoundaries } from '../hooks/useZoneBoundaries.ts';
 import { useCharacterMarkers } from '../hooks/useCharacterMarkers.tsx';
-import { PointOfInterest, PointOfInterestDiscovery, Zone, Character, CharacterAction } from '@poltergeist/types';
+import { useTreasureChestMarkers } from '../hooks/useTreasureChestMarkers.tsx';
+import { PointOfInterest, PointOfInterestDiscovery, Zone, Character, CharacterAction, TreasureChest } from '@poltergeist/types';
 import { MapZoomButton } from './MapZoomButton.tsx';
 import { TagFilter } from './TagFilter.tsx';
 import { Drawer } from './Drawer.tsx';
@@ -91,6 +93,9 @@ export const SinglePlayer = () => {
   const { discoveries } = useDiscoveriesContext();
   const { currentUser } = useUserProfiles();
   const { completedTask } = useCompletedTaskContext();
+  const { apiClient } = useAPI();
+  const { selectedZone } = useZoneContext();
+  const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
 
   const { selectedPointOfInterest, setSelectedPointOfInterest } = usePointOfInterestMarkers({
     pointsOfInterest,
@@ -107,6 +112,30 @@ export const SinglePlayer = () => {
   const { selectedCharacter, setSelectedCharacter } = useCharacterMarkers((character: Character) => {
     setIsCharacterPanelVisible(true);
   });
+
+  const { selectedTreasureChest, setSelectedTreasureChest } = useTreasureChestMarkers({
+    treasureChests,
+  });
+
+  // Fetch treasure chests for the selected zone
+  useEffect(() => {
+    const fetchTreasureChests = async () => {
+      if (!selectedZone?.id) {
+        setTreasureChests([]);
+        return;
+      }
+
+      try {
+        const chests = await apiClient.get<TreasureChest[]>(`/sonar/zones/${selectedZone.id}/treasure-chests`);
+        setTreasureChests(chests);
+      } catch (error) {
+        console.error('Error fetching treasure chests:', error);
+        setTreasureChests([]);
+      }
+    };
+
+    fetchTreasureChests();
+  }, [selectedZone?.id, apiClient]);
 
   const openPointOfInterestPanel = (pointOfInterest: PointOfInterest) => {
     if (pointOfInterest) {

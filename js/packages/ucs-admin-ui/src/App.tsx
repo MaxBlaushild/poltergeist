@@ -26,6 +26,7 @@ import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
 import { InventoryItems } from './components/InventoryItems.tsx';
+import { TreasureChests } from './components/TreasureChests.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -71,6 +72,7 @@ const Navigation = () => {
         <Link to="/users" className="text-white hover:text-gray-300">Users</Link>
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
+        <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
       </div>
     </nav>
   );
@@ -169,6 +171,11 @@ const router = createBrowserRouter([
       {
         path: "/inventory-items",
         element: <InventoryItems />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/treasure-chests",
+        element: <TreasureChests />,
         loader: onlyAuthenticated,
       },
     ]
