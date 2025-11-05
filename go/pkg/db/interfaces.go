@@ -492,4 +492,5 @@ type TreasureChestHandle interface {
 	AddItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
 	RemoveItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int) error
 	UpdateItemQuantity(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
+	InvalidateByZoneID(ctx context.Context, zoneID uuid.UUID) error
 }

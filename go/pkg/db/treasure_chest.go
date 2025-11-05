@@ -53,7 +53,7 @@ func (h *treasureChestHandle) FindAll(ctx context.Context) ([]models.TreasureChe
 func (h *treasureChestHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.TreasureChest, error) {
 	var treasureChests []models.TreasureChest
 	if err := h.db.WithContext(ctx).
-		Where("zone_id = ?", zoneID).
+		Where("zone_id = ? AND invalidated = false", zoneID).
 		Preload("Zone").
 		Preload("Items").
 		Preload("Items.InventoryItem").
@@ -121,5 +121,15 @@ func (h *treasureChestHandle) UpdateItemQuantity(ctx context.Context, treasureCh
 		Updates(map[string]interface{}{
 			"quantity":   quantity,
 			"updated_at": time.Now(),
+		}).Error
+}
+
+func (h *treasureChestHandle) InvalidateByZoneID(ctx context.Context, zoneID uuid.UUID) error {
+	return h.db.WithContext(ctx).
+		Model(&models.TreasureChest{}).
+		Where("zone_id = ?", zoneID).
+		Updates(map[string]interface{}{
+			"invalidated": true,
+			"updated_at":  time.Now(),
 		}).Error
 }
