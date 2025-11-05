@@ -282,6 +282,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTreasureChest))
 	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
+	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 	r.Run(":8042")
 }
@@ -5052,12 +5053,32 @@ func (s *server) sellToShop(ctx *gin.Context) {
 }
 
 func (s *server) getTreasureChests(ctx *gin.Context) {
-	treasureChests, err := s.dbClient.TreasureChest().FindAll(ctx)
+	user, err := s.getAuthenticatedUser(ctx)
+	var userID *uuid.UUID
+	if err == nil {
+		userID = &user.ID
+	}
+
+	treasureChests, openedMap, err := s.dbClient.TreasureChest().FindAllWithUserStatus(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, treasureChests)
+
+	// Add openedByUser field to each chest
+	type TreasureChestResponse struct {
+		models.TreasureChest
+		OpenedByUser bool `json:"openedByUser"`
+	}
+	response := make([]TreasureChestResponse, len(treasureChests))
+	for i, chest := range treasureChests {
+		response[i] = TreasureChestResponse{
+			TreasureChest: chest,
+			OpenedByUser:  openedMap[chest.ID],
+		}
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) getTreasureChest(ctx *gin.Context) {
@@ -5068,7 +5089,13 @@ func (s *server) getTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	treasureChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	user, err := s.getAuthenticatedUser(ctx)
+	var userID *uuid.UUID
+	if err == nil {
+		userID = &user.ID
+	}
+
+	treasureChest, openedByUser, err := s.dbClient.TreasureChest().FindByIDWithUserStatus(ctx, treasureChestID, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -5078,7 +5105,16 @@ func (s *server) getTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, treasureChest)
+	type TreasureChestResponse struct {
+		models.TreasureChest
+		OpenedByUser bool `json:"openedByUser"`
+	}
+	response := TreasureChestResponse{
+		TreasureChest: *treasureChest,
+		OpenedByUser:  openedByUser,
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
@@ -5089,12 +5125,32 @@ func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
 		return
 	}
 
-	treasureChests, err := s.dbClient.TreasureChest().FindByZoneID(ctx, zoneID)
+	user, err := s.getAuthenticatedUser(ctx)
+	var userID *uuid.UUID
+	if err == nil {
+		userID = &user.ID
+	}
+
+	treasureChests, openedMap, err := s.dbClient.TreasureChest().FindByZoneIDWithUserStatus(ctx, zoneID, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, treasureChests)
+
+	// Add openedByUser field to each chest
+	type TreasureChestResponse struct {
+		models.TreasureChest
+		OpenedByUser bool `json:"openedByUser"`
+	}
+	response := make([]TreasureChestResponse, len(treasureChests))
+	for i, chest := range treasureChests {
+		response[i] = TreasureChestResponse{
+			TreasureChest: chest,
+			OpenedByUser:  openedMap[chest.ID],
+		}
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) createTreasureChest(ctx *gin.Context) {
@@ -5274,4 +5330,167 @@ func (s *server) deleteTreasureChest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "treasure chest deleted successfully"})
+}
+
+func (s *server) openTreasureChest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	id := ctx.Param("id")
+	treasureChestID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid treasure chest ID"})
+		return
+	}
+
+	// Get treasure chest
+	treasureChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if treasureChest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "treasure chest not found"})
+		return
+	}
+
+	// Check if user already opened this chest
+	hasOpened, err := s.dbClient.TreasureChest().HasUserOpenedChest(ctx, user.ID, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if hasOpened {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "treasure chest already opened"})
+		return
+	}
+
+	// Validate user proximity (10 meters)
+	locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
+	if err != nil || locationStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user location not available"})
+		return
+	}
+
+	parts := strings.Split(locationStr, ",")
+	if len(parts) < 2 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid location format"})
+		return
+	}
+
+	userLat, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid latitude in user location"})
+		return
+	}
+
+	userLng, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude in user location"})
+		return
+	}
+
+	distance := util.HaversineDistance(userLat, userLng, treasureChest.Latitude, treasureChest.Longitude)
+	if distance > 10 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 10 meters of the treasure chest. Currently %.0f meters away", distance)})
+		return
+	}
+
+	// Check if chest is locked
+	var unlockItemID *uuid.UUID
+	if treasureChest.UnlockTier != nil {
+		// Find user's owned inventory items with unlock tier
+		ownedItems, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &user.ID})
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user inventory"})
+			return
+		}
+
+		// Find inventory items with unlock tier >= chest unlock tier
+		var validUnlockItems []models.OwnedInventoryItem
+		for _, ownedItem := range ownedItems {
+			if ownedItem.Quantity > 0 {
+				// Get the inventory item to check unlock tier
+				inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedItem.InventoryItemID)
+				if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
+					if *inventoryItem.UnlockTier >= *treasureChest.UnlockTier {
+						validUnlockItems = append(validUnlockItems, ownedItem)
+					}
+				}
+			}
+		}
+
+		if len(validUnlockItems) == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you do not have an item with sufficient unlock tier to open this chest"})
+			return
+		}
+
+		// Find the item with the lowest unlock tier
+		var lowestTierItem *models.OwnedInventoryItem
+		var lowestTier int
+		for i := range validUnlockItems {
+			inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, validUnlockItems[i].InventoryItemID)
+			if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
+				if lowestTierItem == nil || *inventoryItem.UnlockTier < lowestTier {
+					lowestTier = *inventoryItem.UnlockTier
+					lowestTierItem = &validUnlockItems[i]
+				}
+			}
+		}
+
+		if lowestTierItem == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "could not find valid unlock item"})
+			return
+		}
+
+		unlockItemID = &lowestTierItem.ID
+	}
+
+	// Consume unlock item if needed
+	if unlockItemID != nil {
+		if err := s.dbClient.InventoryItem().UseInventoryItem(ctx, *unlockItemID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to consume unlock item: " + err.Error()})
+			return
+		}
+	}
+
+	// Give gold if chest has gold
+	if treasureChest.Gold != nil && *treasureChest.Gold > 0 {
+		if err := s.dbClient.User().AddGold(ctx, user.ID, *treasureChest.Gold); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add gold: " + err.Error()})
+			return
+		}
+	}
+
+	// Give items
+	for _, chestItem := range treasureChest.Items {
+		if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &user.ID, chestItem.InventoryItemID, chestItem.Quantity); err != nil {
+			// Log error but continue
+			continue
+		}
+	}
+
+	// Record opening
+	opening := &models.UserTreasureChestOpening{
+		UserID:          user.ID,
+		TreasureChestID: treasureChestID,
+	}
+	if err := s.dbClient.TreasureChest().CreateUserTreasureChestOpening(ctx, opening); err != nil {
+		// Log error but don't fail the request
+	}
+
+	// Fetch updated user
+	updatedUser, err := s.dbClient.User().FindByID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": "treasure chest opened successfully",
+		"user":    updatedUser,
+	})
 }

@@ -23,5 +23,6 @@ export interface TreasureChest {
   geometry: string;
   unlockTier: number | null;
   items: TreasureChestItem[];
+  openedByUser?: boolean;
 }
 

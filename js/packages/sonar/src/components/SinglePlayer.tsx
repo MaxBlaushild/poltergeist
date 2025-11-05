@@ -14,6 +14,7 @@ import { Drawer } from './Drawer.tsx';
 import { Button } from './shared/Button.tsx';
 import { PointOfInterestPanel } from './PointOfInterestPanel/PointOfInterestPanel.tsx';
 import { CharacterPanel } from './CharacterPanel.tsx';
+import { TreasureChestPanel } from './TreasureChestPanel/TreasureChestPanel.tsx';
 import { Inventory } from './Inventory.tsx';
 import { QuestLog } from './QuestLog.tsx';
 import NewItemModal from './NewItemModal.tsx';
@@ -137,6 +138,30 @@ export const SinglePlayer = () => {
     fetchTreasureChests();
   }, [selectedZone?.id, apiClient]);
 
+  // Refresh treasure chests when one is opened
+  useEffect(() => {
+    if (!selectedTreasureChest || !selectedTreasureChest.openedByUser) {
+      return;
+    }
+    const fetchTreasureChests = async () => {
+      if (!selectedZone?.id) {
+        return;
+      }
+      try {
+        const chests = await apiClient.get<TreasureChest[]>(`/sonar/zones/${selectedZone.id}/treasure-chests`);
+        setTreasureChests(chests);
+        // Update selected treasure chest if it exists
+        const updatedChest = chests.find(c => c.id === selectedTreasureChest.id);
+        if (updatedChest) {
+          setSelectedTreasureChest(updatedChest);
+        }
+      } catch (error) {
+        console.error('Error refreshing treasure chests:', error);
+      }
+    };
+    fetchTreasureChests();
+  }, [selectedTreasureChest?.openedByUser, selectedZone?.id, apiClient]);
+
   const openPointOfInterestPanel = (pointOfInterest: PointOfInterest) => {
     if (pointOfInterest) {
       setTimeout(() => {
@@ -158,6 +183,7 @@ export const SinglePlayer = () => {
   const [shopCharacter, setShopCharacter] = useState<Character | null>(null);
   const [shopAction, setShopAction] = useState<CharacterAction | null>(null);
   const [isShopVisible, setIsShopVisible] = useState(false);
+  const [isTreasureChestPanelVisible, setIsTreasureChestPanelVisible] = useState(false);
   
   useEffect(() => {
     if (selectedPointOfInterest) {
@@ -175,6 +201,14 @@ export const SinglePlayer = () => {
     }
   }, [selectedCharacter]);
 
+  useEffect(() => {
+    if (selectedTreasureChest) {
+      setIsTreasureChestPanelVisible(true);
+    } else {
+      setIsTreasureChestPanelVisible(false);
+    }
+  }, [selectedTreasureChest]);
+
   const closePanel = () => {
     if (isPanelVisible) {
       setIsPanelVisible(false);
@@ -186,6 +220,13 @@ export const SinglePlayer = () => {
     if (isCharacterPanelVisible) {
       setIsCharacterPanelVisible(false);
       setSelectedCharacter(null);
+    }
+  };
+
+  const closeTreasureChestPanel = () => {
+    if (isTreasureChestPanelVisible) {
+      setIsTreasureChestPanelVisible(false);
+      setSelectedTreasureChest(null);
     }
   };
 
@@ -214,21 +255,23 @@ export const SinglePlayer = () => {
   };
 
   useEffect(() => {
-    if (isInventoryOpen || isQuestLogOpen || isPanelVisible || isCharacterPanelVisible || completedTask || isDialogueVisible || isShopVisible) {
+    if (isInventoryOpen || isQuestLogOpen || isPanelVisible || isCharacterPanelVisible || isTreasureChestPanelVisible || completedTask || isDialogueVisible || isShopVisible) {
       setAreMapOverlaysVisible(false);
     }
 
-    if (!isInventoryOpen && !isQuestLogOpen && !isPanelVisible && !isCharacterPanelVisible && !completedTask && !isDialogueVisible && !isShopVisible) {
+    if (!isInventoryOpen && !isQuestLogOpen && !isPanelVisible && !isCharacterPanelVisible && !isTreasureChestPanelVisible && !completedTask && !isDialogueVisible && !isShopVisible) {
       setTimeout(() => {
         setAreMapOverlaysVisible(true);
       }, 300);
     }
-  }, [isInventoryOpen, isQuestLogOpen, isPanelVisible, isCharacterPanelVisible, completedTask, isDialogueVisible, isShopVisible]);
+  }, [isInventoryOpen, isQuestLogOpen, isPanelVisible, isCharacterPanelVisible, isTreasureChestPanelVisible, completedTask, isDialogueVisible, isShopVisible]);
 
   const handleMapClick = () => {
     setIsPanelVisible(false);
+    setIsTreasureChestPanelVisible(false);
     setTimeout(() => {
       setSelectedPointOfInterest(null);
+      setSelectedTreasureChest(null);
     }, 300);
   };
 
@@ -268,6 +311,22 @@ export const SinglePlayer = () => {
             onClose={closeCharacterPanel}
             onStartDialogue={handleStartDialogue}
             onStartShop={handleStartShop}
+          />
+        )}
+      </Drawer>
+      <Drawer isVisible={isTreasureChestPanelVisible} onClose={closeTreasureChestPanel} peekHeight={0}>
+        {selectedTreasureChest && (
+          <TreasureChestPanel
+            treasureChest={selectedTreasureChest}
+            onClose={(immediate) => {
+              if (immediate) {
+                closeTreasureChestPanel();
+              } else {
+                setTimeout(() => {
+                  closeTreasureChestPanel();
+                }, 2000);
+              }
+            }}
           />
         )}
       </Drawer>
