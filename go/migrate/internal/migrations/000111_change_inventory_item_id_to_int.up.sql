@@ -28,8 +28,13 @@ DROP TABLE inventory_items CASCADE;
 -- Rename the new table
 ALTER TABLE inventory_items_new RENAME TO inventory_items;
 
--- Rename the sequence to match the new table name
-ALTER SEQUENCE inventory_items_new_id_seq RENAME TO inventory_items_id_seq;
+-- Rename the sequence to match the new table name (if it exists)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_items_new_id_seq') THEN
+        ALTER SEQUENCE inventory_items_new_id_seq RENAME TO inventory_items_id_seq;
+    END IF;
+END $$;
 
 -- Recreate indexes if needed
 CREATE INDEX IF NOT EXISTS idx_inventory_items_id ON inventory_items(id);

@@ -17,5 +17,11 @@ INSERT INTO inventory_items (id, name, image_url, flavor_text, effect_text, rari
 ON CONFLICT (id) DO NOTHING;
 
 -- Reset the sequence to the max ID to ensure next inserts get proper IDs
-SELECT setval('inventory_items_id_seq', COALESCE((SELECT MAX(id) FROM inventory_items), 1), false);
+-- Only set the sequence if it exists (it should be created automatically by SERIAL)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'inventory_items_id_seq') THEN
+        PERFORM setval('inventory_items_id_seq', COALESCE((SELECT MAX(id) FROM inventory_items), 1), false);
+    END IF;
+END $$;
 
