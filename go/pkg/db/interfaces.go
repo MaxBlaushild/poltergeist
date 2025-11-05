@@ -493,4 +493,9 @@ type TreasureChestHandle interface {
 	RemoveItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int) error
 	UpdateItemQuantity(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
 	InvalidateByZoneID(ctx context.Context, zoneID uuid.UUID) error
+	HasUserOpenedChest(ctx context.Context, userID uuid.UUID, chestID uuid.UUID) (bool, error)
+	CreateUserTreasureChestOpening(ctx context.Context, opening *models.UserTreasureChestOpening) error
+	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error)
+	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
+	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
 }

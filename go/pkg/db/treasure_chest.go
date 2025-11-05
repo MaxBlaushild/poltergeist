@@ -133,3 +133,95 @@ func (h *treasureChestHandle) InvalidateByZoneID(ctx context.Context, zoneID uui
 			"updated_at":  time.Now(),
 		}).Error
 }
+
+func (h *treasureChestHandle) HasUserOpenedChest(ctx context.Context, userID uuid.UUID, chestID uuid.UUID) (bool, error) {
+	var count int64
+	err := h.db.WithContext(ctx).
+		Model(&models.UserTreasureChestOpening{}).
+		Where("user_id = ? AND treasure_chest_id = ?", userID, chestID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (h *treasureChestHandle) CreateUserTreasureChestOpening(ctx context.Context, opening *models.UserTreasureChestOpening) error {
+	opening.ID = uuid.New()
+	opening.CreatedAt = time.Now()
+	opening.UpdatedAt = time.Now()
+	return h.db.WithContext(ctx).Create(opening).Error
+}
+
+func (h *treasureChestHandle) FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error) {
+	var treasureChest models.TreasureChest
+	if err := h.db.WithContext(ctx).
+		Preload("Zone").
+		Preload("Items").
+		Preload("Items.InventoryItem").
+		First(&treasureChest, id).Error; err != nil {
+		return nil, false, err
+	}
+
+	var openedByUser bool
+	if userID != nil {
+		opened, err := h.HasUserOpenedChest(ctx, *userID, id)
+		if err != nil {
+			return nil, false, err
+		}
+		openedByUser = opened
+	}
+
+	return &treasureChest, openedByUser, nil
+}
+
+func (h *treasureChestHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error) {
+	var treasureChests []models.TreasureChest
+	if err := h.db.WithContext(ctx).
+		Preload("Zone").
+		Preload("Items").
+		Preload("Items.InventoryItem").
+		Find(&treasureChests).Error; err != nil {
+		return nil, nil, err
+	}
+
+	openedMap := make(map[uuid.UUID]bool)
+	if userID != nil {
+		var openedChests []models.UserTreasureChestOpening
+		if err := h.db.WithContext(ctx).
+			Where("user_id = ?", *userID).
+			Find(&openedChests).Error; err == nil {
+			for _, opening := range openedChests {
+				openedMap[opening.TreasureChestID] = true
+			}
+		}
+	}
+
+	return treasureChests, openedMap, nil
+}
+
+func (h *treasureChestHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error) {
+	var treasureChests []models.TreasureChest
+	if err := h.db.WithContext(ctx).
+		Where("zone_id = ? AND invalidated = false", zoneID).
+		Preload("Zone").
+		Preload("Items").
+		Preload("Items.InventoryItem").
+		Find(&treasureChests).Error; err != nil {
+		return nil, nil, err
+	}
+
+	openedMap := make(map[uuid.UUID]bool)
+	if userID != nil {
+		var openedChests []models.UserTreasureChestOpening
+		if err := h.db.WithContext(ctx).
+			Where("user_id = ?", *userID).
+			Find(&openedChests).Error; err == nil {
+			for _, opening := range openedChests {
+				openedMap[opening.TreasureChestID] = true
+			}
+		}
+	}
+
+	return treasureChests, openedMap, nil
+}
