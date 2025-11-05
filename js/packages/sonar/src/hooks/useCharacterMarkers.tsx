@@ -6,6 +6,7 @@ import { useMap, useLocation } from '@poltergeist/contexts';
 import { useZoneContext } from '@poltergeist/contexts/dist/zones';
 import { useAPI } from '@poltergeist/contexts';
 import { calculateDistance } from '../utils/calculateDistance.ts';
+import { getMarkerPixelSize } from '../utils/markerSize.ts';
 
 interface CharacterMarkerProps {
   character: Character;
@@ -15,40 +16,14 @@ interface CharacterMarkerProps {
 }
 
 const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom, onClick, isClickable }) => {
-  let pinSize = 16;
-  
-  // Scale marker size based on zoom level
-  switch (Math.floor(zoom)) {
-    case 0:
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-    case 8:
-      pinSize = 8;
-      break;
-    case 9:
-    case 10:
-    case 11:
-    case 12:
-    case 13:
-    case 14:
-      pinSize = 12;
-      break;
-    default:
-      pinSize = 16;
-      break;
-  }
+  const pixelSize = getMarkerPixelSize(zoom);
 
   return (
     <div
       onClick={isClickable ? onClick : undefined}
       style={{
-        width: `${pinSize}px`,
-        height: `${pinSize}px`,
+        width: `${pixelSize}px`,
+        height: `${pixelSize}px`,
         borderRadius: '50%',
         backgroundColor: '#FFD700',
         border: '2px solid #FFA500',
@@ -65,14 +40,14 @@ const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom, onCl
           src={character.mapIconUrl}
           alt={character.name}
           style={{
-            width: `${pinSize - 4}px`,
-            height: `${pinSize - 4}px`,
+            width: `${pixelSize - 4}px`,
+            height: `${pixelSize - 4}px`,
             borderRadius: '50%',
             objectFit: 'cover',
           }}
         />
       ) : (
-        <span style={{ color: '#000', fontSize: `${pinSize * 0.6}px` }}>👤</span>
+        <span style={{ color: '#000', fontSize: `${pixelSize * 0.6}px` }}>👤</span>
       )}
     </div>
   );

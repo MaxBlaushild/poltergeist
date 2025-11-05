@@ -4,6 +4,8 @@ import { PointOfInterest, TagGroup, Team } from '@poltergeist/types';
 import { useLocation } from '@poltergeist/contexts';
 import { tagsToFilter } from '../utils/tagFilter.ts';
 import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
+import { getMarkerPixelSize } from '../utils/markerSize.ts';
+
 export const PointOfInterestMarker = ({
   pointOfInterest,
   index,
@@ -35,72 +37,7 @@ export const PointOfInterestMarker = ({
   ? pointOfInterest.imageURL
     : tagGroup?.iconUrl || `https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp`;
 
-  let pinSize = 4;
-  switch (Math.floor(zoom)) {
-    case 0:
-      pinSize = 4;
-      break;
-    case 1:
-      pinSize = 4;
-      break;
-    case 2:
-      pinSize = 4;
-      break;
-    case 3:
-      pinSize = 4;
-      break;
-    case 4:
-      pinSize = 4;
-      break;
-    case 5:
-      pinSize = 4;
-      break;
-    case 6:
-      pinSize = 4;
-      break;
-    case 7:
-      pinSize = 4;
-      break;
-    case 8:
-      pinSize = 4;
-      break;
-    case 9:
-      pinSize = 5;
-      break;
-    case 10:
-      pinSize = 5;
-      break;
-    case 11:
-      pinSize = 6;
-      break;
-    case 12:
-      pinSize = 8;
-      break;
-    case 13:
-      pinSize = 8;
-      break;
-    case 14:
-      pinSize = 8;
-      break;
-    case 15:
-      pinSize = 16;
-      break;
-    case 16:
-      pinSize = 16;
-      break;
-    case 17:
-      pinSize = 16;
-      break;
-    case 18:
-      pinSize = 16;
-      break;
-    case 19:
-      pinSize = 16;
-      break;
-    default:
-      pinSize = 16;
-      break;
-  }
+  const pixelSize = getMarkerPixelSize(zoom);
   let opacity = 1;
   if (usersLocation?.latitude && usersLocation?.longitude) {
     const R = 6371e3; // Earth's radius in meters
@@ -125,11 +62,13 @@ export const PointOfInterestMarker = ({
       <img
         src={imageUrl}
         alt={pointOfInterest.name} 
-        className={`w-${pinSize} h-${pinSize} rounded-lg border-2 transition-all duration-300 ${
+        className={`rounded-lg border-2 transition-all duration-300 ${
           isTrackedQuest ? 'animate-pulse-glow' : ''
         }`}
         style={{
           '--glow-color': '#0066CC', // Deeper, richer blue glow for attention and interactivity
+          width: `${pixelSize}px`,
+          height: `${pixelSize}px`,
           borderColor,
           opacity,
           transform: isTrackedQuest ? 'scale(1.1)' : 'scale(1)',

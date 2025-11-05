@@ -103,8 +103,6 @@ func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Plac
 		return "", err
 	}
 
-	log.Printf("Generated image: %s", base64Image)
-
 	imageUrl, err := c.UploadImage(ctx, place.ID, base64Image)
 	if err != nil {
 		log.Printf("Error processing image: %v", err)

@@ -282,6 +282,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTreasureChest))
 	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
+	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 	r.Run(":8042")
 }
 
@@ -1449,6 +1450,15 @@ func (s *server) generateQuest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest generation started"})
+}
+
+func (s *server) seedTreasureChests(ctx *gin.Context) {
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.SeedTreasureChestsTaskType, nil)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "treasure chest seeding job queued"})
 }
 
 func (s *server) getGooglePlaces(ctx *gin.Context) {

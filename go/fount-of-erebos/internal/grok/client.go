@@ -117,12 +117,10 @@ func (c *client) GenerateImage(ctx context.Context, request deep_priest.Generate
 	// Prefer b64_json if available (matching OpenAI behavior)
 	imageData := grokResp.Data[0]
 	if imageData.B64JSON != "" {
-		log.Printf("Successfully generated image with Grok (base64, length: %d)", len(imageData.B64JSON))
 		return imageData.B64JSON, nil
 	}
 
 	if imageData.URL != "" {
-		log.Printf("Successfully generated image with Grok (URL: %s)", imageData.URL)
 		return imageData.URL, nil
 	}
 
