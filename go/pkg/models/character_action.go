@@ -13,6 +13,7 @@ type ActionType string
 
 const (
 	ActionTypeTalk ActionType = "talk"
+	ActionTypeShop ActionType = "shop"
 	// Future: ActionTypeGift, ActionTypeTrade, etc.
 )
 

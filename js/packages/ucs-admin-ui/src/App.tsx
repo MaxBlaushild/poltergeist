@@ -25,6 +25,7 @@ import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
+import { InventoryItems } from './components/InventoryItems.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -69,6 +70,7 @@ const Navigation = () => {
         <Link to="/zone-quest-archetypes" className="text-white hover:text-gray-300">Zone Quest Archetypes</Link>
         <Link to="/users" className="text-white hover:text-gray-300">Users</Link>
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
+        <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
       </div>
     </nav>
   );
@@ -162,6 +164,11 @@ const router = createBrowserRouter([
       {
         path: "/characters",
         element: <Characters />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/inventory-items",
+        element: <InventoryItems />,
         loader: onlyAuthenticated,
       },
     ]

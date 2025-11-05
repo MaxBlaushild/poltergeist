@@ -204,3 +204,14 @@ func (h *userHandle) SetGold(ctx context.Context, userID uuid.UUID, amount int) 
 		Where("id = ?", userID).
 		UpdateColumn("gold", amount).Error
 }
+
+func (h *userHandle) SubtractGold(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		UpdateColumn("gold", gorm.Expr("gold - ?", amount)).Error
+}

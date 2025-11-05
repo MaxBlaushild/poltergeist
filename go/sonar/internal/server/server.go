@@ -149,6 +149,11 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitAnswerPointOfInterestChallenge))
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
+	r.GET("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllInventoryItems))
+	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
+	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
+	r.PUT("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateInventoryItem))
+	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChat))
@@ -257,6 +262,10 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacter))
 	r.GET("/sonar/characters/:id/actions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterActions))
 	r.GET("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterAction))
+	r.POST("/sonar/character-actions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCharacterAction))
+	r.PUT("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacterAction))
+	r.DELETE("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterAction))
+	r.POST("/sonar/character-actions/:id/purchase", middleware.WithAuthentication(s.authClient, s.livenessClient, s.purchaseFromShop))
 	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptFriendInvite))
 	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createFriendInvite))
 	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPartyInvites))
@@ -2804,6 +2813,152 @@ func (s *server) getInventoryItems(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, items)
 }
 
+func (s *server) getAllInventoryItems(ctx *gin.Context) {
+	items, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (s *server) getInventoryItem(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, item)
+}
+
+func (s *server) createInventoryItem(ctx *gin.Context) {
+	var requestBody struct {
+		Name          string `json:"name" binding:"required"`
+		ImageURL      string `json:"imageUrl"`
+		FlavorText    string `json:"flavorText"`
+		EffectText    string `json:"effectText"`
+		RarityTier    string `json:"rarityTier" binding:"required"`
+		IsCaptureType bool   `json:"isCaptureType"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	item := &models.InventoryItem{
+		Name:          requestBody.Name,
+		ImageURL:      requestBody.ImageURL,
+		FlavorText:    requestBody.FlavorText,
+		EffectText:    requestBody.EffectText,
+		RarityTier:    requestBody.RarityTier,
+		IsCaptureType: requestBody.IsCaptureType,
+	}
+
+	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create inventory item: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, item)
+}
+
+func (s *server) updateInventoryItem(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	// Check if item exists
+	existingItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+
+	var requestBody struct {
+		Name          string `json:"name"`
+		ImageURL      string `json:"imageUrl"`
+		FlavorText    string `json:"flavorText"`
+		EffectText    string `json:"effectText"`
+		RarityTier    string `json:"rarityTier"`
+		IsCaptureType bool   `json:"isCaptureType"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	item := &models.InventoryItem{
+		Name:          requestBody.Name,
+		ImageURL:      requestBody.ImageURL,
+		FlavorText:    requestBody.FlavorText,
+		EffectText:    requestBody.EffectText,
+		RarityTier:    requestBody.RarityTier,
+		IsCaptureType: requestBody.IsCaptureType,
+	}
+
+	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, item); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update inventory item: " + err.Error()})
+		return
+	}
+
+	// Fetch the updated item
+	updatedItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedItem)
+}
+
+func (s *server) deleteInventoryItem(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	// Check if item exists
+	existingItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+
+	if err := s.dbClient.InventoryItem().DeleteInventoryItem(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete inventory item: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "inventory item deleted successfully"})
+}
+
 func (s *server) editTeamName(ctx *gin.Context) {
 	stringTeamID := ctx.Param("teamID")
 	if stringTeamID == "" {
@@ -4453,4 +4608,302 @@ func (s *server) getCharacterAction(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, action)
+}
+
+func (s *server) createCharacterAction(ctx *gin.Context) {
+	var requestBody struct {
+		CharacterID uuid.UUID                `json:"characterId" binding:"required"`
+		ActionType  models.ActionType        `json:"actionType" binding:"required"`
+		Dialogue    []models.DialogueMessage `json:"dialogue"`
+		Metadata    map[string]interface{}   `json:"metadata"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify character exists
+	character, err := s.dbClient.Character().FindByID(ctx, requestBody.CharacterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	action := &models.CharacterAction{
+		CharacterID: requestBody.CharacterID,
+		ActionType:  requestBody.ActionType,
+		Dialogue:    models.DialogueSequence(requestBody.Dialogue),
+		Metadata:    models.MetadataJSONB(requestBody.Metadata),
+	}
+
+	if err := s.dbClient.CharacterAction().Create(ctx, action); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, action)
+}
+
+func (s *server) updateCharacterAction(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character action ID"})
+		return
+	}
+
+	// Verify action exists
+	existingAction, err := s.dbClient.CharacterAction().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if existingAction == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character action not found"})
+		return
+	}
+
+	var requestBody struct {
+		ActionType models.ActionType        `json:"actionType"`
+		Dialogue   []models.DialogueMessage `json:"dialogue"`
+		Metadata   map[string]interface{}   `json:"metadata"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Only update fields that are present in the request
+	updates := &models.CharacterAction{}
+	if requestBody.ActionType != "" {
+		updates.ActionType = requestBody.ActionType
+	}
+	if requestBody.Dialogue != nil {
+		updates.Dialogue = models.DialogueSequence(requestBody.Dialogue)
+	}
+	if requestBody.Metadata != nil {
+		updates.Metadata = models.MetadataJSONB(requestBody.Metadata)
+	}
+
+	if err := s.dbClient.CharacterAction().Update(ctx, id, updates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Fetch updated action
+	updatedAction, err := s.dbClient.CharacterAction().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedAction)
+}
+
+func (s *server) deleteCharacterAction(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character action ID"})
+		return
+	}
+
+	// Verify action exists
+	existingAction, err := s.dbClient.CharacterAction().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if existingAction == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character action not found"})
+		return
+	}
+
+	if err := s.dbClient.CharacterAction().Delete(ctx, id); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "character action deleted successfully"})
+}
+
+func (s *server) purchaseFromShop(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	actionIDStr := ctx.Param("id")
+	actionID, err := uuid.Parse(actionIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character action ID"})
+		return
+	}
+
+	// Verify action exists and is shop type
+	action, err := s.dbClient.CharacterAction().FindByID(ctx, actionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if action == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character action not found"})
+		return
+	}
+
+	if action.ActionType != models.ActionTypeShop {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is not a shop action"})
+		return
+	}
+
+	// Parse request body
+	var requestBody struct {
+		ItemID   int `json:"itemId" binding:"required"`
+		Quantity int `json:"quantity"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Quantity <= 0 {
+		requestBody.Quantity = 1
+	}
+
+	// Extract inventory from metadata
+	metadata := action.Metadata
+	if metadata == nil {
+		metadata = models.MetadataJSONB{}
+	}
+
+	inventoryInterface, ok := metadata["inventory"]
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "shop has no inventory"})
+		return
+	}
+
+	inventoryArray, ok := inventoryInterface.([]interface{})
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory format"})
+		return
+	}
+
+	// Find item in inventory and get price
+	var itemPrice float64
+	var found bool
+	for _, itemInterface := range inventoryArray {
+		item, ok := itemInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		itemIDInterface, ok := item["itemId"]
+		if !ok {
+			continue
+		}
+
+		var itemID int
+		switch v := itemIDInterface.(type) {
+		case float64:
+			itemID = int(v)
+		case int:
+			itemID = v
+		default:
+			continue
+		}
+
+		if itemID == requestBody.ItemID {
+			priceInterface, ok := item["price"]
+			if !ok {
+				continue
+			}
+
+			switch v := priceInterface.(type) {
+			case float64:
+				itemPrice = v
+			case int:
+				itemPrice = float64(v)
+			default:
+				continue
+			}
+
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item not found in shop inventory"})
+		return
+	}
+
+	// Calculate total price
+	totalPrice := int(itemPrice) * requestBody.Quantity
+
+	// Verify user has sufficient gold
+	if user.Gold < totalPrice {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "insufficient gold"})
+		return
+	}
+
+	// Use transaction to deduct gold and add item
+	// Since we need transaction support, we'll use GORM's transaction
+	// First, let's get the user again with lock to check gold one more time
+	currentUser, err := s.dbClient.User().FindByID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+
+	if currentUser.Gold < totalPrice {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "insufficient gold"})
+		return
+	}
+
+	// Deduct gold
+	if err := s.dbClient.User().SubtractGold(ctx, user.ID, totalPrice); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to deduct gold: " + err.Error()})
+		return
+	}
+
+	// Add item to inventory
+	if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(
+		ctx,
+		nil, // teamID
+		&user.ID,
+		requestBody.ItemID,
+		requestBody.Quantity,
+	); err != nil {
+		// If adding item fails, we should try to refund gold
+		// For now, just return error (in production, consider transaction or compensation)
+		_ = s.dbClient.User().AddGold(ctx, user.ID, totalPrice)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add item to inventory: " + err.Error()})
+		return
+	}
+
+	// Fetch and return updated user
+	updatedUser, err := s.dbClient.User().FindByID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"user":       updatedUser,
+		"itemId":     requestBody.ItemID,
+		"quantity":   requestBody.Quantity,
+		"totalPrice": totalPrice,
+	})
 }

@@ -1,17 +1,21 @@
 export type InventoryItem = {
-  id: ItemType;
+  id: number;
   name: string;
   imageUrl: string;
   flavorText: string;
   effectText: string;
-  rarityTier: Rarity;
+  rarityTier: Rarity | string;
+  isCaptureType: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export enum Rarity {
   Common = "Common",
   Uncommon = "Uncommon",
   Epic = "Epic",
-  Mythic = "Mythic"
+  Mythic = "Mythic",
+  NotDroppable = "Not Droppable"
 };
 
 export enum ItemType {
