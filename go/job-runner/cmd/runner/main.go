@@ -69,6 +69,7 @@ func main() {
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
+	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
 	mux := asynq.NewServeMux()
 
 	// Add error logging middleware to each handler
@@ -85,10 +86,15 @@ func main() {
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
+	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
 	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueQuestGenerationsTaskType, nil)); err != nil {
+		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@weekly", asynq.NewTask(jobs.SeedTreasureChestsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
 	}
 
