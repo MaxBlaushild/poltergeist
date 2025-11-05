@@ -28,6 +28,9 @@ DROP TABLE inventory_items CASCADE;
 -- Rename the new table
 ALTER TABLE inventory_items_new RENAME TO inventory_items;
 
+-- Rename the sequence to match the new table name
+ALTER SEQUENCE inventory_items_new_id_seq RENAME TO inventory_items_id_seq;
+
 -- Recreate indexes if needed
 CREATE INDEX IF NOT EXISTS idx_inventory_items_id ON inventory_items(id);
 
