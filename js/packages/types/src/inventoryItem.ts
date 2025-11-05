@@ -6,6 +6,7 @@ export type InventoryItem = {
   effectText: string;
   rarityTier: Rarity | string;
   isCaptureType: boolean;
+  sellValue?: number;
   createdAt?: string;
   updatedAt?: string;
 };

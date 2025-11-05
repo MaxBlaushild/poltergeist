@@ -174,3 +174,25 @@ func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, 
 func (h *inventoryItemHandler) DeleteInventoryItem(ctx context.Context, id int) error {
 	return h.db.WithContext(ctx).Delete(&models.InventoryItem{}, id).Error
 }
+
+func (h *inventoryItemHandler) DecrementUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, quantity int) error {
+	var item models.OwnedInventoryItem
+	result := h.db.WithContext(ctx).Where("user_id = ? AND inventory_item_id = ?", userID, inventoryItemID).First(&item)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return errors.New("user does not own this item")
+		}
+		return result.Error
+	}
+
+	if item.Quantity < quantity {
+		return errors.New("insufficient quantity")
+	}
+
+	item.Quantity -= quantity
+	if item.Quantity <= 0 {
+		// Delete the item if quantity reaches 0 or below
+		return h.db.WithContext(ctx).Delete(&item).Error
+	}
+	return h.db.WithContext(ctx).Save(&item).Error
+}

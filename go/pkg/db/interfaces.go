@@ -246,6 +246,7 @@ type InventoryItemHandle interface {
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+	DecrementUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, quantity int) error
 	// CRUD methods for inventory items
 	CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error
 	FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error)
