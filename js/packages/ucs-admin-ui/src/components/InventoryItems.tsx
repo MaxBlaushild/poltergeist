@@ -25,6 +25,7 @@ export const InventoryItems = () => {
     rarityTier: 'Common' as string,
     isCaptureType: false,
     sellValue: undefined as number | undefined,
+    unlockTier: undefined as number | undefined,
   });
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export const InventoryItems = () => {
       rarityTier: 'Common',
       isCaptureType: false,
       sellValue: undefined,
+      unlockTier: undefined,
     });
     setImageFile(null);
     setImagePreview(null);
@@ -180,6 +182,7 @@ export const InventoryItems = () => {
       rarityTier: item.rarityTier,
       isCaptureType: item.isCaptureType,
       sellValue: item.sellValue,
+      unlockTier: item.unlockTier,
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -419,6 +422,24 @@ export const InventoryItems = () => {
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
                 Set the amount of gold this item sells for. Leave empty if the item cannot be sold.
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Unlock Tier:</label>
+              <input
+                type="number"
+                min="0"
+                value={formData.unlockTier !== undefined ? formData.unlockTier : ''}
+                onChange={(e) => setFormData({ 
+                  ...formData, 
+                  unlockTier: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
+                })}
+                placeholder="Leave empty if no unlock tier required"
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Set the tier level required to unlock this item. Leave empty if no tier requirement.
               </small>
             </div>
 
