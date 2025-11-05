@@ -1,9 +1,10 @@
-import { useAPI } from '@poltergeist/contexts';
+import { useAPI, useMediaContext } from '@poltergeist/contexts';
 import { InventoryItem, Rarity } from '@poltergeist/types';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export const InventoryItems = () => {
   const { apiClient } = useAPI();
+  const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -12,6 +13,9 @@ export const InventoryItems = () => {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -20,6 +24,7 @@ export const InventoryItems = () => {
     effectText: '',
     rarityTier: 'Common' as string,
     isCaptureType: false,
+    sellValue: undefined as number | undefined,
   });
 
   useEffect(() => {
@@ -57,12 +62,45 @@ export const InventoryItems = () => {
       effectText: '',
       rarityTier: 'Common',
       isCaptureType: false,
+      sellValue: undefined,
     });
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleCreateItem = async () => {
     try {
-      const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items', formData);
+      let imageUrl = formData.imageUrl;
+
+      // Upload image to S3 if a file is selected
+      if (imageFile) {
+        const getExtension = (filename: string): string => {
+          return filename.split('.').pop()?.toLowerCase() || 'jpg';
+        };
+        const extension = getExtension(imageFile.name);
+        const timestamp = Date.now();
+        const imageKey = `inventory-items/${timestamp}-${Math.random().toString(36).substring(2, 15)}.${extension}`;
+
+        const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+        if (!presignedUrl) {
+          alert('Failed to get upload URL. Please try again.');
+          return;
+        }
+
+        const uploadSuccess = await uploadMedia(presignedUrl, imageFile);
+        if (!uploadSuccess) {
+          alert('Failed to upload image. Please try again.');
+          return;
+        }
+
+        imageUrl = presignedUrl.split('?')[0];
+      }
+
+      const submitData = { ...formData, imageUrl };
+      const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items', submitData);
       setItems([...items, newItem]);
       setShowCreateItem(false);
       resetForm();
@@ -76,7 +114,34 @@ export const InventoryItems = () => {
     if (!editingItem) return;
     
     try {
-      const updatedItem = await apiClient.put<InventoryItem>(`/sonar/inventory-items/${editingItem.id}`, formData);
+      let imageUrl = formData.imageUrl;
+
+      // Upload new image to S3 if a file is selected, otherwise keep existing imageUrl
+      if (imageFile) {
+        const getExtension = (filename: string): string => {
+          return filename.split('.').pop()?.toLowerCase() || 'jpg';
+        };
+        const extension = getExtension(imageFile.name);
+        const timestamp = Date.now();
+        const imageKey = `inventory-items/${timestamp}-${Math.random().toString(36).substring(2, 15)}.${extension}`;
+
+        const presignedUrl = await getPresignedUploadURL('crew-points-of-interest', imageKey);
+        if (!presignedUrl) {
+          alert('Failed to get upload URL. Please try again.');
+          return;
+        }
+
+        const uploadSuccess = await uploadMedia(presignedUrl, imageFile);
+        if (!uploadSuccess) {
+          alert('Failed to upload image. Please try again.');
+          return;
+        }
+
+        imageUrl = presignedUrl.split('?')[0];
+      }
+
+      const submitData = { ...formData, imageUrl };
+      const updatedItem = await apiClient.put<InventoryItem>(`/sonar/inventory-items/${editingItem.id}`, submitData);
       setItems(items.map(i => i.id === editingItem.id ? updatedItem : i));
       setEditingItem(null);
       resetForm();
@@ -114,7 +179,27 @@ export const InventoryItems = () => {
       effectText: item.effectText,
       rarityTier: item.rarityTier,
       isCaptureType: item.isCaptureType,
+      sellValue: item.sellValue,
     });
+    setImageFile(null);
+    setImagePreview(item.imageUrl || null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setImageFile(file);
+      
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   if (loading) {
@@ -166,6 +251,12 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Capture Type: {item.isCaptureType ? 'Yes' : 'No'}
             </p>
+            
+            {item.sellValue !== undefined && item.sellValue !== null && (
+              <p style={{ margin: '5px 0', color: '#666' }}>
+                Sell Value: {item.sellValue} gold
+              </p>
+            )}
 
             {item.imageUrl && (
               <img
@@ -245,13 +336,27 @@ export const InventoryItems = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Image URL:</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Image:</label>
               <input
-                type="text"
-                value={formData.imageUrl}
-                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageChange}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               />
+              {imagePreview && (
+                <img 
+                  src={imagePreview} 
+                  alt="Preview" 
+                  style={{ 
+                    maxWidth: '100%', 
+                    maxHeight: 200, 
+                    borderRadius: 4, 
+                    marginTop: '10px',
+                    objectFit: 'contain'
+                  }} 
+                />
+              )}
             </div>
 
             <div style={{ marginBottom: '15px' }}>
@@ -297,6 +402,24 @@ export const InventoryItems = () => {
                 />
                 Is Capture Type
               </label>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Sell Value (gold):</label>
+              <input
+                type="number"
+                min="0"
+                value={formData.sellValue !== undefined ? formData.sellValue : ''}
+                onChange={(e) => setFormData({ 
+                  ...formData, 
+                  sellValue: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
+                })}
+                placeholder="Leave empty if item cannot be sold"
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Set the amount of gold this item sells for. Leave empty if the item cannot be sold.
+              </small>
             </div>
 
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>

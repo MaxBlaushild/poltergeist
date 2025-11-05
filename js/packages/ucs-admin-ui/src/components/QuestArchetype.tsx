@@ -1,18 +1,18 @@
-import React, { useState } from "react";
-import { useInventory } from "@poltergeist/contexts";
+import React, { useState, useEffect } from "react";
+import { useAPI } from "@poltergeist/contexts";
 import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
-import { LocationArchetype, QuestArchetype, QuestArchetypeNode, QuestArchetypeChallenge } from "@poltergeist/types";
+import { LocationArchetype, QuestArchetype, QuestArchetypeNode, QuestArchetypeChallenge, InventoryItem } from "@poltergeist/types";
 
 interface ChallengeNodeProps {
   challenge: QuestArchetypeChallenge;
   index: number;
   locationArchetypes: LocationArchetype[];
   depth: number;
+  inventoryItems: InventoryItem[];
   onEdit: (challenge: QuestArchetypeNode) => void;
 }
 
-const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locationArchetypes, depth, onEdit }) => {
-  const { inventoryItems } = useInventory();
+const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locationArchetypes, depth, inventoryItems, onEdit }) => {
   const borderColors = [
     'border-gray-200',
     'border-blue-200',
@@ -56,6 +56,7 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
                     index={i}
                     locationArchetypes={locationArchetypes}
                     depth={depth + 1}
+                    inventoryItems={inventoryItems}
                     onEdit={onEdit}
                   />
                 ))}
@@ -69,8 +70,10 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
 };
 
 export const QuestArchetypeComponent = () => {
-  const { inventoryItems } = useInventory();
+  const { apiClient } = useAPI();
   const { questArchetypes, locationArchetypes, createQuestArchetype, deleteQuestArchetype, addChallengeToQuestArchetype } = useQuestArchetypes();
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [inventoryItemsLoading, setInventoryItemsLoading] = useState<boolean>(false);
   const [shouldShowModal, setShouldShowModal] = useState(false);
   const [selectedQuestArchetype, setSelectedQuestArchetype] = useState<QuestArchetype | null>(null);
   const [name, setName] = useState("");
@@ -79,6 +82,23 @@ export const QuestArchetypeComponent = () => {
   const [ selectedNode, setSelectedNode ] = useState<QuestArchetypeNode | null>(null);
   const [ reward, setReward ] = useState<number>(0);
   const [ unlockedLocationArchetypeId, setUnlockedLocationArchetypeId ] = useState<string>("");
+
+  useEffect(() => {
+    const fetchInventoryItems = async () => {
+      setInventoryItemsLoading(true);
+      try {
+        const response = await apiClient.get<InventoryItem[]>('/sonar/inventory-items');
+        setInventoryItems(response);
+      } catch (error) {
+        console.error('Error fetching inventory items:', error);
+      } finally {
+        setInventoryItemsLoading(false);
+      }
+    };
+
+    fetchInventoryItems();
+  }, [apiClient]);
+
   return <div>
     <h1 className="text-2xl font-bold">Quest Archetype</h1>
     <div className="grid grid-cols-1 gap-4 mt-4 mb-8">
@@ -138,6 +158,7 @@ export const QuestArchetypeComponent = () => {
                     index={i}
                     locationArchetypes={locationArchetypes}
                     depth={0}
+                    inventoryItems={inventoryItems}
                     onEdit={() => setSelectedNode(challenge.unlockedNode!)}
                   />
                 ))}

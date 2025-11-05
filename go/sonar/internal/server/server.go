@@ -266,6 +266,7 @@ func (s *server) ListenAndServe(port string) {
 	r.PUT("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacterAction))
 	r.DELETE("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterAction))
 	r.POST("/sonar/character-actions/:id/purchase", middleware.WithAuthentication(s.authClient, s.livenessClient, s.purchaseFromShop))
+	r.POST("/sonar/character-actions/:id/sell", middleware.WithAuthentication(s.authClient, s.livenessClient, s.sellToShop))
 	r.POST("/sonar/friendInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptFriendInvite))
 	r.POST("/sonar/friendInvites/create", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createFriendInvite))
 	r.GET("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPartyInvites))
@@ -4905,5 +4906,127 @@ func (s *server) purchaseFromShop(ctx *gin.Context) {
 		"itemId":     requestBody.ItemID,
 		"quantity":   requestBody.Quantity,
 		"totalPrice": totalPrice,
+	})
+}
+
+func (s *server) sellToShop(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	actionIDStr := ctx.Param("id")
+	actionID, err := uuid.Parse(actionIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character action ID"})
+		return
+	}
+
+	// Verify action exists and is shop type
+	action, err := s.dbClient.CharacterAction().FindByID(ctx, actionID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if action == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character action not found"})
+		return
+	}
+
+	if action.ActionType != models.ActionTypeShop {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is not a shop action"})
+		return
+	}
+
+	// Parse request body
+	var requestBody struct {
+		ItemID   int `json:"itemId" binding:"required"`
+		Quantity int `json:"quantity"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Quantity <= 0 {
+		requestBody.Quantity = 1
+	}
+
+	// Get the inventory item to check sell value
+	inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, requestBody.ItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find inventory item: " + err.Error()})
+		return
+	}
+
+	if inventoryItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+
+	// Check if item has a sell value
+	if inventoryItem.SellValue == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item cannot be sold"})
+		return
+	}
+
+	// Calculate total sell value
+	totalSellValue := *inventoryItem.SellValue * requestBody.Quantity
+
+	// Verify user owns the item and has sufficient quantity
+	ownedItems, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &user.ID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user items: " + err.Error()})
+		return
+	}
+
+	var ownedItem *models.OwnedInventoryItem
+	for _, item := range ownedItems {
+		if item.InventoryItemID == requestBody.ItemID {
+			ownedItem = &item
+			break
+		}
+	}
+
+	if ownedItem == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user does not own this item"})
+		return
+	}
+
+	if ownedItem.Quantity < requestBody.Quantity {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "insufficient quantity"})
+		return
+	}
+
+	// Decrement item quantity
+	if err := s.dbClient.InventoryItem().DecrementUserInventoryItem(ctx, user.ID, requestBody.ItemID, requestBody.Quantity); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to remove item from inventory: " + err.Error()})
+		return
+	}
+
+	// Add gold to user
+	if err := s.dbClient.User().AddGold(ctx, user.ID, totalSellValue); err != nil {
+		// If adding gold fails, try to restore the item
+		// For now, just return error (in production, consider transaction or compensation)
+		_ = s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &user.ID, requestBody.ItemID, requestBody.Quantity)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add gold: " + err.Error()})
+		return
+	}
+
+	// Fetch and return updated user
+	updatedUser, err := s.dbClient.User().FindByID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated user: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"user":           updatedUser,
+		"itemId":         requestBody.ItemID,
+		"quantity":       requestBody.Quantity,
+		"totalSellValue": totalSellValue,
 	})
 }
