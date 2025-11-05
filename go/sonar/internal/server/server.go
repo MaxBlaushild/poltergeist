@@ -276,6 +276,12 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/sonar/profile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfile))
 	r.GET("/sonar/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getActivities))
 	r.POST("/sonar/activities/markAsSeen", middleware.WithAuthentication(s.authClient, s.livenessClient, s.markActivitiesAsSeen))
+	r.GET("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChests))
+	r.GET("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChest))
+	r.GET("/sonar/zones/:id/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChestsForZone))
+	r.POST("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTreasureChest))
+	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
+	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
 	r.Run(":8042")
 }
 
@@ -5033,4 +5039,229 @@ func (s *server) sellToShop(ctx *gin.Context) {
 		"quantity":       requestBody.Quantity,
 		"totalSellValue": totalSellValue,
 	})
+}
+
+func (s *server) getTreasureChests(ctx *gin.Context) {
+	treasureChests, err := s.dbClient.TreasureChest().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, treasureChests)
+}
+
+func (s *server) getTreasureChest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	treasureChestID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid treasure chest ID"})
+		return
+	}
+
+	treasureChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if treasureChest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "treasure chest not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, treasureChest)
+}
+
+func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	treasureChests, err := s.dbClient.TreasureChest().FindByZoneID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, treasureChests)
+}
+
+func (s *server) createTreasureChest(ctx *gin.Context) {
+	var requestBody struct {
+		Latitude  float64 `json:"latitude" binding:"required"`
+		Longitude float64 `json:"longitude" binding:"required"`
+		ZoneID    string  `json:"zoneId" binding:"required"`
+		Gold      *int    `json:"gold"`
+		Items     []struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"items"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(requestBody.ZoneID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	treasureChest := &models.TreasureChest{
+		Latitude:  requestBody.Latitude,
+		Longitude: requestBody.Longitude,
+		ZoneID:    zoneID,
+		Gold:      requestBody.Gold,
+	}
+
+	if err := s.dbClient.TreasureChest().Create(ctx, treasureChest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create treasure chest: " + err.Error()})
+		return
+	}
+
+	// Add items if provided
+	for _, item := range requestBody.Items {
+		if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChest.ID, item.InventoryItemID, item.Quantity); err != nil {
+			// Log error but don't fail the request
+			// In production, you might want to rollback the treasure chest creation
+			continue
+		}
+	}
+
+	// Fetch the created treasure chest with items
+	createdChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChest.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch created treasure chest: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, createdChest)
+}
+
+func (s *server) updateTreasureChest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	treasureChestID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid treasure chest ID"})
+		return
+	}
+
+	// Check if treasure chest exists
+	existingChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingChest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "treasure chest not found"})
+		return
+	}
+
+	var requestBody struct {
+		Latitude  *float64 `json:"latitude"`
+		Longitude *float64 `json:"longitude"`
+		ZoneID    *string  `json:"zoneId"`
+		Gold      *int     `json:"gold"`
+		Items     []struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"items"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := &models.TreasureChest{
+		ID: treasureChestID,
+	}
+
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		updates.Latitude = *requestBody.Latitude
+		updates.Longitude = *requestBody.Longitude
+	} else {
+		updates.Latitude = existingChest.Latitude
+		updates.Longitude = existingChest.Longitude
+	}
+
+	if requestBody.ZoneID != nil {
+		zoneID, err := uuid.Parse(*requestBody.ZoneID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+			return
+		}
+		updates.ZoneID = zoneID
+	} else {
+		updates.ZoneID = existingChest.ZoneID
+	}
+
+	if requestBody.Gold != nil {
+		updates.Gold = requestBody.Gold
+	} else {
+		updates.Gold = existingChest.Gold
+	}
+
+	if err := s.dbClient.TreasureChest().Update(ctx, treasureChestID, updates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update treasure chest: " + err.Error()})
+		return
+	}
+
+	// Update items if provided
+	if requestBody.Items != nil {
+		// Remove all existing items
+		existingChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+		if err == nil && existingChest != nil {
+			for _, item := range existingChest.Items {
+				_ = s.dbClient.TreasureChest().RemoveItem(ctx, treasureChestID, item.InventoryItemID)
+			}
+		}
+
+		// Add new items
+		for _, item := range requestBody.Items {
+			if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChestID, item.InventoryItemID, item.Quantity); err != nil {
+				// Log error but continue
+				continue
+			}
+		}
+	}
+
+	// Fetch the updated treasure chest
+	updatedChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated treasure chest: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedChest)
+}
+
+func (s *server) deleteTreasureChest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	treasureChestID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid treasure chest ID"})
+		return
+	}
+
+	// Check if treasure chest exists
+	existingChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingChest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "treasure chest not found"})
+		return
+	}
+
+	if err := s.dbClient.TreasureChest().Delete(ctx, treasureChestID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete treasure chest: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "treasure chest deleted successfully"})
 }

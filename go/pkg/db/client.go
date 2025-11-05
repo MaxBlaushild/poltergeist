@@ -59,6 +59,7 @@ type client struct {
 	characterHandle                   *characterHandler
 	characterActionHandle             *characterActionHandler
 	movementPatternHandle             *movementPatternHandler
+	treasureChestHandle               *treasureChestHandle
 }
 
 type ClientConfig struct {
@@ -135,6 +136,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		characterHandle:                   &characterHandler{db: db},
 		characterActionHandle:             &characterActionHandler{db: db},
 		movementPatternHandle:             &movementPatternHandler{db: db},
+		treasureChestHandle:               &treasureChestHandle{db: db},
 	}, nil
 }
 
@@ -328,4 +330,8 @@ func (c *client) CharacterAction() CharacterActionHandle {
 
 func (c *client) MovementPattern() MovementPatternHandle {
 	return c.movementPatternHandle
+}
+
+func (c *client) TreasureChest() TreasureChestHandle {
+	return c.treasureChestHandle
 }
