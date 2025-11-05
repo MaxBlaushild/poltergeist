@@ -141,3 +141,36 @@ func (h *inventoryItemHandler) DeleteAllForUser(ctx context.Context, userID uuid
 	// Delete using both direct comparison and IS NOT NULL check to ensure we get all user items
 	return h.db.WithContext(ctx).Where("user_id = ? AND user_id IS NOT NULL", userID).Delete(&models.OwnedInventoryItem{}).Error
 }
+
+// CRUD methods for inventory items
+func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error {
+	return h.db.WithContext(ctx).Create(item).Error
+}
+
+func (h *inventoryItemHandler) FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error) {
+	var item models.InventoryItem
+	result := h.db.WithContext(ctx).Where("id = ?", id).First(&item)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return &item, nil
+}
+
+func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error) {
+	var items []models.InventoryItem
+	result := h.db.WithContext(ctx).Find(&items)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return items, nil
+}
+
+func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, item *models.InventoryItem) error {
+	item.ID = id
+	item.UpdatedAt = time.Now()
+	return h.db.WithContext(ctx).Model(&models.InventoryItem{}).Where("id = ?", id).Updates(item).Error
+}
+
+func (h *inventoryItemHandler) DeleteInventoryItem(ctx context.Context, id int) error {
+	return h.db.WithContext(ctx).Delete(&models.InventoryItem{}, id).Error
+}

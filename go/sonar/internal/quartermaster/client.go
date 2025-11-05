@@ -35,17 +35,43 @@ func NewClient(db db.DbClient) Quartermaster {
 }
 
 func (c *client) GetInventoryItems() []InventoryItem {
-	return PreDefinedItems
+	ctx := context.Background()
+	dbItems, err := c.db.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		return []InventoryItem{}
+	}
+
+	items := make([]InventoryItem, len(dbItems))
+	for i, dbItem := range dbItems {
+		items[i] = InventoryItem{
+			ID:            dbItem.ID,
+			Name:          dbItem.Name,
+			ImageURL:      dbItem.ImageURL,
+			FlavorText:    dbItem.FlavorText,
+			EffectText:    dbItem.EffectText,
+			RarityTier:    Rarity(dbItem.RarityTier),
+			IsCaptureType: dbItem.IsCaptureType,
+		}
+	}
+	return items
 }
 
 func (c *client) FindItemForItemID(itemID int) (InventoryItem, error) {
-	for _, item := range PreDefinedItems {
-		if item.ID == itemID {
-			return item, nil
-		}
+	ctx := context.Background()
+	dbItem, err := c.db.InventoryItem().FindInventoryItemByID(ctx, itemID)
+	if err != nil {
+		return InventoryItem{}, fmt.Errorf("item not found: %w", err)
 	}
 
-	return InventoryItem{}, fmt.Errorf("item not found")
+	return InventoryItem{
+		ID:            dbItem.ID,
+		Name:          dbItem.Name,
+		ImageURL:      dbItem.ImageURL,
+		FlavorText:    dbItem.FlavorText,
+		EffectText:    dbItem.EffectText,
+		RarityTier:    Rarity(dbItem.RarityTier),
+		IsCaptureType: dbItem.IsCaptureType,
+	}, nil
 }
 
 func (c *client) GetItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID) (InventoryItem, error) {
@@ -110,15 +136,16 @@ func (c *client) getRandomItem() (InventoryItem, error) {
 		NotDroppable:   weightNotDroppable,
 	}
 
+	items := c.GetInventoryItems()
 	totalWeight := 0
-	for _, item := range PreDefinedItems {
+	for _, item := range items {
 		totalWeight += rarityWeights[item.RarityTier]
 	}
 
 	for {
 		randWeight := rand.Intn(totalWeight + 1)
 
-		for _, item := range PreDefinedItems {
+		for _, item := range items {
 			randWeight -= rarityWeights[item.RarityTier]
 			if randWeight < 0 {
 				return item, nil

@@ -2,16 +2,19 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { createRoot } from 'react-dom/client';
 import { Character } from '@poltergeist/types';
-import { useMap } from '@poltergeist/contexts';
+import { useMap, useLocation } from '@poltergeist/contexts';
 import { useZoneContext } from '@poltergeist/contexts/dist/zones';
 import { useAPI } from '@poltergeist/contexts';
+import { calculateDistance } from '../utils/calculateDistance.ts';
 
 interface CharacterMarkerProps {
   character: Character;
   zoom: number;
+  onClick?: () => void;
+  isClickable: boolean;
 }
 
-const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom }) => {
+const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom, onClick, isClickable }) => {
   let pinSize = 16;
   
   // Scale marker size based on zoom level
@@ -42,6 +45,7 @@ const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom }) =>
 
   return (
     <div
+      onClick={isClickable ? onClick : undefined}
       style={{
         width: `${pinSize}px`,
         height: `${pinSize}px`,
@@ -51,7 +55,8 @@ const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom }) =>
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        cursor: 'pointer',
+        cursor: isClickable ? 'pointer' : 'default',
+        opacity: isClickable ? 1 : 0.6,
       }}
       title={character.name}
     >
@@ -73,16 +78,25 @@ const CharacterMarker: React.FC<CharacterMarkerProps> = ({ character, zoom }) =>
   );
 };
 
-export const useCharacterMarkers = () => {
+interface UseCharacterMarkersReturn {
+  markers: mapboxgl.Marker[];
+  selectedCharacter: Character | null;
+  setSelectedCharacter: (character: Character | null) => void;
+}
+
+export const useCharacterMarkers = (onCharacterClick?: (character: Character) => void): UseCharacterMarkersReturn => {
   const { map, zoom } = useMap();
   const { selectedZone } = useZoneContext();
   const { apiClient } = useAPI();
+  const { location } = useLocation();
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [previousZoom, setPreviousZoom] = useState(0);
   const [previousSelectedZoneId, setPreviousSelectedZoneId] = useState<string | null>(null);
   const [previousCharactersCount, setPreviousCharactersCount] = useState(-1);
+  const [previousLocationKey, setPreviousLocationKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
 
   // Fetch all characters
   useEffect(() => {
@@ -104,8 +118,35 @@ export const useCharacterMarkers = () => {
   const createMarker = useCallback((character: Character) => {
     const markerDiv = document.createElement('div');
 
+    // Check if user is within 10 meters
+    let isClickable = false;
+    if (location?.latitude && location?.longitude) {
+      const userLocation = {
+        lat: location.latitude,
+        lng: location.longitude,
+      };
+      const characterLocation = {
+        lat: character.movementPattern.startingLatitude,
+        lng: character.movementPattern.startingLongitude,
+      };
+      const distance = calculateDistance(userLocation, characterLocation);
+      isClickable = distance <= 10;
+    }
+
+    const handleClick = () => {
+      if (isClickable && onCharacterClick) {
+        onCharacterClick(character);
+        setSelectedCharacter(character);
+      }
+    };
+
     createRoot(markerDiv).render(
-      <CharacterMarker character={character} zoom={zoom} />
+      <CharacterMarker 
+        character={character} 
+        zoom={zoom} 
+        onClick={handleClick}
+        isClickable={isClickable}
+      />
     );
 
     const marker = new mapboxgl.Marker(markerDiv)
@@ -113,7 +154,7 @@ export const useCharacterMarkers = () => {
       .addTo(map.current!);
 
     return marker;
-  }, [zoom, map]);
+  }, [zoom, map, location, onCharacterClick]);
 
   const createMarkers = useCallback(() => {
     // Filter characters for the selected zone
@@ -122,19 +163,26 @@ export const useCharacterMarkers = () => {
       : [];
     
     const zoneCharactersCount = zoneCharacters.length;
+    // Round location to ~100m precision to avoid too frequent updates
+    const locationKey = location?.latitude && location?.longitude 
+      ? `${location.latitude.toFixed(3)},${location.longitude.toFixed(3)}` 
+      : null;
     
-    // Don't recreate markers if nothing has changed
-    if (
-      Math.abs(zoom - previousZoom) < 1 && 
-      previousSelectedZoneId === selectedZone?.id &&
-      previousCharactersCount === zoneCharactersCount
-    ) {
+    // Recreate markers if something significant has changed
+    const shouldRecreate = 
+      Math.abs(zoom - previousZoom) >= 1 || 
+      previousSelectedZoneId !== selectedZone?.id ||
+      previousCharactersCount !== zoneCharactersCount ||
+      previousLocationKey !== locationKey; // Update when location changes
+
+    if (!shouldRecreate) {
       return;
     }
 
     setPreviousZoom(zoom);
     setPreviousSelectedZoneId(selectedZone?.id ?? null);
     setPreviousCharactersCount(zoneCharactersCount);
+    setPreviousLocationKey(locationKey);
 
     // Remove existing markers
     markersRef.current.forEach((marker) => marker.remove());
@@ -148,7 +196,7 @@ export const useCharacterMarkers = () => {
     // Create new markers for characters in the selected zone
     const newMarkers = zoneCharacters.map((character) => createMarker(character));
     markersRef.current = newMarkers;
-  }, [selectedZone, characters, zoom, previousZoom, previousSelectedZoneId, previousCharactersCount, isLoading, createMarker]);
+  }, [selectedZone, characters, zoom, previousZoom, previousSelectedZoneId, previousCharactersCount, previousLocationKey, isLoading, createMarker, location]);
 
   useEffect(() => {
     if (map.current && map.current?.isStyleLoaded() && !isLoading) {
@@ -173,6 +221,10 @@ export const useCharacterMarkers = () => {
     };
   }, []);
 
-  return { markers: markersRef.current };
+  return { 
+    markers: markersRef.current,
+    selectedCharacter,
+    setSelectedCharacter,
+  };
 };
 

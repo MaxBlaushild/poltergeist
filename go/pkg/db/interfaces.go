@@ -99,6 +99,7 @@ type UserHandle interface {
 	LeaveParty(ctx context.Context, userID uuid.UUID) error
 	AddGold(ctx context.Context, userID uuid.UUID, amount int) error
 	SetGold(ctx context.Context, userID uuid.UUID, amount int) error
+	SubtractGold(ctx context.Context, userID uuid.UUID, amount int) error
 }
 
 type TeamHandle interface {
@@ -245,6 +246,12 @@ type InventoryItemHandle interface {
 	GetItems(ctx context.Context, userOrTeam models.OwnedInventoryItem) ([]models.OwnedInventoryItem, error)
 	StealItem(ctx context.Context, thiefTeamID uuid.UUID, victimTeamID uuid.UUID, inventoryItemID int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+	// CRUD methods for inventory items
+	CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error
+	FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error)
+	FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
+	UpdateInventoryItem(ctx context.Context, id int, item *models.InventoryItem) error
+	DeleteInventoryItem(ctx context.Context, id int) error
 }
 
 type AuditItemHandle interface {
