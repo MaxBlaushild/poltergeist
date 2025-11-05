@@ -7,6 +7,7 @@ export type InventoryItem = {
   rarityTier: Rarity | string;
   isCaptureType: boolean;
   sellValue?: number;
+  unlockTier?: number;
   createdAt?: string;
   updatedAt?: string;
 };

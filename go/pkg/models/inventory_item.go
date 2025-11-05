@@ -13,6 +13,7 @@ type InventoryItem struct {
 	RarityTier    string    `json:"rarityTier" gorm:"column:rarity_tier"`
 	IsCaptureType bool      `json:"isCaptureType" gorm:"column:is_capture_type"`
 	SellValue     *int      `json:"sellValue" gorm:"column:sell_value"`
+	UnlockTier    *int      `json:"unlockTier" gorm:"column:unlock_tier"`
 }
 
 func (InventoryItem) TableName() string {

@@ -2852,6 +2852,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		EffectText    string `json:"effectText"`
 		RarityTier    string `json:"rarityTier" binding:"required"`
 		IsCaptureType bool   `json:"isCaptureType"`
+		UnlockTier    *int   `json:"unlockTier"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2866,6 +2867,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		EffectText:    requestBody.EffectText,
 		RarityTier:    requestBody.RarityTier,
 		IsCaptureType: requestBody.IsCaptureType,
+		UnlockTier:    requestBody.UnlockTier,
 	}
 
 	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -2902,6 +2904,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		EffectText    string `json:"effectText"`
 		RarityTier    string `json:"rarityTier"`
 		IsCaptureType bool   `json:"isCaptureType"`
+		UnlockTier    *int   `json:"unlockTier"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2916,6 +2919,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		EffectText:    requestBody.EffectText,
 		RarityTier:    requestBody.RarityTier,
 		IsCaptureType: requestBody.IsCaptureType,
+		UnlockTier:    requestBody.UnlockTier,
 	}
 
 	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, item); err != nil {
