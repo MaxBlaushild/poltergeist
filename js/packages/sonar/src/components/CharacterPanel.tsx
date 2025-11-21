@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Character, CharacterAction, DialogueMessage } from '@poltergeist/types';
 import { useAPI } from '@poltergeist/contexts';
+import { useQuestLogContext } from '../contexts/QuestLogContext.tsx';
 import './CharacterPanel.css';
 
 interface CharacterPanelProps {
@@ -17,8 +18,10 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
   onStartShop,
 }) => {
   const { apiClient } = useAPI();
+  const { refreshQuestLog } = useQuestLogContext();
   const [characterActions, setCharacterActions] = useState<CharacterAction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAcceptingQuest, setIsAcceptingQuest] = useState(false);
 
   useEffect(() => {
     const fetchCharacterActions = async () => {
@@ -38,13 +41,33 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     fetchCharacterActions();
   }, [character.id, apiClient]);
 
-  const handleActionClick = (action: CharacterAction) => {
+  const handleActionClick = async (action: CharacterAction) => {
     if (action.actionType === 'shop' && onStartShop) {
       onStartShop(character, action);
       onClose();
     } else if (action.actionType === 'talk' && onStartDialogue) {
       onStartDialogue(character, action);
       onClose();
+    } else if (action.actionType === 'giveQuest') {
+      const questId = action.metadata?.pointOfInterestGroupId;
+      if (!questId) {
+        console.error('Quest ID not found in action metadata');
+        return;
+      }
+
+      setIsAcceptingQuest(true);
+      try {
+        await apiClient.post('/sonar/quests/accept', {
+          characterId: character.id,
+          pointOfInterestGroupId: questId,
+        });
+        await refreshQuestLog();
+        onClose();
+      } catch (error) {
+        console.error('Error accepting quest:', error);
+      } finally {
+        setIsAcceptingQuest(false);
+      }
     }
   };
 
@@ -97,12 +120,13 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
                 key={action.id}
                 onClick={() => handleActionClick(action)}
                 className="CharacterPanel__action-button"
+                disabled={action.actionType === 'giveQuest' && isAcceptingQuest}
               >
                 <div className="CharacterPanel__action-icon">
-                  {action.actionType === 'shop' ? '💰' : '💬'}
+                  {action.actionType === 'shop' ? '💰' : action.actionType === 'giveQuest' ? '📜' : '💬'}
                 </div>
                 <div className="CharacterPanel__action-name">
-                  {action.actionType === 'talk' ? 'Talk' : action.actionType === 'shop' ? 'Shop' : action.actionType}
+                  {action.actionType === 'talk' ? 'Talk' : action.actionType === 'shop' ? 'Shop' : action.actionType === 'giveQuest' ? 'Give Quest' : action.actionType}
                 </div>
                 {action.actionType === 'talk' && action.dialogue && action.dialogue.length > 0 && (
                   <div className="CharacterPanel__action-count">

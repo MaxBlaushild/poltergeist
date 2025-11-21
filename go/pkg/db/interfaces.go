@@ -55,8 +55,13 @@ type DbClient interface {
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
 	Character() CharacterHandle
 	CharacterAction() CharacterActionHandle
+	QuestAcceptance() QuestAcceptanceHandle
 	MovementPattern() MovementPatternHandle
 	TreasureChest() TreasureChestHandle
+	Document() DocumentHandle
+	DocumentTag() DocumentTagHandle
+	GoogleDriveToken() GoogleDriveTokenHandle
+	DropboxToken() DropboxTokenHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -123,7 +128,7 @@ type PointOfInterestHandle interface {
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
-	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error
+	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
@@ -220,7 +225,7 @@ type PointOfInterestGroupHandle interface {
 	AddMember(ctx context.Context, pointOfInterestID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.PointOfInterestGroupMember, error)
 	Update(ctx context.Context, pointOfInterestGroupID uuid.UUID, updates *models.PointOfInterestGroup) error
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.PointOfInterestGroup, error)
-	GetQuestsInZone(ctx context.Context, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error)
+	GetQuestsInZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error)
 }
 
 type PointOfInterestChallengeHandle interface {
@@ -472,6 +477,12 @@ type CharacterActionHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+type QuestAcceptanceHandle interface {
+	Create(ctx context.Context, questAcceptance *models.QuestAcceptance) error
+	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.QuestAcceptance, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptance, error)
+}
+
 type MovementPatternHandle interface {
 	Create(ctx context.Context, movementPattern *models.MovementPattern) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.MovementPattern, error)
@@ -498,4 +509,34 @@ type TreasureChestHandle interface {
 	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error)
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
+}
+
+type DocumentHandle interface {
+	Create(ctx context.Context, document *models.Document, existingTagIDs []uuid.UUID, newTagTexts []string) (*models.Document, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Document, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Document, error)
+	Update(ctx context.Context, document *models.Document) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type DocumentTagHandle interface {
+	FindOrCreateByText(ctx context.Context, text string) (*models.DocumentTag, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.DocumentTag, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.DocumentTag, error)
+}
+
+type GoogleDriveTokenHandle interface {
+	Create(ctx context.Context, token *models.GoogleDriveToken) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.GoogleDriveToken, error)
+	Update(ctx context.Context, token *models.GoogleDriveToken) error
+	Delete(ctx context.Context, userID uuid.UUID) error
+	RefreshToken(ctx context.Context, userID uuid.UUID, newAccessToken string, expiresAt time.Time) error
+}
+
+type DropboxTokenHandle interface {
+	Create(ctx context.Context, token *models.DropboxToken) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.DropboxToken, error)
+	Update(ctx context.Context, token *models.DropboxToken) error
+	Delete(ctx context.Context, userID uuid.UUID) error
+	RefreshToken(ctx context.Context, userID uuid.UUID, newAccessToken string, expiresAt time.Time) error
 }

@@ -1,4 +1,6 @@
-go 1.23.0
+go 1.24.0
+
+toolchain go1.24.10
 
 use (
 	./go/authenticator
@@ -21,9 +23,12 @@ use (
 	./go/pkg/texter
 	./go/pkg/twilio
 	./go/pkg/util
+	./go/pkg/googledrive
+	./go/pkg/dropbox
 	./go/proteus
 	./go/scorekeeper
 	./go/sonar
 	./go/texter
 	./go/trivai
+	./go/travel-angels
 )

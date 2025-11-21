@@ -190,10 +190,11 @@ export const Arena = () => {
     lat: number,
     lng: number,
     image: File | null,
-    clue: string
+    clue: string,
+    unlockTier?: number | null
   ) => {
     try {
-      await createPointOfInterest(name, description, lat, lng, image, clue);
+      await createPointOfInterest(name, description, lat, lng, image, clue, unlockTier);
     } catch (error) {
       console.error('Error creating point:', error);
     } finally {
@@ -466,6 +467,22 @@ export const Arena = () => {
                       }
                       className="border rounded px-2 py-1 w-full"
                       step="0.000001"
+                    />
+                  </div>
+                  <div className="text-sm text-gray-500 mb-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Unlock Tier (optional)</label>
+                    <input
+                      type="number"
+                      value={editedPoint?.unlockTier ?? ''}
+                      onChange={(e) =>
+                        setEditedPoint({
+                          ...editedPoint,
+                          unlockTier: e.target.value ? parseInt(e.target.value) : null,
+                        })
+                      }
+                      className="border rounded px-2 py-1 w-full"
+                      min="1"
+                      placeholder="Leave empty for unlocked"
                     />
                   </div>
                   <div className="flex gap-2 mt-2">

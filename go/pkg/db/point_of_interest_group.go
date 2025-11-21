@@ -13,7 +13,7 @@ type pointOfInterestGroupHandle struct {
 	db *gorm.DB
 }
 
-func (c *pointOfInterestGroupHandle) GetQuestsInZone(ctx context.Context, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
+func (c *pointOfInterestGroupHandle) GetQuestsInZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
 	pointsOfInterest := []models.PointOfInterest{}
 	query := c.db.WithContext(ctx).
 		Table("points_of_interest poi").
@@ -51,6 +51,19 @@ func (c *pointOfInterestGroupHandle) GetQuestsInZone(ctx context.Context, zoneID
 		}
 	}
 
+	// Get accepted quest IDs for this user
+	var acceptedQuestIDs []uuid.UUID
+	if err := c.db.WithContext(ctx).
+		Table("quest_acceptances").
+		Where("user_id = ?", userID).
+		Pluck("point_of_interest_group_id", &acceptedQuestIDs).Error; err != nil {
+		return nil, err
+	}
+	acceptedQuestIDMap := make(map[uuid.UUID]bool)
+	for _, id := range acceptedQuestIDs {
+		acceptedQuestIDMap[id] = true
+	}
+
 	var groups []models.PointOfInterestGroup
 	if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
 		Where("id IN ?", groupIDs).
@@ -59,7 +72,21 @@ func (c *pointOfInterestGroupHandle) GetQuestsInZone(ctx context.Context, zoneID
 		return nil, err
 	}
 
-	return groups, nil
+	// Filter out quests with quest givers that haven't been accepted
+	filteredGroups := []models.PointOfInterestGroup{}
+	for _, group := range groups {
+		// If quest has no quest giver, include it (backward compatibility)
+		if group.QuestGiverCharacterID == nil {
+			filteredGroups = append(filteredGroups, group)
+			continue
+		}
+		// If quest has a quest giver, only include if user has accepted it
+		if acceptedQuestIDMap[group.ID] {
+			filteredGroups = append(filteredGroups, group)
+		}
+	}
+
+	return filteredGroups, nil
 }
 
 func (c *pointOfInterestGroupHandle) GetNearbyQuests(ctx context.Context, userID uuid.UUID, lat float64, lng float64, radiusInMeters float64, tags []string) ([]models.PointOfInterestGroup, error) {
@@ -121,7 +148,8 @@ func (c *pointOfInterestGroupHandle) preloadPointOfInterestGroupRelations(query 
 		Preload("GroupMembers.PointOfInterest").
 		Preload("GroupMembers.PointOfInterest.Tags").
 		Preload("GroupMembers.PointOfInterest.PointOfInterestChallenges").
-		Preload("GroupMembers.Children")
+		Preload("GroupMembers.Children").
+		Preload("QuestGiverCharacter")
 }
 
 func (c *pointOfInterestGroupHandle) FindByIDs(ctx context.Context, groupIDs []uuid.UUID) ([]models.PointOfInterestGroup, error) {
@@ -150,7 +178,40 @@ func (c *pointOfInterestGroupHandle) GetStartedQuests(ctx context.Context, userI
 		return nil, err
 	}
 
-	return groups, nil
+	// Also include accepted quests with quest givers
+	var acceptedQuests []models.PointOfInterestGroup
+	acceptedQuestIDs := []uuid.UUID{}
+	if err := c.db.WithContext(ctx).
+		Table("quest_acceptances").
+		Where("user_id = ?", userID).
+		Pluck("point_of_interest_group_id", &acceptedQuestIDs).Error; err != nil {
+		return nil, err
+	}
+
+	if len(acceptedQuestIDs) > 0 {
+		if err := c.preloadPointOfInterestGroupRelations(c.db.WithContext(ctx)).
+			Where("id IN ?", acceptedQuestIDs).
+			Where("type = ?", models.PointOfInterestGroupTypeQuest).
+			Find(&acceptedQuests).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	// Merge and deduplicate
+	groupMap := make(map[uuid.UUID]models.PointOfInterestGroup)
+	for _, group := range groups {
+		groupMap[group.ID] = group
+	}
+	for _, group := range acceptedQuests {
+		groupMap[group.ID] = group
+	}
+
+	result := []models.PointOfInterestGroup{}
+	for _, group := range groupMap {
+		result = append(result, group)
+	}
+
+	return result, nil
 }
 
 func (c *pointOfInterestGroupHandle) Delete(ctx context.Context, id uuid.UUID) error {

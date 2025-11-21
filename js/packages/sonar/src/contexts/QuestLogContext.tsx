@@ -211,6 +211,7 @@ const getMapPointsOfInterest = (quests: Quest[]) => {
   const pointsOfInterest: PointOfInterest[] = [];
 
   quests.forEach((quest) => {
+    // Only include quests that are in the quest log (which means they've been accepted if they have a quest giver)
     const addPointsFromNode = (node: QuestNode) => {
       pointsOfInterest.push(node.pointOfInterest);
       

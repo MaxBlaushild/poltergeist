@@ -1,6 +1,6 @@
 import { Character } from './character';
 
-export type ActionType = 'talk' | 'shop';
+export type ActionType = 'talk' | 'shop' | 'giveQuest';
 
 export interface DialogueMessage {
   speaker: 'character' | 'user';
@@ -23,6 +23,7 @@ export interface CharacterAction {
   dialogue: DialogueMessage[];
   metadata?: {
     inventory?: ShopInventoryItem[];
+    pointOfInterestGroupId?: string;
     [key: string]: any;
   };
 }

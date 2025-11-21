@@ -25,6 +25,7 @@ func main() {
 	adminDashboardUrl, _ := url.Parse("http://localhost:9093")
 	billingUrl, _ := url.Parse("http://localhost:8022")
 	sonarUrl, _ := url.Parse("http://localhost:8042")
+	travelAngelsUrl, _ := url.Parse("http://localhost:8083")
 
 	fountProxy := httputil.NewSingleHostReverseProxy(fountUrl)
 	trivaiProxy := httputil.NewSingleHostReverseProxy(trivaiUrl)
@@ -35,7 +36,7 @@ func main() {
 	adminDashboardProxy := httputil.NewSingleHostReverseProxy(adminDashboardUrl)
 	billingProxy := httputil.NewSingleHostReverseProxy(billingUrl)
 	sonarProxy := httputil.NewSingleHostReverseProxy(sonarUrl)
-
+	travelAngelsProxy := httputil.NewSingleHostReverseProxy(travelAngelsUrl)
 	router.POST("/consult", func(c *gin.Context) {
 		fountProxy.ServeHTTP(c.Writer, c.Request)
 	})
@@ -70,6 +71,10 @@ func main() {
 
 	router.Any("/sonar/*any", func(c *gin.Context) {
 		sonarProxy.ServeHTTP(c.Writer, c.Request)
+	})
+
+	router.Any("/travel-angels/*any", func(c *gin.Context) {
+		travelAngelsProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
 	router.GET("/", func(c *gin.Context) {

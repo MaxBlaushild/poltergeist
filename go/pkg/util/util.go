@@ -21,7 +21,7 @@ const (
 func MatchesGivePointPattern(s string) (bool, string) {
 	r := regexp.MustCompile(`(?i)give (<@\w+>) a point`)
 	matches := r.FindStringSubmatch(s)
-	if len(matches) > 1 {
+	if len(matches) > 1 && matches[1] != "" {
 		return true, matches[1]
 	}
 	return false, ""

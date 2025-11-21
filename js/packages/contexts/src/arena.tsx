@@ -157,7 +157,8 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     lat: number,
     lng: number,
     image: File | null,
-    clue: string
+    clue: string,
+    unlockTier?: number | null
   ) => {
     if (!name || !description || !lat || !lng || !image || !clue || !arenaId) {
       return;
@@ -189,6 +190,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
           imageUrl: imageUrl.split("?")[0],
           clue,
           pointOfInterestGroupId: arenaId,
+          unlockTier: unlockTier ?? null,
         }
       );
       fetchArena(arenaId);
