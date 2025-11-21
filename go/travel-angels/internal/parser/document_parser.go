@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/nguyenthenguyen/docx"
 	"rsc.io/pdf"
 )
@@ -21,6 +22,7 @@ type ParsedDocument struct {
 const (
 	FileTypePDF  = "pdf"
 	FileTypeDOCX = "docx"
+	FileTypeHTML = "html"
 	MaxFileSize  = 10 * 1024 * 1024 // 10MB
 )
 
@@ -110,6 +112,29 @@ func (p *DocumentParser) ParseWord(fileBytes []byte) (*ParsedDocument, error) {
 		Content:   content,
 		FileType:  FileTypeDOCX,
 		PageCount: nil, // Word documents don't have a fixed page count
+		WordCount: wordCount,
+	}, nil
+}
+
+// ParseHTML converts HTML to markdown
+func (p *DocumentParser) ParseHTML(htmlBytes []byte) (*ParsedDocument, error) {
+	html := string(htmlBytes)
+
+	// Convert HTML to markdown
+	converter := md.NewConverter("", true, nil)
+	markdown, err := converter.ConvertString(html)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert HTML to markdown: %w", err)
+	}
+
+	// Clean up the content
+	content := strings.TrimSpace(markdown)
+	wordCount := len(strings.Fields(content))
+
+	return &ParsedDocument{
+		Content:   content,
+		FileType:  FileTypeHTML,
+		PageCount: nil, // HTML doesn't have a fixed page count
 		WordCount: wordCount,
 	}, nil
 }

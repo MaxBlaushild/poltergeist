@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/parser"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -20,6 +21,11 @@ type ShareFileRequest struct {
 
 type GrantPermissionRequest struct {
 	PermissionType string `json:"permissionType" binding:"required"` // user, domain
+}
+
+type ImportDocumentRequest struct {
+	FileID     string `json:"fileId" binding:"required"`
+	ImportType string `json:"importType" binding:"required"` // "import" or "reference"
 }
 
 func (s *server) GetGoogleDriveStatus(ctx *gin.Context) {
@@ -162,17 +168,16 @@ func (s *server) GoogleDriveCallback(ctx *gin.Context) {
 		return
 	}
 
-	// Redirect to frontend success page or return JSON
+	// Redirect to app or frontend success page
 	redirectURI := ctx.Query("redirect_uri")
 	if redirectURI != "" {
-		ctx.Redirect(http.StatusFound, redirectURI+"?success=true")
+		ctx.Redirect(http.StatusFound, redirectURI+"?success=true&service=google-drive")
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"message": "Google Drive authorization successful",
-		"userId":  userID.String(),
-	})
+	// Default: redirect to app deep link
+	appRedirectURL := fmt.Sprintf("travelangels://oauth-callback?success=true&service=google-drive")
+	ctx.Redirect(http.StatusFound, appRedirectURL)
 }
 
 func (s *server) RevokeGoogleDrive(ctx *gin.Context) {
@@ -316,6 +321,103 @@ func (s *server) ListGoogleDriveFiles(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, files)
+}
+
+func (s *server) ImportGoogleDriveDocument(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	var req ImportDocumentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Validate importType
+	if req.ImportType != "import" && req.ImportType != "reference" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "importType must be 'import' or 'reference'",
+		})
+		return
+	}
+
+	// Get file info from Google Drive
+	file, err := s.googleDriveClient.GetFile(ctx, user.ID.String(), req.FileID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to get file: " + err.Error(),
+		})
+		return
+	}
+
+	// Determine provider based on mimeType
+	var provider models.CloudDocumentProvider
+	switch file.MimeType {
+	case "application/vnd.google-apps.document":
+		provider = models.CloudDocumentProviderGoogleDocs
+	case "application/vnd.google-apps.spreadsheet":
+		provider = models.CloudDocumentProviderGoogleSheets
+	default:
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "file must be a Google Doc or Sheet",
+		})
+		return
+	}
+
+	// Create document
+	document := &models.Document{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Title:     file.Name,
+		Provider:  provider,
+		UserID:    user.ID,
+		Link:      &file.WebViewLink,
+	}
+
+	// If importing, download HTML and convert to markdown
+	if req.ImportType == "import" {
+		htmlBytes, err := s.googleDriveClient.ExportFileAsHTML(ctx, user.ID.String(), req.FileID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to export file as HTML: " + err.Error(),
+			})
+			return
+		}
+
+		// Convert HTML to markdown
+		documentParser := parser.NewDocumentParser()
+		parsedDoc, err := documentParser.ParseHTML(htmlBytes)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to convert HTML to markdown: " + err.Error(),
+			})
+			return
+		}
+
+		document.Content = &parsedDoc.Content
+	} else {
+		// For reference, leave Content as nil
+		document.Content = nil
+	}
+
+	// Create document in database
+	createdDocument, err := s.dbClient.Document().Create(ctx, document, []uuid.UUID{}, []string{})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to create document: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, createdDocument)
 }
 
 func contains(s, substr string) bool {

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/constants/api_constants.dart';
@@ -17,14 +20,68 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
   final GoogleDriveService _googleDriveService = GoogleDriveService(
     APIClient(ApiConstants.baseUrl),
   );
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
   bool _isGoogleDriveConnected = false;
   bool _isLoading = true;
   bool _isToggling = false;
+  bool _expectingOAuthCallback = false;
 
   @override
   void initState() {
     super.initState();
     _loadStatus();
+    _initDeepLinkListener();
+  }
+
+  void _initDeepLinkListener() {
+    // Listen for NEW deep links (stream events only, not initial link)
+    // The initial link is handled once in main.dart when app starts
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (Uri uri) {
+        _handleDeepLink(uri);
+      },
+      onError: (err) {
+        // Handle error silently or log it
+        debugPrint('Deep link error: $err');
+      },
+    );
+  }
+
+  void _handleDeepLink(Uri uri) {
+    if (uri.scheme == 'travelangels' && uri.host == 'oauth-callback') {
+      final success = uri.queryParameters['success'];
+      final service = uri.queryParameters['service'];
+
+      if (success == 'true' && service == 'google-drive') {
+        // Refresh status to check if connection was established
+        final wasConnected = _isGoogleDriveConnected;
+        _loadStatus();
+        
+        // Only show success message if we were expecting the callback
+        // (i.e., we initiated the OAuth flow) or if status changed from disconnected to connected
+        if (_expectingOAuthCallback) {
+          _expectingOAuthCallback = false;
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Google Drive connected successfully!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else if (!wasConnected) {
+          // Status changed from disconnected to connected (e.g., app opened via deep link)
+          // Refresh silently without showing message
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadStatus() async {
@@ -87,22 +144,23 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         final uri = Uri.parse(authUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
+          // Set flag to expect OAuth callback
+          setState(() {
+            _expectingOAuthCallback = true;
+          });
           // Show message that user should complete OAuth flow
+          // The deep link listener will handle the callback and refresh status
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
                   'Please complete the Google Drive authorization in your browser. '
-                  'The connection will be saved automatically.',
+                  'You will be redirected back to the app automatically.',
                 ),
                 duration: Duration(seconds: 5),
               ),
             );
           }
-          // Refresh status after a delay to check if connection was established
-          Future.delayed(const Duration(seconds: 2), () {
-            _loadStatus();
-          });
         } else {
           throw Exception('Could not launch URL: $authUrl');
         }
@@ -147,6 +205,7 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
       // Revert toggle state on error
       setState(() {
         _isGoogleDriveConnected = !value;
+        _expectingOAuthCallback = false; // Reset flag on error
       });
     } finally {
       setState(() {
