@@ -75,13 +75,14 @@ func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID
 	}).Error
 }
 
-func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string) error {
+func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int) error {
 	pointOfInterest := models.PointOfInterest{
 		ID:          id,
 		Name:        name,
 		Description: description,
 		Lat:         lat,
 		Lng:         lng,
+		UnlockTier:  unlockTier,
 		UpdatedAt:   time.Now(),
 	}
 	if err := pointOfInterest.SetGeometry(lat, lng); err != nil {

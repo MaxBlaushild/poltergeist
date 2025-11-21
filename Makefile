@@ -116,3 +116,15 @@ job-runner/ecr-push:
 	make job-runner/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest
+
+PHONY: travel-angels/build
+travel-angels/build:
+	docker build -f ./deploy/services/travel-angels/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/travel-angels:latest .
+
+PHONY: travel-angels/ecr-push
+travel-angels/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	make travel-angels/build
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/travel-angels:latest

@@ -157,7 +157,7 @@ func (c *questlogClient) buildQuestsWithCompletedNodes(
 
 func (c *questlogClient) GetQuestsInZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
 	log.Printf("Getting quests in zone %s for user %s with tags %v", zoneID, userID, tags)
-	groups, err := c.dbClient.PointOfInterestGroup().GetQuestsInZone(ctx, zoneID, tags)
+	groups, err := c.dbClient.PointOfInterestGroup().GetQuestsInZone(ctx, userID, zoneID, tags)
 	if err != nil {
 		log.Printf("Error getting quests in zone: %v", err)
 		return nil, err

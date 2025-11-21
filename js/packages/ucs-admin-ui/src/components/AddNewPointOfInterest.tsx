@@ -3,7 +3,7 @@ import { usePlaces } from '@poltergeist/hooks';
 import { Place } from '@poltergeist/types';
 
 interface AddNewPointOfInterestProps {
-  onSave: (name: string, description: string, lat: number, lng: number, image: File | null, clue: string) => void;
+  onSave: (name: string, description: string, lat: number, lng: number, image: File | null, clue: string, unlockTier?: number | null) => void;
   onCancel: () => void;
 }
 
@@ -16,6 +16,7 @@ export const AddNewPointOfInterest = ({ onSave, onCancel }: AddNewPointOfInteres
   const [image, setImage] = React.useState<File | null>(null);
   const [imagePreview, setImagePreview] = React.useState<string | null>(null);
   const [clue, setClue] = React.useState('');
+  const [unlockTier, setUnlockTier] = React.useState<number | null>(null);
   const timeoutRef = React.useRef<number>();
   const { places } = usePlaces(address);
   const [showPlaces, setShowPlaces] = React.useState(false);
@@ -125,8 +126,16 @@ export const AddNewPointOfInterest = ({ onSave, onCancel }: AddNewPointOfInteres
       placeholder="Longitude"
       value={lng}
       onChange={(e) => setLng(parseFloat(e.target.value))}
-      className="border rounded px-2 py-1 w-full mb-4"
+      className="border rounded px-2 py-1 w-full mb-2"
       step="0.000001"
+    />
+    <input
+      type="number"
+      placeholder="Unlock Tier (optional)"
+      value={unlockTier ?? ''}
+      onChange={(e) => setUnlockTier(e.target.value ? parseInt(e.target.value) : null)}
+      className="border rounded px-2 py-1 w-full mb-4"
+      min="1"
     />
     <div className="flex gap-2 justify-end">
       <button
@@ -136,7 +145,7 @@ export const AddNewPointOfInterest = ({ onSave, onCancel }: AddNewPointOfInteres
         Cancel
       </button>
       <button
-        onClick={() => onSave(name, description, lat, lng, image, clue)}
+        onClick={() => onSave(name, description, lat, lng, image, clue, unlockTier)}
         className="bg-green-500 text-white px-4 py-2 rounded"
       >
         Add Point

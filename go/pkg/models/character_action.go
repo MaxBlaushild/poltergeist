@@ -12,8 +12,9 @@ import (
 type ActionType string
 
 const (
-	ActionTypeTalk ActionType = "talk"
-	ActionTypeShop ActionType = "shop"
+	ActionTypeTalk      ActionType = "talk"
+	ActionTypeShop      ActionType = "shop"
+	ActionTypeGiveQuest ActionType = "giveQuest"
 	// Future: ActionTypeGift, ActionTypeTrade, etc.
 )
 

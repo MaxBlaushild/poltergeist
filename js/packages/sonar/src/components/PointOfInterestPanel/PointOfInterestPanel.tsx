@@ -76,6 +76,19 @@ export const PointOfInterestPanel = ({
     discoveries ?? []
   );
 
+  // Check if user has unlock item
+  const hasUnlockItem = pointOfInterest.unlockTier != null ? (() => {
+    for (const ownedItem of ownedInventoryItems) {
+      if (ownedItem.quantity > 0) {
+        const inventoryItem = inventoryItems.find(item => item.id === ownedItem.inventoryItemId);
+        if (inventoryItem?.unlockTier != null && inventoryItem.unlockTier >= pointOfInterest.unlockTier) {
+          return true;
+        }
+      }
+    }
+    return false;
+  })() : true;
+
   const { submission, challenge } = getHighestFirstCompletedChallenge(
     pointOfInterest,
     submissions
@@ -247,7 +260,14 @@ export const PointOfInterestPanel = ({
                 }, 1000);
               }
             }}
-            title={buttonText}
+            title={
+              pointOfInterest.unlockTier == null
+                ? buttonText
+                : hasUnlockItem
+                ? "Unlock"
+                : "Locked"
+            }
+            disabled={pointOfInterest.unlockTier != null && !hasUnlockItem}
           />
 
           {ownedInventoryItems

@@ -116,7 +116,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
-    const createPointOfInterest = (name, description, lat, lng, image, clue) => __awaiter(void 0, void 0, void 0, function* () {
+    const createPointOfInterest = (name, description, lat, lng, image, clue, unlockTier) => __awaiter(void 0, void 0, void 0, function* () {
         if (!name || !description || !lat || !lng || !image || !clue || !arenaId) {
             return;
         }
@@ -139,6 +139,7 @@ export const ArenaProvider = ({ children, arenaId }) => {
                 imageUrl: imageUrl.split("?")[0],
                 clue,
                 pointOfInterestGroupId: arenaId,
+                unlockTier: unlockTier !== null && unlockTier !== void 0 ? unlockTier : null,
             });
             fetchArena(arenaId);
         }

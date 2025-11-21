@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -241,6 +242,7 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
 	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
+	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
@@ -954,6 +956,121 @@ func (s *server) deleteAllTrackedPointOfInterestGroups(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "all tracked point of interest groups deleted successfully"})
+}
+
+func (s *server) acceptQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		CharacterID            uuid.UUID `json:"characterId" binding:"required"`
+		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupId" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Verify character exists
+	character, err := s.dbClient.Character().FindByID(ctx, requestBody.CharacterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	// Verify quest group exists
+	questGroup, err := s.dbClient.PointOfInterestGroup().FindByID(ctx, requestBody.PointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if questGroup == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+
+	// Verify quest has this character as quest giver
+	if questGroup.QuestGiverCharacterID == nil || *questGroup.QuestGiverCharacterID != requestBody.CharacterID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "character is not the quest giver for this quest"})
+		return
+	}
+
+	// Verify character has a giveQuest action for this quest
+	characterActions, err := s.dbClient.CharacterAction().FindByCharacterID(ctx, requestBody.CharacterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	hasGiveQuestAction := false
+	for _, action := range characterActions {
+		if action.ActionType == models.ActionTypeGiveQuest {
+			// Check if metadata contains the quest ID (can be string or UUID)
+			if questIDVal, ok := action.Metadata["pointOfInterestGroupId"]; ok {
+				var questIDStr string
+				switch v := questIDVal.(type) {
+				case string:
+					questIDStr = v
+				case uuid.UUID:
+					questIDStr = v.String()
+				default:
+					// Try to convert to string
+					questIDStr = fmt.Sprintf("%v", v)
+				}
+				if questIDStr == requestBody.PointOfInterestGroupID.String() {
+					hasGiveQuestAction = true
+					break
+				}
+			}
+		}
+	}
+
+	if !hasGiveQuestAction {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "character does not have a giveQuest action for this quest"})
+		return
+	}
+
+	// Check if user has already accepted this quest
+	existingAcceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, requestBody.PointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if existingAcceptance != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": "quest already accepted"})
+		return
+	}
+
+	// Create quest acceptance record
+	questAcceptance := &models.QuestAcceptance{
+		UserID:                 user.ID,
+		PointOfInterestGroupID: requestBody.PointOfInterestGroupID,
+		CharacterID:            requestBody.CharacterID,
+	}
+
+	if err := s.dbClient.QuestAcceptance().Create(ctx, questAcceptance); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Automatically track the quest
+	if err := s.dbClient.TrackedPointOfInterestGroup().Create(ctx, requestBody.PointOfInterestGroupID, user.ID); err != nil {
+		// Log error but don't fail the request
+		log.Printf("Error tracking quest after acceptance: %v", err)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest accepted successfully"})
 }
 
 func (s *server) getRelevantTags(ctx *gin.Context) {
@@ -2188,6 +2305,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		Description string `binding:"required" json:"description"`
 		Lat         string `binding:"required" json:"lat"`
 		Lng         string `binding:"required" json:"lng"`
+		UnlockTier  *int   `json:"unlockTier"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2197,7 +2315,7 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().Edit(ctx, pointOfInterestID, requestBody.Name, requestBody.Description, requestBody.Lat, requestBody.Lng); err != nil {
+	if err := s.dbClient.PointOfInterest().Edit(ctx, pointOfInterestID, requestBody.Name, requestBody.Description, requestBody.Lat, requestBody.Lng, requestBody.UnlockTier); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -2487,6 +2605,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		Longitude   string `binding:"required" json:"longitude"`
 		ImageUrl    string `binding:"required" json:"imageUrl"`
 		Clue        string `binding:"required" json:"clue"`
+		UnlockTier  *int   `json:"unlockTier"`
 	}
 
 	if err := ctx.Bind(&request); err != nil {
@@ -2503,6 +2622,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		Lng:         request.Longitude,
 		ImageUrl:    request.ImageUrl,
 		Clue:        request.Clue,
+		UnlockTier:  request.UnlockTier,
 	}, pointOfInterestGroupID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -3866,6 +3986,12 @@ func (s *server) endMatch(c *gin.Context) {
 }
 
 func (s *server) unlockPointOfInterest(c *gin.Context) {
+	user, err := s.getAuthenticatedUser(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	var pointOfInterestUnlockRequest struct {
 		TeamID            *uuid.UUID `json:"teamId"`
 		UserID            *uuid.UUID `json:"userId"`
@@ -3913,6 +4039,64 @@ func (s *server) unlockPointOfInterest(c *gin.Context) {
 	if distanceFromPOI > 200 {
 		c.JSON(400, gin.H{"error": fmt.Sprintf("point of interest is not within 200 meters: %f", distanceFromPOI)})
 		return
+	}
+
+	// Check if POI is locked
+	var unlockItemID *uuid.UUID
+	if pointOfInterest.UnlockTier != nil {
+		// Find user's owned inventory items with unlock tier
+		ownedItems, err := s.dbClient.InventoryItem().GetItems(c, models.OwnedInventoryItem{UserID: &user.ID})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user inventory"})
+			return
+		}
+
+		// Find inventory items with unlock tier >= POI unlock tier
+		var validUnlockItems []models.OwnedInventoryItem
+		for _, ownedItem := range ownedItems {
+			if ownedItem.Quantity > 0 {
+				// Get the inventory item to check unlock tier
+				inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(c, ownedItem.InventoryItemID)
+				if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
+					if *inventoryItem.UnlockTier >= *pointOfInterest.UnlockTier {
+						validUnlockItems = append(validUnlockItems, ownedItem)
+					}
+				}
+			}
+		}
+
+		if len(validUnlockItems) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you do not have an item with sufficient unlock tier to unlock this point of interest"})
+			return
+		}
+
+		// Find the item with the lowest unlock tier
+		var lowestTierItem *models.OwnedInventoryItem
+		var lowestTier int
+		for i := range validUnlockItems {
+			inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(c, validUnlockItems[i].InventoryItemID)
+			if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
+				if lowestTierItem == nil || *inventoryItem.UnlockTier < lowestTier {
+					lowestTier = *inventoryItem.UnlockTier
+					lowestTierItem = &validUnlockItems[i]
+				}
+			}
+		}
+
+		if lowestTierItem == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "could not find valid unlock item"})
+			return
+		}
+
+		unlockItemID = &lowestTierItem.ID
+	}
+
+	// Consume unlock item if needed
+	if unlockItemID != nil {
+		if err := s.dbClient.InventoryItem().UseInventoryItem(c, *unlockItemID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to consume unlock item: " + err.Error()})
+			return
+		}
 	}
 
 	if err := s.dbClient.PointOfInterest().Unlock(c, pointOfInterestUnlockRequest.PointOfInterestID, pointOfInterestUnlockRequest.TeamID, pointOfInterestUnlockRequest.UserID); err != nil {

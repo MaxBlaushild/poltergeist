@@ -25,6 +25,7 @@ type PointOfInterest struct {
 	Tags                      []Tag                      `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
 	GoogleMapsPlaceID         *string                    `json:"googleMapsPlaceId"`
 	LastUsedInQuestAt         *time.Time                 `json:"lastUsedInQuestAt,omitempty"`
+	UnlockTier                *int                       `json:"unlockTier" gorm:"column:unlock_tier"`
 }
 
 func (p *PointOfInterest) TableName() string {

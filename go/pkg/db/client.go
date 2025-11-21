@@ -58,8 +58,13 @@ type client struct {
 	pointOfInterestGroupMemberHandle  *pointOfInterestGroupMemberHandle
 	characterHandle                   *characterHandler
 	characterActionHandle             *characterActionHandler
+	questAcceptanceHandle             *questAcceptanceHandle
 	movementPatternHandle             *movementPatternHandler
 	treasureChestHandle               *treasureChestHandle
+	documentHandle                    *documentHandler
+	documentTagHandle                 *documentTagHandler
+	googleDriveTokenHandle            *googleDriveTokenHandler
+	dropboxTokenHandle                *dropboxTokenHandler
 }
 
 type ClientConfig struct {
@@ -135,8 +140,13 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		pointOfInterestGroupMemberHandle:  &pointOfInterestGroupMemberHandle{db: db},
 		characterHandle:                   &characterHandler{db: db},
 		characterActionHandle:             &characterActionHandler{db: db},
+		questAcceptanceHandle:             &questAcceptanceHandle{db: db},
 		movementPatternHandle:             &movementPatternHandler{db: db},
 		treasureChestHandle:               &treasureChestHandle{db: db},
+		documentHandle:                    &documentHandler{db: db},
+		documentTagHandle:                 &documentTagHandler{db: db},
+		googleDriveTokenHandle:            &googleDriveTokenHandler{db: db},
+		dropboxTokenHandle:                &dropboxTokenHandler{db: db},
 	}, nil
 }
 
@@ -328,10 +338,30 @@ func (c *client) CharacterAction() CharacterActionHandle {
 	return c.characterActionHandle
 }
 
+func (c *client) QuestAcceptance() QuestAcceptanceHandle {
+	return c.questAcceptanceHandle
+}
+
 func (c *client) MovementPattern() MovementPatternHandle {
 	return c.movementPatternHandle
 }
 
 func (c *client) TreasureChest() TreasureChestHandle {
 	return c.treasureChestHandle
+}
+
+func (c *client) Document() DocumentHandle {
+	return c.documentHandle
+}
+
+func (c *client) DocumentTag() DocumentTagHandle {
+	return c.documentTagHandle
+}
+
+func (c *client) GoogleDriveToken() GoogleDriveTokenHandle {
+	return c.googleDriveTokenHandle
+}
+
+func (c *client) DropboxToken() DropboxTokenHandle {
+	return c.dropboxTokenHandle
 }

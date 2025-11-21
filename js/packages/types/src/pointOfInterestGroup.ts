@@ -1,5 +1,6 @@
 import { PointOfInterest } from "./pointOfInterest";
 import { PointOfInterestGroupMember } from "./pointOfInterestGroupMember";
+import { Character } from "./character";
 
 export enum PointOfInterestGroupType {
   Unassigned = 0,
@@ -19,4 +20,6 @@ export type PointOfInterestGroup = {
   type: PointOfInterestGroupType;
   gold: number;
   inventoryItemId?: number;
+  questGiverCharacterId?: string | null;
+  questGiverCharacter?: Character | null;
 };
