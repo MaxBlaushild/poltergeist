@@ -4,11 +4,11 @@ part 'user.g.dart';
 
 @JsonSerializable()
 class User {
-  @JsonKey(name: 'ID', fromJson: _idFromJson)
+  @JsonKey(name: 'id', fromJson: _idFromJson)
   final String? id;
-  @JsonKey(name: 'CreatedAt', fromJson: _dateTimeFromJson)
+  @JsonKey(name: 'createdAt', fromJson: _dateTimeFromJson)
   final DateTime? createdAt;
-  @JsonKey(name: 'UpdatedAt', fromJson: _dateTimeFromJson)
+  @JsonKey(name: 'updatedAt', fromJson: _dateTimeFromJson)
   final DateTime? updatedAt;
   @JsonKey(fromJson: _nameFromJson)
   final String? name;

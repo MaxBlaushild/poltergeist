@@ -11,11 +11,14 @@ class ApiConstants {
   static const String registerEndpoint = '/travel-angels/register';
   static const String whoamiEndpoint = '/travel-angels/whoami';
   static const String levelEndpoint = '/travel-angels/level';
+  static const String documentsEndpoint = '/travel-angels/documents';
 
   // Google Drive endpoints
   static const String googleDriveStatusEndpoint = '/travel-angels/google-drive/status';
   static const String googleDriveAuthEndpoint = '/travel-angels/google-drive/auth';
   static const String googleDriveRevokeEndpoint = '/travel-angels/google-drive/revoke';
+  static const String googleDriveFilesEndpoint = '/travel-angels/google-drive/files';
+  static const String googleDriveImportDocumentEndpoint = '/travel-angels/google-drive/documents/import';
 
   // App name for verification code requests
   static const String appName = 'travel-angels';

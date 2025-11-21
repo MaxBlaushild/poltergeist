@@ -87,16 +87,24 @@ class AuthService {
         return null;
       }
 
-      // Create a temporary dio client without token interceptor for token verification
-      final dio = Dio(BaseOptions(baseUrl: ApiConstants.baseUrl));
-      final response = await dio.post<Map<String, dynamic>>(
-        ApiConstants.verifyTokenEndpoint,
-        data: {
-          'token': token,
-        },
-      );
+      // Use whoami endpoint which returns user in same format as login/register
+      try {
+        final user = await _apiClient.get<Map<String, dynamic>>(
+          ApiConstants.whoamiEndpoint,
+        );
+        return User.fromJson(user);
+      } catch (e) {
+        // If whoami fails, fall back to verifyToken endpoint
+        final dio = Dio(BaseOptions(baseUrl: ApiConstants.baseUrl));
+        final response = await dio.post<Map<String, dynamic>>(
+          ApiConstants.verifyTokenEndpoint,
+          data: {
+            'token': token,
+          },
+        );
 
-      return User.fromJson(response.data!);
+        return User.fromJson(response.data!);
+      }
     } catch (e) {
       // Token is invalid, clear it
       await logout();

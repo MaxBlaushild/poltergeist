@@ -54,6 +54,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/travel-angels/google-drive/files/:fileId/share", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ShareGoogleDriveFile))
 	r.POST("/travel-angels/google-drive/files/:fileId/grant-permissions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GrantGoogleDrivePermissions))
 	r.GET("/travel-angels/google-drive/files", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ListGoogleDriveFiles))
+	r.POST("/travel-angels/google-drive/documents/import", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ImportGoogleDriveDocument))
 	r.GET("/travel-angels/dropbox/auth", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetDropboxAuth))
 	r.GET("/travel-angels/dropbox/callback", s.DropboxCallback)
 	r.POST("/travel-angels/dropbox/revoke", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RevokeDropbox))

@@ -44,5 +44,50 @@ class GoogleDriveService {
       rethrow;
     }
   }
+
+  /// Lists Google Drive files
+  /// Returns a FileListResponse with files and nextPageToken
+  Future<Map<String, dynamic>> listFiles({
+    int? pageSize,
+    String? pageToken,
+    String? query,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (pageSize != null) queryParams['pageSize'] = pageSize.toString();
+      if (pageToken != null) queryParams['pageToken'] = pageToken;
+      if (query != null) queryParams['q'] = query;
+
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.googleDriveFilesEndpoint,
+        params: queryParams.isEmpty ? null : queryParams,
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Imports a Google Drive document
+  /// fileId: The Google Drive file ID
+  /// importType: Either "import" or "reference"
+  /// Returns the created document
+  Future<Map<String, dynamic>> importDocument(
+    String fileId,
+    String importType,
+  ) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        ApiConstants.googleDriveImportDocumentEndpoint,
+        data: {
+          'fileId': fileId,
+          'importType': importType,
+        },
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
 }
 
