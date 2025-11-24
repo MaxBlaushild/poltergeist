@@ -2,6 +2,8 @@ package main
 
 import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/billing"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dropbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/googledrive"
@@ -39,5 +41,8 @@ func main() {
 		RedirectURI:  config.Public.DropboxRedirectURI,
 	}, dbClient)
 
-	server.NewServer(authClient, dbClient, googleDriveClient, dropboxClient).ListenAndServe("8083")
+	awsClient := aws.NewAWSClient("us-east-1")
+	billingClient := billing.NewClient()
+
+	server.NewServer(authClient, dbClient, googleDriveClient, dropboxClient, awsClient, billingClient).ListenAndServe("8083")
 }

@@ -26,6 +26,8 @@ class User {
   final String? username;
   @JsonKey(name: 'isActive', fromJson: _isActiveFromJson)
   final bool? isActive;
+  @JsonKey(fromJson: _creditsFromJson)
+  final int? credits;
 
   User({
     this.id,
@@ -39,6 +41,7 @@ class User {
     this.partyId,
     this.username,
     this.isActive,
+    this.credits,
   });
 
   static String? _idFromJson(dynamic json) {
@@ -96,6 +99,15 @@ class User {
   static bool? _isActiveFromJson(dynamic json) {
     if (json == null) return null;
     return json as bool?;
+  }
+
+  static int? _creditsFromJson(dynamic json) {
+    if (json == null) return null;
+    if (json is int) return json;
+    if (json is String) {
+      return int.tryParse(json);
+    }
+    return null;
   }
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);

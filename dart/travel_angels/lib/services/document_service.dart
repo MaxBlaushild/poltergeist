@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/services/api_client.dart';
 
@@ -62,6 +63,88 @@ class DocumentService {
       return response
           .map((doc) => Map<String, dynamic>.from(doc))
           .toList();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Gets documents from friends
+  /// 
+  /// Returns a list of documents from all friends, sorted by createdAt descending
+  Future<List<Map<String, dynamic>>> getFriendsDocuments() async {
+    try {
+      final response = await _apiClient.get<List<dynamic>>(
+        ApiConstants.friendsDocumentsEndpoint,
+      );
+      return response
+          .map((doc) => Map<String, dynamic>.from(doc))
+          .toList();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Updates a document
+  /// 
+  /// [documentId] - The document ID
+  /// [title] - Optional new title
+  /// [content] - Optional new content
+  /// [existingTagIds] - Optional list of existing tag IDs to keep/add
+  /// [newTagTexts] - Optional list of new tag texts to create and add
+  /// 
+  /// Returns the updated document
+  Future<Map<String, dynamic>> updateDocument({
+    required String documentId,
+    String? title,
+    String? content,
+    List<String>? existingTagIds,
+    List<String>? newTagTexts,
+  }) async {
+    try {
+      final data = <String, dynamic>{};
+      
+      if (title != null) data['title'] = title;
+      if (content != null) data['content'] = content;
+      if (existingTagIds != null) data['existingTagIds'] = existingTagIds;
+      if (newTagTexts != null) data['newTagTexts'] = newTagTexts;
+
+      final response = await _apiClient.put<Map<String, dynamic>>(
+        ApiConstants.updateDocumentEndpoint(documentId),
+        data: data,
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Deletes a document
+  /// 
+  /// [documentId] - The document ID
+  /// 
+  /// Throws an exception if deletion fails
+  Future<void> deleteDocument(String documentId) async {
+    try {
+      await _apiClient.delete<void>(
+        ApiConstants.updateDocumentEndpoint(documentId),
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Parses a document file (PDF or Word)
+  /// 
+  /// [file] - The file to parse
+  /// 
+  /// Returns parsed document data (content, fileType, wordCount, etc.)
+  Future<Map<String, dynamic>> parseDocument(File file) async {
+    try {
+      final response = await _apiClient.postMultipart<Map<String, dynamic>>(
+        ApiConstants.parseDocumentEndpoint,
+        filePath: file.path,
+      );
+      return response;
     } catch (e) {
       rethrow;
     }

@@ -7,7 +7,12 @@ import 'package:travel_angels/widgets/import_type_dialog.dart';
 
 /// Widget for picking a Google Drive file (Doc or Sheet)
 class GoogleDriveFilePicker extends StatefulWidget {
-  const GoogleDriveFilePicker({super.key});
+  final VoidCallback? onImportComplete;
+
+  const GoogleDriveFilePicker({
+    super.key,
+    this.onImportComplete,
+  });
 
   @override
   State<GoogleDriveFilePicker> createState() => _GoogleDriveFilePickerState();
@@ -154,6 +159,9 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
             backgroundColor: Colors.green,
           ),
         );
+
+        // Notify parent that import is complete
+        widget.onImportComplete?.call();
       }
     } catch (e) {
       // Close loading

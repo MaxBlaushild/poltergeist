@@ -141,3 +141,12 @@ resource "aws_secretsmanager_secret_version" "google_drive_client_secret" {
   secret_id     = aws_secretsmanager_secret.google_drive_client_secret.id
   secret_string = var.google_drive_client_secret
 }
+
+resource "aws_secretsmanager_secret" "travel_angels_stripe_secret_key" {
+  name = "TRAVEL_ANGELS_STRIPE_SECRET_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "travel_angels_stripe_secret_key" {
+  secret_id     = aws_secretsmanager_secret.travel_angels_stripe_secret_key.id
+  secret_string = var.travel_angels_stripe_secret_key
+}

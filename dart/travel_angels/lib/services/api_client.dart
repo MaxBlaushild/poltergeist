@@ -117,5 +117,29 @@ class APIClient {
     );
     return response.data as T;
   }
+
+  /// Makes a POST request with multipart/form-data
+  /// 
+  /// [url] - The endpoint URL (relative to baseURL)
+  /// [file] - The file to upload (as a File object)
+  /// [fieldName] - The form field name for the file (default: 'file')
+  /// 
+  /// Returns the parsed response data
+  Future<T> postMultipart<T>(
+    String url, {
+    required String filePath,
+    String fieldName = 'file',
+  }) async {
+    final formData = FormData.fromMap({
+      fieldName: await MultipartFile.fromFile(filePath),
+    });
+
+    final response = await _client.post<T>(
+      url,
+      data: formData,
+      options: Options(responseType: ResponseType.json),
+    );
+    return response.data as T;
+  }
 }
 

@@ -77,3 +77,8 @@ variable "google_drive_client_secret" {
   description = "Google Drive Client Secret"
   type        = string
 }
+
+variable "travel_angels_stripe_secret_key" {
+  description = "Travel Angels Stripe Secret Key"
+  type        = string
+}

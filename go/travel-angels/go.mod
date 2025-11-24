@@ -5,6 +5,7 @@ go 1.24.0
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
+	github.com/MaxBlaushild/poltergeist/pkg/billing => ../pkg/billing
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox => ../pkg/dropbox
@@ -49,12 +50,15 @@ require (
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
 	github.com/PuerkitoBio/goquery v1.9.2 // indirect
 	github.com/andybalholm/cascadia v1.3.2 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -83,6 +87,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

@@ -26,32 +26,58 @@ class _AdviceScreenState extends State<AdviceScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
-      body: Column(
-        children: [
-          TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.help_outline),
-                text: 'Get Advice',
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Add top padding for additional spacing below status bar
+            const SizedBox(height: 16),
+            // Enhanced TabBar with more prominent styling
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: theme.colorScheme.primary,
+                unselectedLabelColor: theme.colorScheme.onSurface.withOpacity(0.6),
+                indicatorColor: theme.colorScheme.primary,
+                indicatorWeight: 3.0,
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelStyle: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+                unselectedLabelStyle: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.normal,
+                  fontSize: 16,
+                ),
+                labelPadding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
+                tabs: const [
+                  Tab(
+                    icon: Icon(Icons.help_outline, size: 28),
+                    text: 'Get Advice',
+                    iconMargin: EdgeInsets.only(bottom: 4.0),
+                  ),
+                  Tab(
+                    icon: Icon(Icons.lightbulb_outline, size: 28),
+                    text: 'Give Advice',
+                    iconMargin: EdgeInsets.only(bottom: 4.0),
+                  ),
+                ],
               ),
-              Tab(
-                icon: Icon(Icons.lightbulb_outline),
-                text: 'Give Advice',
-              ),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: const [
-                _GetAdviceTab(),
-                _GiveAdviceTab(),
-              ],
             ),
-          ),
-        ],
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: const [
+                  _GetAdviceTab(),
+                  _GiveAdviceTab(),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -63,13 +89,132 @@ class _GetAdviceTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Get Advice',
-        style: TextStyle(
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-        ),
+    final theme = Theme.of(context);
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title
+          Text(
+            'What do you need help with',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 24),
+          // Quick decision option
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.speed,
+                    size: 32,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Quick decision',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'choose between 2-3 options',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Community Poll option
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.poll,
+                    size: 32,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Community Poll',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Get ranked input from 10+ travelers like you',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Chat Consultation option
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.chat_bubble_outline,
+                    size: 32,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Chat Consultation',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '5-10 min 1-on-1 advice',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

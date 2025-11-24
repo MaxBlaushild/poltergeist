@@ -1,4 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'package:travel_angels/models/document_tag.dart';
+import 'package:travel_angels/models/user.dart';
 
 part 'document.g.dart';
 
@@ -39,6 +41,12 @@ class Document {
   @JsonKey(name: 'content')
   final String? content;
 
+  @JsonKey(name: 'documentTags')
+  final List<DocumentTag>? documentTags;
+
+  @JsonKey(name: 'user')
+  final User? user;
+
   Document({
     required this.id,
     this.createdAt,
@@ -48,6 +56,8 @@ class Document {
     this.userId,
     this.link,
     this.content,
+    this.documentTags,
+    this.user,
   });
 
   factory Document.fromJson(Map<String, dynamic> json) =>

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:travel_angels/widgets/file_picker_widget.dart';
 import 'package:travel_angels/widgets/google_drive_file_picker.dart';
 
 /// Bottom sheet for selecting import source (Google Drive or File)
 class ImportDocumentBottomSheet extends StatelessWidget {
-  const ImportDocumentBottomSheet({super.key});
+  final VoidCallback? onImportComplete;
+
+  const ImportDocumentBottomSheet({
+    super.key,
+    this.onImportComplete,
+  });
 
   void _handleGoogleDriveSelected(BuildContext context) {
     Navigator.pop(context); // Close bottom sheet
@@ -11,16 +17,20 @@ class ImportDocumentBottomSheet extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => const GoogleDriveFilePicker(),
+      builder: (context) => GoogleDriveFilePicker(
+        onImportComplete: onImportComplete,
+      ),
     );
   }
 
   void _handleFileSelected(BuildContext context) {
-    // File import is not yet available
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('File import is not yet available'),
-        backgroundColor: Colors.orange,
+    Navigator.pop(context); // Close bottom sheet
+    // Show file picker
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => FilePickerWidget(
+        onImportComplete: onImportComplete,
       ),
     );
   }
@@ -71,12 +81,12 @@ class ImportDocumentBottomSheet extends StatelessWidget {
               onTap: () => _handleGoogleDriveSelected(context),
             ),
             const SizedBox(height: 12),
-            // File option (disabled)
+            // File option
             _ImportOption(
               icon: Icons.file_upload,
               title: 'Import from File',
-              subtitle: 'Coming soon',
-              enabled: false,
+              subtitle: 'Select a PDF or Word (.docx) file',
+              enabled: true,
               onTap: () => _handleFileSelected(context),
             ),
             const SizedBox(height: 16),

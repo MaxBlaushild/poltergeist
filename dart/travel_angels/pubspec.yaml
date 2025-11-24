@@ -49,6 +49,8 @@ dependencies:
   app_links: ^6.3.3
   # Date formatting
   intl: ^0.19.0
+  # File picker for selecting PDF and Word files
+  file_picker: ^8.1.4
 
 dev_dependencies:
   flutter_test:
