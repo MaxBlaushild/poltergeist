@@ -106,6 +106,9 @@ type UserHandle interface {
 	AddGold(ctx context.Context, userID uuid.UUID, amount int) error
 	SetGold(ctx context.Context, userID uuid.UUID, amount int) error
 	SubtractGold(ctx context.Context, userID uuid.UUID, amount int) error
+	AddCredits(ctx context.Context, userID uuid.UUID, amount int) error
+	SetCredits(ctx context.Context, userID uuid.UUID, amount int) error
+	SubtractCredits(ctx context.Context, userID uuid.UUID, amount int) error
 }
 
 type TeamHandle interface {
@@ -514,8 +517,10 @@ type TreasureChestHandle interface {
 type DocumentHandle interface {
 	Create(ctx context.Context, document *models.Document, existingTagIDs []uuid.UUID, newTagTexts []string) (*models.Document, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Document, error)
+	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Document, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Document, error)
 	Update(ctx context.Context, document *models.Document) error
+	UpdateTags(ctx context.Context, documentID uuid.UUID, existingTagIDs []uuid.UUID, newTagTexts []string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 

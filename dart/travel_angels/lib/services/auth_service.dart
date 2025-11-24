@@ -10,14 +10,28 @@ class AuthService {
 
   AuthService(this._apiClient);
 
+  /// Formats phone number to ensure it starts with +
+  String _formatPhoneNumber(String phoneNumber) {
+    // Remove all non-digit characters except +
+    String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
+    
+    // If it doesn't start with +, add it
+    if (!cleaned.startsWith('+')) {
+      cleaned = '+$cleaned';
+    }
+    
+    return cleaned;
+  }
+
   /// Gets a verification code for the given phone number
   /// Returns true if user exists (login), false if new user (register)
   Future<bool> getVerificationCode(String phoneNumber) async {
     try {
+      final formattedPhone = _formatPhoneNumber(phoneNumber);
       final response = await _apiClient.post(
         ApiConstants.verificationCodeEndpoint,
         data: {
-          'phoneNumber': phoneNumber,
+          'phoneNumber': formattedPhone,
           'appName': ApiConstants.appName,
         },
       );
@@ -32,10 +46,11 @@ class AuthService {
   /// Returns the authenticated user and token
   Future<AuthResponse> login(String phoneNumber, String code) async {
     try {
+      final formattedPhone = _formatPhoneNumber(phoneNumber);
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.loginEndpoint,
         data: {
-          'phoneNumber': phoneNumber,
+          'phoneNumber': formattedPhone,
           'code': code,
         },
       );
@@ -53,16 +68,41 @@ class AuthService {
     }
   }
 
+  /// Validates username uniqueness
+  /// Returns true if username is valid and available
+  Future<bool> validateUsername(String username) async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.validateUsernameEndpoint(username),
+      );
+      return response['valid'] as bool? ?? false;
+    } catch (e) {
+      // If validation fails, assume invalid
+      return false;
+    }
+  }
+
   /// Registers a new user with phone number and verification code
   /// Returns the authenticated user and token
-  Future<AuthResponse> register(String phoneNumber, String code) async {
+  Future<AuthResponse> register(String phoneNumber, String code, {String? username, String? profilePictureUrl}) async {
     try {
+      final formattedPhone = _formatPhoneNumber(phoneNumber);
+      final data = <String, dynamic>{
+        'phoneNumber': formattedPhone,
+        'code': code,
+      };
+      
+      if (username != null && username.isNotEmpty) {
+        data['username'] = username;
+      }
+      
+      if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
+        data['profilePictureUrl'] = profilePictureUrl;
+      }
+
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.registerEndpoint,
-        data: {
-          'phoneNumber': phoneNumber,
-          'code': code,
-        },
+        data: data,
       );
 
       final user = User.fromJson(response['user'] as Map<String, dynamic>);
@@ -73,6 +113,30 @@ class AuthService {
       await prefs.setString(_tokenKey, token);
 
       return AuthResponse(user: user, token: token);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Updates user profile (username and/or profile picture)
+  Future<User> updateProfile({String? username, String? profilePictureUrl}) async {
+    try {
+      final data = <String, dynamic>{};
+      
+      if (username != null && username.isNotEmpty) {
+        data['username'] = username;
+      }
+      
+      if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
+        data['profilePictureUrl'] = profilePictureUrl;
+      }
+
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        ApiConstants.profileEndpoint,
+        data: data,
+      );
+
+      return User.fromJson(response);
     } catch (e) {
       rethrow;
     }

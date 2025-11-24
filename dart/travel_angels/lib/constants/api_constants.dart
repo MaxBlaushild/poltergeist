@@ -12,6 +12,9 @@ class ApiConstants {
   static const String whoamiEndpoint = '/travel-angels/whoami';
   static const String levelEndpoint = '/travel-angels/level';
   static const String documentsEndpoint = '/travel-angels/documents';
+  static String updateDocumentEndpoint(String documentId) => '$documentsEndpoint/$documentId';
+  static const String friendsDocumentsEndpoint = '/travel-angels/documents/friends';
+  static const String parseDocumentEndpoint = '/travel-angels/documents/parse';
 
   // Google Drive endpoints
   static const String googleDriveStatusEndpoint = '/travel-angels/google-drive/status';
@@ -19,6 +22,24 @@ class ApiConstants {
   static const String googleDriveRevokeEndpoint = '/travel-angels/google-drive/revoke';
   static const String googleDriveFilesEndpoint = '/travel-angels/google-drive/files';
   static const String googleDriveImportDocumentEndpoint = '/travel-angels/google-drive/documents/import';
+
+  // Friend endpoints
+  static const String friendsEndpoint = '/travel-angels/friends';
+  static const String friendInvitesEndpoint = '/travel-angels/friend-invites';
+  static const String createFriendInviteEndpoint = '/travel-angels/friend-invites/create';
+  static const String acceptFriendInviteEndpoint = '/travel-angels/friend-invites/accept';
+  static String deleteFriendInviteEndpoint(String inviteId) => '/travel-angels/friend-invites/$inviteId';
+  static String searchUsersEndpoint(String query) => '/travel-angels/users/search?query=$query';
+
+  // Media endpoints
+  static const String presignedUploadUrlEndpoint = '/travel-angels/media/uploadUrl';
+  static const String profileEndpoint = '/travel-angels/profile';
+  static String validateUsernameEndpoint(String username) => '/travel-angels/users/validate-username?username=$username';
+
+  // Credits endpoints
+  static const String creditsEndpoint = '/travel-angels/credits';
+  static const String purchaseCreditsEndpoint = '/travel-angels/credits/purchase';
+  static const String creditsWebhookEndpoint = '/travel-angels/credits/webhook';
 
   // App name for verification code requests
   static const String appName = 'travel-angels';

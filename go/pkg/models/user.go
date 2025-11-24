@@ -23,4 +23,5 @@ type User struct {
 	Username          *string    `json:"username" gorm:"unique"`
 	IsActive          *bool      `json:"isActive" gorm:"-"`
 	Gold              int        `json:"gold"`
+	Credits           int        `json:"credits"`
 }

@@ -18,6 +18,7 @@ User _$UserFromJson(Map<String, dynamic> json) => User(
   partyId: User._partyIdFromJson(json['partyId']),
   username: User._usernameFromJson(json['username']),
   isActive: User._isActiveFromJson(json['isActive']),
+  credits: User._creditsFromJson(json['credits']),
 );
 
 Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
@@ -32,4 +33,5 @@ Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
   'partyId': instance.partyId,
   'username': instance.username,
   'isActive': instance.isActive,
+  'credits': instance.credits,
 };

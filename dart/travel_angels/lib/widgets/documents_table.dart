@@ -9,6 +9,9 @@ class DocumentsTable extends StatelessWidget {
   final int? sortColumnIndex;
   final bool sortAscending;
   final Function(int columnIndex, bool ascending) onSort;
+  final Function(Document document)? onDocumentTap;
+  final Set<String> selectedDocumentIds;
+  final Function(String documentId, bool selected)? onSelectionChanged;
 
   const DocumentsTable({
     super.key,
@@ -16,6 +19,9 @@ class DocumentsTable extends StatelessWidget {
     this.sortColumnIndex,
     required this.sortAscending,
     required this.onSort,
+    this.onDocumentTap,
+    this.selectedDocumentIds = const {},
+    this.onSelectionChanged,
   });
 
   @override
@@ -30,6 +36,9 @@ class DocumentsTable extends StatelessWidget {
           sortColumnIndex: sortColumnIndex,
           sortAscending: sortAscending,
           columns: [
+            const DataColumn(
+              label: SizedBox.shrink(), // Checkbox column
+            ),
             DataColumn(
               label: const Text('Title'),
               onSort: (columnIndex, ascending) => onSort(columnIndex, ascending),
@@ -48,49 +57,89 @@ class DocumentsTable extends StatelessWidget {
             ),
           ],
           rows: documents.map((document) {
+            final isSelected = selectedDocumentIds.contains(document.id);
             return DataRow(
+              selected: isSelected,
+              onSelectChanged: null, // Disable row-level selection
               cells: [
+                // Checkbox cell
                 DataCell(
-                  Tooltip(
-                    message: document.title,
-                    child: Text(
-                      document.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w500),
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: onSelectionChanged != null
+                        ? (bool? value) {
+                            if (value != null) {
+                              onSelectionChanged!(document.id, value);
+                            }
+                          }
+                        : null,
+                  ),
+                ),
+                // Title cell - clickable to navigate
+                DataCell(
+                  GestureDetector(
+                    onTap: onDocumentTap != null
+                        ? () => onDocumentTap!(document)
+                        : null,
+                    child: Tooltip(
+                      message: document.title,
+                      child: Text(
+                        document.title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
                     ),
                   ),
                 ),
+                // Provider cell - clickable to navigate
                 DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        DocumentUtils.getProviderIcon(document.provider),
-                        size: 18,
-                        color: theme.colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        DocumentUtils.getProviderLabel(document.provider),
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
+                  GestureDetector(
+                    onTap: onDocumentTap != null
+                        ? () => onDocumentTap!(document)
+                        : null,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          DocumentUtils.getProviderIcon(document.provider),
+                          size: 18,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          DocumentUtils.getProviderLabel(document.provider),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+                // Date Created cell - clickable to navigate
                 DataCell(
-                  Text(
-                    document.createdAt != null
-                        ? dateFormat.format(document.createdAt!)
-                        : 'N/A',
-                    style: const TextStyle(fontSize: 13),
+                  GestureDetector(
+                    onTap: onDocumentTap != null
+                        ? () => onDocumentTap!(document)
+                        : null,
+                    child: Text(
+                      document.createdAt != null
+                          ? dateFormat.format(document.createdAt!)
+                          : 'N/A',
+                      style: const TextStyle(fontSize: 13),
+                    ),
                   ),
                 ),
+                // Date Edited cell - clickable to navigate
                 DataCell(
-                  Text(
-                    document.updatedAt != null
-                        ? dateFormat.format(document.updatedAt!)
-                        : 'N/A',
-                    style: const TextStyle(fontSize: 13),
+                  GestureDetector(
+                    onTap: onDocumentTap != null
+                        ? () => onDocumentTap!(document)
+                        : null,
+                    child: Text(
+                      document.updatedAt != null
+                          ? dateFormat.format(document.updatedAt!)
+                          : 'N/A',
+                      style: const TextStyle(fontSize: 13),
+                    ),
                   ),
                 ),
               ],

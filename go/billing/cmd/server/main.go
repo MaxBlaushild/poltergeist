@@ -66,6 +66,32 @@ func forwardCancelSubscription(ctx *gin.Context, subscription *stripe.Subscripti
 	return nil
 }
 
+func forwardPaymentComplete(ctx *gin.Context, session *stripe.CheckoutSession, url string) error {
+	// Get amount from session amount_total (in cents)
+	amountInCents := session.AmountTotal
+
+	onPaymentComplete := billing.OnPaymentComplete{
+		Metadata:      session.Metadata,
+		SessionID:     session.ID,
+		AmountInCents: amountInCents,
+	}
+	jsonBody, err := json.Marshal(onPaymentComplete)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("received non-OK response from server")
+	}
+	return nil
+}
+
 func main() {
 	router := gin.Default()
 
@@ -136,6 +162,51 @@ func main() {
 		})
 	})
 
+	router.POST("/billing/payment-checkout-session", func(ctx *gin.Context) {
+		var params billing.PaymentCheckoutSessionParams
+
+		if err := ctx.Bind(&params); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		if params.Metadata == nil {
+			params.Metadata = make(map[string]string)
+		}
+		params.Metadata["payment_complete_callback_url"] = params.PaymentCompleteCallbackUrl
+
+		session, err := session.New(&stripe.CheckoutSessionParams{
+			SuccessURL: &params.SessionSuccessRedirectUrl,
+			CancelURL:  &params.SessionCancelRedirectUrl,
+			Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
+			LineItems: []*stripe.CheckoutSessionLineItemParams{
+				{
+					PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+						Currency: stripe.String("usd"),
+						ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+							Name: stripe.String("Travel Angels Credits"),
+						},
+						UnitAmount: stripe.Int64(params.AmountInCents),
+					},
+					Quantity: stripe.Int64(1),
+				},
+			},
+			Metadata: params.Metadata,
+		})
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		ctx.JSON(200, billing.CheckoutSessionResponse{
+			URL: session.URL,
+		})
+	})
+
 	router.POST("/billing/stripe-webhook", func(ctx *gin.Context) {
 		var event stripe.Event
 
@@ -151,9 +222,22 @@ func main() {
 				fmt.Println(string(event.Data.Raw))
 			}
 
+			// Check if this is a subscription checkout
 			createCallbackUrl, ok := session.Metadata["create_callback_url"]
 			if ok {
 				if err := forwardCreateSubscription(ctx, &session, createCallbackUrl); err != nil {
+					fmt.Println(err.Error())
+					ctx.JSON(500, gin.H{
+						"message": err.Error(),
+					})
+				}
+				return
+			}
+
+			// Check if this is a payment checkout
+			paymentCallbackUrl, ok := session.Metadata["payment_complete_callback_url"]
+			if ok {
+				if err := forwardPaymentComplete(ctx, &session, paymentCallbackUrl); err != nil {
 					fmt.Println(err.Error())
 					ctx.JSON(500, gin.H{
 						"message": err.Error(),
@@ -166,7 +250,6 @@ func main() {
 		if event.Type == subscriptionDeletedEventType {
 			subscription := stripe.Subscription{}
 			if err := json.Unmarshal(event.Data.Raw, &subscription); err != nil {
-				fmt.Println("garbage subscription from stripe")
 				fmt.Println(string(event.Data.Raw))
 			}
 

@@ -189,6 +189,28 @@ module "ecs" {
             }
           ]
         }
+
+      "travel-angels-billing" = {
+          cpu      = 256
+          memory    = 512
+          essential = true
+          secrets = [{
+            name      = "TRAVEL_ANGELS_STRIPE_SECRET_KEY",
+            valueFrom = "${aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn}"
+          }, {
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          image = "${aws_ecr_repository.billing.repository_url}:latest"
+          port_mappings = [
+            {
+              name          = "travel-angels-billing"
+              containerPort = 8085
+              hostPort      = 8085
+              protocol      = "tcp"
+            }
+          ]
+        }
       }
 
       service_connect_configuration = {

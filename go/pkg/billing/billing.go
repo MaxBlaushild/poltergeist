@@ -13,6 +13,7 @@ type client struct {
 
 type Client interface {
 	NewCheckoutSession(ctx context.Context, params *CheckoutSessionParams) (*CheckoutSessionResponse, error)
+	NewPaymentCheckoutSession(ctx context.Context, params *PaymentCheckoutSessionParams) (*CheckoutSessionResponse, error)
 	CancelSubscription(ctx context.Context, params *CancelSubscriptionParams) (*CancelSubscriptionResponse, error)
 }
 
@@ -43,6 +44,20 @@ type OnSubscriptionDelete struct {
 	SubscriptionID string            `json:"subscriptionId"`
 }
 
+type PaymentCheckoutSessionParams struct {
+	SessionSuccessRedirectUrl  string            `json:"successUrl" binding:"required"`
+	SessionCancelRedirectUrl   string            `json:"cancelUrl" binding:"required"`
+	AmountInCents              int64             `json:"amountInCents" binding:"required"`
+	PaymentCompleteCallbackUrl string            `json:"paymentCompleteCallbackUrl" binding:"required"`
+	Metadata                   map[string]string `json:"metadata"`
+}
+
+type OnPaymentComplete struct {
+	Metadata      map[string]string `json:"metadata"`
+	SessionID     string            `json:"sessionId"`
+	AmountInCents int64             `json:"amountInCents"`
+}
+
 type CheckoutSessionResponse struct {
 	URL string `json:"url" binding:"required"`
 }
@@ -57,6 +72,21 @@ func NewClient() Client {
 
 func (c *client) NewCheckoutSession(ctx context.Context, params *CheckoutSessionParams) (*CheckoutSessionResponse, error) {
 	respBytes, err := c.httpClient.Post(ctx, "/billing/checkout-session", params)
+	if err != nil {
+		return nil, err
+	}
+
+	var res CheckoutSessionResponse
+	err = json.Unmarshal(respBytes, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+func (c *client) NewPaymentCheckoutSession(ctx context.Context, params *PaymentCheckoutSessionParams) (*CheckoutSessionResponse, error) {
+	respBytes, err := c.httpClient.Post(ctx, "/billing/payment-checkout-session", params)
 	if err != nil {
 		return nil, err
 	}

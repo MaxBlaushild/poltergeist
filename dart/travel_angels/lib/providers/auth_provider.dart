@@ -97,6 +97,34 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Validates username uniqueness
+  Future<bool> validateUsername(String username) async {
+    try {
+      return await _authService.validateUsername(username);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Updates user profile (username and/or profile picture)
+  Future<void> updateProfile({String? username, String? profilePictureUrl}) async {
+    _error = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateProfile(
+        username: username,
+        profilePictureUrl: profilePictureUrl,
+      );
+      _user = updatedUser;
+      notifyListeners();
+    } catch (e) {
+      _error = _extractErrorMessage(e);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Logs out the user
   Future<void> logout() async {
     await _authService.logout();

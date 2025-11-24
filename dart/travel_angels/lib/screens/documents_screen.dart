@@ -6,6 +6,7 @@ import 'package:travel_angels/models/document.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
+import 'package:travel_angels/screens/edit_document_screen.dart';
 import 'package:travel_angels/widgets/documents_table.dart';
 import 'package:travel_angels/widgets/import_document_bottom_sheet.dart';
 import 'package:travel_angels/widgets/pagination_controls.dart';
@@ -37,6 +38,9 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   int _currentPage = 0;
   int _pageSize = 25;
   final List<int> _pageSizeOptions = [10, 25, 50, 100];
+
+  // Selection state
+  Set<String> _selectedDocumentIds = {};
 
   @override
   void initState() {
@@ -103,19 +107,21 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     if (_sortColumnIndex != null) {
       sorted.sort((a, b) {
         int comparison = 0;
-        switch (_sortColumnIndex) {
-          case 0: // Title
+        // Adjust for checkbox column (index 0 is now checkbox, so subtract 1)
+        final adjustedIndex = _sortColumnIndex! - 1;
+        switch (adjustedIndex) {
+          case 0: // Title (was index 1, now index 0 after checkbox)
             comparison = a.title.compareTo(b.title);
             break;
-          case 1: // Provider
+          case 1: // Provider (was index 2, now index 1 after checkbox)
             comparison = a.provider.name.compareTo(b.provider.name);
             break;
-          case 2: // Created Date
+          case 2: // Created Date (was index 3, now index 2 after checkbox)
             final aDate = a.createdAt ?? DateTime(0);
             final bDate = b.createdAt ?? DateTime(0);
             comparison = aDate.compareTo(bDate);
             break;
-          case 3: // Updated Date
+          case 3: // Updated Date (was index 4, now index 3 after checkbox)
             final aDate = a.updatedAt ?? DateTime(0);
             final bDate = b.updatedAt ?? DateTime(0);
             comparison = aDate.compareTo(bDate);
@@ -181,10 +187,174 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => const ImportDocumentBottomSheet(),
+      builder: (context) => ImportDocumentBottomSheet(
+        onImportComplete: () {
+          // Refresh documents after import
+          _loadDocuments();
+        },
+      ),
     );
-    // Refresh documents after import
-    _loadDocuments();
+  }
+
+  Future<void> _handleDocumentTap(Document document) async {
+    // Navigate to edit screen (row click, not checkbox click)
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditDocumentScreen(document: document),
+      ),
+    );
+
+    // Refresh documents if update was successful
+    if (result == true) {
+      _loadDocuments();
+    }
+  }
+
+  void _toggleDocumentSelection(String documentId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedDocumentIds.add(documentId);
+      } else {
+        _selectedDocumentIds.remove(documentId);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedDocumentIds = _paginatedDocuments.map((doc) => doc.id).toSet();
+    });
+  }
+
+  void _deselectAll() {
+    setState(() {
+      _selectedDocumentIds.clear();
+    });
+  }
+
+  Future<void> _deleteSingleDocument(Document document) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Document'),
+        content: Text('Are you sure you want to delete "${document.title}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _documentService.deleteDocument(document.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Document "${document.title}" deleted successfully')),
+        );
+        _loadDocuments();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete document: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSelectedDocuments() async {
+    if (_selectedDocumentIds.isEmpty) return;
+
+    final selectedDocs = _allDocuments
+        .where((doc) => _selectedDocumentIds.contains(doc.id))
+        .toList();
+
+    final count = selectedDocs.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Documents'),
+        content: Text(
+          count == 1
+              ? 'Are you sure you want to delete "${selectedDocs.first.title}"? This action cannot be undone.'
+              : 'Are you sure you want to delete $count documents? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    int successCount = 0;
+    int failCount = 0;
+    final failedTitles = <String>[];
+
+    for (final doc in selectedDocs) {
+      try {
+        await _documentService.deleteDocument(doc.id);
+        successCount++;
+      } catch (e) {
+        failCount++;
+        failedTitles.add(doc.title);
+      }
+    }
+
+    if (mounted) {
+      if (failCount == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              successCount == 1
+                  ? 'Document deleted successfully'
+                  : '$successCount documents deleted successfully',
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Deleted $successCount document(s), but failed to delete $failCount document(s)',
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+
+      setState(() {
+        _selectedDocumentIds.clear();
+      });
+
+      _loadDocuments();
+    }
   }
 
   int get _totalPages => (_sortedDocuments.length / _pageSize).ceil();
@@ -255,8 +425,26 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Documents'),
+        title: _selectedDocumentIds.isEmpty
+            ? const Text('Documents')
+            : Text('${_selectedDocumentIds.length} selected'),
         actions: [
+          if (_selectedDocumentIds.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              onPressed: _selectedDocumentIds.length == _paginatedDocuments.length
+                  ? _deselectAll
+                  : _selectAll,
+              tooltip: _selectedDocumentIds.length == _paginatedDocuments.length
+                  ? 'Deselect all'
+                  : 'Select all',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _deleteSelectedDocuments,
+              tooltip: 'Delete selected',
+            ),
+          ],
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadDocuments,
@@ -335,9 +523,15 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                         Expanded(
                           child: DocumentsTable(
                             documents: _paginatedDocuments,
-                            sortColumnIndex: _sortColumnIndex,
+                            sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
                             sortAscending: _sortAscending,
-                            onSort: _onSort,
+                            onSort: (columnIndex, ascending) {
+                              // Adjust back for checkbox column
+                              _onSort(columnIndex - 1, ascending);
+                            },
+                            onDocumentTap: _handleDocumentTap,
+                            selectedDocumentIds: _selectedDocumentIds,
+                            onSelectionChanged: _toggleDocumentSelection,
                           ),
                         ),
                         PaginationControls(

@@ -215,3 +215,36 @@ func (h *userHandle) SubtractGold(ctx context.Context, userID uuid.UUID, amount 
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		UpdateColumn("gold", gorm.Expr("gold - ?", amount)).Error
 }
+
+func (h *userHandle) AddCredits(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		// Disallow negative increments here; use Update if debit needed later
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		UpdateColumn("credits", gorm.Expr("credits + ?", amount)).Error
+}
+
+func (h *userHandle) SetCredits(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		UpdateColumn("credits", amount).Error
+}
+
+func (h *userHandle) SubtractCredits(ctx context.Context, userID uuid.UUID, amount int) error {
+	if amount < 0 {
+		return gorm.ErrInvalidData
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		UpdateColumn("credits", gorm.Expr("credits - ?", amount)).Error
+}

@@ -12,12 +12,12 @@ import (
 )
 
 type CreateDocumentRequest struct {
-	Title          string    `json:"title" binding:"required"`
-	Provider       string    `json:"provider" binding:"required"`
-	Link           *string   `json:"link"`
-	Content        *string   `json:"content"`
-	ExistingTagIds []string  `json:"existingTagIds"`
-	NewTagTexts    []string  `json:"newTagTexts"`
+	Title          string   `json:"title" binding:"required"`
+	Provider       string   `json:"provider" binding:"required"`
+	Link           *string  `json:"link"`
+	Content        *string  `json:"content"`
+	ExistingTagIds []string `json:"existingTagIds"`
+	NewTagTexts    []string `json:"newTagTexts"`
 }
 
 func (s *server) CreateDocument(ctx *gin.Context) {
@@ -135,6 +135,47 @@ func (s *server) GetDocumentsByUserID(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, documents)
 }
 
+func (s *server) GetFriendsDocuments(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Get user's friends (returns []User)
+	friends, err := s.dbClient.Friend().FindAllFriends(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to fetch friends: " + err.Error(),
+		})
+		return
+	}
+
+	// Extract friend user IDs
+	if len(friends) == 0 {
+		ctx.JSON(http.StatusOK, []models.Document{})
+		return
+	}
+
+	friendIDs := make([]uuid.UUID, 0, len(friends))
+	for _, friend := range friends {
+		friendIDs = append(friendIDs, friend.ID)
+	}
+
+	// Get documents for all friends
+	documents, err := s.dbClient.Document().FindByUserIDs(ctx, friendIDs)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to fetch friends' documents: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, documents)
+}
+
 func (s *server) ParseDocument(ctx *gin.Context) {
 	_, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
@@ -189,3 +230,202 @@ func (s *server) ParseDocument(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, parsedDoc)
 }
 
+type UpdateDocumentRequest struct {
+	Title          *string  `json:"title"`
+	Content        *string  `json:"content"`
+	ExistingTagIds []string `json:"existingTagIds"`
+	NewTagTexts    []string `json:"newTagTexts"`
+}
+
+func (s *server) UpdateDocument(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Parse document ID from URL param
+	documentIDStr := ctx.Param("id")
+	if documentIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "document id is required",
+		})
+		return
+	}
+
+	documentID, err := uuid.Parse(documentIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid document id format",
+		})
+		return
+	}
+
+	// Get the document to verify ownership
+	document, err := s.dbClient.Document().FindByID(ctx, documentID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "document not found",
+		})
+		return
+	}
+
+	// Verify user owns the document
+	if document.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"error": "cannot update documents for another user",
+		})
+		return
+	}
+
+	// Parse request body
+	var req UpdateDocumentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Update document fields if provided
+	if req.Title != nil {
+		document.Title = *req.Title
+	}
+	if req.Content != nil {
+		document.Content = req.Content
+	}
+
+	// Update the document
+	if err := s.dbClient.Document().Update(ctx, document); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Handle tag updates if provided
+	if req.ExistingTagIds != nil || req.NewTagTexts != nil {
+		// Convert existing tag IDs from strings to UUIDs
+		existingTagIDs := make([]uuid.UUID, 0, len(req.ExistingTagIds))
+		for _, tagIDStr := range req.ExistingTagIds {
+			tagID, err := uuid.Parse(tagIDStr)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{
+					"error": "invalid tag ID format: " + tagIDStr,
+				})
+				return
+			}
+			existingTagIDs = append(existingTagIDs, tagID)
+		}
+
+		// Get document tag handler
+		documentTagHandler := s.dbClient.DocumentTag()
+
+		// Collect all tags to associate
+		var tagsToAssociate []models.DocumentTag
+
+		// Handle existing tag IDs
+		if len(existingTagIDs) > 0 {
+			existingTags, err := documentTagHandler.FindByIDs(ctx, existingTagIDs)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error": "failed to find existing tags: " + err.Error(),
+				})
+				return
+			}
+			tagsToAssociate = append(tagsToAssociate, existingTags...)
+		}
+
+		// Handle new tag texts
+		if len(req.NewTagTexts) > 0 {
+			for _, tagText := range req.NewTagTexts {
+				if tagText == "" {
+					continue
+				}
+				newTag, err := documentTagHandler.FindOrCreateByText(ctx, tagText)
+				if err != nil {
+					ctx.JSON(http.StatusInternalServerError, gin.H{
+						"error": "failed to create tag: " + err.Error(),
+					})
+					return
+				}
+				tagsToAssociate = append(tagsToAssociate, *newTag)
+			}
+		}
+
+		// Update tags using the document handler's UpdateTags method
+		if err := s.dbClient.Document().UpdateTags(ctx, documentID, existingTagIDs, req.NewTagTexts); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to update document tags: " + err.Error(),
+			})
+			return
+		}
+	}
+
+	// Reload document with tags preloaded
+	updatedDocument, err := s.dbClient.Document().FindByID(ctx, documentID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to retrieve updated document",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedDocument)
+}
+
+func (s *server) DeleteDocument(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Parse document ID from URL param
+	documentIDStr := ctx.Param("id")
+	if documentIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "document id is required",
+		})
+		return
+	}
+
+	documentID, err := uuid.Parse(documentIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid document id format",
+		})
+		return
+	}
+
+	// Get the document to verify ownership
+	document, err := s.dbClient.Document().FindByID(ctx, documentID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "document not found",
+		})
+		return
+	}
+
+	// Verify user owns the document
+	if document.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"error": "cannot delete documents for another user",
+		})
+		return
+	}
+
+	// Delete the document
+	if err := s.dbClient.Document().Delete(ctx, documentID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}

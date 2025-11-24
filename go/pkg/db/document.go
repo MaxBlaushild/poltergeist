@@ -116,6 +116,22 @@ func (h *documentHandler) FindByUserID(ctx context.Context, userID uuid.UUID) ([
 	return documents, nil
 }
 
+func (h *documentHandler) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Document, error) {
+	if len(userIDs) == 0 {
+		return []models.Document{}, nil
+	}
+	var documents []models.Document
+	if err := h.db.WithContext(ctx).
+		Preload("DocumentTags").
+		Preload("User").
+		Where("user_id IN ?", userIDs).
+		Order("created_at DESC").
+		Find(&documents).Error; err != nil {
+		return nil, err
+	}
+	return documents, nil
+}
+
 func (h *documentHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Document, error) {
 	var document models.Document
 	if err := h.db.WithContext(ctx).
@@ -130,6 +146,65 @@ func (h *documentHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.D
 func (h *documentHandler) Update(ctx context.Context, document *models.Document) error {
 	document.UpdatedAt = time.Now()
 	return h.db.WithContext(ctx).Save(document).Error
+}
+
+func (h *documentHandler) UpdateTags(ctx context.Context, documentID uuid.UUID, existingTagIDs []uuid.UUID, newTagTexts []string) error {
+	// Start transaction
+	tx := h.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Get DocumentTag handler with transaction
+	documentTagHandler := &documentTagHandler{db: tx}
+
+	// Collect all tags to associate
+	var tagsToAssociate []models.DocumentTag
+
+	// Handle existing tag IDs
+	if len(existingTagIDs) > 0 {
+		existingTags, err := documentTagHandler.FindByIDs(ctx, existingTagIDs)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+		tagsToAssociate = append(tagsToAssociate, existingTags...)
+	}
+
+	// Handle new tag texts
+	if len(newTagTexts) > 0 {
+		for _, tagText := range newTagTexts {
+			if tagText == "" {
+				continue
+			}
+			newTag, err := documentTagHandler.FindOrCreateByText(ctx, tagText)
+			if err != nil {
+				tx.Rollback()
+				return err
+			}
+			tagsToAssociate = append(tagsToAssociate, *newTag)
+		}
+	}
+
+	// Replace document tags using GORM association
+	document := &models.Document{ID: documentID}
+	if err := tx.Model(document).Association("DocumentTags").Replace(tagsToAssociate); err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// Update document's updated_at timestamp
+	if err := tx.Model(document).Update("updated_at", time.Now()).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
 func (h *documentHandler) Delete(ctx context.Context, id uuid.UUID) error {
