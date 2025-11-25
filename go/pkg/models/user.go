@@ -24,4 +24,10 @@ type User struct {
 	IsActive          *bool      `json:"isActive" gorm:"-"`
 	Gold              int        `json:"gold"`
 	Credits           int        `json:"credits"`
+	DateOfBirth       *time.Time `json:"dateOfBirth" db:"date_of_birth"`
+	Gender            *string    `json:"gender" db:"gender"`
+	Latitude          *float64   `json:"latitude" db:"latitude"`
+	Longitude         *float64   `json:"longitude" db:"longitude"`
+	LocationAddress   *string    `json:"locationAddress" db:"location_address"`
+	Bio               *string    `json:"bio" db:"bio"`
 }

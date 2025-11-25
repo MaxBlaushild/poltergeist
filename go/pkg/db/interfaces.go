@@ -87,7 +87,7 @@ type HowManyQuestionHandle interface {
 }
 
 type UserHandle interface {
-	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string) (*models.User, error)
+	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string) (*models.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
 	FindUsersByIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.User, error)

@@ -7,6 +7,7 @@ import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/media_service.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/widgets/location_picker.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -29,12 +30,21 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isValidatingUsername = false;
   String? _usernameValidationError;
   bool _isUsernameValid = false;
+  
+  // New registration fields
+  DateTime? _dateOfBirth;
+  String? _selectedGender;
+  double? _selectedLatitude;
+  double? _selectedLongitude;
+  String? _selectedLocationAddress;
+  final _bioController = TextEditingController();
 
   @override
   void dispose() {
     _phoneController.dispose();
     _codeController.dispose();
     _usernameController.dispose();
+    _bioController.dispose();
     _phoneFocusNode.dispose();
     _codeFocusNode.dispose();
     _usernameFocusNode.dispose();
@@ -159,6 +169,27 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (_dateOfBirth == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your date of birth')),
+      );
+      return;
+    }
+
+    if (_selectedGender == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your gender')),
+      );
+      return;
+    }
+
+    if (_selectedLatitude == null || _selectedLongitude == null || _selectedLocationAddress == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your location')),
+      );
+      return;
+    }
+
     final authProvider = context.read<AuthProvider>();
     String? profilePictureUrl;
 
@@ -194,11 +225,17 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
 
-    // Update profile with username and profile picture
+    // Update profile with all fields including new demographic and location data
     try {
       await authProvider.updateProfile(
         username: _usernameController.text.trim(),
         profilePictureUrl: profilePictureUrl,
+        dateOfBirth: _dateOfBirth,
+        gender: _selectedGender,
+        latitude: _selectedLatitude,
+        longitude: _selectedLongitude,
+        locationAddress: _selectedLocationAddress,
+        bio: _bioController.text.trim().isNotEmpty ? _bioController.text.trim() : null,
       );
       
       // Navigation will be handled by main.dart based on auth state
@@ -294,6 +331,110 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                     const SizedBox(height: 24),
+                    // Date of birth picker
+                    const Text(
+                      'Date of Birth *',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: _dateOfBirth ?? DateTime.now().subtract(const Duration(days: 365 * 18)),
+                          firstDate: DateTime(1900),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _dateOfBirth = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _dateOfBirth != null
+                                  ? '${_dateOfBirth!.year}-${_dateOfBirth!.month.toString().padLeft(2, '0')}-${_dateOfBirth!.day.toString().padLeft(2, '0')}'
+                                  : 'Select date of birth',
+                              style: TextStyle(
+                                color: _dateOfBirth != null ? Colors.black : Colors.grey,
+                              ),
+                            ),
+                            const Icon(Icons.calendar_today),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Gender dropdown
+                    const Text(
+                      'Gender *',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _selectedGender,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        hintText: 'Select gender',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Male', child: Text('Male')),
+                        DropdownMenuItem(value: 'Female', child: Text('Female')),
+                        DropdownMenuItem(value: 'Non-binary', child: Text('Non-binary')),
+                        DropdownMenuItem(value: 'Prefer not to say', child: Text('Prefer not to say')),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          _selectedGender = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    // Location picker
+                    const Text(
+                      'Location *',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    LocationPicker(
+                      onLocationSelected: (latitude, longitude, address) {
+                        setState(() {
+                          _selectedLatitude = latitude;
+                          _selectedLongitude = longitude;
+                          _selectedLocationAddress = address;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    // Bio field
+                    TextField(
+                      controller: _bioController,
+                      decoration: const InputDecoration(
+                        labelText: 'Bio (Optional)',
+                        hintText: 'Tell us about yourself',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 24),
                     // Profile picture picker
                     const Text(
                       'Profile Picture (Optional)',
@@ -329,7 +470,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 32),
                     // Complete profile button
                     ElevatedButton(
-                      onPressed: _isUsernameValid ? _handleCompleteProfile : null,
+                      onPressed: (_isUsernameValid && _dateOfBirth != null && _selectedGender != null && _selectedLatitude != null && _selectedLongitude != null) ? _handleCompleteProfile : null,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                       ),

@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 )
-
 
 func (s *server) register(ctx *gin.Context) {
 	var requestBody auth.RegisterByTextRequest
@@ -167,8 +167,14 @@ func (s *server) UpdateProfile(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Username          *string `json:"username"`
-		ProfilePictureUrl *string `json:"profilePictureUrl"`
+		Username          *string  `json:"username"`
+		ProfilePictureUrl *string  `json:"profilePictureUrl"`
+		DateOfBirth       *string  `json:"dateOfBirth"`
+		Gender            *string  `json:"gender"`
+		Latitude          *float64 `json:"latitude"`
+		Longitude         *float64 `json:"longitude"`
+		LocationAddress   *string  `json:"locationAddress"`
+		Bio               *string  `json:"bio"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -221,6 +227,56 @@ func (s *server) UpdateProfile(ctx *gin.Context) {
 		}
 	}
 
+	// Update demographic and location fields if provided
+	updates := models.User{}
+	needsUpdate := false
+
+	if requestBody.DateOfBirth != nil {
+		parsed, err := time.Parse("2006-01-02", *requestBody.DateOfBirth)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid date of birth format",
+			})
+			return
+		}
+		updates.DateOfBirth = &parsed
+		needsUpdate = true
+	}
+
+	if requestBody.Gender != nil {
+		updates.Gender = requestBody.Gender
+		needsUpdate = true
+	}
+
+	if requestBody.Latitude != nil {
+		updates.Latitude = requestBody.Latitude
+		needsUpdate = true
+	}
+
+	if requestBody.Longitude != nil {
+		updates.Longitude = requestBody.Longitude
+		needsUpdate = true
+	}
+
+	if requestBody.LocationAddress != nil {
+		updates.LocationAddress = requestBody.LocationAddress
+		needsUpdate = true
+	}
+
+	if requestBody.Bio != nil {
+		updates.Bio = requestBody.Bio
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		if err := s.dbClient.User().Update(ctx, user.ID, updates); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
 	// Fetch updated user
 	updatedUser, err := s.dbClient.User().FindByID(ctx, user.ID)
 	if err != nil {
@@ -232,5 +288,3 @@ func (s *server) UpdateProfile(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, updatedUser)
 }
-
-

@@ -31,7 +31,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   int _docsShared = 0;
   bool _isLoadingDocs = false;
-  String? _lastLoadedUserId;
 
   /// Calculate progress percentage towards next level
   /// Returns a value between 0.0 and 1.0
@@ -49,12 +48,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    // Load initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _loadDocumentCount();
     });
   }
 
   Future<void> _loadDocumentCount() async {
+    if (!mounted) return;
+    
     final authProvider = context.read<AuthProvider>();
     final user = authProvider.user;
 
@@ -62,27 +65,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
 
-    // Don't reload if we already loaded for this user
-    if (_lastLoadedUserId == user?.id && user?.id != null) {
-      return;
-    }
-
+    if (!mounted) return;
     setState(() {
       _isLoadingDocs = true;
     });
 
     try {
       final documentsJson = await _documentService.getDocumentsByUserId(user!.id!);
-      setState(() {
-        _docsShared = documentsJson.length;
-        _isLoadingDocs = false;
-        _lastLoadedUserId = user.id;
-      });
+      if (mounted) {
+        setState(() {
+          _docsShared = documentsJson.length;
+          _isLoadingDocs = false;
+        });
+      }
     } catch (e) {
       // Silently handle errors - don't show error state, just keep count at 0
-      setState(() {
-        _isLoadingDocs = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingDocs = false;
+        });
+      }
     }
   }
 
@@ -141,13 +143,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final isLoading = context.select<UserLevelProvider, bool>((provider) => provider.loading);
 
     final userName = user?.name ?? user?.username ?? 'Traveler';
-    
-    // Reload document count if user changes
-    if (user?.id != null && user?.id != _lastLoadedUserId && !_isLoadingDocs) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadDocumentCount();
-      });
-    }
 
     // Use default values if user level is not loaded yet
     final level = userLevel?.level ?? 1;

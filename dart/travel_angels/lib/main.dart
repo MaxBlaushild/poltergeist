@@ -26,6 +26,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   final AppLinks _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSubscription;
+  AuthProvider? _authProvider;
 
   @override
   void initState() {
@@ -59,6 +60,12 @@ class _MyAppState extends State<MyApp> {
     debugPrint('Deep link received: $uri');
     
     if (uri.scheme == 'travelangels') {
+      // Handle credit purchase success
+      if (uri.host == 'credits' && uri.pathSegments.length >= 3 && uri.pathSegments[1] == 'purchase' && uri.pathSegments[2] == 'success') {
+        debugPrint('Credit purchase success detected, refreshing user data');
+        // Refresh user data to get updated credits
+        _authProvider?.verifyToken();
+      }
       // Route to appropriate screen based on deep link
       // For now, OAuth callbacks are handled by PermissionsPanel widget
       // This can be extended for other deep link routes
@@ -79,6 +86,14 @@ class _MyAppState extends State<MyApp> {
     final authProvider = AuthProvider(authService);
     final userLevelService = UserLevelService(apiClient);
     final userLevelProvider = UserLevelProvider(userLevelService);
+
+    // Store authProvider reference for deep link handling
+    _authProvider = authProvider;
+
+    // Set up auth error callback to log out user when 401/403 occurs
+    apiClient.setOnAuthError(() {
+      authProvider.logout();
+    });
 
     return MultiProvider(
       providers: [

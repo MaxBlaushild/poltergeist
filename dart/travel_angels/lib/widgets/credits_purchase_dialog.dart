@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/services/credits_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -34,6 +35,29 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
   void dispose() {
     _customAmountController.dispose();
     super.dispose();
+  }
+
+  /// Extracts error message from DioException response body
+  String _extractErrorMessage(dynamic error) {
+    if (error is DioException) {
+      // Try to get error message from response body
+      if (error.response?.data != null) {
+        final data = error.response!.data;
+        if (data is Map<String, dynamic> && data.containsKey('error')) {
+          return data['error'] as String;
+        }
+        if (data is String) {
+          return data;
+        }
+      }
+      // Fall back to DioException message or status code
+      if (error.response != null) {
+        return 'Server error (${error.response!.statusCode}): ${error.message ?? 'Unknown error'}';
+      }
+      return error.message ?? 'Network error occurred';
+    }
+    // Fall back for non-Dio errors
+    return error.toString();
   }
 
   Future<void> _handlePurchase(int amountInDollars) async {
@@ -76,7 +100,7 @@ class _CreditsPurchaseDialogState extends State<CreditsPurchaseDialog> {
       }
     } catch (e) {
       setState(() {
-        _error = 'Failed to initiate purchase: ${e.toString()}';
+        _error = 'Failed to initiate purchase: ${_extractErrorMessage(e)}';
         _isProcessing = false;
       });
     }

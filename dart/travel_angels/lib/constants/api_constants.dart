@@ -41,6 +41,9 @@ class ApiConstants {
   static const String purchaseCreditsEndpoint = '/travel-angels/credits/purchase';
   static const String creditsWebhookEndpoint = '/travel-angels/credits/webhook';
 
+  // Location endpoints
+  static String locationSearchEndpoint(String query) => '/travel-angels/location/search?q=${Uri.encodeComponent(query)}';
+
   // App name for verification code requests
   static const String appName = 'travel-angels';
 }

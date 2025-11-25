@@ -195,7 +195,7 @@ module "ecs" {
           memory    = 512
           essential = true
           secrets = [{
-            name      = "TRAVEL_ANGELS_STRIPE_SECRET_KEY",
+            name      = "STRIPE_SECRET_KEY",
             valueFrom = "${aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn}"
           }, {
             name      = "DB_PASSWORD",
@@ -205,8 +205,8 @@ module "ecs" {
           port_mappings = [
             {
               name          = "travel-angels-billing"
-              containerPort = 8085
-              hostPort      = 8085
+              containerPort = 8022
+              hostPort      = 8022
               protocol      = "tcp"
             }
           ]

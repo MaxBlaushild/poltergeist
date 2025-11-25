@@ -1,9 +1,12 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -37,6 +40,7 @@ func main() {
 	billingProxy := httputil.NewSingleHostReverseProxy(billingUrl)
 	sonarProxy := httputil.NewSingleHostReverseProxy(sonarUrl)
 	travelAngelsProxy := httputil.NewSingleHostReverseProxy(travelAngelsUrl)
+
 	router.POST("/consult", func(c *gin.Context) {
 		fountProxy.ServeHTTP(c.Writer, c.Request)
 	})
@@ -75,6 +79,35 @@ func main() {
 
 	router.Any("/travel-angels/*any", func(c *gin.Context) {
 		travelAngelsProxy.ServeHTTP(c.Writer, c.Request)
+	})
+
+	// Champagne endpoint - sends celebratory text
+	texterClient := texter.NewClient()
+	router.POST("/champagne", func(c *gin.Context) {
+		// Get phone number from environment or use default
+		fromPhoneNumber := os.Getenv("PHONE_NUMBER")
+		if fromPhoneNumber == "" {
+			fromPhoneNumber = "+18445206851" // Default fallback
+		}
+
+		// Send champagne text
+		err := texterClient.Text(c.Request.Context(), &texter.Text{
+			Body:     "Time for champagne! 🍾",
+			To:       "+12154354713",
+			From:     fromPhoneNumber,
+			TextType: "champagne",
+		})
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to send text",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Champagne text sent successfully",
+		})
 	})
 
 	router.GET("/", func(c *gin.Context) {

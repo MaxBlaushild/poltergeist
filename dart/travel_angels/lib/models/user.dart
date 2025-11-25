@@ -28,6 +28,18 @@ class User {
   final bool? isActive;
   @JsonKey(fromJson: _creditsFromJson)
   final int? credits;
+  @JsonKey(name: 'dateOfBirth', fromJson: _dateTimeFromJson)
+  final DateTime? dateOfBirth;
+  @JsonKey(fromJson: _genderFromJson)
+  final String? gender;
+  @JsonKey(fromJson: _latitudeFromJson)
+  final double? latitude;
+  @JsonKey(fromJson: _longitudeFromJson)
+  final double? longitude;
+  @JsonKey(name: 'locationAddress', fromJson: _locationAddressFromJson)
+  final String? locationAddress;
+  @JsonKey(fromJson: _bioFromJson)
+  final String? bio;
 
   User({
     this.id,
@@ -42,6 +54,12 @@ class User {
     this.username,
     this.isActive,
     this.credits,
+    this.dateOfBirth,
+    this.gender,
+    this.latitude,
+    this.longitude,
+    this.locationAddress,
+    this.bio,
   });
 
   static String? _idFromJson(dynamic json) {
@@ -108,6 +126,41 @@ class User {
       return int.tryParse(json);
     }
     return null;
+  }
+
+  static String? _genderFromJson(dynamic json) {
+    if (json == null || json == '') return null;
+    return json as String?;
+  }
+
+  static double? _latitudeFromJson(dynamic json) {
+    if (json == null) return null;
+    if (json is double) return json;
+    if (json is int) return json.toDouble();
+    if (json is String) {
+      return double.tryParse(json);
+    }
+    return null;
+  }
+
+  static double? _longitudeFromJson(dynamic json) {
+    if (json == null) return null;
+    if (json is double) return json;
+    if (json is int) return json.toDouble();
+    if (json is String) {
+      return double.tryParse(json);
+    }
+    return null;
+  }
+
+  static String? _locationAddressFromJson(dynamic json) {
+    if (json == null || json == '') return null;
+    return json as String?;
+  }
+
+  static String? _bioFromJson(dynamic json) {
+    if (json == null || json == '') return null;
+    return json as String?;
   }
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);

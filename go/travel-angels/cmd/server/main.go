@@ -7,6 +7,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dropbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/googledrive"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/config"
 	"github.com/MaxBlaushild/poltergeist/travel-angels/internal/server"
 )
@@ -43,6 +44,12 @@ func main() {
 
 	awsClient := aws.NewAWSClient("us-east-1")
 	billingClient := billing.NewClient()
+	googleMapsClient := googlemaps.NewClient(config.Secret.GoogleMapsApiKey)
 
-	server.NewServer(authClient, dbClient, googleDriveClient, dropboxClient, awsClient, billingClient).ListenAndServe("8083")
+	baseURL := config.Public.BaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8083"
+	}
+
+	server.NewServer(authClient, dbClient, googleDriveClient, dropboxClient, awsClient, billingClient, googleMapsClient, baseURL).ListenAndServe("8083")
 }
