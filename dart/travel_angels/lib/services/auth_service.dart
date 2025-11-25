@@ -84,7 +84,18 @@ class AuthService {
 
   /// Registers a new user with phone number and verification code
   /// Returns the authenticated user and token
-  Future<AuthResponse> register(String phoneNumber, String code, {String? username, String? profilePictureUrl}) async {
+  Future<AuthResponse> register(
+    String phoneNumber,
+    String code, {
+    String? username,
+    String? profilePictureUrl,
+    DateTime? dateOfBirth,
+    String? gender,
+    double? latitude,
+    double? longitude,
+    String? locationAddress,
+    String? bio,
+  }) async {
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
       final data = <String, dynamic>{
@@ -98,6 +109,30 @@ class AuthService {
       
       if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
         data['profilePictureUrl'] = profilePictureUrl;
+      }
+
+      if (dateOfBirth != null) {
+        data['dateOfBirth'] = '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
+      }
+
+      if (gender != null && gender.isNotEmpty) {
+        data['gender'] = gender;
+      }
+
+      if (latitude != null) {
+        data['latitude'] = latitude;
+      }
+
+      if (longitude != null) {
+        data['longitude'] = longitude;
+      }
+
+      if (locationAddress != null && locationAddress.isNotEmpty) {
+        data['locationAddress'] = locationAddress;
+      }
+
+      if (bio != null && bio.isNotEmpty) {
+        data['bio'] = bio;
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(
@@ -118,8 +153,17 @@ class AuthService {
     }
   }
 
-  /// Updates user profile (username and/or profile picture)
-  Future<User> updateProfile({String? username, String? profilePictureUrl}) async {
+  /// Updates user profile (username, profile picture, and demographic/location fields)
+  Future<User> updateProfile({
+    String? username,
+    String? profilePictureUrl,
+    DateTime? dateOfBirth,
+    String? gender,
+    double? latitude,
+    double? longitude,
+    String? locationAddress,
+    String? bio,
+  }) async {
     try {
       final data = <String, dynamic>{};
       
@@ -129,6 +173,30 @@ class AuthService {
       
       if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
         data['profilePictureUrl'] = profilePictureUrl;
+      }
+
+      if (dateOfBirth != null) {
+        data['dateOfBirth'] = '${dateOfBirth.year}-${dateOfBirth.month.toString().padLeft(2, '0')}-${dateOfBirth.day.toString().padLeft(2, '0')}';
+      }
+
+      if (gender != null && gender.isNotEmpty) {
+        data['gender'] = gender;
+      }
+
+      if (latitude != null) {
+        data['latitude'] = latitude;
+      }
+
+      if (longitude != null) {
+        data['longitude'] = longitude;
+      }
+
+      if (locationAddress != null && locationAddress.isNotEmpty) {
+        data['locationAddress'] = locationAddress;
+      }
+
+      if (bio != null && bio.isNotEmpty) {
+        data['bio'] = bio;
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(

@@ -107,7 +107,16 @@ class AuthProvider extends ChangeNotifier {
   }
 
   /// Updates user profile (username and/or profile picture)
-  Future<void> updateProfile({String? username, String? profilePictureUrl}) async {
+  Future<void> updateProfile({
+    String? username,
+    String? profilePictureUrl,
+    DateTime? dateOfBirth,
+    String? gender,
+    double? latitude,
+    double? longitude,
+    String? locationAddress,
+    String? bio,
+  }) async {
     _error = null;
     notifyListeners();
 
@@ -115,6 +124,12 @@ class AuthProvider extends ChangeNotifier {
       final updatedUser = await _authService.updateProfile(
         username: username,
         profilePictureUrl: profilePictureUrl,
+        dateOfBirth: dateOfBirth,
+        gender: gender,
+        latitude: latitude,
+        longitude: longitude,
+        locationAddress: locationAddress,
+        bio: bio,
       );
       _user = updatedUser;
       notifyListeners();

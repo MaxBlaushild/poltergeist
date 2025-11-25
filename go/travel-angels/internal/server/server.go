@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dropbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/googledrive"
+	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -20,6 +21,8 @@ type server struct {
 	dropboxClient     dropbox.Client
 	awsClient         aws.AWSClient
 	billingClient     billing.Client
+	googleMapsClient  googlemaps.Client
+	baseURL           string
 }
 
 type Server interface {
@@ -33,6 +36,8 @@ func NewServer(
 	dropboxClient dropbox.Client,
 	awsClient aws.AWSClient,
 	billingClient billing.Client,
+	googleMapsClient googlemaps.Client,
+	baseURL string,
 ) Server {
 	return &server{
 		authClient:        authClient,
@@ -41,6 +46,8 @@ func NewServer(
 		dropboxClient:     dropboxClient,
 		awsClient:         awsClient,
 		billingClient:     billingClient,
+		googleMapsClient:  googleMapsClient,
+		baseURL:           baseURL,
 	}
 }
 
@@ -73,6 +80,7 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/travel-angels/friend-invites/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteFriendInvite))
 	r.GET("/travel-angels/users/search", middleware.WithAuthenticationWithoutLocation(s.authClient, s.SearchUsers))
 	r.GET("/travel-angels/users/validate-username", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ValidateUsername))
+	r.GET("/travel-angels/location/search", s.SearchLocation)
 	r.GET("/travel-angels/dropbox/auth", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetDropboxAuth))
 	r.GET("/travel-angels/dropbox/callback", s.DropboxCallback)
 	r.POST("/travel-angels/dropbox/revoke", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RevokeDropbox))

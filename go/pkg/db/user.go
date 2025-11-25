@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -44,11 +45,17 @@ func (h *userHandle) FindByUsername(ctx context.Context, username string) (*mode
 	return &user, nil
 }
 
-func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string) (*models.User, error) {
+func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string) (*models.User, error) {
 	user := models.User{
-		Name:        name,
-		PhoneNumber: phoneNumber,
-		Username:    username,
+		Name:            name,
+		PhoneNumber:     phoneNumber,
+		Username:        username,
+		DateOfBirth:     dateOfBirth,
+		Gender:          gender,
+		Latitude:        latitude,
+		Longitude:       longitude,
+		LocationAddress: locationAddress,
+		Bio:             bio,
 	}
 
 	if id != nil {

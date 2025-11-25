@@ -19,6 +19,12 @@ User _$UserFromJson(Map<String, dynamic> json) => User(
   username: User._usernameFromJson(json['username']),
   isActive: User._isActiveFromJson(json['isActive']),
   credits: User._creditsFromJson(json['credits']),
+  dateOfBirth: User._dateTimeFromJson(json['dateOfBirth']),
+  gender: User._genderFromJson(json['gender']),
+  latitude: User._latitudeFromJson(json['latitude']),
+  longitude: User._longitudeFromJson(json['longitude']),
+  locationAddress: User._locationAddressFromJson(json['locationAddress']),
+  bio: User._bioFromJson(json['bio']),
 );
 
 Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
@@ -34,4 +40,10 @@ Map<String, dynamic> _$UserToJson(User instance) => <String, dynamic>{
   'username': instance.username,
   'isActive': instance.isActive,
   'credits': instance.credits,
+  'dateOfBirth': instance.dateOfBirth?.toIso8601String(),
+  'gender': instance.gender,
+  'latitude': instance.latitude,
+  'longitude': instance.longitude,
+  'locationAddress': instance.locationAddress,
+  'bio': instance.bio,
 };

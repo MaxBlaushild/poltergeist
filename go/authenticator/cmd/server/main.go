@@ -329,7 +329,20 @@ func main() {
 			userId = &id
 		}
 
-		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId, requestBody.Username)
+		// Parse date of birth if provided
+		var dateOfBirth *time.Time
+		if requestBody.DateOfBirth != nil && *requestBody.DateOfBirth != "" {
+			parsed, err := time.Parse("2006-01-02", *requestBody.DateOfBirth)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": errors.Wrap(err, "invalid date of birth format").Error(),
+				})
+				return
+			}
+			dateOfBirth = &parsed
+		}
+
+		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId, requestBody.Username, dateOfBirth, requestBody.Gender, requestBody.Latitude, requestBody.Longitude, requestBody.LocationAddress, requestBody.Bio)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": errors.Wrap(err, "inserting user error").Error(),

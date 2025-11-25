@@ -15,11 +15,17 @@ type GetUsersRequest struct {
 }
 
 type RegisterByTextRequest struct {
-	PhoneNumber string  `json:"phoneNumber" binding:"required"`
-	Code        string  `json:"code" binding:"required"`
-	Name        string  `json:"name"`
-	UserID      *string `json:"userId"`
-	Username    *string `json:"username"`
+	PhoneNumber     string   `json:"phoneNumber" binding:"required"`
+	Code            string   `json:"code" binding:"required"`
+	Name            string   `json:"name"`
+	UserID          *string  `json:"userId"`
+	Username        *string  `json:"username"`
+	DateOfBirth     *string  `json:"dateOfBirth"`
+	Gender          *string  `json:"gender"`
+	Latitude        *float64 `json:"latitude"`
+	Longitude       *float64 `json:"longitude"`
+	LocationAddress *string  `json:"locationAddress"`
+	Bio             *string  `json:"bio"`
 }
 
 type LoginByTextRequest struct {

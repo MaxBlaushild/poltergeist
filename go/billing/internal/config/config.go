@@ -8,8 +8,9 @@ import (
 )
 
 type SecretConfig struct {
-	DbPassword      string
-	StripeSecretKey string
+	DbPassword          string
+	StripeSecretKey     string
+	StripeWebhookSecret string
 }
 
 type PublicConfig struct {
@@ -55,8 +56,9 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword:      os.Getenv("DB_PASSWORD"),
-			StripeSecretKey: os.Getenv("STRIPE_SECRET_KEY"),
+			DbPassword:          os.Getenv("DB_PASSWORD"),
+			StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
+			StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		},
 		Public: publicCfg,
 	}, nil

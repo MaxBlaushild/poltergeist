@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// API Client for making HTTP requests to the Poltergeist API
@@ -6,13 +7,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 class APIClient {
   final Dio _client;
   static const String _tokenKey = 'token';
+  VoidCallback? _onAuthError;
 
   /// Creates a new APIClient instance
   /// 
   /// [baseURL] - The base URL for the API
-  APIClient(String baseURL)
-      : _client = Dio(BaseOptions(baseUrl: baseURL)) {
+  /// [onAuthError] - Optional callback to be called when a 401/403 error occurs
+  APIClient(String baseURL, {VoidCallback? onAuthError})
+      : _client = Dio(BaseOptions(baseUrl: baseURL)),
+        _onAuthError = onAuthError {
     _setupInterceptors();
+  }
+
+  /// Sets the callback to be called when a 401/403 error occurs
+  void setOnAuthError(VoidCallback? callback) {
+    _onAuthError = callback;
   }
 
   void _setupInterceptors() {
@@ -37,6 +46,8 @@ class APIClient {
             error.response?.statusCode == 403) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove(_tokenKey);
+          // Call the auth error callback if provided
+          _onAuthError?.call();
         }
         return handler.next(error);
       },

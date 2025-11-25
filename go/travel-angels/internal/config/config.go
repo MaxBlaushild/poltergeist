@@ -28,6 +28,7 @@ type PublicConfig struct {
 	RedisUrl               string `mapstructure:"REDIS_URL"`
 	GoogleDriveRedirectURI string `mapstructure:"GOOGLE_DRIVE_REDIRECT_URI"`
 	DropboxRedirectURI     string `mapstructure:"DROPBOX_REDIRECT_URI"`
+	BaseURL                string `mapstructure:"BASE_URL"`
 }
 
 type Config struct {

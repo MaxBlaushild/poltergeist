@@ -1,12 +1,14 @@
 package server
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/billing"
-	"github.com/google/uuid"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func (s *server) GetCredits(ctx *gin.Context) {
@@ -68,15 +70,23 @@ func (s *server) PurchaseCredits(ctx *gin.Context) {
 	successURL := "travelangels://credits/purchase/success?session_id={CHECKOUT_SESSION_ID}"
 	cancelURL := "travelangels://credits/purchase/cancel"
 
-	// Create callback URL for webhook
-	paymentCompleteCallbackURL := "http://localhost:8083/travel-angels/credits/webhook"
+	// Create callback URL for webhook - use baseURL from config, fallback to localhost for local dev
+	baseURL := s.baseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8083"
+		log.Printf("[WARNING] BASE_URL not configured, using localhost fallback")
+	}
+	paymentCompleteCallbackURL := fmt.Sprintf("%s/travel-angels/credits/webhook", baseURL)
+
+	log.Printf("[PurchaseCredits] User %s purchasing %d credits ($%d)", user.ID, requestBody.AmountInDollars, requestBody.AmountInDollars)
+	log.Printf("[PurchaseCredits] Callback URL: %s", paymentCompleteCallbackURL)
 
 	// Create checkout session
 	checkoutSession, err := s.billingClient.NewPaymentCheckoutSession(ctx, &billing.PaymentCheckoutSessionParams{
 		SessionSuccessRedirectUrl:  successURL,
-		SessionCancelRedirectUrl:    cancelURL,
-		AmountInCents:               amountInCents,
-		PaymentCompleteCallbackUrl:  paymentCompleteCallbackURL,
+		SessionCancelRedirectUrl:   cancelURL,
+		AmountInCents:              amountInCents,
+		PaymentCompleteCallbackUrl: paymentCompleteCallbackURL,
 		Metadata: map[string]string{
 			"user_id":           user.ID.String(),
 			"amount_in_dollars": strconv.Itoa(requestBody.AmountInDollars),
@@ -84,11 +94,14 @@ func (s *server) PurchaseCredits(ctx *gin.Context) {
 		},
 	})
 	if err != nil {
+		log.Printf("[PurchaseCredits] Error creating checkout session: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
+
+	log.Printf("[PurchaseCredits] Checkout session created: %s", checkoutSession.URL)
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"checkoutUrl": checkoutSession.URL,
@@ -96,27 +109,37 @@ func (s *server) PurchaseCredits(ctx *gin.Context) {
 }
 
 func (s *server) HandleCreditsWebhook(ctx *gin.Context) {
+	log.Printf("[HandleCreditsWebhook] Webhook received")
+
 	var requestBody billing.OnPaymentComplete
 
 	if err := ctx.Bind(&requestBody); err != nil {
+		log.Printf("[HandleCreditsWebhook] Error binding request: %v", err)
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
+	log.Printf("[HandleCreditsWebhook] Session ID: %s, Amount: %d cents, Metadata: %+v",
+		requestBody.SessionID, requestBody.AmountInCents, requestBody.Metadata)
+
 	// Extract user ID from metadata
 	userIDStr, ok := requestBody.Metadata["user_id"]
 	if !ok {
+		log.Printf("[HandleCreditsWebhook] ERROR: user_id not found in metadata")
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "user_id not found in metadata",
 		})
 		return
 	}
 
+	log.Printf("[HandleCreditsWebhook] User ID from metadata: %s", userIDStr)
+
 	// Parse user ID
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
+		log.Printf("[HandleCreditsWebhook] ERROR: invalid user_id format: %v", err)
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid user_id",
 		})
@@ -128,22 +151,37 @@ func (s *server) HandleCreditsWebhook(ctx *gin.Context) {
 	if !ok {
 		// Fallback: calculate from amount in cents (1 dollar = 1 credit)
 		creditsStr = strconv.FormatInt(requestBody.AmountInCents/100, 10)
+		log.Printf("[HandleCreditsWebhook] Credits not in metadata, calculated from amount: %s", creditsStr)
+	} else {
+		log.Printf("[HandleCreditsWebhook] Credits from metadata: %s", creditsStr)
 	}
 
 	credits, err := strconv.Atoi(creditsStr)
 	if err != nil {
+		log.Printf("[HandleCreditsWebhook] ERROR: invalid credits amount: %v", err)
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid credits amount",
 		})
 		return
 	}
 
+	log.Printf("[HandleCreditsWebhook] Adding %d credits to user %s", credits, userID)
+
 	// Add credits to user
 	if err := s.dbClient.User().AddCredits(ctx, userID, credits); err != nil {
+		log.Printf("[HandleCreditsWebhook] ERROR: failed to add credits: %v", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
+	}
+
+	// Fetch updated user to verify credits were added
+	updatedUser, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		log.Printf("[HandleCreditsWebhook] WARNING: failed to fetch updated user: %v", err)
+	} else {
+		log.Printf("[HandleCreditsWebhook] Success! User %s now has %d credits", userID, updatedUser.Credits)
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -258,4 +296,3 @@ func (s *server) SubtractCredits(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, updatedUser)
 }
-

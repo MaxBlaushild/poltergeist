@@ -77,18 +77,26 @@ func forwardPaymentComplete(ctx *gin.Context, session *stripe.CheckoutSession, u
 	}
 	jsonBody, err := json.Marshal(onPaymentComplete)
 	if err != nil {
+		fmt.Printf("[forwardPaymentComplete] ERROR marshaling JSON: %v\n", err)
 		return err
 	}
 
+	fmt.Printf("[forwardPaymentComplete] POSTing to %s with body: %s\n", url, string(jsonBody))
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
+		fmt.Printf("[forwardPaymentComplete] ERROR making POST request: %v\n", err)
 		return err
 	}
 	defer resp.Body.Close()
 
+	fmt.Printf("[forwardPaymentComplete] Response status: %d\n", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("received non-OK response from server")
+		bodyBytes := make([]byte, 1024)
+		n, _ := resp.Body.Read(bodyBytes)
+		fmt.Printf("[forwardPaymentComplete] Response body: %s\n", string(bodyBytes[:n]))
+		return fmt.Errorf("received non-OK response from server: %d", resp.StatusCode)
 	}
+	fmt.Printf("[forwardPaymentComplete] Successfully forwarded payment complete\n")
 	return nil
 }
 
@@ -237,13 +245,21 @@ func main() {
 			// Check if this is a payment checkout
 			paymentCallbackUrl, ok := session.Metadata["payment_complete_callback_url"]
 			if ok {
+				fmt.Printf("[StripeWebhook] Payment checkout detected, forwarding to: %s\n", paymentCallbackUrl)
+				fmt.Printf("[StripeWebhook] Session ID: %s, Amount: %d cents\n", session.ID, session.AmountTotal)
+				fmt.Printf("[StripeWebhook] Metadata: %+v\n", session.Metadata)
 				if err := forwardPaymentComplete(ctx, &session, paymentCallbackUrl); err != nil {
-					fmt.Println(err.Error())
+					fmt.Printf("[StripeWebhook] ERROR forwarding payment complete: %v\n", err)
 					ctx.JSON(500, gin.H{
 						"message": err.Error(),
 					})
+					return
 				}
+				fmt.Printf("[StripeWebhook] Successfully forwarded payment complete\n")
 				return
+			} else {
+				fmt.Printf("[StripeWebhook] Payment checkout session but no payment_complete_callback_url in metadata\n")
+				fmt.Printf("[StripeWebhook] Available metadata keys: %+v\n", session.Metadata)
 			}
 		}
 
