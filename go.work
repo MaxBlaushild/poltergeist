@@ -25,10 +25,12 @@ use (
 	./go/pkg/util
 	./go/pkg/googledrive
 	./go/pkg/dropbox
+	./go/pkg/hue
 	./go/proteus
 	./go/scorekeeper
 	./go/sonar
 	./go/texter
 	./go/trivai
 	./go/travel-angels
+	./go/final-fete
 )

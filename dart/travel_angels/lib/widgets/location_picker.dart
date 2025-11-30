@@ -7,10 +7,16 @@ import 'package:travel_angels/services/location_service.dart';
 
 class LocationPicker extends StatefulWidget {
   final Function(double latitude, double longitude, String address)? onLocationSelected;
+  final double? initialLatitude;
+  final double? initialLongitude;
+  final String? initialAddress;
 
   const LocationPicker({
     super.key,
     this.onLocationSelected,
+    this.initialLatitude,
+    this.initialLongitude,
+    this.initialAddress,
   });
 
   @override
@@ -29,10 +35,29 @@ class _LocationPickerState extends State<LocationPicker> {
   bool _isSearching = false;
   bool _showResults = false;
   
-  final CameraPosition _defaultCameraPosition = const CameraPosition(
-    target: LatLng(40.7128, -74.0060), // New York City
-    zoom: 10,
-  );
+  @override
+  void initState() {
+    super.initState();
+    // Initialize with provided values if available
+    if (widget.initialLatitude != null && widget.initialLongitude != null) {
+      _selectedLocation = LatLng(widget.initialLatitude!, widget.initialLongitude!);
+      _selectedAddress = widget.initialAddress ?? '${widget.initialLatitude}, ${widget.initialLongitude}';
+      _searchController.text = widget.initialAddress ?? '';
+    }
+  }
+
+  CameraPosition get _initialCameraPosition {
+    if (_selectedLocation != null) {
+      return CameraPosition(
+        target: _selectedLocation!,
+        zoom: 15,
+      );
+    }
+    return const CameraPosition(
+      target: LatLng(40.7128, -74.0060), // New York City
+      zoom: 10,
+    );
+  }
 
   @override
   void dispose() {
@@ -138,6 +163,7 @@ class _LocationPickerState extends State<LocationPicker> {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         // Search field
         TextField(
@@ -197,39 +223,51 @@ class _LocationPickerState extends State<LocationPicker> {
         
         const SizedBox(height: 16),
         
-        // Map
+        // Map - wrapped in a fixed-size container to prevent scroll issues
         SizedBox(
           height: 300,
-          child: GoogleMap(
-            initialCameraPosition: _defaultCameraPosition,
-            onMapCreated: (GoogleMapController controller) {
-              _mapController = controller;
-            },
-            onTap: _onMapTap,
-            onCameraMove: _onCameraMove,
-            onCameraIdle: _onCameraIdle,
-            markers: _selectedLocation != null
-                ? {
-                    Marker(
-                      markerId: const MarkerId('selected_location'),
-                      position: _selectedLocation!,
-                      draggable: true,
-                      onDragEnd: (LatLng newPosition) {
-                        setState(() {
-                          _selectedLocation = newPosition;
-                          _selectedAddress = '${newPosition.latitude}, ${newPosition.longitude}';
-                        });
-                        widget.onLocationSelected?.call(
-                          newPosition.latitude,
-                          newPosition.longitude,
-                          _selectedAddress!,
-                        );
-                      },
-                    ),
-                  }
-                : {},
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: true,
+          width: double.infinity,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: GoogleMap(
+              initialCameraPosition: _initialCameraPosition,
+              onMapCreated: (GoogleMapController controller) {
+                _mapController = controller;
+                // If we have an initial location, center the map on it
+                if (_selectedLocation != null && mounted) {
+                  controller.animateCamera(
+                    CameraUpdate.newLatLngZoom(_selectedLocation!, 15),
+                  );
+                }
+              },
+              onTap: _onMapTap,
+              onCameraMove: _onCameraMove,
+              onCameraIdle: _onCameraIdle,
+              markers: _selectedLocation != null
+                  ? {
+                      Marker(
+                        markerId: const MarkerId('selected_location'),
+                        position: _selectedLocation!,
+                        draggable: true,
+                        onDragEnd: (LatLng newPosition) {
+                          if (mounted) {
+                            setState(() {
+                              _selectedLocation = newPosition;
+                              _selectedAddress = '${newPosition.latitude}, ${newPosition.longitude}';
+                            });
+                            widget.onLocationSelected?.call(
+                              newPosition.latitude,
+                              newPosition.longitude,
+                              _selectedAddress!,
+                            );
+                          }
+                        },
+                      ),
+                    }
+                  : {},
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: true,
+            ),
           ),
         ),
         

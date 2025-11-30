@@ -1,5 +1,4 @@
 import { MovementPattern } from './movementPattern';
-import { PointOfInterest } from './pointOfInterest';
 export interface Character {
     id: string;
     createdAt: Date;
@@ -8,8 +7,7 @@ export interface Character {
     description: string;
     mapIconUrl: string;
     dialogueImageUrl: string;
-    locationId: string;
-    location?: PointOfInterest;
+    geometry?: string;
     movementPatternId: string;
     movementPattern: MovementPattern;
 }

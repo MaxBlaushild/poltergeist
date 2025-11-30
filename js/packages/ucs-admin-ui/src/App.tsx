@@ -27,6 +27,9 @@ import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
 import { InventoryItems } from './components/InventoryItems.tsx';
 import { TreasureChests } from './components/TreasureChests.tsx';
+import { FeteRooms } from './components/FeteRooms.tsx';
+import { FeteTeams } from './components/FeteTeams.tsx';
+import { FeteRoomLinkedListTeams } from './components/FeteRoomLinkedListTeams.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -73,6 +76,9 @@ const Navigation = () => {
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
+        <Link to="/fete-rooms" className="text-white hover:text-gray-300">Fete Rooms</Link>
+        <Link to="/fete-teams" className="text-white hover:text-gray-300">Fete Teams</Link>
+        <Link to="/fete-room-linked-list-teams" className="text-white hover:text-gray-300">Fete Linked List</Link>
       </div>
     </nav>
   );
@@ -176,6 +182,21 @@ const router = createBrowserRouter([
       {
         path: "/treasure-chests",
         element: <TreasureChests />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/fete-rooms",
+        element: <FeteRooms />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/fete-teams",
+        element: <FeteTeams />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/fete-room-linked-list-teams",
+        element: <FeteRoomLinkedListTeams />,
         loader: onlyAuthenticated,
       },
     ]

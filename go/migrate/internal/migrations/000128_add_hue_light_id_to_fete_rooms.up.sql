@@ -1,0 +1,3 @@
+ALTER TABLE fete_rooms
+ADD COLUMN IF NOT EXISTS hue_light_id INTEGER;
+

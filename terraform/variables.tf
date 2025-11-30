@@ -82,3 +82,13 @@ variable "travel_angels_stripe_secret_key" {
   description = "Travel Angels Stripe Secret Key"
   type        = string
 }
+
+variable "hue_bridge_hostname" {
+  description = "Hue Bridge Hostname"
+  type        = string
+}
+
+variable "hue_bridge_username" {
+  description = "Hue Bridge Username"
+  type        = string
+}

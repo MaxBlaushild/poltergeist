@@ -115,3 +115,11 @@ resource "aws_ecr_repository" "travel_angels" {
   }
 }
 
+resource "aws_ecr_repository" "final_fete" {
+  name                 = "final-fete"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}

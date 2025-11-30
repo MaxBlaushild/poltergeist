@@ -20,13 +20,11 @@ module "ecs" {
 
   services = {
     sonar_core = {
-      cpu = 2048
-      memory = 4096
+      cpu = 1024
+      memory = 2048
 
       container_definitions = {
         "core" = {
-          cpu       = 256
-          memory    = 512
           essential = true
           image     = "${aws_ecr_repository.core.repository_url}:latest"
           port_mappings = [
@@ -40,8 +38,6 @@ module "ecs" {
         }
 
         "authenticator" = {
-          cpu       = 256
-          memory    = 512
           essential = true
           secrets = [{
             name      = "DB_PASSWORD",
@@ -62,8 +58,8 @@ module "ecs" {
         }
 
         "fount-of-erebos" = {
-          cpu       = 256
-          memory    = 512
+          # cpu       = 256
+          # memory    = 512
           essential = true
           secrets = [{
             name      = "OPEN_AI_KEY",
@@ -81,8 +77,6 @@ module "ecs" {
         }
 
         "texter" = {
-          cpu       = 256
-          memory    = 512
           essential = true
           secrets = [{
             name      = "DB_PASSWORD",
@@ -106,8 +100,6 @@ module "ecs" {
         }
 
         "job-runner" = {
-          cpu       = 256
-          memory    = 512
           essential = true
           secrets = [{ 
             name      = "DB_PASSWORD",
@@ -134,8 +126,8 @@ module "ecs" {
         }
 
         "travel-angels" = {
-          cpu       = 256
-          memory    = 512
+          # cpu       = 256
+          # memory    = 512
           essential = true
           image = "${aws_ecr_repository.travel_angels.repository_url}:latest"
           secrets = [{
@@ -159,8 +151,6 @@ module "ecs" {
         }
 
         "sonar" = {
-          cpu       = 256
-          memory    = 512
           essential = true
           secrets = [{
             name      = "DB_PASSWORD",
@@ -191,8 +181,6 @@ module "ecs" {
         }
 
       "travel-angels-billing" = {
-          cpu      = 256
-          memory    = 512
           essential = true
           secrets = [{
             name      = "STRIPE_SECRET_KEY",
@@ -207,6 +195,29 @@ module "ecs" {
               name          = "travel-angels-billing"
               containerPort = 8022
               hostPort      = 8022
+              protocol      = "tcp"
+            }
+          ]
+        }
+        
+        "final-fete" = {
+          essential = true
+          image = "${aws_ecr_repository.final_fete.repository_url}:latest"
+          secrets = [{
+            name      = "HUE_BRIDGE_HOSTNAME",
+            valueFrom = "${aws_secretsmanager_secret.hue_bridge_hostname.arn}"
+          }, {
+            name      = "HUE_BRIDGE_USERNAME",
+            valueFrom = "${aws_secretsmanager_secret.hue_bridge_username.arn}"
+          }, {
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }]
+          port_mappings = [
+            {
+              name          = "final-fete"
+              containerPort = 8085
+              hostPort      = 8085
               protocol      = "tcp"
             }
           ]

@@ -150,3 +150,21 @@ resource "aws_secretsmanager_secret_version" "travel_angels_stripe_secret_key" {
   secret_id     = aws_secretsmanager_secret.travel_angels_stripe_secret_key.id
   secret_string = var.travel_angels_stripe_secret_key
 }
+
+resource "aws_secretsmanager_secret" "hue_bridge_hostname" {
+  name = "HUE_BRIDGE_HOSTNAME"
+}
+
+resource "aws_secretsmanager_secret_version" "hue_bridge_hostname" {
+  secret_id     = aws_secretsmanager_secret.hue_bridge_hostname.id
+  secret_string = var.hue_bridge_hostname
+}
+
+resource "aws_secretsmanager_secret" "hue_bridge_username" {
+  name = "HUE_BRIDGE_USERNAME"
+}
+
+resource "aws_secretsmanager_secret_version" "hue_bridge_username" {
+  secret_id     = aws_secretsmanager_secret.hue_bridge_username.id
+  secret_string = var.hue_bridge_username
+}
