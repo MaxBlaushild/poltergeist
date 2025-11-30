@@ -29,6 +29,7 @@ func main() {
 	billingUrl, _ := url.Parse("http://localhost:8022")
 	sonarUrl, _ := url.Parse("http://localhost:8042")
 	travelAngelsUrl, _ := url.Parse("http://localhost:8083")
+	finalFeteUrl, _ := url.Parse("http://localhost:8085")
 
 	fountProxy := httputil.NewSingleHostReverseProxy(fountUrl)
 	trivaiProxy := httputil.NewSingleHostReverseProxy(trivaiUrl)
@@ -40,6 +41,7 @@ func main() {
 	billingProxy := httputil.NewSingleHostReverseProxy(billingUrl)
 	sonarProxy := httputil.NewSingleHostReverseProxy(sonarUrl)
 	travelAngelsProxy := httputil.NewSingleHostReverseProxy(travelAngelsUrl)
+	finalFeteProxy := httputil.NewSingleHostReverseProxy(finalFeteUrl)
 
 	router.POST("/consult", func(c *gin.Context) {
 		fountProxy.ServeHTTP(c.Writer, c.Request)
@@ -79,6 +81,10 @@ func main() {
 
 	router.Any("/travel-angels/*any", func(c *gin.Context) {
 		travelAngelsProxy.ServeHTTP(c.Writer, c.Request)
+	})
+
+	router.Any("/final-fete/*any", func(c *gin.Context) {
+		finalFeteProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
 	// Champagne endpoint - sends celebratory text

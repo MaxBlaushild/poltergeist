@@ -4,6 +4,7 @@ export var Rarity;
     Rarity["Uncommon"] = "Uncommon";
     Rarity["Epic"] = "Epic";
     Rarity["Mythic"] = "Mythic";
+    Rarity["NotDroppable"] = "Not Droppable";
 })(Rarity || (Rarity = {}));
 ;
 export var ItemType;

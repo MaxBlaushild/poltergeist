@@ -62,6 +62,10 @@ type DbClient interface {
 	DocumentTag() DocumentTagHandle
 	GoogleDriveToken() GoogleDriveTokenHandle
 	DropboxToken() DropboxTokenHandle
+	HueToken() HueTokenHandle
+	FeteRoom() FeteRoomHandle
+	FeteTeam() FeteTeamHandle
+	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -544,4 +548,37 @@ type DropboxTokenHandle interface {
 	Update(ctx context.Context, token *models.DropboxToken) error
 	Delete(ctx context.Context, userID uuid.UUID) error
 	RefreshToken(ctx context.Context, userID uuid.UUID, newAccessToken string, expiresAt time.Time) error
+}
+
+type HueTokenHandle interface {
+	Create(ctx context.Context, token *models.HueToken) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.HueToken, error)
+	FindLatest(ctx context.Context) (*models.HueToken, error)
+	Update(ctx context.Context, token *models.HueToken) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	RefreshToken(ctx context.Context, id uuid.UUID, newAccessToken string, expiresAt time.Time) error
+}
+
+type FeteRoomHandle interface {
+	Create(ctx context.Context, room *models.FeteRoom) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.FeteRoom, error)
+	FindAll(ctx context.Context) ([]models.FeteRoom, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.FeteRoom) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type FeteTeamHandle interface {
+	Create(ctx context.Context, team *models.FeteTeam) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.FeteTeam, error)
+	FindAll(ctx context.Context) ([]models.FeteTeam, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.FeteTeam) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type FeteRoomLinkedListTeamHandle interface {
+	Create(ctx context.Context, item *models.FeteRoomLinkedListTeam) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.FeteRoomLinkedListTeam, error)
+	FindAll(ctx context.Context) ([]models.FeteRoomLinkedListTeam, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.FeteRoomLinkedListTeam) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }

@@ -43,3 +43,7 @@ export * from './movementPattern';
 export * from './character';
 export * from './characterAction';
 export * from './treasureChest';
+export * from './feteRoom';
+export * from './feteTeam';
+export * from './feteRoomLinkedListTeam';
+export * from './hueLight';
