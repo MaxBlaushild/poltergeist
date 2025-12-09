@@ -18,6 +18,9 @@ Document _$DocumentFromJson(Map<String, dynamic> json) => Document(
   documentTags: (json['documentTags'] as List<dynamic>?)
       ?.map((e) => DocumentTag.fromJson(e as Map<String, dynamic>))
       .toList(),
+  documentLocations: (json['documentLocations'] as List<dynamic>?)
+      ?.map((e) => DocumentLocation.fromJson(e as Map<String, dynamic>))
+      .toList(),
   user: json['user'] == null
       ? null
       : User.fromJson(json['user'] as Map<String, dynamic>),
@@ -33,6 +36,7 @@ Map<String, dynamic> _$DocumentToJson(Document instance) => <String, dynamic>{
   'link': instance.link,
   'content': instance.content,
   'documentTags': instance.documentTags,
+  'documentLocations': instance.documentLocations,
   'user': instance.user,
 };
 

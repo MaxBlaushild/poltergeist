@@ -13,6 +13,7 @@ type SecretConfig struct {
 	HueBridgeUsername string
 	HueClientID       string
 	HueClientSecret   string
+	HueApplicationKey string
 }
 
 type PublicConfig struct {
@@ -65,6 +66,7 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 			HueBridgeUsername: os.Getenv("HUE_BRIDGE_USERNAME"),
 			HueClientID:       os.Getenv("HUE_CLIENT_ID"),
 			HueClientSecret:   os.Getenv("HUE_CLIENT_SECRET"),
+			HueApplicationKey: os.Getenv("HUE_APPLICATION_KEY"),
 		},
 		Public: publicCfg,
 	}, nil

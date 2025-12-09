@@ -1,0 +1,208 @@
+/* Logister component styles - Matrix theme */
+.Logister__container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.Logister__inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.Logister__inputs input {
+  height: 44px;
+  min-height: 44px;
+  font-size: 16px;
+  border: 2px solid #00ff00;
+  border-radius: 4px;
+  padding: 8px 12px;
+  width: 100%;
+  box-sizing: border-box;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #00ff00;
+  font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+  text-shadow: 0 0 5px #00ff00;
+  transition: all 0.3s ease;
+}
+
+.Logister__inputs input:focus {
+  outline: none;
+  border-color: #00ff41;
+  box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00, inset 0 0 10px rgba(0, 255, 0, 0.2);
+}
+
+.Logister__inputs input::placeholder {
+  color: #00cc00;
+  opacity: 0.6;
+}
+
+.Logister__buttonBar {
+  display: flex;
+  justify-content: center;
+}
+
+.Logister__button {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff00;
+  font-weight: bold;
+  border: 2px solid #00ff00;
+  width: 100%;
+  padding: 12px 24px;
+  min-height: 44px;
+  font-size: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+  text-shadow: 0 0 5px #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.Logister__button:hover:not(:disabled) {
+  background: rgba(0, 255, 0, 0.1);
+  box-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00;
+  border-color: #00ff41;
+}
+
+.Logister__button:disabled {
+  background: rgba(0, 0, 0, 0.5);
+  border-color: #00cc00;
+  color: #00cc00;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.Logister__disclaimer {
+  font-size: 14px;
+  color: #00ff00;
+  margin-top: 8px;
+  opacity: 0.7;
+}
+
+.Logister__error {
+  color: #ff0000;
+  font-size: 14px;
+  margin-top: 8px;
+  text-shadow: 0 0 10px #ff0000;
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    background-color: rgba(0, 255, 0, 0.2);
+    box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7), 0 0 20px rgba(0, 255, 0, 0.3);
+  }
+  50% {
+    background-color: rgba(0, 255, 0, 0.3);
+    box-shadow: 0 0 0 6px rgba(0, 255, 0, 0), 0 0 30px rgba(0, 255, 0, 0.5);
+  }
+}
+
+.pulsing-green-highlight {
+  background-color: rgba(0, 255, 0, 0.2);
+  color: #00ff00;
+  animation: pulse-green 2s ease-in-out infinite;
+  border: 1px solid #00ff00;
+}
+
+/* Matrix button styles */
+.matrix-button {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ff00;
+  font-weight: bold;
+  border: 2px solid #00ff00;
+  padding: 12px 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+  text-shadow: 0 0 5px #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.matrix-button:hover {
+  background: rgba(0, 255, 0, 0.1);
+  box-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00;
+  border-color: #00ff41;
+}
+
+.matrix-button-primary {
+  background: rgba(0, 255, 0, 0.1);
+}
+
+.matrix-button-primary:hover {
+  background: rgba(0, 255, 0, 0.2);
+}
+
+.matrix-button-secondary {
+  background: rgba(0, 0, 0, 0.8);
+  border-color: #00cc00;
+  color: #00cc00;
+}
+
+.matrix-button-secondary:hover {
+  border-color: #00ff00;
+  color: #00ff00;
+}
+
+.matrix-button-success {
+  background: rgba(0, 255, 0, 0.1);
+  border-color: #00ff00;
+}
+
+.matrix-button-success:hover {
+  background: rgba(0, 255, 0, 0.2);
+}
+
+.matrix-button-danger {
+  background: rgba(255, 0, 0, 0.1);
+  border-color: #ff0000;
+  color: #ff0000;
+  text-shadow: 0 0 5px #ff0000;
+}
+
+.matrix-button-danger:hover {
+  background: rgba(255, 0, 0, 0.2);
+  box-shadow: 0 0 20px #ff0000, 0 0 30px #ff0000;
+}
+
+/* Matrix card style */
+.matrix-card {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.matrix-card:hover {
+  box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
+  border-color: #00ff41;
+}
+
+/* Slide up animation for mobile bottom sheet */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Reduce animation on mobile to improve performance */
+@media (prefers-reduced-motion: reduce) {
+  .pulsing-green-highlight {
+    animation: none;
+    background-color: rgba(0, 255, 0, 0.25);
+  }
+  .animate-slide-up {
+    animation: none;
+  }
+}

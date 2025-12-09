@@ -11,7 +11,8 @@
     "build": "lerna run build",
     "test": "lerna run test",
     "lint": "NODE_ENV=development eslint --fix 'packages/**/*.js'",
-    "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'"
+    "format": "prettier --write 'packages/**/*.{js,jsx,ts,tsx,json,css,md}'",
+    "watch": "concurrently -n \"types,api-client,components,contexts,hooks,utils\" -c \"cyan,magenta,yellow,green,blue,red\" \"npm run watch --prefix packages/types\" \"npm run watch --prefix packages/api-client\" \"npm run watch --prefix packages/components\" \"npm run watch --prefix packages/contexts\" \"npm run watch --prefix packages/hooks\" \"npm run watch --prefix packages/utils\""
   },
   "author": "",
   "license": "ISC",
@@ -25,6 +26,7 @@
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "babel-preset-react-app": "^10.0.1",
+    "concurrently": "^8.2.2",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.1",

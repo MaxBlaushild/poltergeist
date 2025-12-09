@@ -46,4 +46,5 @@ export * from './treasureChest';
 export * from './feteRoom';
 export * from './feteTeam';
 export * from './feteRoomLinkedListTeam';
+export * from './feteRoomTeam';
 export * from './hueLight';

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 
 class DocumentService {
@@ -15,6 +16,7 @@ class DocumentService {
   /// [content] - Optional document content
   /// [tagIds] - Optional list of existing tag IDs
   /// [newTags] - Optional list of new tag texts
+  /// [locations] - Optional list of document locations
   /// 
   /// Returns the created document
   Future<Map<String, dynamic>> createDocument({
@@ -24,6 +26,7 @@ class DocumentService {
     String? content,
     List<String>? tagIds,
     List<String>? newTags,
+    List<DocumentLocation>? locations,
   }) async {
     try {
       final data = <String, dynamic>{
@@ -38,6 +41,16 @@ class DocumentService {
       }
       if (newTags != null && newTags.isNotEmpty) {
         data['newTagTexts'] = newTags;
+      }
+      if (locations != null && locations.isNotEmpty) {
+        data['locations'] = locations.map((loc) => {
+          'placeId': loc.placeId,
+          'name': loc.name,
+          'formattedAddress': loc.formattedAddress,
+          'latitude': loc.latitude,
+          'longitude': loc.longitude,
+          'type': loc.locationType.name,
+        }).toList();
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(
@@ -91,6 +104,7 @@ class DocumentService {
   /// [content] - Optional new content
   /// [existingTagIds] - Optional list of existing tag IDs to keep/add
   /// [newTagTexts] - Optional list of new tag texts to create and add
+  /// [locations] - Optional list of document locations (replaces all existing)
   /// 
   /// Returns the updated document
   Future<Map<String, dynamic>> updateDocument({
@@ -99,6 +113,7 @@ class DocumentService {
     String? content,
     List<String>? existingTagIds,
     List<String>? newTagTexts,
+    List<DocumentLocation>? locations,
   }) async {
     try {
       final data = <String, dynamic>{};
@@ -107,6 +122,16 @@ class DocumentService {
       if (content != null) data['content'] = content;
       if (existingTagIds != null) data['existingTagIds'] = existingTagIds;
       if (newTagTexts != null) data['newTagTexts'] = newTagTexts;
+      if (locations != null) {
+        data['locations'] = locations.map((loc) => {
+          'placeId': loc.placeId,
+          'name': loc.name,
+          'formattedAddress': loc.formattedAddress,
+          'latitude': loc.latitude,
+          'longitude': loc.longitude,
+          'type': loc.locationType.name,
+        }).toList();
+      }
 
       final response = await _apiClient.put<Map<String, dynamic>>(
         ApiConstants.updateDocumentEndpoint(documentId),

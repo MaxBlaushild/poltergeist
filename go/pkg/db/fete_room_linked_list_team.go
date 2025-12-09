@@ -57,3 +57,19 @@ func (h *feteRoomLinkedListTeamHandler) Delete(ctx context.Context, id uuid.UUID
 	return h.db.WithContext(ctx).Delete(&models.FeteRoomLinkedListTeam{}, id).Error
 }
 
+func (h *feteRoomLinkedListTeamHandler) FindByRoomIDAndFirstTeamID(ctx context.Context, roomID, firstTeamID uuid.UUID) (*models.FeteRoomLinkedListTeam, error) {
+	var item models.FeteRoomLinkedListTeam
+	if err := h.db.WithContext(ctx).
+		Preload("FeteRoom").
+		Preload("FirstTeam").
+		Preload("SecondTeam").
+		Where("fete_room_id = ? AND first_team_id = ?", roomID, firstTeamID).
+		First(&item).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+

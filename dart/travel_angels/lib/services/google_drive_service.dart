@@ -1,4 +1,5 @@
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 
 class GoogleDriveService {
@@ -71,18 +72,33 @@ class GoogleDriveService {
   /// Imports a Google Drive document
   /// fileId: The Google Drive file ID
   /// importType: Either "import" or "reference"
+  /// locations: Optional list of document locations
   /// Returns the created document
   Future<Map<String, dynamic>> importDocument(
     String fileId,
-    String importType,
-  ) async {
+    String importType, {
+    List<DocumentLocation>? locations,
+  }) async {
     try {
+      final data = <String, dynamic>{
+        'fileId': fileId,
+        'importType': importType,
+      };
+
+      if (locations != null && locations.isNotEmpty) {
+        data['locations'] = locations.map((loc) => {
+          'placeId': loc.placeId,
+          'name': loc.name,
+          'formattedAddress': loc.formattedAddress,
+          'latitude': loc.latitude,
+          'longitude': loc.longitude,
+          'type': loc.locationType.name,
+        }).toList();
+      }
+
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.googleDriveImportDocumentEndpoint,
-        data: {
-          'fileId': fileId,
-          'importType': importType,
-        },
+        data: data,
       );
       return response;
     } catch (e) {

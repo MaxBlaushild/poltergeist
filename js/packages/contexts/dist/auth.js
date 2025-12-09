@@ -11,6 +11,10 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 const tokenKey = 'token';
+// Support both Vite and CRA environment variables
+const getApiUrl = () => {
+    return 'https://api.unclaimedstreets.com';
+};
 const AuthContext = createContext({
     user: null,
     isWaitingForVerificationCode: false,
@@ -33,7 +37,8 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
             setLoading(true);
             const verifyToken = () => __awaiter(void 0, void 0, void 0, function* () {
                 try {
-                    const response = yield axios.post(`${process.env.REACT_APP_API_URL}/authenticator/token/verify`, { token });
+                    const response = yield axios.post(`${getApiUrl()}/authenticator/token/verify`, { token });
+                    console.log(response.data);
                     setUser(response.data);
                 }
                 catch (e) {
@@ -52,7 +57,7 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
     }, [token]);
     const getVerificationCode = (phoneNumber) => __awaiter(void 0, void 0, void 0, function* () {
         try {
-            const { data } = yield axios.post(`${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`, { phoneNumber, appName });
+            const { data } = yield axios.post(`${getApiUrl()}/authenticator/text/verification-code`, { phoneNumber, appName });
             setIsWaitingOnVerificationCode(true);
             setIsRegister(!data);
         }
@@ -63,14 +68,14 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
     });
     const logister = (phoneNumber, verificationCode) => __awaiter(void 0, void 0, void 0, function* () {
         try {
-            const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/login`, { phoneNumber, code: verificationCode });
+            const response = yield axios.post(`${getApiUrl()}${uriPrefix}/login`, { phoneNumber, code: verificationCode });
             const { user, token } = response.data;
             localStorage.setItem(tokenKey, token);
             setUser(user);
         }
         catch (e) {
             try {
-                const response = yield axios.post(`${process.env.REACT_APP_API_URL}${uriPrefix}/register`, { phoneNumber, code: verificationCode });
+                const response = yield axios.post(`${getApiUrl()}${uriPrefix}/register`, { phoneNumber, code: verificationCode });
                 const { user, token } = response.data;
                 localStorage.setItem(tokenKey, token);
                 setIsRegister(true);
@@ -97,5 +102,9 @@ export const AuthProvider = ({ children, appName, uriPrefix, }) => {
         } }, { children: children })));
 };
 export const useAuth = () => {
-    return useContext(AuthContext);
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 };

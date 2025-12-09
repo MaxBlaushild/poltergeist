@@ -126,8 +126,6 @@ module "ecs" {
         }
 
         "travel-angels" = {
-          # cpu       = 256
-          # memory    = 512
           essential = true
           image = "${aws_ecr_repository.travel_angels.repository_url}:latest"
           secrets = [{
@@ -210,8 +208,17 @@ module "ecs" {
             name      = "HUE_BRIDGE_USERNAME",
             valueFrom = "${aws_secretsmanager_secret.hue_bridge_username.arn}"
           }, {
+            name      = "HUE_CLIENT_ID",
+            valueFrom = "${aws_secretsmanager_secret.hue_client_id.arn}"
+          }, {
+            name      = "HUE_CLIENT_SECRET",
+            valueFrom = "${aws_secretsmanager_secret.hue_client_secret.arn}"
+          }, {
             name      = "DB_PASSWORD",
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "HUE_APPLICATION_KEY",
+            valueFrom = "${aws_secretsmanager_secret.hue_application_key.arn}"
           }]
           port_mappings = [
             {

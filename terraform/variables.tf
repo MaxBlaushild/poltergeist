@@ -92,3 +92,18 @@ variable "hue_bridge_username" {
   description = "Hue Bridge Username"
   type        = string
 }
+
+variable "hue_client_id" {
+  description = "Hue Client ID"
+  type        = string
+}
+
+variable "hue_client_secret" {
+  description = "Hue Client Secret"
+  type        = string
+}
+
+variable "hue_application_key" {
+  description = "Hue Application Key"
+  type        = string
+}

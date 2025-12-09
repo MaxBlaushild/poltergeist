@@ -168,3 +168,30 @@ resource "aws_secretsmanager_secret_version" "hue_bridge_username" {
   secret_id     = aws_secretsmanager_secret.hue_bridge_username.id
   secret_string = var.hue_bridge_username
 }
+
+resource "aws_secretsmanager_secret" "hue_client_id" {
+  name = "HUE_CLIENT_ID"
+}
+
+resource "aws_secretsmanager_secret_version" "hue_client_id" {
+  secret_id     = aws_secretsmanager_secret.hue_client_id.id
+  secret_string = var.hue_client_id
+}
+
+resource "aws_secretsmanager_secret" "hue_client_secret" {
+  name = "HUE_CLIENT_SECRET"
+}
+
+resource "aws_secretsmanager_secret_version" "hue_client_secret" {
+  secret_id     = aws_secretsmanager_secret.hue_client_secret.id
+  secret_string = var.hue_client_secret
+}
+
+resource "aws_secretsmanager_secret" "hue_application_key" {
+  name = "HUE_APPLICATION_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "hue_application_key" {
+  secret_id     = aws_secretsmanager_secret.hue_application_key.id
+  secret_string = var.hue_application_key
+}

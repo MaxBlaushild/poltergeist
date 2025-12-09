@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
+import 'package:travel_angels/widgets/location_selector.dart';
 
 /// Widget for picking and importing PDF or Word files from device
 class FilePickerWidget extends StatefulWidget {
@@ -25,6 +27,77 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
 
   bool _isLoading = false;
   String? _errorMessage;
+  File? _selectedFile;
+  String? _parsedContent;
+  String? _documentTitle;
+  List<DocumentLocation> _selectedLocations = [];
+
+  Future<void> _createDocument() async {
+    if (_selectedFile == null || _documentTitle == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    // Show loading dialog
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    try {
+      // Create document with parsed content and locations
+      await _documentService.createDocument(
+        title: _documentTitle!,
+        provider: 'internal',
+        content: _parsedContent,
+        locations: _selectedLocations.isNotEmpty ? _selectedLocations : null,
+      );
+
+      // Close loading dialog and file picker
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading
+        Navigator.of(context).pop(); // Close file picker
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Document imported successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Notify parent that import is complete
+        widget.onImportComplete?.call();
+      }
+    } catch (e) {
+      // Close loading dialog if it's open
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import document: ${_errorMessage ?? 'Unknown error'}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   Future<void> _pickAndImportFile() async {
     setState(() {
@@ -87,27 +160,17 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
       final fileName = pickedFile.name;
       final title = fileName.replaceAll(RegExp(r'\.(pdf|docx)$', caseSensitive: false), '');
 
-      // Create document with parsed content
-      await _documentService.createDocument(
-        title: title,
-        provider: 'internal',
-        content: parsedDoc['content'] as String?,
-      );
+      // Store file info for later use
+      setState(() {
+        _selectedFile = file;
+        _parsedContent = parsedDoc['content'] as String?;
+        _documentTitle = title;
+        _isLoading = false;
+      });
 
-      // Close loading dialog and file picker
-      if (mounted) {
-        Navigator.of(context).pop(); // Close loading
-        Navigator.of(context).pop(); // Close file picker
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Document imported successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Notify parent that import is complete
-        widget.onImportComplete?.call();
+      // Close loading dialog
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
       }
     } catch (e) {
       // Close loading dialog if it's open
@@ -177,43 +240,82 @@ class _FilePickerWidgetState extends State<FilePickerWidget> {
               ),
             ),
             const SizedBox(height: 24),
-            if (_isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24.0),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (_errorMessage != null)
-              Container(
-                padding: const EdgeInsets.all(12.0),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                    const SizedBox(width: 12.0),
-                    Expanded(
-                      child: Text(
-                        _errorMessage!,
-                        style: TextStyle(
-                          color: theme.colorScheme.onErrorContainer,
+            if (_selectedFile == null)
+              if (_isLoading)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
+              else if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(12.0),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 12.0),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              )
-            else
+                    ],
+                  ),
+                )
+              else
+                Text(
+                  'Select a PDF or Word (.docx) file to import',
+                  style: theme.textTheme.bodyMedium,
+                )
+            else ...[
+              // File selected, show location selector and create button
               Text(
-                'Select a PDF or Word (.docx) file to import',
-                style: theme.textTheme.bodyMedium,
+                'File selected: ${_selectedFile!.path.split('/').last}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
+              const SizedBox(height: 16),
+              Text(
+                'Optionally add locations to tag this document:',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              LocationSelector(
+                initialLocations: _selectedLocations,
+                onLocationsChanged: (locations) {
+                  setState(() {
+                    _selectedLocations = locations;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _isLoading ? null : _createDocument,
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.upload_file),
+                label: Text(_isLoading ? 'Importing...' : 'Import Document'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
           ],
         ),

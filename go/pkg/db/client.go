@@ -63,12 +63,14 @@ type client struct {
 	treasureChestHandle               *treasureChestHandle
 	documentHandle                    *documentHandler
 	documentTagHandle                 *documentTagHandler
+	documentLocationHandle            *documentLocationHandler
 	googleDriveTokenHandle            *googleDriveTokenHandler
 	dropboxTokenHandle                *dropboxTokenHandler
 	hueTokenHandle                    *hueTokenHandler
 	feteRoomHandle                    *feteRoomHandler
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
+	feteRoomTeamHandle                *feteRoomTeamHandler
 }
 
 type ClientConfig struct {
@@ -149,12 +151,14 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		treasureChestHandle:               &treasureChestHandle{db: db},
 		documentHandle:                    &documentHandler{db: db},
 		documentTagHandle:                 &documentTagHandler{db: db},
+		documentLocationHandle:            &documentLocationHandler{db: db},
 		googleDriveTokenHandle:            &googleDriveTokenHandler{db: db},
 		dropboxTokenHandle:                &dropboxTokenHandler{db: db},
 		hueTokenHandle:                    &hueTokenHandler{db: db},
 		feteRoomHandle:                    &feteRoomHandler{db: db},
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
+		feteRoomTeamHandle:                &feteRoomTeamHandler{db: db},
 	}, nil
 }
 
@@ -366,6 +370,10 @@ func (c *client) DocumentTag() DocumentTagHandle {
 	return c.documentTagHandle
 }
 
+func (c *client) DocumentLocation() DocumentLocationHandle {
+	return c.documentLocationHandle
+}
+
 func (c *client) GoogleDriveToken() GoogleDriveTokenHandle {
 	return c.googleDriveTokenHandle
 }
@@ -388,4 +396,8 @@ func (c *client) FeteTeam() FeteTeamHandle {
 
 func (c *client) FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle {
 	return c.feteRoomLinkedListTeamHandle
+}
+
+func (c *client) FeteRoomTeam() FeteRoomTeamHandle {
+	return c.feteRoomTeamHandle
 }

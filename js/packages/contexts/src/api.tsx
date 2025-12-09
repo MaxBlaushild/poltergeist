@@ -15,15 +15,19 @@ interface APIContextType {
 }
 
 const APIContext = createContext<APIContextType | null>({
-  apiClient: new APIClient(process.env.REACT_APP_API_URL || ''),
+  apiClient: new APIClient(''),
 });
 
 interface APIProviderProps {
   children: ReactNode;
 }
 
+const getApiUrl = () => {
+  return 'https://api.unclaimedstreets.com';
+};
+
 export const APIProvider: React.FC<APIProviderProps> = ({ children }) => {
-  const baseURL = process.env.REACT_APP_API_URL || '';
+  const baseURL = getApiUrl();
   const { location } = useLocation();
   
   // Create stable getLocation function that always returns current location

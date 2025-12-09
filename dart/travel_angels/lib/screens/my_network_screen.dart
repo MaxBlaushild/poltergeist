@@ -671,7 +671,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Network'),
+        title: const Text('My Circle'),
       ),
       body: RefreshIndicator(
         onRefresh: _loadData,

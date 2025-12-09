@@ -3,6 +3,7 @@ import 'package:travel_angels/screens/discover_screen.dart';
 import 'package:travel_angels/screens/advice_screen.dart';
 import 'package:travel_angels/screens/documents_screen.dart';
 import 'package:travel_angels/screens/profile_screen.dart';
+import 'package:travel_angels/screens/my_network_screen.dart';
 import 'package:travel_angels/utils/platform_utils.dart';
 import 'package:travel_angels/widgets/main_navbar.dart';
 
@@ -19,6 +20,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   final List<Widget> _screens = const [
     DiscoverScreen(),
+    MyNetworkScreen(),
     ProfileScreen(),
     AdviceScreen(),
     DocumentsScreen(),
@@ -45,6 +47,8 @@ class _MainScaffoldState extends State<MainScaffold> {
       );
     } else {
       // Mobile/Native: Bottom navigation bar
+      // Note: Screens with AppBar handle their own safe areas
+      // Screens without AppBar (like DiscoverScreen) need SafeArea, which they handle internally
       return Scaffold(
         body: _screens[_currentIndex],
         bottomNavigationBar: MainNavbar(

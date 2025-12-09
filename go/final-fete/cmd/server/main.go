@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
+	"log"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/final-fete/internal/config"
 	"github.com/MaxBlaushild/poltergeist/final-fete/internal/server"
@@ -30,22 +31,6 @@ func main() {
 		panic(err)
 	}
 
-	// Initialize Hue client if credentials are provided
-	var hueClient hue.Client
-	if config.Secret.HueBridgeHostname != "" && config.Secret.HueBridgeUsername != "" {
-		ctx := context.Background()
-		hueClient = hue.NewClient()
-		hostname := config.Secret.HueBridgeHostname
-		// Ensure hostname has https:// prefix if it doesn't already
-		if !strings.HasPrefix(hostname, "http://") && !strings.HasPrefix(hostname, "https://") {
-			hostname = fmt.Sprintf("https://%s", hostname)
-		}
-		err = hueClient.Connect(ctx, hostname, config.Secret.HueBridgeUsername)
-		if err != nil {
-			panic(fmt.Errorf("failed to connect to Hue bridge: %w", err))
-		}
-	}
-
 	// Initialize Hue OAuth client if credentials are provided
 	var hueOAuthClient hue.OAuthClient
 	if config.Secret.HueClientID != "" && config.Secret.HueClientSecret != "" && config.Public.HueRedirectURI != "" {
@@ -54,6 +39,50 @@ func main() {
 			ClientSecret: config.Secret.HueClientSecret,
 			RedirectURI:  config.Public.HueRedirectURI,
 		})
+	}
+
+	// Initialize Hue cloud client using OAuth
+	var hueClient hue.Client
+	ctx := context.Background()
+	if hueOAuthClient != nil {
+		// Load refresh token from database
+		hueToken, err := dbClient.HueToken().FindLatest(ctx)
+		if err != nil {
+			log.Printf("Warning: Failed to load Hue token from database: %v", err)
+		} else if hueToken != nil && hueToken.RefreshToken != "" {
+			// Create token updater callback to persist refreshed tokens
+			tokenUpdater := func(accessToken, refreshToken string, expiresAt time.Time) error {
+				// Find the token again to get the ID
+				latestToken, err := dbClient.HueToken().FindLatest(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to find token for update: %w", err)
+				}
+				if latestToken == nil {
+					return fmt.Errorf("token not found in database")
+				}
+
+				// Update token fields
+				latestToken.AccessToken = accessToken
+				latestToken.RefreshToken = refreshToken
+				latestToken.ExpiresAt = expiresAt
+
+				// Save updated token
+				return dbClient.HueToken().Update(ctx, latestToken)
+			}
+
+			// Initialize cloud client with OAuth, refresh token, existing access token (if valid), and token updater
+			hueClient = hue.NewClientWithOAuth(
+				hueOAuthClient,
+				hueToken.RefreshToken,
+				hueToken.AccessToken,
+				hueToken.ExpiresAt,
+				tokenUpdater,
+				config.Secret.HueApplicationKey,
+			)
+			log.Println("Hue cloud client initialized successfully")
+		} else {
+			log.Println("Warning: No Hue refresh token found in database. Hue features will be unavailable. Run OAuth flow first.")
+		}
 	}
 
 	server.NewServer(authClient, dbClient, hueClient, hueOAuthClient).ListenAndServe("8085")
