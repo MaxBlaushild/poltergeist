@@ -30,6 +30,7 @@ import { TreasureChests } from './components/TreasureChests.tsx';
 import { FeteRooms } from './components/FeteRooms.tsx';
 import { FeteTeams } from './components/FeteTeams.tsx';
 import { FeteRoomLinkedListTeams } from './components/FeteRoomLinkedListTeams.tsx';
+import { FeteRoomTeams } from './components/FeteRoomTeams.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -197,6 +198,11 @@ const router = createBrowserRouter([
       {
         path: "/fete-room-linked-list-teams",
         element: <FeteRoomLinkedListTeams />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/fete-room-teams",
+        element: <FeteRoomTeams />,
         loader: onlyAuthenticated,
       },
     ]

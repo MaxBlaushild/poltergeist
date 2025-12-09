@@ -46,7 +46,10 @@ func (h *feteRoomHandler) FindAll(ctx context.Context) ([]models.FeteRoom, error
 func (h *feteRoomHandler) Update(ctx context.Context, id uuid.UUID, updates *models.FeteRoom) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
-	return h.db.WithContext(ctx).Model(&models.FeteRoom{}).Where("id = ?", id).Updates(updates).Error
+	return h.db.WithContext(ctx).Model(&models.FeteRoom{}).
+		Where("id = ?", id).
+		Select("Name", "Open", "CurrentTeamID", "HueLightID", "UpdatedAt").
+		Updates(updates).Error
 }
 
 func (h *feteRoomHandler) Delete(ctx context.Context, id uuid.UUID) error {

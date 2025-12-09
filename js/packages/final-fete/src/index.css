@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --matrix-green: #00ff00;
+    --matrix-green-bright: #00ff41;
+    --matrix-green-dim: #00cc00;
+    --matrix-black: #000000;
+    
+    font-family: 'Courier New', 'Monaco', 'Consolas', 'Lucida Console', monospace;
+    line-height: 1.5;
+    font-weight: 400;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background-color: var(--matrix-black);
+    color: var(--matrix-green);
+    /* Prevent zoom on iOS when focusing inputs */
+    font-size: 16px;
+    /* Safe area insets for notched devices */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Ensure minimum font size to prevent iOS zoom */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* Matrix green text with glow */
+  h1, h2, h3, h4, h5, h6, p, span, div {
+    text-shadow: 0 0 5px var(--matrix-green), 0 0 10px var(--matrix-green);
+  }
+}

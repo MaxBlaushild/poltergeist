@@ -94,26 +94,51 @@ func (c *oauthClient) ExchangeCode(ctx context.Context, code string) (*TokenResp
 }
 
 func (c *oauthClient) RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+	// Validate refresh token
+	if refreshToken == "" {
+		return nil, fmt.Errorf("refresh token is empty")
+	}
+
+	// Create token source with refresh token
 	tokenSource := c.config.TokenSource(ctx, &oauth2.Token{
 		RefreshToken: refreshToken,
 	})
 
+	// Get new token (this will automatically use the refresh token)
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		return nil, fmt.Errorf("failed to refresh token: %w", err)
 	}
 
-	expiresAt := time.Now().Add(time.Duration(newToken.Expiry.Unix()-time.Now().Unix()) * time.Second)
-	if newToken.Expiry.After(time.Now()) {
-		expiresAt = newToken.Expiry
+	// Validate the new token
+	if newToken.AccessToken == "" {
+		return nil, fmt.Errorf("received empty access token from refresh")
+	}
+
+	// Calculate expiry time
+	expiresAt := newToken.Expiry
+	if expiresAt.IsZero() || !expiresAt.After(time.Now()) {
+		// If expiry is not set or already expired, set a default (8 hours from now)
+		expiresAt = time.Now().Add(8 * time.Hour)
+	}
+
+	// Use new refresh token if provided, otherwise keep the old one
+	// According to Hue docs, each refresh may return a new refresh token
+	newRefreshToken := refreshToken
+	if newToken.RefreshToken != "" && newToken.RefreshToken != refreshToken {
+		newRefreshToken = newToken.RefreshToken
+	}
+
+	tokenType := newToken.TokenType
+	if tokenType == "" {
+		tokenType = "Bearer" // Default token type
 	}
 
 	return &TokenResponse{
 		AccessToken:  newToken.AccessToken,
-		RefreshToken: refreshToken, // Refresh token doesn't change
-		ExpiresIn:    int(time.Until(newToken.Expiry).Seconds()),
+		RefreshToken: newRefreshToken,
+		ExpiresIn:    int(time.Until(expiresAt).Seconds()),
 		ExpiresAt:    expiresAt,
-		TokenType:    newToken.TokenType,
+		TokenType:    tokenType,
 	}, nil
 }
-

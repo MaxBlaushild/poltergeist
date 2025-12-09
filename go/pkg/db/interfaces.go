@@ -60,12 +60,14 @@ type DbClient interface {
 	TreasureChest() TreasureChestHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
+	DocumentLocation() DocumentLocationHandle
 	GoogleDriveToken() GoogleDriveTokenHandle
 	DropboxToken() DropboxTokenHandle
 	HueToken() HueTokenHandle
 	FeteRoom() FeteRoomHandle
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
+	FeteRoomTeam() FeteRoomTeamHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -534,6 +536,12 @@ type DocumentTagHandle interface {
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.DocumentTag, error)
 }
 
+type DocumentLocationHandle interface {
+	Create(ctx context.Context, location *models.DocumentLocation) error
+	FindByDocumentID(ctx context.Context, documentID uuid.UUID) ([]models.DocumentLocation, error)
+	DeleteByDocumentID(ctx context.Context, documentID uuid.UUID) error
+}
+
 type GoogleDriveTokenHandle interface {
 	Create(ctx context.Context, token *models.GoogleDriveToken) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.GoogleDriveToken, error)
@@ -573,6 +581,10 @@ type FeteTeamHandle interface {
 	FindAll(ctx context.Context) ([]models.FeteTeam, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.FeteTeam) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	FindTeamByUserID(ctx context.Context, userID uuid.UUID) (*models.FeteTeam, error)
+	AddUserToTeam(ctx context.Context, teamID, userID uuid.UUID) error
+	GetUsersByTeamID(ctx context.Context, teamID uuid.UUID) ([]models.User, error)
+	RemoveUserFromTeam(ctx context.Context, teamID, userID uuid.UUID) error
 }
 
 type FeteRoomLinkedListTeamHandle interface {
@@ -581,4 +593,13 @@ type FeteRoomLinkedListTeamHandle interface {
 	FindAll(ctx context.Context) ([]models.FeteRoomLinkedListTeam, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.FeteRoomLinkedListTeam) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	FindByRoomIDAndFirstTeamID(ctx context.Context, roomID, firstTeamID uuid.UUID) (*models.FeteRoomLinkedListTeam, error)
+}
+
+type FeteRoomTeamHandle interface {
+	Create(ctx context.Context, roomTeam *models.FeteRoomTeam) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.FeteRoomTeam, error)
+	FindAll(ctx context.Context) ([]models.FeteRoomTeam, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+	FindByRoomIDAndTeamID(ctx context.Context, roomID, teamID uuid.UUID) (*models.FeteRoomTeam, error)
 }

@@ -92,10 +92,11 @@ func (h *documentHandler) Create(
 		return nil, err
 	}
 
-	// Reload document with tags preloaded
+	// Reload document with tags and locations preloaded
 	var createdDocument models.Document
 	if err := h.db.WithContext(ctx).
 		Preload("DocumentTags").
+		Preload("DocumentLocations").
 		Where("id = ?", document.ID).
 		First(&createdDocument).Error; err != nil {
 		return nil, err
@@ -108,6 +109,7 @@ func (h *documentHandler) FindByUserID(ctx context.Context, userID uuid.UUID) ([
 	var documents []models.Document
 	if err := h.db.WithContext(ctx).
 		Preload("DocumentTags").
+		Preload("DocumentLocations").
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&documents).Error; err != nil {
@@ -123,6 +125,7 @@ func (h *documentHandler) FindByUserIDs(ctx context.Context, userIDs []uuid.UUID
 	var documents []models.Document
 	if err := h.db.WithContext(ctx).
 		Preload("DocumentTags").
+		Preload("DocumentLocations").
 		Preload("User").
 		Where("user_id IN ?", userIDs).
 		Order("created_at DESC").
@@ -136,6 +139,7 @@ func (h *documentHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.D
 	var document models.Document
 	if err := h.db.WithContext(ctx).
 		Preload("DocumentTags").
+		Preload("DocumentLocations").
 		Where("id = ?", id).
 		First(&document).Error; err != nil {
 		return nil, err

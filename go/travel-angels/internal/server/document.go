@@ -11,13 +11,23 @@ import (
 	"github.com/google/uuid"
 )
 
+type DocumentLocationRequest struct {
+	PlaceID          string  `json:"placeId" binding:"required"`
+	Name             string  `json:"name" binding:"required"`
+	FormattedAddress string  `json:"formattedAddress" binding:"required"`
+	Latitude         float64 `json:"latitude" binding:"required"`
+	Longitude        float64 `json:"longitude" binding:"required"`
+	Type             string  `json:"type" binding:"required"`
+}
+
 type CreateDocumentRequest struct {
-	Title          string   `json:"title" binding:"required"`
-	Provider       string   `json:"provider" binding:"required"`
-	Link           *string  `json:"link"`
-	Content        *string  `json:"content"`
-	ExistingTagIds []string `json:"existingTagIds"`
-	NewTagTexts    []string `json:"newTagTexts"`
+	Title          string                    `json:"title" binding:"required"`
+	Provider       string                    `json:"provider" binding:"required"`
+	Link           *string                   `json:"link"`
+	Content        *string                   `json:"content"`
+	ExistingTagIds []string                  `json:"existingTagIds"`
+	NewTagTexts    []string                  `json:"newTagTexts"`
+	Locations      []DocumentLocationRequest `json:"locations"`
 }
 
 func (s *server) CreateDocument(ctx *gin.Context) {
@@ -82,6 +92,48 @@ func (s *server) CreateDocument(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
+		})
+		return
+	}
+
+	// Create document locations if provided
+	if len(req.Locations) > 0 {
+		documentLocationHandler := s.dbClient.DocumentLocation()
+		for _, locReq := range req.Locations {
+			// Validate location type
+			locationType := models.LocationType(locReq.Type)
+			switch locationType {
+			case models.LocationTypeCity, models.LocationTypeCountry, models.LocationTypeContinent:
+				// Valid type
+			default:
+				// Default to city if invalid
+				locationType = models.LocationTypeCity
+			}
+
+			location := &models.DocumentLocation{
+				DocumentID:       createdDocument.ID,
+				PlaceID:          locReq.PlaceID,
+				Name:             locReq.Name,
+				FormattedAddress: locReq.FormattedAddress,
+				Latitude:         locReq.Latitude,
+				Longitude:        locReq.Longitude,
+				LocationType:     locationType,
+			}
+
+			if err := documentLocationHandler.Create(ctx, location); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error": "failed to create document location: " + err.Error(),
+				})
+				return
+			}
+		}
+	}
+
+	// Reload document with locations
+	createdDocument, err = s.dbClient.Document().FindByID(ctx, createdDocument.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to retrieve created document",
 		})
 		return
 	}
@@ -231,10 +283,11 @@ func (s *server) ParseDocument(ctx *gin.Context) {
 }
 
 type UpdateDocumentRequest struct {
-	Title          *string  `json:"title"`
-	Content        *string  `json:"content"`
-	ExistingTagIds []string `json:"existingTagIds"`
-	NewTagTexts    []string `json:"newTagTexts"`
+	Title          *string                   `json:"title"`
+	Content        *string                   `json:"content"`
+	ExistingTagIds []string                  `json:"existingTagIds"`
+	NewTagTexts    []string                  `json:"newTagTexts"`
+	Locations      []DocumentLocationRequest `json:"locations"`
 }
 
 func (s *server) UpdateDocument(ctx *gin.Context) {
@@ -364,7 +417,50 @@ func (s *server) UpdateDocument(ctx *gin.Context) {
 		}
 	}
 
-	// Reload document with tags preloaded
+	// Handle location updates if provided
+	if req.Locations != nil {
+		documentLocationHandler := s.dbClient.DocumentLocation()
+
+		// Delete existing locations
+		if err := documentLocationHandler.DeleteByDocumentID(ctx, documentID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to delete existing locations: " + err.Error(),
+			})
+			return
+		}
+
+		// Create new locations
+		for _, locReq := range req.Locations {
+			// Validate location type
+			locationType := models.LocationType(locReq.Type)
+			switch locationType {
+			case models.LocationTypeCity, models.LocationTypeCountry, models.LocationTypeContinent:
+				// Valid type
+			default:
+				// Default to city if invalid
+				locationType = models.LocationTypeCity
+			}
+
+			location := &models.DocumentLocation{
+				DocumentID:       documentID,
+				PlaceID:          locReq.PlaceID,
+				Name:             locReq.Name,
+				FormattedAddress: locReq.FormattedAddress,
+				Latitude:         locReq.Latitude,
+				Longitude:        locReq.Longitude,
+				LocationType:     locationType,
+			}
+
+			if err := documentLocationHandler.Create(ctx, location); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error": "failed to create document location: " + err.Error(),
+				})
+				return
+			}
+		}
+	}
+
+	// Reload document with tags and locations preloaded
 	updatedDocument, err := s.dbClient.Document().FindByID(ctx, documentID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{

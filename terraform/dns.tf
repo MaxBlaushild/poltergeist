@@ -21,4 +21,3 @@ resource "aws_route53_record" "sonar_route_53_record" {
     evaluate_target_health = true
   }
 }
-

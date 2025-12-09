@@ -13,5 +13,4 @@ type FeteTeam struct {
 	UpdatedAt time.Time      `gorm:"not null" json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deletedAt"`
 	Name      string         `gorm:"not null" json:"name"`
-	UserIDs   *uuid.UUID     `gorm:"not null" json:"userIds"`
 }

@@ -4,6 +4,11 @@ import axios from 'axios';
 
 const tokenKey = 'token';
 
+// Support both Vite and CRA environment variables
+  const getApiUrl = () => {
+    return 'https://api.unclaimedstreets.com';
+  }
+
 type AuthContextType = {
   user: User | null;
   isWaitingForVerificationCode: boolean;
@@ -56,9 +61,10 @@ export const AuthProvider = ({
       const verifyToken = async () => {
         try {
           const response = await axios.post(
-            `${process.env.REACT_APP_API_URL}/authenticator/token/verify`,
+            `${getApiUrl()}/authenticator/token/verify`,
             { token },
           );
+          console.log(response.data);
           setUser(response.data);
         } catch (e) {
           setError(e);
@@ -76,7 +82,7 @@ export const AuthProvider = ({
   const getVerificationCode = async (phoneNumber: string) => {
     try {
       const { data } = await axios.post(
-        `${process.env.REACT_APP_API_URL}/authenticator/text/verification-code`,
+        `${getApiUrl()}/authenticator/text/verification-code`,
         { phoneNumber, appName }
       );
       setIsWaitingOnVerificationCode(true);
@@ -93,7 +99,7 @@ export const AuthProvider = ({
   ) => {
     try {
       const response = await axios.post(
-        `${process.env.REACT_APP_API_URL}${uriPrefix}/login`,
+        `${getApiUrl()}${uriPrefix}/login`,
         { phoneNumber, code: verificationCode }
       );
       const { user, token } = response.data;
@@ -104,7 +110,7 @@ export const AuthProvider = ({
     } catch (e) {
       try {
         const response = await axios.post(
-          `${process.env.REACT_APP_API_URL}${uriPrefix}/register`,
+          `${getApiUrl()}${uriPrefix}/register`,
           { phoneNumber, code: verificationCode }
         );
         const { user, token } = response.data;
@@ -141,6 +147,10 @@ export const AuthProvider = ({
   );
 };
 
-export const useAuth = () => {
-  return useContext(AuthContext);
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };

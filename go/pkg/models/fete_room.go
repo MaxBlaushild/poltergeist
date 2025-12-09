@@ -15,5 +15,6 @@ type FeteRoom struct {
 	Name          string         `gorm:"not null" json:"name"`
 	Open          bool           `gorm:"not null" json:"open"`
 	CurrentTeamID uuid.UUID      `gorm:"not null" json:"currentTeamId"`
+	CurrentTeam   *FeteTeam      `gorm:"foreignKey:CurrentTeamID" json:"currentTeam,omitempty"`
 	HueLightID    *int           `gorm:"column:hue_light_id" json:"hueLightId,omitempty"`
 }

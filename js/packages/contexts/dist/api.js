@@ -3,10 +3,13 @@ import { createContext, useContext, useMemo, useCallback, } from 'react';
 import APIClient from '@poltergeist/api-client';
 import { useLocation } from './location';
 const APIContext = createContext({
-    apiClient: new APIClient(process.env.REACT_APP_API_URL || ''),
+    apiClient: new APIClient(''),
 });
+const getApiUrl = () => {
+    return 'https://api.unclaimedstreets.com';
+};
 export const APIProvider = ({ children }) => {
-    const baseURL = process.env.REACT_APP_API_URL || '';
+    const baseURL = getApiUrl();
     const { location } = useLocation();
     // Create stable getLocation function that always returns current location
     const getLocation = useCallback(() => {

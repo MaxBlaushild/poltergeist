@@ -6,7 +6,6 @@ import 'package:travel_angels/models/user_level.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/providers/user_level_provider.dart';
 import 'package:travel_angels/screens/documents_screen.dart';
-import 'package:travel_angels/screens/my_network_screen.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/credits_service.dart';
 import 'package:travel_angels/services/document_service.dart';
@@ -311,12 +310,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     return Scaffold(
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 24),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 24),
             // Profile Picture
             _buildProfilePicture(user, theme),
             const SizedBox(height: 16),
@@ -522,52 +522,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // Manage Friends Section
-            Card(
-              child: InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const MyNetworkScreen(),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Manage Friends',
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'View friends and manage invites',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Icon(
-                        Icons.people,
-                        size: 32,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
             // Permissions Panel
             const PermissionsPanel(),
             const SizedBox(height: 16),
@@ -622,6 +576,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
+        ),
     );
   }
 

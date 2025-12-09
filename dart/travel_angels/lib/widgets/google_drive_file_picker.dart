@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:travel_angels/constants/api_constants.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/google_drive_service.dart';
 import 'package:travel_angels/widgets/import_type_dialog.dart';
+import 'package:travel_angels/widgets/location_selector.dart';
 
 /// Widget for picking a Google Drive file (Doc or Sheet)
 class GoogleDriveFilePicker extends StatefulWidget {
@@ -127,6 +129,22 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
       return;
     }
 
+    // Show location selection dialog
+    List<DocumentLocation> selectedLocations = [];
+    final shouldImport = await showDialog<bool>(
+      context: context,
+      builder: (context) => _LocationSelectionDialog(
+        fileName: file['name'] as String? ?? 'Document',
+        onLocationsChanged: (locations) {
+          selectedLocations = locations;
+        },
+      ),
+    );
+
+    if (shouldImport != true || !mounted) {
+      return;
+    }
+
     // Show loading indicator
     if (mounted) {
       showDialog(
@@ -139,10 +157,11 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
     }
 
     try {
-      // Import document
+      // Import document with locations
       await _googleDriveService.importDocument(
         file['id'] as String,
         importType,
+        locations: selectedLocations.isNotEmpty ? selectedLocations : null,
       );
 
       // Close loading and file picker
@@ -313,6 +332,67 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LocationSelectionDialog extends StatefulWidget {
+  final String fileName;
+  final Function(List<DocumentLocation>) onLocationsChanged;
+
+  const _LocationSelectionDialog({
+    required this.fileName,
+    required this.onLocationsChanged,
+  });
+
+  @override
+  State<_LocationSelectionDialog> createState() => _LocationSelectionDialogState();
+}
+
+class _LocationSelectionDialogState extends State<_LocationSelectionDialog> {
+  List<DocumentLocation> _selectedLocations = [];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: Text('Tag "${widget.fileName}"'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Optionally add locations to tag this document:',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              LocationSelector(
+                initialLocations: _selectedLocations,
+                onLocationsChanged: (locations) {
+                  setState(() {
+                    _selectedLocations = locations;
+                  });
+                  widget.onLocationsChanged(locations);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text('Import'),
+        ),
+      ],
     );
   }
 }

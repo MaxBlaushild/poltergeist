@@ -77,19 +77,22 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
     if (!authProvider.isAuthenticated) {
       return Scaffold(
-        body: Center(
-          child: Text(
-            'Please log in to view friends\' documents',
-            style: theme.textTheme.bodyLarge,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              'Please log in to view friends\' documents',
+              style: theme.textTheme.bodyLarge,
+            ),
           ),
         ),
       );
     }
 
     return Scaffold(
-      body: RefreshIndicator(
-        onRefresh: _loadFriendsDocuments,
-        child: _isLoading
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadFriendsDocuments,
+          child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
                 ? Center(
@@ -153,6 +156,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           return _buildDocumentCard(context, document, theme);
                         },
                       ),
+        ),
       ),
     );
   }
@@ -214,6 +218,39 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 4.0),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         visualDensity: VisualDensity.compact,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+            // Locations
+            if (document.documentLocations != null && document.documentLocations!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8.0,
+                runSpacing: 4.0,
+                children: document.documentLocations!
+                    .map(
+                      (location) => Chip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.location_on,
+                              size: 16,
+                              color: theme.colorScheme.onPrimary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(location.name),
+                          ],
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: theme.colorScheme.primary,
+                        labelStyle: TextStyle(
+                          color: theme.colorScheme.onPrimary,
+                        ),
                       ),
                     )
                     .toList(),

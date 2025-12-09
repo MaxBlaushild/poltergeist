@@ -155,6 +155,16 @@ export const FeteRooms = () => {
     });
   };
 
+  const handleToggleRoom = async (room: FeteRoom) => {
+    try {
+      const updatedRoom = await apiClient.post<FeteRoom>(`/final-fete/rooms/${room.id}/toggle`, {});
+      setRooms(rooms.map(r => r.id === room.id ? updatedRoom : r));
+    } catch (error) {
+      console.error('Error toggling fete room:', error);
+      alert('Error toggling fete room. Please try again.');
+    }
+  };
+
   if (loading) {
     return <div className="m-10">Loading fete rooms...</div>;
   }
@@ -189,12 +199,23 @@ export const FeteRooms = () => {
           return (
             <div key={room.id} className="p-4 border rounded-lg bg-white shadow">
               <h2 className="text-lg font-semibold mb-2">{room.name}</h2>
+              <p className="text-sm text-gray-500 font-mono mb-1">ID: {room.id}</p>
               <p className="text-sm text-gray-600">Open: {room.open ? 'Yes' : 'No'}</p>
               <p className="text-sm text-gray-600">Current Team: {currentTeam?.name || room.currentTeamId}</p>
               {hueLight && (
                 <p className="text-sm text-gray-600">Hue Light: {hueLight.name}</p>
               )}
               <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => handleToggleRoom(room)}
+                  className={`px-4 py-2 rounded-md text-white ${
+                    room.open 
+                      ? 'bg-orange-500 hover:bg-orange-600' 
+                      : 'bg-green-500 hover:bg-green-600'
+                  }`}
+                >
+                  {room.open ? 'Close' : 'Open'}
+                </button>
                 <button
                   onClick={() => handleEditRoom(room)}
                   className="bg-blue-500 text-white px-4 py-2 rounded-md"

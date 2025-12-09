@@ -3,8 +3,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/document.dart';
 import 'package:travel_angels/models/document_tag.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
+import 'package:travel_angels/widgets/location_selector.dart';
 
 /// Screen for editing a document's title and content
 class EditDocumentScreen extends StatefulWidget {
@@ -28,6 +30,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
   late TextEditingController _contentController;
   late TextEditingController _tagInputController;
   List<DocumentTag> _tags = [];
+  List<DocumentLocation> _locations = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -39,8 +42,9 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
       text: widget.document.content ?? '',
     );
     _tagInputController = TextEditingController();
-    // Load tags from document
+    // Load tags and locations from document
     _tags = List<DocumentTag>.from(widget.document.documentTags ?? []);
+    _locations = List<DocumentLocation>.from(widget.document.documentLocations ?? []);
   }
 
   @override
@@ -102,6 +106,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
 
       // Send content if document has content (always allow content updates)
       // Always send tag arrays (empty if no tags) to replace all tags
+      // Always send location array (empty if no locations) to replace all locations
       await _documentService.updateDocument(
         documentId: widget.document.id,
         title: _titleController.text.trim(),
@@ -110,6 +115,7 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
             : null,
         existingTagIds: existingTagIds,
         newTagTexts: newTagTexts,
+        locations: _locations,
       );
 
       if (mounted) {
@@ -254,6 +260,28 @@ class _EditDocumentScreenState extends State<EditDocumentScreen> {
                       tooltip: 'Add Tag',
                     ),
                   ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16.0),
+            // Locations section
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Locations',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8.0),
+                LocationSelector(
+                  initialLocations: _locations,
+                  onLocationsChanged: (locations) {
+                    setState(() {
+                      _locations = locations;
+                    });
+                  },
                 ),
               ],
             ),

@@ -13,30 +13,17 @@ import GoogleMaps
        !apiKey.isEmpty {
       GMSServices.provideAPIKey(apiKey)
     } else {
-      // Debug: Print all Info.plist keys and values
-      print("DEBUG: Info.plist contents:")
-      if let infoDict = Bundle.main.infoDictionary {
-        for (key, value) in infoDict.sorted(by: { $0.key < $1.key }) {
-          print("  \(key): \(value)")
-        }
-      } else {
-        print("  (Info.plist is nil)")
-      }
-      
-      fatalError("""
-      ERROR: Google Maps API key not found in Info.plist!
-      
-      The build setting INFOPLIST_KEY_GMS_API_KEY = $(GMS_API_KEY) is not working.
-      The GMS_API_KEY variable from GoogleMaps.xcconfig is not being injected into Info.plist.
-      
-      Please ensure:
-      1. The file ios/Flutter/GoogleMaps.xcconfig exists and contains: GMS_API_KEY = YOUR_API_KEY
-      2. Debug.xcconfig and Release.xcconfig include: #include? "GoogleMaps.xcconfig"
-      3. Clean build folder (Product → Clean Build Folder in Xcode)
-      4. Rebuild the app
-      
-      See ios/Flutter/GoogleMaps.xcconfig.example for reference.
-      """)
+      // Warn but don't crash - app can still run without Google Maps
+      print("WARNING: Google Maps API key not found in Info.plist!")
+      print("Google Maps features will not work until the API key is configured.")
+      print("")
+      print("To fix this, ensure:")
+      print("1. The file ios/Flutter/GoogleMaps.xcconfig exists and contains: GMS_API_KEY = YOUR_API_KEY")
+      print("2. Debug.xcconfig and Release.xcconfig include: #include? \"GoogleMaps.xcconfig\"")
+      print("3. Clean build folder (Product → Clean Build Folder in Xcode)")
+      print("4. Rebuild the app")
+      print("")
+      print("See ios/Flutter/GoogleMaps.xcconfig.example for reference.")
     }
     
     GeneratedPluginRegistrant.register(with: self)

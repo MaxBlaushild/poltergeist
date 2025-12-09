@@ -1,5 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
 import 'package:travel_angels/models/document_tag.dart';
+import 'package:travel_angels/models/document_location.dart';
 import 'package:travel_angels/models/user.dart';
 
 part 'document.g.dart';
@@ -44,6 +45,9 @@ class Document {
   @JsonKey(name: 'documentTags')
   final List<DocumentTag>? documentTags;
 
+  @JsonKey(name: 'documentLocations')
+  final List<DocumentLocation>? documentLocations;
+
   @JsonKey(name: 'user')
   final User? user;
 
@@ -57,6 +61,7 @@ class Document {
     this.link,
     this.content,
     this.documentTags,
+    this.documentLocations,
     this.user,
   });
 

@@ -14,6 +14,7 @@ export const FeteRoomLinkedListTeams = () => {
   const [editingItem, setEditingItem] = useState<FeteRoomLinkedListTeam | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<FeteRoomLinkedListTeam | null>(null);
+  const [roomsLoading, setRoomsLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     feteRoomId: '',
@@ -26,6 +27,14 @@ export const FeteRoomLinkedListTeams = () => {
     fetchRooms();
     fetchTeams();
   }, []);
+
+  useEffect(() => {
+    // Refetch rooms when modal opens to ensure they're up to date
+    if (showCreateItem || editingItem) {
+      fetchRooms();
+      fetchTeams();
+    }
+  }, [showCreateItem, editingItem]);
 
   useEffect(() => {
     if (searchQuery === '') {
@@ -59,19 +68,27 @@ export const FeteRoomLinkedListTeams = () => {
 
   const fetchRooms = async () => {
     try {
+      setRoomsLoading(true);
       const response = await apiClient.get<FeteRoom[]>('/final-fete/rooms');
-      setRooms(response);
+      const roomsArray = Array.isArray(response) ? response : [];
+      setRooms(roomsArray);
+      console.log('Fetched rooms:', roomsArray.length);
     } catch (error) {
       console.error('Error fetching fete rooms:', error);
+      setRooms([]);
+    } finally {
+      setRoomsLoading(false);
     }
   };
 
   const fetchTeams = async () => {
     try {
       const response = await apiClient.get<FeteTeam[]>('/final-fete/teams');
-      setTeams(response);
+      const teamsArray = Array.isArray(response) ? response : [];
+      setTeams(teamsArray);
     } catch (error) {
       console.error('Error fetching fete teams:', error);
+      setTeams([]);
     }
   };
 
@@ -217,8 +234,12 @@ export const FeteRoomLinkedListTeams = () => {
                 onChange={(e) => setFormData({ ...formData, feteRoomId: e.target.value })}
                 className="w-full p-2 border rounded-md"
                 required
+                disabled={roomsLoading}
               >
-                <option value="">Select a room</option>
+                <option value="">{roomsLoading ? 'Loading rooms...' : 'Select a room'}</option>
+                {rooms.length === 0 && !roomsLoading && (
+                  <option value="" disabled>No rooms available</option>
+                )}
                 {rooms.map(room => (
                   <option key={room.id} value={room.id}>{room.name}</option>
                 ))}

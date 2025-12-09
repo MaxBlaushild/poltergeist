@@ -4,6 +4,7 @@ import 'package:travel_angels/utils/platform_utils.dart';
 /// Enum for navigation destinations
 enum NavDestination {
   discover(Icons.explore, 'Discover'),
+  myCircle(Icons.people, 'My Circle'),
   profile(Icons.person, 'Profile'),
   advice(Icons.chat_bubble_outline, 'Advice'),
   documents(Icons.folder, 'Documents');
