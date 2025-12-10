@@ -423,128 +423,156 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       );
     }
 
+    final theme = Theme.of(context);
+    
     return Scaffold(
-      appBar: AppBar(
-        title: _selectedDocumentIds.isEmpty
-            ? const Text('Documents')
-            : Text('${_selectedDocumentIds.length} selected'),
-        actions: [
-          if (_selectedDocumentIds.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.select_all),
-              onPressed: _selectedDocumentIds.length == _paginatedDocuments.length
-                  ? _deselectAll
-                  : _selectAll,
-              tooltip: _selectedDocumentIds.length == _paginatedDocuments.length
-                  ? 'Deselect all'
-                  : 'Select all',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: _deleteSelectedDocuments,
-              tooltip: 'Delete selected',
-            ),
-          ],
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDocuments,
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.add),
-            onPressed: _showImportBottomSheet,
-            tooltip: 'Import Document',
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Documents header with actions
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 8.0, 8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Documents header
+                  Text(
+                    _selectedDocumentIds.isEmpty
+                        ? 'Documents'
+                        : '${_selectedDocumentIds.length} selected',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  // Actions
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
+                      if (_selectedDocumentIds.isNotEmpty) ...[
+                        IconButton(
+                          icon: const Icon(Icons.select_all),
+                          onPressed: _selectedDocumentIds.length == _paginatedDocuments.length
+                              ? _deselectAll
+                              : _selectAll,
+                          tooltip: _selectedDocumentIds.length == _paginatedDocuments.length
+                              ? 'Deselect all'
+                              : 'Select all',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete),
+                          onPressed: _deleteSelectedDocuments,
+                          tooltip: 'Delete selected',
+                        ),
+                      ],
+                      IconButton(
+                        icon: const Icon(Icons.refresh),
                         onPressed: _loadDocuments,
-                        child: const Text('Retry'),
+                        tooltip: 'Refresh',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: _showImportBottomSheet,
+                        tooltip: 'Import Document',
                       ),
                     ],
                   ),
-                )
-              : _allDocuments.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.description_outlined,
-                            size: 64,
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: theme.colorScheme.error,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.error,
+                                    ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadDocuments,
+                                child: const Text('Retry'),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No documents yet',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        )
+                      : _allDocuments.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.description_outlined,
+                                    size: 64,
+                                    color: theme.colorScheme.onSurface.withOpacity(0.4),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No documents yet',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                          color: theme.colorScheme.onSurface.withOpacity(0.6),
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Import your first document to get started',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                                        ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  ElevatedButton.icon(
+                                    onPressed: _showImportBottomSheet,
+                                    icon: const Icon(Icons.add),
+                                    label: const Text('Import Document'),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                Expanded(
+                                  child: DocumentsTable(
+                                    documents: _paginatedDocuments,
+                                    sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
+                                    sortAscending: _sortAscending,
+                                    onSort: (columnIndex, ascending) {
+                                      // Adjust back for checkbox column
+                                      _onSort(columnIndex - 1, ascending);
+                                    },
+                                    onDocumentTap: _handleDocumentTap,
+                                    selectedDocumentIds: _selectedDocumentIds,
+                                    onSelectionChanged: _toggleDocumentSelection,
+                                  ),
                                 ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Import your first document to get started',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                                PaginationControls(
+                                  currentPage: _currentPage,
+                                  totalPages: _totalPages,
+                                  totalItems: _sortedDocuments.length,
+                                  pageSize: _pageSize,
+                                  pageSizeOptions: _pageSizeOptions,
+                                  onPageChanged: _onPageChanged,
+                                  onPageSizeChanged: _onPageSizeChanged,
                                 ),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton.icon(
-                            onPressed: _showImportBottomSheet,
-                            icon: const Icon(Icons.add),
-                            label: const Text('Import Document'),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: DocumentsTable(
-                            documents: _paginatedDocuments,
-                            sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
-                            sortAscending: _sortAscending,
-                            onSort: (columnIndex, ascending) {
-                              // Adjust back for checkbox column
-                              _onSort(columnIndex - 1, ascending);
-                            },
-                            onDocumentTap: _handleDocumentTap,
-                            selectedDocumentIds: _selectedDocumentIds,
-                            onSelectionChanged: _toggleDocumentSelection,
-                          ),
-                        ),
-                        PaginationControls(
-                          currentPage: _currentPage,
-                          totalPages: _totalPages,
-                          totalItems: _sortedDocuments.length,
-                          pageSize: _pageSize,
-                          pageSizeOptions: _pageSizeOptions,
-                          onPageChanged: _onPageChanged,
-                          onPageSizeChanged: _onPageSizeChanged,
-                        ),
-                      ],
-                    ),
+                              ],
+                            ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

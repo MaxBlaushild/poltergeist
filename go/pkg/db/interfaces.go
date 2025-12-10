@@ -65,6 +65,7 @@ type DbClient interface {
 	DropboxToken() DropboxTokenHandle
 	HueToken() HueTokenHandle
 	TrendingDestination() TrendingDestinationHandle
+	QuickDecisionRequest() QuickDecisionRequestHandle
 	FeteRoom() FeteRoomHandle
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
@@ -610,4 +611,9 @@ type TrendingDestinationHandle interface {
 	FindByType(ctx context.Context, locationType models.LocationType) ([]models.TrendingDestination, error)
 	DeleteAll(ctx context.Context) error
 	GetTopLocationsByType(ctx context.Context, locationType models.LocationType, since time.Time, limit int) ([]LocationCountResult, error)
+}
+
+type QuickDecisionRequestHandle interface {
+	Create(ctx context.Context, request *models.QuickDecisionRequest) (*models.QuickDecisionRequest, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuickDecisionRequest, error)
 }

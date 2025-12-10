@@ -36,6 +36,7 @@ class ApiConstants {
 
   // Trending destinations endpoint
   static const String trendingDestinationsEndpoint = '/travel-angels/trending-destinations';
+  static const String quickDecisionRequestsEndpoint = '/travel-angels/quick-decision-requests';
   static const String profileEndpoint = '/travel-angels/profile';
   static String validateUsernameEndpoint(String username) => '/travel-angels/users/validate-username?username=$username';
 
