@@ -66,6 +66,7 @@ type DbClient interface {
 	HueToken() HueTokenHandle
 	TrendingDestination() TrendingDestinationHandle
 	QuickDecisionRequest() QuickDecisionRequestHandle
+	CommunityPoll() CommunityPollHandle
 	FeteRoom() FeteRoomHandle
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
@@ -616,4 +617,9 @@ type TrendingDestinationHandle interface {
 type QuickDecisionRequestHandle interface {
 	Create(ctx context.Context, request *models.QuickDecisionRequest) (*models.QuickDecisionRequest, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuickDecisionRequest, error)
+}
+
+type CommunityPollHandle interface {
+	Create(ctx context.Context, poll *models.CommunityPoll) (*models.CommunityPoll, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.CommunityPoll, error)
 }

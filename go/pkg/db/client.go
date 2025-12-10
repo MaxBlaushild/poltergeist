@@ -69,6 +69,7 @@ type client struct {
 	hueTokenHandle                    *hueTokenHandler
 	trendingDestinationHandle         *trendingDestinationHandler
 	quickDecisionRequestHandle        *quickDecisionRequestHandler
+	communityPollHandle               *communityPollHandler
 	feteRoomHandle                    *feteRoomHandler
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
@@ -159,6 +160,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		hueTokenHandle:                    &hueTokenHandler{db: db},
 		trendingDestinationHandle:         &trendingDestinationHandler{db: db},
 		quickDecisionRequestHandle:        &quickDecisionRequestHandler{db: db},
+		communityPollHandle:               &communityPollHandler{db: db},
 		feteRoomHandle:                    &feteRoomHandler{db: db},
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
@@ -396,6 +398,10 @@ func (c *client) TrendingDestination() TrendingDestinationHandle {
 
 func (c *client) QuickDecisionRequest() QuickDecisionRequestHandle {
 	return c.quickDecisionRequestHandle
+}
+
+func (c *client) CommunityPoll() CommunityPollHandle {
+	return c.communityPollHandle
 }
 
 func (c *client) FeteRoom() FeteRoomHandle {

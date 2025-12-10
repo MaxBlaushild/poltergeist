@@ -33,16 +33,8 @@ func (h *quickDecisionRequestHandler) Create(
 		return nil, err
 	}
 
-	// Reload with user preloaded
-	var createdRequest models.QuickDecisionRequest
-	if err := h.db.WithContext(ctx).
-		Preload("User").
-		Where("id = ?", request.ID).
-		First(&createdRequest).Error; err != nil {
-		return nil, err
-	}
-
-	return &createdRequest, nil
+	// Return the created request (GORM will populate the ID and timestamps)
+	return request, nil
 }
 
 func (h *quickDecisionRequestHandler) FindByUserID(
