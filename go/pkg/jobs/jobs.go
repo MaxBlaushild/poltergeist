@@ -5,10 +5,11 @@ import (
 )
 
 const (
-	GenerateQuestForZoneTaskType  = "generate_quest_for_zone"
-	QueueQuestGenerationsTaskType = "queue_quest_generations"
-	CreateProfilePictureTaskType  = "create_profile_picture"
-	SeedTreasureChestsTaskType    = "seed_treasure_chests"
+	GenerateQuestForZoneTaskType          = "generate_quest_for_zone"
+	QueueQuestGenerationsTaskType         = "queue_quest_generations"
+	CreateProfilePictureTaskType          = "create_profile_picture"
+	SeedTreasureChestsTaskType            = "seed_treasure_chests"
+	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 )
 
 type GenerateQuestForZoneTaskPayload struct {

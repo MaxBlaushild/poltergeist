@@ -52,10 +52,15 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
     });
 
     try {
+      print('[GoogleDriveFilePicker] Loading files (loadMore: $loadMore, pageToken: $_nextPageToken)');
+      
       final response = await _googleDriveService.listFiles(
         pageSize: 50,
         pageToken: loadMore ? _nextPageToken : null,
       );
+
+      print('[GoogleDriveFilePicker] Received response: ${response.keys}');
+      print('[GoogleDriveFilePicker] Files count: ${(response['files'] as List?)?.length ?? 0}');
 
       final List<dynamic> filesList = response['files'] ?? [];
       final List<Map<String, dynamic>> newFiles = filesList
@@ -73,20 +78,53 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         _isLoadingMore = false;
         _errorMessage = null;
       });
+      
+      print('[GoogleDriveFilePicker] Successfully loaded ${newFiles.length} files');
     } catch (e) {
+      print('[GoogleDriveFilePicker] Error loading files: $e');
+      print('[GoogleDriveFilePicker] Error type: ${e.runtimeType}');
+      
+      String errorMsg = 'Failed to load files';
+      String? detailedError;
+      
+      if (e is DioException) {
+        print('[GoogleDriveFilePicker] DioException details:');
+        print('  - Status code: ${e.response?.statusCode}');
+        print('  - Status message: ${e.response?.statusMessage}');
+        print('  - Response data: ${e.response?.data}');
+        print('  - Request path: ${e.requestOptions.path}');
+        print('  - Request method: ${e.requestOptions.method}');
+        print('  - Error type: ${e.type}');
+        print('  - Error message: ${e.message}');
+        
+        if (e.response != null) {
+          errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+          
+          // Try to extract detailed error message from response
+          if (e.response?.data != null) {
+            if (e.response!.data is Map) {
+              final errorData = e.response!.data as Map<String, dynamic>;
+              detailedError = errorData['error']?.toString();
+              if (detailedError != null) {
+                errorMsg = detailedError;
+              }
+            } else if (e.response!.data is String) {
+              detailedError = e.response!.data as String;
+              errorMsg = '$errorMsg\n$detailedError';
+            }
+          }
+        } else {
+          errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+        }
+      } else {
+        errorMsg = '$errorMsg: $e';
+      }
+      
+      print('[GoogleDriveFilePicker] Final error message: $errorMsg');
+      
       setState(() {
         _isLoading = false;
         _isLoadingMore = false;
-        String errorMsg = 'Failed to load files';
-        if (e is DioException) {
-          if (e.response != null) {
-            errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
-          } else {
-            errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
-          }
-        } else {
-          errorMsg = '$errorMsg: $e';
-        }
         _errorMessage = errorMsg;
       });
     }

@@ -94,6 +94,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/travel-angels/credits/webhook", s.HandleCreditsWebhook)
 	r.POST("/travel-angels/credits/add", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AddCredits))
 	r.POST("/travel-angels/credits/subtract", middleware.WithAuthenticationWithoutLocation(s.authClient, s.SubtractCredits))
+	r.GET("/travel-angels/trending-destinations", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetTrendingDestinations))
 
 	r.Run(fmt.Sprintf(":%s", port))
 }

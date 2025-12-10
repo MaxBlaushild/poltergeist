@@ -34,18 +34,39 @@ class LocationService {
 
   Future<List<LocationCandidate>> searchLocations(String query) async {
     try {
+      print('LocationService: Searching for "$query"');
+      final endpoint = ApiConstants.locationSearchEndpoint(query);
+      print('LocationService: Calling endpoint: $endpoint');
+      
       final response = await _apiClient.get<List<dynamic>>(
-        ApiConstants.locationSearchEndpoint(query),
+        endpoint,
       );
       
+      print('LocationService: Received response: ${response.length} items');
+      print('LocationService: Response data: $response');
+      
       if (response.isEmpty) {
+        print('LocationService: Empty response, returning empty list');
         return [];
       }
 
-      return response
-          .map((json) => LocationCandidate.fromJson(json as Map<String, dynamic>))
+      final candidates = response
+          .map((json) {
+            try {
+              return LocationCandidate.fromJson(json as Map<String, dynamic>);
+            } catch (e) {
+              print('LocationService: Error parsing candidate: $e, JSON: $json');
+              rethrow;
+            }
+          })
           .toList();
-    } catch (e) {
+      
+      print('LocationService: Successfully parsed ${candidates.length} candidates');
+      return candidates;
+    } catch (e, stackTrace) {
+      // Log the error for debugging
+      print('LocationService.searchLocations error: $e');
+      print('LocationService.searchLocations stackTrace: $stackTrace');
       rethrow;
     }
   }

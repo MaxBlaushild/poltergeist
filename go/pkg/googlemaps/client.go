@@ -38,7 +38,9 @@ func NewClient(apiKey string) Client {
 }
 
 type CandidateResponse struct {
-	Candidates []Candidate `json:"candidates"`
+	Candidates   []Candidate `json:"candidates"`
+	Status       string      `json:"status"`
+	ErrorMessage string      `json:"error_message,omitempty"`
 }
 
 type GooglePlacesResponse struct {
@@ -95,11 +97,30 @@ func (c *client) FindCandidatesByQuery(query string) ([]Candidate, error) {
 		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
-	var data CandidateResponse
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&data); err != nil {
-		return nil, fmt.Errorf("error decoding response: %w", err)
+	// Log the raw response for debugging
+	log.Printf("Google Places API response status: %d", resp.StatusCode)
+	log.Printf("Google Places API response body: %s", string(body))
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("google places API returned status %d: %s", resp.StatusCode, string(body))
 	}
 
+	var data CandidateResponse
+	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&data); err != nil {
+		return nil, fmt.Errorf("error decoding response: %w, body: %s", err, string(body))
+	}
+
+	// Check API response status
+	if data.Status != "OK" && data.Status != "ZERO_RESULTS" {
+		return nil, fmt.Errorf("google places API error: status=%s, error_message=%s", data.Status, data.ErrorMessage)
+	}
+
+	if data.Status == "ZERO_RESULTS" {
+		log.Printf("Google Places API returned ZERO_RESULTS for query: %s", query)
+		return []Candidate{}, nil
+	}
+
+	log.Printf("Google Places API returned %d candidates for query: %s", len(data.Candidates), query)
 	return data.Candidates, nil
 }
 

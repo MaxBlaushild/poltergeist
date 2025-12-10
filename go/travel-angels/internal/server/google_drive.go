@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -295,11 +296,14 @@ func (s *server) GrantGoogleDrivePermissions(ctx *gin.Context) {
 func (s *server) ListGoogleDriveFiles(ctx *gin.Context) {
 	user, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
+		log.Printf("[ListGoogleDriveFiles] Failed to get authenticated user: %v", err)
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
+
+	log.Printf("[ListGoogleDriveFiles] User ID: %s", user.ID.String())
 
 	// Parse query parameters
 	pageSize := 10 // default
@@ -312,15 +316,20 @@ func (s *server) ListGoogleDriveFiles(ctx *gin.Context) {
 	pageToken := ctx.Query("pageToken")
 	query := ctx.Query("q")
 
+	log.Printf("[ListGoogleDriveFiles] Request params - pageSize: %d, pageToken: %s, query: %s", pageSize, pageToken, query)
+
 	// List files
 	files, err := s.googleDriveClient.ListFiles(ctx, user.ID.String(), pageSize, pageToken, query)
 	if err != nil {
+		log.Printf("[ListGoogleDriveFiles] Error listing files: %v", err)
+		log.Printf("[ListGoogleDriveFiles] Error type: %T", err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to list files: " + err.Error(),
 		})
 		return
 	}
 
+	log.Printf("[ListGoogleDriveFiles] Successfully listed %d files", len(files.Files))
 	ctx.JSON(http.StatusOK, files)
 }
 
