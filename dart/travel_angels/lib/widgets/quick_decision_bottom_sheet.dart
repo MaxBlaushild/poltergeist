@@ -117,7 +117,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 controller: _questionController,
                 decoration: const InputDecoration(
                   labelText: 'Your Question',
-                  hintText: 'Enter your question...',
+                  hintText: 'e.g., Which restaurant should I try in Tokyo: Sukiyabashi Jiro or Sushi Saito?',
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 4,
@@ -135,7 +135,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 controller: _option1Controller,
                 decoration: const InputDecoration(
                   labelText: 'Option 1',
-                  hintText: 'e.g., Lake Laogi',
+                  hintText: 'e.g., Sukiyabashi Jiro',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
@@ -151,7 +151,7 @@ class _QuickDecisionBottomSheetState extends State<QuickDecisionBottomSheet> {
                 controller: _option2Controller,
                 decoration: const InputDecoration(
                   labelText: 'Option 2',
-                  hintText: 'e.g., Sushi Naziwa',
+                  hintText: 'e.g., Sushi Saito',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {

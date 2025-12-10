@@ -63,8 +63,10 @@ func (s *server) CreateQuickDecisionRequest(ctx *gin.Context) {
 	// Save via database handler
 	createdRequest, err := s.dbClient.QuickDecisionRequest().Create(ctx, request)
 	if err != nil {
+		// Log the error for debugging
+		gin.DefaultErrorWriter.Write([]byte("Error creating quick decision request: " + err.Error() + "\n"))
 		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+			"error": "Failed to create quick decision request: " + err.Error(),
 		})
 		return
 	}
