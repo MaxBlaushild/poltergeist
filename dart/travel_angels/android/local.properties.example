@@ -1,0 +1,13 @@
+# Example file for local.properties
+# Copy this file to local.properties and add your actual Google Maps API key
+# local.properties is gitignored and will not be committed
+
+# Flutter SDK location (already set by Flutter)
+# flutter.sdk=/path/to/flutter
+
+# Android SDK location (already set by Android Studio)
+# sdk.dir=/path/to/android/sdk
+
+# Google Maps API Key
+google.maps.key=YOUR_GOOGLE_MAPS_API_KEY_HERE
+

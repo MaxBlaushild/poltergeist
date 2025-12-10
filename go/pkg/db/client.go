@@ -67,6 +67,7 @@ type client struct {
 	googleDriveTokenHandle            *googleDriveTokenHandler
 	dropboxTokenHandle                *dropboxTokenHandler
 	hueTokenHandle                    *hueTokenHandler
+	trendingDestinationHandle         *trendingDestinationHandler
 	feteRoomHandle                    *feteRoomHandler
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
@@ -155,6 +156,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		googleDriveTokenHandle:            &googleDriveTokenHandler{db: db},
 		dropboxTokenHandle:                &dropboxTokenHandler{db: db},
 		hueTokenHandle:                    &hueTokenHandler{db: db},
+		trendingDestinationHandle:         &trendingDestinationHandler{db: db},
 		feteRoomHandle:                    &feteRoomHandler{db: db},
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
@@ -384,6 +386,10 @@ func (c *client) DropboxToken() DropboxTokenHandle {
 
 func (c *client) HueToken() HueTokenHandle {
 	return c.hueTokenHandle
+}
+
+func (c *client) TrendingDestination() TrendingDestinationHandle {
+	return c.trendingDestinationHandle
 }
 
 func (c *client) FeteRoom() FeteRoomHandle {

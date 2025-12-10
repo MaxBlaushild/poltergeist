@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,8 @@ func (s *server) SearchLocation(ctx *gin.Context) {
 
 	candidates, err := s.googleMapsClient.FindCandidatesByQuery(query)
 	if err != nil {
+		// Log the error for debugging
+		fmt.Printf("Error searching locations for query '%s': %v\n", query, err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -36,5 +39,6 @@ func (s *server) SearchLocation(ctx *gin.Context) {
 		results = append(results, result)
 	}
 
+	fmt.Printf("Location search for '%s' returned %d results\n", query, len(results))
 	ctx.JSON(http.StatusOK, results)
 }

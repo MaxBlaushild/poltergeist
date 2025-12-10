@@ -33,6 +33,9 @@ class ApiConstants {
 
   // Media endpoints
   static const String presignedUploadUrlEndpoint = '/travel-angels/media/uploadUrl';
+
+  // Trending destinations endpoint
+  static const String trendingDestinationsEndpoint = '/travel-angels/trending-destinations';
   static const String profileEndpoint = '/travel-angels/profile';
   static String validateUsernameEndpoint(String username) => '/travel-angels/users/validate-username?username=$username';
 

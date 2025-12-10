@@ -8,8 +8,8 @@ import GoogleMaps
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    // Get API key from Info.plist (injected from GoogleMaps.xcconfig via build settings)
-    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMS_API_KEY") as? String,
+    // Get API key from Info.plist (injected from Secrets.xcconfig via build settings)
+    if let apiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String,
        !apiKey.isEmpty {
       GMSServices.provideAPIKey(apiKey)
     } else {
@@ -18,12 +18,12 @@ import GoogleMaps
       print("Google Maps features will not work until the API key is configured.")
       print("")
       print("To fix this, ensure:")
-      print("1. The file ios/Flutter/GoogleMaps.xcconfig exists and contains: GMS_API_KEY = YOUR_API_KEY")
-      print("2. Debug.xcconfig and Release.xcconfig include: #include? \"GoogleMaps.xcconfig\"")
+      print("1. The file ios/Flutter/Secrets.xcconfig exists and contains: GOOGLE_MAPS_API_KEY = YOUR_API_KEY")
+      print("2. Debug.xcconfig and Release.xcconfig include: #include? \"Secrets.xcconfig\"")
       print("3. Clean build folder (Product → Clean Build Folder in Xcode)")
       print("4. Rebuild the app")
       print("")
-      print("See ios/Flutter/GoogleMaps.xcconfig.example for reference.")
+      print("See ios/Flutter/Secrets.xcconfig.example for reference.")
     }
     
     GeneratedPluginRegistrant.register(with: self)

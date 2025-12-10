@@ -64,6 +64,7 @@ type DbClient interface {
 	GoogleDriveToken() GoogleDriveTokenHandle
 	DropboxToken() DropboxTokenHandle
 	HueToken() HueTokenHandle
+	TrendingDestination() TrendingDestinationHandle
 	FeteRoom() FeteRoomHandle
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
@@ -602,4 +603,11 @@ type FeteRoomTeamHandle interface {
 	FindAll(ctx context.Context) ([]models.FeteRoomTeam, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByRoomIDAndTeamID(ctx context.Context, roomID, teamID uuid.UUID) (*models.FeteRoomTeam, error)
+}
+
+type TrendingDestinationHandle interface {
+	Upsert(ctx context.Context, destination *models.TrendingDestination) error
+	FindByType(ctx context.Context, locationType models.LocationType) ([]models.TrendingDestination, error)
+	DeleteAll(ctx context.Context) error
+	GetTopLocationsByType(ctx context.Context, locationType models.LocationType, since time.Time, limit int) ([]LocationCountResult, error)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -116,12 +117,68 @@ func (c *client) RefreshAccessToken(ctx context.Context, refreshToken string) (*
 	}, nil
 }
 
-func (c *client) getDriveService(ctx context.Context, userID string) (*drive.Service, error) {
-	token, err := c.GetToken(ctx, userID)
+// dbTokenSource wraps an oauth2 TokenSource and updates the database when tokens are refreshed
+type dbTokenSource struct {
+	baseSource    oauth2.TokenSource
+	ctx           context.Context
+	userID        string
+	dbClient      db.DbClient
+	originalToken *models.GoogleDriveToken
+}
+
+func (ts *dbTokenSource) Token() (*oauth2.Token, error) {
+	// Get token from base source (this will auto-refresh if needed)
+	token, err := ts.baseSource.Token()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get token: %w", err)
+		log.Printf("[dbTokenSource] Failed to get token: %v", err)
+		return nil, err
 	}
 
+	// Check if token was refreshed (new access token or expiry changed significantly)
+	// Use a 1 second tolerance for expiry comparison to account for time precision
+	expiryDiff := token.Expiry.Sub(ts.originalToken.ExpiresAt)
+	wasRefreshed := token.AccessToken != ts.originalToken.AccessToken ||
+		expiryDiff > time.Second || expiryDiff < -time.Second
+
+	if wasRefreshed {
+		log.Printf("[dbTokenSource] Token was refreshed, updating database...")
+		log.Printf("[dbTokenSource] Old expiry: %v, New expiry: %v", ts.originalToken.ExpiresAt, token.Expiry)
+
+		// Update the original token with new values
+		ts.originalToken.AccessToken = token.AccessToken
+		ts.originalToken.ExpiresAt = token.Expiry
+		ts.originalToken.TokenType = token.TokenType
+		ts.originalToken.UpdatedAt = time.Now()
+
+		// Update refresh token if a new one was provided
+		if token.RefreshToken != "" && token.RefreshToken != ts.originalToken.RefreshToken {
+			log.Printf("[dbTokenSource] Refresh token was also updated")
+			ts.originalToken.RefreshToken = token.RefreshToken
+		}
+
+		// Persist to database
+		if err := ts.dbClient.GoogleDriveToken().Update(ts.ctx, ts.originalToken); err != nil {
+			log.Printf("[dbTokenSource] Failed to update token in database: %v", err)
+			// Don't fail the request if DB update fails, but log it
+			// The token is still valid for this request
+		} else {
+			log.Printf("[dbTokenSource] Successfully updated token in database")
+		}
+	}
+
+	return token, nil
+}
+
+func (c *client) getDriveService(ctx context.Context, userID string) (*drive.Service, error) {
+	log.Printf("[GoogleDriveClient.getDriveService] Getting token for userID: %s", userID)
+	token, err := c.GetToken(ctx, userID)
+	if err != nil {
+		log.Printf("[GoogleDriveClient.getDriveService] Failed to get token: %v", err)
+		return nil, fmt.Errorf("failed to get token: %w", err)
+	}
+	log.Printf("[GoogleDriveClient.getDriveService] Successfully retrieved token, expires at: %v", token.ExpiresAt)
+
+	// Create oauth2 token from database token
 	oauthToken := &oauth2.Token{
 		AccessToken:  token.AccessToken,
 		RefreshToken: token.RefreshToken,
@@ -129,41 +186,38 @@ func (c *client) getDriveService(ctx context.Context, userID string) (*drive.Ser
 		TokenType:    token.TokenType,
 	}
 
-	// Check if token needs refresh
-	if time.Now().After(token.ExpiresAt.Add(-5 * time.Minute)) {
-		tokenResp, err := c.RefreshAccessToken(ctx, token.RefreshToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed to refresh token: %w", err)
-		}
+	// Create base token source that will handle automatic refresh
+	baseTokenSource := c.config.TokenSource(ctx, oauthToken)
 
-		// Update token in database
-		token.AccessToken = tokenResp.AccessToken
-		token.ExpiresAt = tokenResp.ExpiresAt
-		if err := c.dbClient.GoogleDriveToken().Update(ctx, token); err != nil {
-			return nil, fmt.Errorf("failed to update token: %w", err)
-		}
-
-		oauthToken = &oauth2.Token{
-			AccessToken:  tokenResp.AccessToken,
-			RefreshToken: token.RefreshToken,
-			Expiry:       tokenResp.ExpiresAt,
-			TokenType:    tokenResp.TokenType,
-		}
+	// Wrap it with our dbTokenSource to persist refreshes
+	dbTokenSource := &dbTokenSource{
+		baseSource:    baseTokenSource,
+		ctx:           ctx,
+		userID:        userID,
+		dbClient:      c.dbClient,
+		originalToken: token,
 	}
 
-	driveService, err := drive.NewService(ctx, option.WithTokenSource(c.config.TokenSource(ctx, oauthToken)))
+	log.Printf("[GoogleDriveClient.getDriveService] Creating drive service with auto-refresh token source...")
+	driveService, err := drive.NewService(ctx, option.WithTokenSource(dbTokenSource))
 	if err != nil {
+		log.Printf("[GoogleDriveClient.getDriveService] Failed to create drive service: %v", err)
 		return nil, fmt.Errorf("failed to create drive service: %w", err)
 	}
+	log.Printf("[GoogleDriveClient.getDriveService] Successfully created drive service")
 
 	return driveService, nil
 }
 
 func (c *client) ListFiles(ctx context.Context, userID string, pageSize int, pageToken string, query string) (*FileListResponse, error) {
+	log.Printf("[GoogleDriveClient.ListFiles] Starting - userID: %s, pageSize: %d, pageToken: %s, query: %s", userID, pageSize, pageToken, query)
+
 	driveService, err := c.getDriveService(ctx, userID)
 	if err != nil {
+		log.Printf("[GoogleDriveClient.ListFiles] Failed to get drive service: %v", err)
 		return nil, err
 	}
+	log.Printf("[GoogleDriveClient.ListFiles] Successfully created drive service")
 
 	listCall := driveService.Files.List().
 		PageSize(int64(pageSize)).
@@ -171,16 +225,22 @@ func (c *client) ListFiles(ctx context.Context, userID string, pageSize int, pag
 
 	if query != "" {
 		listCall = listCall.Q(query)
+		log.Printf("[GoogleDriveClient.ListFiles] Added query filter: %s", query)
 	}
 
 	if pageToken != "" {
 		listCall = listCall.PageToken(pageToken)
+		log.Printf("[GoogleDriveClient.ListFiles] Added page token")
 	}
 
+	log.Printf("[GoogleDriveClient.ListFiles] Executing Google Drive API call...")
 	files, err := listCall.Do()
 	if err != nil {
+		log.Printf("[GoogleDriveClient.ListFiles] Google Drive API error: %v", err)
+		log.Printf("[GoogleDriveClient.ListFiles] Error type: %T", err)
 		return nil, fmt.Errorf("failed to list files: %w", err)
 	}
+	log.Printf("[GoogleDriveClient.ListFiles] Successfully received %d files from Google Drive", len(files.Files))
 
 	result := &FileListResponse{
 		Files:         make([]File, 0, len(files.Files)),

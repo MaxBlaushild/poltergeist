@@ -6,6 +6,7 @@ import 'package:travel_angels/models/document.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
+import 'package:travel_angels/widgets/trending_destinations_widget.dart';
 
 /// Discover screen for browsing travel destinations and experiences
 class DiscoverScreen extends StatefulWidget {
@@ -150,9 +151,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.all(16.0),
-                        itemCount: _documents.length,
+                        itemCount: _documents.length + 1, // +1 for trending widget
                         itemBuilder: (context, index) {
-                          final document = _documents[index];
+                          // Show trending destinations widget at the top
+                          if (index == 0) {
+                            return const TrendingDestinationsWidget();
+                          }
+                          // Show documents after trending widget
+                          final document = _documents[index - 1];
                           return _buildDocumentCard(context, document, theme);
                         },
                       ),

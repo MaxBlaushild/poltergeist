@@ -3,31 +3,37 @@ module "ecs" {
 
   cluster_name = local.name
 
-  # Capacity provider
-  fargate_capacity_providers = {
-    FARGATE = {
-      default_capacity_provider_strategy = {
-        weight = 50
-        base   = 20
-      }
-    }
-    FARGATE_SPOT = {
-      default_capacity_provider_strategy = {
-        weight = 50
-      }
-    }
-  }
 
   services = {
     sonar_core = {
       cpu = 1024
       memory = 2048
 
+      task_exec_secret_arns = [
+        aws_secretsmanager_secret.db_password.arn,
+        aws_secretsmanager_secret.auth_private_key.arn,
+        aws_secretsmanager_secret.open_ai_key.arn,
+        aws_secretsmanager_secret.twilio_account_sid.arn,
+        aws_secretsmanager_secret.twilio_auth_token.arn,
+        aws_secretsmanager_secret.imagine_api_key.arn,
+        aws_secretsmanager_secret.use_api_key.arn,
+        aws_secretsmanager_secret.google_maps_api_key.arn,
+        aws_secretsmanager_secret.mapbox_api_key.arn,
+        aws_secretsmanager_secret.google_drive_client_id.arn,
+        aws_secretsmanager_secret.google_drive_client_secret.arn,
+        aws_secretsmanager_secret.hue_bridge_hostname.arn,
+        aws_secretsmanager_secret.hue_bridge_username.arn,
+        aws_secretsmanager_secret.hue_client_id.arn,
+        aws_secretsmanager_secret.hue_client_secret.arn,
+        aws_secretsmanager_secret.hue_application_key.arn,
+        aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn,
+      ]
+
       container_definitions = {
         "core" = {
           essential = true
           image     = "${aws_ecr_repository.core.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = local.core_container_name
               containerPort = local.core_container_port
@@ -47,7 +53,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.auth_private_key.arn}"
           }]
           image = "${aws_ecr_repository.authenticator.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "authenticator"
               containerPort = 8089
@@ -66,7 +72,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
           }]
           image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "fount-of-erebos"
               containerPort = 8081
@@ -89,7 +95,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.twilio_auth_token.arn}"
           }]
           image = "${aws_ecr_repository.texter.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "texter"
               containerPort = 8084
@@ -115,7 +121,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
           }]
           image = "${aws_ecr_repository.job_runner.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "job-runner"
               containerPort = 9013
@@ -137,8 +143,14 @@ module "ecs" {
           }, {
             name      = "GOOGLE_DRIVE_CLIENT_SECRET",
             valueFrom = "${aws_secretsmanager_secret.google_drive_client_secret.arn}"
+          }, {
+            name      = "MAPBOX_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.mapbox_api_key.arn}"
+          }, {
+            name      = "GOOGLE_MAPS_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
           }]
-          port_mappings = [
+          portMappings = [
             {
               name          = "travel-angels"
               containerPort = 8083
@@ -168,7 +180,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
           }]
           image = "${aws_ecr_repository.sonar.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "sonar"
               containerPort = 8042
@@ -188,7 +200,7 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
           }]
           image = "${aws_ecr_repository.billing.repository_url}:latest"
-          port_mappings = [
+          portMappings = [
             {
               name          = "travel-angels-billing"
               containerPort = 8022
@@ -220,7 +232,7 @@ module "ecs" {
             name      = "HUE_APPLICATION_KEY",
             valueFrom = "${aws_secretsmanager_secret.hue_application_key.arn}"
           }]
-          port_mappings = [
+          portMappings = [
             {
               name          = "final-fete"
               containerPort = 8085
@@ -233,149 +245,41 @@ module "ecs" {
 
       service_connect_configuration = {
           namespace = aws_service_discovery_http_namespace.sonar_namespace.arn
-          service = {
+          service = [{
             client_alias = {
               port     = local.core_container_port
               dns_name = local.core_container_name
             }
             port_name      = local.core_container_name
             discovery_name = local.core_container_name
-          }
+          }]
         }
 
         load_balancer = {
           service = {
-            target_group_arn = element(module.sonar_alb.target_group_arns, 0)
+            target_group_arn = module.sonar_alb.target_groups["core"].arn
             container_name   = local.core_container_name
             container_port   = local.core_container_port
           }
         }
 
         subnet_ids = module.vpc.private_subnets
-        security_group_rules = {
+        security_group_ingress_rules = {
           alb_ingress_8080 = {
-            type                     = "ingress"
             from_port                = 0
             to_port                  = local.core_container_port
             protocol                 = "tcp"
             description              = "Service port"
-            source_security_group_id = module.sonar_alb_sg.security_group_id
-          }
-          egress_all = {
-            type        = "egress"
-            from_port   = 0
-            to_port     = 0
-            protocol    = "-1"
-            cidr_blocks = ["0.0.0.0/0"]
+            referenced_security_group_id = module.sonar_alb_sg.security_group_id
           }
         }
+              security_group_egress_rules = {
+        all = {
+          ip_protocol = "-1"
+          cidr_ipv4   = "0.0.0.0/0"
+        }
+      }
     }
-
-    # poltergeist_core = {
-    #   cpu    = 1024
-    #   memory = 2048
-
-    #   # Container definition(s)
-    #   container_definitions = {
-    #     "core" = {
-    #       cpu       = 256
-    #       memory    = 512
-    #       essential = true
-    #       image     = "${aws_ecr_repository.core.repository_url}:latest"
-    #       port_mappings = [
-    #         {
-    #           name          = local.core_container_name
-    #           containerPort = local.core_container_port
-    #           hostPort      = local.core_container_port
-    #           protocol      = "tcp"
-    #         }
-    #       ]
-    #     }
-
-    #     "fount-of-erebos" = {
-    #       cpu       = 256
-    #       memory    = 512
-    #       essential = true
-    #       secrets = [{
-    #         name      = "OPEN_AI_KEY",
-    #         valueFrom = "${aws_secretsmanager_secret.open_ai_key.arn}"
-    #       }]
-    #       image = "${aws_ecr_repository.fount_of_erebos.repository_url}:latest"
-    #       port_mappings = [
-    #         {
-    #           name          = "fount-of-erebos"
-    #           containerPort = 8081
-    #           hostPort      = 8081
-    #           protocol      = "tcp"
-        #     }
-        #   ]
-        # }
-
-        # "trivai" = {
-        #   cpu       = 256
-        #   memory    = 512
-        #   essential = true
-        #   secrets = [{
-        #     name      = "DB_PASSWORD",
-        #     valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-        #     }, {
-        #     name      = "SENDGRID_API_KEY",
-        #     valueFrom = "${aws_secretsmanager_secret.sendgrid_api_key.arn}"
-        #     }, {
-        #     name      = "GUESS_HOW_MANY_PHONE_NUMBER",
-        #     valueFrom = "${aws_secretsmanager_secret.twilio_phone_number.arn}"
-        #   }]
-      #     image = "${aws_ecr_repository.trivai.repository_url}:latest"
-      #     port_mappings = [
-      #       {
-      #         name          = "trivai"
-      #         containerPort = 8082
-      #         hostPort      = 8082
-      #         protocol      = "tcp"
-      #       }
-      #     ]
-      #   }
-      # }
-
-      # service_connect_configuration = {
-      #   namespace = aws_service_discovery_http_namespace.this.arn
-      #   service = {
-      #     client_alias = {
-      #       port     = local.core_container_port
-      #       dns_name = local.core_container_name
-      #     }
-      #     port_name      = local.core_container_name
-      #     discovery_name = local.core_container_name
-      #   }
-      # }
-
-    #   load_balancer = {
-    #     service = {
-    #       target_group_arn = element(module.alb.target_group_arns, 0)
-    #       container_name   = local.core_container_name
-    #       container_port   = local.core_container_port
-    #     }
-    #   }
-
-    #   subnet_ids = module.vpc.private_subnets
-    #   security_group_rules = {
-    #     alb_ingress_8080 = {
-    #       type                     = "ingress"
-    #       from_port                = 0
-    #       to_port                  = local.core_container_port
-    #       protocol                 = "tcp"
-    #       description              = "Service port"
-    #       source_security_group_id = module.alb_sg.security_group_id
-    #     }
-    #     egress_all = {
-    #       type        = "egress"
-    #       from_port   = 0
-    #       to_port     = 0
-    #       protocol    = "-1"
-    #       cidr_blocks = ["0.0.0.0/0"]
-    #     }
-    #   }
-    # }
   }
 }
 

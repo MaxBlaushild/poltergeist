@@ -1,7 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:travel_angels/constants/api_constants.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/providers/auth_provider.dart';
+import 'package:travel_angels/services/api_client.dart';
+import 'package:travel_angels/services/media_service.dart';
 import 'package:travel_angels/widgets/location_picker.dart';
 
 class EditProfileDialog extends StatefulWidget {
@@ -26,6 +31,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   String? _selectedLocationAddress;
   final _bioController = TextEditingController();
   bool _isSaving = false;
+  File? _profilePicture;
 
   @override
   void initState() {
@@ -43,6 +49,28 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   void dispose() {
     _bioController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickProfilePicture() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _profilePicture = File(result.files.single.path!);
+        });
+      }
+    } catch (e) {
+      // Handle error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick image: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _handleSave() async {
@@ -73,6 +101,46 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
     try {
       final authProvider = context.read<AuthProvider>();
+      String? profilePictureUrl;
+
+      // Upload profile picture if selected
+      if (_profilePicture != null) {
+        try {
+          final apiClient = APIClient(ApiConstants.baseUrl);
+          final mediaService = MediaService(apiClient);
+          final user = authProvider.user;
+          
+          if (user != null && user.id != null) {
+            profilePictureUrl = await mediaService.uploadProfilePicture(
+              _profilePicture!,
+              user.id!,
+            );
+            
+            if (profilePictureUrl == null) {
+              if (mounted) {
+                setState(() {
+                  _isSaving = false;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to upload profile picture')),
+                );
+              }
+              return;
+            }
+          }
+        } catch (e) {
+          if (mounted) {
+            setState(() {
+              _isSaving = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to upload profile picture: $e')),
+            );
+          }
+          return;
+        }
+      }
+
       await authProvider.updateProfile(
         dateOfBirth: _dateOfBirth,
         gender: _selectedGender,
@@ -80,6 +148,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         longitude: _selectedLongitude,
         locationAddress: _selectedLocationAddress,
         bio: _bioController.text.trim().isNotEmpty ? _bioController.text.trim() : null,
+        profilePictureUrl: profilePictureUrl,
       );
 
       if (mounted) {
@@ -234,8 +303,10 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // Wrap LocationPicker to prevent scroll conflicts with GoogleMap
+                // LocationPicker - wrapped to prevent scroll conflicts with GoogleMap
+                // The map needs explicit width constraints from MediaQuery to render properly
                 SizedBox(
+                  width: MediaQuery.of(context).size.width - 48, // Account for padding
                   child: LocationPicker(
                     initialLatitude: _selectedLatitude,
                     initialLongitude: _selectedLongitude,
@@ -248,6 +319,58 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                       });
                     },
                   ),
+                ),
+                const SizedBox(height: 24),
+                // Profile picture picker
+                const Text(
+                  'Profile Picture (Optional)',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (_profilePicture != null) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          _profilePicture!,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                    ] else if (widget.user?.profilePictureUrl != null && widget.user!.profilePictureUrl!.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          widget.user!.profilePictureUrl!,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 100,
+                              height: 100,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.person, size: 50),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                    ],
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickProfilePicture,
+                        icon: const Icon(Icons.image),
+                        label: Text(_profilePicture == null ? 'Pick Image' : 'Change Image'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 24),
                 // Bio field

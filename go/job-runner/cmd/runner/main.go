@@ -70,6 +70,7 @@ func main() {
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
+	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
 	mux := asynq.NewServeMux()
 
 	// Add error logging middleware to each handler
@@ -87,6 +88,7 @@ func main() {
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
+	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
 
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
@@ -95,6 +97,10 @@ func main() {
 	}
 
 	if _, err = scheduler.Register("@weekly", asynq.NewTask(jobs.SeedTreasureChestsTaskType, nil)); err != nil {
+		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@every 6h", asynq.NewTask(jobs.CalculateTrendingDestinationsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
 	}
 
