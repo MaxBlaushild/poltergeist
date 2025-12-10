@@ -340,6 +340,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _isFriendsExpanded = expanded;
         });
       },
+      shape: const Border(),
+      collapsedShape: const Border(),
       children: [
         if (_isLoadingFriends)
           const Padding(
@@ -358,21 +360,24 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _friends.length,
-            itemBuilder: (context, index) {
-              final friend = _friends[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: ListTile(
-                  leading: _buildUserAvatar(friend),
-                  title: Text(friend.username ?? 'Unknown'),
-                  subtitle: friend.name != null ? Text(friend.name!) : null,
-                ),
-              );
-            },
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _friends.length,
+              itemBuilder: (context, index) {
+                final friend = _friends[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    leading: _buildUserAvatar(friend),
+                    title: Text(friend.username ?? 'Unknown'),
+                    subtitle: friend.name != null ? Text(friend.name!) : null,
+                  ),
+                );
+              },
+            ),
           ),
       ],
     );
@@ -393,6 +398,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _isSearchExpanded = expanded;
         });
       },
+      shape: const Border(),
+      collapsedShape: const Border(),
       children: [
         Padding(
           padding: const EdgeInsets.all(16.0),
@@ -502,6 +509,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _isReceivedInvitesExpanded = expanded;
         });
       },
+      shape: const Border(),
+      collapsedShape: const Border(),
       children: [
         if (_isLoadingInvites)
           const Padding(
@@ -520,67 +529,70 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: receivedInvites.length,
-            itemBuilder: (context, index) {
-              final invite = receivedInvites[index];
-              final inviter = invite.inviter;
-              final isAccepting = _acceptingInvites.contains(invite.id);
-              final isRejecting = _rejectingInvites.contains(invite.id);
-              final isProcessing = isAccepting || isRejecting;
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: receivedInvites.length,
+              itemBuilder: (context, index) {
+                final invite = receivedInvites[index];
+                final inviter = invite.inviter;
+                final isAccepting = _acceptingInvites.contains(invite.id);
+                final isRejecting = _rejectingInvites.contains(invite.id);
+                final isProcessing = isAccepting || isRejecting;
 
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: ListTile(
-                  leading: _buildUserAvatar(inviter),
-                  title: Text(inviter?.username ?? 'Unknown'),
-                  subtitle: Text(
-                    invite.createdAt != null
-                        ? DateFormat.yMMMd().format(invite.createdAt!)
-                        : 'Unknown date',
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ElevatedButton(
-                        onPressed: isProcessing
-                            ? null
-                            : () => _handleAcceptInvite(invite.id),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    leading: _buildUserAvatar(inviter),
+                    title: Text(inviter?.username ?? 'Unknown'),
+                    subtitle: Text(
+                      invite.createdAt != null
+                          ? DateFormat.yMMMd().format(invite.createdAt!)
+                          : 'Unknown date',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton(
+                          onPressed: isProcessing
+                              ? null
+                              : () => _handleAcceptInvite(invite.id),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: isAccepting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text('Accept'),
                         ),
-                        child: isAccepting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Text('Accept'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: isProcessing
-                            ? null
-                            : () => _handleRejectInvite(invite.id),
-                        child: isRejecting
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Reject'),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: isProcessing
+                              ? null
+                              : () => _handleRejectInvite(invite.id),
+                          child: isRejecting
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Reject'),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
       ],
     );
@@ -608,6 +620,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _isSentInvitesExpanded = expanded;
         });
       },
+      shape: const Border(),
+      collapsedShape: const Border(),
       children: [
         if (_isLoadingInvites)
           const Padding(
@@ -626,40 +640,43 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             ),
           )
         else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: sentInvites.length,
-            itemBuilder: (context, index) {
-              final invite = sentInvites[index];
-              final invitee = invite.invitee;
-              final isRejecting = _rejectingInvites.contains(invite.id);
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: sentInvites.length,
+              itemBuilder: (context, index) {
+                final invite = sentInvites[index];
+                final invitee = invite.invitee;
+                final isRejecting = _rejectingInvites.contains(invite.id);
 
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: ListTile(
-                  leading: _buildUserAvatar(invitee),
-                  title: Text(invitee?.username ?? 'Unknown'),
-                  subtitle: Text(
-                    invite.createdAt != null
-                        ? DateFormat.yMMMd().format(invite.createdAt!)
-                        : 'Unknown date',
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: ListTile(
+                    leading: _buildUserAvatar(invitee),
+                    title: Text(invitee?.username ?? 'Unknown'),
+                    subtitle: Text(
+                      invite.createdAt != null
+                          ? DateFormat.yMMMd().format(invite.createdAt!)
+                          : 'Unknown date',
+                    ),
+                    trailing: OutlinedButton(
+                      onPressed: isRejecting
+                          ? null
+                          : () => _handleRejectInvite(invite.id),
+                      child: isRejecting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Cancel'),
+                    ),
                   ),
-                  trailing: OutlinedButton(
-                    onPressed: isRejecting
-                        ? null
-                        : () => _handleRejectInvite(invite.id),
-                    child: isRejecting
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('Cancel'),
-                  ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
       ],
     );
@@ -670,18 +687,24 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Circle'),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_errorMessage != null) ...[
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // My Circle header
+                Text(
+                  'My Circle',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (_errorMessage != null) ...[
                 Container(
                   padding: const EdgeInsets.all(12.0),
                   margin: const EdgeInsets.only(bottom: 16.0),
@@ -727,6 +750,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           ),
         ),
       ),
+        ),
     );
   }
 }

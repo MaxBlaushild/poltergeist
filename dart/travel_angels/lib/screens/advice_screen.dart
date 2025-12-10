@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:travel_angels/widgets/quick_decision_bottom_sheet.dart';
 
 /// Consolidated Advice screen that combines Get Advice and Give Advice functionality
 class AdviceScreen extends StatefulWidget {
@@ -32,8 +33,19 @@ class _AdviceScreenState extends State<AdviceScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Add top padding for additional spacing below status bar
-            const SizedBox(height: 16),
+            // Advice header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Advice',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
             // Enhanced TabBar with more prominent styling
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8.0),
@@ -84,8 +96,21 @@ class _AdviceScreenState extends State<AdviceScreen>
 }
 
 /// Get Advice tab content
-class _GetAdviceTab extends StatelessWidget {
+class _GetAdviceTab extends StatefulWidget {
   const _GetAdviceTab();
+
+  @override
+  State<_GetAdviceTab> createState() => _GetAdviceTabState();
+}
+
+class _GetAdviceTabState extends State<_GetAdviceTab> {
+  void _showQuickDecisionBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => const QuickDecisionBottomSheet(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -105,38 +130,42 @@ class _GetAdviceTab extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           // Quick decision option
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.speed,
-                    size: 32,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Quick decision',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'choose between 2-3 options',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.7),
-                          ),
-                        ),
-                      ],
+          InkWell(
+            onTap: _showQuickDecisionBottomSheet,
+            borderRadius: BorderRadius.circular(12),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.speed,
+                      size: 32,
+                      color: theme.colorScheme.primary,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quick decision',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'choose between 2-3 options',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurface.withOpacity(0.7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

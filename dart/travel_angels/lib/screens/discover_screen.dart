@@ -7,6 +7,7 @@ import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
 import 'package:travel_angels/widgets/trending_destinations_widget.dart';
+import 'package:travel_angels/widgets/from_your_network_widget.dart';
 
 /// Discover screen for browsing travel destinations and experiences
 class DiscoverScreen extends StatefulWidget {
@@ -121,46 +122,26 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                       ],
                     ),
                   )
-                : _documents.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.inbox_outlined,
-                              size: 64,
-                              color: theme.colorScheme.onSurface.withOpacity(0.5),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No documents from friends yet',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(0.7),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'When your friends upload documents, they\'ll appear here',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: theme.colorScheme.onSurface.withOpacity(0.5),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
+                : ListView(
                         padding: const EdgeInsets.all(16.0),
-                        itemCount: _documents.length + 1, // +1 for trending widget
-                        itemBuilder: (context, index) {
-                          // Show trending destinations widget at the top
-                          if (index == 0) {
-                            return const TrendingDestinationsWidget();
-                          }
-                          // Show documents after trending widget
-                          final document = _documents[index - 1];
-                          return _buildDocumentCard(context, document, theme);
-                        },
+                        children: [
+                          // Discover header
+                          Text(
+                            'Discover',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          // Trending destinations widget at the top
+                          const TrendingDestinationsWidget(),
+                          const SizedBox(height: 16),
+                          // From Your Network widget
+                          FromYourNetworkWidget(
+                            documents: _documents,
+                            buildDocumentCard: _buildDocumentCard,
+                          ),
+                        ],
                       ),
         ),
       ),

@@ -316,6 +316,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              // Profile header
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Profile',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
             // Profile Picture
             _buildProfilePicture(user, theme),

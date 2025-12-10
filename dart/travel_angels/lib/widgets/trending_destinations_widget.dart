@@ -106,11 +106,6 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
       );
     }
 
-    // Don't show widget if there's no data
-    if (_cities.isEmpty && _countries.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
       child: Padding(
@@ -172,6 +167,22 @@ class _TrendingDestinationsWidgetState extends State<TrendingDestinationsWidget>
                   country,
                   theme,
                 )).toList(),
+              ),
+            ],
+            // Empty state
+            if (_cities.isEmpty && _countries.isEmpty) ...[
+              Text(
+                'No trending destinations yet',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.6),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Trending destinations will appear here once documents are created with locations',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                ),
               ),
             ],
           ],

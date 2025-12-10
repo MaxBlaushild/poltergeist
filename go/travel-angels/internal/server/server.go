@@ -95,6 +95,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/travel-angels/credits/add", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AddCredits))
 	r.POST("/travel-angels/credits/subtract", middleware.WithAuthenticationWithoutLocation(s.authClient, s.SubtractCredits))
 	r.GET("/travel-angels/trending-destinations", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetTrendingDestinations))
+	r.POST("/travel-angels/quick-decision-requests", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateQuickDecisionRequest))
 
 	r.Run(fmt.Sprintf(":%s", port))
 }
