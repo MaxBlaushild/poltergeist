@@ -36,6 +36,7 @@ func (h *utilityClosetPuzzleHandler) GetPuzzle(ctx context.Context) (*models.Uti
 			Button3BaseHue:    3,
 			Button4BaseHue:    4,
 			Button5BaseHue:    5,
+			AllGreensAchieved: false,
 		}
 		if err := h.db.WithContext(ctx).Create(&puzzle).Error; err != nil {
 			return nil, err
@@ -69,4 +70,8 @@ func (h *utilityClosetPuzzleHandler) ResetPuzzle(ctx context.Context) (*models.U
 	}
 
 	return puzzle, nil
+}
+
+func (h *utilityClosetPuzzleHandler) DeletePuzzle(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.UtilityClosetPuzzle{}, id).Error
 }

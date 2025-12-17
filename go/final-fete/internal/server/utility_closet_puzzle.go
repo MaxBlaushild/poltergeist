@@ -9,7 +9,7 @@ import (
 )
 
 type PressButtonRequest struct {
-	Slot int `json:"slot" binding:"required"`
+	Slot int `json:"slot"`
 }
 
 // PressButton handles pressing a button in the utility closet puzzle
@@ -48,7 +48,8 @@ func (s *server) PressButton(ctx *gin.Context) {
 	// Check if all lights have been green at least once
 	// This is true if any light has progressed beyond green (is red, blue, purple, or white)
 	// OR if all 6 lights are currently green (which unlocks blue)
-	allGreensAchieved := false
+	// Use the persistent field, but also check current state to update it if needed
+	allGreensAchieved := puzzle.AllGreensAchieved
 	allCurrentlyGreen := true
 	for i := 0; i < 6; i++ {
 		if currentHues[i] != 2 {
@@ -62,6 +63,10 @@ func (s *server) PressButton(ctx *gin.Context) {
 	// If all are currently green, this also unlocks blue
 	if allCurrentlyGreen {
 		allGreensAchieved = true
+	}
+	// Update the persistent field if it changed
+	if puzzle.AllGreensAchieved != allGreensAchieved {
+		puzzle.AllGreensAchieved = allGreensAchieved
 	}
 
 	// Don't allow actions if puzzle is already in gold (success) state
@@ -350,4 +355,172 @@ func (s *server) UpdatePuzzle(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, puzzle)
+}
+
+// Admin CRUD endpoints
+
+// AdminGetPuzzleState returns the current state of the puzzle (admin endpoint)
+func (s *server) AdminGetPuzzleState(ctx *gin.Context) {
+	puzzle, err := s.dbClient.UtilityClosetPuzzle().GetPuzzle(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, puzzle)
+}
+
+type AdminCreatePuzzleRequest struct {
+	Buttons []AdminButtonConfig `json:"buttons" binding:"required,dive"`
+}
+
+type AdminButtonConfig struct {
+	Slot       int  `json:"slot" binding:"min=0,max=5"`
+	HueLightID *int `json:"hueLightId"`
+	BaseHue    int  `json:"baseHue" binding:"min=0,max=6"`
+	CurrentHue int  `json:"currentHue" binding:"min=0,max=6"`
+}
+
+// AdminCreatePuzzle creates a new puzzle instance (admin endpoint)
+func (s *server) AdminCreatePuzzle(ctx *gin.Context) {
+	var req AdminCreatePuzzleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate that we have exactly 6 buttons
+	if len(req.Buttons) != 6 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "must provide exactly 6 button configurations"})
+		return
+	}
+
+	// Validate that slots are unique and 0-5
+	slotMap := make(map[int]bool)
+	for _, button := range req.Buttons {
+		if slotMap[button.Slot] {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "duplicate slot found"})
+			return
+		}
+		if button.Slot < 0 || button.Slot > 5 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "slot must be between 0 and 5"})
+			return
+		}
+		slotMap[button.Slot] = true
+	}
+
+	// Check if puzzle already exists
+	existingPuzzle, err := s.dbClient.UtilityClosetPuzzle().GetPuzzle(ctx)
+	if err == nil && existingPuzzle != nil {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "puzzle already exists. Use PUT to update or DELETE to remove first"})
+		return
+	}
+
+	// Create new puzzle
+	puzzle := &models.UtilityClosetPuzzle{}
+	for _, button := range req.Buttons {
+		puzzle.SetButtonHueLightID(button.Slot, button.HueLightID)
+		puzzle.SetButtonBaseHue(button.Slot, button.BaseHue)
+		puzzle.SetButtonCurrentHue(button.Slot, button.CurrentHue)
+	}
+
+	// Save puzzle
+	if err := s.dbClient.UtilityClosetPuzzle().UpdatePuzzle(ctx, puzzle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create puzzle: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, puzzle)
+}
+
+type AdminUpdatePuzzleRequest struct {
+	Buttons           []AdminButtonConfig `json:"buttons" binding:"required,dive"`
+	AllGreensAchieved *bool               `json:"allGreensAchieved"`
+}
+
+// AdminUpdatePuzzle updates the puzzle with comprehensive admin controls (admin endpoint)
+func (s *server) AdminUpdatePuzzle(ctx *gin.Context) {
+	var req AdminUpdatePuzzleRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate that we have exactly 6 buttons
+	if len(req.Buttons) != 6 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "must provide exactly 6 button configurations"})
+		return
+	}
+
+	// Validate that slots are unique and 0-5
+	slotMap := make(map[int]bool)
+	for _, button := range req.Buttons {
+		if slotMap[button.Slot] {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "duplicate slot found"})
+			return
+		}
+		if button.Slot < 0 || button.Slot > 5 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "slot must be between 0 and 5"})
+			return
+		}
+		slotMap[button.Slot] = true
+	}
+
+	// Get puzzle instance
+	puzzle, err := s.dbClient.UtilityClosetPuzzle().GetPuzzle(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle: " + err.Error()})
+		return
+	}
+
+	// Update each button configuration
+	for _, button := range req.Buttons {
+		puzzle.SetButtonHueLightID(button.Slot, button.HueLightID)
+		puzzle.SetButtonBaseHue(button.Slot, button.BaseHue)
+		puzzle.SetButtonCurrentHue(button.Slot, button.CurrentHue)
+	}
+
+	// Update allGreensAchieved if provided
+	if req.AllGreensAchieved != nil {
+		puzzle.AllGreensAchieved = *req.AllGreensAchieved
+	}
+
+	// Save updated puzzle
+	if err := s.dbClient.UtilityClosetPuzzle().UpdatePuzzle(ctx, puzzle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update puzzle: " + err.Error()})
+		return
+	}
+
+	// Update Hue lights to current colors
+	if s.hueClient != nil {
+		for _, button := range req.Buttons {
+			if button.HueLightID != nil {
+				r, g, b := models.ColorIndexToRGB(button.CurrentHue)
+				if err := s.hueClient.SetColorRGB(ctx, *button.HueLightID, r, g, b); err != nil {
+					log.Printf("Warning: Failed to set light %d to color %d for button %d: %v", *button.HueLightID, button.CurrentHue, button.Slot, err)
+					// Don't fail the request if light update fails
+				}
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, puzzle)
+}
+
+// AdminDeletePuzzle deletes the puzzle (admin endpoint)
+func (s *server) AdminDeletePuzzle(ctx *gin.Context) {
+	// Get puzzle instance
+	puzzle, err := s.dbClient.UtilityClosetPuzzle().GetPuzzle(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle: " + err.Error()})
+		return
+	}
+
+	// Delete puzzle from database
+	if err := s.dbClient.UtilityClosetPuzzle().DeletePuzzle(ctx, puzzle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete puzzle: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "puzzle deleted successfully"})
 }

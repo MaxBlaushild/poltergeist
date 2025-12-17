@@ -629,4 +629,5 @@ type UtilityClosetPuzzleHandle interface {
 	GetPuzzle(ctx context.Context) (*models.UtilityClosetPuzzle, error)
 	UpdatePuzzle(ctx context.Context, puzzle *models.UtilityClosetPuzzle) error
 	ResetPuzzle(ctx context.Context) (*models.UtilityClosetPuzzle, error)
+	DeletePuzzle(ctx context.Context, id uuid.UUID) error
 }
