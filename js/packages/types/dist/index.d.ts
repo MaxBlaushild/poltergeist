@@ -48,3 +48,4 @@ export * from './feteTeam';
 export * from './feteRoomLinkedListTeam';
 export * from './feteRoomTeam';
 export * from './hueLight';
+export * from './utilityClosetPuzzle';
