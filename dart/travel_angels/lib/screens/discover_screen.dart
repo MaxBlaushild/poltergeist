@@ -124,14 +124,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   )
                 : ListView(
                         padding: const EdgeInsets.all(16.0),
-                        children: [
+                          children: [
                           // Discover header
-                          Text(
+                            Text(
                             'Discover',
                             style: theme.textTheme.headlineMedium?.copyWith(
                               fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 24),
                           // Trending destinations widget at the top
                           const TrendingDestinationsWidget(),

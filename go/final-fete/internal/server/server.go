@@ -84,5 +84,11 @@ func (s *server) ListenAndServe(port string) {
 	// Hue OAuth routes (callback doesn't require auth)
 	r.GET("/final-fete/hue-oauth/callback", s.hueOAuthCallback)
 
+	// Utility Closet Puzzle routes
+	r.GET("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPuzzleState))
+	r.PUT("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.UpdatePuzzle))
+	r.POST("/final-fete/utility-closet-puzzle/press", middleware.WithAuthenticationWithoutLocation(s.authClient, s.PressButton))
+	r.POST("/final-fete/utility-closet-puzzle/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ResetPuzzle))
+
 	r.Run(fmt.Sprintf(":%s", port))
 }

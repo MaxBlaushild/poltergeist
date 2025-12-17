@@ -67,6 +67,7 @@ type DbClient interface {
 	TrendingDestination() TrendingDestinationHandle
 	QuickDecisionRequest() QuickDecisionRequestHandle
 	CommunityPoll() CommunityPollHandle
+	UtilityClosetPuzzle() UtilityClosetPuzzleHandle
 	FeteRoom() FeteRoomHandle
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
@@ -622,4 +623,10 @@ type QuickDecisionRequestHandle interface {
 type CommunityPollHandle interface {
 	Create(ctx context.Context, poll *models.CommunityPoll) (*models.CommunityPoll, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.CommunityPoll, error)
+}
+
+type UtilityClosetPuzzleHandle interface {
+	GetPuzzle(ctx context.Context) (*models.UtilityClosetPuzzle, error)
+	UpdatePuzzle(ctx context.Context, puzzle *models.UtilityClosetPuzzle) error
+	ResetPuzzle(ctx context.Context) (*models.UtilityClosetPuzzle, error)
 }

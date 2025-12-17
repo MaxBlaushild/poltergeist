@@ -84,10 +84,10 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
       print('[GoogleDriveFilePicker] Error loading files: $e');
       print('[GoogleDriveFilePicker] Error type: ${e.runtimeType}');
       
-      String errorMsg = 'Failed to load files';
+        String errorMsg = 'Failed to load files';
       String? detailedError;
       
-      if (e is DioException) {
+        if (e is DioException) {
         print('[GoogleDriveFilePicker] DioException details:');
         print('  - Status code: ${e.response?.statusCode}');
         print('  - Status message: ${e.response?.statusMessage}');
@@ -97,8 +97,8 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         print('  - Error type: ${e.type}');
         print('  - Error message: ${e.message}');
         
-        if (e.response != null) {
-          errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+          if (e.response != null) {
+            errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
           
           // Try to extract detailed error message from response
           if (e.response?.data != null) {
@@ -113,12 +113,12 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
               errorMsg = '$errorMsg\n$detailedError';
             }
           }
+          } else {
+            errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+          }
         } else {
-          errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+          errorMsg = '$errorMsg: $e';
         }
-      } else {
-        errorMsg = '$errorMsg: $e';
-      }
       
       print('[GoogleDriveFilePicker] Final error message: $errorMsg');
       
