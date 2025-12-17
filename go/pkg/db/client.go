@@ -70,6 +70,7 @@ type client struct {
 	trendingDestinationHandle         *trendingDestinationHandler
 	quickDecisionRequestHandle        *quickDecisionRequestHandler
 	communityPollHandle               *communityPollHandler
+	utilityClosetPuzzleHandle         *utilityClosetPuzzleHandler
 	feteRoomHandle                    *feteRoomHandler
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
@@ -161,6 +162,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		trendingDestinationHandle:         &trendingDestinationHandler{db: db},
 		quickDecisionRequestHandle:        &quickDecisionRequestHandler{db: db},
 		communityPollHandle:               &communityPollHandler{db: db},
+		utilityClosetPuzzleHandle:         &utilityClosetPuzzleHandler{db: db},
 		feteRoomHandle:                    &feteRoomHandler{db: db},
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
@@ -402,6 +404,10 @@ func (c *client) QuickDecisionRequest() QuickDecisionRequestHandle {
 
 func (c *client) CommunityPoll() CommunityPollHandle {
 	return c.communityPollHandle
+}
+
+func (c *client) UtilityClosetPuzzle() UtilityClosetPuzzleHandle {
+	return c.utilityClosetPuzzleHandle
 }
 
 func (c *client) FeteRoom() FeteRoomHandle {

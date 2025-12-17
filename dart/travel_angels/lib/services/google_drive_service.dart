@@ -62,7 +62,7 @@ class GoogleDriveService {
 
       print('[GoogleDriveService] Listing files with params: $queryParams');
       print('[GoogleDriveService] Endpoint: ${ApiConstants.googleDriveFilesEndpoint}');
-      
+
       final response = await _apiClient.get<Map<String, dynamic>>(
         ApiConstants.googleDriveFilesEndpoint,
         params: queryParams.isEmpty ? null : queryParams,

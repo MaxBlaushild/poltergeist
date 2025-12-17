@@ -31,6 +31,7 @@ import { FeteRooms } from './components/FeteRooms.tsx';
 import { FeteTeams } from './components/FeteTeams.tsx';
 import { FeteRoomLinkedListTeams } from './components/FeteRoomLinkedListTeams.tsx';
 import { FeteRoomTeams } from './components/FeteRoomTeams.tsx';
+import { UtilityClosetPuzzleAdmin } from './components/UtilityClosetPuzzle.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -80,6 +81,7 @@ const Navigation = () => {
         <Link to="/fete-rooms" className="text-white hover:text-gray-300">Fete Rooms</Link>
         <Link to="/fete-teams" className="text-white hover:text-gray-300">Fete Teams</Link>
         <Link to="/fete-room-linked-list-teams" className="text-white hover:text-gray-300">Fete Linked List</Link>
+        <Link to="/utility-closet-puzzle" className="text-white hover:text-gray-300">Utility Closet Puzzle</Link>
       </div>
     </nav>
   );
@@ -203,6 +205,11 @@ const router = createBrowserRouter([
       {
         path: "/fete-room-teams",
         element: <FeteRoomTeams />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/utility-closet-puzzle",
+        element: <UtilityClosetPuzzleAdmin />,
         loader: onlyAuthenticated,
       },
     ]
