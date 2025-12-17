@@ -87,8 +87,8 @@ func (p *UtilityClosetPuzzle) SetButtonCurrentHue(slot int, hue int) {
 	if hue < 0 {
 		hue = 0
 	}
-	if hue > 5 {
-		hue = 5
+	if hue > 6 {
+		hue = 6
 	}
 
 	switch slot {
@@ -150,8 +150,8 @@ func (p *UtilityClosetPuzzle) SetButtonBaseHue(slot int, hue int) {
 	if hue < 0 {
 		hue = 0
 	}
-	if hue > 5 {
-		hue = 5
+	if hue > 6 {
+		hue = 6
 	}
 
 	switch slot {
@@ -190,6 +190,7 @@ const (
 	PuzzleColorWhite                     // White
 	PuzzleColorRed                       // Red
 	PuzzleColorPurple                    // Purple
+	PuzzleColorGold                      // Gold (success state)
 )
 
 // String returns the string representation of the color
@@ -207,26 +208,28 @@ func (c PuzzleColor) String() string {
 		return "Red"
 	case PuzzleColorPurple:
 		return "Purple"
+	case PuzzleColorGold:
+		return "Gold"
 	default:
 		return "Unknown"
 	}
 }
 
-// ToInt returns the integer representation of the color (0-5)
+// ToInt returns the integer representation of the color (0-6)
 func (c PuzzleColor) ToInt() int {
 	return int(c)
 }
 
-// PuzzleColorFromInt returns a PuzzleColor from an integer (0-5)
+// PuzzleColorFromInt returns a PuzzleColor from an integer (0-6)
 func PuzzleColorFromInt(i int) PuzzleColor {
-	if i < 0 || i > 5 {
+	if i < 0 || i > 6 {
 		return PuzzleColorOff
 	}
 	return PuzzleColor(i)
 }
 
-// ColorIndexToRGB converts a color index (0-5) to RGB values
-// Color mapping: 0=Off (grey), 1=Blue, 2=Green, 3=White, 4=Red, 5=Purple
+// ColorIndexToRGB converts a color index (0-6) to RGB values
+// Color mapping: 0=Off (grey), 1=Blue, 2=Green, 3=White, 4=Red, 5=Purple, 6=Gold
 func ColorIndexToRGB(colorIndex int) (r, g, b uint8) {
 	switch colorIndex {
 	case 0: // Off (grey)
@@ -241,6 +244,8 @@ func ColorIndexToRGB(colorIndex int) (r, g, b uint8) {
 		return 255, 0, 0
 	case 5: // Purple
 		return 128, 0, 128
+	case 6: // Gold
+		return 255, 215, 0
 	default:
 		return 128, 128, 128 // Default to grey (off)
 	}
