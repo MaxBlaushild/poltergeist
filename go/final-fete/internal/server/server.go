@@ -90,5 +90,11 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/final-fete/utility-closet-puzzle/press", middleware.WithAuthenticationWithoutLocation(s.authClient, s.PressButton))
 	r.POST("/final-fete/utility-closet-puzzle/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ResetPuzzle))
 
+	// Utility Closet Puzzle Admin CRUD routes
+	r.GET("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminGetPuzzleState))
+	r.POST("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminCreatePuzzle))
+	r.PUT("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminUpdatePuzzle))
+	r.DELETE("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminDeletePuzzle))
+
 	r.Run(fmt.Sprintf(":%s", port))
 }

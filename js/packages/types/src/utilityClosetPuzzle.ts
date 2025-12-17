@@ -20,6 +20,7 @@ export interface UtilityClosetPuzzle {
   button3BaseHue: number;
   button4BaseHue: number;
   button5BaseHue: number;
+  allGreensAchieved: boolean;
 }
 
 export interface ButtonConfig {

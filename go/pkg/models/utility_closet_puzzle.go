@@ -36,6 +36,10 @@ type UtilityClosetPuzzle struct {
 	Button3BaseHue int `gorm:"column:button_3_base_hue;not null" json:"button3BaseHue"`
 	Button4BaseHue int `gorm:"column:button_4_base_hue;not null" json:"button4BaseHue"`
 	Button5BaseHue int `gorm:"column:button_5_base_hue;not null" json:"button5BaseHue"`
+
+	// AllGreensAchieved tracks whether all lights have been green at least once
+	// This is required to unlock blue color from red
+	AllGreensAchieved bool `gorm:"column:all_greens_achieved;not null;default:false" json:"allGreensAchieved"`
 }
 
 func (UtilityClosetPuzzle) TableName() string {
@@ -178,6 +182,7 @@ func (p *UtilityClosetPuzzle) ResetToBaseState() {
 	p.Button3CurrentHue = p.Button3BaseHue
 	p.Button4CurrentHue = p.Button4BaseHue
 	p.Button5CurrentHue = p.Button5BaseHue
+	p.AllGreensAchieved = false
 }
 
 // PuzzleColor represents a color for the utility closet puzzle
