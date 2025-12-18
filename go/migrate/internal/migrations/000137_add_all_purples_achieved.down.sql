@@ -1,0 +1,3 @@
+-- Remove all_purples_achieved field from utility_closet_puzzle table
+ALTER TABLE utility_closet_puzzle
+DROP COLUMN IF EXISTS all_purples_achieved;
