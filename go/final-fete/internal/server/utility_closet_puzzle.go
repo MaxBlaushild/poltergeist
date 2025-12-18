@@ -69,6 +69,28 @@ func (s *server) PressButton(ctx *gin.Context) {
 		puzzle.AllGreensAchieved = allGreensAchieved
 	}
 
+	// Check if all lights have been purple at least once
+	// This is true if any light is white (3) OR if all 6 lights are currently purple
+	allPurplesAchieved := puzzle.AllPurplesAchieved
+	allCurrentlyPurple := true
+	for i := 0; i < 6; i++ {
+		if currentHues[i] != 5 {
+			allCurrentlyPurple = false
+		}
+		// If any light is white (3), we've had all purples unlocked
+		if currentHues[i] == 3 {
+			allPurplesAchieved = true
+		}
+	}
+	// If all are currently purple, this also unlocks white
+	if allCurrentlyPurple {
+		allPurplesAchieved = true
+	}
+	// Update the persistent field if it changed
+	if puzzle.AllPurplesAchieved != allPurplesAchieved {
+		puzzle.AllPurplesAchieved = allPurplesAchieved
+	}
+
 	// Don't allow actions if puzzle is already in gold (success) state
 	if currentHues[0] == 6 || currentHues[1] == 6 || currentHues[2] == 6 ||
 		currentHues[3] == 6 || currentHues[4] == 6 || currentHues[5] == 6 {
@@ -164,7 +186,8 @@ func (s *server) PressButton(ctx *gin.Context) {
 		}
 
 	case 5: // Purple
-		// Check if all 6 lights are purple - if so, clicking unlocks white
+		// Check if all 6 lights are currently purple - if so, clicking unlocks white
+		// Use the persistent allPurplesAchieved field to determine if white is unlocked
 		allPurple := true
 		for i := 0; i < 6; i++ {
 			if currentHues[i] != 5 {
@@ -173,8 +196,8 @@ func (s *server) PressButton(ctx *gin.Context) {
 			}
 		}
 
-		if allPurple {
-			// All purple - clicking one turns it white
+		if allPurple && puzzle.AllPurplesAchieved {
+			// All purple and white is unlocked - clicking one turns it white
 			puzzle.SetButtonCurrentHue(req.Slot, 3) // White
 			updateLightColor(ctx, s, puzzle, req.Slot, 3)
 		} else {
@@ -434,8 +457,9 @@ func (s *server) AdminCreatePuzzle(ctx *gin.Context) {
 }
 
 type AdminUpdatePuzzleRequest struct {
-	Buttons           []AdminButtonConfig `json:"buttons" binding:"required,dive"`
-	AllGreensAchieved *bool               `json:"allGreensAchieved"`
+	Buttons            []AdminButtonConfig `json:"buttons" binding:"required,dive"`
+	AllGreensAchieved  *bool               `json:"allGreensAchieved"`
+	AllPurplesAchieved *bool               `json:"allPurplesAchieved"`
 }
 
 // AdminUpdatePuzzle updates the puzzle with comprehensive admin controls (admin endpoint)
@@ -483,6 +507,11 @@ func (s *server) AdminUpdatePuzzle(ctx *gin.Context) {
 	// Update allGreensAchieved if provided
 	if req.AllGreensAchieved != nil {
 		puzzle.AllGreensAchieved = *req.AllGreensAchieved
+	}
+
+	// Update allPurplesAchieved if provided
+	if req.AllPurplesAchieved != nil {
+		puzzle.AllPurplesAchieved = *req.AllPurplesAchieved
 	}
 
 	// Save updated puzzle
