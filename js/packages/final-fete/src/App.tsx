@@ -7,6 +7,12 @@ import { UnlockRoom } from './components/UnlockRoom';
 import { LoginPage } from './components/LoginPage';
 import { MatrixBackground } from './components/MatrixBackground';
 import { GarbledText } from './components/GarbledText';
+import { AntiviralPage } from './components/AntiviralPage';
+import { PressQRScanner } from './components/PressQRScanner';
+import { MailRoomExtraLetterPage } from './components/MailRoomExtraLetterPage';
+import { MailRoomNoteBreakerCluePage } from './components/MailRoomNoteBreakerCluePage';
+import { WhiteIndicatorsPage } from './components/WhiteIndicatorsPage';
+import { WinningSequencePage } from './components/WinningSequencePage';
 import './App.css';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -34,6 +40,30 @@ function AppRouter() {
       element: <OnlyUnauthenticatedRoute>
         <LoginPage />
       </OnlyUnauthenticatedRoute>,
+    },
+    {
+      path: '/antiviral',
+      element: <AntiviralPage />,
+    },
+    {
+      path: '/press-scanner',
+      element: <PressQRScanner />,
+    },
+    {
+      path: '/mail-room-extra-letter',
+      element: <MailRoomExtraLetterPage />,
+    },
+    {
+      path: '/mail-room-note-breaker-clue',
+      element: <MailRoomNoteBreakerCluePage />,
+    },
+    {
+      path: '/white-indicators',
+      element: <WhiteIndicatorsPage />,
+    },
+    {
+      path: '/winning-sequence',
+      element: <WinningSequencePage />,
     },
     {
       path: '/',

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 
+	"github.com/MaxBlaushild/poltergeist/final-fete/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/hue"
@@ -11,10 +12,11 @@ import (
 )
 
 type server struct {
-	authClient     auth.Client
-	dbClient       db.DbClient
-	hueClient      hue.Client
-	hueOAuthClient hue.OAuthClient
+	authClient             auth.Client
+	dbClient               db.DbClient
+	hueClient              hue.Client
+	hueOAuthClient         hue.OAuthClient
+	puzzleGameEngineClient gameengine.UtilityClosetPuzzleClient
 }
 
 type Server interface {
@@ -26,12 +28,14 @@ func NewServer(
 	dbClient db.DbClient,
 	hueClient hue.Client,
 	hueOAuthClient hue.OAuthClient,
+	puzzleGameEngineClient gameengine.UtilityClosetPuzzleClient,
 ) Server {
 	return &server{
-		authClient:     authClient,
-		dbClient:       dbClient,
-		hueClient:      hueClient,
-		hueOAuthClient: hueOAuthClient,
+		authClient:             authClient,
+		dbClient:               dbClient,
+		hueClient:              hueClient,
+		hueOAuthClient:         hueOAuthClient,
+		puzzleGameEngineClient: puzzleGameEngineClient,
 	}
 }
 
@@ -87,7 +91,7 @@ func (s *server) ListenAndServe(port string) {
 	// Utility Closet Puzzle routes
 	r.GET("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPuzzleState))
 	r.PUT("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.UpdatePuzzle))
-	r.POST("/final-fete/utility-closet-puzzle/press", middleware.WithAuthenticationWithoutLocation(s.authClient, s.PressButton))
+	r.GET("/final-fete/utility-closet-puzzle/press/:slot", middleware.WithAntiviralCookie(s.PressButton))
 	r.POST("/final-fete/utility-closet-puzzle/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ResetPuzzle))
 
 	// Utility Closet Puzzle Admin CRUD routes
@@ -95,6 +99,7 @@ func (s *server) ListenAndServe(port string) {
 	r.POST("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminCreatePuzzle))
 	r.PUT("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminUpdatePuzzle))
 	r.DELETE("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminDeletePuzzle))
+	r.POST("/final-fete/utility-closet-puzzle/toggle-achievement", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ToggleAchievement))
 
 	r.Run(fmt.Sprintf(":%s", port))
 }

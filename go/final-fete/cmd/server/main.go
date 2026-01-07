@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/final-fete/internal/config"
+	"github.com/MaxBlaushild/poltergeist/final-fete/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/final-fete/internal/server"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -85,5 +86,8 @@ func main() {
 		}
 	}
 
-	server.NewServer(authClient, dbClient, hueClient, hueOAuthClient).ListenAndServe("8085")
+	// Initialize puzzle game engine client
+	puzzleGameEngineClient := gameengine.NewUtilityClosetPuzzleClient(dbClient)
+
+	server.NewServer(authClient, dbClient, hueClient, hueOAuthClient, puzzleGameEngineClient).ListenAndServe("8085")
 }

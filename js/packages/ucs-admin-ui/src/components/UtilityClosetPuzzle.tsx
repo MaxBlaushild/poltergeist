@@ -10,6 +10,7 @@ export const UtilityClosetPuzzleAdmin = () => {
   const [saving, setSaving] = useState(false);
   const [pressing, setPressing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [buttonConfigs, setButtonConfigs] = useState<ButtonConfig[]>([]);
@@ -115,9 +116,7 @@ export const UtilityClosetPuzzleAdmin = () => {
     setPressing(true);
     setError(null);
     try {
-      const updatedPuzzle = await apiClient.post<UtilityClosetPuzzle>('/final-fete/utility-closet-puzzle/press', {
-        slot,
-      });
+      const updatedPuzzle = await apiClient.get<UtilityClosetPuzzle>(`/final-fete/utility-closet-puzzle/press/${slot}?antiviral=true`);
       setPuzzle(updatedPuzzle);
     } catch (error) {
       console.error('Error pressing button:', error);
@@ -141,6 +140,23 @@ export const UtilityClosetPuzzleAdmin = () => {
       alert('Error resetting puzzle. Please try again.');
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleToggleAchievement = async (achievementType: 'allGreens' | 'allPurples') => {
+    setToggling(true);
+    setError(null);
+    try {
+      const updatedPuzzle = await apiClient.post<UtilityClosetPuzzle>('/final-fete/utility-closet-puzzle/toggle-achievement', {
+        achievementType,
+      });
+      setPuzzle(updatedPuzzle);
+    } catch (error) {
+      console.error('Error toggling achievement:', error);
+      setError('Failed to toggle achievement');
+      alert('Error toggling achievement. Please try again.');
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -213,20 +229,76 @@ export const UtilityClosetPuzzleAdmin = () => {
             );
           })}
         </div>
-        <div className="flex justify-center gap-4">
-          <button
-            onClick={handleResetPuzzle}
-            disabled={resetting}
-            className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400 text-white px-6 py-2 rounded-md font-medium"
-          >
-            {resetting ? 'Resetting...' : 'Reset to Base State'}
-          </button>
-          <button
-            onClick={fetchPuzzle}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-md font-medium"
-          >
-            Refresh State
-          </button>
+        <div className="flex flex-col items-center gap-4">
+          {/* Achievement State Toggles */}
+          <div className="flex gap-6 items-center">
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-gray-700">
+                All Greens Achieved:
+              </label>
+              <button
+                onClick={() => handleToggleAchievement('allGreens')}
+                disabled={toggling}
+                className={`
+                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                  ${puzzle.allGreensAchieved ? 'bg-green-500' : 'bg-gray-300'}
+                  ${toggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                `}
+                title={puzzle.allGreensAchieved ? 'Click to disable' : 'Click to enable'}
+              >
+                <span
+                  className={`
+                    inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                    ${puzzle.allGreensAchieved ? 'translate-x-6' : 'translate-x-1'}
+                  `}
+                />
+              </button>
+              <span className={`text-sm font-semibold ${puzzle.allGreensAchieved ? 'text-green-600' : 'text-gray-500'}`}>
+                {puzzle.allGreensAchieved ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-gray-700">
+                All Purples Achieved:
+              </label>
+              <button
+                onClick={() => handleToggleAchievement('allPurples')}
+                disabled={toggling}
+                className={`
+                  relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                  ${puzzle.allPurplesAchieved ? 'bg-purple-500' : 'bg-gray-300'}
+                  ${toggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                `}
+                title={puzzle.allPurplesAchieved ? 'Click to disable' : 'Click to enable'}
+              >
+                <span
+                  className={`
+                    inline-block h-4 w-4 transform rounded-full bg-white transition-transform
+                    ${puzzle.allPurplesAchieved ? 'translate-x-6' : 'translate-x-1'}
+                  `}
+                />
+              </button>
+              <span className={`text-sm font-semibold ${puzzle.allPurplesAchieved ? 'text-purple-600' : 'text-gray-500'}`}>
+                {puzzle.allPurplesAchieved ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+          </div>
+          {/* Action Buttons */}
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={handleResetPuzzle}
+              disabled={resetting}
+              className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400 text-white px-6 py-2 rounded-md font-medium"
+            >
+              {resetting ? 'Resetting...' : 'Reset to Base State'}
+            </button>
+            <button
+              onClick={fetchPuzzle}
+              className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-md font-medium"
+            >
+              Refresh State
+            </button>
+          </div>
         </div>
       </div>
 
