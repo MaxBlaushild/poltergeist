@@ -28,7 +28,7 @@ export interface ButtonConfig {
     hueLightId?: number | null;
     baseHue: number;
 }
-export type PuzzleColor = 'Off' | 'Blue' | 'Green' | 'White' | 'Red' | 'Purple' | 'Gold';
+export type PuzzleColor = 'Off' | 'Blue' | 'Red' | 'White' | 'Yellow' | 'Purple' | 'Green';
 export declare const PUZZLE_COLORS: PuzzleColor[];
 export declare const COLOR_TO_INDEX: Record<PuzzleColor, number>;
 export declare const INDEX_TO_COLOR: Record<number, PuzzleColor>;

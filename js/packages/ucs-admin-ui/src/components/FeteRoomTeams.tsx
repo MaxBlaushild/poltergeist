@@ -1,267 +1,304 @@
 import { useAPI } from '@poltergeist/contexts';
 import { FeteRoomTeam, FeteRoom, FeteTeam } from '@poltergeist/types';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 
 export const FeteRoomTeams = () => {
   const { apiClient } = useAPI();
-  const [items, setItems] = useState<FeteRoomTeam[]>([]);
+  const [roomTeams, setRoomTeams] = useState<FeteRoomTeam[]>([]);
   const [rooms, setRooms] = useState<FeteRoom[]>([]);
   const [teams, setTeams] = useState<FeteTeam[]>([]);
-  const [filteredItems, setFilteredItems] = useState<FeteRoomTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showCreateItem, setShowCreateItem] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<FeteRoomTeam | null>(null);
-  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [togglingStates, setTogglingStates] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
-    feteRoomId: '',
-    teamId: '',
-  });
+  // Optimize data structure: Create a map for quick lookup of room-team relationships
+  // Key format: `${teamId}-${roomId}`, value: FeteRoomTeam (for ID lookup)
+  const roomTeamMap = useMemo(() => {
+    const map: Record<string, FeteRoomTeam> = {};
+    roomTeams.forEach(rt => {
+      const key = `${rt.teamId}-${rt.feteRoomId}`;
+      map[key] = rt;
+    });
+    return map;
+  }, [roomTeams]);
+
+  // Filter teams based on search query (rooms are shown for all teams)
+  const filteredTeams = useMemo(() => {
+    if (searchQuery === '') return teams;
+    const query = searchQuery.toLowerCase();
+    return teams.filter(team => 
+      team.name?.toLowerCase().includes(query)
+    );
+  }, [teams, searchQuery]);
 
   useEffect(() => {
-    fetchItems();
-    fetchRooms();
-    fetchTeams();
+    fetchAllData();
   }, []);
 
-  useEffect(() => {
-    // Refetch rooms when modal opens to ensure they're up to date
-    if (showCreateItem) {
-      fetchRooms();
-      fetchTeams();
+  const fetchAllData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all([fetchRoomTeams(), fetchRooms(), fetchTeams()]);
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to load data. Please refresh the page.');
+    } finally {
+      setLoading(false);
     }
-  }, [showCreateItem]);
+  };
 
-  useEffect(() => {
-    if (searchQuery === '') {
-      setFilteredItems(items);
-    } else {
-      const filtered = items.filter(item => {
-        const room = rooms.find(r => r.id === item.feteRoomId);
-        const team = teams.find(t => t.id === item.teamId);
-        return (
-          room?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          team?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      });
-      setFilteredItems(filtered);
-    }
-  }, [searchQuery, items, rooms, teams]);
-
-  const fetchItems = async () => {
+  const fetchRoomTeams = async () => {
     try {
       const response = await apiClient.get<FeteRoomTeam[]>('/final-fete/room-teams');
-      setItems(response);
-      setFilteredItems(response);
-      setLoading(false);
+      setRoomTeams(Array.isArray(response) ? response : []);
     } catch (error) {
       console.error('Error fetching fete room teams:', error);
-      setLoading(false);
+      setRoomTeams([]);
+      throw error;
     }
   };
 
   const fetchRooms = async () => {
     try {
-      setRoomsLoading(true);
       const response = await apiClient.get<FeteRoom[]>('/final-fete/rooms');
-      const roomsArray = Array.isArray(response) ? response : [];
-      setRooms(roomsArray);
+      setRooms(Array.isArray(response) ? response : []);
     } catch (error) {
       console.error('Error fetching fete rooms:', error);
       setRooms([]);
-    } finally {
-      setRoomsLoading(false);
+      throw error;
     }
   };
 
   const fetchTeams = async () => {
     try {
       const response = await apiClient.get<FeteTeam[]>('/final-fete/teams');
-      const teamsArray = Array.isArray(response) ? response : [];
-      setTeams(teamsArray);
+      setTeams(Array.isArray(response) ? response : []);
     } catch (error) {
       console.error('Error fetching fete teams:', error);
       setTeams([]);
+      throw error;
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      feteRoomId: '',
-      teamId: '',
-    });
+  // Check if a room is unlocked for a team
+  const isRoomUnlocked = (teamId: string, roomId: string): boolean => {
+    const key = `${teamId}-${roomId}`;
+    return key in roomTeamMap;
   };
 
-  const handleCreateItem = async () => {
-    try {
-      const submitData = {
-        feteRoomId: formData.feteRoomId,
-        teamId: formData.teamId,
-      };
-
-      const newItem = await apiClient.post<FeteRoomTeam>('/final-fete/room-teams', submitData);
-      setItems([...items, newItem]);
-      setShowCreateItem(false);
-      resetForm();
-    } catch (error) {
-      console.error('Error creating fete room team:', error);
-      alert('Error creating fete room team. Please check all required fields.');
-    }
+  // Get the relationship ID for a room-team pair
+  const getRelationshipId = (teamId: string, roomId: string): string | null => {
+    const key = `${teamId}-${roomId}`;
+    return roomTeamMap[key]?.id || null;
   };
 
-  const handleDeleteItem = async (item: FeteRoomTeam) => {
-    setItemToDelete(item);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!itemToDelete) return;
+  // Toggle room unlock status for a team
+  const handleToggleRoom = async (teamId: string, roomId: string) => {
+    const toggleKey = `${teamId}-${roomId}`;
+    const isUnlocked = isRoomUnlocked(teamId, roomId);
     
+    // Set loading state for this specific toggle
+    setTogglingStates(prev => ({ ...prev, [toggleKey]: true }));
+    setError(null);
+
     try {
-      await apiClient.delete(`/final-fete/room-teams/${itemToDelete.id}`);
-      setItems(items.filter(i => i.id !== itemToDelete.id));
-      setShowDeleteConfirm(false);
-      setItemToDelete(null);
-    } catch (error) {
-      console.error('Error deleting fete room team:', error);
-      alert('Error deleting fete room team.');
+      if (isUnlocked) {
+        // Lock the room: delete the relationship
+        const relationshipId = getRelationshipId(teamId, roomId);
+        if (!relationshipId) {
+          throw new Error('Relationship ID not found');
+        }
+        
+        await apiClient.delete(`/final-fete/room-teams/${relationshipId}`);
+        
+        // Optimistically update state
+        setRoomTeams(prev => prev.filter(rt => rt.id !== relationshipId));
+      } else {
+        // Unlock the room: create the relationship
+        const newRelationship = await apiClient.post<FeteRoomTeam>('/final-fete/room-teams', {
+          teamId,
+          feteRoomId: roomId,
+        });
+        
+        // Optimistically update state
+        setRoomTeams(prev => [...prev, newRelationship]);
+      }
+    } catch (error: any) {
+      console.error('Error toggling room unlock:', error);
+      setError(error?.message || `Failed to ${isUnlocked ? 'lock' : 'unlock'} room. Please try again.`);
+      // Refresh data to sync with server state
+      await fetchRoomTeams();
+    } finally {
+      // Clear loading state
+      setTogglingStates(prev => {
+        const updated = { ...prev };
+        delete updated[toggleKey];
+        return updated;
+      });
     }
+  };
+
+  const isToggling = (teamId: string, roomId: string): boolean => {
+    const toggleKey = `${teamId}-${roomId}`;
+    return togglingStates[toggleKey] || false;
   };
 
   if (loading) {
-    return <div className="m-10">Loading fete room teams...</div>;
+    return (
+      <div className="m-10">
+        <div className="text-xl font-semibold mb-4">Loading team room unlocks...</div>
+        <div className="text-gray-600">Please wait while we fetch the data.</div>
+      </div>
+    );
   }
 
   return (
     <div className="m-10">
-      <h1 className="text-2xl font-bold mb-4">Fete Room Teams</h1>
-      
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search by room or team name..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full p-2 border rounded-md"
-        />
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">Team Room Unlocks</h1>
+        <p className="text-gray-600">Manage which teams have unlocked which final fete rooms</p>
       </div>
 
-      <div className="mb-4">
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          onClick={() => setShowCreateItem(true)}
-        >
-          Create Room Team
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredItems.map((item) => {
-          const room = rooms.find(r => r.id === item.feteRoomId);
-          const team = teams.find(t => t.id === item.teamId);
-          return (
-            <div key={item.id} className="p-4 border rounded-lg bg-white shadow">
-              <h2 className="text-lg font-semibold mb-2">Room Team</h2>
-              <p className="text-sm text-gray-600">Room: {room?.name || item.feteRoomId}</p>
-              <p className="text-sm text-gray-600">Team: {team?.name || item.teamId}</p>
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => handleDeleteItem(item)}
-                  className="bg-red-500 text-white px-4 py-2 rounded-md"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {showCreateItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96 max-h-[80vh] overflow-auto">
-            <h2 className="text-xl font-bold mb-4">Create Room Team</h2>
-            
-            <div className="mb-4">
-              <label className="block mb-2">Fete Room ID *</label>
-              <select
-                value={formData.feteRoomId}
-                onChange={(e) => setFormData({ ...formData, feteRoomId: e.target.value })}
-                className="w-full p-2 border rounded-md"
-                required
-                disabled={roomsLoading}
-              >
-                <option value="">{roomsLoading ? 'Loading rooms...' : 'Select a room'}</option>
-                {rooms.length === 0 && !roomsLoading && (
-                  <option value="" disabled>No rooms available</option>
-                )}
-                {rooms.map(room => (
-                  <option key={room.id} value={room.id}>{room.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4">
-              <label className="block mb-2">Team ID *</label>
-              <select
-                value={formData.teamId}
-                onChange={(e) => setFormData({ ...formData, teamId: e.target.value })}
-                className="w-full p-2 border rounded-md"
-                required
-              >
-                <option value="">Select a team</option>
-                {teams.map(team => (
-                  <option key={team.id} value={team.id}>{team.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleCreateItem}
-                className="bg-blue-500 text-white px-4 py-2 rounded-md"
-              >
-                Create
-              </button>
-              <button
-                onClick={() => {
-                  setShowCreateItem(false);
-                  resetForm();
-                }}
-                className="bg-gray-500 text-white px-4 py-2 rounded-md"
-              >
-                Cancel
-              </button>
-            </div>
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+          <div className="flex items-center justify-between">
+            <span className="text-red-800">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-red-600 hover:text-red-800"
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
 
-      {showDeleteConfirm && itemToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96">
-            <h2 className="text-xl font-bold mb-4">Confirm Delete</h2>
-            <p className="mb-4">Are you sure you want to delete this room team? This action cannot be undone.</p>
-            <div className="flex gap-2">
-              <button
-                onClick={confirmDelete}
-                className="bg-red-500 text-white px-4 py-2 rounded-md"
+      <div className="mb-4">
+        <input
+          type="text"
+          placeholder="Search by team name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full max-w-md p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      <div className="mb-4 flex items-center gap-4">
+        <button
+          onClick={fetchAllData}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors"
+          disabled={loading}
+        >
+          Refresh Data
+        </button>
+        <div className="text-sm text-gray-600">
+          {roomTeams.length} unlock{roomTeams.length !== 1 ? 's' : ''} across {teams.length} team{teams.length !== 1 ? 's' : ''} and {rooms.length} room{rooms.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {filteredTeams.length === 0 ? (
+        <div className="p-8 border border-gray-200 rounded-lg bg-gray-50 text-center">
+          <p className="text-gray-600">
+            {searchQuery ? 'No teams match your search.' : 'No teams found.'}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {filteredTeams.map((team) => {
+            const teamUnlockedRooms = roomTeams
+              .filter(rt => rt.teamId === team.id)
+              .map(rt => rt.feteRoomId);
+            const unlockedCount = teamUnlockedRooms.length;
+            const totalRooms = rooms.length;
+
+            return (
+              <div
+                key={team.id}
+                className="border border-gray-300 rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow"
               >
-                Delete
-              </button>
-              <button
-                onClick={() => {
-                  setShowDeleteConfirm(false);
-                  setItemToDelete(null);
-                }}
-                className="bg-gray-500 text-white px-4 py-2 rounded-md"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+                <div className="p-4 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-gray-800">{team.name}</h2>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {unlockedCount} of {totalRooms} room{totalRooms !== 1 ? 's' : ''} unlocked
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {totalRooms > 0 && (
+                        <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-500 transition-all duration-300"
+                            style={{ width: `${(unlockedCount / totalRooms) * 100}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4">
+                  {rooms.length === 0 ? (
+                    <p className="text-gray-500 italic">No rooms available.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {rooms.map((room) => {
+                        const unlocked = isRoomUnlocked(team.id, room.id);
+                        const toggling = isToggling(team.id, room.id);
+
+                        return (
+                          <label
+                            key={room.id}
+                            className={`
+                              flex items-center gap-3 p-3 border rounded-md cursor-pointer transition-all
+                              ${unlocked
+                                ? 'border-green-300 bg-green-50 hover:bg-green-100'
+                                : 'border-gray-300 bg-white hover:bg-gray-50'
+                              }
+                              ${toggling ? 'opacity-50 cursor-wait' : ''}
+                            `}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={unlocked}
+                              onChange={() => handleToggleRoom(team.id, room.id)}
+                              disabled={toggling}
+                              className="w-5 h-5 text-green-600 border-gray-300 rounded focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`font-medium ${unlocked ? 'text-green-800' : 'text-gray-700'}`}>
+                                  {room.name}
+                                </span>
+                                {toggling && (
+                                  <span className="text-xs text-gray-500">(updating...)</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                {unlocked ? (
+                                  <>
+                                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                                    <span className="text-xs text-green-700">Unlocked</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-block w-2 h-2 bg-gray-400 rounded-full"></span>
+                                    <span className="text-xs text-gray-500">Locked</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

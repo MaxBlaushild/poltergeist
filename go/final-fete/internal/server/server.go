@@ -89,17 +89,17 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/final-fete/hue-oauth/callback", s.hueOAuthCallback)
 
 	// Utility Closet Puzzle routes
-	r.GET("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPuzzleState))
-	r.PUT("/final-fete/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.UpdatePuzzle))
+	r.GET("/final-fete/utility-closet-puzzle", s.GetPuzzleState)
+	r.PUT("/final-fete/utility-closet-puzzle", s.UpdatePuzzle)
 	r.GET("/final-fete/utility-closet-puzzle/press/:slot", middleware.WithAntiviralCookie(s.PressButton))
-	r.POST("/final-fete/utility-closet-puzzle/reset", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ResetPuzzle))
+	r.POST("/final-fete/utility-closet-puzzle/reset", s.ResetPuzzle)
 
 	// Utility Closet Puzzle Admin CRUD routes
-	r.GET("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminGetPuzzleState))
-	r.POST("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminCreatePuzzle))
-	r.PUT("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminUpdatePuzzle))
-	r.DELETE("/final-fete/admin/utility-closet-puzzle", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminDeletePuzzle))
-	r.POST("/final-fete/utility-closet-puzzle/toggle-achievement", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ToggleAchievement))
+	r.GET("/final-fete/admin/utility-closet-puzzle", s.AdminGetPuzzleState)
+	r.POST("/final-fete/admin/utility-closet-puzzle", s.AdminCreatePuzzle)
+	r.PUT("/final-fete/admin/utility-closet-puzzle", s.AdminUpdatePuzzle)
+	r.DELETE("/final-fete/admin/utility-closet-puzzle", s.AdminDeletePuzzle)
+	r.POST("/final-fete/utility-closet-puzzle/toggle-achievement", s.ToggleAchievement)
 
 	r.Run(fmt.Sprintf(":%s", port))
 }

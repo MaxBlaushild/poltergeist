@@ -8,5 +8,6 @@ export interface FeteRoom {
     open: boolean;
     currentTeamId: string;
     hueLightId?: number | null;
+    resetInstructions?: string | null;
     currentTeam?: FeteTeam;
 }

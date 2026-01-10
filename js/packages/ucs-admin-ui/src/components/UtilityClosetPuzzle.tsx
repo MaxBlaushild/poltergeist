@@ -89,11 +89,11 @@ export const UtilityClosetPuzzleAdmin = () => {
     const colorMap: Record<number, string> = {
       0: '#808080', // Off (grey)
       1: '#0000FF', // Blue
-      2: '#00FF00', // Green
+      2: '#FF0000', // Red
       3: '#FFFFFF', // White
-      4: '#FF0000', // Red
+      4: '#FFC800', // Yellow (warmer, more golden)
       5: '#800080', // Purple
-      6: '#FFD700', // Gold
+      6: '#00FF00', // Green (success state)
     };
     const color = colorMap[hue] || '#808080';
     return {
@@ -181,7 +181,7 @@ export const UtilityClosetPuzzleAdmin = () => {
       <div className="mb-6">
         <p className="text-gray-600 mb-4">
           Configure the Hue light IDs and base colors for each of the 6 puzzle buttons.
-          Colors: Off (grey), Blue, Green, White, Red, Purple
+          Colors: Off (grey), Blue, Red, White, Yellow, Purple
         </p>
       </div>
 
@@ -196,8 +196,8 @@ export const UtilityClosetPuzzleAdmin = () => {
             const currentHue = puzzle[`button${slot}CurrentHue` as keyof UtilityClosetPuzzle] as number;
             const hueLightId = puzzle[`button${slot}HueLightId` as keyof UtilityClosetPuzzle] as number | null | undefined;
             const hasLight = hueLightId !== null && hueLightId !== undefined;
-            const isGold = currentHue === 6;
-            const isDisabled = pressing || !hasLight || isGold;
+            const isGreen = currentHue === 6;
+            const isDisabled = pressing || !hasLight || isGreen;
             
             return (
               <div key={slot} className="flex flex-col items-center">
@@ -208,10 +208,10 @@ export const UtilityClosetPuzzleAdmin = () => {
                   className={`
                     hover:opacity-90 active:scale-95
                     ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'}
-                    ${isGold ? 'ring-4 ring-yellow-300 ring-opacity-75' : ''}
+                    ${isGreen ? 'ring-4 ring-green-300 ring-opacity-75' : ''}
                   `}
                   title={
-                    isGold 
+                    isGreen 
                       ? `Button ${slot} - Puzzle Solved! 🎉`
                       : hasLight 
                         ? `Button ${slot} - Click to press`
@@ -223,7 +223,7 @@ export const UtilityClosetPuzzleAdmin = () => {
                 <div className="mt-2 text-xs text-gray-500">
                   Button {slot}
                   {!hasLight && <div className="text-red-500">(No light)</div>}
-                  {isGold && <div className="text-yellow-600 font-bold">✓ Solved!</div>}
+                  {isGreen && <div className="text-green-600 font-bold">✓ Solved!</div>}
                 </div>
               </div>
             );

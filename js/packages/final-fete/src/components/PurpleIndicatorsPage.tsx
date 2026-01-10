@@ -1,12 +1,12 @@
 import React from 'react';
 
-export const WhiteIndicatorsPage = () => {
+export const PurpleIndicatorsPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="bg-black/90 backdrop-blur-sm p-4 md:p-6 lg:p-8 rounded-lg border-2 border-[#00ff00] shadow-[0_0_20px_rgba(0,255,0,0.5)] w-full max-w-md mx-4 matrix-card">
-        <h1 className="text-xl md:text-2xl font-bold mb-6 text-center text-[#00ff00]">White Indicators</h1>
+        <h1 className="text-xl md:text-2xl font-bold mb-6 text-center text-[#00ff00]">Purple Indicators</h1>
         <p className="text-[#00ff00] text-center text-lg md:text-xl">
-          If all lights are purple, pressing any of them will result in the appearance of a white indicator.
+          Five purple indicators are needed to activate the sixth. Purple will come after red for the sixth server light.
         </p>
       </div>
     </div>

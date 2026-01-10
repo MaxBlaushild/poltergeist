@@ -160,7 +160,7 @@ export const RoomsList = () => {
                 <h2 className="text-lg font-semibold mb-2 text-[#00ff00]">{room.name}</h2>
                 <p className="text-sm text-[#00ff00] mb-1 opacity-80">
                   Status: <span className={room.open ? 'text-[#00ff00]' : 'text-red-500'} style={room.open ? { textShadow: '0 0 10px #00ff00' } : { textShadow: '0 0 10px #ff0000' }}>
-                    {room.open ? 'Open' : 'Closed'}
+                    {room.open ? 'Available' : 'In Use'}
                   </span>
                 </p>
                 <p className="text-sm text-[#00ff00] mb-1 opacity-80">
@@ -195,7 +195,7 @@ export const RoomsList = () => {
                           : 'matrix-button-success'
                       }`}
                     >
-                      {room.open ? 'Lock Room' : 'Unlock Room'}
+                      {room.open ? 'Claim Room' : 'Release Room'}
                     </button>
                   </div>
                 )}
@@ -220,19 +220,28 @@ export const RoomsList = () => {
           {/* Mobile Bottom Sheet */}
           <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden animate-slide-up">
             <div className="bg-black/95 backdrop-blur-sm border-t-2 border-[#00ff00] rounded-t-lg shadow-[0_0_30px_rgba(0,255,0,0.5)] p-6">
-              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Confirm Unlock Room</h2>
+              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Nice Work!</h2>
               <p className="text-[#00ff00] mb-2 opacity-90">
-                You are about to unlock <span className="font-semibold">{roomToLock.name}</span>.
+                You are about to release <span className="font-semibold">{roomToLock.name}</span>.
               </p>
+              {roomToLock.resetInstructions && (
+                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md">
+                  <p className="text-yellow-400 font-semibold mb-2 text-sm">Reset Instructions:</p>
+                  <p className="text-yellow-300 text-sm whitespace-pre-wrap">{roomToLock.resetInstructions}</p>
+                </div>
+              )}
               <p className="text-[#00ff00] mb-4 opacity-90">
-                <span className="font-semibold text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>Warning:</span> You will lose access to this room and this action cannot be undone. Make sure you're ready to pass the room to the next team.
+                <span className="font-semibold text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>Warning:</span> {roomToLock.resetInstructions 
+                  ? 'Please complete the reset instructions above before releasing. You will lose access to this room and this action cannot be undone.'
+                  : 'You will lose access to this room and this action cannot be undone. Make sure you\'re ready to pass the room to the next team.'
+                }
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => handleToggleRoom(roomToLock.id)}
                   className="flex-1 matrix-button matrix-button-success min-h-[44px]"
                 >
-                  Unlock Room
+                  Release Room
                 </button>
                 <button
                   onClick={() => {
@@ -250,19 +259,28 @@ export const RoomsList = () => {
           {/* Desktop Modal */}
           <div className="hidden md:flex fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
             <div className="bg-black/95 backdrop-blur-sm border-2 border-[#00ff00] rounded-lg shadow-[0_0_30px_rgba(0,255,0,0.5)] p-6 max-w-md w-full matrix-card">
-              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Confirm Unlock Room</h2>
+              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Nice Work!</h2>
               <p className="text-[#00ff00] mb-2 opacity-90">
-                You are about to unlock <span className="font-semibold">{roomToLock.name}</span>.
+                You are about to release <span className="font-semibold">{roomToLock.name}</span>.
               </p>
+              {roomToLock.resetInstructions && (
+                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md">
+                  <p className="text-yellow-400 font-semibold mb-2 text-sm">Reset Instructions:</p>
+                  <p className="text-yellow-300 text-sm whitespace-pre-wrap">{roomToLock.resetInstructions}</p>
+                </div>
+              )}
               <p className="text-[#00ff00] mb-6 opacity-90">
-                <span className="font-semibold text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>Warning:</span> You will lose access to this room and this action cannot be undone. Make sure you're ready to pass the room to the next team.
+                <span className="font-semibold text-red-500" style={{ textShadow: '0 0 10px #ff0000' }}>Warning:</span> {roomToLock.resetInstructions
+                  ? 'Please complete the reset instructions above before releasing. You will lose access to this room and this action cannot be undone.'
+                  : 'You will lose access to this room and this action cannot be undone. Make sure you\'re ready to pass the room to the next team.'
+                }
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => handleToggleRoom(roomToLock.id)}
                   className="flex-1 matrix-button matrix-button-success min-h-[44px]"
                 >
-                  Unlock Room
+                  Release Room
                 </button>
                 <button
                   onClick={() => {

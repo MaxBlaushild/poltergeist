@@ -80,6 +80,7 @@ const Navigation = () => {
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
         <Link to="/fete-rooms" className="text-white hover:text-gray-300">Fete Rooms</Link>
         <Link to="/fete-teams" className="text-white hover:text-gray-300">Fete Teams</Link>
+        <Link to="/fete-room-teams" className="text-white hover:text-gray-300">Team Room Unlocks</Link>
         <Link to="/fete-room-linked-list-teams" className="text-white hover:text-gray-300">Fete Linked List</Link>
         <Link to="/utility-closet-puzzle" className="text-white hover:text-gray-300">Utility Closet Puzzle</Link>
       </div>

@@ -30,26 +30,26 @@ export interface ButtonConfig {
   baseHue: number;
 }
 
-export type PuzzleColor = 'Off' | 'Blue' | 'Green' | 'White' | 'Red' | 'Purple' | 'Gold';
+export type PuzzleColor = 'Off' | 'Blue' | 'Red' | 'White' | 'Yellow' | 'Purple' | 'Green';
 
-export const PUZZLE_COLORS: PuzzleColor[] = ['Off', 'Blue', 'Green', 'White', 'Red', 'Purple', 'Gold'];
+export const PUZZLE_COLORS: PuzzleColor[] = ['Off', 'Blue', 'Red', 'White', 'Yellow', 'Purple', 'Green'];
 
 export const COLOR_TO_INDEX: Record<PuzzleColor, number> = {
   'Off': 0,
   'Blue': 1,
-  'Green': 2,
+  'Red': 2,
   'White': 3,
-  'Red': 4,
+  'Yellow': 4,
   'Purple': 5,
-  'Gold': 6,
+  'Green': 6,
 };
 
 export const INDEX_TO_COLOR: Record<number, PuzzleColor> = {
   0: 'Off',
   1: 'Blue',
-  2: 'Green',
+  2: 'Red',
   3: 'White',
-  4: 'Red',
+  4: 'Yellow',
   5: 'Purple',
-  6: 'Gold',
+  6: 'Green',
 };

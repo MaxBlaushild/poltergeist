@@ -37,8 +37,8 @@ type UtilityClosetPuzzle struct {
 	Button4BaseHue int `gorm:"column:button_4_base_hue;not null" json:"button4BaseHue"`
 	Button5BaseHue int `gorm:"column:button_5_base_hue;not null" json:"button5BaseHue"`
 
-	// AllGreensAchieved tracks whether all lights have been green at least once
-	// This is required to unlock blue color from red
+	// AllGreensAchieved tracks whether all lights have been red at least once
+	// This is required to unlock blue color from yellow
 	AllGreensAchieved bool `gorm:"column:all_greens_achieved;not null;default:false" json:"allGreensAchieved"`
 
 	// AllPurplesAchieved tracks whether all lights have been purple at least once
@@ -196,11 +196,11 @@ type PuzzleColor int
 const (
 	PuzzleColorOff    PuzzleColor = iota // Off (grey)
 	PuzzleColorBlue                      // Blue
-	PuzzleColorGreen                     // Green
-	PuzzleColorWhite                     // White
 	PuzzleColorRed                       // Red
+	PuzzleColorWhite                     // White
+	PuzzleColorYellow                    // Yellow
 	PuzzleColorPurple                    // Purple
-	PuzzleColorGold                      // Gold (success state)
+	PuzzleColorGreen                     // Green (success state)
 )
 
 // String returns the string representation of the color
@@ -210,16 +210,16 @@ func (c PuzzleColor) String() string {
 		return "Off"
 	case PuzzleColorBlue:
 		return "Blue"
-	case PuzzleColorGreen:
-		return "Green"
-	case PuzzleColorWhite:
-		return "White"
 	case PuzzleColorRed:
 		return "Red"
+	case PuzzleColorWhite:
+		return "White"
+	case PuzzleColorYellow:
+		return "Yellow"
 	case PuzzleColorPurple:
 		return "Purple"
-	case PuzzleColorGold:
-		return "Gold"
+	case PuzzleColorGreen:
+		return "Green"
 	default:
 		return "Unknown"
 	}
@@ -239,23 +239,23 @@ func PuzzleColorFromInt(i int) PuzzleColor {
 }
 
 // ColorIndexToRGB converts a color index (0-6) to RGB values
-// Color mapping: 0=Off (grey), 1=Blue, 2=Green, 3=White, 4=Red, 5=Purple, 6=Gold
+// Color mapping: 0=Off (grey), 1=Blue, 2=Red, 3=White, 4=Yellow, 5=Purple, 6=Green
 func ColorIndexToRGB(colorIndex int) (r, g, b uint8) {
 	switch colorIndex {
 	case 0: // Off (grey)
 		return 128, 128, 128
 	case 1: // Blue
 		return 0, 0, 255
-	case 2: // Green
-		return 0, 255, 0
+	case 2: // Red
+		return 255, 0, 0
 	case 3: // White
 		return 255, 255, 255
-	case 4: // Red
-		return 255, 0, 0
+	case 4: // Yellow
+		return 255, 200, 0 // Warmer, more golden yellow
 	case 5: // Purple
 		return 128, 0, 128
-	case 6: // Gold
-		return 255, 215, 0
+	case 6: // Green (success state)
+		return 0, 255, 0
 	default:
 		return 128, 128, 128 // Default to grey (off)
 	}

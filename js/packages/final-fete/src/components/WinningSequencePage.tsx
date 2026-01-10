@@ -3,9 +3,9 @@ import React from 'react';
 const WINNING_SEQUENCE = [
   { slot: 0, color: 'Off (Gray)', value: 0 },
   { slot: 1, color: 'Blue', value: 1 },
-  { slot: 2, color: 'Green', value: 2 },
+  { slot: 2, color: 'Red', value: 2 },
   { slot: 3, color: 'White', value: 3 },
-  { slot: 4, color: 'Red', value: 4 },
+  { slot: 4, color: 'Yellow', value: 4 },
   { slot: 5, color: 'Purple', value: 5 },
 ];
 

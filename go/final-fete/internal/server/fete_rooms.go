@@ -42,10 +42,11 @@ func (s *server) getFeteRoom(ctx *gin.Context) {
 
 func (s *server) createFeteRoom(ctx *gin.Context) {
 	var requestBody struct {
-		Name          string    `json:"name" binding:"required"`
-		Open          bool      `json:"open"`
-		CurrentTeamID uuid.UUID `json:"currentTeamId" binding:"required"`
-		HueLightID    *int      `json:"hueLightId"`
+		Name              string    `json:"name" binding:"required"`
+		Open              bool      `json:"open"`
+		CurrentTeamID     uuid.UUID `json:"currentTeamId" binding:"required"`
+		HueLightID        *int      `json:"hueLightId"`
+		ResetInstructions *string   `json:"resetInstructions"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -54,10 +55,11 @@ func (s *server) createFeteRoom(ctx *gin.Context) {
 	}
 
 	room := &models.FeteRoom{
-		Name:          requestBody.Name,
-		Open:          requestBody.Open,
-		CurrentTeamID: requestBody.CurrentTeamID,
-		HueLightID:    requestBody.HueLightID,
+		Name:              requestBody.Name,
+		Open:              requestBody.Open,
+		CurrentTeamID:     requestBody.CurrentTeamID,
+		HueLightID:        requestBody.HueLightID,
+		ResetInstructions: requestBody.ResetInstructions,
 	}
 
 	if err := s.dbClient.FeteRoom().Create(ctx, room); err != nil {
@@ -77,10 +79,11 @@ func (s *server) updateFeteRoom(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name          *string    `json:"name"`
-		Open          *bool      `json:"open"`
-		CurrentTeamID *uuid.UUID `json:"currentTeamId"`
-		HueLightID    *int       `json:"hueLightId"`
+		Name              *string    `json:"name"`
+		Open              *bool      `json:"open"`
+		CurrentTeamID     *uuid.UUID `json:"currentTeamId"`
+		HueLightID        *int       `json:"hueLightId"`
+		ResetInstructions *string    `json:"resetInstructions"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -120,6 +123,11 @@ func (s *server) updateFeteRoom(ctx *gin.Context) {
 		updates.HueLightID = requestBody.HueLightID
 	} else {
 		updates.HueLightID = existingRoom.HueLightID
+	}
+	if requestBody.ResetInstructions != nil {
+		updates.ResetInstructions = requestBody.ResetInstructions
+	} else {
+		updates.ResetInstructions = existingRoom.ResetInstructions
 	}
 
 	if err := s.dbClient.FeteRoom().Update(ctx, id, updates); err != nil {

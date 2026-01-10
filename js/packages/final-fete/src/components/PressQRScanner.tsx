@@ -7,6 +7,8 @@ type ScanResult = {
   message: string;
 };
 
+const errorMessage = 'ERROR: Attempted to inject antivirus software into a tutorial document.';
+
 export const PressQRScanner = () => {
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -30,13 +32,13 @@ export const PressQRScanner = () => {
       const pressIndex = pathParts.indexOf('press');
       
       if (pressIndex === -1 || pressIndex === pathParts.length - 1) {
-        return { valid: false, error: 'Antivirus software can only be injected into a server' };
+        return { valid: false, error: errorMessage };
       }
 
       // Check if it's the utility closet puzzle press endpoint
       const utilityClosetIndex = pathParts.indexOf('utility-closet-puzzle');
       if (utilityClosetIndex === -1 || utilityClosetIndex !== pressIndex - 1) {
-        return { valid: false, error: 'Antivirus software can only be injected into a server' };
+        return { valid: false, error: errorMessage };
       }
 
       const slotStr = pathParts[pressIndex + 1];
@@ -48,7 +50,7 @@ export const PressQRScanner = () => {
 
       return { valid: true, slot };
     } catch (err) {
-      return { valid: false, error: 'Antivirus software can only be injected into a server' };
+      return { valid: false, error: errorMessage };
     }
   };
 
@@ -63,13 +65,10 @@ export const PressQRScanner = () => {
         fullUrl = `${window.location.origin}${urlString.startsWith('/') ? urlString : '/' + urlString}`;
       }
 
-      // Check if antiviral is installed and add query parameter
-      const antiviralInstalled = localStorage.getItem('antiviral-installed');
-      if (antiviralInstalled === 'true') {
-        const url = new URL(fullUrl);
-        url.searchParams.set('antiviral', 'true');
-        fullUrl = url.toString();
-      }
+      // Always add antiviral=true query parameter to press URLs
+      const url = new URL(fullUrl);
+      url.searchParams.set('antiviral', 'true');
+      fullUrl = url.toString();
 
       const response = await axios.get(fullUrl, {
         validateStatus: () => true, // Don't throw on any status code

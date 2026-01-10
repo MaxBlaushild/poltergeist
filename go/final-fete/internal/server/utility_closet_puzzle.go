@@ -51,6 +51,27 @@ func (s *server) ResetPuzzle(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, puzzle)
 }
 
+// updateLightForColor updates a single light based on color index
+// If color index is 0 (Off), turns the light off; otherwise turns it on and sets the color
+func (s *server) updateLightForColor(ctx *gin.Context, lightID int, colorIndex int, slot int) error {
+	if colorIndex == 0 {
+		// Off - turn the light off
+		if err := s.hueClient.TurnOff(ctx, lightID); err != nil {
+			return err
+		}
+	} else {
+		// Turn the light on first, then set the color
+		if err := s.hueClient.TurnOn(ctx, lightID); err != nil {
+			return err
+		}
+		r, g, b := models.ColorIndexToRGB(colorIndex)
+		if err := s.hueClient.SetColorRGB(ctx, lightID, r, g, b); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // updateHueLightsForPuzzle updates all Hue lights to match the current puzzle state
 func (s *server) updateHueLightsForPuzzle(ctx *gin.Context, puzzle *models.UtilityClosetPuzzle) {
 	if s.hueClient == nil {
@@ -61,8 +82,7 @@ func (s *server) updateHueLightsForPuzzle(ctx *gin.Context, puzzle *models.Utili
 		lightID := puzzle.GetButtonHueLightID(slot)
 		if lightID != nil {
 			currentHue := puzzle.GetButtonCurrentHue(slot)
-			r, g, b := models.ColorIndexToRGB(currentHue)
-			if err := s.hueClient.SetColorRGB(ctx, *lightID, r, g, b); err != nil {
+			if err := s.updateLightForColor(ctx, *lightID, currentHue, slot); err != nil {
 				log.Printf("Warning: Failed to set light %d to color %d for button %d: %v", *lightID, currentHue, slot, err)
 				// Don't fail the request if light update fails
 			}
@@ -142,8 +162,7 @@ func (s *server) UpdatePuzzle(ctx *gin.Context) {
 	if s.hueClient != nil {
 		for _, button := range req.Buttons {
 			if button.HueLightID != nil {
-				r, g, b := models.ColorIndexToRGB(button.BaseHue)
-				if err := s.hueClient.SetColorRGB(ctx, *button.HueLightID, r, g, b); err != nil {
+				if err := s.updateLightForColor(ctx, *button.HueLightID, button.BaseHue, button.Slot); err != nil {
 					log.Printf("Warning: Failed to set light %d to base color %d for button %d: %v", *button.HueLightID, button.BaseHue, button.Slot, err)
 					// Don't fail the request if light update fails
 				}
@@ -298,8 +317,7 @@ func (s *server) AdminUpdatePuzzle(ctx *gin.Context) {
 	if s.hueClient != nil {
 		for _, button := range req.Buttons {
 			if button.HueLightID != nil {
-				r, g, b := models.ColorIndexToRGB(button.CurrentHue)
-				if err := s.hueClient.SetColorRGB(ctx, *button.HueLightID, r, g, b); err != nil {
+				if err := s.updateLightForColor(ctx, *button.HueLightID, button.CurrentHue, button.Slot); err != nil {
 					log.Printf("Warning: Failed to set light %d to color %d for button %d: %v", *button.HueLightID, button.CurrentHue, button.Slot, err)
 					// Don't fail the request if light update fails
 				}
