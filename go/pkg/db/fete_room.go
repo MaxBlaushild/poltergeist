@@ -48,7 +48,7 @@ func (h *feteRoomHandler) Update(ctx context.Context, id uuid.UUID, updates *mod
 	updates.UpdatedAt = time.Now()
 	return h.db.WithContext(ctx).Model(&models.FeteRoom{}).
 		Where("id = ?", id).
-		Select("Name", "Open", "CurrentTeamID", "HueLightID", "UpdatedAt").
+		Select("Name", "Open", "CurrentTeamID", "HueLightID", "ResetInstructions", "UpdatedAt").
 		Updates(updates).Error
 }
 

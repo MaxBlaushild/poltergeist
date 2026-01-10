@@ -20,6 +20,7 @@ export const FeteRooms = () => {
     open: false,
     currentTeamId: '',
     hueLightId: '',
+    resetInstructions: '',
   });
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export const FeteRooms = () => {
       open: false,
       currentTeamId: '',
       hueLightId: '',
+      resetInstructions: '',
     });
   };
 
@@ -89,6 +91,10 @@ export const FeteRooms = () => {
 
       if (formData.hueLightId) {
         submitData.hueLightId = parseInt(formData.hueLightId, 10);
+      }
+
+      if (formData.resetInstructions) {
+        submitData.resetInstructions = formData.resetInstructions;
       }
 
       const newRoom = await apiClient.post<FeteRoom>('/final-fete/rooms', submitData);
@@ -115,6 +121,8 @@ export const FeteRooms = () => {
       } else {
         submitData.hueLightId = null;
       }
+
+      submitData.resetInstructions = formData.resetInstructions || null;
 
       const updatedRoom = await apiClient.put<FeteRoom>(`/final-fete/rooms/${editingRoom.id}`, submitData);
       setRooms(rooms.map(r => r.id === editingRoom.id ? updatedRoom : r));
@@ -152,6 +160,7 @@ export const FeteRooms = () => {
       open: room.open,
       currentTeamId: room.currentTeamId,
       hueLightId: room.hueLightId?.toString() || '',
+      resetInstructions: room.resetInstructions || '',
     });
   };
 
@@ -204,6 +213,12 @@ export const FeteRooms = () => {
               <p className="text-sm text-gray-600">Current Team: {currentTeam?.name || room.currentTeamId}</p>
               {hueLight && (
                 <p className="text-sm text-gray-600">Hue Light: {hueLight.name}</p>
+              )}
+              {room.resetInstructions && (
+                <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-700 mb-1">Reset Instructions:</p>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{room.resetInstructions}</p>
+                </div>
               )}
               <div className="mt-4 flex gap-2">
                 <button
@@ -291,6 +306,17 @@ export const FeteRooms = () => {
                 />
                 Open
               </label>
+            </div>
+
+            <div className="mb-4">
+              <label className="block mb-2">Reset Instructions</label>
+              <textarea
+                value={formData.resetInstructions}
+                onChange={(e) => setFormData({ ...formData, resetInstructions: e.target.value })}
+                className="w-full p-2 border rounded-md"
+                rows={4}
+                placeholder="Enter instructions for resetting this room..."
+              />
             </div>
 
             <div className="flex gap-2">

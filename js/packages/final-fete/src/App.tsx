@@ -12,7 +12,12 @@ import { PressQRScanner } from './components/PressQRScanner';
 import { MailRoomExtraLetterPage } from './components/MailRoomExtraLetterPage';
 import { MailRoomNoteBreakerCluePage } from './components/MailRoomNoteBreakerCluePage';
 import { WhiteIndicatorsPage } from './components/WhiteIndicatorsPage';
+import { BlueIndicatorsPage } from './components/BlueIndicatorsPage';
+import { PurpleIndicatorsPage } from './components/PurpleIndicatorsPage';
+import { BlueRedPurplePage } from './components/BlueRedPurplePage';
 import { WinningSequencePage } from './components/WinningSequencePage';
+import { DataVaultPage } from './components/DataVaultPage';
+import { SituationRoomPage } from './components/SituationRoomPage';
 import './App.css';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -62,8 +67,28 @@ function AppRouter() {
       element: <WhiteIndicatorsPage />,
     },
     {
+      path: '/blue-indicators',
+      element: <BlueIndicatorsPage />,
+    },
+    {
+      path: '/purple-indicators',
+      element: <PurpleIndicatorsPage />,
+    },
+    {
+      path: '/blue-red-purple',
+      element: <BlueRedPurplePage />,
+    },
+    {
       path: '/winning-sequence',
       element: <WinningSequencePage />,
+    },
+    {
+      path: '/data-vault',
+      element: <DataVaultPage />,
+    },
+    {
+      path: '/situation-room',
+      element: <SituationRoomPage />,
     },
     {
       path: '/',

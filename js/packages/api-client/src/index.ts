@@ -50,8 +50,25 @@ export class APIClient {
           // Get current path
           const currentPath = window.location.pathname;
           
-          // Don't redirect if already on login or home page (prevent loops)
-          if (currentPath !== '/login' && currentPath !== '/') {
+          // List of paths that should not redirect to login (unauthenticated routes)
+          const unauthenticatedPaths = [
+            '/login',
+            '/',
+            '/data-vault',
+            '/antiviral',
+            '/press-scanner',
+            '/mail-room-extra-letter',
+            '/mail-room-note-breaker-clue',
+            '/white-indicators',
+            '/blue-indicators',
+            '/purple-indicators',
+            '/blue-red-purple',
+            '/winning-sequence',
+            '/situation-room',
+          ];
+          
+          // Don't redirect if on an unauthenticated route
+          if (!unauthenticatedPaths.includes(currentPath)) {
             // Redirect to login with return URL
             window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
           }

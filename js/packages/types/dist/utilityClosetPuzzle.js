@@ -1,19 +1,19 @@
-export const PUZZLE_COLORS = ['Off', 'Blue', 'Green', 'White', 'Red', 'Purple', 'Gold'];
+export const PUZZLE_COLORS = ['Off', 'Blue', 'Red', 'White', 'Yellow', 'Purple', 'Green'];
 export const COLOR_TO_INDEX = {
     'Off': 0,
     'Blue': 1,
-    'Green': 2,
+    'Red': 2,
     'White': 3,
-    'Red': 4,
+    'Yellow': 4,
     'Purple': 5,
-    'Gold': 6,
+    'Green': 6,
 };
 export const INDEX_TO_COLOR = {
     0: 'Off',
     1: 'Blue',
-    2: 'Green',
+    2: 'Red',
     3: 'White',
-    4: 'Red',
+    4: 'Yellow',
     5: 'Purple',
-    6: 'Gold',
+    6: 'Green',
 };
