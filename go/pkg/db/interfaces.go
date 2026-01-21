@@ -658,5 +658,6 @@ type UserCertificateHandle interface {
 	Create(ctx context.Context, userID uuid.UUID, certificateDER []byte, certificatePEM string, publicKeyPEM string, fingerprint []byte) (*models.UserCertificate, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserCertificate, error)
 	FindByFingerprint(ctx context.Context, fingerprint []byte) (*models.UserCertificate, error)
+	UpdateActive(ctx context.Context, userID uuid.UUID, active bool) error
 	Delete(ctx context.Context, userID uuid.UUID) error
 }

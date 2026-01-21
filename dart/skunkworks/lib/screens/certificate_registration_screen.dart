@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:skunkworks/models/certificate.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/certificate_provider.dart';
 
@@ -16,10 +17,8 @@ class _CertificateRegistrationScreenState
   @override
   void initState() {
     super.initState();
-    // Check if certificate already exists when screen loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<CertificateProvider>().checkCertificate();
-    });
+    // Don't check here - main.dart handles the initial check
+    // This prevents duplicate checks and infinite loops
   }
 
   Future<void> _handleEnrollCertificate() async {

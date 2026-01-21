@@ -26,5 +26,6 @@ func NewServerFromDependencies(
 	if err != nil {
 		panic(err)
 	}
-	return server.NewServer(authClient, dbClient, awsClient, certClient)
+	// Ethereum transactor client is optional - pass nil if not configured
+	return server.NewServer(authClient, dbClient, awsClient, certClient, nil, "")
 }

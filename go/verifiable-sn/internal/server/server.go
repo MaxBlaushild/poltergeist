@@ -7,15 +7,18 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 type server struct {
-	authClient auth.Client
-	dbClient   db.DbClient
-	awsClient  aws.AWSClient
-	certClient cert.Client
+	authClient            auth.Client
+	dbClient              db.DbClient
+	awsClient             aws.AWSClient
+	certClient            cert.Client
+	ethereumTransactorClient ethereum_transactor.Client
+	c2PAContractAddress   string
 }
 
 type Server interface {
@@ -28,12 +31,16 @@ func NewServer(
 	dbClient db.DbClient,
 	awsClient aws.AWSClient,
 	certClient cert.Client,
+	ethereumTransactorClient ethereum_transactor.Client,
+	c2PAContractAddress string,
 ) Server {
 	return &server{
-		authClient: authClient,
-		dbClient:   dbClient,
-		awsClient:  awsClient,
-		certClient: certClient,
+		authClient:              authClient,
+		dbClient:                dbClient,
+		awsClient:                awsClient,
+		certClient:               certClient,
+		ethereumTransactorClient: ethereumTransactorClient,
+		c2PAContractAddress:      c2PAContractAddress,
 	}
 }
 

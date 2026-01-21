@@ -20,6 +20,7 @@ type BlockchainTransaction struct {
 	Nonce       uint64     `gorm:"type:bigint;not null;index:idx_chain_from_nonce" json:"nonce"`
 	TxHash      *string    `gorm:"type:text;index" json:"txHash,omitempty"`
 	Status      string     `gorm:"type:text;not null;default:'pending';index" json:"status"`
+	Type        *string    `gorm:"type:text;index" json:"type,omitempty"`
 	BlockNumber *uint64    `gorm:"type:bigint" json:"blockNumber,omitempty"`
 	ConfirmedAt *time.Time `gorm:"type:timestamp" json:"confirmedAt,omitempty"`
 	ExpiresAt   time.Time  `gorm:"type:timestamp;not null;index" json:"expiresAt"`
