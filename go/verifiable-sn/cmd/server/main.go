@@ -1,6 +1,7 @@
 package main
 
 import (
+	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/cert"
@@ -36,5 +37,10 @@ func main() {
 		panic(err)
 	}
 
-	server.NewServer(authClient, dbClient, awsClient, certClient).ListenAndServe("8087")
+	var ethereumTransactorClient ethereum_transactor.Client
+	if cfg.Public.EthereumTransactorURL != "" {
+		ethereumTransactorClient = ethereum_transactor.NewClient(cfg.Public.EthereumTransactorURL)
+	}
+
+	server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, cfg.Public.C2PAContractAddress).ListenAndServe("8087")
 }

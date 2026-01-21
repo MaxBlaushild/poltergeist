@@ -14,6 +14,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox => ../pkg/dropbox
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster => ../pkg/dungeonmaster
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor => ../pkg/ethereum_transactor
 	github.com/MaxBlaushild/poltergeist/pkg/googledrive => ../pkg/googledrive
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
@@ -35,8 +36,10 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/cert v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
+	github.com/ethereum/go-ethereum v1.14.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/viper v1.21.0

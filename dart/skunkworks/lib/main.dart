@@ -71,6 +71,7 @@ class HomeWidget extends StatefulWidget {
 
 class _HomeWidgetState extends State<HomeWidget> {
   NavTab _currentTab = NavTab.home;
+  bool _hasCheckedCertificate = false;
 
   void _onTabChanged(NavTab tab) {
     setState(() {
@@ -106,19 +107,31 @@ class _HomeWidgetState extends State<HomeWidget> {
 
         // Show login screen if not authenticated
         if (!authProvider.isAuthenticated) {
+          _hasCheckedCertificate = false; // Reset when logged out
           return const LoginScreen();
         }
 
-        // Check certificate on app startup (if authenticated)
-        if (!certProvider.loading && !certProvider.hasCertificate) {
-          // Check certificate if not already checked
-          if (certProvider.certificate == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Check certificate on app startup (if authenticated and not already checked)
+        if (!_hasCheckedCertificate && !certProvider.loading) {
+          _hasCheckedCertificate = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && authProvider.isAuthenticated) {
               certProvider.checkCertificate();
-            });
-          }
-          
-          // Show certificate registration screen if no certificate
+            }
+          });
+        }
+        
+        // Show loading while checking certificate
+        if (certProvider.loading) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        
+        // Show certificate registration screen if no certificate
+        if (!certProvider.hasCertificate) {
           return const CertificateRegistrationScreen();
         }
 

@@ -13,12 +13,14 @@ type SecretConfig struct {
 }
 
 type PublicConfig struct {
-	DbHost      string `mapstructure:"DB_HOST"`
-	DbUser      string `mapstructure:"DB_USER"`
-	DbPort      string `mapstructure:"DB_PORT"`
-	DbName      string `mapstructure:"DB_NAME"`
-	PhoneNumber string `mapstructure:"PHONE_NUMBER"`
-	RedisUrl    string `mapstructure:"REDIS_URL"`
+	DbHost              string `mapstructure:"DB_HOST"`
+	DbUser              string `mapstructure:"DB_USER"`
+	DbPort              string `mapstructure:"DB_PORT"`
+	DbName              string `mapstructure:"DB_NAME"`
+	PhoneNumber         string `mapstructure:"PHONE_NUMBER"`
+	RedisUrl            string `mapstructure:"REDIS_URL"`
+	EthereumTransactorURL string `mapstructure:"ETHEREUM_TRANSACTOR_URL"`
+	C2PAContractAddress  string `mapstructure:"C2PA_CONTRACT_ADDRESS"`
 }
 
 type Config struct {

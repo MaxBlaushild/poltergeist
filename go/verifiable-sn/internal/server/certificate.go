@@ -7,12 +7,16 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
+	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -129,13 +133,49 @@ func (s *server) EnrollCertificate(ctx *gin.Context) {
 		return
 	}
 
-	// Store certificate in database
+	// Store certificate in database (created as inactive by default)
 	_, err = s.dbClient.UserCertificate().Create(ctx, user.ID, certificateDER, certificatePEM, requestBody.PublicKey, fingerprint)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": fmt.Sprintf("failed to store certificate: %v", err),
 		})
 		return
+	}
+
+	// Extract issuer and subject from X.509 certificate
+	issuer, subject, err := extractIssuerAndSubject(certificateDER)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("failed to extract certificate fields: %v", err),
+		})
+		return
+	}
+
+	// Generate ABI-encoded registerCertificate function call
+	encodedData, err := encodeRegisterCertificateCall(fingerprint, issuer, subject)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("failed to encode function call: %v", err),
+		})
+		return
+	}
+
+	// Create blockchain transaction via ethereum-transactor service
+	if s.ethereumTransactorClient != nil && s.c2PAContractAddress != "" {
+		dataHex := "0x" + hex.EncodeToString(encodedData)
+		_, err := s.ethereumTransactorClient.CreateTransaction(ctx, ethereum_transactor.CreateTransactionRequest{
+			To:   &s.c2PAContractAddress,
+			Value: "0",
+			Data: &dataHex,
+		})
+		if err != nil {
+			// Log error but don't fail the enrollment - certificate is created, just not registered on-chain yet
+			// In production, you might want to queue this for retry
+			fmt.Printf("Warning: failed to create blockchain transaction: %v\n", err)
+		}
+		// Note: The ethereum-transactor service stores the transaction in its database.
+		// The job runner will find transactions by type "registerCertificate" and match fingerprints
+		// from the transaction data to activate certificates when they confirm.
 	}
 
 	ctx.JSON(http.StatusOK, EnrollCertificateResponse{
@@ -231,4 +271,55 @@ func encodeECDSASignature(r, s *big.Int) ([]byte, error) {
 	}
 
 	return asn1.Marshal(sig)
+}
+
+// encodeRegisterCertificateCall ABI encodes the registerCertificate(bytes32,string,string) function call
+func encodeRegisterCertificateCall(fingerprint []byte, issuer string, subject string) ([]byte, error) {
+	// Function signature: registerCertificate(bytes32,string,string)
+	// Function selector: keccak256("registerCertificate(bytes32,string,string)")[:4]
+	// We'll use the ABI package to encode this properly
+	
+	// Define the ABI for the function
+	abiJSON := `[{"constant":false,"inputs":[{"name":"fingerprint","type":"bytes32"},{"name":"issuer","type":"string"},{"name":"subject","type":"string"}],"name":"registerCertificate","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`
+	
+	contractABI, err := abi.JSON(strings.NewReader(abiJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ABI: %w", err)
+	}
+
+	// Convert fingerprint to bytes32
+	var fingerprintBytes32 [32]byte
+	copy(fingerprintBytes32[:], fingerprint)
+
+	// Encode the function call
+	data, err := contractABI.Pack("registerCertificate", fingerprintBytes32, issuer, subject)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack function call: %w", err)
+	}
+
+	return data, nil
+}
+
+// extractIssuerAndSubject extracts issuer and subject strings from an X.509 certificate
+func extractIssuerAndSubject(certDER []byte) (string, string, error) {
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	// Extract issuer - format as "CN=..., O=..., ..."
+	issuer := cert.Issuer.String()
+	
+	// Extract subject - format as "CN=..., O=..., ..."
+	subject := cert.Subject.String()
+
+	// If the strings are empty, provide defaults
+	if issuer == "" {
+		issuer = "Unknown Issuer"
+	}
+	if subject == "" {
+		subject = "Unknown Subject"
+	}
+
+	return issuer, subject, nil
 }

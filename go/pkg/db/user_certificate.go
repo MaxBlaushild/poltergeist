@@ -20,6 +20,7 @@ func (h *userCertificateHandle) Create(ctx context.Context, userID uuid.UUID, ce
 		CertificatePEM: certificatePEM,
 		PublicKey:     publicKeyPEM,
 		Fingerprint:   fingerprint,
+		Active:        false, // Certificates are created as inactive by default
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -51,6 +52,13 @@ func (h *userCertificateHandle) FindByFingerprint(ctx context.Context, fingerpri
 		return nil, err
 	}
 	return &cert, nil
+}
+
+func (h *userCertificateHandle) UpdateActive(ctx context.Context, userID uuid.UUID, active bool) error {
+	return h.db.WithContext(ctx).
+		Model(&models.UserCertificate{}).
+		Where("user_id = ?", userID).
+		Update("active", active).Error
 }
 
 func (h *userCertificateHandle) Delete(ctx context.Context, userID uuid.UUID) error {

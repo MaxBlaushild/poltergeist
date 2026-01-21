@@ -41,6 +41,10 @@ dependencies:
   cryptography: ^2.7.0
   flutter_secure_storage: ^9.0.0
   pointycastle: ^3.7.3
+  asn1lib: ^1.5.0
+  elliptic: ^0.3.12
+  ecdsa: ^0.1.2
+  crypto: ^3.0.3
   local_auth: ^2.1.7
 
 dev_dependencies:

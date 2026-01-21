@@ -15,4 +15,5 @@ type UserCertificate struct {
 	CertificatePEM string   `gorm:"type:text;not null" json:"certificatePem"`
 	PublicKey     string    `gorm:"type:text;not null" json:"publicKey"`
 	Fingerprint   []byte    `gorm:"type:bytea;not null;index" json:"fingerprint"`
+	Active        bool      `gorm:"type:boolean;not null;default:false;index" json:"active"`
 }

@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import Security
+import Foundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -8,7 +9,12 @@ import Security
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    let controller : FlutterViewController = window?.rootViewController as! FlutterViewController
+    GeneratedPluginRegistrant.register(with: self)
+    
+    guard let controller = window?.rootViewController as? FlutterViewController else {
+      return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+    
     let secureEnclaveChannel = FlutterMethodChannel(name: "com.verifiablesn/secure_enclave",
                                                     binaryMessenger: controller.binaryMessenger)
     
@@ -34,13 +40,18 @@ import Security
         }
         self.getPublicKey(keyTag: keyTag, result: result)
       case "isAvailable":
-        result(SecureEnclave.isAvailable)
+        // Check if device supports Secure Enclave
+        // Secure Enclave is available on devices with A7 processor and later
+        #if targetEnvironment(simulator)
+        result(false)
+        #else
+        result(true)
+        #endif
       default:
         result(FlutterMethodNotImplemented)
       }
     })
     
-    GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
   
@@ -84,11 +95,12 @@ import Security
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     
-    guard status == errSecSuccess,
-          let privateKey = item as! SecKey? else {
+    guard status == errSecSuccess, let keyRef = item else {
       result(FlutterError(code: "KEY_NOT_FOUND", message: "Key not found", details: nil))
       return
     }
+    
+    let privateKey = keyRef as! SecKey
     
     var error: Unmanaged<CFError>?
     guard let signature = SecKeyCreateSignature(
@@ -115,11 +127,12 @@ import Security
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     
-    guard status == errSecSuccess,
-          let privateKey = item as! SecKey? else {
+    guard status == errSecSuccess, let keyRef = item else {
       result(FlutterError(code: "KEY_NOT_FOUND", message: "Key not found", details: nil))
       return
     }
+    
+    let privateKey = keyRef as! SecKey
     
     guard let publicKey = SecKeyCopyPublicKey(privateKey) else {
       result(FlutterError(code: "PUBLIC_KEY_FAILED", message: "Failed to extract public key", details: nil))
