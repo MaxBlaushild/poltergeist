@@ -5,6 +5,7 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,7 @@ type server struct {
 	authClient auth.Client
 	dbClient   db.DbClient
 	awsClient  aws.AWSClient
+	certClient cert.Client
 }
 
 type Server interface {
@@ -25,11 +27,13 @@ func NewServer(
 	authClient auth.Client,
 	dbClient db.DbClient,
 	awsClient aws.AWSClient,
+	certClient cert.Client,
 ) Server {
 	return &server{
 		authClient: authClient,
 		dbClient:   dbClient,
 		awsClient:  awsClient,
+		certClient: certClient,
 	}
 }
 
@@ -58,6 +62,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 
 	// User routes
 	r.GET("/verifiable-sn/users/search", middleware.WithAuthenticationWithoutLocation(s.authClient, s.SearchUsers))
+
+	// Certificate routes
+	r.GET("/verifiable-sn/certificate/check", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CheckCertificate))
+	r.POST("/verifiable-sn/certificate/enroll", middleware.WithAuthenticationWithoutLocation(s.authClient, s.EnrollCertificate))
+	r.GET("/verifiable-sn/certificate", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetCertificate))
 }
 
 func (s *server) ListenAndServe(port string) {

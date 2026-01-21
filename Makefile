@@ -140,3 +140,15 @@ final-fete/ecr-push:
 	make final-fete/build
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/final-fete:latest
+
+PHONY: ethereum-transactor/build
+ethereum-transactor/build:
+	docker build -f ./deploy/services/ethereum-transactor/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/ethereum-transactor:latest .
+
+PHONY: ethereum-transactor/ecr-push
+ethereum-transactor/ecr-push:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 872408892710.dkr.ecr.us-east-1.amazonaws.com
+	# Build the Docker image
+	make ethereum-transactor/build
+	# Push the Docker image to ECR
+	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/ethereum-transactor:latest

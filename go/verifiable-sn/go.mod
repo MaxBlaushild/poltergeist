@@ -8,9 +8,8 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
 	github.com/MaxBlaushild/poltergeist/pkg/billing => ../pkg/billing
+	github.com/MaxBlaushild/poltergeist/pkg/cert => ../pkg/cert
 	github.com/MaxBlaushild/poltergeist/pkg/db => ../pkg/db
-	github.com/MaxBlaushild/poltergeist/pkg/aws => ../pkg/aws
-	github.com/MaxBlaushild/poltergeist/pkg/middleware => ../pkg/middleware
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest => ../pkg/deep_priest
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox => ../pkg/dropbox
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster => ../pkg/dungeonmaster
@@ -34,9 +33,12 @@ replace (
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/cert v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/middleware v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/spf13/viper v1.21.0
 )
 
@@ -44,11 +46,14 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/http v0.0.0-00010101000000-000000000000 // indirect
-	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/liveness v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
+	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
@@ -59,13 +64,13 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
 	github.com/jackc/pgx/v5 v5.5.5 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -77,6 +82,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
+	github.com/redis/go-redis/v9 v9.14.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect

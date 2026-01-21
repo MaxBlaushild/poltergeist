@@ -8,7 +8,7 @@ import (
 )
 
 func (s *server) GetPresignedUploadUrl(ctx *gin.Context) {
-	user, err := s.GetAuthenticatedUser(ctx)
+	_, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
@@ -17,8 +17,9 @@ func (s *server) GetPresignedUploadUrl(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Bucket string `json:"bucket" binding:"required"`
-		Key    string `json:"key" binding:"required"`
+		Bucket      string `json:"bucket" binding:"required"`
+		Key         string `json:"key" binding:"required"`
+		ContentType string `json:"contentType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -28,7 +29,12 @@ func (s *server) GetPresignedUploadUrl(ctx *gin.Context) {
 		return
 	}
 
-	url, err := s.awsClient.GeneratePresignedUploadURL(requestBody.Bucket, requestBody.Key, time.Hour)
+	var url string
+	if requestBody.ContentType != "" {
+		url, err = s.awsClient.GeneratePresignedUploadURLWithContentType(requestBody.Bucket, requestBody.Key, requestBody.ContentType, time.Hour)
+	} else {
+		url, err = s.awsClient.GeneratePresignedUploadURL(requestBody.Bucket, requestBody.Key, time.Hour)
+	}
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -36,11 +42,7 @@ func (s *server) GetPresignedUploadUrl(ctx *gin.Context) {
 		return
 	}
 
-	// Prevent unused variable warning
-	_ = user
-
 	ctx.JSON(http.StatusOK, gin.H{
 		"url": url,
 	})
 }
-

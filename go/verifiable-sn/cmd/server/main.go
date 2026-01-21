@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/config"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/server"
@@ -30,5 +31,10 @@ func main() {
 
 	awsClient := aws.NewAWSClient("us-east-1")
 
-	server.NewServer(authClient, dbClient, awsClient).ListenAndServe("8087")
+	certClient, err := cert.NewClient(cfg.Secret.CAPrivateKey)
+	if err != nil {
+		panic(err)
+	}
+
+	server.NewServer(authClient, dbClient, awsClient, certClient).ListenAndServe("8087")
 }

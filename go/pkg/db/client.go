@@ -76,6 +76,8 @@ type client struct {
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
 	feteRoomTeamHandle                *feteRoomTeamHandler
+	blockchainTransactionHandle      *blockchainTransactionHandle
+	userCertificateHandle             *userCertificateHandle
 }
 
 type ClientConfig struct {
@@ -169,6 +171,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
 		feteRoomTeamHandle:                &feteRoomTeamHandler{db: db},
+		blockchainTransactionHandle:      &blockchainTransactionHandle{db: db},
+		userCertificateHandle:             &userCertificateHandle{db: db},
 	}, nil
 }
 
@@ -430,4 +434,12 @@ func (c *client) FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle {
 
 func (c *client) FeteRoomTeam() FeteRoomTeamHandle {
 	return c.feteRoomTeamHandle
+}
+
+func (c *client) BlockchainTransaction() BlockchainTransactionHandle {
+	return c.blockchainTransactionHandle
+}
+
+func (c *client) UserCertificate() UserCertificateHandle {
+	return c.userCertificateHandle
 }

@@ -29,6 +29,7 @@ module "ecs" {
         aws_secretsmanager_secret.hue_client_secret.arn,
         aws_secretsmanager_secret.hue_application_key.arn,
         aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn,
+        aws_secretsmanager_secret.ethereum_private_key.arn,
       ]
 
       container_definitions = {
@@ -223,6 +224,16 @@ module "ecs" {
             valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
           }]
           image = "${aws_ecr_repository.job_runner.repository_url}:latest"
+          environment = [
+            {
+              name  = "CHAIN_ID"
+              value = "84532"
+            },
+            {
+              name  = "RPC_URL"
+              value = "https://sepolia.base.org"
+            }
+          ]
           portMappings = [
             {
               name          = "job-runner"
@@ -248,6 +259,52 @@ module "ecs" {
               name          = "travel-angels-billing"
               containerPort = 8022
               hostPort      = 8022
+              protocol      = "tcp"
+            }
+          ]
+        }
+
+        "ethereum-transactor" = {
+          essential = true
+          secrets = [{
+            name      = "DB_PASSWORD",
+            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+          }, {
+            name      = "PRIVATE_KEY",
+            valueFrom = "${aws_secretsmanager_secret.ethereum_private_key.arn}"
+          }]
+          image = "${aws_ecr_repository.ethereum_transactor.repository_url}:latest"
+          environment = [
+            {
+              name  = "DB_HOST"
+              value = aws_db_instance.poltergeist-db.address
+            },
+            {
+              name  = "DB_USER"
+              value = aws_db_instance.poltergeist-db.username
+            },
+            {
+              name  = "DB_PORT"
+              value = tostring(aws_db_instance.poltergeist-db.port)
+            },
+            {
+              name  = "DB_NAME"
+              value = aws_db_instance.poltergeist-db.db_name
+            },
+            {
+              name  = "CHAIN_ID"
+              value = "84532"
+            },
+            {
+              name  = "RPC_URL"
+              value = "https://sepolia.base.org"
+            }
+          ]
+          portMappings = [
+            {
+              name          = "ethereum-transactor"
+              containerPort = 8088
+              hostPort      = 8088
               protocol      = "tcp"
             }
           ]

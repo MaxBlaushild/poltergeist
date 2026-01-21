@@ -3,6 +3,7 @@ package config
 import (
 	"flag"
 	"os"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
@@ -20,6 +21,8 @@ type PublicConfig struct {
 	DbPort   string `mapstructure:"DB_PORT"`
 	DbName   string `mapstructure:"DB_NAME"`
 	RedisUrl string `mapstructure:"REDIS_URL"`
+	ChainID  int64  `mapstructure:"CHAIN_ID"`
+	RPCURL   string `mapstructure:"RPC_URL"`
 }
 
 type Config struct {
@@ -54,6 +57,21 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	if err := viper.Unmarshal(&publicCfg); err != nil {
 		return nil, err
+	}
+
+	// Parse CHAIN_ID from environment if not set via viper
+	if publicCfg.ChainID == 0 {
+		if chainIDStr := os.Getenv("CHAIN_ID"); chainIDStr != "" {
+			chainID, err := strconv.ParseInt(chainIDStr, 10, 64)
+			if err == nil {
+				publicCfg.ChainID = chainID
+			}
+		}
+	}
+
+	// Get RPC_URL from environment if not set via viper
+	if publicCfg.RPCURL == "" {
+		publicCfg.RPCURL = os.Getenv("RPC_URL")
 	}
 
 	return &Config{

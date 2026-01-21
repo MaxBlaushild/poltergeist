@@ -34,4 +34,9 @@ class ApiConstants {
   
   // S3 bucket for posts
   static const String postsBucket = 'verifiable-sn-posts';
+  
+  // Certificate endpoints
+  static const String checkCertificateEndpoint = '/verifiable-sn/certificate/check';
+  static const String enrollCertificateEndpoint = '/verifiable-sn/certificate/enroll';
+  static const String getCertificateEndpoint = '/verifiable-sn/certificate';
 }

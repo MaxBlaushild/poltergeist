@@ -73,6 +73,8 @@ type DbClient interface {
 	FeteTeam() FeteTeamHandle
 	FeteRoomLinkedListTeam() FeteRoomLinkedListTeamHandle
 	FeteRoomTeam() FeteRoomTeamHandle
+	BlockchainTransaction() BlockchainTransactionHandle
+	UserCertificate() UserCertificateHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -459,6 +461,16 @@ type PostHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+type BlockchainTransactionHandle interface {
+	Create(ctx context.Context, tx *models.BlockchainTransaction) (*models.BlockchainTransaction, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.BlockchainTransaction, error)
+	FindByTxHash(ctx context.Context, txHash string) (*models.BlockchainTransaction, error)
+	FindPending(ctx context.Context) ([]models.BlockchainTransaction, error)
+	FindPendingExpired(ctx context.Context) ([]models.BlockchainTransaction, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status string, blockNumber *uint64, confirmedAt *time.Time) error
+	GetNextNonce(ctx context.Context, chainID int64, fromAddress string) (uint64, error)
+}
+
 type PartyInviteHandle interface {
 	Create(ctx context.Context, inviter *models.User, inviteeID uuid.UUID) (*models.PartyInvite, error)
 	FindAllInvites(ctx context.Context, userID uuid.UUID) ([]models.PartyInvite, error)
@@ -640,4 +652,11 @@ type UtilityClosetPuzzleHandle interface {
 	UpdatePuzzle(ctx context.Context, puzzle *models.UtilityClosetPuzzle) error
 	ResetPuzzle(ctx context.Context) (*models.UtilityClosetPuzzle, error)
 	DeletePuzzle(ctx context.Context, id uuid.UUID) error
+}
+
+type UserCertificateHandle interface {
+	Create(ctx context.Context, userID uuid.UUID, certificateDER []byte, certificatePEM string, publicKeyPEM string, fingerprint []byte) (*models.UserCertificate, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserCertificate, error)
+	FindByFingerprint(ctx context.Context, fingerprint []byte) (*models.UserCertificate, error)
+	Delete(ctx context.Context, userID uuid.UUID) error
 }

@@ -3,6 +3,7 @@ package pkg
 import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
+	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/server"
 	"github.com/gin-gonic/gin"
@@ -20,5 +21,10 @@ func NewServerFromDependencies(
 	dbClient db.DbClient,
 ) Server {
 	awsClient := aws.NewAWSClient("us-east-1")
-	return server.NewServer(authClient, dbClient, awsClient)
+	// Initialize cert client with empty CA key (will generate new CA)
+	certClient, err := cert.NewClient("")
+	if err != nil {
+		panic(err)
+	}
+	return server.NewServer(authClient, dbClient, awsClient, certClient)
 }
