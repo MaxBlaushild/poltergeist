@@ -21,6 +21,8 @@ module "ecs" {
         aws_secretsmanager_secret.mapbox_api_key.arn,
         aws_secretsmanager_secret.google_drive_client_id.arn,
         aws_secretsmanager_secret.google_drive_client_secret.arn,
+        aws_secretsmanager_secret.dropbox_client_id.arn,
+        aws_secretsmanager_secret.dropbox_client_secret.arn,
         aws_secretsmanager_secret.hue_bridge_hostname.arn,
         aws_secretsmanager_secret.hue_bridge_username.arn,
         aws_secretsmanager_secret.hue_client_id.arn,
@@ -33,6 +35,106 @@ module "ecs" {
         "core" = {
           essential = true
           image     = "${aws_ecr_repository.core.repository_url}:latest"
+          environment = [
+            {
+              name  = "DB_HOST"
+              value = aws_db_instance.poltergeist-db.address
+            },
+            {
+              name  = "DB_USER"
+              value = aws_db_instance.poltergeist-db.username
+            },
+            {
+              name  = "DB_PORT"
+              value = tostring(aws_db_instance.poltergeist-db.port)
+            },
+            {
+              name  = "DB_NAME"
+              value = aws_db_instance.poltergeist-db.db_name
+            },
+            {
+              name  = "PHONE_NUMBER"
+              value = var.twilio_phone_number
+            },
+            {
+              name  = "REDIS_URL"
+              value = "redis://${aws_elasticache_cluster.redis.cache_nodes[0].address}:6379"
+            },
+            {
+              name  = "HUE_REDIRECT_URI"
+              value = "https://api.poltergeist.gg/final-fete/hue-oauth/callback"
+            },
+            {
+              name  = "GOOGLE_DRIVE_REDIRECT_URI"
+              value = "https://api.poltergeist.gg/travel-angels/google-drive/callback"
+            },
+            {
+              name  = "DROPBOX_REDIRECT_URI"
+              value = "https://api.poltergeist.gg/travel-angels/dropbox/callback"
+            },
+            {
+              name  = "BASE_URL"
+              value = "https://api.poltergeist.gg"
+            }
+          ]
+          secrets = [
+            {
+              name      = "DB_PASSWORD"
+              valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
+            },
+            {
+              name      = "HUE_CLIENT_ID"
+              valueFrom = "${aws_secretsmanager_secret.hue_client_id.arn}"
+            },
+            {
+              name      = "HUE_CLIENT_SECRET"
+              valueFrom = "${aws_secretsmanager_secret.hue_client_secret.arn}"
+            },
+            {
+              name      = "HUE_APPLICATION_KEY"
+              valueFrom = "${aws_secretsmanager_secret.hue_application_key.arn}"
+            },
+            {
+              name      = "HUE_BRIDGE_HOSTNAME"
+              valueFrom = "${aws_secretsmanager_secret.hue_bridge_hostname.arn}"
+            },
+            {
+              name      = "HUE_BRIDGE_USERNAME"
+              valueFrom = "${aws_secretsmanager_secret.hue_bridge_username.arn}"
+            },
+            {
+              name      = "IMAGINE_API_KEY"
+              valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
+            },
+            {
+              name      = "USE_API_KEY"
+              valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
+            },
+            {
+              name      = "MAPBOX_API_KEY"
+              valueFrom = "${aws_secretsmanager_secret.mapbox_api_key.arn}"
+            },
+            {
+              name      = "GOOGLE_MAPS_API_KEY"
+              valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
+            },
+            {
+              name      = "GOOGLE_DRIVE_CLIENT_ID"
+              valueFrom = "${aws_secretsmanager_secret.google_drive_client_id.arn}"
+            },
+            {
+              name      = "GOOGLE_DRIVE_CLIENT_SECRET"
+              valueFrom = "${aws_secretsmanager_secret.google_drive_client_secret.arn}"
+            },
+            {
+              name      = "DROPBOX_CLIENT_ID"
+              valueFrom = "${aws_secretsmanager_secret.dropbox_client_id.arn}"
+            },
+            {
+              name      = "DROPBOX_CLIENT_SECRET"
+              valueFrom = "${aws_secretsmanager_secret.dropbox_client_secret.arn}"
+            }
+          ]
           portMappings = [
             {
               name          = local.core_container_name
@@ -131,65 +233,6 @@ module "ecs" {
           ]
         }
 
-        "travel-angels" = {
-          essential = true
-          image = "${aws_ecr_repository.travel_angels.repository_url}:latest"
-          secrets = [{
-            name      = "DB_PASSWORD",
-            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name      = "GOOGLE_DRIVE_CLIENT_ID",
-            valueFrom = "${aws_secretsmanager_secret.google_drive_client_id.arn}"
-          }, {
-            name      = "GOOGLE_DRIVE_CLIENT_SECRET",
-            valueFrom = "${aws_secretsmanager_secret.google_drive_client_secret.arn}"
-          }, {
-            name      = "MAPBOX_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.mapbox_api_key.arn}"
-          }, {
-            name      = "GOOGLE_MAPS_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
-          }]
-          portMappings = [
-            {
-              name          = "travel-angels"
-              containerPort = 8083
-              hostPort      = 8083
-              protocol      = "tcp"
-            }
-          ]
-        }
-
-        "sonar" = {
-          essential = true
-          secrets = [{
-            name      = "DB_PASSWORD",
-            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name      = "IMAGINE_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.imagine_api_key.arn}"
-          }, {
-            name      = "USE_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.use_api_key.arn}"
-          },
-          {
-            name      = "MAPBOX_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.mapbox_api_key.arn}"
-          }, {
-            name      = "GOOGLE_MAPS_API_KEY",
-            valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
-          }]
-          image = "${aws_ecr_repository.sonar.repository_url}:latest"
-          portMappings = [
-            {
-              name          = "sonar"
-              containerPort = 8042
-              hostPort      = 8042
-              protocol      = "tcp"
-            }
-          ]
-        }
-
       "travel-angels-billing" = {
           essential = true
           secrets = [{
@@ -205,38 +248,6 @@ module "ecs" {
               name          = "travel-angels-billing"
               containerPort = 8022
               hostPort      = 8022
-              protocol      = "tcp"
-            }
-          ]
-        }
-        
-        "final-fete" = {
-          essential = true
-          image = "${aws_ecr_repository.final_fete.repository_url}:latest"
-          secrets = [{
-            name      = "HUE_BRIDGE_HOSTNAME",
-            valueFrom = "${aws_secretsmanager_secret.hue_bridge_hostname.arn}"
-          }, {
-            name      = "HUE_BRIDGE_USERNAME",
-            valueFrom = "${aws_secretsmanager_secret.hue_bridge_username.arn}"
-          }, {
-            name      = "HUE_CLIENT_ID",
-            valueFrom = "${aws_secretsmanager_secret.hue_client_id.arn}"
-          }, {
-            name      = "HUE_CLIENT_SECRET",
-            valueFrom = "${aws_secretsmanager_secret.hue_client_secret.arn}"
-          }, {
-            name      = "DB_PASSWORD",
-            valueFrom = "${aws_secretsmanager_secret.db_password.arn}"
-          }, {
-            name      = "HUE_APPLICATION_KEY",
-            valueFrom = "${aws_secretsmanager_secret.hue_application_key.arn}"
-          }]
-          portMappings = [
-            {
-              name          = "final-fete"
-              containerPort = 8085
-              hostPort      = 8085
               protocol      = "tcp"
             }
           ]

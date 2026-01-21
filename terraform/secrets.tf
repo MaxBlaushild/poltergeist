@@ -195,3 +195,21 @@ resource "aws_secretsmanager_secret_version" "hue_application_key" {
   secret_id     = aws_secretsmanager_secret.hue_application_key.id
   secret_string = var.hue_application_key
 }
+
+resource "aws_secretsmanager_secret" "dropbox_client_id" {
+  name = "DROPBOX_CLIENT_ID"
+}
+
+resource "aws_secretsmanager_secret_version" "dropbox_client_id" {
+  secret_id     = aws_secretsmanager_secret.dropbox_client_id.id
+  secret_string = var.dropbox_client_id
+}
+
+resource "aws_secretsmanager_secret" "dropbox_client_secret" {
+  name = "DROPBOX_CLIENT_SECRET"
+}
+
+resource "aws_secretsmanager_secret_version" "dropbox_client_secret" {
+  secret_id     = aws_secretsmanager_secret.dropbox_client_secret.id
+  secret_string = var.dropbox_client_secret
+}

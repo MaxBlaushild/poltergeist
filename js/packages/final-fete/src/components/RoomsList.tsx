@@ -1,12 +1,12 @@
-import { useAPI, useAuth } from '@poltergeist/contexts';
+import { useAPI } from '@poltergeist/contexts';
 import type { FeteRoom, FeteTeam, FeteRoomLinkedListTeam, FeteRoomTeam } from '@poltergeist/types';
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export const RoomsList = () => {
   const { apiClient } = useAPI();
-  const { logout } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rooms, setRooms] = useState<FeteRoom[]>([]);
   const [teams, setTeams] = useState<FeteTeam[]>([]);
   const [linkedListTeams, setLinkedListTeams] = useState<FeteRoomLinkedListTeam[]>([]);
@@ -16,6 +16,8 @@ export const RoomsList = () => {
   const [error, setError] = useState<string | null>(null);
   const [showLockConfirm, setShowLockConfirm] = useState(false);
   const [roomToLock, setRoomToLock] = useState<FeteRoom | null>(null);
+  const [showReleaseSuccess, setShowReleaseSuccess] = useState(false);
+  const [releaseSuccessMessage, setReleaseSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchRooms();
@@ -24,6 +26,35 @@ export const RoomsList = () => {
     fetchLinkedListTeams();
     fetchRoomTeams();
   }, []);
+
+  // Check for held room in "in use" state after unlocking a new room and automatically trigger release flow
+  useEffect(() => {
+    const justUnlocked = searchParams.get('justUnlocked') === 'true';
+    
+    // Only proceed if we just unlocked a room, data is loaded, and user has a team
+    if (!justUnlocked || loading || !userTeam || rooms.length === 0 || showLockConfirm) return;
+
+    // Find rooms where the user's team is the current team and the room is in "in use" state (open === false)
+    const heldRoomsInUse = rooms.filter(room => 
+      room.currentTeamId === userTeam.id && !room.open
+    );
+
+    // If there's a held room in use, automatically trigger release flow
+    if (heldRoomsInUse.length > 0) {
+      // Use the first held room (in case there are multiple - shouldn't happen but handle it)
+      const roomToRelease = heldRoomsInUse[0];
+      setRoomToLock(roomToRelease);
+      setShowLockConfirm(true);
+      
+      // Remove the query parameter from URL to prevent re-triggering on refresh
+      searchParams.delete('justUnlocked');
+      setSearchParams(searchParams, { replace: true });
+    } else {
+      // No held room in use, just clean up the URL parameter
+      searchParams.delete('justUnlocked');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [loading, userTeam, rooms, showLockConfirm, searchParams, setSearchParams]);
 
   const fetchRooms = async () => {
     try {
@@ -79,12 +110,60 @@ export const RoomsList = () => {
   };
 
   const handleToggleRoom = async (roomId: string) => {
+    if (!userTeam || !roomToLock) return;
+
     try {
       await apiClient.post(`/final-fete/rooms/${roomId}/toggle`, {});
-      // Refresh rooms after toggle
-      fetchRooms();
+      
+      // Refresh all data after toggle to get updated state
+      await Promise.all([
+        fetchRooms(),
+        fetchLinkedListTeams()
+      ]);
+      
+      // Fetch fresh data to check next room availability
+      const [freshRooms, freshLinkedListTeams] = await Promise.all([
+        apiClient.get<FeteRoom[]>('/final-fete/rooms'),
+        apiClient.get<FeteRoomLinkedListTeam[]>('/final-fete/room-linked-list-teams')
+      ]);
+      
+      const roomsArray = Array.isArray(freshRooms) ? freshRooms : [];
+      const linkedListArray = Array.isArray(freshLinkedListTeams) ? freshLinkedListTeams : [];
+      
+      // Find the next room for the team
+      // Look for linked list items where the user's team is the second team (next team)
+      const nextRoomLink = linkedListArray.find(
+        item => item.secondTeamId === userTeam.id
+      );
+      
+      let message: string | null = null;
+      
+      if (nextRoomLink) {
+        // Find the next room in the refreshed rooms list
+        const nextRoom = roomsArray.find(r => r.id === nextRoomLink.feteRoomId);
+        
+        if (nextRoom) {
+          // Check if the next room is available (user's team is the current team)
+          if (nextRoom.currentTeamId === userTeam.id) {
+            // Room is available - tell them to go to it
+            message = `Your next room "${nextRoom.name}" is now available! Please proceed to ${nextRoom.name}.`;
+          } else {
+            // Room is not available yet
+            message = `Your next room "${nextRoom.name}" is not yet available. Please check back later for availability.`;
+          }
+        } else {
+          // Next room not found in current rooms list
+          message = 'Room released successfully. Please check for your next room availability.';
+        }
+      } else {
+        // No next room configured
+        message = 'Room released successfully.';
+      }
+      
       setShowLockConfirm(false);
       setRoomToLock(null);
+      setReleaseSuccessMessage(message);
+      setShowReleaseSuccess(true);
     } catch (err) {
       console.error('Error toggling room:', err);
       alert('Failed to toggle room. Please try again.');
@@ -206,6 +285,61 @@ export const RoomsList = () => {
         );
       })()}
 
+      {showReleaseSuccess && releaseSuccessMessage && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/80 z-50 md:hidden"
+            onClick={() => {
+              setShowReleaseSuccess(false);
+              setReleaseSuccessMessage(null);
+            }}
+          />
+          
+          {/* Mobile Bottom Sheet */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden animate-slide-up">
+            <div className="bg-black/95 backdrop-blur-sm border-t-2 border-[#00ff00] rounded-t-lg shadow-[0_0_30px_rgba(0,255,0,0.5)] p-6">
+              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Room Released!</h2>
+              <p className="text-[#00ff00] mb-4 opacity-90 whitespace-pre-wrap">
+                {releaseSuccessMessage}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowReleaseSuccess(false);
+                    setReleaseSuccessMessage(null);
+                  }}
+                  className="flex-1 matrix-button matrix-button-primary min-h-[44px]"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Desktop Modal */}
+          <div className="hidden md:flex fixed inset-0 bg-black/80 z-50 items-center justify-center p-4">
+            <div className="bg-black/95 backdrop-blur-sm border-2 border-[#00ff00] rounded-lg shadow-[0_0_30px_rgba(0,255,0,0.5)] p-6 max-w-md w-full matrix-card">
+              <h2 className="text-xl font-bold text-[#00ff00] mb-4">Room Released!</h2>
+              <p className="text-[#00ff00] mb-6 opacity-90 whitespace-pre-wrap">
+                {releaseSuccessMessage}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowReleaseSuccess(false);
+                    setReleaseSuccessMessage(null);
+                  }}
+                  className="flex-1 matrix-button matrix-button-primary min-h-[44px]"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {showLockConfirm && roomToLock && (
         <>
           {/* Backdrop */}
@@ -225,9 +359,34 @@ export const RoomsList = () => {
                 You are about to release <span className="font-semibold">{roomToLock.name}</span>.
               </p>
               {roomToLock.resetInstructions && (
-                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md">
+                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md max-h-64 overflow-y-auto">
                   <p className="text-yellow-400 font-semibold mb-2 text-sm">Reset Instructions:</p>
-                  <p className="text-yellow-300 text-sm whitespace-pre-wrap">{roomToLock.resetInstructions}</p>
+                  <div className="text-yellow-300 text-sm whitespace-pre-wrap leading-relaxed">
+                    {roomToLock.resetInstructions.split('\n').map((line, index) => {
+                      // Format markdown-style headers
+                      if (line.trim().startsWith('# ')) {
+                        return (
+                          <h3 key={index} className="font-bold text-yellow-200 mt-3 mb-2 first:mt-0">
+                            {line.trim().substring(2)}
+                          </h3>
+                        );
+                      }
+                      // Format numbered list items
+                      if (/^\d+\.\s/.test(line.trim())) {
+                        return (
+                          <p key={index} className="ml-4 mb-1">
+                            {line}
+                          </p>
+                        );
+                      }
+                      // Empty lines
+                      if (line.trim() === '') {
+                        return <br key={index} />;
+                      }
+                      // Regular text
+                      return <p key={index} className="mb-1">{line}</p>;
+                    })}
+                  </div>
                 </div>
               )}
               <p className="text-[#00ff00] mb-4 opacity-90">
@@ -264,9 +423,34 @@ export const RoomsList = () => {
                 You are about to release <span className="font-semibold">{roomToLock.name}</span>.
               </p>
               {roomToLock.resetInstructions && (
-                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md">
+                <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600/50 rounded-md max-h-64 overflow-y-auto">
                   <p className="text-yellow-400 font-semibold mb-2 text-sm">Reset Instructions:</p>
-                  <p className="text-yellow-300 text-sm whitespace-pre-wrap">{roomToLock.resetInstructions}</p>
+                  <div className="text-yellow-300 text-sm whitespace-pre-wrap leading-relaxed">
+                    {roomToLock.resetInstructions.split('\n').map((line, index) => {
+                      // Format markdown-style headers
+                      if (line.trim().startsWith('# ')) {
+                        return (
+                          <h3 key={index} className="font-bold text-yellow-200 mt-3 mb-2 first:mt-0">
+                            {line.trim().substring(2)}
+                          </h3>
+                        );
+                      }
+                      // Format numbered list items
+                      if (/^\d+\.\s/.test(line.trim())) {
+                        return (
+                          <p key={index} className="ml-4 mb-1">
+                            {line}
+                          </p>
+                        );
+                      }
+                      // Empty lines
+                      if (line.trim() === '') {
+                        return <br key={index} />;
+                      }
+                      // Regular text
+                      return <p key={index} className="mb-1">{line}</p>;
+                    })}
+                  </div>
                 </div>
               )}
               <p className="text-[#00ff00] mb-6 opacity-90">
@@ -296,19 +480,6 @@ export const RoomsList = () => {
           </div>
         </>
       )}
-
-      {/* Logout button - bottom aligned */}
-      <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto">
-        <button
-          onClick={() => {
-            logout();
-            navigate('/login');
-          }}
-          className="matrix-button matrix-button-secondary w-full md:w-auto min-h-[44px]"
-        >
-          Logout
-        </button>
-      </div>
     </div>
   );
 };

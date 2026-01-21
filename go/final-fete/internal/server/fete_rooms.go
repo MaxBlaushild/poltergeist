@@ -290,14 +290,21 @@ func (s *server) unlockFeteRoom(ctx *gin.Context) {
 		return
 	}
 
-	// Check if room-team relationship already exists
+	// Check if room-team relationship already exists (idempotency check)
 	existing, err := s.dbClient.FeteRoomTeam().FindByRoomIDAndTeamID(ctx, roomID, team.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check existing relationship: " + err.Error()})
 		return
 	}
 	if existing != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "room is already unlocked for this team"})
+		// Relationship already exists - return it with success status for idempotency
+		// Fetch with preloaded relationships for consistency
+		existingWithRelations, err := s.dbClient.FeteRoomTeam().FindByID(ctx, existing.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, existingWithRelations)
 		return
 	}
 
@@ -308,6 +315,20 @@ func (s *server) unlockFeteRoom(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.FeteRoomTeam().Create(ctx, roomTeam); err != nil {
+		// Handle potential race condition: if another request created it simultaneously,
+		// check again and return the existing relationship
+		existing, checkErr := s.dbClient.FeteRoomTeam().FindByRoomIDAndTeamID(ctx, roomID, team.ID)
+		if checkErr == nil && existing != nil {
+			// Another request created it - return existing for idempotency
+			existingWithRelations, fetchErr := s.dbClient.FeteRoomTeam().FindByID(ctx, existing.ID)
+			if fetchErr != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": fetchErr.Error()})
+				return
+			}
+			ctx.JSON(http.StatusOK, existingWithRelations)
+			return
+		}
+		// Actual error creating the relationship
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to unlock room: " + err.Error()})
 		return
 	}

@@ -1,124 +1,103 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"os"
+	"context"
+	"fmt"
+	"log"
+	"time"
 
+	"github.com/MaxBlaushild/core/internal/config"
+	"github.com/MaxBlaushild/core/internal/server"
+	finalfete "github.com/MaxBlaushild/poltergeist/final-fete/pkg"
+	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/hue"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
+	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
+	travelangels "github.com/MaxBlaushild/poltergeist/travel-angels/pkg"
+	verifiablesn "github.com/MaxBlaushild/poltergeist/verifiable-sn/pkg"
 )
 
 func main() {
-	router := gin.Default()
-	router.Use(cors.New(cors.Config{
-		AllowAllOrigins: true,
-		AllowMethods:    []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:    []string{"Origin", "Content-Type", "Accept", "Authorization", "X-User-Location"},
-	}))
+	// Load shared configuration
+	cfg := config.NewConfigFromEnv()
 
-	fountUrl, _ := url.Parse("http://localhost:8081")
-	trivaiUrl, _ := url.Parse("http://localhost:8082")
-	texterUrl, _ := url.Parse("http://localhost:8084")
-	scorekeeperUrl, _ := url.Parse("http://localhost:8086")
-	authenticatorUrl, _ := url.Parse("http://localhost:8089")
-	crystalCrisisUrl, _ := url.Parse("http://localhost:8091")
-	adminDashboardUrl, _ := url.Parse("http://localhost:9093")
-	billingUrl, _ := url.Parse("http://localhost:8022")
-	sonarUrl, _ := url.Parse("http://localhost:8042")
-	travelAngelsUrl, _ := url.Parse("http://localhost:8083")
-	finalFeteUrl, _ := url.Parse("http://localhost:8085")
-
-	fountProxy := httputil.NewSingleHostReverseProxy(fountUrl)
-	trivaiProxy := httputil.NewSingleHostReverseProxy(trivaiUrl)
-	texterProxy := httputil.NewSingleHostReverseProxy(texterUrl)
-	scorekeeperProxy := httputil.NewSingleHostReverseProxy(scorekeeperUrl)
-	authenticatorProxy := httputil.NewSingleHostReverseProxy(authenticatorUrl)
-	crystalCrisisProxy := httputil.NewSingleHostReverseProxy(crystalCrisisUrl)
-	adminDashboardProxy := httputil.NewSingleHostReverseProxy(adminDashboardUrl)
-	billingProxy := httputil.NewSingleHostReverseProxy(billingUrl)
-	sonarProxy := httputil.NewSingleHostReverseProxy(sonarUrl)
-	travelAngelsProxy := httputil.NewSingleHostReverseProxy(travelAngelsUrl)
-	finalFeteProxy := httputil.NewSingleHostReverseProxy(finalFeteUrl)
-
-	router.POST("/consult", func(c *gin.Context) {
-		fountProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/trivai/*any", func(c *gin.Context) {
-		trivaiProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/texter/*any", func(c *gin.Context) {
-		texterProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/scorekeeper/*any", func(c *gin.Context) {
-		scorekeeperProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/authenticator/*any", func(c *gin.Context) {
-		authenticatorProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/crystal-crisis/*any", func(c *gin.Context) {
-		crystalCrisisProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/admin/*any", func(c *gin.Context) {
-		adminDashboardProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/billing/*any", func(c *gin.Context) {
-		billingProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/sonar/*any", func(c *gin.Context) {
-		sonarProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/travel-angels/*any", func(c *gin.Context) {
-		travelAngelsProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	router.Any("/final-fete/*any", func(c *gin.Context) {
-		finalFeteProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	// Champagne endpoint - sends celebratory text
 	texterClient := texter.NewClient()
-	router.POST("/champagne", func(c *gin.Context) {
-		// Get phone number from environment or use default
-		fromPhoneNumber := os.Getenv("PHONE_NUMBER")
-		if fromPhoneNumber == "" {
-			fromPhoneNumber = "+18445206851" // Default fallback
-		}
 
-		// Send champagne text
-		err := texterClient.Text(c.Request.Context(), &texter.Text{
-			Body:     "Time for champagne! 🍾",
-			To:       "+12154354713",
-			From:     fromPhoneNumber,
-			TextType: "champagne",
+	// Initialize auth client
+	authClient := auth.NewClient()
+
+	// Initialize database client using shared config
+	dbClient, err := db.NewClient(db.ClientConfig{
+		Name:     cfg.Public.DbName,
+		Host:     cfg.Public.DbHost,
+		Port:     cfg.Public.DbPort,
+		User:     cfg.Public.DbUser,
+		Password: cfg.Secret.DbPassword,
+	})
+	if err != nil {
+		log.Printf("Warning: Failed to initialize database client: %v. Routes will not be available.", err)
+		panic(err)
+	}
+
+	// Initialize Hue OAuth client if credentials are provided
+	var hueOAuthClient hue.OAuthClient
+	if cfg.Secret.HueClientID != "" && cfg.Secret.HueClientSecret != "" && cfg.Public.HueRedirectURI != "" {
+		hueOAuthClient = hue.NewOAuthClient(hue.OAuthClientConfig{
+			ClientID:     cfg.Secret.HueClientID,
+			ClientSecret: cfg.Secret.HueClientSecret,
+			RedirectURI:  cfg.Public.HueRedirectURI,
 		})
+	}
 
+	// Initialize Hue cloud client using OAuth
+	var hueClient hue.Client
+	ctx := context.Background()
+	if hueOAuthClient != nil {
+		// Load refresh token from database
+		hueToken, err := dbClient.HueToken().FindLatest(ctx)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to send text",
-			})
-			return
+			log.Printf("Warning: Failed to load Hue token from database: %v", err)
+		} else if hueToken != nil && hueToken.RefreshToken != "" {
+			// Create token updater callback to persist refreshed tokens
+			tokenUpdater := func(accessToken, refreshToken string, expiresAt time.Time) error {
+				// Find the token again to get the ID
+				latestToken, err := dbClient.HueToken().FindLatest(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to find token for update: %w", err)
+				}
+				if latestToken == nil {
+					return fmt.Errorf("token not found in database")
+				}
+
+				// Update token fields
+				latestToken.AccessToken = accessToken
+				latestToken.RefreshToken = refreshToken
+				latestToken.ExpiresAt = expiresAt
+
+				// Save updated token
+				return dbClient.HueToken().Update(ctx, latestToken)
+			}
+
+			// Initialize cloud client with OAuth, refresh token, existing access token (if valid), and token updater
+			hueClient = hue.NewClientWithOAuth(
+				hueOAuthClient,
+				hueToken.RefreshToken,
+				hueToken.AccessToken,
+				hueToken.ExpiresAt,
+				tokenUpdater,
+				cfg.Secret.HueApplicationKey,
+			)
+			log.Println("Hue cloud client initialized successfully")
+		} else {
+			log.Println("Warning: No Hue refresh token found in database. Hue features will be unavailable. Run OAuth flow first.")
 		}
+	}
 
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Champagne text sent successfully",
-		})
-	})
-
-	router.GET("/", func(c *gin.Context) {
-		c.String(200, "Goodbye, World!")
-	})
-
-	router.Run(":8080")
+	finalFeteServer := finalfete.NewServerFromDependencies(authClient, dbClient, hueClient, hueOAuthClient)
+	sonarServer := sonar.NewServerFromDependencies(authClient, texterClient, dbClient, cfg)
+	travelAngelsServer := travelangels.NewServerFromDependencies(authClient, dbClient, cfg)
+	verifiableSnServer := verifiablesn.NewServerFromDependencies(authClient, dbClient)
+	srv := server.NewServer(finalFeteServer, sonarServer, travelAngelsServer, verifiableSnServer, texterClient)
+	srv.ListenAndServe("8080")
 }

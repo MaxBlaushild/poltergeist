@@ -50,6 +50,7 @@ type DbClient interface {
 	Friend() FriendHandle
 	Party() PartyHandle
 	FriendInvite() FriendInviteHandle
+	Post() PostHandle
 	PartyInvite() PartyInviteHandle
 	Activity() ActivityHandle
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
@@ -447,6 +448,15 @@ type FriendInviteHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type PostHandle interface {
+	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string) (*models.Post, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
+	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Post, error)
+	FindAllFriendsPosts(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Post, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type PartyInviteHandle interface {
