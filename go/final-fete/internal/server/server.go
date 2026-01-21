@@ -21,6 +21,7 @@ type server struct {
 
 type Server interface {
 	ListenAndServe(port string)
+	SetupRoutes(r *gin.Engine)
 }
 
 func NewServer(
@@ -39,9 +40,7 @@ func NewServer(
 	}
 }
 
-func (s *server) ListenAndServe(port string) {
-	r := gin.Default()
-
+func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/final-fete/health", s.GetHealth)
 
 	// Authentication routes (no auth required)
@@ -100,6 +99,10 @@ func (s *server) ListenAndServe(port string) {
 	r.PUT("/final-fete/admin/utility-closet-puzzle", s.AdminUpdatePuzzle)
 	r.DELETE("/final-fete/admin/utility-closet-puzzle", s.AdminDeletePuzzle)
 	r.POST("/final-fete/utility-closet-puzzle/toggle-achievement", s.ToggleAchievement)
+}
 
+func (s *server) ListenAndServe(port string) {
+	r := gin.Default()
+	s.SetupRoutes(r)
 	r.Run(fmt.Sprintf(":%s", port))
 }

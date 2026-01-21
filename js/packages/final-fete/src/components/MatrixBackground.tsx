@@ -150,7 +150,11 @@ export const MatrixBackground = () => {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 w-full h-full z-0"
-      style={{ background: '#000000', cursor: isPulsing && pulsingColumnRef.current !== null ? 'pointer' : 'default' }}
+      style={{ 
+        background: '#000000', 
+        cursor: isPulsing && pulsingColumnRef.current !== null ? 'pointer' : 'default',
+        pointerEvents: isPulsing && pulsingColumnRef.current !== null ? 'auto' : 'none'
+      }}
       onClick={handleCanvasClick}
     />
   );

@@ -1,4 +1,4 @@
-FROM golang:1.18 AS builder
+FROM golang:1.24 AS builder
 
 ENV CGO_ENABLED=0
 ENV GOPATH=/usr/home/app
@@ -8,6 +8,10 @@ WORKDIR /usr/home/app
 
 COPY ./go/pkg ./pkg
 COPY ./go/core ./core
+COPY ./go/final-fete ./final-fete
+COPY ./go/sonar ./sonar
+COPY ./go/travel-angels ./travel-angels
+COPY ./go/verifiable-sn ./verifiable-sn
 
 # RUN cd ./trivai
 # RUN go mod download

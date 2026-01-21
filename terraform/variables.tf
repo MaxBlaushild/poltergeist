@@ -107,3 +107,13 @@ variable "hue_application_key" {
   description = "Hue Application Key"
   type        = string
 }
+
+variable "dropbox_client_id" {
+  description = "Dropbox Client ID"
+  type        = string
+}
+
+variable "dropbox_client_secret" {
+  description = "Dropbox Client Secret"
+  type        = string
+}

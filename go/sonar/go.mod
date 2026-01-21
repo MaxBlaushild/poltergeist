@@ -1,6 +1,6 @@
 module github.com/MaxBlaushild/poltergeist/sonar
 
-go 1.23.0
+go 1.23
 
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/auth => ../pkg/auth

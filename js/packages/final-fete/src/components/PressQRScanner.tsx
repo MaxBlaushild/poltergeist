@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 type ScanResult = {
@@ -10,6 +11,7 @@ type ScanResult = {
 const errorMessage = 'ERROR: Attempted to inject antivirus software into a tutorial document.';
 
 export const PressQRScanner = () => {
+  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -98,6 +100,36 @@ export const PressQRScanner = () => {
     }
   };
 
+  const extractRoomId = (decodedText: string): string | null => {
+    // Extract room ID from URL
+    // Expected format: https://domain.com/unlock-room/:roomId or /unlock-room/:roomId
+    let roomId: string | null = null;
+
+    try {
+      const url = new URL(decodedText);
+      const pathParts = url.pathname.split('/');
+      const unlockIndex = pathParts.indexOf('unlock-room');
+      if (unlockIndex !== -1 && pathParts[unlockIndex + 1]) {
+        roomId = pathParts[unlockIndex + 1];
+      }
+    } catch {
+      // If it's not a full URL, try parsing as relative path
+      const pathParts = decodedText.split('/');
+      const unlockIndex = pathParts.indexOf('unlock-room');
+      if (unlockIndex !== -1 && pathParts[unlockIndex + 1]) {
+        roomId = pathParts[unlockIndex + 1];
+      } else {
+        // If it's just a UUID, use it directly
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(decodedText)) {
+          roomId = decodedText;
+        }
+      }
+    }
+
+    return roomId;
+  };
+
   const handleQRCodeDetected = useCallback(async (decodedText: string) => {
     // Stop scanning immediately
     if (scannerRef.current && scannerRef.current.isScanning) {
@@ -112,7 +144,15 @@ export const PressQRScanner = () => {
     setError(null);
     setResult(null);
 
-    // Validate URL format
+    // First check if this is an unlock room QR code
+    const roomId = extractRoomId(decodedText);
+    if (roomId) {
+      // Navigate to unlock room page, which will redirect to rooms list with justUnlocked=true
+      navigate(`/unlock-room/${roomId}`);
+      return;
+    }
+
+    // If not an unlock room code, validate as press URL format
     const validation = validatePressUrl(decodedText);
     if (!validation.valid) {
       setResult({ type: 'error', message: validation.error || 'Invalid QR code format.' });
@@ -120,11 +160,11 @@ export const PressQRScanner = () => {
       return;
     }
 
-    // Make the HTTP request
+    // Make the HTTP request for press
     const result = await makePressRequest(decodedText);
     setResult(result);
     setProcessing(false);
-  }, []);
+  }, [navigate]);
 
   const handleRescan = useCallback(async () => {
     setResult(null);

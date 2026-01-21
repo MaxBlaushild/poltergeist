@@ -27,6 +27,7 @@ type server struct {
 
 type Server interface {
 	ListenAndServe(port string)
+	SetupRoutes(r *gin.Engine)
 }
 
 func NewServer(
@@ -51,9 +52,7 @@ func NewServer(
 	}
 }
 
-func (s *server) ListenAndServe(port string) {
-	r := gin.Default()
-
+func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/travel-angels/health", s.GetHealth)
 	r.POST("/travel-angels/login", s.login)
 	r.POST("/travel-angels/register", s.register)
@@ -97,6 +96,10 @@ func (s *server) ListenAndServe(port string) {
 	r.GET("/travel-angels/trending-destinations", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetTrendingDestinations))
 	r.POST("/travel-angels/quick-decision-requests", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateQuickDecisionRequest))
 	r.POST("/travel-angels/community-polls", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateCommunityPoll))
+}
 
+func (s *server) ListenAndServe(port string) {
+	r := gin.Default()
+	s.SetupRoutes(r)
 	r.Run(fmt.Sprintf(":%s", port))
 }

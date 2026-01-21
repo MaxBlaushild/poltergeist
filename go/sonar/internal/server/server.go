@@ -68,6 +68,7 @@ type server struct {
 
 type Server interface {
 	ListenAndServe(port string)
+	SetupRoutes(r *gin.Engine)
 }
 
 func NewServer(
@@ -114,9 +115,7 @@ func NewServer(
 	}
 }
 
-func (s *server) ListenAndServe(port string) {
-	r := gin.Default()
-
+func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/register", s.register)
 	r.POST("/sonar/login", s.login)
 
@@ -286,7 +285,12 @@ func (s *server) ListenAndServe(port string) {
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
 	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
-	r.Run(":8042")
+}
+
+func (s *server) ListenAndServe(port string) {
+	r := gin.Default()
+	s.SetupRoutes(r)
+	r.Run(fmt.Sprintf(":%s", port))
 }
 
 func (s *server) getActivities(ctx *gin.Context) {

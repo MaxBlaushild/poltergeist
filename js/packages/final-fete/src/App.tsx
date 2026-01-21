@@ -18,6 +18,8 @@ import { BlueRedPurplePage } from './components/BlueRedPurplePage';
 import { WinningSequencePage } from './components/WinningSequencePage';
 import { DataVaultPage } from './components/DataVaultPage';
 import { SituationRoomPage } from './components/SituationRoomPage';
+import { CodeEntryPage } from './components/CodeEntryPage';
+import { MainLayout } from './components/MainLayout';
 import './App.css';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -91,28 +93,8 @@ function AppRouter() {
       element: <SituationRoomPage />,
     },
     {
-      path: '/',
-      element: (
-        <ProtectedRoute>
-          <RoomsList />
-        </ProtectedRoute>
-      ),
-    },
-    {
-      path: '/scan-qr',
-      element: (
-        <ProtectedRoute>
-          <QRScanner />
-        </ProtectedRoute>
-      ),
-    },
-    {
       path: '/unlock-room/:roomId',
-      element: (
-        <ProtectedRoute>
-          <UnlockRoom />
-        </ProtectedRoute>
-      ),
+      element: <UnlockRoom />,
     },
     {
       path: '/garbled',
@@ -121,6 +103,27 @@ function AppRouter() {
           <GarbledText />
         </ProtectedRoute>
       ),
+    },
+    {
+      element: (
+        <ProtectedRoute>
+          <MainLayout />
+        </ProtectedRoute>
+      ),
+      children: [
+        {
+          path: '/',
+          element: <RoomsList />,
+        },
+        {
+          path: '/codes',
+          element: <CodeEntryPage />,
+        },
+        {
+          path: '/scan-qr',
+          element: <QRScanner />,
+        },
+      ],
     },
   ]);
 
