@@ -213,3 +213,12 @@ resource "aws_secretsmanager_secret_version" "dropbox_client_secret" {
   secret_id     = aws_secretsmanager_secret.dropbox_client_secret.id
   secret_string = var.dropbox_client_secret
 }
+
+resource "aws_secretsmanager_secret" "ethereum_private_key" {
+  name = "ETHEREUM_PRIVATE_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "ethereum_private_key" {
+  secret_id     = aws_secretsmanager_secret.ethereum_private_key.id
+  secret_string = var.ethereum_private_key
+}

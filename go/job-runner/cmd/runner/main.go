@@ -16,6 +16,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
+	"github.com/MaxBlaushild/poltergeist/pkg/ethereum"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
@@ -71,6 +72,19 @@ func main() {
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
+
+	// Initialize Ethereum client for blockchain transaction checking (read-only)
+	var checkBlockchainTransactionsProcessor *processors.CheckBlockchainTransactionsProcessor
+	if cfg.Public.RPCURL != "" && cfg.Public.ChainID != 0 {
+		ethereumClient, err := ethereum.NewReadOnlyClient(cfg.Public.RPCURL, cfg.Public.ChainID)
+		if err != nil {
+			log.Printf("Warning: Failed to create Ethereum client for transaction checking: %v", err)
+		} else {
+			checkBlockchainTransactionsProcessor = new(processors.CheckBlockchainTransactionsProcessor)
+			*checkBlockchainTransactionsProcessor = processors.NewCheckBlockchainTransactionsProcessor(dbClient, ethereumClient)
+		}
+	}
+
 	mux := asynq.NewServeMux()
 
 	// Add error logging middleware to each handler
@@ -89,6 +103,9 @@ func main() {
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
+	if checkBlockchainTransactionsProcessor != nil {
+		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
+	}
 
 	scheduler := asynq.NewScheduler(redisConnOpt, &asynq.SchedulerOpts{})
 
@@ -102,6 +119,12 @@ func main() {
 
 	if _, err = scheduler.Register("@every 6h", asynq.NewTask(jobs.CalculateTrendingDestinationsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if checkBlockchainTransactionsProcessor != nil {
+		if _, err = scheduler.Register("@every 5m", asynq.NewTask(jobs.CheckBlockchainTransactionsTaskType, nil)); err != nil {
+			log.Fatalf("could not register the blockchain transactions check schedule: %v", err)
+		}
 	}
 
 	go func() {

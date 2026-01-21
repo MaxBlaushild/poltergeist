@@ -52,6 +52,8 @@ replace github.com/MaxBlaushild/poltergeist/pkg/dropbox => ../pkg/dropbox
 
 replace github.com/MaxBlaushild/poltergeist/pkg/googledrive => ../pkg/googledrive
 
+replace github.com/MaxBlaushild/poltergeist/pkg/cert => ../pkg/cert
+
 require (
 	github.com/MaxBlaushild/poltergeist/final-fete v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
@@ -73,6 +75,7 @@ require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000 // indirect
+	github.com/MaxBlaushild/poltergeist/pkg/cert v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/dropbox v0.0.0-00010101000000-000000000000 // indirect
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000 // indirect

@@ -12,16 +12,22 @@ class MediaService {
   /// 
   /// [bucket] - The S3 bucket name
   /// [key] - The S3 object key
+  /// [contentType] - Optional content type for the upload
   /// 
   /// Returns the presigned URL or null if failed
-  Future<String?> getPresignedUploadURL(String bucket, String key) async {
+  Future<String?> getPresignedUploadURL(String bucket, String key, {String? contentType}) async {
     try {
+      final data = <String, dynamic>{
+        'bucket': bucket,
+        'key': key,
+      };
+      if (contentType != null) {
+        data['contentType'] = contentType;
+      }
+
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.presignedUploadUrlEndpoint,
-        data: {
-          'bucket': bucket,
-          'key': key,
-        },
+        data: data,
       );
 
       return response['url'] as String?;
@@ -57,6 +63,10 @@ class MediaService {
       final dio = Dio();
       final fileBytes = await file.readAsBytes();
       
+      print('Uploading to S3: ${presignedUrl.substring(0, presignedUrl.indexOf('?'))}...');
+      print('Content-Type: $contentType');
+      print('File size: ${fileBytes.length} bytes');
+      
       final response = await dio.put(
         presignedUrl,
         data: fileBytes,
@@ -64,12 +74,22 @@ class MediaService {
           headers: {
             'Content-Type': contentType,
           },
+          validateStatus: (status) => status! < 500, // Don't throw on 4xx errors
         ),
       );
 
-      return response.statusCode == 200;
+      if (response.statusCode != 200) {
+        print('Upload failed with status ${response.statusCode}: ${response.data}');
+        return false;
+      }
+
+      return true;
     } catch (e) {
       print('Failed to upload media: $e');
+      if (e is DioException) {
+        print('DioException details: ${e.response?.statusCode} - ${e.response?.data}');
+        print('Request URL: ${e.requestOptions.uri}');
+      }
       return false;
     }
   }
@@ -85,15 +105,30 @@ class MediaService {
       final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
       final fileName = file.path.split('/').last;
       final extension = fileName.split('.').last.toLowerCase();
-      final key = '$userId/$timestamp.$extension';
+      final key = '$userId/posts/$timestamp.$extension';
 
-      final presignedUrl = await getPresignedUploadURL(ApiConstants.postsBucket, key);
+      // Determine content type based on extension
+      String contentType = 'application/octet-stream';
+      if (extension == 'jpg' || extension == 'jpeg') {
+        contentType = 'image/jpeg';
+      } else if (extension == 'png') {
+        contentType = 'image/png';
+      } else if (extension == 'webp') {
+        contentType = 'image/webp';
+      } else if (extension == 'gif') {
+        contentType = 'image/gif';
+      }
+
+      final presignedUrl = await getPresignedUploadURL(ApiConstants.postsBucket, key, contentType: contentType);
       if (presignedUrl == null) {
+        print('Failed to get presigned URL');
         return null;
       }
 
+      print('Got presigned URL: $presignedUrl');
       final uploadSuccess = await uploadMedia(presignedUrl, file);
       if (!uploadSuccess) {
+        print('Failed to upload media');
         return null;
       }
 

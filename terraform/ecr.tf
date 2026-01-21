@@ -123,3 +123,12 @@ resource "aws_ecr_repository" "final_fete" {
     scan_on_push = true
   }
 }
+
+resource "aws_ecr_repository" "ethereum_transactor" {
+  name                 = "ethereum-transactor"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}

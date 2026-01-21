@@ -117,3 +117,8 @@ variable "dropbox_client_secret" {
   description = "Dropbox Client Secret"
   type        = string
 }
+
+variable "ethereum_private_key" {
+  description = "Ethereum Private Key for transaction signing"
+  type        = string
+}

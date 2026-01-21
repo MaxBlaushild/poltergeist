@@ -17,6 +17,7 @@ type AWSClient interface {
 	UploadImageToS3(bucket, key string, image []byte) (string, error)
 	GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURL(bucket, key string, expiry time.Duration) (string, error)
+	GeneratePresignedUploadURLWithContentType(bucket, key string, contentType string, expiry time.Duration) (string, error)
 }
 
 func NewAWSClient(region string) AWSClient {
@@ -53,6 +54,16 @@ func (client *client) GeneratePresignedUploadURL(bucket, key string, expiry time
 	req, _ := client.s3.PutObjectRequest(&s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
+	})
+	urlStr, err := req.Presign(expiry)
+	return urlStr, err
+}
+
+func (client *client) GeneratePresignedUploadURLWithContentType(bucket, key string, contentType string, expiry time.Duration) (string, error) {
+	req, _ := client.s3.PutObjectRequest(&s3.PutObjectInput{
+		Bucket:      aws.String(bucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
 	})
 	urlStr, err := req.Presign(expiry)
 	return urlStr, err

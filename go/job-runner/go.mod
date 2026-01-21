@@ -10,6 +10,7 @@ replace (
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster => ../pkg/dungeonmaster
 	github.com/MaxBlaushild/poltergeist/pkg/email => ../pkg/email
 	github.com/MaxBlaushild/poltergeist/pkg/encoding => ../pkg/encoding
+	github.com/MaxBlaushild/poltergeist/pkg/ethereum => ../pkg/ethereum
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps => ../pkg/googlemaps
 	github.com/MaxBlaushild/poltergeist/pkg/http => ../pkg/http
 	github.com/MaxBlaushild/poltergeist/pkg/imagine => ../pkg/imagine
@@ -28,6 +29,7 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/ethereum v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/jobs v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/locationseeder v0.0.0-00010101000000-000000000000
@@ -85,4 +87,5 @@ require (
 	gorm.io/driver/mysql v1.5.6 // indirect
 	gorm.io/driver/postgres v1.5.2 // indirect
 	gorm.io/gorm v1.30.0 // indirect
+	github.com/ethereum/go-ethereum v1.14.0 // indirect
 )

@@ -10,6 +10,7 @@ const (
 	CreateProfilePictureTaskType          = "create_profile_picture"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
+	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
