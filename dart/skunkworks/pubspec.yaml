@@ -46,6 +46,7 @@ dependencies:
   ecdsa: ^0.1.2
   crypto: ^3.0.3
   local_auth: ^2.1.7
+  cbor: ^0.3.0
 
 dev_dependencies:
   flutter_test:

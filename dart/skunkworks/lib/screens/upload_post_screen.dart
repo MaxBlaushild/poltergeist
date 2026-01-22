@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,8 @@ import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/services/api_client.dart';
+import 'package:skunkworks/services/c2pa_service.dart';
+import 'package:skunkworks/services/certificate_service.dart';
 import 'package:skunkworks/services/media_service.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 
@@ -71,19 +74,56 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
     try {
       final apiClient = APIClient(ApiConstants.baseUrl);
       final mediaService = MediaService(apiClient);
+      final certificateService = CertificateService(apiClient);
+      final c2paService = C2PAService(certificateService);
 
-      // Upload image to S3
+      // Upload image to S3 first
       final imageUrl = await mediaService.uploadPostImage(_selectedImage!, user!.id!);
       if (imageUrl == null) {
         throw Exception('Failed to upload image');
       }
 
-      // Create post
+      // Create C2PA manifest
+      String? manifestUrl;
+      String? manifestHash;
+      String? certFingerprint;
+      String? assetId;
+
+      try {
+        final manifestData = await c2paService.createManifest(
+          imageUrl,
+          assetId: imageUrl, // Use image URL as asset ID
+        );
+
+        // Upload manifest to S3
+        final manifestBytes = manifestData['manifestBytes'] as Uint8List;
+        manifestUrl = await mediaService.uploadManifest(
+          manifestBytes,
+          user.id!,
+        );
+
+        if (manifestUrl != null) {
+          // Convert bytes to hex strings for API
+          manifestHash = _bytesToHex(manifestData['manifestHash'] as Uint8List);
+          certFingerprint = _bytesToHex(manifestData['certFingerprint'] as Uint8List);
+          assetId = imageUrl;
+        }
+      } catch (e) {
+        // If manifest creation fails, log but don't fail the post
+        // User might not have a certificate enrolled yet
+        print('Warning: Failed to create C2PA manifest: $e');
+      }
+
+      // Create post with manifest data
       await postProvider.createPost(
         imageUrl,
         caption: _captionController.text.trim().isNotEmpty
             ? _captionController.text.trim()
             : null,
+        manifestUrl: manifestUrl,
+        manifestHash: manifestHash,
+        certFingerprint: certFingerprint,
+        assetId: assetId,
       );
 
       // Clear form and navigate to feed
@@ -226,6 +266,11 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         onTabChanged: widget.onNavigate,
       ),
     );
+  }
+
+  /// Converts bytes to hex string
+  String _bytesToHex(Uint8List bytes) {
+    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join('');
   }
 }
 

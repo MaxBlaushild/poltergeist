@@ -59,7 +59,7 @@ func (p *CheckBlockchainTransactionsProcessor) checkBlockchainTransactions(ctx c
 			continue
 		}
 
-		if status.Status == "confirmed" {
+		if status.Status == string(models.ConfirmedStatus) {
 			log.Printf("Transaction %s confirmed in block %d", *tx.TxHash, *status.BlockNumber)
 			err = p.dbClient.BlockchainTransaction().UpdateStatus(ctx, tx.ID, "confirmed", status.BlockNumber, status.ConfirmedAt)
 			if err != nil {
@@ -68,7 +68,7 @@ func (p *CheckBlockchainTransactionsProcessor) checkBlockchainTransactions(ctx c
 
 			// Check if this is a registerCertificate transaction by function selector or type
 			isRegisterCert := false
-			if tx.Type != nil && *tx.Type == "registerCertificate" {
+			if tx.Type != nil && *tx.Type == string(models.RegisterCertificateType) {
 				isRegisterCert = true
 			} else if tx.Data != nil {
 				// Check function selector: registerCertificate(bytes32,string,string)
@@ -90,7 +90,7 @@ func (p *CheckBlockchainTransactionsProcessor) checkBlockchainTransactions(ctx c
 			}
 		} else if status.Status == "failed" {
 			log.Printf("Transaction %s failed", *tx.TxHash)
-			err = p.dbClient.BlockchainTransaction().UpdateStatus(ctx, tx.ID, "failed", status.BlockNumber, status.ConfirmedAt)
+			err = p.dbClient.BlockchainTransaction().UpdateStatus(ctx, tx.ID, string(models.FailedStatus), status.BlockNumber, status.ConfirmedAt)
 			if err != nil {
 				log.Printf("Failed to update transaction status: %v", err)
 			}
@@ -109,7 +109,7 @@ func (p *CheckBlockchainTransactionsProcessor) checkBlockchainTransactions(ctx c
 
 	for _, tx := range expiredTxs {
 		log.Printf("Marking transaction %s as expired", tx.ID)
-		err = p.dbClient.BlockchainTransaction().UpdateStatus(ctx, tx.ID, "expired", nil, nil)
+		err = p.dbClient.BlockchainTransaction().UpdateStatus(ctx, tx.ID, string(models.ExpiredStatus), nil, nil)
 		if err != nil {
 			log.Printf("Failed to mark transaction as expired: %v", err)
 		}

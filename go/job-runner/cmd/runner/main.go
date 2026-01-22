@@ -122,7 +122,7 @@ func main() {
 	}
 
 	if checkBlockchainTransactionsProcessor != nil {
-		if _, err = scheduler.Register("@every 5m", asynq.NewTask(jobs.CheckBlockchainTransactionsTaskType, nil)); err != nil {
+		if _, err = scheduler.Register("@every 15s", asynq.NewTask(jobs.CheckBlockchainTransactionsTaskType, nil)); err != nil {
 			log.Fatalf("could not register the blockchain transactions check schedule: %v", err)
 		}
 	}

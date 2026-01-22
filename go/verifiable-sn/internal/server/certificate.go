@@ -16,6 +16,7 @@ import (
 	"time"
 
 	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -160,12 +161,15 @@ func (s *server) EnrollCertificate(ctx *gin.Context) {
 		return
 	}
 
+	registerCertificateType := string(models.RegisterCertificateType)
+
 	// Create blockchain transaction via ethereum-transactor service
 	dataHex := "0x" + hex.EncodeToString(encodedData)
 	_, err = s.ethereumTransactorClient.CreateTransaction(ctx, ethereum_transactor.CreateTransactionRequest{
 		To:    &s.c2PAContractAddress,
 		Value: "0",
 		Data:  &dataHex,
+		Type:  &registerCertificateType,
 	})
 	if err != nil {
 		// Log error but don't fail the enrollment - certificate is created, just not registered on-chain yet
@@ -320,4 +324,41 @@ func extractIssuerAndSubject(certDER []byte) (string, string, error) {
 	}
 
 	return issuer, subject, nil
+}
+
+// encodeAnchorManifestCall ABI encodes the anchorManifest(bytes32,string,string,bytes32) function call
+func encodeAnchorManifestCall(manifestHash []byte, manifestURI string, assetID string, certFingerprint []byte) ([]byte, error) {
+	// Function signature: anchorManifest(bytes32,string,string,bytes32)
+	// We'll use the ABI package to encode this properly
+
+	// Define the ABI for the function
+	abiJSON := `[{"constant":false,"inputs":[{"name":"manifestHash","type":"bytes32"},{"name":"manifestUri","type":"string"},{"name":"assetId","type":"string"},{"name":"certFingerprint","type":"bytes32"}],"name":"anchorManifest","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"}]`
+
+	contractABI, err := abi.JSON(strings.NewReader(abiJSON))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ABI: %w", err)
+	}
+
+	// Convert hashes to bytes32
+	var manifestHashBytes32 [32]byte
+	copy(manifestHashBytes32[:], manifestHash)
+	if len(manifestHash) < 32 {
+		// Pad with zeros if needed
+		copy(manifestHashBytes32[:], manifestHash)
+	}
+
+	var certFingerprintBytes32 [32]byte
+	copy(certFingerprintBytes32[:], certFingerprint)
+	if len(certFingerprint) < 32 {
+		// Pad with zeros if needed
+		copy(certFingerprintBytes32[:], certFingerprint)
+	}
+
+	// Encode the function call
+	data, err := contractABI.Pack("anchorManifest", manifestHashBytes32, manifestURI, assetID, certFingerprintBytes32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pack function call: %w", err)
+	}
+
+	return data, nil
 }

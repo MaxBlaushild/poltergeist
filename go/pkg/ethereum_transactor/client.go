@@ -28,6 +28,7 @@ type CreateTransactionRequest struct {
 	Data     *string `json:"data,omitempty"`
 	GasLimit *uint64 `json:"gasLimit,omitempty"`
 	GasPrice *string `json:"gasPrice,omitempty"`
+	Type     *string `json:"type,omitempty"`
 }
 
 type CreateTransactionResponse struct {

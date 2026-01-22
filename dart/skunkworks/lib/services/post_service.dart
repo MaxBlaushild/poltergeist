@@ -11,9 +11,20 @@ class PostService {
   /// 
   /// [imageUrl] - The S3 URL of the uploaded image
   /// [caption] - Optional caption text
+  /// [manifestUrl] - S3 URL of the C2PA manifest
+  /// [manifestHash] - SHA-256 hash of manifest bytes (hex string)
+  /// [certFingerprint] - Certificate fingerprint (hex string)
+  /// [assetId] - Optional C2PA asset identifier
   /// 
   /// Returns the created post
-  Future<Post> createPost(String imageUrl, {String? caption}) async {
+  Future<Post> createPost(
+    String imageUrl, {
+    String? caption,
+    String? manifestUrl,
+    String? manifestHash,
+    String? certFingerprint,
+    String? assetId,
+  }) async {
     try {
       final data = <String, dynamic>{
         'imageUrl': imageUrl,
@@ -21,6 +32,22 @@ class PostService {
       
       if (caption != null && caption.isNotEmpty) {
         data['caption'] = caption;
+      }
+
+      if (manifestUrl != null) {
+        data['manifestUrl'] = manifestUrl;
+      }
+
+      if (manifestHash != null) {
+        data['manifestHash'] = manifestHash;
+      }
+
+      if (certFingerprint != null) {
+        data['certFingerprint'] = certFingerprint;
+      }
+
+      if (assetId != null) {
+        data['assetId'] = assetId;
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(
