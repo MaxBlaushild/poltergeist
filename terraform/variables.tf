@@ -122,3 +122,8 @@ variable "ethereum_private_key" {
   description = "Ethereum Private Key for transaction signing"
   type        = string
 }
+
+variable "ca_private_key" {
+  description = "CA Private Key"
+  type        = string
+}

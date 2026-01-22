@@ -161,22 +161,20 @@ func (s *server) EnrollCertificate(ctx *gin.Context) {
 	}
 
 	// Create blockchain transaction via ethereum-transactor service
-	if s.ethereumTransactorClient != nil && s.c2PAContractAddress != "" {
-		dataHex := "0x" + hex.EncodeToString(encodedData)
-		_, err := s.ethereumTransactorClient.CreateTransaction(ctx, ethereum_transactor.CreateTransactionRequest{
-			To:   &s.c2PAContractAddress,
-			Value: "0",
-			Data: &dataHex,
-		})
-		if err != nil {
-			// Log error but don't fail the enrollment - certificate is created, just not registered on-chain yet
-			// In production, you might want to queue this for retry
-			fmt.Printf("Warning: failed to create blockchain transaction: %v\n", err)
-		}
-		// Note: The ethereum-transactor service stores the transaction in its database.
-		// The job runner will find transactions by type "registerCertificate" and match fingerprints
-		// from the transaction data to activate certificates when they confirm.
+	dataHex := "0x" + hex.EncodeToString(encodedData)
+	_, err = s.ethereumTransactorClient.CreateTransaction(ctx, ethereum_transactor.CreateTransactionRequest{
+		To:    &s.c2PAContractAddress,
+		Value: "0",
+		Data:  &dataHex,
+	})
+	if err != nil {
+		// Log error but don't fail the enrollment - certificate is created, just not registered on-chain yet
+		// In production, you might want to queue this for retry
+		fmt.Printf("Warning: failed to create blockchain transaction: %v\n", err)
 	}
+	// Note: The ethereum-transactor service stores the transaction in its database.
+	// The job runner will find transactions by type "registerCertificate" and match fingerprints
+	// from the transaction data to activate certificates when they confirm.
 
 	ctx.JSON(http.StatusOK, EnrollCertificateResponse{
 		CertificatePEM: certificatePEM,
@@ -278,10 +276,10 @@ func encodeRegisterCertificateCall(fingerprint []byte, issuer string, subject st
 	// Function signature: registerCertificate(bytes32,string,string)
 	// Function selector: keccak256("registerCertificate(bytes32,string,string)")[:4]
 	// We'll use the ABI package to encode this properly
-	
+
 	// Define the ABI for the function
 	abiJSON := `[{"constant":false,"inputs":[{"name":"fingerprint","type":"bytes32"},{"name":"issuer","type":"string"},{"name":"subject","type":"string"}],"name":"registerCertificate","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"}]`
-	
+
 	contractABI, err := abi.JSON(strings.NewReader(abiJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ABI: %w", err)
@@ -309,7 +307,7 @@ func extractIssuerAndSubject(certDER []byte) (string, string, error) {
 
 	// Extract issuer - format as "CN=..., O=..., ..."
 	issuer := cert.Issuer.String()
-	
+
 	// Extract subject - format as "CN=..., O=..., ..."
 	subject := cert.Subject.String()
 

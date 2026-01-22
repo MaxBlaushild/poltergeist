@@ -222,3 +222,12 @@ resource "aws_secretsmanager_secret_version" "ethereum_private_key" {
   secret_id     = aws_secretsmanager_secret.ethereum_private_key.id
   secret_string = var.ethereum_private_key
 }
+
+resource "aws_secretsmanager_secret" "ca_private_key" {
+  name = "CA_PRIVATE_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "ca_private_key" {
+  secret_id     = aws_secretsmanager_secret.ca_private_key.id
+  secret_string = var.ca_private_key
+}

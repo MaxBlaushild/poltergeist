@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -22,6 +23,7 @@ type TransactionStatus struct {
 
 type EthereumClient interface {
 	SendTransaction(ctx context.Context, to *common.Address, value *big.Int, data []byte, gasLimit uint64, gasPrice *big.Int, nonce uint64) (common.Hash, error)
+	EstimateGas(ctx context.Context, to *common.Address, value *big.Int, data []byte) (uint64, error)
 	GetTransactionStatus(ctx context.Context, txHash common.Hash) (*TransactionStatus, error)
 	GetPendingNonce(ctx context.Context, address common.Address) (uint64, error)
 	GetAddress() common.Address
@@ -175,6 +177,25 @@ func (c *client) GetTransactionStatus(ctx context.Context, txHash common.Hash) (
 		BlockNumber: &blockNumber,
 		ConfirmedAt: &confirmedAt,
 	}, nil
+}
+
+func (c *client) EstimateGas(ctx context.Context, to *common.Address, value *big.Int, data []byte) (uint64, error) {
+	msg := ethereum.CallMsg{
+		From:  c.address, // Set From address so the RPC can properly simulate the transaction
+		To:    to,
+		Value: value,
+		Data:  data,
+	}
+
+	gasLimit, err := c.ethClient.EstimateGas(ctx, msg)
+	if err != nil {
+		return 0, fmt.Errorf("failed to estimate gas: %w", err)
+	}
+
+	// Add a 20% buffer to the estimated gas to account for variability
+	gasLimit = gasLimit + (gasLimit * 20 / 100)
+
+	return gasLimit, nil
 }
 
 func (c *client) GetPendingNonce(ctx context.Context, address common.Address) (uint64, error) {

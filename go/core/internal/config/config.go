@@ -31,6 +31,10 @@ type PublicConfig struct {
 	GoogleDriveRedirectURI string
 	DropboxRedirectURI     string
 	BaseURL                string
+
+	// Verifiable SN configuration
+	EthereumTransactorURL string
+	C2PAContractAddress   string
 }
 
 // SecretConfig holds secret configuration values
@@ -56,6 +60,10 @@ type SecretConfig struct {
 	GoogleDriveClientSecret string
 	DropboxClientID         string
 	DropboxClientSecret     string
+
+	// Verifiable SN-specific configuration
+	CAPrivateKey       string
+	EthereumPrivateKey string
 }
 
 // NewConfigFromEnv creates a Config from environment variables
@@ -72,6 +80,8 @@ func NewConfigFromEnv() *Config {
 			GoogleDriveRedirectURI: os.Getenv("GOOGLE_DRIVE_REDIRECT_URI"),
 			DropboxRedirectURI:     os.Getenv("DROPBOX_REDIRECT_URI"),
 			BaseURL:                os.Getenv("BASE_URL"),
+			EthereumTransactorURL:  os.Getenv("ETHEREUM_TRANSACTOR_URL"),
+			C2PAContractAddress:    os.Getenv("C2PA_CONTRACT_ADDRESS"),
 		},
 		Secret: SecretConfig{
 			DbPassword:              os.Getenv("DB_PASSWORD"),
@@ -88,6 +98,8 @@ func NewConfigFromEnv() *Config {
 			GoogleDriveClientSecret: os.Getenv("GOOGLE_DRIVE_CLIENT_SECRET"),
 			DropboxClientID:         os.Getenv("DROPBOX_CLIENT_ID"),
 			DropboxClientSecret:     os.Getenv("DROPBOX_CLIENT_SECRET"),
+			CAPrivateKey:            os.Getenv("CA_PRIVATE_KEY"),
+			EthereumPrivateKey:      os.Getenv("ETHEREUM_PRIVATE_KEY"),
 		},
 	}
 }
@@ -121,3 +133,5 @@ func (c *Config) GetDropboxClientID() string         { return c.Secret.DropboxCl
 func (c *Config) GetDropboxClientSecret() string     { return c.Secret.DropboxClientSecret }
 func (c *Config) GetDropboxRedirectURI() string      { return c.Public.DropboxRedirectURI }
 func (c *Config) GetBaseURL() string                 { return c.Public.BaseURL }
+func (c *Config) GetEthereumTransactorURL() string   { return c.Public.EthereumTransactorURL }
+func (c *Config) GetC2PAContractAddress() string     { return c.Public.C2PAContractAddress }
