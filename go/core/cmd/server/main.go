@@ -97,7 +97,7 @@ func main() {
 	finalFeteServer := finalfete.NewServerFromDependencies(authClient, dbClient, hueClient, hueOAuthClient)
 	sonarServer := sonar.NewServerFromDependencies(authClient, texterClient, dbClient, cfg)
 	travelAngelsServer := travelangels.NewServerFromDependencies(authClient, dbClient, cfg)
-	verifiableSnServer := verifiablesn.NewServerFromDependencies(authClient, dbClient)
+	verifiableSnServer := verifiablesn.NewServerFromDependencies(authClient, dbClient, cfg)
 	srv := server.NewServer(finalFeteServer, sonarServer, travelAngelsServer, verifiableSnServer, texterClient)
 	srv.ListenAndServe("8080")
 }

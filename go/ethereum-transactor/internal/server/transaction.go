@@ -62,17 +62,31 @@ func (s *server) CreateTransaction(ctx *gin.Context) {
 		}
 	}
 
-	// Default gas limit
-	gasLimit := uint64(21000) // Standard ETH transfer
-	if requestBody.GasLimit != nil {
-		gasLimit = *requestBody.GasLimit
-	}
-
 	// Parse to address if provided
 	var toAddress *common.Address
 	if requestBody.To != nil {
 		addr := common.HexToAddress(*requestBody.To)
 		toAddress = &addr
+	}
+
+	// Calculate gas limit
+	var gasLimit uint64
+	if requestBody.GasLimit != nil {
+		// Use provided gas limit
+		gasLimit = *requestBody.GasLimit
+	} else if len(data) > 0 && toAddress != nil {
+		// For contract calls with data, estimate gas
+		estimatedGas, err := s.ethereumClient.EstimateGas(ctx, toAddress, value, data)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to estimate gas: " + err.Error(),
+			})
+			return
+		}
+		gasLimit = estimatedGas
+	} else {
+		// Default gas limit for simple ETH transfers
+		gasLimit = uint64(21000)
 	}
 
 	// Get next nonce

@@ -1,11 +1,11 @@
 package main
 
 import (
-	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/config"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/server"
 )
@@ -37,10 +37,15 @@ func main() {
 		panic(err)
 	}
 
-	var ethereumTransactorClient ethereum_transactor.Client
-	if cfg.Public.EthereumTransactorURL != "" {
-		ethereumTransactorClient = ethereum_transactor.NewClient(cfg.Public.EthereumTransactorURL)
+	// Validate required configuration
+	if cfg.Public.EthereumTransactorURL == "" {
+		panic("ETHEREUM_TRANSACTOR_URL is required")
 	}
+	if cfg.Public.C2PAContractAddress == "" {
+		panic("C2PA_CONTRACT_ADDRESS is required")
+	}
+
+	ethereumTransactorClient := ethereum_transactor.NewClient(cfg.Public.EthereumTransactorURL)
 
 	server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, cfg.Public.C2PAContractAddress).ListenAndServe("8087")
 }

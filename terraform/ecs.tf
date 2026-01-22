@@ -30,6 +30,7 @@ module "ecs" {
         aws_secretsmanager_secret.hue_application_key.arn,
         aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn,
         aws_secretsmanager_secret.ethereum_private_key.arn,
+        aws_secretsmanager_secret.ca_private_key.arn,
       ]
 
       container_definitions = {
@@ -76,6 +77,14 @@ module "ecs" {
             {
               name  = "BASE_URL"
               value = "https://api.poltergeist.gg"
+            },
+            {
+              name = "ETHEREUM_TRANSACTOR_URL"
+              value = "http://localhost:8088"
+            },
+            {
+              name = "C2PA_CONTRACT_ADDRESS"
+              value = "0x653d604fdaA2320DF90cc4e9dFd5aabe86BD91A9"
             }
           ]
           secrets = [
@@ -134,6 +143,10 @@ module "ecs" {
             {
               name      = "DROPBOX_CLIENT_SECRET"
               valueFrom = "${aws_secretsmanager_secret.dropbox_client_secret.arn}"
+            },
+            {
+              name      = "CA_PRIVATE_KEY"
+              valueFrom = "${aws_secretsmanager_secret.ca_private_key.arn}"
             }
           ]
           portMappings = [
