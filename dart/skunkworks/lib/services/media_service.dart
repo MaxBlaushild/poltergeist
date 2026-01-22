@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/services/api_client.dart';
@@ -91,6 +92,59 @@ class MediaService {
         print('Request URL: ${e.requestOptions.uri}');
       }
       return false;
+    }
+  }
+
+  /// Uploads manifest bytes to S3
+  /// 
+  /// [manifestBytes] - The manifest bytes to upload
+  /// [userId] - The user ID for generating the key
+  /// [postId] - Optional post ID for naming
+  /// 
+  /// Returns the final S3 URL or null if upload failed
+  Future<String?> uploadManifest(Uint8List manifestBytes, String userId, {String? postId}) async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final key = postId != null 
+          ? '$userId/manifests/$postId.c2pa'
+          : '$userId/manifests/$timestamp.c2pa';
+
+      final presignedUrl = await getPresignedUploadURL(
+        ApiConstants.postsBucket, 
+        key, 
+        contentType: 'application/cbor',
+      );
+      if (presignedUrl == null) {
+        print('Failed to get presigned URL for manifest');
+        return null;
+      }
+
+      // Create temporary file for upload
+      final tempFile = File('/tmp/manifest_$timestamp.c2pa');
+      await tempFile.writeAsBytes(manifestBytes);
+
+      final uploadSuccess = await uploadMedia(presignedUrl, tempFile);
+      
+      // Clean up temp file
+      try {
+        await tempFile.delete();
+      } catch (_) {
+        // Ignore cleanup errors
+      }
+
+      if (!uploadSuccess) {
+        print('Failed to upload manifest');
+        return null;
+      }
+
+      // Extract the final S3 URL from the presigned URL
+      final uri = Uri.parse(presignedUrl);
+      final finalUrl = '${uri.scheme}://${uri.host}${uri.path}';
+      
+      return finalUrl;
+    } catch (e) {
+      print('Failed to upload manifest: $e');
+      return null;
     }
   }
 

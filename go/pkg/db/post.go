@@ -13,13 +13,17 @@ type postHandle struct {
 	db *gorm.DB
 }
 
-func (h *postHandle) Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string) (*models.Post, error) {
+func (h *postHandle) Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string) (*models.Post, error) {
 	post := &models.Post{
-		UserID:   userID,
-		ImageURL: imageURL,
-		Caption:  caption,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		UserID:          userID,
+		ImageURL:        imageURL,
+		Caption:         caption,
+		ManifestHash:    manifestHash,
+		ManifestURI:     manifestURI,
+		CertFingerprint: certFingerprint,
+		AssetID:         assetID,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := h.db.WithContext(ctx).Create(post).Error; err != nil {

@@ -34,12 +34,30 @@ class PostProvider extends ChangeNotifier {
   /// 
   /// [imageUrl] - The S3 URL of the uploaded image
   /// [caption] - Optional caption text
-  Future<void> createPost(String imageUrl, {String? caption}) async {
+  /// [manifestUrl] - S3 URL of the C2PA manifest
+  /// [manifestHash] - SHA-256 hash of manifest bytes (hex string)
+  /// [certFingerprint] - Certificate fingerprint (hex string)
+  /// [assetId] - Optional C2PA asset identifier
+  Future<void> createPost(
+    String imageUrl, {
+    String? caption,
+    String? manifestUrl,
+    String? manifestHash,
+    String? certFingerprint,
+    String? assetId,
+  }) async {
     _error = null;
     notifyListeners();
 
     try {
-      await _postService.createPost(imageUrl, caption: caption);
+      await _postService.createPost(
+        imageUrl,
+        caption: caption,
+        manifestUrl: manifestUrl,
+        manifestHash: manifestHash,
+        certFingerprint: certFingerprint,
+        assetId: assetId,
+      );
       // Refresh feed after creating post
       await loadFeed();
     } catch (e) {

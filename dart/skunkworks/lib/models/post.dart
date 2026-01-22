@@ -7,6 +7,10 @@ class Post {
   final String? userId;
   final String? imageUrl;
   final String? caption;
+  final String? manifestUri;
+  final String? manifestHash;
+  final String? certFingerprint;
+  final String? assetId;
   final User? user;
 
   Post({
@@ -16,6 +20,10 @@ class Post {
     this.userId,
     this.imageUrl,
     this.caption,
+    this.manifestUri,
+    this.manifestHash,
+    this.certFingerprint,
+    this.assetId,
     this.user,
   });
 
@@ -31,6 +39,10 @@ class Post {
       userId: json['userId']?.toString(),
       imageUrl: json['imageUrl'] as String?,
       caption: json['caption'] as String?,
+      manifestUri: json['manifestUri'] as String?,
+      manifestHash: json['manifestHash'] as String?,
+      certFingerprint: json['certFingerprint'] as String?,
+      assetId: json['assetId'] as String?,
       user: json['user'] != null
           ? User.fromJson(json['user'] as Map<String, dynamic>)
           : null,

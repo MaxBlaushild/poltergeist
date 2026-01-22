@@ -6,6 +6,22 @@ import (
 	"github.com/google/uuid"
 )
 
+type BlockchainTransactionType string
+
+const (
+	RegisterCertificateType BlockchainTransactionType = "registerCertificate"
+	AnchorManifestType      BlockchainTransactionType = "anchorManifest"
+)
+
+type BlockchainTransactionStatus string
+
+const (
+	PendingStatus   BlockchainTransactionStatus = "pending"
+	ConfirmedStatus BlockchainTransactionStatus = "confirmed"
+	FailedStatus    BlockchainTransactionStatus = "failed"
+	ExpiredStatus   BlockchainTransactionStatus = "expired"
+)
+
 type BlockchainTransaction struct {
 	ID          uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
 	CreatedAt   time.Time  `gorm:"not null" json:"createdAt"`
@@ -25,4 +41,3 @@ type BlockchainTransaction struct {
 	ConfirmedAt *time.Time `gorm:"type:timestamp" json:"confirmedAt,omitempty"`
 	ExpiresAt   time.Time  `gorm:"type:timestamp;not null;index" json:"expiresAt"`
 }
-

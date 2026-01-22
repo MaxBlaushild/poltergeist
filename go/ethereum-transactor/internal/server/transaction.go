@@ -18,6 +18,7 @@ func (s *server) CreateTransaction(ctx *gin.Context) {
 		Data     *string `json:"data"`
 		GasLimit *uint64 `json:"gasLimit"`
 		GasPrice *string `json:"gasPrice"`
+		Type     *string `json:"type"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -150,6 +151,7 @@ func (s *server) CreateTransaction(ctx *gin.Context) {
 		Nonce:       nonce,
 		TxHash:      &txHashStr,
 		Status:      "pending",
+		Type:        requestBody.Type,
 		ExpiresAt:   time.Now().Add(24 * time.Hour),
 	}
 
