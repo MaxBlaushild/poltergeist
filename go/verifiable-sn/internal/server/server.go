@@ -56,6 +56,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/verifiable-sn/posts/feed", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetFeed))
 	r.GET("/verifiable-sn/posts/user/:userId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetUserPosts))
 	r.DELETE("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeletePost))
+	r.POST("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateReaction))
+	r.DELETE("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteReaction))
+	r.GET("/verifiable-sn/posts/:id/comments", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetComments))
+	r.POST("/verifiable-sn/posts/:id/comments", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateComment))
+	r.DELETE("/verifiable-sn/posts/:id/comments/:commentId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteComment))
 
 	// Media routes
 	r.POST("/verifiable-sn/media/uploadUrl", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPresignedUploadUrl))

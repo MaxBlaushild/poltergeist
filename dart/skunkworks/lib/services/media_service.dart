@@ -119,21 +119,26 @@ class MediaService {
         return null;
       }
 
-      // Create temporary file for upload
-      final tempFile = File('/tmp/manifest_$timestamp.c2pa');
-      await tempFile.writeAsBytes(manifestBytes);
-
-      final uploadSuccess = await uploadMedia(presignedUrl, tempFile);
+      // Upload bytes directly with the correct content type
+      final dio = Dio();
       
-      // Clean up temp file
-      try {
-        await tempFile.delete();
-      } catch (_) {
-        // Ignore cleanup errors
-      }
+      print('Uploading manifest to S3: ${presignedUrl.substring(0, presignedUrl.indexOf('?'))}...');
+      print('Content-Type: application/cbor');
+      print('File size: ${manifestBytes.length} bytes');
+      
+      final response = await dio.put(
+        presignedUrl,
+        data: manifestBytes,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/cbor',
+          },
+          validateStatus: (status) => status! < 500, // Don't throw on 4xx errors
+        ),
+      );
 
-      if (!uploadSuccess) {
-        print('Failed to upload manifest');
+      if (response.statusCode != 200) {
+        print('Upload failed with status ${response.statusCode}: ${response.data}');
         return null;
       }
 
@@ -144,6 +149,10 @@ class MediaService {
       return finalUrl;
     } catch (e) {
       print('Failed to upload manifest: $e');
+      if (e is DioException) {
+        print('DioException details: ${e.response?.statusCode} - ${e.response?.data}');
+        print('Request URL: ${e.requestOptions.uri}');
+      }
       return null;
     }
   }

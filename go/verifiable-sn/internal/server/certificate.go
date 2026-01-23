@@ -211,12 +211,33 @@ func (s *server) GetCertificate(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	// Find the blockchain transaction that registered this certificate
+	var txHash *string
+	var chainId *int64
+	tx, err := s.dbClient.BlockchainTransaction().FindByCertificateFingerprint(ctx, cert.Fingerprint)
+	if err == nil && tx != nil {
+		if tx.TxHash != nil {
+			txHash = tx.TxHash
+		}
+		chainId = &tx.ChainID
+	}
+
+	response := gin.H{
 		"certificatePem": cert.CertificatePEM,
 		"fingerprint":    fmt.Sprintf("%x", cert.Fingerprint),
 		"publicKey":      cert.PublicKey,
 		"createdAt":      cert.CreatedAt,
-	})
+		"active":         cert.Active,
+	}
+
+	if txHash != nil {
+		response["transactionHash"] = *txHash
+	}
+	if chainId != nil {
+		response["chainId"] = *chainId
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }
 
 // createChallenge creates a deterministic challenge based on user ID and public key
