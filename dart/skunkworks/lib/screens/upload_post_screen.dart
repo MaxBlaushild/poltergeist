@@ -226,28 +226,17 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Select an image',
+                                  'Take a photo',
                                   style: TextStyle(
                                     color: Colors.grey.shade600,
                                     fontSize: 16,
                                   ),
                                 ),
                                 const SizedBox(height: 24),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    ElevatedButton.icon(
-                                      onPressed: () => _pickImage(ImageSource.gallery),
-                                      icon: const Icon(Icons.photo_library),
-                                      label: const Text('Gallery'),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    ElevatedButton.icon(
-                                      onPressed: () => _pickImage(ImageSource.camera),
-                                      icon: const Icon(Icons.camera_alt),
-                                      label: const Text('Camera'),
-                                    ),
-                                  ],
+                                ElevatedButton.icon(
+                                  onPressed: () => _pickImage(ImageSource.camera),
+                                  icon: const Icon(Icons.camera_alt),
+                                  label: const Text('Take photo'),
                                 ),
                               ],
                             ),
