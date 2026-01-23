@@ -51,6 +51,8 @@ type DbClient interface {
 	Party() PartyHandle
 	FriendInvite() FriendInviteHandle
 	Post() PostHandle
+	PostReaction() PostReactionHandle
+	PostComment() PostCommentHandle
 	PartyInvite() PartyInviteHandle
 	Activity() ActivityHandle
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
@@ -461,6 +463,23 @@ type PostHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+type PostReactionHandle interface {
+	CreateOrUpdate(ctx context.Context, postID uuid.UUID, userID uuid.UUID, emoji string) (*models.PostReaction, error)
+	Delete(ctx context.Context, postID uuid.UUID, userID uuid.UUID) error
+	FindByPostID(ctx context.Context, postID uuid.UUID) ([]models.PostReaction, error)
+	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) ([]models.PostReaction, error)
+	FindByPostIDAndUserID(ctx context.Context, postID uuid.UUID, userID uuid.UUID) (*models.PostReaction, error)
+}
+
+type PostCommentHandle interface {
+	Create(ctx context.Context, postID uuid.UUID, userID uuid.UUID, text string) (*models.PostComment, error)
+	Delete(ctx context.Context, commentID uuid.UUID) error
+	FindByPostID(ctx context.Context, postID uuid.UUID) ([]models.PostComment, error)
+	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) ([]models.PostComment, error)
+	FindByID(ctx context.Context, commentID uuid.UUID) (*models.PostComment, error)
+	GetCommentCount(ctx context.Context, postID uuid.UUID) (int64, error)
+}
+
 type BlockchainTransactionHandle interface {
 	Create(ctx context.Context, tx *models.BlockchainTransaction) (*models.BlockchainTransaction, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.BlockchainTransaction, error)
@@ -469,6 +488,7 @@ type BlockchainTransactionHandle interface {
 	FindPendingExpired(ctx context.Context) ([]models.BlockchainTransaction, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string, blockNumber *uint64, confirmedAt *time.Time) error
 	GetNextNonce(ctx context.Context, chainID int64, fromAddress string) (uint64, error)
+	FindByCertificateFingerprint(ctx context.Context, fingerprint []byte) (*models.BlockchainTransaction, error)
 }
 
 type PartyInviteHandle interface {

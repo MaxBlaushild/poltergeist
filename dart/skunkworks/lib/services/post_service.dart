@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/services/api_client.dart';
@@ -57,6 +58,12 @@ class PostService {
 
       return Post.fromJson(response);
     } catch (e) {
+      // Log additional error details for debugging
+      if (e is DioException) {
+        print('Post creation error - Status: ${e.response?.statusCode}');
+        print('Post creation error - Response: ${e.response?.data}');
+        print('Post creation error - Request data: ${e.requestOptions.data}');
+      }
       rethrow;
     }
   }
@@ -106,6 +113,95 @@ class PostService {
     try {
       await _apiClient.delete(
         ApiConstants.deletePostEndpoint(postId),
+      );
+      return true;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Reacts to a post with an emoji
+  /// 
+  /// [postId] - The post ID
+  /// [emoji] - The emoji to react with
+  /// 
+  /// Returns the created/updated reaction
+  Future<Map<String, dynamic>> reactToPost(String postId, String emoji) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        ApiConstants.reactToPostEndpoint(postId),
+        data: {'emoji': emoji},
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Removes a reaction from a post
+  /// 
+  /// [postId] - The post ID
+  /// 
+  /// Returns true if successful
+  Future<bool> removeReaction(String postId) async {
+    try {
+      await _apiClient.delete(
+        ApiConstants.removeReactionEndpoint(postId),
+      );
+      return true;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Gets all comments for a post
+  /// 
+  /// [postId] - The post ID
+  /// 
+  /// Returns list of comments with user information
+  Future<List<Comment>> getComments(String postId) async {
+    try {
+      final response = await _apiClient.get<List<dynamic>>(
+        ApiConstants.getCommentsEndpoint(postId),
+      );
+
+      return response
+          .map((json) => Comment.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Creates a comment on a post
+  /// 
+  /// [postId] - The post ID
+  /// [text] - The comment text
+  /// 
+  /// Returns the created comment with user information
+  Future<Comment> createComment(String postId, String text) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        ApiConstants.createCommentEndpoint(postId),
+        data: {'text': text},
+      );
+
+      return Comment.fromJson(response);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Deletes a comment
+  /// 
+  /// [postId] - The post ID
+  /// [commentId] - The comment ID
+  /// 
+  /// Returns true if successful
+  Future<bool> deleteComment(String postId, String commentId) async {
+    try {
+      await _apiClient.delete(
+        ApiConstants.deleteCommentEndpoint(postId, commentId),
       );
       return true;
     } catch (e) {

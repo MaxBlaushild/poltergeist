@@ -11,8 +11,21 @@ import (
 	"github.com/google/uuid"
 )
 
+type ReactionSummary struct {
+	Emoji      string `json:"emoji"`
+	Count      int    `json:"count"`
+	UserReacted bool  `json:"userReacted"`
+}
+
 type PostWithUser struct {
 	models.Post
+	User     *models.User        `json:"user"`
+	Reactions []ReactionSummary  `json:"reactions,omitempty"`
+	CommentCount *int64          `json:"commentCount,omitempty"`
+}
+
+type CommentWithUser struct {
+	models.PostComment
 	User *models.User `json:"user"`
 }
 
@@ -36,7 +49,7 @@ func (s *server) CreatePost(ctx *gin.Context) {
 
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+			"error": fmt.Sprintf("invalid request body: %v", err),
 		})
 		return
 	}
@@ -47,7 +60,9 @@ func (s *server) CreatePost(ctx *gin.Context) {
 	var assetID *string
 
 	// If manifest data is provided, validate it
-	if requestBody.ManifestURL != nil && requestBody.ManifestHash != nil && requestBody.CertFingerprint != nil {
+	if requestBody.ManifestURL != nil && *requestBody.ManifestURL != "" &&
+		requestBody.ManifestHash != nil && *requestBody.ManifestHash != "" &&
+		requestBody.CertFingerprint != nil && *requestBody.CertFingerprint != "" {
 		// Download manifest from S3
 		manifestBytes, err := DownloadManifestFromS3(*requestBody.ManifestURL)
 		if err != nil {
@@ -60,6 +75,8 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		// Validate manifest
 		computedHash, computedFingerprint, err := ValidateManifest(manifestBytes)
 		if err != nil {
+			fmt.Printf("Manifest validation error: %v\n", err)
+			fmt.Printf("Manifest size: %d bytes\n", len(manifestBytes))
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf("manifest validation failed: %v", err),
 			})
@@ -266,12 +283,28 @@ func (s *server) GetFeed(ctx *gin.Context) {
 		userMap[users[i].ID] = &users[i]
 	}
 
-	// Create posts with user info
+	// Get post IDs for reaction aggregation
+	postIDs := make([]uuid.UUID, len(posts))
+	for i, post := range posts {
+		postIDs[i] = post.ID
+	}
+
+	// Aggregate reactions
+	reactionMap, err := s.aggregateReactions(ctx, postIDs, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Create posts with user info and reactions
 	postsWithUsers := make([]PostWithUser, len(posts))
 	for i, post := range posts {
 		postsWithUsers[i] = PostWithUser{
-			Post: post,
-			User: userMap[post.UserID],
+			Post:      post,
+			User:      userMap[post.UserID],
+			Reactions: reactionMap[post.ID],
 		}
 	}
 
@@ -311,7 +344,40 @@ func (s *server) GetUserPosts(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, posts)
+	// Get current user for reaction aggregation
+	currentUser, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Get post IDs for reaction aggregation
+	postIDs := make([]uuid.UUID, len(posts))
+	for i, post := range posts {
+		postIDs[i] = post.ID
+	}
+
+	// Aggregate reactions
+	reactionMap, err := s.aggregateReactions(ctx, postIDs, currentUser.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Create posts with reactions
+	postsWithReactions := make([]PostWithUser, len(posts))
+	for i, post := range posts {
+		postsWithReactions[i] = PostWithUser{
+			Post:      post,
+			Reactions: reactionMap[post.ID],
+		}
+	}
+
+	ctx.JSON(http.StatusOK, postsWithReactions)
 }
 
 func (s *server) DeletePost(ctx *gin.Context) {
@@ -365,3 +431,385 @@ func (s *server) DeletePost(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
+func (s *server) CreateReaction(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	// Verify post exists
+	_, err = s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "post not found",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Emoji string `json:"emoji" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("invalid request body: %v", err),
+		})
+		return
+	}
+
+	// Validate emoji is not empty
+	if requestBody.Emoji == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "emoji is required",
+		})
+		return
+	}
+
+	reaction, err := s.dbClient.PostReaction().CreateOrUpdate(ctx, postID, user.ID, requestBody.Emoji)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, reaction)
+}
+
+func (s *server) DeleteReaction(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	if err := s.dbClient.PostReaction().Delete(ctx, postID, user.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// aggregateReactions groups reactions by emoji and creates summaries
+func (s *server) aggregateReactions(ctx *gin.Context, postIDs []uuid.UUID, currentUserID uuid.UUID) (map[uuid.UUID][]ReactionSummary, error) {
+	if len(postIDs) == 0 {
+		return make(map[uuid.UUID][]ReactionSummary), nil
+	}
+
+	reactions, err := s.dbClient.PostReaction().FindByPostIDs(ctx, postIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group reactions by post ID and emoji
+	postReactionMap := make(map[uuid.UUID]map[string]int)
+	userReactionMap := make(map[uuid.UUID]string) // postID -> emoji that user reacted with
+
+	for _, reaction := range reactions {
+		if postReactionMap[reaction.PostID] == nil {
+			postReactionMap[reaction.PostID] = make(map[string]int)
+		}
+		postReactionMap[reaction.PostID][reaction.Emoji]++
+
+		if reaction.UserID == currentUserID {
+			userReactionMap[reaction.PostID] = reaction.Emoji
+		}
+	}
+
+	// Create summaries
+	result := make(map[uuid.UUID][]ReactionSummary)
+	for postID, emojiCounts := range postReactionMap {
+		summaries := make([]ReactionSummary, 0, len(emojiCounts))
+		for emoji, count := range emojiCounts {
+			summaries = append(summaries, ReactionSummary{
+				Emoji:       emoji,
+				Count:       count,
+				UserReacted: userReactionMap[postID] == emoji,
+			})
+		}
+		result[postID] = summaries
+	}
+
+	// Ensure all posts have an entry (even if empty)
+	for _, postID := range postIDs {
+		if _, exists := result[postID]; !exists {
+			result[postID] = []ReactionSummary{}
+		}
+	}
+
+	return result, nil
+}
+
+func (s *server) CreateComment(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	// Verify post exists
+	_, err = s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "post not found",
+		})
+		return
+	}
+
+	var requestBody struct {
+		Text string `json:"text" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("invalid request body: %v", err),
+		})
+		return
+	}
+
+	// Validate text is not empty
+	if requestBody.Text == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "comment text is required",
+		})
+		return
+	}
+
+	comment, err := s.dbClient.PostComment().Create(ctx, postID, user.ID, requestBody.Text)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Return comment with user info
+	commentWithUser := CommentWithUser{
+		PostComment: *comment,
+		User:        user,
+	}
+
+	ctx.JSON(http.StatusOK, commentWithUser)
+}
+
+func (s *server) GetComments(ctx *gin.Context) {
+	_, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	comments, err := s.dbClient.PostComment().FindByPostID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Get user IDs from comments
+	userIDs := make(map[uuid.UUID]bool)
+	for _, comment := range comments {
+		userIDs[comment.UserID] = true
+	}
+
+	// Convert map to slice
+	userIDSlice := make([]uuid.UUID, 0, len(userIDs))
+	for id := range userIDs {
+		userIDSlice = append(userIDSlice, id)
+	}
+
+	// Get users
+	users, err := s.dbClient.User().FindUsersByIDs(ctx, userIDSlice)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Create user map
+	userMap := make(map[uuid.UUID]*models.User)
+	for i := range users {
+		userMap[users[i].ID] = &users[i]
+	}
+
+	// Create comments with user info
+	commentsWithUsers := make([]CommentWithUser, len(comments))
+	for i, comment := range comments {
+		commentsWithUsers[i] = CommentWithUser{
+			PostComment: comment,
+			User:        userMap[comment.UserID],
+		}
+	}
+
+	ctx.JSON(http.StatusOK, commentsWithUsers)
+}
+
+func (s *server) DeleteComment(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	commentIDStr := ctx.Param("commentId")
+	if commentIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "comment id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	commentID, err := uuid.Parse(commentIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid comment id format",
+		})
+		return
+	}
+
+	// Get comment to check ownership
+	comment, err := s.dbClient.PostComment().FindByID(ctx, commentID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if comment == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "comment not found",
+		})
+		return
+	}
+
+	// Verify comment belongs to the post
+	if comment.PostID != postID {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "comment does not belong to this post",
+		})
+		return
+	}
+
+	// Get post to check if user is post owner
+	post, err := s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Authorization: user must be comment author OR post owner
+	if comment.UserID != user.ID && post.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"error": "cannot delete comments from another user",
+		})
+		return
+	}
+
+	if err := s.dbClient.PostComment().Delete(ctx, commentID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}

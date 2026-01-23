@@ -41,13 +41,15 @@ class C2PAService {
       fingerprint: fingerprintBytes,
     );
 
-    // Encode manifest as CBOR
+    // Convert manifest Map to CborValue and encode
+    final manifestCbor = _dartToCborValue(manifest);
     final encoder = CborEncoder();
-    final manifestBytesList = encoder.convert(manifest);
+    final manifestBytesList = encoder.convert(manifestCbor);
     final manifestBytes = Uint8List.fromList(manifestBytesList);
 
     // Compute manifest hash
-    final manifestHash = sha256.convert(manifestBytes).bytes;
+    final manifestHashBytes = sha256.convert(manifestBytes).bytes;
+    final manifestHash = Uint8List.fromList(manifestHashBytes);
 
     // Sign the manifest (we'll sign the hash)
     // Note: In a full implementation, we'd sign the manifest properly
@@ -58,13 +60,15 @@ class C2PAService {
       certificate.certificatePem,
     );
 
-    // Re-encode with signature
+    // Convert signed manifest to CborValue and encode
+    final signedManifestCbor = _dartToCborValue(signedManifest);
     final finalEncoder = CborEncoder();
-    final finalManifestBytesList = finalEncoder.convert(signedManifest);
+    final finalManifestBytesList = finalEncoder.convert(signedManifestCbor);
     final finalManifestBytes = Uint8List.fromList(finalManifestBytesList);
 
     // Recompute hash with signature
-    final finalManifestHash = sha256.convert(finalManifestBytes).bytes;
+    final finalManifestHashBytes = sha256.convert(finalManifestBytes).bytes;
+    final finalManifestHash = Uint8List.fromList(finalManifestHashBytes);
 
     return {
       'manifestBytes': finalManifestBytes,
@@ -203,5 +207,33 @@ class C2PAService {
   Uint8List getManifestHash(Uint8List manifestBytes) {
     final digest = sha256.convert(manifestBytes);
     return Uint8List.fromList(digest.bytes);
+  }
+
+  /// Converts Dart objects to CborValue for encoding
+  CborValue _dartToCborValue(dynamic value) {
+    if (value == null) {
+      return CborNull();
+    } else if (value is bool) {
+      return CborBool(value);
+    } else if (value is int) {
+      if (value >= 0 && value < 24) {
+        return CborSmallInt(value.toInt());
+      } else {
+        return CborInt(BigInt.from(value));
+      }
+    } else if (value is String) {
+      return CborString(value);
+    } else if (value is List) {
+      return CborList(value.map((e) => _dartToCborValue(e)).toList());
+    } else if (value is Map) {
+      final cborMap = <CborValue, CborValue>{};
+      for (final entry in value.entries) {
+        cborMap[_dartToCborValue(entry.key)] = _dartToCborValue(entry.value);
+      }
+      return CborMap(cborMap);
+    } else {
+      // Fallback: convert to string
+      return CborString(value.toString());
+    }
   }
 }

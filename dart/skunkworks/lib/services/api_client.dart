@@ -41,6 +41,15 @@ class APIClient {
         return handler.next(response);
       },
       onError: (error, handler) async {
+        // Log error response body for debugging
+        if (error.response != null) {
+          print('API Error - Status: ${error.response?.statusCode}');
+          print('API Error - URL: ${error.requestOptions.uri}');
+          if (error.response?.data != null) {
+            print('API Error - Response body: ${error.response?.data}');
+          }
+        }
+        
         // Handle 401/403 errors by clearing invalid token
         if (error.response?.statusCode == 401 ||
             error.response?.statusCode == 403) {

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -136,6 +137,15 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         widget.onNavigate(NavTab.home);
       }
     } catch (e) {
+      // Log detailed error information
+      print('Upload post error: $e');
+      if (e is DioException) {
+        print('DioException - Status: ${e.response?.statusCode}');
+        print('DioException - Response body: ${e.response?.data}');
+        print('DioException - Request URL: ${e.requestOptions.uri}');
+        print('DioException - Request data: ${e.requestOptions.data}');
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to upload post: $e')),

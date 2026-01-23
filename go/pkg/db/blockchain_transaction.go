@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -96,4 +98,74 @@ func (h *blockchainTransactionHandle) GetNextNonce(ctx context.Context, chainID 
 	}
 
 	return uint64(maxNonce.Int64) + 1, nil
+}
+
+// FindByCertificateFingerprint finds the blockchain transaction that registered a certificate
+// by extracting the fingerprint from transaction data and matching it
+func (h *blockchainTransactionHandle) FindByCertificateFingerprint(ctx context.Context, fingerprint []byte) (*models.BlockchainTransaction, error) {
+	// Query all transactions with type "registerCertificate"
+	var txs []models.BlockchainTransaction
+	registerCertType := string(models.RegisterCertificateType)
+	if err := h.db.WithContext(ctx).
+		Where("type = ?", registerCertType).
+		Order("block_number DESC NULLS LAST, created_at DESC").
+		Find(&txs).Error; err != nil {
+		return nil, err
+	}
+
+	// Iterate through transactions and extract fingerprint from data
+	for _, tx := range txs {
+		if tx.Data == nil {
+			continue
+		}
+
+		// Remove "0x" prefix if present
+		dataHex := strings.TrimPrefix(*tx.Data, "0x")
+		data, err := hex.DecodeString(dataHex)
+		if err != nil {
+			continue // Skip invalid hex data
+		}
+
+		// The function selector is the first 4 bytes, followed by the encoded parameters
+		// For registerCertificate(bytes32,string,string), the fingerprint is the first parameter
+		// ABI encoding: function selector (4 bytes) + bytes32 (32 bytes) + offset to string data + ...
+		if len(data) < 4+32 {
+			continue // Skip if data is too short
+		}
+
+		// Extract fingerprint (bytes32) - it's at offset 4 (after function selector)
+		var extractedFingerprint [32]byte
+		copy(extractedFingerprint[:], data[4:36])
+
+		// Compare with provided fingerprint
+		if len(fingerprint) == 32 {
+			match := true
+			for i := 0; i < 32; i++ {
+				if extractedFingerprint[i] != fingerprint[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				return &tx, nil
+			}
+		} else {
+			// Handle case where fingerprint might be shorter (shouldn't happen, but be safe)
+			if len(fingerprint) <= 32 {
+				match := true
+				for i := 0; i < len(fingerprint); i++ {
+					if extractedFingerprint[i] != fingerprint[i] {
+						match = false
+						break
+					}
+				}
+				if match {
+					return &tx, nil
+				}
+			}
+		}
+	}
+
+	// No matching transaction found
+	return nil, nil
 }
