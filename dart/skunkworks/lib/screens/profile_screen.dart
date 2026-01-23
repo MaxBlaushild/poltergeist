@@ -227,28 +227,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 }
                               },
                               child: post.imageUrl != null
-                                  ? Image.network(
-                                      post.imageUrl!,
-                                      fit: BoxFit.cover,
-                                      loadingBuilder:
-                                          (context, child, loadingProgress) {
-                                        if (loadingProgress == null) {
-                                          return child;
-                                        }
-                                        return Container(
-                                          color: Colors.grey.shade200,
-                                          child: const Center(
-                                            child: CircularProgressIndicator(),
+                                  ? Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        Image.network(
+                                          post.imageUrl!,
+                                          fit: BoxFit.cover,
+                                          loadingBuilder:
+                                              (context, child, loadingProgress) {
+                                            if (loadingProgress == null) {
+                                              return child;
+                                            }
+                                            return Container(
+                                              color: Colors.grey.shade200,
+                                              child: const Center(
+                                                child: CircularProgressIndicator(),
+                                              ),
+                                            );
+                                          },
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return Container(
+                                              color: Colors.grey.shade200,
+                                              child: const Icon(Icons.error),
+                                            );
+                                          },
+                                        ),
+                                        if (post.isVideo)
+                                          Container(
+                                            color: Colors.black.withOpacity(0.3),
+                                            child: const Center(
+                                              child: Icon(
+                                                Icons.play_circle_filled,
+                                                color: Colors.white,
+                                                size: 40,
+                                              ),
+                                            ),
                                           ),
-                                        );
-                                      },
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                        return Container(
-                                          color: Colors.grey.shade200,
-                                          child: const Icon(Icons.error),
-                                        );
-                                      },
+                                      ],
                                     )
                                   : Container(
                                       color: Colors.grey.shade200,

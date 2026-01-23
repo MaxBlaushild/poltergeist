@@ -455,7 +455,7 @@ type FriendInviteHandle interface {
 }
 
 type PostHandle interface {
-	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string) (*models.Post, error)
+	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string) (*models.Post, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Post, error)
 	FindAllFriendsPosts(ctx context.Context, userID uuid.UUID) ([]models.Post, error)

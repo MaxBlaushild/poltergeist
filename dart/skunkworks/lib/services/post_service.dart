@@ -10,12 +10,13 @@ class PostService {
 
   /// Creates a new post
   /// 
-  /// [imageUrl] - The S3 URL of the uploaded image
+  /// [imageUrl] - The S3 URL of the uploaded image or video
   /// [caption] - Optional caption text
   /// [manifestUrl] - S3 URL of the C2PA manifest
   /// [manifestHash] - SHA-256 hash of manifest bytes (hex string)
   /// [certFingerprint] - Certificate fingerprint (hex string)
   /// [assetId] - Optional C2PA asset identifier
+  /// [mediaType] - Optional media type ("image" or "video"), defaults to "image"
   /// 
   /// Returns the created post
   Future<Post> createPost(
@@ -25,6 +26,7 @@ class PostService {
     String? manifestHash,
     String? certFingerprint,
     String? assetId,
+    String? mediaType,
   }) async {
     try {
       final data = <String, dynamic>{
@@ -33,6 +35,10 @@ class PostService {
       
       if (caption != null && caption.isNotEmpty) {
         data['caption'] = caption;
+      }
+
+      if (mediaType != null) {
+        data['mediaType'] = mediaType;
       }
 
       if (manifestUrl != null) {

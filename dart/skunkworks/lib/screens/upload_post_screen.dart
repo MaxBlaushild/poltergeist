@@ -27,8 +27,9 @@ class UploadPostScreen extends StatefulWidget {
 
 class _UploadPostScreenState extends State<UploadPostScreen> {
   final _captionController = TextEditingController();
-  File? _selectedImage;
+  File? _selectedMedia;
   bool _uploading = false;
+  bool _isVideoMode = false; // false = photo, true = video
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -37,25 +38,34 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
     super.dispose();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
+  Future<void> _pickMedia(ImageSource source) async {
     try {
-      final XFile? image = await _picker.pickImage(source: source);
-      if (image != null) {
-        setState(() {
-          _selectedImage = File(image.path);
-        });
+      if (_isVideoMode) {
+        final XFile? video = await _picker.pickVideo(source: source);
+        if (video != null) {
+          setState(() {
+            _selectedMedia = File(video.path);
+          });
+        }
+      } else {
+        final XFile? image = await _picker.pickImage(source: source);
+        if (image != null) {
+          setState(() {
+            _selectedMedia = File(image.path);
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick image: $e')),
+          SnackBar(content: Text('Failed to capture ${_isVideoMode ? 'video' : 'photo'}: $e')),
         );
       }
     }
   }
 
   Future<void> _uploadPost() async {
-    if (_selectedImage == null) return;
+    if (_selectedMedia == null) return;
 
     final authProvider = context.read<AuthProvider>();
     final postProvider = context.read<PostProvider>();
@@ -78,46 +88,51 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
       final certificateService = CertificateService(apiClient);
       final c2paService = C2PAService(certificateService);
 
-      // Upload image to S3 first
-      final imageUrl = await mediaService.uploadPostImage(_selectedImage!, user!.id!);
-      if (imageUrl == null) {
-        throw Exception('Failed to upload image');
+      // Upload media to S3 first
+      final mediaUrl = await mediaService.uploadPostImage(_selectedMedia!, user!.id!);
+      if (mediaUrl == null) {
+        throw Exception('Failed to upload ${_isVideoMode ? 'video' : 'image'}');
       }
 
-      // Create C2PA manifest
+      // Determine media type
+      final mediaType = _isVideoMode ? 'video' : 'image';
+
+      // Create C2PA manifest (skip for videos)
       String? manifestUrl;
       String? manifestHash;
       String? certFingerprint;
       String? assetId;
 
-      try {
-        final manifestData = await c2paService.createManifest(
-          imageUrl,
-          assetId: imageUrl, // Use image URL as asset ID
-        );
+      if (!_isVideoMode) {
+        try {
+          final manifestData = await c2paService.createManifest(
+            mediaUrl,
+            assetId: mediaUrl, // Use media URL as asset ID
+          );
 
-        // Upload manifest to S3
-        final manifestBytes = manifestData['manifestBytes'] as Uint8List;
-        manifestUrl = await mediaService.uploadManifest(
-          manifestBytes,
-          user.id!,
-        );
+          // Upload manifest to S3
+          final manifestBytes = manifestData['manifestBytes'] as Uint8List;
+          manifestUrl = await mediaService.uploadManifest(
+            manifestBytes,
+            user.id!,
+          );
 
-        if (manifestUrl != null) {
-          // Convert bytes to hex strings for API
-          manifestHash = _bytesToHex(manifestData['manifestHash'] as Uint8List);
-          certFingerprint = _bytesToHex(manifestData['certFingerprint'] as Uint8List);
-          assetId = imageUrl;
+          if (manifestUrl != null) {
+            // Convert bytes to hex strings for API
+            manifestHash = _bytesToHex(manifestData['manifestHash'] as Uint8List);
+            certFingerprint = _bytesToHex(manifestData['certFingerprint'] as Uint8List);
+            assetId = mediaUrl;
+          }
+        } catch (e) {
+          // If manifest creation fails, log but don't fail the post
+          // User might not have a certificate enrolled yet
+          print('Warning: Failed to create C2PA manifest: $e');
         }
-      } catch (e) {
-        // If manifest creation fails, log but don't fail the post
-        // User might not have a certificate enrolled yet
-        print('Warning: Failed to create C2PA manifest: $e');
       }
 
       // Create post with manifest data
       await postProvider.createPost(
-        imageUrl,
+        mediaUrl,
         caption: _captionController.text.trim().isNotEmpty
             ? _captionController.text.trim()
             : null,
@@ -125,12 +140,14 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         manifestHash: manifestHash,
         certFingerprint: certFingerprint,
         assetId: assetId,
+        mediaType: mediaType,
       );
 
       // Clear form and navigate to feed
       _captionController.clear();
       setState(() {
-        _selectedImage = null;
+        _selectedMedia = null;
+        _isVideoMode = false;
       });
 
       if (mounted) {
@@ -176,7 +193,7 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
           ),
         ),
         actions: [
-          if (_selectedImage != null && !_uploading)
+          if (_selectedMedia != null && !_uploading)
             TextButton(
               onPressed: _uploadPost,
               child: const Text(
@@ -206,37 +223,103 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Image picker/preview
+                  // Media picker/preview
                   Container(
                     height: 400,
                     color: Colors.grey.shade100,
-                    child: _selectedImage != null
-                        ? Image.file(
-                            _selectedImage!,
-                            fit: BoxFit.cover,
-                          )
+                    child: _selectedMedia != null
+                        ? _isVideoMode
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.file(
+                                    _selectedMedia!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Center(
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.videocam,
+                                              size: 64,
+                                              color: Colors.grey.shade400,
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Text(
+                                              'Video selected',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  Center(
+                                    child: Icon(
+                                      Icons.play_circle_filled,
+                                      size: 64,
+                                      color: Colors.white.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Image.file(
+                                _selectedMedia!,
+                                fit: BoxFit.cover,
+                              )
                         : Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(
-                                  Icons.image_outlined,
+                                  _isVideoMode ? Icons.videocam_outlined : Icons.image_outlined,
                                   size: 64,
                                   color: Colors.grey.shade400,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  'Take a photo',
+                                  _isVideoMode ? 'Record a video' : 'Take a photo',
                                   style: TextStyle(
                                     color: Colors.grey.shade600,
                                     fontSize: 16,
                                   ),
                                 ),
                                 const SizedBox(height: 24),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SegmentedButton<bool>(
+                                      segments: const [
+                                        ButtonSegment(
+                                          value: false,
+                                          label: Text('Photo'),
+                                          icon: Icon(Icons.camera_alt),
+                                        ),
+                                        ButtonSegment(
+                                          value: true,
+                                          label: Text('Video'),
+                                          icon: Icon(Icons.videocam),
+                                        ),
+                                      ],
+                                      selected: {_isVideoMode},
+                                      onSelectionChanged: (Set<bool> newSelection) {
+                                        setState(() {
+                                          _isVideoMode = newSelection.first;
+                                          _selectedMedia = null; // Clear selection when switching modes
+                                        });
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
                                 ElevatedButton.icon(
-                                  onPressed: () => _pickImage(ImageSource.camera),
-                                  icon: const Icon(Icons.camera_alt),
-                                  label: const Text('Take photo'),
+                                  onPressed: () => _pickMedia(ImageSource.camera),
+                                  icon: Icon(_isVideoMode ? Icons.videocam : Icons.camera_alt),
+                                  label: Text(_isVideoMode ? 'Record video' : 'Take photo'),
                                 ),
                               ],
                             ),

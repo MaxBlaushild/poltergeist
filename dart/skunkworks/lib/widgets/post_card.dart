@@ -6,6 +6,7 @@ import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
 import 'package:skunkworks/screens/post_detail_screen.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
+import 'package:skunkworks/widgets/video_player_widget.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -182,7 +183,7 @@ class _PostCardState extends State<PostCard> {
               ],
             ),
           ),
-          // Image - tappable to view detail
+          // Media - tappable to view detail
           if (_currentPost.imageUrl != null)
             GestureDetector(
               onTap: () {
@@ -198,28 +199,38 @@ class _PostCardState extends State<PostCard> {
                   );
                 }
               },
-              child: Image.network(
-                _currentPost.imageUrl!,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 300,
-                    color: Colors.grey.shade200,
-                    child: const Center(
-                      child: CircularProgressIndicator(),
+              child: _currentPost.isVideo
+                  ? SizedBox(
+                      height: 300,
+                      child: VideoPlayerWidget(
+                        videoUrl: _currentPost.imageUrl!,
+                        autoPlay: false,
+                        showControls: true,
+                        fit: BoxFit.cover,
+                      ),
+                    )
+                  : Image.network(
+                      _currentPost.imageUrl!,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 300,
+                          color: Colors.grey.shade200,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 300,
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.error),
+                        );
+                      },
                     ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 300,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.error),
-                  );
-                },
-              ),
             ),
           // Caption
           if (_currentPost.caption != null && _currentPost.caption!.isNotEmpty)

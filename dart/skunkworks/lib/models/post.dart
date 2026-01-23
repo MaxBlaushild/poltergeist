@@ -84,6 +84,7 @@ class Post {
   final DateTime? updatedAt;
   final String? userId;
   final String? imageUrl;
+  final String? mediaType; // "image" or "video", defaults to "image" if null
   final String? caption;
   final String? manifestUri;
   final String? manifestHash;
@@ -100,6 +101,7 @@ class Post {
     this.updatedAt,
     this.userId,
     this.imageUrl,
+    this.mediaType,
     this.caption,
     this.manifestUri,
     this.manifestHash,
@@ -122,6 +124,7 @@ class Post {
           : null,
       userId: json['userId']?.toString(),
       imageUrl: json['imageUrl'] as String?,
+      mediaType: json['mediaType'] as String?,
       caption: json['caption'] as String?,
       manifestUri: json['manifestUri'] as String?,
       manifestHash: json['manifestHash'] as String?,
@@ -144,6 +147,26 @@ class Post {
               .toList()
           : null,
     );
+  }
+
+  /// Returns true if this post is a video
+  bool get isVideo => mediaType == 'video' || _isVideoUrl(imageUrl);
+
+  /// Returns true if this post is an image (default)
+  bool get isImage => !isVideo;
+
+  /// Helper to detect video from URL extension
+  static bool _isVideoUrl(String? url) {
+    if (url == null) return false;
+    final lowerUrl = url.toLowerCase();
+    return lowerUrl.endsWith('.mp4') ||
+        lowerUrl.endsWith('.mov') ||
+        lowerUrl.endsWith('.avi') ||
+        lowerUrl.endsWith('.mkv') ||
+        lowerUrl.contains('.mp4?') ||
+        lowerUrl.contains('.mov?') ||
+        lowerUrl.contains('.avi?') ||
+        lowerUrl.contains('.mkv?');
   }
 }
 

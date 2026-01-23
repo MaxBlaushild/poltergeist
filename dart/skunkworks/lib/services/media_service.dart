@@ -59,6 +59,14 @@ class MediaService {
         contentType = 'image/webp';
       } else if (extension == 'gif') {
         contentType = 'image/gif';
+      } else if (extension == 'mp4') {
+        contentType = 'video/mp4';
+      } else if (extension == 'mov') {
+        contentType = 'video/quicktime';
+      } else if (extension == 'avi') {
+        contentType = 'video/x-msvideo';
+      } else if (extension == 'mkv') {
+        contentType = 'video/x-matroska';
       }
 
       final dio = Dio();
@@ -180,6 +188,14 @@ class MediaService {
         contentType = 'image/webp';
       } else if (extension == 'gif') {
         contentType = 'image/gif';
+      } else if (extension == 'mp4') {
+        contentType = 'video/mp4';
+      } else if (extension == 'mov') {
+        contentType = 'video/quicktime';
+      } else if (extension == 'avi') {
+        contentType = 'video/x-msvideo';
+      } else if (extension == 'mkv') {
+        contentType = 'video/x-matroska';
       }
 
       final presignedUrl = await getPresignedUploadURL(ApiConstants.postsBucket, key, contentType: contentType);

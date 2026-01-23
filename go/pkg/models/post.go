@@ -12,6 +12,7 @@ type Post struct {
 	UpdatedAt       time.Time `gorm:"not null" json:"updatedAt"`
 	UserID          uuid.UUID `gorm:"type:uuid;not null;index" json:"userId"`
 	ImageURL        string    `gorm:"type:text;not null" json:"imageUrl"`
+	MediaType       *string   `gorm:"type:text" json:"mediaType,omitempty"` // "image" or "video"
 	Caption         *string   `gorm:"type:text" json:"caption,omitempty"`
 	ManifestHash    []byte    `gorm:"type:bytea" json:"manifestHash,omitempty"`
 	ManifestURI     *string   `gorm:"type:text" json:"manifestUri,omitempty"`
