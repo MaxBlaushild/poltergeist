@@ -85,6 +85,23 @@ class PostService {
     }
   }
 
+  /// Gets a single post by ID
+  /// 
+  /// [postId] - The post ID
+  /// 
+  /// Returns the post with user information and reactions
+  Future<Post> getPost(String postId) async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.getPostEndpoint(postId),
+      );
+
+      return Post.fromJson(response);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   /// Gets all posts from a specific user
   /// 
   /// [userId] - The user ID
@@ -205,6 +222,26 @@ class PostService {
       );
       return true;
     } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Gets the blockchain transaction for a post's manifest
+  /// 
+  /// [postId] - The post ID
+  /// 
+  /// Returns the blockchain transaction or null if not found
+  Future<Map<String, dynamic>?> getBlockchainTransaction(String postId) async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.getBlockchainTransactionEndpoint(postId),
+      );
+      return response;
+    } catch (e) {
+      // Return null if transaction not found (404) or post has no manifest
+      if (e is DioException && e.response?.statusCode == 404) {
+        return null;
+      }
       rethrow;
     }
   }

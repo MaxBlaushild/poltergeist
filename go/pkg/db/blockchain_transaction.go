@@ -169,3 +169,73 @@ func (h *blockchainTransactionHandle) FindByCertificateFingerprint(ctx context.C
 	// No matching transaction found
 	return nil, nil
 }
+
+// FindByManifestHash finds the blockchain transaction that anchored a manifest
+// by extracting the manifest hash from transaction data and matching it
+func (h *blockchainTransactionHandle) FindByManifestHash(ctx context.Context, manifestHash []byte) (*models.BlockchainTransaction, error) {
+	// Query all transactions with type "anchorManifest"
+	var txs []models.BlockchainTransaction
+	anchorManifestType := string(models.AnchorManifestType)
+	if err := h.db.WithContext(ctx).
+		Where("type = ?", anchorManifestType).
+		Order("block_number DESC NULLS LAST, created_at DESC").
+		Find(&txs).Error; err != nil {
+		return nil, err
+	}
+
+	// Iterate through transactions and extract manifest hash from data
+	for _, tx := range txs {
+		if tx.Data == nil {
+			continue
+		}
+
+		// Remove "0x" prefix if present
+		dataHex := strings.TrimPrefix(*tx.Data, "0x")
+		data, err := hex.DecodeString(dataHex)
+		if err != nil {
+			continue // Skip invalid hex data
+		}
+
+		// The function selector is the first 4 bytes, followed by the encoded parameters
+		// For anchorManifest(bytes32,string,string,bytes32), the manifest hash is the first parameter
+		// ABI encoding: function selector (4 bytes) + bytes32 (32 bytes) + offset to string data + ...
+		if len(data) < 4+32 {
+			continue // Skip if data is too short
+		}
+
+		// Extract manifest hash (bytes32) - it's at offset 4 (after function selector)
+		var extractedManifestHash [32]byte
+		copy(extractedManifestHash[:], data[4:36])
+
+		// Compare with provided manifest hash
+		if len(manifestHash) == 32 {
+			match := true
+			for i := 0; i < 32; i++ {
+				if extractedManifestHash[i] != manifestHash[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				return &tx, nil
+			}
+		} else {
+			// Handle case where manifest hash might be shorter (shouldn't happen, but be safe)
+			if len(manifestHash) <= 32 {
+				match := true
+				for i := 0; i < len(manifestHash); i++ {
+					if extractedManifestHash[i] != manifestHash[i] {
+						match = false
+						break
+					}
+				}
+				if match {
+					return &tx, nil
+				}
+			}
+		}
+	}
+
+	// No matching transaction found
+	return nil, nil
+}

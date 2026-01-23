@@ -55,6 +55,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/verifiable-sn/posts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreatePost))
 	r.GET("/verifiable-sn/posts/feed", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetFeed))
 	r.GET("/verifiable-sn/posts/user/:userId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetUserPosts))
+	r.GET("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPost))
+	r.GET("/verifiable-sn/posts/:id/blockchain-transaction", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetBlockchainTransactionByManifestHash))
 	r.DELETE("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeletePost))
 	r.POST("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateReaction))
 	r.DELETE("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteReaction))

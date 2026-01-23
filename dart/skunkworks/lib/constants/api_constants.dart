@@ -17,12 +17,14 @@ class ApiConstants {
   static const String createPostEndpoint = '/verifiable-sn/posts';
   static const String feedEndpoint = '/verifiable-sn/posts/feed';
   static String userPostsEndpoint(String userId) => '/verifiable-sn/posts/user/$userId';
+  static String getPostEndpoint(String postId) => '/verifiable-sn/posts/$postId';
   static String deletePostEndpoint(String postId) => '/verifiable-sn/posts/$postId';
   static String reactToPostEndpoint(String postId) => '/verifiable-sn/posts/$postId/reactions';
   static String removeReactionEndpoint(String postId) => '/verifiable-sn/posts/$postId/reactions';
   static String getCommentsEndpoint(String postId) => '/verifiable-sn/posts/$postId/comments';
   static String createCommentEndpoint(String postId) => '/verifiable-sn/posts/$postId/comments';
   static String deleteCommentEndpoint(String postId, String commentId) => '/verifiable-sn/posts/$postId/comments/$commentId';
+  static String getBlockchainTransactionEndpoint(String postId) => '/verifiable-sn/posts/$postId/blockchain-transaction';
   
   // Media endpoints
   static const String presignedUploadUrlEndpoint = '/verifiable-sn/media/uploadUrl';

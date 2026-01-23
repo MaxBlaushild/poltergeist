@@ -4,13 +4,17 @@ import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
+import 'package:skunkworks/screens/post_detail_screen.dart';
+import 'package:skunkworks/widgets/bottom_nav.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
+  final Function(NavTab)? onNavigate;
 
   const PostCard({
     super.key,
     required this.post,
+    this.onNavigate,
   });
 
   @override
@@ -178,29 +182,44 @@ class _PostCardState extends State<PostCard> {
               ],
             ),
           ),
-          // Image
+          // Image - tappable to view detail
           if (_currentPost.imageUrl != null)
-            Image.network(
-              _currentPost.imageUrl!,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Container(
-                  height: 300,
-                  color: Colors.grey.shade200,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                );
+            GestureDetector(
+              onTap: () {
+                if (_currentPost.id != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PostDetailScreen(
+                        postId: _currentPost.id!,
+                        onNavigate: widget.onNavigate ?? (_) {},
+                      ),
+                    ),
+                  );
+                }
               },
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  height: 300,
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.error),
-                );
-              },
+              child: Image.network(
+                _currentPost.imageUrl!,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    height: 300,
+                    color: Colors.grey.shade200,
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    height: 300,
+                    color: Colors.grey.shade200,
+                    child: const Icon(Icons.error),
+                  );
+                },
+              ),
             ),
           // Caption
           if (_currentPost.caption != null && _currentPost.caption!.isNotEmpty)
