@@ -9,6 +9,7 @@ import 'package:skunkworks/services/post_service.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
+import 'package:skunkworks/widgets/video_player_widget.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -338,30 +339,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image - larger display
+            // Media - larger display
             if (_post!.imageUrl != null)
-              Image.network(
-                _post!.imageUrl!,
-                width: double.infinity,
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 400,
-                    color: Colors.grey.shade200,
-                    child: const Center(
-                      child: CircularProgressIndicator(),
+              _post!.isVideo
+                  ? SizedBox(
+                      height: 400,
+                      child: VideoPlayerWidget(
+                        videoUrl: _post!.imageUrl!,
+                        autoPlay: false,
+                        showControls: true,
+                        fit: BoxFit.contain,
+                      ),
+                    )
+                  : Image.network(
+                      _post!.imageUrl!,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 400,
+                          color: Colors.grey.shade200,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 400,
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.error),
+                        );
+                      },
                     ),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 400,
-                    color: Colors.grey.shade200,
-                    child: const Icon(Icons.error),
-                  );
-                },
-              ),
             // Caption
             if (_post!.caption != null && _post!.caption!.isNotEmpty)
               Padding(

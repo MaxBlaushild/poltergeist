@@ -32,12 +32,13 @@ class PostProvider extends ChangeNotifier {
 
   /// Creates a new post and refreshes the feed
   /// 
-  /// [imageUrl] - The S3 URL of the uploaded image
+  /// [imageUrl] - The S3 URL of the uploaded image or video
   /// [caption] - Optional caption text
   /// [manifestUrl] - S3 URL of the C2PA manifest
   /// [manifestHash] - SHA-256 hash of manifest bytes (hex string)
   /// [certFingerprint] - Certificate fingerprint (hex string)
   /// [assetId] - Optional C2PA asset identifier
+  /// [mediaType] - Optional media type ("image" or "video"), defaults to "image"
   Future<void> createPost(
     String imageUrl, {
     String? caption,
@@ -45,6 +46,7 @@ class PostProvider extends ChangeNotifier {
     String? manifestHash,
     String? certFingerprint,
     String? assetId,
+    String? mediaType,
   }) async {
     _error = null;
     notifyListeners();
@@ -57,6 +59,7 @@ class PostProvider extends ChangeNotifier {
         manifestHash: manifestHash,
         certFingerprint: certFingerprint,
         assetId: assetId,
+        mediaType: mediaType,
       );
       // Refresh feed after creating post
       await loadFeed();

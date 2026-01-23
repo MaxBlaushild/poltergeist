@@ -40,6 +40,7 @@ func (s *server) CreatePost(ctx *gin.Context) {
 
 	var requestBody struct {
 		ImageURL        string  `json:"imageUrl" binding:"required"`
+		MediaType       *string `json:"mediaType"` // "image" or "video", defaults to "image" if not provided
 		Caption         *string `json:"caption"`
 		ManifestURL     *string `json:"manifestUrl"`
 		ManifestHash    *string `json:"manifestHash"`
@@ -187,6 +188,13 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		}
 	}
 
+	// Default mediaType to "image" if not provided (backward compatibility)
+	mediaType := requestBody.MediaType
+	if mediaType == nil {
+		defaultMediaType := "image"
+		mediaType = &defaultMediaType
+	}
+
 	// Create post
 	post, err := s.dbClient.Post().Create(
 		ctx,
@@ -197,6 +205,7 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		manifestURI,
 		certFingerprintBytes,
 		assetID,
+		mediaType,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
