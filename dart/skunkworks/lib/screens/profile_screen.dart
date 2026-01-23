@@ -10,6 +10,7 @@ import 'package:skunkworks/services/certificate_service.dart';
 import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
+import 'package:skunkworks/screens/post_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -213,7 +214,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             final post = _userPosts[index];
                             return GestureDetector(
                               onTap: () {
-                                // Could show post details in a dialog
+                                if (post.id != null) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PostDetailScreen(
+                                        postId: post.id!,
+                                        onNavigate: widget.onNavigate,
+                                      ),
+                                    ),
+                                  );
+                                }
                               },
                               child: post.imageUrl != null
                                   ? Image.network(

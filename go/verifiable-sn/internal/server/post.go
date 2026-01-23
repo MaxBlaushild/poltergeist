@@ -380,6 +380,68 @@ func (s *server) GetUserPosts(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, postsWithReactions)
 }
 
+func (s *server) GetPost(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	// Get post by ID
+	post, err := s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "post not found",
+		})
+		return
+	}
+
+	// Get user information
+	postUser, err := s.dbClient.User().FindByID(ctx, post.UserID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Aggregate reactions
+	reactionMap, err := s.aggregateReactions(ctx, []uuid.UUID{postID}, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Create post with user info and reactions
+	postWithUser := PostWithUser{
+		Post:      *post,
+		User:      postUser,
+		Reactions: reactionMap[postID],
+	}
+
+	ctx.JSON(http.StatusOK, postWithUser)
+}
+
 func (s *server) DeletePost(ctx *gin.Context) {
 	user, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
@@ -812,4 +874,65 @@ func (s *server) DeleteComment(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+func (s *server) GetBlockchainTransactionByManifestHash(ctx *gin.Context) {
+	_, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	postIDStr := ctx.Param("id")
+	if postIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "post id is required",
+		})
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid post id format",
+		})
+		return
+	}
+
+	// Get post to retrieve manifest hash
+	post, err := s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "post not found",
+		})
+		return
+	}
+
+	// Check if post has a manifest hash
+	if post.ManifestHash == nil || len(post.ManifestHash) == 0 {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "post does not have a manifest hash",
+		})
+		return
+	}
+
+	// Find blockchain transaction by manifest hash
+	tx, err := s.dbClient.BlockchainTransaction().FindByManifestHash(ctx, post.ManifestHash)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if tx == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "blockchain transaction not found for this manifest",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, tx)
 }

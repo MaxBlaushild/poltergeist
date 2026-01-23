@@ -489,6 +489,7 @@ type BlockchainTransactionHandle interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string, blockNumber *uint64, confirmedAt *time.Time) error
 	GetNextNonce(ctx context.Context, chainID int64, fromAddress string) (uint64, error)
 	FindByCertificateFingerprint(ctx context.Context, fingerprint []byte) (*models.BlockchainTransaction, error)
+	FindByManifestHash(ctx context.Context, manifestHash []byte) (*models.BlockchainTransaction, error)
 }
 
 type PartyInviteHandle interface {

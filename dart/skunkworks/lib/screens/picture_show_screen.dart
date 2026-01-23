@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
+import 'package:skunkworks/screens/post_detail_screen.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
-import 'package:skunkworks/widgets/post_card.dart';
 
-class FeedScreen extends StatefulWidget {
+class PictureShowScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
 
-  const FeedScreen({
+  const PictureShowScreen({
     super.key,
     required this.onNavigate,
   });
 
   @override
-  State<FeedScreen> createState() => _FeedScreenState();
+  State<PictureShowScreen> createState() => _PictureShowScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> {
+class _PictureShowScreenState extends State<PictureShowScreen> {
   @override
   void initState() {
     super.initState();
@@ -37,7 +37,7 @@ class _FeedScreenState extends State<FeedScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: const Text(
-          'Verifiable SN',
+          'Picture Show',
           style: TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.w400,
@@ -95,12 +95,56 @@ class _FeedScreenState extends State<FeedScreen> {
 
           return RefreshIndicator(
             onRefresh: _refreshFeed,
-            child: ListView.builder(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(2),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                crossAxisSpacing: 2,
+                mainAxisSpacing: 2,
+              ),
               itemCount: postProvider.feedPosts.length,
               itemBuilder: (context, index) {
-                return PostCard(
-                  post: postProvider.feedPosts[index],
-                  onNavigate: widget.onNavigate,
+                final post = postProvider.feedPosts[index];
+                return GestureDetector(
+                  onTap: () {
+                    if (post.id != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PostDetailScreen(
+                            postId: post.id!,
+                            onNavigate: widget.onNavigate,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: post.imageUrl != null
+                      ? Image.network(
+                          post.imageUrl!,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) {
+                              return child;
+                            }
+                            return Container(
+                              color: Colors.grey.shade200,
+                              child: const Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: Colors.grey.shade200,
+                              child: const Icon(Icons.error),
+                            );
+                          },
+                        )
+                      : Container(
+                          color: Colors.grey.shade200,
+                          child: const Icon(Icons.image),
+                        ),
                 );
               },
             ),
@@ -114,4 +158,3 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 }
-
