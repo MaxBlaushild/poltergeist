@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 
 enum NavTab { home, search, upload, profile }
 
@@ -16,7 +17,7 @@ class BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.warmWhite,
         border: Border(
           top: BorderSide(color: Colors.grey.shade300, width: 0.5),
         ),
@@ -26,7 +27,7 @@ class BottomNav extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _buildNavItem(Icons.home, NavTab.home, context),
-            _buildNavItem(Icons.search, NavTab.search, context),
+            _buildNavItem(Icons.people, NavTab.search, context),
             _buildNavItem(Icons.add_box_outlined, NavTab.upload, context),
             _buildNavItem(Icons.person_outline, NavTab.profile, context),
           ],
@@ -43,7 +44,7 @@ class BottomNav extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         child: Icon(
           icon,
-          color: isSelected ? Colors.black : Colors.grey.shade600,
+          color: isSelected ? AppColors.softRealBlue : AppColors.graphiteInk.withOpacity(0.6),
           size: 28,
         ),
       ),

@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/models/certificate.dart';
+import 'package:skunkworks/models/user.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/services/post_service.dart';
 import 'package:skunkworks/services/certificate_service.dart';
@@ -14,10 +16,14 @@ import 'package:skunkworks/screens/post_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
+  final String? userId; // Optional: if provided, show this user's profile
+  final User? user; // Optional: user data if available
 
   const ProfileScreen({
     super.key,
     required this.onNavigate,
+    this.userId,
+    this.user,
   });
 
   @override
@@ -29,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = false;
   Certificate? _certificate;
   bool _loadingCertificate = false;
+  User? _displayUser;
 
   @override
   void initState() {
@@ -37,11 +44,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadCertificate();
   }
 
+  bool _isViewingOwnProfile() {
+    final authProvider = context.read<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    return widget.userId == null || widget.userId == currentUserId;
+  }
+
   Future<void> _loadUserPosts() async {
     final authProvider = context.read<AuthProvider>();
-    final user = authProvider.user;
+    final currentUser = authProvider.user;
+    
+    // Determine which user's posts to load
+    final targetUserId = widget.userId ?? currentUser?.id;
+    if (targetUserId == null) return;
 
-    if (user?.id == null) return;
+    // Set display user
+    if (widget.user != null) {
+      _displayUser = widget.user;
+    } else if (widget.userId == null || widget.userId == currentUser?.id) {
+      _displayUser = currentUser;
+    } else {
+      // We'll get user info from the first post if available
+      _displayUser = null;
+    }
 
     setState(() {
       _loading = true;
@@ -50,7 +75,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final apiClient = APIClient(ApiConstants.baseUrl);
       final postService = PostService(apiClient);
-      _userPosts = await postService.getUserPosts(user!.id!);
+      _userPosts = await postService.getUserPosts(targetUserId);
+      
+      // If we don't have user info and posts exist, get it from first post
+      if (_displayUser == null && _userPosts.isNotEmpty && _userPosts[0].user != null) {
+        _displayUser = _userPosts[0].user;
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -74,7 +104,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final apiClient = APIClient(ApiConstants.baseUrl);
       final certificateService = CertificateService(apiClient);
-      final certificate = await certificateService.getCertificate();
+      
+      Certificate? certificate;
+      if (_isViewingOwnProfile()) {
+        // Get own certificate
+        certificate = await certificateService.getCertificate();
+      } else {
+        // Get other user's certificate
+        final targetUserId = widget.userId;
+        if (targetUserId != null) {
+          certificate = await certificateService.getUserCertificate(targetUserId);
+        }
+      }
       
       if (mounted) {
         setState(() {
@@ -101,31 +142,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
-        final user = authProvider.user;
-        final username = user?.username ?? user?.phoneNumber ?? 'Unknown';
-        final profilePictureUrl = user?.profilePictureUrl;
+        final currentUser = authProvider.user;
+        final displayUser = _displayUser ?? currentUser;
+        final username = displayUser?.username ?? displayUser?.phoneNumber ?? 'Unknown';
+        final profilePictureUrl = displayUser?.profilePictureUrl;
+        final isOwnProfile = _isViewingOwnProfile();
 
         return Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: AppColors.warmWhite,
           appBar: AppBar(
-            backgroundColor: Colors.white,
+            backgroundColor: AppColors.warmWhite,
             elevation: 0,
             title: Text(
               username,
-              style: const TextStyle(
-                color: Colors.black,
+              style: TextStyle(
+                color: AppColors.graphiteInk,
                 fontWeight: FontWeight.w600,
                 fontSize: 18,
               ),
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.logout, color: Colors.black),
-                onPressed: () async {
-                  await authProvider.logout();
-                },
-              ),
-            ],
+            actions: isOwnProfile
+                ? [
+                    IconButton(
+                      icon: Icon(Icons.logout, color: AppColors.graphiteInk),
+                      onPressed: () async {
+                        await authProvider.logout();
+                      },
+                    ),
+                  ]
+                : null,
           ),
           body: _loading
               ? const Center(child: CircularProgressIndicator())
@@ -276,10 +321,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ),
                 ),
-          bottomNavigationBar: BottomNav(
-            currentTab: NavTab.profile,
-            onTabChanged: widget.onNavigate,
-          ),
+          bottomNavigationBar: isOwnProfile
+              ? BottomNav(
+                  currentTab: NavTab.profile,
+                  onTabChanged: widget.onNavigate,
+                )
+              : null,
         );
       },
     );
@@ -342,7 +389,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         child: ExpansionTile(
           initiallyExpanded: false,
-          leading: Icon(Icons.verified, color: Colors.blue.shade700),
+          leading: Icon(Icons.verified, color: AppColors.softRealBlue),
           title: const Text(
             'Certificate',
             style: TextStyle(
@@ -475,13 +522,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                   child: Row(
                     children: [
-                      Icon(Icons.open_in_new, size: 18, color: Colors.blue.shade700),
+                      Icon(Icons.open_in_new, size: 18, color: AppColors.softRealBlue),
                       const SizedBox(width: 8),
                       Text(
                         'View on Block Explorer',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.blue.shade700,
+                          color: AppColors.softRealBlue,
                           decoration: TextDecoration.underline,
                         ),
                       ),

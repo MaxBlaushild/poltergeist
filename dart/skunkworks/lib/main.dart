@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:skunkworks/constants/api_constants.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/friend_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
@@ -51,10 +53,24 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider.value(value: certificateProvider),
       ],
       child: MaterialApp(
-        title: 'Verifiable SN',
+        title: 'Vera',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
           useMaterial3: true,
+          fontFamily: GoogleFonts.inter().fontFamily,
+          textTheme: GoogleFonts.interTextTheme(),
+          colorScheme: ColorScheme.light(
+            primary: AppColors.softRealBlue,
+            secondary: AppColors.freshMint,
+            background: AppColors.warmWhite,
+            surface: AppColors.warmWhite,
+            onPrimary: AppColors.warmWhite,
+            onSecondary: AppColors.graphiteInk,
+            onBackground: AppColors.graphiteInk,
+            onSurface: AppColors.graphiteInk,
+            error: AppColors.coralPop,
+            onError: AppColors.warmWhite,
+          ),
+          scaffoldBackgroundColor: AppColors.warmWhite,
         ),
         home: const HomeWidget(),
       ),

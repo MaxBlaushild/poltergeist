@@ -350,6 +350,25 @@ func main() {
 			return
 		}
 
+		// Update profile picture URL if provided
+		if requestBody.ProfilePictureUrl != nil && *requestBody.ProfilePictureUrl != "" {
+			if err := dbClient.User().UpdateProfilePictureUrl(ctx, user.ID, *requestBody.ProfilePictureUrl); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "updating profile picture url error").Error(),
+				})
+				return
+			}
+		}
+
+		// Refresh user to get latest data including profile picture URL
+		user, err = dbClient.User().FindByID(ctx, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": errors.Wrap(err, "refreshing user error").Error(),
+			})
+			return
+		}
+
 		token, err := tokenClient.New(user.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{

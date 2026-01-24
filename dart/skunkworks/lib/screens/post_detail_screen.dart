@@ -1,6 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:gal/gal.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
@@ -8,6 +13,7 @@ import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/services/post_service.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
+import 'package:skunkworks/screens/profile_screen.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
 import 'package:skunkworks/widgets/video_player_widget.dart';
 
@@ -252,6 +258,111 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _handleSaveImage() async {
+    if (_post?.imageUrl == null || _post!.isVideo) return;
+
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Saving image...'),
+              ],
+            ),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Download the image
+      final response = await http.get(Uri.parse(_post!.imageUrl!));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download image: ${response.statusCode}');
+      }
+
+      // Get temporary directory
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/image_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(response.bodyBytes);
+
+      // Save to gallery
+      await Gal.putImage(file.path);
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image saved to Photos!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Clean up temporary file
+      await file.delete();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save image: ${e.toString()}'),
+            backgroundColor: AppColors.coralPop,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleDeletePost() async {
+    if (_post?.id == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final postProvider = context.read<PostProvider>();
+      await postProvider.deletePost(_post!.id!);
+      
+      // Navigate back after successful deletion
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete post: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
   String _getBlockExplorerUrl(String txHash, int? chainId) {
     switch (chainId) {
       case 84532: // Base Sepolia
@@ -269,12 +380,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.warmWhite,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppColors.warmWhite,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            icon: Icon(Icons.arrow_back, color: AppColors.graphiteInk),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -286,12 +397,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (_error != null || _post == null) {
       return Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.warmWhite,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: AppColors.warmWhite,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
+            icon: Icon(Icons.arrow_back, color: AppColors.graphiteInk),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -301,7 +412,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             children: [
               Text(
                 'Error: ${_error ?? "Post not found"}',
-                style: const TextStyle(color: Colors.red),
+                style: TextStyle(color: AppColors.coralPop),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -316,24 +427,57 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final username = _post!.user?.username ?? _post!.user?.phoneNumber ?? 'Unknown';
     final userReactionEmoji = _getUserReactionEmoji();
+    final authProvider = context.watch<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    final isPostOwner = currentUserId != null && _post!.userId == currentUserId;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.warmWhite,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.warmWhite,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: Icon(Icons.arrow_back, color: AppColors.graphiteInk),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          username,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
+        title: GestureDetector(
+          onTap: () {
+            if (_post!.userId != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => ProfileScreen(
+                    userId: _post!.userId!,
+                    user: _post!.user,
+                    onNavigate: widget.onNavigate,
+                  ),
+                ),
+              );
+            }
+          },
+          child: Text(
+            username,
+            style: TextStyle(
+              color: AppColors.graphiteInk,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
           ),
         ),
+        actions: isPostOwner
+            ? [
+                if (_post!.imageUrl != null && !_post!.isVideo)
+                  IconButton(
+                    icon: const Icon(Icons.download, color: AppColors.softRealBlue),
+                    onPressed: _handleSaveImage,
+                    tooltip: 'Save to Photos',
+                  ),
+                IconButton(
+                  icon: Icon(Icons.delete, color: AppColors.coralPop),
+                  onPressed: _handleDeletePost,
+                ),
+              ]
+            : null,
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -400,11 +544,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: reaction.userReacted ? FontWeight.w600 : FontWeight.normal,
-                              color: reaction.userReacted ? Colors.blue : Colors.black87,
+                              color: reaction.userReacted ? AppColors.softRealBlue : AppColors.graphiteInk,
                             ),
                           ),
                           backgroundColor: reaction.userReacted 
-                              ? Colors.blue.shade50 
+                              ? AppColors.softRealBlue.withOpacity(0.1)
                               : Colors.grey.shade100,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -421,7 +565,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
                         color: userReactionEmoji != null 
-                            ? Colors.blue.shade50 
+                            ? AppColors.softRealBlue.withOpacity(0.1)
                             : Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(24),
                       ),
@@ -438,8 +582,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             style: TextStyle(
                               fontSize: 16,
                               color: userReactionEmoji != null 
-                                  ? Colors.blue 
-                                  : Colors.black87,
+                                  ? AppColors.softRealBlue 
+                                  : AppColors.graphiteInk,
                               fontWeight: userReactionEmoji != null 
                                   ? FontWeight.w600 
                                   : FontWeight.normal,
@@ -568,7 +712,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: Text(
                             'Delete',
                             style: TextStyle(
-                              color: Colors.red.shade600,
+                              color: AppColors.coralPop,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -637,7 +781,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         child: ExpansionTile(
           initiallyExpanded: false,
-          leading: Icon(Icons.description, color: Colors.blue.shade700),
+          leading: Icon(Icons.description, color: AppColors.softRealBlue),
           title: const Text(
             'C2PA Manifest',
             style: TextStyle(

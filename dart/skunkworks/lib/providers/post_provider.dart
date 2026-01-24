@@ -347,5 +347,26 @@ class PostProvider extends ChangeNotifier {
       }
     }
   }
+
+  /// Deletes a post
+  /// 
+  /// [postId] - The post ID
+  Future<void> deletePost(String postId) async {
+    try {
+      await _postService.deletePost(postId);
+      // Update local state optimistically
+      _removePostFromFeed(postId);
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  /// Removes a post from the feed in local state
+  void _removePostFromFeed(String postId) {
+    _feedPosts.removeWhere((post) => post.id == postId);
+  }
 }
 

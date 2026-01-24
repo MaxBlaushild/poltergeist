@@ -77,15 +77,30 @@ class AuthService {
 
   /// Registers a new user with phone number and verification code
   /// Returns the authenticated user and token
-  Future<AuthResponse> register(String phoneNumber, String code) async {
+  Future<AuthResponse> register(
+    String phoneNumber,
+    String code, {
+    String? username,
+    String? profilePictureUrl,
+  }) async {
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
+      final data = <String, dynamic>{
+        'phoneNumber': formattedPhone,
+        'code': code,
+      };
+
+      if (username != null && username.isNotEmpty) {
+        data['username'] = username;
+      }
+
+      if (profilePictureUrl != null && profilePictureUrl.isNotEmpty) {
+        data['profilePictureUrl'] = profilePictureUrl;
+      }
+
       final response = await _apiClient.post<Map<String, dynamic>>(
         ApiConstants.registerEndpoint,
-        data: {
-          'phoneNumber': formattedPhone,
-          'code': code,
-        },
+        data: data,
       );
 
       final user = User.fromJson(response['user'] as Map<String, dynamic>);

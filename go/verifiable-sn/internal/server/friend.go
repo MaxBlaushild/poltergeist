@@ -139,13 +139,24 @@ func (s *server) AcceptFriendInvite(ctx *gin.Context) {
 		return
 	}
 
-	// Create the friend relationship
-	_, err = s.dbClient.Friend().Create(ctx, invite.InviterID, user.ID)
+	// Check if friendship already exists
+	exists, err := s.dbClient.Friend().Exists(ctx, invite.InviterID, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
+	}
+
+	// Create the friend relationship only if it doesn't already exist
+	if !exists {
+		_, err = s.dbClient.Friend().Create(ctx, invite.InviterID, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
 	}
 
 	// Delete the invite

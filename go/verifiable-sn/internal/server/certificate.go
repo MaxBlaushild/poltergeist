@@ -240,6 +240,76 @@ func (s *server) GetCertificate(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
+func (s *server) GetUserCertificate(ctx *gin.Context) {
+	// Authenticate the requesting user (but they can view any user's certificate)
+	_, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	userIDStr := ctx.Param("userId")
+	if userIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "user id is required",
+		})
+		return
+	}
+
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid user id format",
+		})
+		return
+	}
+
+	cert, err := s.dbClient.UserCertificate().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if cert == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{
+			"error": "certificate not found",
+		})
+		return
+	}
+
+	// Find the blockchain transaction that registered this certificate
+	var txHash *string
+	var chainId *int64
+	tx, err := s.dbClient.BlockchainTransaction().FindByCertificateFingerprint(ctx, cert.Fingerprint)
+	if err == nil && tx != nil {
+		if tx.TxHash != nil {
+			txHash = tx.TxHash
+		}
+		chainId = &tx.ChainID
+	}
+
+	response := gin.H{
+		"certificatePem": cert.CertificatePEM,
+		"fingerprint":    fmt.Sprintf("%x", cert.Fingerprint),
+		"publicKey":      cert.PublicKey,
+		"createdAt":      cert.CreatedAt,
+		"active":         cert.Active,
+	}
+
+	if txHash != nil {
+		response["transactionHash"] = *txHash
+	}
+	if chainId != nil {
+		response["chainId"] = *chainId
+	}
+
+	ctx.JSON(http.StatusOK, response)
+}
+
 // createChallenge creates a deterministic challenge based on user ID and public key
 func createChallenge(userID uuid.UUID, publicKeyPEM string) []byte {
 	data := fmt.Sprintf("%s:%s", userID.String(), publicKeyPEM)

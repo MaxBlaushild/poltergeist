@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
 )
 
@@ -53,6 +54,14 @@ func (s *server) register(ctx *gin.Context) {
 		requestBody.Name = ""
 	}
 
+	// Validate username if provided
+	if requestBody.Username != nil && !util.ValidateUsername(*requestBody.Username) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid username",
+		})
+		return
+	}
+
 	authenticateResponse, err := s.authClient.RegisterByText(ctx, &requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -61,8 +70,17 @@ func (s *server) register(ctx *gin.Context) {
 		return
 	}
 
+	// Refresh user from database to get latest data including profile picture URL
+	refreshedUser, err := s.dbClient.User().FindByID(ctx, authenticateResponse.User.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	ctx.JSON(200, gin.H{
-		"user":  authenticateResponse.User,
+		"user":  refreshedUser,
 		"token": authenticateResponse.Token,
 	})
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/widgets/post_card.dart';
@@ -32,14 +33,14 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.warmWhite,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.warmWhite,
         elevation: 0,
         title: const Text(
-          'Verifiable SN',
+          'Vera',
           style: TextStyle(
-            color: Colors.black,
+            color: AppColors.graphiteInk,
             fontWeight: FontWeight.w400,
             letterSpacing: -1.0,
             fontSize: 24,
@@ -62,7 +63,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 children: [
                   Text(
                     'Error loading feed: ${postProvider.error}',
-                    style: const TextStyle(color: Colors.red),
+                    style: TextStyle(color: AppColors.coralPop),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
@@ -81,11 +82,11 @@ class _FeedScreenState extends State<FeedScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 child: SizedBox(
                   height: MediaQuery.of(context).size.height - 200,
-                  child: const Center(
+                  child: Center(
                     child: Text(
                       'No posts yet.\nFollow friends to see their posts!',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: AppColors.graphiteInk.withOpacity(0.6)),
                     ),
                   ),
                 ),

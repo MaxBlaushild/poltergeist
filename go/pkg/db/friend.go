@@ -14,7 +14,9 @@ type friendHandle struct {
 }
 
 func (h *friendHandle) Create(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (*models.Friend, error) {
+	friendID := uuid.New()
 	friend := &models.Friend{
+		ID:           friendID,
 		FirstUserID:  firstUserID,
 		SecondUserID: secondUserID,
 		CreatedAt:    time.Now(),
@@ -53,4 +55,16 @@ func (h *friendHandle) FindAllFriends(ctx context.Context, userID uuid.UUID) ([]
 
 func (h *friendHandle) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("first_user_id = ? OR second_user_id = ?", userID, userID).Delete(&models.Friend{}).Error
+}
+
+func (h *friendHandle) Exists(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (bool, error) {
+	var count int64
+	err := h.db.WithContext(ctx).Model(&models.Friend{}).
+		Where("(first_user_id = ? AND second_user_id = ?) OR (first_user_id = ? AND second_user_id = ?)",
+			firstUserID, secondUserID, secondUserID, firstUserID).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
