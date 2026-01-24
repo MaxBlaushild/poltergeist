@@ -46,4 +46,5 @@ class ApiConstants {
   static const String checkCertificateEndpoint = '/verifiable-sn/certificate/check';
   static const String enrollCertificateEndpoint = '/verifiable-sn/certificate/enroll';
   static const String getCertificateEndpoint = '/verifiable-sn/certificate';
+  static String getUserCertificateEndpoint(String userId) => '/verifiable-sn/certificate/user/$userId';
 }

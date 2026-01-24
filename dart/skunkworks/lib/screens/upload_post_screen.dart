@@ -5,9 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:skunkworks/constants/api_constants.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
+import 'package:skunkworks/models/draft.dart';
+import 'package:skunkworks/screens/drafts_screen.dart';
+import 'package:skunkworks/screens/image_editor_screen.dart';
 import 'package:skunkworks/services/api_client.dart';
+import 'package:skunkworks/services/draft_service.dart';
 import 'package:skunkworks/services/c2pa_service.dart';
 import 'package:skunkworks/services/certificate_service.dart';
 import 'package:skunkworks/services/media_service.dart';
@@ -28,9 +33,12 @@ class UploadPostScreen extends StatefulWidget {
 class _UploadPostScreenState extends State<UploadPostScreen> {
   final _captionController = TextEditingController();
   File? _selectedMedia;
+  File? _editedImage;
+  Draft? _editingDraft;
   bool _uploading = false;
-  bool _isVideoMode = false; // false = photo, true = video
+  bool _isVideoMode = false;
   final ImagePicker _picker = ImagePicker();
+  final DraftService _draftService = DraftService();
 
   @override
   void dispose() {
@@ -45,6 +53,8 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         if (video != null) {
           setState(() {
             _selectedMedia = File(video.path);
+            _editedImage = null;
+            _editingDraft = null;
           });
         }
       } else {
@@ -52,6 +62,8 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         if (image != null) {
           setState(() {
             _selectedMedia = File(image.path);
+            _editedImage = null;
+            _editingDraft = null;
           });
         }
       }
@@ -62,6 +74,114 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         );
       }
     }
+  }
+
+  Future<void> _navigateToEditor() async {
+    if (_selectedMedia == null || _isVideoMode) return;
+
+    debugPrint('[UploadPost] _navigateToEditor: pushing ImageEditorScreen');
+    try {
+      final editedFile = await Navigator.push<File>(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ImageEditorScreen(
+            imageFile: _selectedMedia!,
+          ),
+        ),
+      );
+      debugPrint('[UploadPost] _navigateToEditor: Navigator.push returned');
+      debugPrint('[UploadPost] _navigateToEditor: editedFile=${editedFile?.path ?? "null"}');
+      debugPrint('[UploadPost] _navigateToEditor: mounted=$mounted');
+
+      if (editedFile != null && mounted) {
+        final exists = await editedFile.exists();
+        debugPrint('[UploadPost] _navigateToEditor: file exists=$exists');
+        if (exists) {
+          setState(() {
+            _editedImage = editedFile;
+          });
+          debugPrint('[UploadPost] _navigateToEditor: set _editedImage');
+        }
+      } else {
+        debugPrint('[UploadPost] _navigateToEditor: no file or not mounted, skipping setState');
+      }
+    } catch (e, st) {
+      debugPrint('[UploadPost] _navigateToEditor: error $e');
+      debugPrint('[UploadPost] _navigateToEditor: stack $st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error editing image: $e'),
+            backgroundColor: AppColors.coralPop,
+          ),
+        );
+      }
+    }
+    debugPrint('[UploadPost] _navigateToEditor: done');
+  }
+
+  Future<void> _saveDraft() async {
+    if (_selectedMedia == null || _isVideoMode) return;
+    final image = _editedImage ?? _selectedMedia!;
+    final caption = _captionController.text.trim();
+    final c = caption.isEmpty ? null : caption;
+
+    try {
+      if (_editingDraft != null) {
+        await _draftService.updateDraft(_editingDraft!.id, image, c);
+      } else {
+        await _draftService.saveDraft(image, c);
+      }
+      _captionController.clear();
+      setState(() {
+        _selectedMedia = null;
+        _editedImage = null;
+        _editingDraft = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Saved to draft')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save draft: $e'),
+            backgroundColor: AppColors.coralPop,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _navigateToDrafts() async {
+    final draft = await Navigator.push<Draft?>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const DraftsScreen(),
+      ),
+    );
+    if (draft == null || !mounted) return;
+    final file = File(draft.imagePath);
+    if (!await file.exists()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Draft image no longer available'),
+            backgroundColor: AppColors.coralPop,
+          ),
+        );
+      }
+      return;
+    }
+    _captionController.text = draft.caption ?? '';
+    setState(() {
+      _selectedMedia = file;
+      _editedImage = null;
+      _editingDraft = draft;
+      _isVideoMode = false;
+    });
   }
 
   Future<void> _uploadPost() async {
@@ -88,8 +208,11 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
       final certificateService = CertificateService(apiClient);
       final c2paService = C2PAService(certificateService);
 
+      // Use edited image if available, otherwise use original
+      final imageToUpload = _editedImage ?? _selectedMedia!;
+
       // Upload media to S3 first
-      final mediaUrl = await mediaService.uploadPostImage(_selectedMedia!, user!.id!);
+      final mediaUrl = await mediaService.uploadPostImage(imageToUpload, user!.id!);
       if (mediaUrl == null) {
         throw Exception('Failed to upload ${_isVideoMode ? 'video' : 'image'}');
       }
@@ -143,10 +266,16 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         mediaType: mediaType,
       );
 
-      // Clear form and navigate to feed
+      final editingDraft = _editingDraft;
+      if (editingDraft != null) {
+        await _draftService.deleteDraft(editingDraft.id);
+      }
+
       _captionController.clear();
       setState(() {
         _selectedMedia = null;
+        _editedImage = null;
+        _editingDraft = null;
         _isVideoMode = false;
       });
 
@@ -180,26 +309,44 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.warmWhite,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.warmWhite,
         elevation: 0,
         title: const Text(
           'New Post',
           style: TextStyle(
-            color: Colors.black,
+            color: AppColors.graphiteInk,
             fontWeight: FontWeight.w600,
             fontSize: 18,
           ),
         ),
         actions: [
+          if (!_uploading)
+            IconButton(
+              icon: Icon(Icons.drafts_outlined, color: AppColors.graphiteInk),
+              onPressed: _navigateToDrafts,
+              tooltip: 'Drafts',
+            ),
+          if (_selectedMedia != null && !_isVideoMode && !_uploading)
+            TextButton(
+              onPressed: _saveDraft,
+              child: Text(
+                'Save draft',
+                style: TextStyle(
+                  color: AppColors.graphiteInk,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                ),
+              ),
+            ),
           if (_selectedMedia != null && !_uploading)
             TextButton(
               onPressed: _uploadPost,
-              child: const Text(
+              child: Text(
                 'Share',
                 style: TextStyle(
-                  color: Colors.blue,
+                  color: AppColors.softRealBlue,
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
                 ),
@@ -267,9 +414,52 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                                   ),
                                 ],
                               )
-                            : Image.file(
-                                _selectedMedia!,
-                                fit: BoxFit.cover,
+                            : Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.file(
+                                    _editedImage ?? _selectedMedia!,
+                                    fit: BoxFit.cover,
+                                  ),
+                                  // Edit button overlay
+                                  Positioned(
+                                    top: 12,
+                                    right: 12,
+                                    child: Material(
+                                      color: AppColors.softRealBlue,
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: InkWell(
+                                        onTap: _navigateToEditor,
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.edit,
+                                                color: Colors.white,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                'Edit',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               )
                         : Center(
                             child: Column(
@@ -309,7 +499,9 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                                       onSelectionChanged: (Set<bool> newSelection) {
                                         setState(() {
                                           _isVideoMode = newSelection.first;
-                                          _selectedMedia = null; // Clear selection when switching modes
+                                          _selectedMedia = null;
+                                          _editedImage = null;
+                                          _editingDraft = null;
                                         });
                                       },
                                     ),

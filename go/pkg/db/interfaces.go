@@ -444,6 +444,7 @@ type FriendHandle interface {
 	Create(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (*models.Friend, error)
 	FindAllFriends(ctx context.Context, userID uuid.UUID) ([]models.User, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+	Exists(ctx context.Context, firstUserID uuid.UUID, secondUserID uuid.UUID) (bool, error)
 }
 
 type FriendInviteHandle interface {

@@ -28,7 +28,9 @@ class _SearchScreenState extends State<SearchScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = context.read<AuthProvider>();
       _currentUserId = authProvider.user?.id ?? '';
-      context.read<FriendProvider>().loadInvites();
+      final friendProvider = context.read<FriendProvider>();
+      friendProvider.loadInvites();
+      friendProvider.loadFriends();
     });
   }
 

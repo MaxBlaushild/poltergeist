@@ -250,6 +250,11 @@ class CertificateService {
   /// Enrolls a certificate by generating a keypair, signing a challenge, and sending to backend
   Future<Certificate> enrollCertificate(User user) async {
     try {
+      // Validate that user has an ID
+      if (user.id == null || user.id!.isEmpty) {
+        throw Exception('User ID is required to enroll a certificate. Please ensure you are logged in with a valid account.');
+      }
+      
       // Generate keypair using elliptic package
       final privateKey = await generateKeyPair();
       
@@ -301,6 +306,25 @@ class CertificateService {
       await storeCertificateLocally(certificate);
       
       return certificate;
+    } catch (e) {
+      if (e is DioException && e.response?.statusCode == 404) {
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  /// Gets a user's certificate by user ID
+  /// 
+  /// [userId] - The user ID
+  /// 
+  /// Returns the certificate or null if not found
+  Future<Certificate?> getUserCertificate(String userId) async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.getUserCertificateEndpoint(userId),
+      );
+      return Certificate.fromJson(response);
     } catch (e) {
       if (e is DioException && e.response?.statusCode == 404) {
         return null;

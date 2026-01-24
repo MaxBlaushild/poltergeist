@@ -81,6 +81,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/verifiable-sn/certificate/check", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CheckCertificate))
 	r.POST("/verifiable-sn/certificate/enroll", middleware.WithAuthenticationWithoutLocation(s.authClient, s.EnrollCertificate))
 	r.GET("/verifiable-sn/certificate", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetCertificate))
+	r.GET("/verifiable-sn/certificate/user/:userId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetUserCertificate))
 }
 
 func (s *server) ListenAndServe(port string) {

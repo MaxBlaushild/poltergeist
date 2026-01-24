@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -76,7 +77,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.warmWhite,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -90,12 +91,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     // App branding area (Instagram-like)
                     const SizedBox(height: 60),
                     Text(
-                      'Verifiable SN',
+                      'Vera',
                       style: TextStyle(
                         fontSize: 48,
                         fontWeight: FontWeight.w400,
                         letterSpacing: -1.0,
-                        color: Colors.black87,
+                        color: AppColors.graphiteInk,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -115,14 +116,14 @@ class _LoginScreenState extends State<LoginScreen> {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.red.shade50,
+                          color: AppColors.coralPop.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.red.shade200),
+                          border: Border.all(color: AppColors.coralPop.withOpacity(0.3)),
                         ),
                         child: Text(
                           authProvider.error!,
                           style: TextStyle(
-                            color: Colors.red.shade700,
+                            color: AppColors.coralPop,
                             fontSize: 14,
                           ),
                           textAlign: TextAlign.center,
@@ -196,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
           "We've sent a 6-digit verification code to your phone. It may take a moment to arrive.",
           style: TextStyle(
             fontSize: 14,
-            color: Colors.grey.shade600,
+            color: AppColors.graphiteInk.withOpacity(0.6),
           ),
           textAlign: TextAlign.center,
         ),
@@ -250,9 +251,9 @@ class _LoginScreenState extends State<LoginScreen> {
         onPressed: _isPhoneValid ? _handleGetCode : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: _isPhoneValid
-              ? Colors.blue.shade600
-              : Colors.blue.shade300,
-          foregroundColor: Colors.white,
+              ? AppColors.softRealBlue
+              : AppColors.softRealBlue.withOpacity(0.5),
+          foregroundColor: AppColors.warmWhite,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(4),
           ),
@@ -278,13 +279,13 @@ class _LoginScreenState extends State<LoginScreen> {
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            child: Text(
-              'Change number',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontSize: 14,
+              child: Text(
+                'Change number',
+                style: TextStyle(
+                  color: AppColors.graphiteInk.withOpacity(0.7),
+                  fontSize: 14,
+                ),
               ),
-            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -298,9 +299,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _codeController.text.length == 6
-                    ? Colors.blue.shade600
-                    : Colors.blue.shade300,
-                foregroundColor: Colors.white,
+                    ? AppColors.softRealBlue
+                    : AppColors.softRealBlue.withOpacity(0.5),
+                foregroundColor: AppColors.warmWhite,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(4),
                 ),

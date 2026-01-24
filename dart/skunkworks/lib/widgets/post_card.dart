@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
 import 'package:skunkworks/screens/post_detail_screen.dart';
+import 'package:skunkworks/screens/profile_screen.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/widgets/video_player_widget.dart';
 
@@ -132,14 +134,17 @@ class _PostCardState extends State<PostCard> {
     final username = _currentPost.user?.username ?? _currentPost.user?.phoneNumber ?? 'Unknown';
     final profilePictureUrl = _currentPost.user?.profilePictureUrl;
     final userReactionEmoji = _getUserReactionEmoji();
+    final authProvider = context.watch<AuthProvider>();
+    final currentUserId = authProvider.user?.id;
+    final isPostOwner = currentUserId != null && _currentPost.userId == currentUserId;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(
+        color: AppColors.warmWhite,
         border: Border(
-          top: BorderSide(color: Colors.grey, width: 0.5),
-          bottom: BorderSide(color: Colors.grey, width: 0.5),
+          top: BorderSide(color: Colors.grey.shade300, width: 0.5),
+          bottom: BorderSide(color: Colors.grey.shade300, width: 0.5),
         ),
       ),
       child: Column(
@@ -150,25 +155,57 @@ class _PostCardState extends State<PostCard> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.grey.shade300,
-                  backgroundImage: profilePictureUrl != null
-                      ? NetworkImage(profilePictureUrl)
-                      : null,
-                  child: profilePictureUrl == null
-                      ? Text(
-                          username.isNotEmpty ? username[0].toUpperCase() : 'U',
-                          style: const TextStyle(color: Colors.grey),
-                        )
-                      : null,
+                GestureDetector(
+                  onTap: () {
+                    if (_currentPost.userId != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProfileScreen(
+                            userId: _currentPost.userId!,
+                            user: _currentPost.user,
+                            onNavigate: widget.onNavigate ?? (_) {},
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.grey.shade300,
+                    backgroundImage: profilePictureUrl != null
+                        ? NetworkImage(profilePictureUrl)
+                        : null,
+                    child: profilePictureUrl == null
+                        ? Text(
+                            username.isNotEmpty ? username[0].toUpperCase() : 'U',
+                            style: const TextStyle(color: Colors.grey),
+                          )
+                        : null,
+                  ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  username,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                GestureDetector(
+                  onTap: () {
+                    if (_currentPost.userId != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProfileScreen(
+                            userId: _currentPost.userId!,
+                            user: _currentPost.user,
+                            onNavigate: widget.onNavigate ?? (_) {},
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(
+                    username,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -176,10 +213,36 @@ class _PostCardState extends State<PostCard> {
                   Text(
                     _formatTimestamp(_currentPost.createdAt),
                     style: TextStyle(
-                      color: Colors.grey.shade600,
+                      color: AppColors.graphiteInk.withOpacity(0.6),
                       fontSize: 12,
                     ),
                   ),
+                if (isPostOwner) ...[
+                  const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 20, color: Colors.grey),
+                    onSelected: (value) {
+                      if (value == 'delete') {
+                        _handleDeletePost();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: AppColors.coralPop, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Delete',
+                              style: TextStyle(color: AppColors.coralPop),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -259,11 +322,11 @@ class _PostCardState extends State<PostCard> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: reaction.userReacted ? FontWeight.w600 : FontWeight.normal,
-                            color: reaction.userReacted ? Colors.blue : Colors.black87,
+                            color: reaction.userReacted ? AppColors.softRealBlue : AppColors.graphiteInk,
                           ),
                         ),
                         backgroundColor: reaction.userReacted 
-                            ? Colors.blue.shade50 
+                            ? AppColors.softRealBlue.withOpacity(0.1)
                             : Colors.grey.shade100,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -282,7 +345,7 @@ class _PostCardState extends State<PostCard> {
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: userReactionEmoji != null 
-                              ? Colors.blue.shade50 
+                              ? AppColors.softRealBlue.withOpacity(0.1)
                               : Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(20),
                         ),
@@ -299,8 +362,8 @@ class _PostCardState extends State<PostCard> {
                               style: TextStyle(
                                 fontSize: 14,
                                 color: userReactionEmoji != null 
-                                    ? Colors.blue 
-                                    : Colors.black87,
+                                    ? AppColors.softRealBlue 
+                                    : AppColors.graphiteInk,
                                 fontWeight: userReactionEmoji != null 
                                     ? FontWeight.w600 
                                     : FontWeight.normal,
@@ -354,7 +417,7 @@ class _PostCardState extends State<PostCard> {
                             ? 'Hide comments'
                             : 'View all ${_currentPost.commentCount ?? _currentPost.comments?.length ?? 0} comments',
                         style: TextStyle(
-                          color: Colors.grey.shade600,
+                          color: AppColors.graphiteInk.withOpacity(0.6),
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
@@ -453,7 +516,7 @@ class _PostCardState extends State<PostCard> {
                           child: Text(
                             'Delete',
                             style: TextStyle(
-                              color: Colors.red.shade600,
+                              color: AppColors.coralPop,
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                             ),
@@ -581,6 +644,42 @@ class _PostCardState extends State<PostCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete comment: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleDeletePost() async {
+    if (_currentPost.id == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final postProvider = context.read<PostProvider>();
+      await postProvider.deletePost(_currentPost.id!);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete post: ${e.toString()}')),
         );
       }
     }
