@@ -365,6 +365,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _handleFlagPost() async {
+    if (_post?.id == null) return;
+
+    try {
+      await context.read<PostProvider>().flagPost(_post!.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post reported. Thank you for your feedback.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to report post: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
   void _handleSharePost() {
     if (_post?.id == null) return;
     final url = ApiConstants.sharePostUrl(_post!.id!);
@@ -480,6 +499,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             icon: const Icon(Icons.share, color: AppColors.softRealBlue),
             onPressed: _handleSharePost,
             tooltip: 'Share post',
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert, color: AppColors.graphiteInk),
+            onSelected: (value) {
+              if (value == 'flag') _handleFlagPost();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'flag',
+                child: Row(
+                  children: [
+                    Icon(Icons.flag_outlined, size: 20),
+                    SizedBox(width: 8),
+                    Text('Report'),
+                  ],
+                ),
+              ),
+            ],
           ),
           if (isPostOwner) ...[
             if (_post!.imageUrl != null && !_post!.isVideo)

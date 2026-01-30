@@ -56,6 +56,7 @@ type client struct {
 	partyInviteHandle                 *partyInviteHandle
 	postHandle                        *postHandle
 	postTagHandle                     *postTagHandle
+	postFlagHandle                    *postFlagHandle
 	postReactionHandle                *postReactionHandle
 	postCommentHandle                 *postCommentHandle
 	activityHandle                    *activityHandle
@@ -79,8 +80,9 @@ type client struct {
 	feteTeamHandle                    *feteTeamHandler
 	feteRoomLinkedListTeamHandle      *feteRoomLinkedListTeamHandler
 	feteRoomTeamHandle                *feteRoomTeamHandler
-	blockchainTransactionHandle      *blockchainTransactionHandle
+	blockchainTransactionHandle       *blockchainTransactionHandle
 	userCertificateHandle             *userCertificateHandle
+	albumHandle                       *albumHandle
 }
 
 type ClientConfig struct {
@@ -154,6 +156,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		partyInviteHandle:                 &partyInviteHandle{db: db},
 		postHandle:                        &postHandle{db: db},
 		postTagHandle:                     &postTagHandle{db: db},
+		postFlagHandle:                    &postFlagHandle{db: db},
 		albumHandle:                       &albumHandle{db: db},
 		postReactionHandle:                &postReactionHandle{db: db},
 		postCommentHandle:                 &postCommentHandle{db: db},
@@ -178,7 +181,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		feteTeamHandle:                    &feteTeamHandler{db: db},
 		feteRoomLinkedListTeamHandle:      &feteRoomLinkedListTeamHandler{db: db},
 		feteRoomTeamHandle:                &feteRoomTeamHandler{db: db},
-		blockchainTransactionHandle:      &blockchainTransactionHandle{db: db},
+		blockchainTransactionHandle:       &blockchainTransactionHandle{db: db},
 		userCertificateHandle:             &userCertificateHandle{db: db},
 	}, nil
 }
@@ -209,6 +212,10 @@ func (c *client) Post() PostHandle {
 
 func (c *client) PostTag() PostTagHandle {
 	return c.postTagHandle
+}
+
+func (c *client) PostFlag() PostFlagHandle {
+	return c.postFlagHandle
 }
 
 func (c *client) Album() AlbumHandle {

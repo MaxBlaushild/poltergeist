@@ -133,6 +133,13 @@ class PostService {
     }
   }
 
+  /// Flags a post for review
+  ///
+  /// [postId] - The post ID
+  Future<void> flagPost(String postId) async {
+    await _apiClient.post(ApiConstants.flagPostEndpoint(postId));
+  }
+
   /// Deletes a post
   /// 
   /// [postId] - The post ID
