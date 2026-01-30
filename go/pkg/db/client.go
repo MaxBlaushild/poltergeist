@@ -154,6 +154,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		partyInviteHandle:                 &partyInviteHandle{db: db},
 		postHandle:                        &postHandle{db: db},
 		postTagHandle:                     &postTagHandle{db: db},
+		albumHandle:                       &albumHandle{db: db},
 		postReactionHandle:                &postReactionHandle{db: db},
 		postCommentHandle:                 &postCommentHandle{db: db},
 		activityHandle:                    &activityHandle{db: db},
@@ -208,6 +209,10 @@ func (c *client) Post() PostHandle {
 
 func (c *client) PostTag() PostTagHandle {
 	return c.postTagHandle
+}
+
+func (c *client) Album() AlbumHandle {
+	return c.albumHandle
 }
 
 func (c *client) PostReaction() PostReactionHandle {

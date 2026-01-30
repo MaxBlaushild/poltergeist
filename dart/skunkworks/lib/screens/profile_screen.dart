@@ -13,6 +13,7 @@ import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/post_detail_screen.dart';
+import 'package:skunkworks/screens/albums_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -241,7 +242,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                       const Divider(),
-                      
+
+                      // Albums (own profile only)
+                      if (isOwnProfile)
+                        ListTile(
+                          leading: Icon(Icons.photo_album_outlined, color: AppColors.softRealBlue),
+                          title: const Text('Albums'),
+                          subtitle: const Text('View albums by tag'),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AlbumsScreen(onNavigate: widget.onNavigate),
+                              ),
+                            );
+                          },
+                        ),
+                      if (isOwnProfile) const Divider(),
+
                       // Certificate section
                       _buildCertificateSection(),
                       

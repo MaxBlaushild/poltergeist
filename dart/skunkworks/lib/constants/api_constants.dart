@@ -25,7 +25,11 @@ class ApiConstants {
   static String createCommentEndpoint(String postId) => '/verifiable-sn/posts/$postId/comments';
   static String deleteCommentEndpoint(String postId, String commentId) => '/verifiable-sn/posts/$postId/comments/$commentId';
   static String getBlockchainTransactionEndpoint(String postId) => '/verifiable-sn/posts/$postId/blockchain-transaction';
-  
+
+  // Album endpoints
+  static const String albumsEndpoint = '/verifiable-sn/albums';
+  static String albumEndpoint(String albumId) => '/verifiable-sn/albums/$albumId';
+
   // Media endpoints
   static const String presignedUploadUrlEndpoint = '/verifiable-sn/media/uploadUrl';
   
