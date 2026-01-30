@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:travel_angels/widgets/file_picker_widget.dart';
 import 'package:travel_angels/widgets/google_drive_file_picker.dart';
+import 'package:travel_angels/widgets/video_picker_flow.dart';
 
 /// Bottom sheet for selecting import source (Google Drive or File)
 class ImportDocumentBottomSheet extends StatelessWidget {
@@ -33,6 +34,10 @@ class ImportDocumentBottomSheet extends StatelessWidget {
         onImportComplete: onImportComplete,
       ),
     );
+  }
+
+  void _handleVideoSelected(BuildContext context) {
+    showVideoPickerFlow(context, onComplete: onImportComplete);
   }
 
   @override
@@ -88,6 +93,15 @@ class ImportDocumentBottomSheet extends StatelessWidget {
               subtitle: 'Select a PDF or Word (.docx) file',
               enabled: true,
               onTap: () => _handleFileSelected(context),
+            ),
+            const SizedBox(height: 12),
+            // Video option
+            _ImportOption(
+              icon: Icons.videocam_outlined,
+              title: 'Import Video',
+              subtitle: 'Edit and upload a video (mobile, macOS)',
+              enabled: true,
+              onTap: () => _handleVideoSelected(context),
             ),
             const SizedBox(height: 16),
           ],

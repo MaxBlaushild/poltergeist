@@ -27,6 +27,8 @@ type RegisterByTextRequest struct {
 	Longitude        *float64 `json:"longitude"`
 	LocationAddress  *string  `json:"locationAddress"`
 	Bio              *string  `json:"bio"`
+	Category         *string  `json:"category"`
+	AgeRange         *string  `json:"ageRange"`
 }
 
 type LoginByTextRequest struct {

@@ -11,12 +11,17 @@ import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/models/draft.dart';
 import 'package:skunkworks/screens/drafts_screen.dart';
 import 'package:skunkworks/screens/image_editor_screen.dart';
+// import 'package:skunkworks/screens/video_editor_screen.dart'; // Video editing disabled
 import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/services/draft_service.dart';
 import 'package:skunkworks/services/c2pa_service.dart';
 import 'package:skunkworks/services/certificate_service.dart';
 import 'package:skunkworks/services/media_service.dart';
+import 'package:skunkworks/utils/video_platform_utils.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
+// import 'package:skunkworks/widgets/video_preview_dialog.dart'; // Video editing disabled
+import 'package:chewie/chewie.dart';
+import 'package:video_player/video_player.dart';
 
 class UploadPostScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -32,6 +37,8 @@ class UploadPostScreen extends StatefulWidget {
 
 class _UploadPostScreenState extends State<UploadPostScreen> {
   final _captionController = TextEditingController();
+  final _tagInputController = TextEditingController();
+  List<String> _selectedTags = [];
   File? _selectedMedia;
   File? _editedImage;
   Draft? _editingDraft;
@@ -43,7 +50,24 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
   @override
   void dispose() {
     _captionController.dispose();
+    _tagInputController.dispose();
     super.dispose();
+  }
+
+  void _addTag() {
+    final t = _tagInputController.text.trim();
+    if (t.isEmpty) return;
+    final tag = t.length > 64 ? t.substring(0, 64) : t;
+    if (!_selectedTags.contains(tag)) {
+      setState(() {
+        _selectedTags = [..._selectedTags, tag];
+        _tagInputController.clear();
+      });
+    }
+  }
+
+  void _removeTag(String tag) {
+    setState(() => _selectedTags = _selectedTags.where((t) => t != tag).toList());
   }
 
   Future<void> _pickMedia(ImageSource source) async {
@@ -76,9 +100,22 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
     }
   }
 
-  Future<void> _navigateToEditor() async {
-    if (_selectedMedia == null || _isVideoMode) return;
+  Future<void> _previewVideo(File videoFile) async {
+    showDialog(
+      context: context,
+      builder: (context) => _VideoFilePreviewDialog(videoFile: videoFile),
+    );
+  }
 
+  Future<void> _navigateToEditor() async {
+    if (_selectedMedia == null) return;
+
+    // Video editing is disabled/hidden
+    if (_isVideoMode) {
+      return;
+    }
+
+    // Handle image editing
     debugPrint('[UploadPost] _navigateToEditor: pushing ImageEditorScreen');
     try {
       final editedFile = await Navigator.push<File>(
@@ -272,10 +309,12 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
       }
 
       _captionController.clear();
+      _tagInputController.clear();
       setState(() {
         _selectedMedia = null;
         _editedImage = null;
         _editingDraft = null;
+        _selectedTags = [];
         _isVideoMode = false;
       });
 
@@ -379,39 +418,83 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                             ? Stack(
                                 fit: StackFit.expand,
                                 children: [
-                                  Image.file(
-                                    _selectedMedia!,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Center(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Icon(
-                                              Icons.videocam,
-                                              size: 64,
-                                              color: Colors.grey.shade400,
-                                            ),
-                                            const SizedBox(height: 16),
-                                            Text(
-                                              'Video selected',
-                                              style: TextStyle(
-                                                color: Colors.grey.shade600,
-                                                fontSize: 16,
+                                  GestureDetector(
+                                    onTap: () => _previewVideo(_selectedMedia!),
+                                    child: Image.file(
+                                      _selectedMedia!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.videocam,
+                                                size: 64,
+                                                color: Colors.grey.shade400,
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  Center(
-                                    child: Icon(
-                                      Icons.play_circle_filled,
-                                      size: 64,
-                                      color: Colors.white.withOpacity(0.8),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Video selected',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
+                                  Center(
+                                    child: GestureDetector(
+                                      onTap: () => _previewVideo(_selectedMedia!),
+                                      child: Icon(
+                                        Icons.play_circle_filled,
+                                        size: 64,
+                                        color: Colors.white.withValues(alpha: 0.8),
+                                      ),
+                                    ),
+                                  ),
+                                  // Edit button overlay - HIDDEN for videos
+                                  // Positioned(
+                                  //   top: 12,
+                                  //   right: 12,
+                                  //   child: Material(
+                                  //     color: AppColors.softRealBlue,
+                                  //     borderRadius: BorderRadius.circular(20),
+                                  //     child: InkWell(
+                                  //       onTap: _navigateToEditor,
+                                  //       borderRadius: BorderRadius.circular(20),
+                                  //       child: Container(
+                                  //         padding: const EdgeInsets.symmetric(
+                                  //           horizontal: 16,
+                                  //           vertical: 8,
+                                  //         ),
+                                  //         child: Row(
+                                  //           mainAxisSize: MainAxisSize.min,
+                                  //           children: [
+                                  //             const Icon(
+                                  //               Icons.edit,
+                                  //               color: Colors.white,
+                                  //               size: 18,
+                                  //             ),
+                                  //             const SizedBox(width: 6),
+                                  //             Text(
+                                  //               'Edit',
+                                  //               style: TextStyle(
+                                  //                 color: Colors.white,
+                                  //                 fontWeight: FontWeight.w600,
+                                  //                 fontSize: 14,
+                                  //               ),
+                                  //             ),
+                                  //           ],
+                                  //         ),
+                                  //       ),
+                                  //     ),
+                                  //   ),
+                                  // ),
                                 ],
                               )
                             : Stack(
@@ -422,43 +505,44 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                                     fit: BoxFit.cover,
                                   ),
                                   // Edit button overlay
-                                  Positioned(
-                                    top: 12,
-                                    right: 12,
-                                    child: Material(
-                                      color: AppColors.softRealBlue,
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: InkWell(
-                                        onTap: _navigateToEditor,
+                                  if (!_isVideoMode || supportsFullVideoEditing)
+                                    Positioned(
+                                      top: 12,
+                                      right: 12,
+                                      child: Material(
+                                        color: AppColors.softRealBlue,
                                         borderRadius: BorderRadius.circular(20),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(
-                                                Icons.edit,
-                                                color: Colors.white,
-                                                size: 18,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                'Edit',
-                                                style: TextStyle(
+                                        child: InkWell(
+                                          onTap: _navigateToEditor,
+                                          borderRadius: BorderRadius.circular(20),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 8,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.edit,
                                                   color: Colors.white,
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 14,
+                                                  size: 18,
                                                 ),
-                                              ),
-                                            ],
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  'Edit',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
-                                  ),
                                 ],
                               )
                         : Center(
@@ -529,6 +613,59 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                       maxLines: 5,
                     ),
                   ),
+                  // Tags
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tags',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _tagInputController,
+                                decoration: const InputDecoration(
+                                  hintText: 'Add a tag',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                ),
+                                onSubmitted: (_) => _addTag(),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              onPressed: _addTag,
+                              icon: const Icon(Icons.add, size: 20),
+                              tooltip: 'Add tag',
+                            ),
+                          ],
+                        ),
+                        if (_selectedTags.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: _selectedTags.map((tag) => Chip(
+                              label: Text(tag, style: const TextStyle(fontSize: 13)),
+                              deleteIcon: const Icon(Icons.close, size: 18),
+                              onDeleted: () => _removeTag(tag),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            )).toList(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -545,6 +682,144 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
   /// Converts bytes to hex string
   String _bytesToHex(Uint8List bytes) {
     return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join('');
+  }
+}
+
+/// Dialog for previewing a video from a File
+class _VideoFilePreviewDialog extends StatefulWidget {
+  final File videoFile;
+
+  const _VideoFilePreviewDialog({required this.videoFile});
+
+  @override
+  State<_VideoFilePreviewDialog> createState() => _VideoFilePreviewDialogState();
+}
+
+class _VideoFilePreviewDialogState extends State<_VideoFilePreviewDialog> {
+  VideoPlayerController? _videoPlayerController;
+  ChewieController? _chewieController;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePlayer();
+  }
+
+  Future<void> _initializePlayer() async {
+    try {
+      _videoPlayerController = VideoPlayerController.file(widget.videoFile);
+      await _videoPlayerController!.initialize();
+      
+      if (!mounted) return;
+      
+      _chewieController = ChewieController(
+        videoPlayerController: _videoPlayerController!,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: _videoPlayerController!.value.aspectRatio,
+        errorBuilder: (context, errorMessage) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  'Error loading video',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  errorMessage,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        },
+      );
+      
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _chewieController?.dispose();
+    _videoPlayerController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.9,
+        height: MediaQuery.of(context).size.height * 0.7,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Video Preview',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  size: 48, color: Colors.red),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Error loading video',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _error!,
+                                style: Theme.of(context).textTheme.bodySmall,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        )
+                      : _chewieController != null
+                          ? Chewie(controller: _chewieController!)
+                          : const Center(child: CircularProgressIndicator()),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

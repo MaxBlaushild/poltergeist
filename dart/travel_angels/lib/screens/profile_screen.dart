@@ -11,8 +11,6 @@ import 'package:travel_angels/services/credits_service.dart';
 import 'package:travel_angels/services/document_service.dart';
 import 'package:travel_angels/widgets/credits_purchase_dialog.dart';
 import 'package:travel_angels/widgets/permissions_panel.dart';
-import 'package:travel_angels/widgets/edit_profile_dialog.dart';
-import 'package:intl/intl.dart';
 
 /// Profile screen for user profile and settings
 class ProfileScreen extends StatefulWidget {
@@ -52,6 +50,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // Load initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Refresh user details to ensure we have the latest data
+      context.read<AuthProvider>().verifyToken();
       _loadDocumentCount();
     });
   }
@@ -134,158 +134,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// Calculate age from date of birth
-  static int? _calculateAge(DateTime? dateOfBirth) {
-    if (dateOfBirth == null) return null;
-    final now = DateTime.now();
-    int age = now.year - dateOfBirth.year;
-    if (now.month < dateOfBirth.month ||
-        (now.month == dateOfBirth.month && now.day < dateOfBirth.day)) {
-      age--;
-    }
-    return age;
-  }
-
-  /// Format date of birth for display
-  static String _formatDateOfBirth(DateTime? dateOfBirth) {
-    if (dateOfBirth == null) return 'Not set';
-    return DateFormat('MMMM d, yyyy').format(dateOfBirth);
-  }
-
-  /// Format location for display
-  static String _formatLocation(String? locationAddress) {
-    if (locationAddress == null || locationAddress.isEmpty) return 'Not set';
-    return locationAddress;
-  }
-
-  /// Build demographic information section
-  Widget _buildDemographicSection(User? user, ThemeData theme) {
-    final age = _calculateAge(user?.dateOfBirth);
-    final dateOfBirthText = user?.dateOfBirth != null
-        ? '${_formatDateOfBirth(user!.dateOfBirth)} (${age} years old)'
-        : 'Not set';
-    final genderText = user?.gender ?? 'Not set';
-    final locationText = _formatLocation(user?.locationAddress);
-    final bioText = user?.bio ?? 'Not set';
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Profile Information',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _openEditDialog(context, user),
-                  tooltip: 'Edit profile',
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildInfoRow(
-              theme,
-              Icons.cake,
-              'Date of Birth',
-              dateOfBirthText,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow(
-              theme,
-              Icons.person,
-              'Gender',
-              genderText,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow(
-              theme,
-              Icons.location_on,
-              'Location',
-              locationText,
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow(
-              theme,
-              Icons.description,
-              'Bio',
-              bioText,
-              isMultiline: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build a single info row
-  Widget _buildInfoRow(
-    ThemeData theme,
-    IconData icon,
-    String label,
-    String value, {
-    bool isMultiline = false,
-  }) {
-    return Row(
-      crossAxisAlignment: isMultiline ? CrossAxisAlignment.start : CrossAxisAlignment.center,
-      children: [
-        Icon(
-          icon,
-          size: 20,
-          color: theme.colorScheme.primary,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.6),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: value == 'Not set'
-                      ? theme.colorScheme.onSurface.withOpacity(0.5)
-                      : theme.colorScheme.onSurface,
-                ),
-                maxLines: isMultiline ? null : 1,
-                overflow: isMultiline ? null : TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Open edit profile dialog
-  void _openEditDialog(BuildContext context, User? user) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => EditProfileDialog(
-        user: user,
-        onSave: () {
-          // Refresh user data after save
-          context.read<AuthProvider>().verifyToken();
-        },
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -354,9 +202,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            // Demographic Information Section
-            _buildDemographicSection(user, theme),
-            const SizedBox(height: 16),
             // Experience Bar Section
             Card(
               child: Padding(

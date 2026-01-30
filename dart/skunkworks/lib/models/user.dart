@@ -17,6 +17,8 @@ class User {
   final double? longitude;
   final String? locationAddress;
   final String? bio;
+  final String? category;
+  final String? ageRange;
 
   User({
     this.id,
@@ -37,6 +39,8 @@ class User {
     this.longitude,
     this.locationAddress,
     this.bio,
+    this.category,
+    this.ageRange,
   });
 
   static String? _idFromJson(dynamic json) {
@@ -140,6 +144,16 @@ class User {
     return json as String?;
   }
 
+  static String? _categoryFromJson(dynamic json) {
+    if (json == null || json == '') return null;
+    return json as String?;
+  }
+
+  static String? _ageRangeFromJson(dynamic json) {
+    if (json == null || json == '') return null;
+    return json as String?;
+  }
+
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: _idFromJson(json['id']),
@@ -160,6 +174,8 @@ class User {
       longitude: _longitudeFromJson(json['longitude']),
       locationAddress: _locationAddressFromJson(json['locationAddress']),
       bio: _bioFromJson(json['bio']),
+      category: _categoryFromJson(json['category']),
+      ageRange: _ageRangeFromJson(json['ageRange']),
     );
   }
 }

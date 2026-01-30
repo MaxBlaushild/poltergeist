@@ -18,5 +18,6 @@ type Post struct {
 	ManifestURI     *string   `gorm:"type:text" json:"manifestUri,omitempty"`
 	CertFingerprint []byte    `gorm:"type:bytea" json:"certFingerprint,omitempty"`
 	AssetID         *string   `gorm:"type:text" json:"assetId,omitempty"`
+	Tags            []string  `gorm:"-" json:"tags,omitempty"` // Populated from post_tags, not stored on posts table
 }
 

@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 class AuthService {
   final APIClient _apiClient;
   static const String _tokenKey = 'token';
+  static const String _demoPhone = '+14407858475';
 
   AuthService(this._apiClient);
 
@@ -23,11 +24,19 @@ class AuthService {
     return cleaned;
   }
 
+  bool _isDemoPhone(String formattedPhone) => formattedPhone == _demoPhone;
+
   /// Gets a verification code for the given phone number
   /// Returns true if user exists (login), false if new user (register)
   Future<bool> getVerificationCode(String phoneNumber) async {
     try {
       final formattedPhone = _formatPhoneNumber(phoneNumber);
+
+      // Demo account: skip API call (no SMS), always treat as existing user (login).
+      if (_isDemoPhone(formattedPhone)) {
+        return true;
+      }
+
       final response = await _apiClient.post(
         ApiConstants.verificationCodeEndpoint,
         data: {
@@ -152,6 +161,41 @@ class AuthService {
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_tokenKey);
+  }
+
+  /// Updates the user profile
+  /// 
+  /// [username] - Optional username to update
+  /// [profilePictureUrl] - Optional profile picture URL to update
+  /// [category] - Optional category to update
+  /// [ageRange] - Optional age range to update
+  /// [bio] - Optional bio to update
+  /// 
+  /// Returns the updated user
+  Future<User> updateProfile({
+    String? username,
+    String? profilePictureUrl,
+    String? category,
+    String? ageRange,
+    String? bio,
+  }) async {
+    try {
+      final data = <String, dynamic>{};
+      if (username != null) data['username'] = username;
+      if (profilePictureUrl != null) data['profilePictureUrl'] = profilePictureUrl;
+      if (category != null) data['category'] = category;
+      if (ageRange != null) data['ageRange'] = ageRange;
+      if (bio != null) data['bio'] = bio;
+
+      final response = await _apiClient.put<Map<String, dynamic>>(
+        ApiConstants.updateProfileEndpoint,
+        data: data,
+      );
+
+      return User.fromJson(response);
+    } catch (e) {
+      rethrow;
+    }
   }
 }
 

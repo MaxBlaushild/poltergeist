@@ -97,6 +97,34 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates the user profile
+  Future<void> updateProfile({
+    String? username,
+    String? profilePictureUrl,
+    String? category,
+    String? ageRange,
+    String? bio,
+  }) async {
+    _error = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateProfile(
+        username: username,
+        profilePictureUrl: profilePictureUrl,
+        category: category,
+        ageRange: ageRange,
+        bio: bio,
+      );
+      _user = updatedUser;
+      notifyListeners();
+    } catch (e) {
+      _error = _extractErrorMessage(e);
+      notifyListeners();
+      rethrow;
+    }
+  }
+
   /// Logs out the user
   Future<void> logout() async {
     await _authService.logout();

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
@@ -73,6 +75,12 @@ class _PostCardState extends State<PostCard> {
     } else {
       return 'now';
     }
+  }
+
+  void _handleSharePost() {
+    if (_currentPost.id == null) return;
+    final url = ApiConstants.sharePostUrl(_currentPost.id!);
+    Share.share('Check out this post on Vera! $url', subject: 'Post on Vera');
   }
 
   Future<void> _handleReaction(String emoji) async {
@@ -304,6 +312,27 @@ class _PostCardState extends State<PostCard> {
                 style: const TextStyle(fontSize: 14),
               ),
             ),
+          // Tags
+          if (_currentPost.tags != null && _currentPost.tags!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _currentPost.tags!.map((tag) => Chip(
+                  label: Text(
+                    '#$tag',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.softRealBlue.withOpacity(0.9),
+                    ),
+                  ),
+                  backgroundColor: AppColors.softRealBlue.withOpacity(0.08),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                )).toList(),
+              ),
+            ),
           // Reactions section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -334,7 +363,7 @@ class _PostCardState extends State<PostCard> {
                     }).toList(),
                   ),
                 const SizedBox(height: 8),
-                // Reaction button
+                // Reaction and Share
                 Row(
                   children: [
                     GestureDetector(
@@ -371,6 +400,16 @@ class _PostCardState extends State<PostCard> {
                             ),
                           ],
                         ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.share_outlined, size: 22, color: AppColors.graphiteInk),
+                      onPressed: _handleSharePost,
+                      tooltip: 'Share post',
+                      style: IconButton.styleFrom(
+                        padding: const EdgeInsets.all(4),
+                        minimumSize: const Size(36, 36),
                       ),
                     ),
                   ],

@@ -4,6 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  file_selector_windows
+  pro_video_editor
+  record_windows
   url_launcher_windows
 )
 

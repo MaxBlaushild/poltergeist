@@ -39,6 +39,7 @@ class PostProvider extends ChangeNotifier {
   /// [certFingerprint] - Certificate fingerprint (hex string)
   /// [assetId] - Optional C2PA asset identifier
   /// [mediaType] - Optional media type ("image" or "video"), defaults to "image"
+  /// [tags] - Optional list of tags for the post
   Future<void> createPost(
     String imageUrl, {
     String? caption,
@@ -47,6 +48,7 @@ class PostProvider extends ChangeNotifier {
     String? certFingerprint,
     String? assetId,
     String? mediaType,
+    List<String>? tags,
   }) async {
     _error = null;
     notifyListeners();
@@ -60,6 +62,7 @@ class PostProvider extends ChangeNotifier {
         certFingerprint: certFingerprint,
         assetId: assetId,
         mediaType: mediaType,
+        tags: tags,
       );
       // Refresh feed after creating post
       await loadFeed();

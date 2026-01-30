@@ -39,13 +39,14 @@ func (s *server) CreatePost(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		ImageURL        string  `json:"imageUrl" binding:"required"`
-		MediaType       *string `json:"mediaType"` // "image" or "video", defaults to "image" if not provided
-		Caption         *string `json:"caption"`
-		ManifestURL     *string `json:"manifestUrl"`
-		ManifestHash    *string `json:"manifestHash"`
-		CertFingerprint *string `json:"certFingerprint"`
-		AssetID         *string `json:"assetId"`
+		ImageURL        string   `json:"imageUrl" binding:"required"`
+		MediaType       *string  `json:"mediaType"` // "image" or "video", defaults to "image" if not provided
+		Caption         *string  `json:"caption"`
+		ManifestURL     *string  `json:"manifestUrl"`
+		ManifestHash    *string  `json:"manifestHash"`
+		CertFingerprint *string  `json:"certFingerprint"`
+		AssetID         *string  `json:"assetId"`
+		Tags            []string `json:"tags"` // Optional list of tags for the post
 	}
 
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
@@ -214,6 +215,15 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		return
 	}
 
+	// Create tags if provided
+	if len(requestBody.Tags) > 0 {
+		if err := s.dbClient.PostTag().CreateForPost(ctx, post.ID, requestBody.Tags); err != nil {
+			fmt.Printf("Warning: failed to create post tags: %v\n", err)
+		} else {
+			post.Tags = requestBody.Tags
+		}
+	}
+
 	// If manifest was provided, create blockchain transaction for anchoring
 	if manifestHashBytes != nil && manifestURI != nil && certFingerprintBytes != nil {
 		// Encode anchorManifest function call
@@ -264,6 +274,8 @@ func (s *server) GetFeed(ctx *gin.Context) {
 		})
 		return
 	}
+
+	s.attachTagsToPosts(ctx, posts)
 
 	// Get user IDs from posts
 	userIDs := make(map[uuid.UUID]bool)
@@ -353,6 +365,8 @@ func (s *server) GetUserPosts(ctx *gin.Context) {
 		return
 	}
 
+	s.attachTagsToPosts(ctx, posts)
+
 	// Get current user for reaction aggregation
 	currentUser, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
@@ -440,6 +454,10 @@ func (s *server) GetPost(ctx *gin.Context) {
 		})
 		return
 	}
+
+	postSlice := []models.Post{*post}
+	s.attachTagsToPosts(ctx, postSlice)
+	post.Tags = postSlice[0].Tags
 
 	// Create post with user info and reactions
 	postWithUser := PostWithUser{
@@ -599,6 +617,24 @@ func (s *server) DeleteReaction(ctx *gin.Context) {
 	}
 
 	ctx.Status(http.StatusNoContent)
+}
+
+// attachTagsToPosts loads tags for the given posts and sets each post's Tags field
+func (s *server) attachTagsToPosts(ctx *gin.Context, posts []models.Post) {
+	if len(posts) == 0 {
+		return
+	}
+	postIDs := make([]uuid.UUID, len(posts))
+	for i := range posts {
+		postIDs[i] = posts[i].ID
+	}
+	tagMap, err := s.dbClient.PostTag().FindByPostIDs(ctx, postIDs)
+	if err != nil {
+		return
+	}
+	for i := range posts {
+		posts[i].Tags = tagMap[posts[i].ID]
+	}
 }
 
 // aggregateReactions groups reactions by emoji and creates summaries

@@ -27,9 +27,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to take photos and record videos for new posts.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>This app needs microphone access to record audio when capturing videos for new posts.</string>
+	<string>This app needs microphone access to record audio when capturing videos for new posts and to record voiceovers for video editing.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to your photo library to select images for posts.</string>
+	<string>This app needs access to your photo library to select images and videos for posts, and to pick videos for editing.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app needs access to save images to your photo library.</string>
 	<key>UILaunchStoryboardName</key>

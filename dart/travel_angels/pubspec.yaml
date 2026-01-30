@@ -53,6 +53,15 @@ dependencies:
   file_picker: ^8.1.4
   # Google Maps for location picker
   google_maps_flutter: ^2.5.0
+  # Video editing (TikTok/Instagram-style)
+  pro_video_editor: ^1.2.3
+  pro_image_editor: ^11.15.5
+  record: ^6.1.2
+  image_picker: ^1.1.2
+  path_provider: ^2.1.4
+  # Video player for previewing videos
+  video_player: ^2.8.2
+  chewie: ^1.7.7
 
 dev_dependencies:
   flutter_test:

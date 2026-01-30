@@ -76,6 +76,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 
 	// User routes
 	r.GET("/verifiable-sn/users/search", middleware.WithAuthenticationWithoutLocation(s.authClient, s.SearchUsers))
+	r.PUT("/verifiable-sn/users/profile", middleware.WithAuthenticationWithoutLocation(s.authClient, s.UpdateProfile))
 
 	// Certificate routes
 	r.GET("/verifiable-sn/certificate/check", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CheckCertificate))
