@@ -94,6 +94,7 @@ class Post {
   final List<ReactionSummary>? reactions;
   final int? commentCount;
   final List<Comment>? comments;
+  final List<String>? tags;
 
   Post({
     this.id,
@@ -111,6 +112,7 @@ class Post {
     this.reactions,
     this.commentCount,
     this.comments,
+    this.tags,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) {
@@ -145,6 +147,9 @@ class Post {
           ? (json['comments'] as List<dynamic>)
               .map((c) => Comment.fromJson(c as Map<String, dynamic>))
               .toList()
+          : null,
+      tags: json['tags'] != null
+          ? (json['tags'] as List<dynamic>).map((t) => t.toString()).toList()
           : null,
     );
   }

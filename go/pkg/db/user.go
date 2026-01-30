@@ -45,7 +45,7 @@ func (h *userHandle) FindByUsername(ctx context.Context, username string) (*mode
 	return &user, nil
 }
 
-func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string) (*models.User, error) {
+func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string, category *string, ageRange *string) (*models.User, error) {
 	user := models.User{
 		Name:            name,
 		PhoneNumber:     phoneNumber,
@@ -56,6 +56,8 @@ func (h *userHandle) Insert(ctx context.Context, name string, phoneNumber string
 		Longitude:       longitude,
 		LocationAddress: locationAddress,
 		Bio:             bio,
+		Category:      category,
+		AgeRange:        ageRange,
 	}
 
 	if id != nil {

@@ -30,4 +30,6 @@ type User struct {
 	Longitude         *float64   `json:"longitude" db:"longitude"`
 	LocationAddress   *string    `json:"locationAddress" db:"location_address"`
 	Bio               *string    `json:"bio" db:"bio"`
+	Category          *string    `json:"category" db:"category"`
+	AgeRange          *string    `json:"ageRange" db:"age_range"`
 }

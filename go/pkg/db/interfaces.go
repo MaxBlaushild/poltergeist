@@ -51,6 +51,7 @@ type DbClient interface {
 	Party() PartyHandle
 	FriendInvite() FriendInviteHandle
 	Post() PostHandle
+	PostTag() PostTagHandle
 	PostReaction() PostReactionHandle
 	PostComment() PostCommentHandle
 	PartyInvite() PartyInviteHandle
@@ -102,7 +103,7 @@ type HowManyQuestionHandle interface {
 }
 
 type UserHandle interface {
-	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string) (*models.User, error)
+	Insert(ctx context.Context, name string, phoneNumber string, id *uuid.UUID, username *string, dateOfBirth *time.Time, gender *string, latitude *float64, longitude *float64, locationAddress *string, bio *string, category *string, ageRange *string) (*models.User, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	FindByPhoneNumber(ctx context.Context, phoneNumber string) (*models.User, error)
 	FindUsersByIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.User, error)
@@ -453,6 +454,11 @@ type FriendInviteHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.FriendInvite, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type PostTagHandle interface {
+	CreateForPost(ctx context.Context, postID uuid.UUID, tags []string) error
+	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) (map[uuid.UUID][]string, error)
 }
 
 type PostHandle interface {

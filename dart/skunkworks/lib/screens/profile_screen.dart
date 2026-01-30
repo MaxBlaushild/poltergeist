@@ -36,12 +36,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Certificate? _certificate;
   bool _loadingCertificate = false;
   User? _displayUser;
+  bool _hasLoadedForUser = false;
 
   @override
   void initState() {
     super.initState();
     _loadUserPosts();
     _loadCertificate();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload when viewing own profile and auth user just became available (e.g. right after login)
+    if (!_isViewingOwnProfile()) return;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId != null && !_hasLoadedForUser) {
+      _loadUserPosts();
+    }
   }
 
   bool _isViewingOwnProfile() {
@@ -53,21 +65,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadUserPosts() async {
     final authProvider = context.read<AuthProvider>();
     final currentUser = authProvider.user;
-    
-    // Determine which user's posts to load
-    final targetUserId = widget.userId ?? currentUser?.id;
-    if (targetUserId == null) return;
 
-    // Set display user
+    // Set display user immediately so profile details show before posts load
     if (widget.user != null) {
       _displayUser = widget.user;
     } else if (widget.userId == null || widget.userId == currentUser?.id) {
       _displayUser = currentUser;
     } else {
-      // We'll get user info from the first post if available
       _displayUser = null;
     }
+    if (mounted) setState(() {});
 
+    // Determine which user's posts to load
+    final targetUserId = widget.userId ?? currentUser?.id;
+    if (targetUserId == null) return;
+
+    _hasLoadedForUser = true;
     setState(() {
       _loading = true;
     });
@@ -76,9 +89,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final apiClient = APIClient(ApiConstants.baseUrl);
       final postService = PostService(apiClient);
       _userPosts = await postService.getUserPosts(targetUserId);
-      
+
       // If we don't have user info and posts exist, get it from first post
-      if (_displayUser == null && _userPosts.isNotEmpty && _userPosts[0].user != null) {
+      if (_displayUser == null &&
+          _userPosts.isNotEmpty &&
+          _userPosts[0].user != null) {
         _displayUser = _userPosts[0].user;
       }
     } catch (e) {
@@ -172,13 +187,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ]
                 : null,
           ),
-          body: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
+          body: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Profile header
+                      // Profile header – always show immediately (from AuthProvider)
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Row(
@@ -232,8 +245,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       // Certificate section
                       _buildCertificateSection(),
                       
-                      // Posts grid
-                      if (_userPosts.isEmpty)
+                      // Posts grid – show loading only for this section
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        )
+                      else if (_userPosts.isEmpty)
                         const Padding(
                           padding: EdgeInsets.all(32.0),
                           child: Center(
@@ -329,6 +349,243 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : null,
         );
       },
+    );
+  }
+
+  Widget _buildProfileInfoSection(User? user, AuthProvider authProvider) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          children: [
+            ListTile(
+              leading: Icon(Icons.info_outline, color: AppColors.graphiteInk),
+              title: const Text(
+                'Profile Information',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              trailing: IconButton(
+                icon: Icon(Icons.edit, color: AppColors.softRealBlue),
+                onPressed: () => _showEditProfileDialog(context, user, authProvider),
+                tooltip: 'Edit profile',
+              ),
+            ),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInfoRow(
+                    Icons.category,
+                    'Category',
+                    user?.category ?? 'Not set',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoRow(
+                    Icons.calendar_today,
+                    'Age Range',
+                    user?.ageRange ?? 'Not set',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: Colors.grey.shade600),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showEditProfileDialog(BuildContext context, User? user, AuthProvider authProvider) {
+    final bioController = TextEditingController(text: user?.bio ?? '');
+
+    final categoryOptions = [
+      'Travel',
+      'Food',
+      'Art',
+      'Music',
+      'Sports',
+      'Technology',
+      'Fashion',
+      'Fitness',
+      'Photography',
+      'Other',
+    ];
+
+    final ageRangeOptions = [
+      '18-25',
+      '26-35',
+      '36-45',
+      '46-55',
+      '56+',
+    ];
+
+    String? selectedCategory = user?.category;
+    String? selectedAgeRange = user?.ageRange;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Profile'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Category dropdown
+                const Text(
+                  'Category',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                  ),
+                  hint: const Text('Select category'),
+                  items: categoryOptions.map((cat) {
+                    return DropdownMenuItem(
+                      value: cat,
+                      child: Text(cat),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedCategory = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Age range dropdown
+                const Text(
+                  'Age Range',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedAgeRange,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                  ),
+                  hint: const Text('Select age range'),
+                  items: ageRangeOptions.map((range) {
+                    return DropdownMenuItem(
+                      value: range,
+                      child: Text(range),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      selectedAgeRange = value;
+                    });
+                  },
+                ),
+                const SizedBox(height: 16),
+                // Bio text field
+                const Text(
+                  'Bio',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: bioController,
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    hintText: 'Tell us about yourself',
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                try {
+                  await authProvider.updateProfile(
+                    category: selectedCategory,
+                    ageRange: selectedAgeRange,
+                    bio: bioController.text.trim().isEmpty
+                        ? null
+                        : bioController.text.trim(),
+                  );
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Profile updated successfully')),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to update profile: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -40,7 +40,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access to scan QR codes for passcodes</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs access to your photo library to allow you to upload and select images to use in your profile.</string>
+	<string>This app needs access to your photo library to allow you to upload and select images to use in your profile, and to pick videos for editing.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access to record voiceovers for your videos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>This app needs access to your location to help you select and tag locations for your travel documents and to display relevant location-based information on maps.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

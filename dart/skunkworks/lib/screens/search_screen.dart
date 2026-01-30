@@ -5,6 +5,7 @@ import 'package:skunkworks/models/user.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/friend_provider.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
+import 'package:skunkworks/screens/profile_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -257,6 +258,20 @@ class _SearchScreenState extends State<SearchScreen> {
                   },
                   child: const Text('Add'),
                 ),
+      onTap: () {
+        if (user.id != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProfileScreen(
+                userId: user.id!,
+                user: user,
+                onNavigate: widget.onNavigate,
+              ),
+            ),
+          );
+        }
+      },
     );
   }
 

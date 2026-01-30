@@ -7,9 +7,14 @@ import 'package:travel_angels/providers/auth_provider.dart';
 import 'package:travel_angels/services/api_client.dart';
 import 'package:travel_angels/services/document_service.dart';
 import 'package:travel_angels/screens/edit_document_screen.dart';
+import 'package:travel_angels/screens/video_editor_screen.dart';
+import 'package:travel_angels/services/media_service.dart';
+import 'package:travel_angels/utils/document_utils.dart';
+import 'package:travel_angels/utils/video_platform_utils.dart';
 import 'package:travel_angels/widgets/documents_table.dart';
 import 'package:travel_angels/widgets/import_document_bottom_sheet.dart';
 import 'package:travel_angels/widgets/pagination_controls.dart';
+import 'package:travel_angels/widgets/video_preview_dialog.dart';
 
 /// Documents screen for managing travel documents
 class DocumentsScreen extends StatefulWidget {
@@ -23,6 +28,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   final DocumentService _documentService = DocumentService(
     APIClient(ApiConstants.baseUrl),
   );
+  final MediaService _mediaService = MediaService(APIClient(ApiConstants.baseUrl));
 
   List<Document> _allDocuments = [];
   List<Document> _sortedDocuments = [];
@@ -71,6 +77,12 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
           .map((json) => Document.fromJson(json))
           .toList();
 
+      print('[DocumentsScreen._loadDocuments] Loaded ${documents.length} documents');
+      for (final doc in documents) {
+        final isVideo = DocumentUtils.isVideo(doc);
+        print('[DocumentsScreen._loadDocuments] Document: id=${doc.id}, title="${doc.title}", provider=${doc.provider}, link=${doc.link}, isVideo=$isVideo');
+      }
+
       _allDocuments = documents;
       _applySortAndPagination();
 
@@ -84,13 +96,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
         String errorMsg = 'Failed to load documents';
         if (e is DioException) {
           if (e.response != null) {
-            errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMsg = errorData['error']?.toString() ?? errorMsg;
             }
           } else {
-            errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+            errorMsg = '$errorMsg: ${e.message ?? e.toString()}';
           }
         } else {
           errorMsg = '$errorMsg: $e';
@@ -197,7 +209,33 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   Future<void> _handleDocumentTap(Document document) async {
-    // Navigate to edit screen (row click, not checkbox click)
+    print('[DocumentsScreen._handleDocumentTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}');
+    final isVideo = DocumentUtils.isVideo(document);
+    print('[DocumentsScreen._handleDocumentTap] isVideo=$isVideo');
+    
+    // If it's a video, show preview instead of edit screen
+    if (isVideo) {
+      print('[DocumentsScreen._handleDocumentTap] Handling as VIDEO');
+      if (document.link == null) {
+        print('[DocumentsScreen._handleDocumentTap] ❌ Video link is null!');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Video link is missing')),
+        );
+        return;
+      }
+      
+      print('[DocumentsScreen._handleDocumentTap] Opening video preview dialog with URL: ${document.link}');
+      // Show video preview dialog
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => VideoPreviewDialog(videoUrl: document.link!),
+      );
+      return;
+    }
+    
+    print('[DocumentsScreen._handleDocumentTap] Handling as regular document');
+    // Navigate to edit screen for non-video documents
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -208,6 +246,80 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     // Refresh documents if update was successful
     if (result == true) {
       _loadDocuments();
+    }
+  }
+
+  Future<void> _handleEditTap(Document document) async {
+    print('[DocumentsScreen._handleEditTap] Called for document: id=${document.id}, title="${document.title}", link=${document.link}');
+    final isVideo = DocumentUtils.isVideo(document);
+    print('[DocumentsScreen._handleEditTap] isVideo=$isVideo');
+    
+    if (isVideo) {
+      print('[DocumentsScreen._handleEditTap] Handling as VIDEO');
+      // Handle video editing
+      if (!supportsFullVideoEditing) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Full video editing is available on Android, iOS, and macOS. '
+              'Use the mobile app for the full experience.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      if (document.link == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Video link is missing')),
+        );
+        return;
+      }
+
+      // Show loading dialog
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        // Download video from URL
+        final videoFile = await _mediaService.downloadVideo(document.link!);
+        if (!mounted) return;
+        Navigator.of(context).pop(); // Close loading dialog
+
+        if (videoFile == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to download video')),
+          );
+          return;
+        }
+
+        // Open video editor
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VideoEditorScreen(
+              videoFile: videoFile,
+              onComplete: () {
+                _loadDocuments();
+              },
+            ),
+          ),
+        );
+      } catch (e) {
+        if (mounted) {
+          Navigator.of(context).pop(); // Close loading dialog if still open
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to open video editor: $e')),
+          );
+        }
+      }
+    } else {
+      // Handle document editing
+      _handleDocumentTap(document);
     }
   }
 
@@ -545,17 +657,25 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                   : Column(
                       children: [
                         Expanded(
-                          child: DocumentsTable(
-                            documents: _paginatedDocuments,
-                            sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
-                            sortAscending: _sortAscending,
-                            onSort: (columnIndex, ascending) {
-                              // Adjust back for checkbox column
-                              _onSort(columnIndex - 1, ascending);
+                          child: Builder(
+                            builder: (context) {
+                              print('[DocumentsScreen.build] Creating DocumentsTable with ${_paginatedDocuments.length} documents');
+                              print('[DocumentsScreen.build] onEditTap callback: ${_handleEditTap != null ? "provided" : "null"}');
+                              print('[DocumentsScreen.build] onDocumentTap callback: ${_handleDocumentTap != null ? "provided" : "null"}');
+                              return DocumentsTable(
+                                documents: _paginatedDocuments,
+                                sortColumnIndex: _sortColumnIndex != null ? _sortColumnIndex! + 1 : null, // Adjust for checkbox column
+                                sortAscending: _sortAscending,
+                                onSort: (columnIndex, ascending) {
+                                  // Adjust back for checkbox column
+                                  _onSort(columnIndex - 1, ascending);
+                                },
+                                onDocumentTap: _handleDocumentTap,
+                                onEditTap: _handleEditTap,
+                                selectedDocumentIds: _selectedDocumentIds,
+                                onSelectionChanged: _toggleDocumentSelection,
+                              );
                             },
-                            onDocumentTap: _handleDocumentTap,
-                            selectedDocumentIds: _selectedDocumentIds,
-                            onSelectionChanged: _toggleDocumentSelection,
                           ),
                         ),
                         PaginationControls(

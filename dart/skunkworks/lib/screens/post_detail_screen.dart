@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:gal/gal.dart';
 import 'package:http/http.dart' as http;
@@ -84,6 +85,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         reactions: post.reactions,
         commentCount: post.commentCount,
         comments: comments,
+        tags: post.tags,
       );
 
       // Load blockchain transaction if manifest hash exists
@@ -363,6 +365,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  void _handleSharePost() {
+    if (_post?.id == null) return;
+    final url = ApiConstants.sharePostUrl(_post!.id!);
+    Share.share(
+      'Check out this post on Vera! $url',
+      subject: 'Post on Vera',
+    );
+  }
+
   String _getBlockExplorerUrl(String txHash, int? chainId) {
     switch (chainId) {
       case 84532: // Base Sepolia
@@ -464,20 +475,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ),
-        actions: isPostOwner
-            ? [
-                if (_post!.imageUrl != null && !_post!.isVideo)
-                  IconButton(
-                    icon: const Icon(Icons.download, color: AppColors.softRealBlue),
-                    onPressed: _handleSaveImage,
-                    tooltip: 'Save to Photos',
-                  ),
-                IconButton(
-                  icon: Icon(Icons.delete, color: AppColors.coralPop),
-                  onPressed: _handleDeletePost,
-                ),
-              ]
-            : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share, color: AppColors.softRealBlue),
+            onPressed: _handleSharePost,
+            tooltip: 'Share post',
+          ),
+          if (isPostOwner) ...[
+            if (_post!.imageUrl != null && !_post!.isVideo)
+              IconButton(
+                icon: const Icon(Icons.download, color: AppColors.softRealBlue),
+                onPressed: _handleSaveImage,
+                tooltip: 'Save to Photos',
+              ),
+            IconButton(
+              icon: Icon(Icons.delete, color: AppColors.coralPop),
+              onPressed: _handleDeletePost,
+            ),
+          ],
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -524,6 +540,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Text(
                   _post!.caption!,
                   style: const TextStyle(fontSize: 16),
+                ),
+              ),
+            // Tags
+            if (_post!.tags != null && _post!.tags!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _post!.tags!.map((tag) => Chip(
+                    label: Text(
+                      '#$tag',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.softRealBlue.withOpacity(0.9),
+                      ),
+                    ),
+                    backgroundColor: AppColors.softRealBlue.withOpacity(0.08),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  )).toList(),
                 ),
               ),
             // Reactions section

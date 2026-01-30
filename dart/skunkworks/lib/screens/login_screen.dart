@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
+import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:intl_phone_field/phone_number.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _codeFocusNode = FocusNode();
 
   bool _isPhoneValid = false;
+  String _countryCode = '+1'; // Default to US
+  String _phoneNumber = '';
+  PhoneNumber? _phoneNumberObj;
 
   @override
   void dispose() {
@@ -28,19 +33,53 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _validatePhoneNumber(String value) {
-    // Basic validation: non-empty and reasonable length (10-15 digits)
-    final digitsOnly = value.replaceAll(RegExp(r'[^\d]'), '');
+  void _validatePhoneNumber(PhoneNumber? phoneNumber) {
+    if (phoneNumber == null || phoneNumber.number.isEmpty) {
+      setState(() {
+        _isPhoneValid = false;
+        _phoneNumber = '';
+        _phoneNumberObj = null;
+      });
+      return;
+    }
+    
+    // Store the phone number object and extracted values
+    _phoneNumberObj = phoneNumber;
+    _phoneNumber = phoneNumber.number;
+    _countryCode = phoneNumber.countryCode;
+    
+    // Basic validation: reasonable length (at least 4 digits, max 15)
+    final digitsOnly = phoneNumber.number.replaceAll(RegExp(r'[^\d]'), '');
     setState(() {
-      _isPhoneValid = digitsOnly.length >= 10 && digitsOnly.length <= 15;
+      _isPhoneValid = digitsOnly.length >= 4 && digitsOnly.length <= 15;
     });
+  }
+
+  String _getFullPhoneNumber() {
+    // Use the complete phone number from the PhoneNumber object if available
+    if (_phoneNumberObj != null) {
+      // Ensure the number starts with '+'
+      final completeNumber = _phoneNumberObj!.completeNumber;
+      if (completeNumber.startsWith('+')) {
+        return completeNumber;
+      } else {
+        // If it doesn't start with '+', add it
+        return '+$completeNumber';
+      }
+    }
+    // Fallback: combine country code and phone number with '+' prefix
+    final digitsOnly = _phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
+    // Ensure country code has '+' prefix
+    final countryCode = _countryCode.startsWith('+') ? _countryCode : '+$_countryCode';
+    return '$countryCode$digitsOnly';
   }
 
   Future<void> _handleGetCode() async {
     if (!_isPhoneValid) return;
 
     final authProvider = context.read<AuthProvider>();
-    final phoneNumber = _phoneController.text.trim();
+    // Get full phone number with country code and '+' prefix
+    final phoneNumber = _getFullPhoneNumber();
 
     try {
       await authProvider.getVerificationCode(phoneNumber);
@@ -54,7 +93,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (_codeController.text.length != 6) return;
 
     final authProvider = context.read<AuthProvider>();
-    final phoneNumber = _phoneController.text.trim();
+    // Get full phone number with country code and '+' prefix
+    final phoneNumber = _getFullPhoneNumber();
     final code = _codeController.text.trim();
 
     try {
@@ -154,10 +194,9 @@ class _LoginScreenState extends State<LoginScreen> {
       key: const ValueKey('phone'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        IntlPhoneField(
           controller: _phoneController,
           focusNode: _phoneFocusNode,
-          keyboardType: TextInputType.phone,
           decoration: InputDecoration(
             labelText: 'Phone Number',
             hintText: 'Phone number',
@@ -179,8 +218,15 @@ class _LoginScreenState extends State<LoginScreen> {
               borderSide: BorderSide(color: Colors.grey.shade600),
             ),
           ),
-          style: const TextStyle(fontSize: 16),
-          onChanged: _validatePhoneNumber,
+          initialCountryCode: 'US',
+          onCountryChanged: (country) {
+            setState(() {
+              _countryCode = '+${country.dialCode}';
+            });
+          },
+          onChanged: (phone) {
+            _validatePhoneNumber(phone);
+          },
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _handleGetCode(),
         ),

@@ -17,6 +17,7 @@ class PostService {
   /// [certFingerprint] - Certificate fingerprint (hex string)
   /// [assetId] - Optional C2PA asset identifier
   /// [mediaType] - Optional media type ("image" or "video"), defaults to "image"
+  /// [tags] - Optional list of tags for the post
   /// 
   /// Returns the created post
   Future<Post> createPost(
@@ -27,6 +28,7 @@ class PostService {
     String? certFingerprint,
     String? assetId,
     String? mediaType,
+    List<String>? tags,
   }) async {
     try {
       final data = <String, dynamic>{
@@ -55,6 +57,10 @@ class PostService {
 
       if (assetId != null) {
         data['assetId'] = assetId;
+      }
+
+      if (tags != null && tags.isNotEmpty) {
+        data['tags'] = tags;
       }
 
       final response = await _apiClient.post<Map<String, dynamic>>(

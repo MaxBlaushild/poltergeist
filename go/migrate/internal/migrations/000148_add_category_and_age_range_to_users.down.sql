@@ -1,0 +1,3 @@
+ALTER TABLE users
+DROP COLUMN IF EXISTS category,
+DROP COLUMN IF EXISTS age_range;

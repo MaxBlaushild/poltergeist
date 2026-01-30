@@ -55,6 +55,7 @@ type client struct {
 	friendInviteHandle                *friendInviteHandle
 	partyInviteHandle                 *partyInviteHandle
 	postHandle                        *postHandle
+	postTagHandle                     *postTagHandle
 	postReactionHandle                *postReactionHandle
 	postCommentHandle                 *postCommentHandle
 	activityHandle                    *activityHandle
@@ -152,6 +153,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		friendInviteHandle:                &friendInviteHandle{db: db},
 		partyInviteHandle:                 &partyInviteHandle{db: db},
 		postHandle:                        &postHandle{db: db},
+		postTagHandle:                     &postTagHandle{db: db},
 		postReactionHandle:                &postReactionHandle{db: db},
 		postCommentHandle:                 &postCommentHandle{db: db},
 		activityHandle:                    &activityHandle{db: db},
@@ -202,6 +204,10 @@ func (c *client) Friend() FriendHandle {
 
 func (c *client) Post() PostHandle {
 	return c.postHandle
+}
+
+func (c *client) PostTag() PostTagHandle {
+	return c.postTagHandle
 }
 
 func (c *client) PostReaction() PostReactionHandle {

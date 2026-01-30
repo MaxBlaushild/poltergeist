@@ -37,7 +37,7 @@ dependencies:
   dio: ^5.4.0
   shared_preferences: ^2.2.2
   provider: ^6.1.1
-  image_picker: ^1.0.7
+  image_picker: ^1.1.2
   video_player: ^2.8.0
   cryptography: ^2.7.0
   flutter_secure_storage: ^9.0.0
@@ -51,9 +51,16 @@ dependencies:
   url_launcher: ^6.2.5
   google_fonts: ^6.1.0
   gal: ^2.0.1
-  path_provider: ^2.1.1
+  path_provider: ^2.1.5
   http: ^1.2.0
   pro_image_editor: ^11.15.5
+  # Video editing (TikTok/Instagram-style)
+  pro_video_editor: ^1.2.3
+  record: ^6.1.2
+  file_picker: ^8.1.4
+  chewie: ^1.7.7
+  intl_phone_field: ^3.2.0
+  share_plus: ^12.0.1
 
 dev_dependencies:
   flutter_test:

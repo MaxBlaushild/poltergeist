@@ -38,9 +38,17 @@ class ApiConstants {
   
   // User endpoints
   static String searchUsersEndpoint(String query) => '/verifiable-sn/users/search?query=$query';
+  static const String updateProfileEndpoint = '/verifiable-sn/users/profile';
   
   // S3 bucket for posts
   static const String postsBucket = 'verifiable-sn-posts';
+
+  /// Public TestFlight beta link for sharing posts. Append ?post=<id> to
+  /// associate shared link with a post (for future deeplink / analytics).
+  static const String shareTestFlightUrl = 'https://testflight.apple.com/join/XTzctGYr';
+
+  static String sharePostUrl(String postId) =>
+      '$shareTestFlightUrl?post=${Uri.encodeComponent(postId)}';
   
   // Certificate endpoints
   static const String checkCertificateEndpoint = '/verifiable-sn/certificate/check';

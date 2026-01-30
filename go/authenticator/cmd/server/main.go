@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/authenticator/internal/config"
@@ -18,6 +19,23 @@ import (
 	"github.com/pkg/errors"
 	"gorm.io/gorm"
 )
+
+const (
+	demoPhone = "+14407858475"
+	demoCode  = "123456"
+)
+
+// formatPhoneNumber ensures phone number starts with + (matches verifiable-sn auth.go).
+func formatPhoneNumber(phone string) string {
+	cleaned := strings.ReplaceAll(phone, " ", "")
+	cleaned = strings.ReplaceAll(cleaned, "-", "")
+	cleaned = strings.ReplaceAll(cleaned, "(", "")
+	cleaned = strings.ReplaceAll(cleaned, ")", "")
+	if !strings.HasPrefix(cleaned, "+") {
+		cleaned = "+" + cleaned
+	}
+	return cleaned
+}
 
 func main() {
 	ctx := context.Background()
@@ -166,6 +184,21 @@ func main() {
 			return
 		}
 
+		formatted := formatPhoneNumber(requestBody.PhoneNumber)
+
+		// Demo account: skip SMS and code insert, return user so app shows code screen.
+		if formatted == demoPhone {
+			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
+			if err != nil || user == nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": "demo account +14407858475 must exist in database",
+				})
+				return
+			}
+			c.JSON(200, user)
+			return
+		}
+
 		user, err := dbClient.User().FindByPhoneNumber(c, requestBody.PhoneNumber)
 		if err != nil && err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -247,6 +280,31 @@ func main() {
 			return
 		}
 
+		formatted := formatPhoneNumber(requestBody.PhoneNumber)
+
+		// Demo account: skip code lookup, find user, issue token.
+		if formatted == demoPhone && requestBody.Code == demoCode {
+			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
+			if err != nil || user == nil {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": "demo user not found",
+				})
+				return
+			}
+			tok, err := tokenClient.New(user.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "jwt creation error").Error(),
+				})
+				return
+			}
+			c.JSON(200, gin.H{
+				"user":  user,
+				"token": tok,
+			})
+			return
+		}
+
 		code, err := dbClient.TextVerificationCode().Find(c, requestBody.PhoneNumber, requestBody.Code)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -291,6 +349,47 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
+			return
+		}
+
+		formatted := formatPhoneNumber(requestBody.PhoneNumber)
+
+		// Demo account: skip code lookup, find or create user, issue token.
+		if formatted == demoPhone && requestBody.Code == demoCode {
+			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
+			if err == nil && user != nil {
+				tok, err := tokenClient.New(user.ID)
+				if err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"error": errors.Wrap(err, "jwt creation error").Error(),
+					})
+					return
+				}
+				c.JSON(200, gin.H{"user": user, "token": tok})
+				return
+			}
+			user, err = dbClient.User().Insert(ctx, "", demoPhone, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "inserting demo user error").Error(),
+				})
+				return
+			}
+			user, err = dbClient.User().FindByID(ctx, user.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "refreshing user error").Error(),
+				})
+				return
+			}
+			tok, err := tokenClient.New(user.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "jwt creation error").Error(),
+				})
+				return
+			}
+			c.JSON(200, gin.H{"user": user, "token": tok})
 			return
 		}
 
@@ -342,7 +441,7 @@ func main() {
 			dateOfBirth = &parsed
 		}
 
-		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId, requestBody.Username, dateOfBirth, requestBody.Gender, requestBody.Latitude, requestBody.Longitude, requestBody.LocationAddress, requestBody.Bio)
+		user, err := dbClient.User().Insert(ctx, requestBody.Name, requestBody.PhoneNumber, userId, requestBody.Username, dateOfBirth, requestBody.Gender, requestBody.Latitude, requestBody.Longitude, requestBody.LocationAddress, requestBody.Bio, requestBody.Category, requestBody.AgeRange)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": errors.Wrap(err, "inserting user error").Error(),

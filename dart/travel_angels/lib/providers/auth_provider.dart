@@ -82,6 +82,9 @@ class AuthProvider extends ChangeNotifier {
       _user = response.user;
       _isWaitingForVerificationCode = false;
       notifyListeners();
+      
+      // Refresh user details from server to ensure we have all profile fields
+      await verifyToken();
     } catch (e) {
       _error = _extractErrorMessage(e);
       notifyListeners();

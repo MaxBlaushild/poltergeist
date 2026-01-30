@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/services/api_client.dart';
 
@@ -220,6 +221,43 @@ class MediaService {
       print('Failed to upload post image: $e');
       return null;
     }
+  }
+
+  /// Downloads a video from a URL to a temporary file
+  ///
+  /// [url] - The URL of the video to download
+  ///
+  /// Returns the downloaded File or null if download failed
+  Future<File?> downloadVideo(String url) async {
+    try {
+      final dio = Dio();
+      final response = await dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode != 200 || response.data == null) {
+        return null;
+      }
+
+      final tempDir = await getTemporaryDirectory();
+      final extension = _getVideoExtension(url);
+      final file = File('${tempDir.path}/video_${DateTime.now().millisecondsSinceEpoch}.$extension');
+      await file.writeAsBytes(response.data!);
+      return file;
+    } catch (e) {
+      print('Failed to download video: $e');
+      return null;
+    }
+  }
+
+  String _getVideoExtension(String url) {
+    final uri = Uri.parse(url);
+    final path = uri.path.toLowerCase();
+    if (path.endsWith('.mp4')) return 'mp4';
+    if (path.endsWith('.mov')) return 'mov';
+    if (path.endsWith('.m4v')) return 'm4v';
+    return 'mp4'; // Default
   }
 }
 

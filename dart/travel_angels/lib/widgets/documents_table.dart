@@ -10,6 +10,7 @@ class DocumentsTable extends StatelessWidget {
   final bool sortAscending;
   final Function(int columnIndex, bool ascending) onSort;
   final Function(Document document)? onDocumentTap;
+  final Function(Document document)? onEditTap;
   final Set<String> selectedDocumentIds;
   final Function(String documentId, bool selected)? onSelectionChanged;
 
@@ -20,6 +21,7 @@ class DocumentsTable extends StatelessWidget {
     required this.sortAscending,
     required this.onSort,
     this.onDocumentTap,
+    this.onEditTap,
     this.selectedDocumentIds = const {},
     this.onSelectionChanged,
   });
@@ -32,10 +34,12 @@ class DocumentsTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SingleChildScrollView(
-        child: DataTable(
-          sortColumnIndex: sortColumnIndex,
-          sortAscending: sortAscending,
-          columns: [
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 800),
+          child: DataTable(
+            sortColumnIndex: sortColumnIndex,
+            sortAscending: sortAscending,
+            columns: [
             const DataColumn(
               label: SizedBox.shrink(), // Checkbox column
             ),
@@ -55,9 +59,15 @@ class DocumentsTable extends StatelessWidget {
               label: const Text('Date Edited'),
               onSort: (columnIndex, ascending) => onSort(columnIndex, ascending),
             ),
+            DataColumn(
+              label: const Text('Actions'),
+              tooltip: 'Edit or view document',
+            ),
           ],
           rows: documents.map((document) {
             final isSelected = selectedDocumentIds.contains(document.id);
+            final isVideo = DocumentUtils.isVideo(document);
+            print('[DocumentsTable] Building row for document: id=${document.id}, title="${document.title}", link=${document.link}, isVideo=$isVideo, onEditTap=${onEditTap != null}');
             return DataRow(
               selected: isSelected,
               onSelectChanged: null, // Disable row-level selection
@@ -83,10 +93,26 @@ class DocumentsTable extends StatelessWidget {
                         : null,
                     child: Tooltip(
                       message: document.title,
-                      child: Text(
-                        document.title,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (DocumentUtils.isVideo(document))
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Icon(
+                                Icons.videocam,
+                                size: 18,
+                                color: theme.colorScheme.primary,
+                              ),
+                            ),
+                          Flexible(
+                            child: Text(
+                              document.title,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -142,9 +168,46 @@ class DocumentsTable extends StatelessWidget {
                     ),
                   ),
                 ),
+                // Actions cell - edit button
+                DataCell(
+                  Builder(
+                    builder: (context) {
+                      final isVideoDoc = DocumentUtils.isVideo(document);
+                      print('[DocumentsTable] Actions cell - onEditTap=${onEditTap != null}, isVideo=$isVideoDoc');
+                      return Container(
+                        width: 60,
+                        alignment: Alignment.center,
+                        child: onEditTap != null
+                            ? IconButton(
+                                icon: Icon(
+                                  isVideoDoc 
+                                      ? Icons.video_library 
+                                      : Icons.edit,
+                                  size: 22,
+                                  color: theme.colorScheme.primary,
+                                ),
+                                onPressed: () {
+                                  print('[DocumentsTable] Edit button pressed for document: id=${document.id}, title="${document.title}", isVideo=$isVideoDoc');
+                                  onEditTap!(document);
+                                },
+                                tooltip: isVideoDoc 
+                                    ? 'Edit Video' 
+                                    : 'Edit Document',
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(
+                                  minWidth: 48,
+                                  minHeight: 48,
+                                ),
+                              )
+                            : const SizedBox(width: 48),
+                      );
+                    },
+                  ),
+                ),
               ],
             );
           }).toList(),
+          ),
         ),
       ),
     );
