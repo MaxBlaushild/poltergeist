@@ -64,6 +64,12 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/verifiable-sn/posts/:id/comments", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateComment))
 	r.DELETE("/verifiable-sn/posts/:id/comments/:commentId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteComment))
 
+	// Album routes
+	r.POST("/verifiable-sn/albums", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateAlbum))
+	r.GET("/verifiable-sn/albums", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbums))
+	r.GET("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbum))
+	r.DELETE("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteAlbum))
+
 	// Media routes
 	r.POST("/verifiable-sn/media/uploadUrl", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPresignedUploadUrl))
 

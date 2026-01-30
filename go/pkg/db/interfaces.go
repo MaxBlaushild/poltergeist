@@ -52,6 +52,7 @@ type DbClient interface {
 	FriendInvite() FriendInviteHandle
 	Post() PostHandle
 	PostTag() PostTagHandle
+	Album() AlbumHandle
 	PostReaction() PostReactionHandle
 	PostComment() PostCommentHandle
 	PartyInvite() PartyInviteHandle
@@ -459,6 +460,15 @@ type FriendInviteHandle interface {
 type PostTagHandle interface {
 	CreateForPost(ctx context.Context, postID uuid.UUID, tags []string) error
 	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) (map[uuid.UUID][]string, error)
+}
+
+type AlbumHandle interface {
+	Create(ctx context.Context, userID uuid.UUID, name string, tags []string) (*models.Album, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Album, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Album, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+	GetTags(ctx context.Context, albumID uuid.UUID) ([]string, error)
+	FindPostsForAlbum(ctx context.Context, userID uuid.UUID, albumTags []string) ([]models.Post, error)
 }
 
 type PostHandle interface {
