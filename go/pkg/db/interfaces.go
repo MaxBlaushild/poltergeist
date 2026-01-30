@@ -52,6 +52,7 @@ type DbClient interface {
 	FriendInvite() FriendInviteHandle
 	Post() PostHandle
 	PostTag() PostTagHandle
+	PostFlag() PostFlagHandle
 	Album() AlbumHandle
 	PostReaction() PostReactionHandle
 	PostComment() PostCommentHandle
@@ -460,6 +461,14 @@ type FriendInviteHandle interface {
 type PostTagHandle interface {
 	CreateForPost(ctx context.Context, postID uuid.UUID, tags []string) error
 	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) (map[uuid.UUID][]string, error)
+}
+
+type PostFlagHandle interface {
+	Create(ctx context.Context, postID, userID uuid.UUID) error
+	DeleteByPostID(ctx context.Context, postID uuid.UUID) error
+	FindFlaggedPostIDs(ctx context.Context) ([]uuid.UUID, error)
+	GetFlagCount(ctx context.Context, postID uuid.UUID) (int64, error)
+	IsFlaggedByUser(ctx context.Context, postID, userID uuid.UUID) (bool, error)
 }
 
 type AlbumHandle interface {

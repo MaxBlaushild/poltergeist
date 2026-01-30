@@ -32,6 +32,7 @@ import { FeteTeams } from './components/FeteTeams.tsx';
 import { FeteRoomLinkedListTeams } from './components/FeteRoomLinkedListTeams.tsx';
 import { FeteRoomTeams } from './components/FeteRoomTeams.tsx';
 import { UtilityClosetPuzzleAdmin } from './components/UtilityClosetPuzzle.tsx';
+import { FlaggedPhotos } from './components/FlaggedPhotos.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -211,6 +212,11 @@ const router = createBrowserRouter([
       {
         path: "/utility-closet-puzzle",
         element: <UtilityClosetPuzzleAdmin />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/flagged-photos",
+        element: <FlaggedPhotos />,
         loader: onlyAuthenticated,
       },
     ]

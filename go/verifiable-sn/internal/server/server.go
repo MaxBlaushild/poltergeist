@@ -58,6 +58,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPost))
 	r.GET("/verifiable-sn/posts/:id/blockchain-transaction", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetBlockchainTransactionByManifestHash))
 	r.DELETE("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeletePost))
+	r.POST("/verifiable-sn/posts/:id/flag", middleware.WithAuthenticationWithoutLocation(s.authClient, s.FlagPost))
 	r.POST("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateReaction))
 	r.DELETE("/verifiable-sn/posts/:id/reactions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteReaction))
 	r.GET("/verifiable-sn/posts/:id/comments", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetComments))
@@ -89,6 +90,11 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/verifiable-sn/certificate/enroll", middleware.WithAuthenticationWithoutLocation(s.authClient, s.EnrollCertificate))
 	r.GET("/verifiable-sn/certificate", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetCertificate))
 	r.GET("/verifiable-sn/certificate/user/:userId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetUserCertificate))
+
+	// Admin routes (flagged posts)
+	r.GET("/verifiable-sn/admin/flagged-posts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetFlaggedPosts))
+	r.POST("/verifiable-sn/admin/flagged-posts/:id/dismiss", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DismissFlaggedPost))
+	r.DELETE("/verifiable-sn/admin/flagged-posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AdminDeletePost))
 }
 
 func (s *server) ListenAndServe(port string) {

@@ -351,6 +351,13 @@ class PostProvider extends ChangeNotifier {
     }
   }
 
+  /// Flags a post for review
+  ///
+  /// [postId] - The post ID
+  Future<void> flagPost(String postId) async {
+    await _postService.flagPost(postId);
+  }
+
   /// Deletes a post
   /// 
   /// [postId] - The post ID

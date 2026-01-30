@@ -225,16 +225,18 @@ class _PostCardState extends State<PostCard> {
                       fontSize: 12,
                     ),
                   ),
-                if (isPostOwner) ...[
-                  const SizedBox(width: 8),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20, color: Colors.grey),
-                    onSelected: (value) {
-                      if (value == 'delete') {
-                        _handleDeletePost();
-                      }
-                    },
-                    itemBuilder: (context) => [
+                const SizedBox(width: 8),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 20, color: Colors.grey),
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _handleDeletePost();
+                    } else if (value == 'flag') {
+                      _handleFlagPost();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (isPostOwner)
                       PopupMenuItem<String>(
                         value: 'delete',
                         child: Row(
@@ -248,9 +250,18 @@ class _PostCardState extends State<PostCard> {
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ],
+                    PopupMenuItem<String>(
+                      value: 'flag',
+                      child: Row(
+                        children: [
+                          Icon(Icons.flag_outlined, size: 20, color: Colors.grey.shade700),
+                          const SizedBox(width: 8),
+                          Text('Report'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -683,6 +694,25 @@ class _PostCardState extends State<PostCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to delete comment: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleFlagPost() async {
+    if (_currentPost.id == null) return;
+
+    try {
+      await context.read<PostProvider>().flagPost(_currentPost.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post reported. Thank you for your feedback.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to report post: ${e.toString()}')),
         );
       }
     }
