@@ -20,7 +20,6 @@ replace (
 
 require (
 	github.com/MaxBlaushild/poltergeist/pkg/billing v0.0.0-00010101000000-000000000000
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/gin-gonic/gin v1.9.1
 	github.com/spf13/viper v1.17.0
 	github.com/stripe/stripe-go/v75 v75.10.0
