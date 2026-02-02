@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
-import '../providers/auth_provider.dart';
 import '../services/poi_service.dart';
 
 class CharacterPanel extends StatefulWidget {
@@ -46,37 +45,47 @@ class _CharacterPanelState extends State<CharacterPanel> {
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _handleAction(CharacterAction action) async {
-    if (action.actionType == 'shop' && widget.onStartShop != null) {
-      widget.onStartShop!(widget.character, action);
-      widget.onClose();
-    } else if (action.actionType == 'talk' && widget.onStartDialogue != null) {
-      widget.onStartDialogue!(widget.character, action);
-      widget.onClose();
-    } else if (action.actionType == 'giveQuest') {
-      final questId = action.pointOfInterestGroupId;
-      if (questId == null) return;
-      setState(() => _acceptingQuest = true);
-      try {
-        await context.read<PoiService>().acceptQuest(
-              characterId: widget.character.id,
-              pointOfInterestGroupId: questId,
-            );
-        if (mounted) widget.onClose();
-      } catch (_) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to accept quest')),
+  CharacterAction? _firstActionOfType(String type) {
+    for (final action in _actions) {
+      if (action.actionType == type) return action;
+    }
+    return null;
+  }
+
+  Future<void> _handleQuest(CharacterAction action) async {
+    final questId = action.pointOfInterestGroupId;
+    if (questId == null) return;
+    setState(() => _acceptingQuest = true);
+    try {
+      await context.read<PoiService>().acceptQuest(
+            characterId: widget.character.id,
+            pointOfInterestGroupId: questId,
           );
-        }
-      } finally {
-        if (mounted) setState(() => _acceptingQuest = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Quest accepted')),
+        );
+        widget.onClose();
       }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to accept quest')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _acceptingQuest = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final talkAction = _firstActionOfType('talk');
+    final shopAction = _firstActionOfType('shop');
+    final questAction = _firstActionOfType('giveQuest');
+    final hasQuest = questAction?.pointOfInterestGroupId != null;
+    final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
+
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
       minChildSize: 0.3,
@@ -99,13 +108,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
                         CircleAvatar(
                           radius: 24,
                           backgroundColor: Colors.grey.shade300,
-                          backgroundImage: widget.character.dialogueImageUrl != null
-                              ? NetworkImage(widget.character.dialogueImageUrl!)
-                              : widget.character.mapIconUrl != null
-                                  ? NetworkImage(widget.character.mapIconUrl!)
-                                  : null,
-                          child: widget.character.dialogueImageUrl == null &&
-                                  widget.character.mapIconUrl == null
+                          backgroundImage: imageUrl != null
+                              ? NetworkImage(imageUrl)
+                              : null,
+                          child: imageUrl == null
                               ? const Icon(Icons.person)
                               : null,
                         ),
@@ -141,37 +147,122 @@ class _CharacterPanelState extends State<CharacterPanel> {
                   ? const Center(child: CircularProgressIndicator())
                   : _actions.isEmpty
                       ? const Center(child: Text('No actions available'))
-                      : ListView.builder(
+                      : ListView(
                           controller: scrollController,
-                          itemCount: _actions.length,
-                          itemBuilder: (_, i) {
-                            final a = _actions[i];
-                            String label;
-                            if (a.actionType == 'talk') {
-                              label = 'Talk';
-                            } else if (a.actionType == 'shop') {
-                              final count = a.shopInventory?.length ?? 0;
-                              label = 'Shop${count > 0 ? ' ($count items)' : ''}';
-                            } else if (a.actionType == 'giveQuest') {
-                              label = 'Give Quest';
-                            } else {
-                              label = a.actionType;
-                            }
-                            return ListTile(
-                              title: Text(label),
-                              trailing: a.actionType == 'giveQuest' && _acceptingQuest
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.arrow_forward),
-                              onTap: () => _handleAction(a),
-                            );
-                          },
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.black87,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.white70, width: 2),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${widget.character.name}:',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Choose an action:',
+                                    style: TextStyle(color: Colors.white70),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  if (hasQuest)
+                                    _DialogueChoiceButton(
+                                      label: _acceptingQuest ? 'Accepting quest…' : 'Quest',
+                                      icon: Icons.assignment_turned_in,
+                                      onTap: _acceptingQuest
+                                          ? null
+                                          : () => _handleQuest(questAction!),
+                                    ),
+                                  if (shopAction != null)
+                                    _DialogueChoiceButton(
+                                      label: 'Shop',
+                                      icon: Icons.storefront,
+                                      onTap: widget.onStartShop == null
+                                          ? null
+                                          : () {
+                                              widget.onStartShop!(widget.character, shopAction);
+                                              widget.onClose();
+                                            },
+                                    ),
+                                  if (talkAction != null)
+                                    _DialogueChoiceButton(
+                                      label: 'Dialogue',
+                                      icon: Icons.chat_bubble_outline,
+                                      onTap: widget.onStartDialogue == null
+                                          ? null
+                                          : () {
+                                              widget.onStartDialogue!(widget.character, talkAction);
+                                              widget.onClose();
+                                            },
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (widget.character.description != null &&
+                                widget.character.description!.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Text(
+                                widget.character.description!,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ],
                         ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogueChoiceButton extends StatelessWidget {
+  const _DialogueChoiceButton({
+    required this.label,
+    required this.icon,
+    this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+          decoration: BoxDecoration(
+            color: onTap == null ? Colors.white12 : Colors.white10,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white30),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: Colors.white),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  color: onTap == null ? Colors.white38 : Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

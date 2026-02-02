@@ -48,6 +48,48 @@ func (h *albumHandle) FindByUserID(ctx context.Context, userID uuid.UUID) ([]mod
 	return albums, nil
 }
 
+// FindAccessibleAlbumIDs returns album IDs the user can access: owned, member, or accepted invite.
+func (h *albumHandle) FindAccessibleAlbumIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	// Owned
+	var owned []uuid.UUID
+	h.db.WithContext(ctx).Model(&models.Album{}).Where("user_id = ?", userID).Pluck("id", &owned)
+	seen := make(map[uuid.UUID]bool)
+	for _, id := range owned {
+		seen[id] = true
+	}
+	// Member (via album_members - but we need albumMemberHandle, which we don't have)
+	// Use raw query
+	var memberIDs []uuid.UUID
+	h.db.WithContext(ctx).Table("album_members").Where("user_id = ?", userID).Pluck("album_id", &memberIDs)
+	for _, id := range memberIDs {
+		seen[id] = true
+	}
+	// Accepted invites
+	var acceptedIDs []uuid.UUID
+	h.db.WithContext(ctx).Table("album_invites").
+		Where("invited_user_id = ? AND status = ?", userID, "accepted").
+		Pluck("album_id", &acceptedIDs)
+	for _, id := range acceptedIDs {
+		seen[id] = true
+	}
+	result := make([]uuid.UUID, 0, len(seen))
+	for id := range seen {
+		result = append(result, id)
+	}
+	return result, nil
+}
+
+func (h *albumHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Album, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var albums []models.Album
+	if err := h.db.WithContext(ctx).Where("id IN ?", ids).Order("created_at DESC").Find(&albums).Error; err != nil {
+		return nil, err
+	}
+	return albums, nil
+}
+
 func (h *albumHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Album, error) {
 	var album models.Album
 	if err := h.db.WithContext(ctx).Where("id = ?", id).First(&album).Error; err != nil {
@@ -70,6 +112,19 @@ func (h *albumHandle) GetTags(ctx context.Context, albumID uuid.UUID) ([]string,
 		tags[i] = rows[i].Tag
 	}
 	return tags, nil
+}
+
+func (h *albumHandle) AddTag(ctx context.Context, albumID uuid.UUID, tag string) error {
+	t := trimTag(tag)
+	if t == "" {
+		return nil
+	}
+	return h.db.WithContext(ctx).Create(&models.AlbumTag{AlbumID: albumID, Tag: t}).Error
+}
+
+func (h *albumHandle) RemoveTag(ctx context.Context, albumID uuid.UUID, tag string) error {
+	return h.db.WithContext(ctx).Where("album_id = ? AND tag = ?", albumID, tag).
+		Delete(&models.AlbumTag{}).Error
 }
 
 // FindPostsForAlbum returns posts from the user's feed (user + friends) that have at least one of the album's tags

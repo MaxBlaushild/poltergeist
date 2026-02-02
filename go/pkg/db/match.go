@@ -29,6 +29,7 @@ func (h *matchHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Match
 	if err := h.db.WithContext(ctx).
 		Preload("Users").
 		Preload("PointsOfInterest.PointOfInterestChallenges").
+		Preload("PointsOfInterest.Characters").
 		Preload("Teams.Users").
 		Preload("InventoryItemEffects").
 		Where("id = ?", id).First(&match).Error; err != nil {

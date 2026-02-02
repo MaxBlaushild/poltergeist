@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -895,6 +896,65 @@ func (s *server) upsertZoneBoundary(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "zone boundary updated successfully"})
 }
 
+func (s *server) userZoneReputationLevel(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (int, error) {
+	reputation, err := s.dbClient.UserZoneReputation().FindByUserIDAndZoneID(ctx, userID, zoneID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return 1, nil
+		}
+		return 0, err
+	}
+	if reputation.Level <= 0 {
+		return 1, nil
+	}
+	return reputation.Level, nil
+}
+
+func (s *server) questGroupZoneID(ctx context.Context, group *models.PointOfInterestGroup) (uuid.UUID, error) {
+	if len(group.PointsOfInterest) > 0 {
+		zone, err := s.dbClient.Zone().FindByPointOfInterestID(ctx, group.PointsOfInterest[0].ID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return zone.ID, nil
+	}
+	if len(group.GroupMembers) > 0 {
+		zone, err := s.dbClient.Zone().FindByPointOfInterestID(ctx, group.GroupMembers[0].PointOfInterestID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return zone.ID, nil
+	}
+	return uuid.Nil, fmt.Errorf("quest has no points of interest")
+}
+
+func (s *server) userMeetsQuestReputation(ctx context.Context, userID uuid.UUID, questGroupID uuid.UUID) (bool, int, int, error) {
+	questGroup, err := s.dbClient.PointOfInterestGroup().FindByID(ctx, questGroupID)
+	if err != nil {
+		return false, 0, 0, err
+	}
+	return s.userMeetsQuestReputationForGroup(ctx, userID, questGroup)
+}
+
+func (s *server) userMeetsQuestReputationForGroup(ctx context.Context, userID uuid.UUID, questGroup *models.PointOfInterestGroup) (bool, int, int, error) {
+	requiredLevel := 0
+	if questGroup.RequiredReputationLevel != nil {
+		requiredLevel = *questGroup.RequiredReputationLevel
+	}
+	if requiredLevel <= 0 {
+		return true, 0, requiredLevel, nil
+	}
+	zoneID, err := s.questGroupZoneID(ctx, questGroup)
+	if err != nil {
+		return false, 0, requiredLevel, err
+	}
+	userLevel, err := s.userZoneReputationLevel(ctx, userID, zoneID)
+	if err != nil {
+		return false, 0, requiredLevel, err
+	}
+	return userLevel >= requiredLevel, userLevel, requiredLevel, nil
+}
+
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -908,6 +968,15 @@ func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputation(ctx, user.ID, requestBody.PointOfInterestGroupID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !meetsReputation {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("requires zone reputation level %d", requiredLevel)})
 		return
 	}
 	err = s.dbClient.TrackedPointOfInterestGroup().Create(ctx, requestBody.PointOfInterestGroupID, user.ID)
@@ -930,7 +999,18 @@ func (s *server) getTrackedPointOfInterestGroups(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, trackedPointOfInterestGroups)
+	filtered := make([]models.TrackedPointOfInterestGroup, 0, len(trackedPointOfInterestGroups))
+	for _, tracked := range trackedPointOfInterestGroups {
+		meetsReputation, _, _, err := s.userMeetsQuestReputation(ctx, user.ID, tracked.PointOfInterestGroupID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if meetsReputation {
+			filtered = append(filtered, tracked)
+		}
+	}
+	ctx.JSON(http.StatusOK, filtered)
 }
 
 func (s *server) deleteTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -1000,6 +1080,16 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 
 	if questGroup == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+
+	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputationForGroup(ctx, user.ID, questGroup)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !meetsReputation {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("requires zone reputation level %d", requiredLevel)})
 		return
 	}
 
@@ -2550,11 +2640,13 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name            string `binding:"required" json:"name"`
-		Description     string `binding:"required" json:"description"`
-		Type            int    `binding:"required" json:"type"`
-		Gold            *int   `json:"gold"`
-		InventoryItemID *int   `json:"inventoryItemId"`
+		Name                  string     `binding:"required" json:"name"`
+		Description           string     `binding:"required" json:"description"`
+		Type                  int        `binding:"required" json:"type"`
+		Gold                  *int       `json:"gold"`
+		InventoryItemID       *int       `json:"inventoryItemId"`
+		RequiredReputationLevel *int     `json:"requiredReputationLevel"`
+		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2576,6 +2668,21 @@ func (s *server) editPointOfInterestGroup(ctx *gin.Context) {
 	}
 	if requestBody.InventoryItemID != nil {
 		updates.InventoryItemID = requestBody.InventoryItemID
+	}
+	if requestBody.RequiredReputationLevel != nil {
+		updates.RequiredReputationLevel = requestBody.RequiredReputationLevel
+	}
+	if requestBody.QuestGiverCharacterID != nil {
+		character, err := s.dbClient.Character().FindByID(ctx, *requestBody.QuestGiverCharacterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if character == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest giver character not found"})
+			return
+		}
+		updates.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
 	}
 	if err := s.dbClient.PointOfInterestGroup().Update(ctx, pointOfInterestGroupID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -3145,7 +3252,7 @@ func (s *server) editTeamName(ctx *gin.Context) {
 }
 
 func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
-	_, err := s.getAuthenticatedUser(ctx)
+	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
@@ -3166,6 +3273,23 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, requestBody.ChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if challenge.PointOfInterestGroupID != nil {
+		meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputation(ctx, user.ID, *challenge.PointOfInterestGroupID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !meetsReputation {
+			ctx.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("requires zone reputation level %d", requiredLevel)})
+			return
+		}
 	}
 
 	submissionResult, err := s.gameEngineClient.ProcessSubmission(ctx, gameengine.Submission{
@@ -3312,12 +3436,14 @@ func (s *server) getPointsOfInterestGroups(ctx *gin.Context) {
 
 func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 	var requestBody struct {
-		Name            string `binding:"required" json:"name"`
-		Description     string `binding:"required" json:"description"`
-		ImageUrl        string `binding:"required" json:"imageUrl"`
-		Type            int    `binding:"required" json:"type"`
-		Gold            *int   `json:"gold"`
-		InventoryItemID *int   `json:"inventoryItemId"`
+		Name                  string     `binding:"required" json:"name"`
+		Description           string     `binding:"required" json:"description"`
+		ImageUrl              string     `binding:"required" json:"imageUrl"`
+		Type                  int        `binding:"required" json:"type"`
+		Gold                  *int       `json:"gold"`
+		InventoryItemID       *int       `json:"inventoryItemId"`
+		RequiredReputationLevel *int     `json:"requiredReputationLevel"`
+		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3335,18 +3461,38 @@ func (s *server) createPointOfInterestGroup(ctx *gin.Context) {
 		return
 	}
 
-	if requestBody.Gold != nil || requestBody.InventoryItemID != nil {
+	if requestBody.QuestGiverCharacterID != nil {
+		character, err := s.dbClient.Character().FindByID(ctx, *requestBody.QuestGiverCharacterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if character == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest giver character not found"})
+			return
+		}
+	}
+
+	if requestBody.Gold != nil || requestBody.InventoryItemID != nil || requestBody.QuestGiverCharacterID != nil || requestBody.RequiredReputationLevel != nil {
 		// Update the group with provided gold value and/or inventory item
-		updateData := make(map[string]interface{})
 		if requestBody.Gold != nil {
-			updateData["gold"] = *requestBody.Gold
 			group.Gold = *requestBody.Gold
 		}
 		if requestBody.InventoryItemID != nil {
-			updateData["inventory_item_id"] = *requestBody.InventoryItemID
 			group.InventoryItemID = requestBody.InventoryItemID
 		}
-		if err := s.dbClient.PointOfInterestGroup().Update(ctx, group.ID, &models.PointOfInterestGroup{Gold: group.Gold, InventoryItemID: group.InventoryItemID}); err != nil {
+		if requestBody.RequiredReputationLevel != nil {
+			group.RequiredReputationLevel = requestBody.RequiredReputationLevel
+		}
+		if requestBody.QuestGiverCharacterID != nil {
+			group.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
+		}
+		if err := s.dbClient.PointOfInterestGroup().Update(ctx, group.ID, &models.PointOfInterestGroup{
+			Gold:                  group.Gold,
+			InventoryItemID:       group.InventoryItemID,
+			RequiredReputationLevel: group.RequiredReputationLevel,
+			QuestGiverCharacterID: group.QuestGiverCharacterID,
+		}); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -4625,6 +4771,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		Description      string `json:"description"`
 		MapIconUrl       string `json:"mapIconUrl"`
 		DialogueImageUrl string `json:"dialogueImageUrl"`
+		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
 		MovementPattern  struct {
 			MovementPatternType models.MovementPatternType `json:"movementPatternType" binding:"required"`
 			ZoneID              *uuid.UUID                 `json:"zoneId"`
@@ -4637,6 +4784,18 @@ func (s *server) createCharacter(ctx *gin.Context) {
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if requestBody.PointOfInterestID != nil {
+		_, err := s.dbClient.PointOfInterest().FindByID(ctx, *requestBody.PointOfInterestID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "point of interest not found"})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest: " + err.Error()})
+			return
+		}
 	}
 
 	// First create the movement pattern
@@ -4659,6 +4818,7 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		Description:       requestBody.Description,
 		MapIconURL:        requestBody.MapIconUrl,
 		DialogueImageURL:  requestBody.DialogueImageUrl,
+		PointOfInterestID: requestBody.PointOfInterestID,
 		MovementPatternID: movementPattern.ID,
 		MovementPattern:   *movementPattern,
 	}
@@ -4695,6 +4855,7 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		Description      string `json:"description"`
 		MapIconUrl       string `json:"mapIconUrl"`
 		DialogueImageUrl string `json:"dialogueImageUrl"`
+		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
 		MovementPattern  struct {
 			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
 			ZoneID              *uuid.UUID                 `json:"zoneId"`
@@ -4729,6 +4890,18 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		Description:      requestBody.Description,
 		MapIconURL:       requestBody.MapIconUrl,
 		DialogueImageURL: requestBody.DialogueImageUrl,
+	}
+	if requestBody.PointOfInterestID != nil {
+		_, err := s.dbClient.PointOfInterest().FindByID(ctx, *requestBody.PointOfInterestID)
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "point of interest not found"})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest: " + err.Error()})
+			return
+		}
+		characterUpdates.PointOfInterestID = requestBody.PointOfInterestID
 	}
 
 	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {

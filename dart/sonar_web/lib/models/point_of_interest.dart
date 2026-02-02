@@ -1,3 +1,5 @@
+import 'character.dart';
+
 /// Lightweight tag as returned on a POI (id, name).
 class PoiTag {
   final String id;
@@ -24,6 +26,7 @@ class PointOfInterest {
   final String? originalName;
   final String? googleMapsPlaceId;
   final List<PoiTag> tags;
+  final List<Character> characters;
 
   const PointOfInterest({
     required this.id,
@@ -36,6 +39,7 @@ class PointOfInterest {
     this.originalName,
     this.googleMapsPlaceId,
     this.tags = const [],
+    this.characters = const [],
   });
 
   factory PointOfInterest.fromJson(Map<String, dynamic> json) {
@@ -46,6 +50,17 @@ class PointOfInterest {
         if (t is Map<String, dynamic>) {
           try {
             tags.add(PoiTag.fromJson(t));
+          } catch (_) {}
+        }
+      }
+    }
+    List<Character> characters = [];
+    final rawCharacters = json['characters'];
+    if (rawCharacters is List) {
+      for (final c in rawCharacters) {
+        if (c is Map<String, dynamic>) {
+          try {
+            characters.add(Character.fromJson(c));
           } catch (_) {}
         }
       }
@@ -61,6 +76,7 @@ class PointOfInterest {
       originalName: json['originalName'] as String?,
       googleMapsPlaceId: json['googleMapsPlaceId'] as String?,
       tags: tags,
+      characters: characters,
     );
   }
 }

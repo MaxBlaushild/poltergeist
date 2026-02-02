@@ -54,6 +54,11 @@ type DbClient interface {
 	PostTag() PostTagHandle
 	PostFlag() PostFlagHandle
 	Album() AlbumHandle
+	AlbumMember() AlbumMemberHandle
+	AlbumInvite() AlbumInviteHandle
+	AlbumPost() AlbumPostHandle
+	Notification() NotificationHandle
+	UserDeviceToken() UserDeviceTokenHandle
 	PostReaction() PostReactionHandle
 	PostComment() PostCommentHandle
 	PartyInvite() PartyInviteHandle
@@ -474,16 +479,63 @@ type PostFlagHandle interface {
 type AlbumHandle interface {
 	Create(ctx context.Context, userID uuid.UUID, name string, tags []string) (*models.Album, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Album, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Album, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Album, error)
+	FindAccessibleAlbumIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetTags(ctx context.Context, albumID uuid.UUID) ([]string, error)
+	AddTag(ctx context.Context, albumID uuid.UUID, tag string) error
+	RemoveTag(ctx context.Context, albumID uuid.UUID, tag string) error
 	FindPostsForAlbum(ctx context.Context, userID uuid.UUID, albumTags []string) ([]models.Post, error)
+}
+
+type AlbumMemberHandle interface {
+	Add(ctx context.Context, albumID, userID uuid.UUID, role string) error
+	Remove(ctx context.Context, albumID, userID uuid.UUID) error
+	GetRole(ctx context.Context, albumID, userID uuid.UUID) (string, error)
+	FindByAlbumID(ctx context.Context, albumID uuid.UUID) ([]models.AlbumMember, error)
+	FindAlbumIDsForUser(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	UpdateRole(ctx context.Context, albumID, userID uuid.UUID, role string) error
+}
+
+type AlbumInviteHandle interface {
+	Create(ctx context.Context, albumID, invitedUserID, invitedByID uuid.UUID, role string) (*models.AlbumInvite, error)
+	FindByID(ctx context.Context, id uuid.UUID) (*models.AlbumInvite, error)
+	FindPendingByAlbumID(ctx context.Context, albumID uuid.UUID) ([]models.AlbumInvite, error)
+	FindPendingByUserID(ctx context.Context, userID uuid.UUID) ([]models.AlbumInvite, error)
+	FindByUserIDAndStatus(ctx context.Context, userID uuid.UUID, status string) ([]models.AlbumInvite, error)
+	FindByAlbumIDAndStatus(ctx context.Context, albumID uuid.UUID, status string) ([]models.AlbumInvite, error)
+	FindByAlbumAndUser(ctx context.Context, albumID, userID uuid.UUID) (*models.AlbumInvite, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
+	Reinvite(ctx context.Context, albumID, userID uuid.UUID, role string) (*models.AlbumInvite, error)
+}
+
+type NotificationHandle interface {
+	Create(ctx context.Context, n *models.Notification) error
+	FindByUserID(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.Notification, error)
+	CountUnreadByUserID(ctx context.Context, userID uuid.UUID) (int64, error)
+	MarkAsRead(ctx context.Context, id, userID uuid.UUID) error
+	MarkAllAsRead(ctx context.Context, userID uuid.UUID) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Notification, error)
+}
+
+type UserDeviceTokenHandle interface {
+	Upsert(ctx context.Context, userID uuid.UUID, token, platform string) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserDeviceToken, error)
+}
+
+type AlbumPostHandle interface {
+	Add(ctx context.Context, albumID, postID uuid.UUID) error
+	Remove(ctx context.Context, albumID, postID uuid.UUID) error
+	FindPostIDsByAlbumID(ctx context.Context, albumID uuid.UUID) ([]uuid.UUID, error)
+	HasAny(ctx context.Context, albumID uuid.UUID) (bool, error)
 }
 
 type PostHandle interface {
 	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string) (*models.Post, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Post, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Post, error)
 	FindAllFriendsPosts(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Post, error)
 	Delete(ctx context.Context, id uuid.UUID) error

@@ -104,10 +104,14 @@ class PoiService {
     );
   }
 
-  Future<Map<String, dynamic>> sellToShop(String actionId, int itemId) async {
+  Future<Map<String, dynamic>> sellToShop(
+    String actionId,
+    int itemId, {
+    int quantity = 1,
+  }) async {
     return await _api.post<Map<String, dynamic>>(
       '/sonar/character-actions/$actionId/sell',
-      data: {'itemId': itemId, 'quantity': 1},
+      data: {'itemId': itemId, 'quantity': quantity},
     );
   }
 

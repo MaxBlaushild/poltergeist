@@ -89,6 +89,17 @@ func (h *postHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Post, 
 	return &post, nil
 }
 
+func (h *postHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Post, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var posts []models.Post
+	if err := h.db.WithContext(ctx).Where("id IN ?", ids).Order("created_at DESC").Find(&posts).Error; err != nil {
+		return nil, err
+	}
+	return posts, nil
+}
+
 func (h *postHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Post{}, "id = ?", id).Error
 }

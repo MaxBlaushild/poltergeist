@@ -96,6 +96,7 @@ func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfIn
 	var pointsOfInterest []models.PointOfInterest
 
 	if err := c.db.WithContext(ctx).
+		Preload("Characters").
 		Preload("Tags").
 		Preload("PointOfInterestChallenges").
 		Find(&pointsOfInterest).Error; err != nil {
@@ -108,7 +109,11 @@ func (c *pointOfInterestHandle) FindAll(ctx context.Context) ([]models.PointOfIn
 func (c *pointOfInterestHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterest, error) {
 	var pointOfInterest models.PointOfInterest
 
-	if err := c.db.WithContext(ctx).First(&pointOfInterest, id).Error; err != nil {
+	if err := c.db.WithContext(ctx).
+		Preload("Characters").
+		Preload("Tags").
+		Preload("PointOfInterestChallenges").
+		First(&pointOfInterest, id).Error; err != nil {
 		return nil, err
 	}
 
@@ -139,6 +144,7 @@ func (c *pointOfInterestHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) 
 	var pointsOfInterest []models.PointOfInterest
 
 	if err := c.db.WithContext(ctx).
+		Preload("Characters").
 		Preload("Tags").
 		Preload("PointOfInterestChallenges").
 		Where("id IN (?)", ids).

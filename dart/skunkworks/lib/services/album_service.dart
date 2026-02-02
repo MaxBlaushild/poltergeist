@@ -32,10 +32,74 @@ class AlbumService {
     final posts = postsRaw
         .map((p) => Post.fromJson(p as Map<String, dynamic>))
         .toList();
-    return {'album': album, 'posts': posts};
+    final role = response['role'] as String?;
+    final members = response['members'] as List<dynamic>?;
+    final pendingInvites = response['pendingInvites'] as List<dynamic>?;
+    return {
+      'album': album,
+      'posts': posts,
+      'role': role,
+      'members': members ?? [],
+      'pendingInvites': pendingInvites ?? [],
+    };
   }
 
   Future<void> deleteAlbum(String albumId) async {
     await _api.delete(ApiConstants.albumEndpoint(albumId));
+  }
+
+  Future<void> addAlbumTag(String albumId, String tag) async {
+    await _api.post(ApiConstants.albumTagsEndpoint(albumId), data: {'tag': tag});
+  }
+
+  Future<void> removeAlbumTag(String albumId, String tag) async {
+    await _api.delete(ApiConstants.albumTagsEndpoint(albumId), data: {'tag': tag});
+  }
+
+  Future<void> addAlbumPost(String albumId, String postId) async {
+    await _api.post(ApiConstants.albumPostsEndpoint(albumId), data: {'postId': postId});
+  }
+
+  Future<void> removeAlbumPost(String albumId, String postId) async {
+    await _api.delete(ApiConstants.albumPostsEndpoint(albumId), data: {'postId': postId});
+  }
+
+  Future<Map<String, dynamic>> inviteToAlbum(String albumId, String userId, String role) async {
+    final response = await _api.post<Map<String, dynamic>>(
+      ApiConstants.albumInviteEndpoint(albumId),
+      data: {'userId': userId, 'role': role},
+    );
+    return response;
+  }
+
+  Future<List<dynamic>> getAlbumMembers(String albumId) async {
+    final response = await _api.get<List<dynamic>>(ApiConstants.albumMembersEndpoint(albumId));
+    return response;
+  }
+
+  Future<void> removeAlbumMember(String albumId, String userId) async {
+    await _api.delete(ApiConstants.albumMembersEndpoint(albumId), data: {'userId': userId});
+  }
+
+  Future<void> updateAlbumMemberRole(String albumId, String userId, String role) async {
+    await _api.patch(ApiConstants.albumMembersEndpoint(albumId), data: {'userId': userId, 'role': role});
+  }
+
+  Future<List<dynamic>> getAlbumPendingInvites(String albumId) async {
+    final response = await _api.get<List<dynamic>>(ApiConstants.albumInvitesEndpoint(albumId));
+    return response;
+  }
+
+  Future<List<dynamic>> getMyAlbumInvites() async {
+    final response = await _api.get<List<dynamic>>(ApiConstants.albumInvitesListEndpoint);
+    return response;
+  }
+
+  Future<void> acceptAlbumInvite(String inviteId) async {
+    await _api.post(ApiConstants.acceptAlbumInviteEndpoint(inviteId));
+  }
+
+  Future<void> rejectAlbumInvite(String inviteId) async {
+    await _api.post(ApiConstants.rejectAlbumInviteEndpoint(inviteId));
   }
 }

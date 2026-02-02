@@ -19,6 +19,8 @@ type Character struct {
 	Description       string          `json:"description"`
 	MapIconURL        string          `json:"mapIconUrl"`
 	DialogueImageURL  string          `json:"dialogueImageUrl"`
+	PointOfInterestID *uuid.UUID      `json:"pointOfInterestId,omitempty" gorm:"type:uuid"`
+	PointOfInterest   *PointOfInterest `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
 	Geometry          string          `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	MovementPattern   MovementPattern `json:"movementPattern"`
 	MovementPatternID uuid.UUID       `json:"movementPatternId" gorm:"type:uuid"`

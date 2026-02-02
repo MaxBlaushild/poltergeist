@@ -85,6 +85,10 @@ module "ecs" {
             {
               name = "C2PA_CONTRACT_ADDRESS"
               value = "0x653d604fdaA2320DF90cc4e9dFd5aabe86BD91A9"
+            },
+            {
+              name  = "GOOGLE_APPLICATION_CREDENTIALS"
+              value = "/etc/core/vera-firebase.json"
             }
           ]
           secrets = [

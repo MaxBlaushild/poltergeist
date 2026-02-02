@@ -81,14 +81,17 @@ class APIClient {
   /// Makes a POST request
   /// 
   /// [url] - The endpoint URL (relative to baseURL)
-  /// [data] - Optional request body data
+  /// [data] - Optional request body data (Map/List encoded as JSON)
   /// 
   /// Returns the parsed response data
   Future<T> post<T>(String url, {dynamic data}) async {
     final response = await _client.post<T>(
       url,
       data: data,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        contentType: Headers.jsonContentType,
+        responseType: ResponseType.json,
+      ),
     );
     return response.data as T;
   }
