@@ -9,16 +9,18 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/middleware"
+	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/push"
 	"github.com/gin-gonic/gin"
 )
 
 type server struct {
-	authClient            auth.Client
-	dbClient              db.DbClient
-	awsClient             aws.AWSClient
-	certClient            cert.Client
+	authClient               auth.Client
+	dbClient                 db.DbClient
+	awsClient                aws.AWSClient
+	certClient               cert.Client
 	ethereumTransactorClient ethereum_transactor.Client
-	c2PAContractAddress   string
+	c2PAContractAddress      string
+	pushClient               push.Client
 }
 
 type Server interface {
@@ -33,14 +35,16 @@ func NewServer(
 	certClient cert.Client,
 	ethereumTransactorClient ethereum_transactor.Client,
 	c2PAContractAddress string,
+	pushClient push.Client,
 ) Server {
 	return &server{
-		authClient:              authClient,
-		dbClient:                dbClient,
+		authClient:               authClient,
+		dbClient:                 dbClient,
 		awsClient:                awsClient,
 		certClient:               certClient,
 		ethereumTransactorClient: ethereumTransactorClient,
 		c2PAContractAddress:      c2PAContractAddress,
+		pushClient:               pushClient,
 	}
 }
 
@@ -70,6 +74,24 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/verifiable-sn/albums", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbums))
 	r.GET("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbum))
 	r.DELETE("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteAlbum))
+	r.POST("/verifiable-sn/albums/:id/tags", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AddAlbumTag))
+	r.DELETE("/verifiable-sn/albums/:id/tags", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RemoveAlbumTag))
+	r.POST("/verifiable-sn/albums/:id/posts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AddAlbumPost))
+	r.DELETE("/verifiable-sn/albums/:id/posts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RemoveAlbumPost))
+	r.POST("/verifiable-sn/albums/:id/invite", middleware.WithAuthenticationWithoutLocation(s.authClient, s.InviteToAlbum))
+	r.GET("/verifiable-sn/albums/:id/members", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbumMembers))
+	r.DELETE("/verifiable-sn/albums/:id/members", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RemoveAlbumMember))
+	r.PATCH("/verifiable-sn/albums/:id/members", middleware.WithAuthenticationWithoutLocation(s.authClient, s.UpdateAlbumMemberRole))
+	r.GET("/verifiable-sn/albums/:id/invites", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbumPendingInvites))
+	r.GET("/verifiable-sn/album-invites", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbumInvites))
+	r.POST("/verifiable-sn/album-invites/:inviteId/accept", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AcceptAlbumInvite))
+	r.POST("/verifiable-sn/album-invites/:inviteId/reject", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RejectAlbumInvite))
+
+	// Notification routes
+	r.GET("/verifiable-sn/notifications", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetNotifications))
+	r.PATCH("/verifiable-sn/notifications/read-all", middleware.WithAuthenticationWithoutLocation(s.authClient, s.MarkAllNotificationsRead))
+	r.PATCH("/verifiable-sn/notifications/:id/read", middleware.WithAuthenticationWithoutLocation(s.authClient, s.MarkNotificationRead))
+	r.POST("/verifiable-sn/device-tokens", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RegisterDeviceToken))
 
 	// Media routes
 	r.POST("/verifiable-sn/media/uploadUrl", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPresignedUploadUrl))

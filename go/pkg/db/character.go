@@ -18,7 +18,10 @@ func (h *characterHandler) Create(ctx context.Context, character *models.Charact
 
 func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error) {
 	var character models.Character
-	if err := h.db.WithContext(ctx).Preload("MovementPattern").First(&character, "id = ?", id).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("MovementPattern").
+		Preload("PointOfInterest").
+		First(&character, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
 		}
@@ -29,7 +32,10 @@ func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.
 
 func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, error) {
 	var characters []*models.Character
-	if err := h.db.WithContext(ctx).Preload("MovementPattern").Find(&characters).Error; err != nil {
+	if err := h.db.WithContext(ctx).
+		Preload("MovementPattern").
+		Preload("PointOfInterest").
+		Find(&characters).Error; err != nil {
 		return nil, err
 	}
 	return characters, nil
@@ -47,6 +53,7 @@ func (h *characterHandler) FindByMovementPatternType(ctx context.Context, patter
 	var characters []*models.Character
 	if err := h.db.WithContext(ctx).
 		Preload("MovementPattern").
+		Preload("PointOfInterest").
 		Joins("JOIN movement_patterns ON characters.movement_pattern_id = movement_patterns.id").
 		Where("movement_patterns.movement_pattern_type = ?", patternType).
 		Find(&characters).Error; err != nil {

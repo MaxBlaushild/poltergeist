@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/character.dart';
@@ -25,6 +26,7 @@ class ShopModal extends StatefulWidget {
 }
 
 class _ShopModalState extends State<ShopModal> {
+  final FocusNode _focusNode = FocusNode();
   String _activeTab = 'buy';
   int? _purchasingItemId;
   int? _sellingItemId;
@@ -37,6 +39,12 @@ class _ShopModalState extends State<ShopModal> {
   void initState() {
     super.initState();
     _loadInventory();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInventory() async {
@@ -64,7 +72,7 @@ class _ShopModalState extends State<ShopModal> {
   Future<void> _purchase(int itemId, int price) async {
     final user = context.read<AuthProvider>().user;
     if (user == null) {
-      setState(() => _error = 'You must be logged in');
+      setState(() => _error = 'You must be logged in to purchase items');
       return;
     }
     if (user.gold < price) {
@@ -86,9 +94,10 @@ class _ShopModalState extends State<ShopModal> {
         await context.read<AuthProvider>().refresh();
         setState(() {
           _purchasingItemId = null;
-          _success = 'Purchased ${_getItemById(itemId)?.name ?? 'item'}!';
+          _success =
+              'Purchased ${_getItemById(itemId)?.name ?? 'item'} for $price gold!';
         });
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 3), () {
           if (mounted) setState(() => _success = null);
         });
       }
@@ -102,11 +111,23 @@ class _ShopModalState extends State<ShopModal> {
     }
   }
 
-  Future<void> _sell(int itemId) async {
+  Future<void> _sell(
+    int itemId, {
+    int quantity = 1,
+  }) async {
+    final user = context.read<AuthProvider>().user;
+    if (user == null) {
+      setState(() => _error = 'You must be logged in to sell items');
+      return;
+    }
     final item = _getItemById(itemId);
     final sellValue = item?.sellValue ?? 0;
     if (sellValue == 0) {
       setState(() => _error = 'Item cannot be sold');
+      return;
+    }
+    if (quantity <= 0) {
+      setState(() => _error = 'Invalid quantity');
       return;
     }
     setState(() {
@@ -115,15 +136,19 @@ class _ShopModalState extends State<ShopModal> {
       _success = null;
     });
     try {
-      await context.read<PoiService>().sellToShop(widget.action.id, itemId);
+      await context
+          .read<PoiService>()
+          .sellToShop(widget.action.id, itemId, quantity: quantity);
       if (mounted) {
         await _loadInventory();
         await context.read<AuthProvider>().refresh();
+        final totalValue = sellValue * quantity;
         setState(() {
           _sellingItemId = null;
-          _success = 'Sold ${item?.name ?? 'item'}!';
+          _success =
+              'Sold ${quantity}x ${item?.name ?? 'item'} for $totalValue gold!';
         });
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 3), () {
           if (mounted) setState(() => _success = null);
         });
       }
@@ -141,15 +166,45 @@ class _ShopModalState extends State<ShopModal> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
     final shopItems = widget.action.shopInventory ?? [];
-    final sellableItems = _ownedItems.where((o) => o.quantity > 0).toList();
+    final sellableItems = _ownedItems.where((o) {
+      if (o.quantity <= 0) return false;
+      final item = _getItemById(o.inventoryItemId);
+      return (item?.sellValue ?? 0) > 0;
+    }).toList();
+    final characterImageUrl =
+        widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
+    const activeTabColor = Color(0xFF007BFF);
 
-    return Dialog(
-      child: Container(
-        width: 600,
-        height: 600,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: widget.onClose,
+            child: Container(color: Colors.black54),
+          ),
+        ),
+        Center(
+          child: Focus(
+            autofocus: true,
+            focusNode: _focusNode,
+            onKeyEvent: (_, event) {
+              if (event is KeyDownEvent &&
+                  event.logicalKey == LogicalKeyboardKey.escape) {
+                widget.onClose();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Material(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              elevation: 10,
+              child: Container(
+                width: 700,
+                height: 640,
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -174,24 +229,98 @@ class _ShopModalState extends State<ShopModal> {
               ],
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Buy'),
-                    selected: _activeTab == 'buy',
-                    onSelected: (_) => setState(() => _activeTab = 'buy'),
-                  ),
+            if (characterImageUrl != null && characterImageUrl.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.network(
+                  characterImageUrl,
+                  width: 140,
+                  height: 140,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.image),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: const Text('Sell'),
-                    selected: _activeTab == 'sell',
-                    onSelected: (_) => setState(() => _activeTab = 'sell'),
-                  ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            Container(
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade300, width: 2),
                 ),
-              ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _activeTab = 'buy'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _activeTab == 'buy'
+                              ? activeTabColor
+                              : Colors.transparent,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: _activeTab == 'buy'
+                                  ? activeTabColor
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Buy',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _activeTab == 'buy'
+                                ? Colors.white
+                                : Colors.grey.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _activeTab = 'sell'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _activeTab == 'sell'
+                              ? activeTabColor
+                              : Colors.transparent,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: _activeTab == 'sell'
+                                  ? activeTabColor
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Sell',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _activeTab == 'sell'
+                                ? Colors.white
+                                : Colors.grey.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             if (_error != null)
               Padding(
@@ -213,7 +342,9 @@ class _ShopModalState extends State<ShopModal> {
             Expanded(
               child: _activeTab == 'buy'
                   ? shopItems.isEmpty
-                      ? const Center(child: Text('No items for sale'))
+                      ? const Center(
+                          child: Text('This shop has no items for sale.'),
+                        )
                       : ListView.builder(
                           itemCount: shopItems.length,
                           itemBuilder: (_, i) {
@@ -260,7 +391,9 @@ class _ShopModalState extends State<ShopModal> {
                           },
                         )
                   : sellableItems.isEmpty
-                      ? const Center(child: Text('No items to sell'))
+                      ? const Center(
+                          child: Text('You have no items that can be sold.'),
+                        )
                       : ListView.builder(
                           itemCount: sellableItems.length,
                           itemBuilder: (_, i) {
@@ -269,6 +402,8 @@ class _ShopModalState extends State<ShopModal> {
                             final sellValue = item?.sellValue ?? 0;
                             final img = item?.imageUrl ?? '';
                             final name = item?.name ?? 'Unknown';
+                            final isSellingItem =
+                                _sellingItemId == owned.inventoryItemId;
                             return Card(
                               child: ListTile(
                                 leading: img.isNotEmpty
@@ -288,17 +423,52 @@ class _ShopModalState extends State<ShopModal> {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text('💰 $sellValue each'),
-                                    FilledButton(
-                                      onPressed: sellValue > 0 &&
-                                              _sellingItemId != owned.inventoryItemId
-                                          ? () => _sell(owned.inventoryItemId)
-                                          : null,
-                                      child: Text(
-                                        _sellingItemId == owned.inventoryItemId
-                                            ? '...'
-                                            : 'Sell',
+                                    const SizedBox(height: 6),
+                                    if (owned.quantity > 1)
+                                      Wrap(
+                                        spacing: 6,
+                                        children: [
+                                          FilledButton(
+                                            onPressed:
+                                                sellValue > 0 && !isSellingItem
+                                                    ? () => _sell(
+                                                          owned.inventoryItemId,
+                                                          quantity: 1,
+                                                        )
+                                                    : null,
+                                            child: Text(
+                                              isSellingItem ? '...' : 'Sell 1',
+                                            ),
+                                          ),
+                                          FilledButton(
+                                            onPressed:
+                                                sellValue > 0 && !isSellingItem
+                                                    ? () => _sell(
+                                                          owned.inventoryItemId,
+                                                          quantity: owned.quantity,
+                                                        )
+                                                    : null,
+                                            child: Text(
+                                              isSellingItem
+                                                  ? '...'
+                                                  : 'Sell All (${owned.quantity})',
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    else
+                                      FilledButton(
+                                        onPressed:
+                                            sellValue > 0 && !isSellingItem
+                                                ? () => _sell(
+                                                      owned.inventoryItemId,
+                                                      quantity: 1,
+                                                    )
+                                                : null,
+                                        child: Text(
+                                          isSellingItem ? '...' : 'Sell',
+                                        ),
                                       ),
-                                    ),
                                   ],
                                 ),
                               ),
@@ -306,9 +476,13 @@ class _ShopModalState extends State<ShopModal> {
                           },
                         ),
             ),
-          ],
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

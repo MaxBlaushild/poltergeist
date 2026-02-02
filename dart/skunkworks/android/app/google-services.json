@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "757461333740",
+    "project_id": "vera-e30a2",
+    "storage_bucket": "vera-e30a2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:757461333740:android:05e370185f078f138c97c9",
+        "android_client_info": {
+          "package_name": "com.unclaimedstreets.vera"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFKtqeOewwYsZp5LvXOM6ROhivoX4wHW0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

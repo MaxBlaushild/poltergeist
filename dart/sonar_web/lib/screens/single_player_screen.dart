@@ -325,6 +325,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         pointOfInterest: poi,
         hasDiscovered: hasDiscovered,
         onClose: () => Navigator.of(context).pop(),
+        onCharacterTap: (character) {
+          Navigator.of(context).pop();
+          _showCharacterPanel(character);
+        },
         onUnlocked: () async {
           await context.read<DiscoveriesProvider>().refresh();
           if (!mounted) return;

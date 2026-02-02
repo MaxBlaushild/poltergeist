@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -22,18 +23,17 @@ func (s *server) CreateAlbum(ctx *gin.Context) {
 	}
 
 	var req struct {
-		Name string   `json:"name" binding:"required"`
-		Tags []string `json:"tags" binding:"required"`
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
 	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
 		return
 	}
-	if len(req.Tags) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one tag is required"})
+	if strings.TrimSpace(req.Name) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "album name is required"})
 		return
 	}
-
 	album, err := s.dbClient.Album().Create(ctx, user.ID, req.Name, req.Tags)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -50,7 +50,12 @@ func (s *server) GetAlbums(ctx *gin.Context) {
 		return
 	}
 
-	albums, err := s.dbClient.Album().FindByUserID(ctx, user.ID)
+	ids, err := s.dbClient.Album().FindAccessibleAlbumIDs(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	albums, err := s.dbClient.Album().FindByIDs(ctx, ids)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -88,8 +93,8 @@ func (s *server) GetAlbum(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "album not found"})
 		return
 	}
-	if album.UserID != user.ID {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": "cannot access another user's album"})
+	if !s.canAccessAlbum(ctx, album, user.ID) {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "cannot access this album"})
 		return
 	}
 
@@ -99,10 +104,20 @@ func (s *server) GetAlbum(ctx *gin.Context) {
 		return
 	}
 
-	posts, err := s.dbClient.Album().FindPostsForAlbum(ctx, user.ID, tags)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	var posts []models.Post
+	hasExplicit, _ := s.dbClient.AlbumPost().HasAny(ctx, album.ID)
+	if hasExplicit {
+		postIDs, _ := s.dbClient.AlbumPost().FindPostIDsByAlbumID(ctx, album.ID)
+		if len(postIDs) > 0 {
+			posts, _ = s.dbClient.Post().FindByIDs(ctx, postIDs)
+		}
+	}
+	if len(posts) == 0 && len(tags) > 0 {
+		posts, err = s.dbClient.Album().FindPostsForAlbum(ctx, user.ID, tags)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	s.attachTagsToPosts(ctx, posts)
@@ -145,10 +160,47 @@ func (s *server) GetAlbum(ctx *gin.Context) {
 		}
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	role := s.getAlbumRole(ctx, album, user.ID)
+	if role == "" {
+		role = "viewer" // has access via accepted invite but not yet member
+	}
+
+	resp := gin.H{
 		"album": AlbumWithTags{Album: *album, Tags: tags},
 		"posts": postsWithUsers,
-	})
+		"role":  role,
+	}
+	if s.canAdminAlbum(ctx, album, user.ID) {
+		members, _ := s.dbClient.AlbumMember().FindByAlbumID(ctx, album.ID)
+		userIDs := make([]uuid.UUID, 0, len(members)+1)
+		userIDs = append(userIDs, album.UserID)
+		for _, m := range members {
+			userIDs = append(userIDs, m.UserID)
+		}
+		users, _ := s.dbClient.User().FindUsersByIDs(ctx, userIDs)
+		userMap := make(map[uuid.UUID]*models.User)
+		for i := range users {
+			userMap[users[i].ID] = &users[i]
+		}
+		type MemberInfo struct {
+			UserID uuid.UUID   `json:"userId"`
+			Role   string      `json:"role"`
+			User   *models.User `json:"user"`
+		}
+		memberList := []MemberInfo{{UserID: album.UserID, Role: "owner", User: userMap[album.UserID]}}
+		for _, m := range members {
+			memberList = append(memberList, MemberInfo{UserID: m.UserID, Role: m.Role, User: userMap[m.UserID]})
+		}
+		invs, _ := s.dbClient.AlbumInvite().FindPendingByAlbumID(ctx, album.ID)
+		invList := make([]gin.H, len(invs))
+		for i, inv := range invs {
+			u, _ := s.dbClient.User().FindByID(ctx, inv.InvitedUserID)
+			invList[i] = gin.H{"id": inv.ID, "invitedUser": u, "role": inv.Role}
+		}
+		resp["members"] = memberList
+		resp["pendingInvites"] = invList
+	}
+	ctx.JSON(http.StatusOK, resp)
 }
 
 func (s *server) DeleteAlbum(ctx *gin.Context) {

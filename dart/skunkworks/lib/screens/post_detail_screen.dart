@@ -17,6 +17,7 @@ import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/profile_screen.dart';
 import 'package:skunkworks/widgets/emoji_picker.dart';
 import 'package:skunkworks/widgets/video_player_widget.dart';
+import 'package:skunkworks/services/export_service.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final String postId;
@@ -365,6 +366,77 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Future<void> _handleExport() async {
+    if (_post?.id == null || _post!.imageUrl == null || _post!.isVideo) return;
+
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Exporting...'),
+              ],
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+
+      final response = await http.get(Uri.parse(_post!.imageUrl!));
+      if (response.statusCode != 200) {
+        throw Exception('Failed to download image: ${response.statusCode}');
+      }
+
+      final txHash = _blockchainTransaction?['txHash'] as String?;
+
+      final bytes = await ExportService.exportPostWithStamp(
+        context,
+        ExportParams(
+          imageBytes: response.bodyBytes,
+          postId: _post!.id!,
+          manifestHash: _post!.manifestHash,
+          txHash: txHash,
+        ),
+      );
+
+      if (bytes == null || !mounted) return;
+
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/export_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await file.writeAsBytes(bytes);
+
+      await Gal.putImage(file.path);
+      await file.delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Exported to Photos!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: ${e.toString()}'),
+            backgroundColor: AppColors.coralPop,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _handleFlagPost() async {
     if (_post?.id == null) return;
 
@@ -518,18 +590,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ],
           ),
-          if (isPostOwner) ...[
-            if (_post!.imageUrl != null && !_post!.isVideo)
+          if (_post!.imageUrl != null && !_post!.isVideo) ...[
+            IconButton(
+              icon: const Icon(Icons.qr_code_2, color: AppColors.softRealBlue),
+              onPressed: _handleExport,
+              tooltip: 'Export with verification stamp',
+            ),
+            if (isPostOwner)
               IconButton(
                 icon: const Icon(Icons.download, color: AppColors.softRealBlue),
                 onPressed: _handleSaveImage,
                 tooltip: 'Save to Photos',
               ),
+          ],
+          if (isPostOwner)
             IconButton(
               icon: Icon(Icons.delete, color: AppColors.coralPop),
               onPressed: _handleDeletePost,
             ),
-          ],
         ],
       ),
       body: SingleChildScrollView(

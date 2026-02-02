@@ -21,6 +21,7 @@ type PointOfInterest struct {
 	ImageUrl                  string                     `json:"imageURL"`
 	Description               string                     `json:"description"`
 	PointOfInterestChallenges []PointOfInterestChallenge `json:"pointOfInterestChallenges"`
+	Characters                []Character                `json:"characters" gorm:"foreignKey:PointOfInterestID"`
 	Geometry                  string                     `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Tags                      []Tag                      `json:"tags" gorm:"many2many:tag_entities;joinForeignKey:point_of_interest_id;joinReferences:tag_id"`
 	GoogleMapsPlaceID         *string                    `json:"googleMapsPlaceId"`

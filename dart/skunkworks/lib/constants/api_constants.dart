@@ -30,6 +30,20 @@ class ApiConstants {
   // Album endpoints
   static const String albumsEndpoint = '/verifiable-sn/albums';
   static String albumEndpoint(String albumId) => '/verifiable-sn/albums/$albumId';
+  static String albumTagsEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/tags';
+  static String albumPostsEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/posts';
+  static String albumInviteEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/invite';
+  static String albumMembersEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/members';
+  static String albumInvitesEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/invites';
+  static const String albumInvitesListEndpoint = '/verifiable-sn/album-invites';
+  static String acceptAlbumInviteEndpoint(String inviteId) => '/verifiable-sn/album-invites/$inviteId/accept';
+  static String rejectAlbumInviteEndpoint(String inviteId) => '/verifiable-sn/album-invites/$inviteId/reject';
+
+  // Notification endpoints
+  static const String notificationsEndpoint = '/verifiable-sn/notifications';
+  static String notificationReadEndpoint(String id) => '/verifiable-sn/notifications/$id/read';
+  static const String notificationsReadAllEndpoint = '/verifiable-sn/notifications/read-all';
+  static const String deviceTokensEndpoint = '/verifiable-sn/device-tokens';
 
   // Media endpoints
   static const String presignedUploadUrlEndpoint = '/verifiable-sn/media/uploadUrl';
@@ -54,7 +68,17 @@ class ApiConstants {
 
   static String sharePostUrl(String postId) =>
       '$shareTestFlightUrl?post=${Uri.encodeComponent(postId)}';
-  
+
+  /// Builds vera:// deep link for export QR code.
+  /// m=manifestHash, t=txHash (blockchain). Omit params if null.
+  static String exportPostDeepLink(String postId, {String? manifestHash, String? txHash}) {
+    final uri = Uri(scheme: 'vera', host: 'post', pathSegments: [postId]);
+    final query = <String, String>{};
+    if (manifestHash != null && manifestHash.isNotEmpty) query['m'] = manifestHash;
+    if (txHash != null && txHash.isNotEmpty) query['t'] = txHash;
+    return query.isEmpty ? uri.toString() : uri.replace(queryParameters: query).toString();
+  }
+
   // Certificate endpoints
   static const String checkCertificateEndpoint = '/verifiable-sn/certificate/check';
   static const String enrollCertificateEndpoint = '/verifiable-sn/certificate/enroll';

@@ -2,11 +2,13 @@ package questlog
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type QuestObjective struct {
@@ -61,6 +63,92 @@ func NewClient(dbClient db.DbClient) QuestlogClient {
 	return &questlogClient{dbClient: dbClient}
 }
 
+func (c *questlogClient) requiredReputationLevel(group models.PointOfInterestGroup) int {
+	if group.RequiredReputationLevel == nil {
+		return 0
+	}
+	if *group.RequiredReputationLevel <= 0 {
+		return 0
+	}
+	return *group.RequiredReputationLevel
+}
+
+func (c *questlogClient) userZoneLevel(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (int, error) {
+	reputation, err := c.dbClient.UserZoneReputation().FindByUserIDAndZoneID(ctx, userID, zoneID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 1, nil
+		}
+		return 0, err
+	}
+	if reputation.Level <= 0 {
+		return 1, nil
+	}
+	return reputation.Level, nil
+}
+
+func (c *questlogClient) questGroupZoneID(ctx context.Context, group models.PointOfInterestGroup) (uuid.UUID, error) {
+	if len(group.PointsOfInterest) > 0 {
+		zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, group.PointsOfInterest[0].ID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return zone.ID, nil
+	}
+	if len(group.GroupMembers) > 0 {
+		zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, group.GroupMembers[0].PointOfInterestID)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return zone.ID, nil
+	}
+	return uuid.Nil, errors.New("quest has no points of interest")
+}
+
+func (c *questlogClient) filterQuestsByZoneReputation(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
+	level, err := c.userZoneLevel(ctx, userID, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
+	for _, group := range groups {
+		required := c.requiredReputationLevel(group)
+		if required == 0 || level >= required {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered, nil
+}
+
+func (c *questlogClient) filterQuestsByReputation(ctx context.Context, userID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
+	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
+	zoneLevels := map[uuid.UUID]int{}
+	for _, group := range groups {
+		required := c.requiredReputationLevel(group)
+		if required == 0 {
+			filtered = append(filtered, group)
+			continue
+		}
+		zoneID, err := c.questGroupZoneID(ctx, group)
+		if err != nil {
+			log.Printf("Skipping quest %s: %v", group.ID, err)
+			continue
+		}
+		level, ok := zoneLevels[zoneID]
+		if !ok {
+			level, err = c.userZoneLevel(ctx, userID, zoneID)
+			if err != nil {
+				return nil, err
+			}
+			zoneLevels[zoneID] = level
+		}
+		if level >= required {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered, nil
+}
+
 func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
 	log.Printf("Getting quest log for user %s in zone %s with tags %v", userID, zoneID, tags)
 
@@ -79,6 +167,22 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 	trackedQuests, err := c.GetTrackedQuests(ctx, userID)
 	if err != nil {
 		log.Printf("Error getting tracked quests: %v", err)
+		return nil, err
+	}
+
+	groups, err = c.filterQuestsByZoneReputation(ctx, userID, zoneID, groups)
+	if err != nil {
+		log.Printf("Error filtering quests by zone reputation: %v", err)
+		return nil, err
+	}
+	startedQuests, err = c.filterQuestsByReputation(ctx, userID, startedQuests)
+	if err != nil {
+		log.Printf("Error filtering started quests by reputation: %v", err)
+		return nil, err
+	}
+	trackedQuests, err = c.filterQuestsByReputation(ctx, userID, trackedQuests)
+	if err != nil {
+		log.Printf("Error filtering tracked quests by reputation: %v", err)
 		return nil, err
 	}
 

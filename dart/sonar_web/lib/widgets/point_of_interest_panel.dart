@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/character.dart';
 import '../models/point_of_interest.dart';
 import '../providers/auth_provider.dart';
 import '../providers/location_provider.dart';
@@ -26,6 +27,7 @@ class PointOfInterestPanel extends StatefulWidget {
     required this.hasDiscovered,
     required this.onClose,
     this.onUnlocked,
+    this.onCharacterTap,
   });
 
   final PointOfInterest pointOfInterest;
@@ -33,6 +35,7 @@ class PointOfInterestPanel extends StatefulWidget {
   final VoidCallback onClose;
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
+  final void Function(Character character)? onCharacterTap;
 
   @override
   State<PointOfInterestPanel> createState() => _PointOfInterestPanelState();
@@ -294,6 +297,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         ? poi.imageURL!
         : _placeholderImageUrl;
     final tags = poi.tags;
+    final characters = poi.characters;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -423,6 +427,68 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                     const SizedBox(height: 12),
+                  ],
+                  if (characters.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Characters',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.8),
+                          ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 120,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: characters.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (_, i) {
+                          final ch = characters[i];
+                          final imageUrl = ch.dialogueImageUrl ?? ch.mapIconUrl;
+                          return InkWell(
+                            onTap: widget.onCharacterTap == null
+                                ? null
+                                : () => widget.onCharacterTap!(ch),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 120,
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceVariant,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 28,
+                                    backgroundColor: Colors.grey.shade300,
+                                    backgroundImage:
+                                        imageUrl != null ? NetworkImage(imageUrl) : null,
+                                    child: imageUrl == null
+                                        ? const Icon(Icons.person)
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    ch.name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ],
                 ],
               ),

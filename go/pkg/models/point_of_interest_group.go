@@ -27,6 +27,7 @@ type PointOfInterestGroup struct {
 	Type                  PointOfInterestGroupType     `json:"type"`
 	Gold                  int                          `json:"gold"`
 	InventoryItemID       *int                         `json:"inventoryItemId,omitempty"`
+	RequiredReputationLevel *int                       `json:"requiredReputationLevel,omitempty" gorm:"column:required_reputation_level"`
 	QuestGiverCharacterID *uuid.UUID                   `json:"questGiverCharacterId,omitempty" gorm:"type:uuid"`
 	QuestGiverCharacter   *Character                   `json:"questGiverCharacter,omitempty" gorm:"foreignKey:QuestGiverCharacterID"`
 }

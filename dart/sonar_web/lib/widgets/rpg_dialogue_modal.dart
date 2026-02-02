@@ -58,8 +58,9 @@ class _RpgDialogueModalState extends State<RpgDialogueModal> {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white70, width: 2),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -70,10 +71,14 @@ class _RpgDialogueModalState extends State<RpgDialogueModal> {
                               : 'You',
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
+                                color: Colors.white,
                               ),
                         ),
                         const SizedBox(height: 8),
-                        Text(current.text),
+                        Text(
+                          current.text,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
                       ],
                     ),
                   ),

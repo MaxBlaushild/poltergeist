@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/services/api_client.dart';
@@ -6,6 +7,10 @@ import 'package:skunkworks/models/album.dart';
 import 'package:skunkworks/services/album_service.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/album_detail_screen.dart';
+import 'package:skunkworks/screens/album_invites_screen.dart';
+import 'package:skunkworks/screens/notifications_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:skunkworks/providers/notification_provider.dart';
 
 class AlbumsScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -25,6 +30,13 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   void initState() {
     super.initState();
     _loadAlbums();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        try {
+          context.read<NotificationProvider>().loadNotifications();
+        } catch (_) {}
+      }
+    });
   }
 
   Future<void> _loadAlbums() async {
@@ -143,7 +155,6 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
             FilledButton(
               onPressed: () {
                 if (nameController.text.trim().isEmpty) return;
-                if (tags.isEmpty) return;
                 Navigator.pop(context, true);
               },
               child: const Text('Create'),
@@ -155,7 +166,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
 
     if (result == true && mounted) {
       final name = nameController.text.trim();
-      if (name.isEmpty || tags.isEmpty) return;
+      if (name.isEmpty) return;
       try {
         final apiClient = APIClient(ApiConstants.baseUrl);
         final albumService = AlbumService(apiClient);
@@ -168,10 +179,58 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         }
       } catch (e) {
         if (mounted) {
+          String msg = e.toString();
+          if (e is DioException && e.response?.data != null) {
+            final data = e.response!.data;
+            if (data is Map && data['error'] != null) {
+              msg = data['error'] as String;
+            }
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to create album: $e')),
+            SnackBar(content: Text('Failed to create album: $msg')),
           );
         }
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteAlbum(Album album) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Album'),
+        content: Text(
+          'Delete "${album.name}"? This will not delete the posts in the album.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || album.id == null || !mounted) return;
+    try {
+      final apiClient = APIClient(ApiConstants.baseUrl);
+      final albumService = AlbumService(apiClient);
+      await albumService.deleteAlbum(album.id!);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Album deleted')),
+        );
+        _loadAlbums();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete album: $e')),
+        );
       }
     }
   }
@@ -191,6 +250,58 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
             fontSize: 18,
           ),
         ),
+        actions: [
+          Consumer<NotificationProvider>(
+            builder: (context, notificationProvider, _) {
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_outlined),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => NotificationsScreen(onNavigate: widget.onNavigate),
+                        ),
+                      ).then((_) => notificationProvider.loadNotifications());
+                    },
+                    tooltip: 'Notifications',
+                  ),
+                  if (notificationProvider.unreadCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        child: Text(
+                          notificationProvider.unreadCount > 99 ? '99+' : '${notificationProvider.unreadCount}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.mail_outline),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => AlbumInvitesScreen(onNavigate: widget.onNavigate),
+                ),
+              );
+            },
+            tooltip: 'Album invites',
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -237,7 +348,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                           margin: const EdgeInsets.only(bottom: 12),
                           child: ListTile(
                             leading: CircleAvatar(
-                              backgroundColor: AppColors.softRealBlue.withOpacity(0.2),
+                              backgroundColor: AppColors.softRealBlue.withValues(alpha: 0.2),
                               child: Icon(Icons.photo_album, color: AppColors.softRealBlue),
                             ),
                             title: Text(album.name),
@@ -247,7 +358,17 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                                     album.tags.map((t) => '#$t').join(' '),
                                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                   ),
-                            trailing: const Icon(Icons.chevron_right),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey.shade600),
+                                  onPressed: () => _confirmDeleteAlbum(album),
+                                  tooltip: 'Delete album',
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
                             onTap: () {
                               if (album.id != null) {
                                 Navigator.push(
@@ -271,7 +392,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: BottomNav(
-        currentTab: NavTab.profile,
+        currentTab: NavTab.home,
         onTabChanged: widget.onNavigate,
       ),
     );

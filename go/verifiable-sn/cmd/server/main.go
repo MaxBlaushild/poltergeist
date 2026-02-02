@@ -7,6 +7,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/config"
+	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/push"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/server"
 )
 
@@ -46,6 +47,7 @@ func main() {
 	}
 
 	ethereumTransactorClient := ethereum_transactor.NewClient(cfg.Public.EthereumTransactorURL)
+	pushClient := push.NewClient()
 
-	server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, cfg.Public.C2PAContractAddress).ListenAndServe("8087")
+	server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, cfg.Public.C2PAContractAddress, pushClient).ListenAndServe("8087")
 }
