@@ -1,4 +1,13 @@
-PHONY: deploy-all
+PHONY: go/mod
+go/mod:
+	@for dir in $$(find go -name 'go.mod' -exec dirname {} \; | sort); do \
+		echo "go mod tidy: $$dir"; \
+		(cd $$dir && go mod tidy) || exit 1; \
+	done
+	@echo "go work sync"
+	@go work sync
+
+.PHONY: deploy-all
 deploy-all:
 	aws ecs update-service --cluster poltergeist --service poltergeist_core --force-new-deployment
 
