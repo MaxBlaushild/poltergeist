@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../models/quest.dart';
+import '../providers/completed_task_provider.dart';
+import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
 
 class CharacterPanel extends StatefulWidget {
@@ -27,6 +30,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   List<CharacterAction> _actions = [];
   bool _loading = true;
   bool _acceptingQuest = false;
+  bool _turningInQuest = false;
 
   @override
   void initState() {
@@ -78,12 +82,50 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
   }
 
+  Future<void> _handleTurnIn(Quest quest, CharacterAction action) async {
+    final questId = action.pointOfInterestGroupId ?? quest.id;
+    if (questId.isEmpty) return;
+    setState(() => _turningInQuest = true);
+    try {
+      final resp = await context.read<QuestLogProvider>().turnInQuest(questId);
+      if (mounted) {
+        context.read<CompletedTaskProvider>().showModal('questCompleted', data: {
+          'questName': quest.name,
+          ...resp,
+        });
+        widget.onClose();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to turn in quest')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _turningInQuest = false);
+    }
+  }
+
+  Quest? _questReadyToTurnIn(CharacterAction action) {
+    final questId = action.pointOfInterestGroupId;
+    if (questId == null || questId.isEmpty) return null;
+    final quests = context.read<QuestLogProvider>().quests;
+    try {
+      return quests.firstWhere(
+        (q) => q.id == questId && q.readyToTurnIn,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
     final questAction = _firstActionOfType('giveQuest');
     final hasQuest = questAction?.pointOfInterestGroupId != null;
+    final questReadyToTurnIn = questAction != null ? _questReadyToTurnIn(questAction) : null;
     final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
 
     return DraggableScrollableSheet(
@@ -174,7 +216,15 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                     style: TextStyle(color: Colors.white70),
                                   ),
                                   const SizedBox(height: 12),
-                                  if (hasQuest)
+                                  if (questReadyToTurnIn != null)
+                                    _DialogueChoiceButton(
+                                      label: _turningInQuest ? 'Turning in…' : 'Turn in',
+                                      icon: Icons.assignment_turned_in,
+                                      onTap: _turningInQuest
+                                          ? null
+                                          : () => _handleTurnIn(questReadyToTurnIn, questAction!),
+                                    )
+                                  else if (hasQuest)
                                     _DialogueChoiceButton(
                                       label: _acceptingQuest ? 'Accepting quest…' : 'Quest',
                                       icon: Icons.assignment_turned_in,

@@ -16,6 +16,7 @@ type QuestAcceptance struct {
 	PointOfInterestGroup   PointOfInterestGroup `json:"pointOfInterestGroup,omitempty" gorm:"foreignKey:PointOfInterestGroupID"`
 	CharacterID            uuid.UUID            `json:"characterId" gorm:"type:uuid"`
 	Character              Character            `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
+	TurnedInAt             *time.Time           `json:"turnedInAt,omitempty"`
 }
 
 func (q *QuestAcceptance) TableName() string {

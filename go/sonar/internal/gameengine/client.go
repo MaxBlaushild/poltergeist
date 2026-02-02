@@ -43,6 +43,7 @@ type SubmissionResult struct {
 type GameEngineClient interface {
 	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
+	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemAwarded *models.ItemAwarded, err error)
 }
 
 type gameEngineClient struct {
@@ -410,33 +411,9 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		}
 	}
 
-	// Collect items awarded (will be populated during award process)
+	// Gold and items are awarded on quest turn-in, not on challenge completion
 	itemsAwarded := []models.ItemAwarded{}
-
-	// Determine gold and item to be awarded for this completion (only when quest completes)
 	goldAwarded := 0
-	var itemAwarded *models.ItemAwarded
-	if questCompleted && challenge.PointOfInterestGroupID != nil {
-		group, err := c.db.PointOfInterestGroup().FindByID(ctx, *challenge.PointOfInterestGroupID)
-		if err == nil {
-			if group.Gold > 0 {
-				goldAwarded = group.Gold
-			}
-			// Get item information if a specific item is configured for the quest
-			if group.InventoryItemID != nil && *group.InventoryItemID > 0 {
-				item, err := c.quartermaster.FindItemForItemID(*group.InventoryItemID)
-				if err == nil {
-					itemAwarded = &models.ItemAwarded{
-						ID:       item.ID,
-						Name:     item.Name,
-						ImageURL: item.ImageURL,
-					}
-					// Add to itemsAwarded for challenge activity display
-					itemsAwarded = append(itemsAwarded, *itemAwarded)
-				}
-			}
-		}
-	}
 
 	// Create activity for challenge completed with full context
 	challengeActivityData, err := json.Marshal(models.ChallengeCompletedActivity{
@@ -481,28 +458,7 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		}
 	}
 
-	// Create activity for quest completed if applicable
-	if questCompleted {
-		questActivityData, err := json.Marshal(models.QuestCompletedActivity{
-			QuestID:     questID,
-			GoldAwarded: goldAwarded,
-			ItemAwarded: itemAwarded,
-		})
-		if err != nil {
-			return nil, err
-		}
-		// Create quest completed activities for filtered members only
-		for _, member := range filteredMembers {
-			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
-				UserID:       member.ID,
-				ActivityType: models.ActivityTypeQuestCompleted,
-				Data:         questActivityData,
-				Seen:         false,
-			}); err != nil {
-				return nil, err
-			}
-		}
-	}
+	// QuestCompleted activity is created on turn-in, not when last challenge completes
 
 	if err = c.awardExperiencePoints(ctx, submission, questCompleted); err != nil {
 		return nil, err
@@ -512,15 +468,7 @@ func (c *gameEngineClient) ProcessSuccessfulSubmission(ctx context.Context, subm
 		return nil, err
 	}
 
-	// Award gold and items only when the quest is completed
-	if questCompleted {
-		if err = c.awardGold(ctx, submission, challenge); err != nil {
-			return nil, err
-		}
-		if err = c.awardItems(ctx, submission, challenge); err != nil {
-			return nil, err
-		}
-	}
+	// Gold and items are awarded on quest turn-in, not here
 
 	if err := c.addTaskCompleteMessage(ctx, submission, challenge, &submissionResult); err != nil {
 		return nil, err
@@ -653,6 +601,91 @@ func (c *gameEngineClient) addTaskCompleteMessage(ctx context.Context, submissio
 	}
 
 	return nil
+}
+
+func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemAwarded *models.ItemAwarded, err error) {
+	group, err := c.db.PointOfInterestGroup().FindByID(ctx, pointOfInterestGroupID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	rootMember := group.GetRootMember()
+	if rootMember == nil {
+		return 0, nil, fmt.Errorf("quest group has no root member")
+	}
+
+	zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, rootMember.PointOfInterestID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, &userID, zone.ZoneID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	goldAwarded = group.Gold
+	if goldAwarded > 0 {
+		for _, member := range partyMembers {
+			if err := c.db.User().AddGold(ctx, member.ID, goldAwarded); err != nil {
+				return goldAwarded, itemAwarded, err
+			}
+		}
+	}
+
+	if group.InventoryItemID != nil && *group.InventoryItemID > 0 {
+		item, err := c.quartermaster.FindItemForItemID(*group.InventoryItemID)
+		if err == nil {
+			itemAwarded = &models.ItemAwarded{
+				ID:       item.ID,
+				Name:     item.Name,
+				ImageURL: item.ImageURL,
+			}
+			for _, member := range partyMembers {
+				_, err := c.quartermaster.GetItemSpecificItem(ctx, teamID, &member.ID, *group.InventoryItemID)
+				if err != nil {
+					return goldAwarded, itemAwarded, err
+				}
+				activityData, err := json.Marshal(models.ItemReceivedActivity{
+					ItemID:   item.ID,
+					ItemName: item.Name,
+				})
+				if err != nil {
+					return goldAwarded, itemAwarded, err
+				}
+				if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+					UserID:       member.ID,
+					ActivityType: models.ActivityTypeItemReceived,
+					Data:         activityData,
+					Seen:         false,
+				}); err != nil {
+					return goldAwarded, itemAwarded, err
+				}
+			}
+		}
+	}
+
+	// Create QuestCompleted activity for each party member
+	questActivityData, err := json.Marshal(models.QuestCompletedActivity{
+		QuestID:     pointOfInterestGroupID,
+		GoldAwarded: goldAwarded,
+		ItemAwarded: itemAwarded,
+	})
+	if err != nil {
+		return goldAwarded, itemAwarded, err
+	}
+	for _, member := range partyMembers {
+		if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+			UserID:       member.ID,
+			ActivityType: models.ActivityTypeQuestCompleted,
+			Data:         questActivityData,
+			Seen:         false,
+		}); err != nil {
+			return goldAwarded, itemAwarded, err
+		}
+	}
+
+	return goldAwarded, itemAwarded, nil
 }
 
 func (c *gameEngineClient) trackQuestForPartyMembers(ctx context.Context, challenge *models.PointOfInterestChallenge, userID *uuid.UUID) error {

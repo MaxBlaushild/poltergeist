@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:skunkworks/models/notification.dart';
+import 'package:skunkworks/models/notification.dart' as models;
 import 'package:skunkworks/services/notification_service.dart';
 
 class NotificationProvider extends ChangeNotifier {
   final NotificationService _notificationService;
-  List<Notification> _notifications = [];
+  List<models.Notification> _notifications = [];
   int _unreadCount = 0;
   bool _loading = false;
   String? _error;
 
   NotificationProvider(this._notificationService);
 
-  List<Notification> get notifications => _notifications;
+  List<models.Notification> get notifications => _notifications;
   int get unreadCount => _unreadCount;
   bool get loading => _loading;
   String? get error => _error;
@@ -23,7 +23,7 @@ class NotificationProvider extends ChangeNotifier {
 
     try {
       final result = await _notificationService.getNotifications();
-      _notifications = List<Notification>.from(result['notifications'] as List);
+      _notifications = List<models.Notification>.from(result['notifications'] as List);
       _unreadCount = result['unreadCount'] as int? ?? 0;
     } catch (e) {
       _error = e.toString();

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -26,12 +27,17 @@ type QuestNode struct {
 }
 
 type Quest struct {
-	IsCompleted bool       `json:"isCompleted"`
-	RootNode    *QuestNode `json:"rootNode"`
-	ImageUrl    string     `json:"imageUrl"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	ID          uuid.UUID  `json:"id"`
+	IsCompleted            bool        `json:"isCompleted"`
+	RootNode               *QuestNode  `json:"rootNode"`
+	ImageUrl               string      `json:"imageUrl"`
+	Name                   string      `json:"name"`
+	Description            string      `json:"description"`
+	ID                     uuid.UUID   `json:"id"`
+	Gold                   int         `json:"gold"`
+	InventoryItemID        *int        `json:"inventoryItemId,omitempty"`
+	QuestGiverCharacterID  *uuid.UUID  `json:"questGiverCharacterId,omitempty"`
+	TurnedInAt             *time.Time  `json:"turnedInAt,omitempty"`
+	ReadyToTurnIn          bool        `json:"readyToTurnIn"`
 }
 
 type QuestChallenge struct {
@@ -48,6 +54,7 @@ type QuestLog struct {
 
 type QuestlogClient interface {
 	GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error)
+	AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (bool, error)
 }
 
 type questlogClient struct {
@@ -63,6 +70,50 @@ func NewClient(dbClient db.DbClient) QuestlogClient {
 	return &questlogClient{dbClient: dbClient}
 }
 
+func (c *questlogClient) filterQuestsByZone(ctx context.Context, zoneID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
+	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
+	for _, group := range groups {
+		groupZoneID, err := c.questGroupZoneID(ctx, group)
+		if err != nil {
+			log.Printf("Skipping quest %s: %v", group.ID, err)
+			continue
+		}
+		if groupZoneID == zoneID {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered, nil
+}
+
+func (c *questlogClient) filterQuestsByTags(groups []models.PointOfInterestGroup, tags []string) []models.PointOfInterestGroup {
+	if len(tags) == 0 {
+		return groups
+	}
+	tagSet := make(map[string]struct{}, len(tags))
+	for _, t := range tags {
+		tagSet[t] = struct{}{}
+	}
+	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
+	for _, group := range groups {
+		matched := false
+		for _, poi := range group.PointsOfInterest {
+			for _, tag := range poi.Tags {
+				if _, ok := tagSet[tag.Value]; ok {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, group)
+		}
+	}
+	return filtered
+}
+
 func (c *questlogClient) requiredReputationLevel(group models.PointOfInterestGroup) int {
 	if group.RequiredReputationLevel == nil {
 		return 0
@@ -74,7 +125,7 @@ func (c *questlogClient) requiredReputationLevel(group models.PointOfInterestGro
 }
 
 func (c *questlogClient) userZoneLevel(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (int, error) {
-	reputation, err := c.dbClient.UserZoneReputation().FindByUserIDAndZoneID(ctx, userID, zoneID)
+	reputation, err := c.dbClient.UserZoneReputation().FindOrCreateForUserAndZone(ctx, userID, zoneID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return 1, nil
@@ -152,15 +203,15 @@ func (c *questlogClient) filterQuestsByReputation(ctx context.Context, userID uu
 func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
 	log.Printf("Getting quest log for user %s in zone %s with tags %v", userID, zoneID, tags)
 
-	groups, err := c.GetQuestsInZone(ctx, userID, zoneID, tags)
+	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
 	if err != nil {
-		log.Printf("Error getting nearby quests: %v", err)
+		log.Printf("Error getting challenge submissions: %v", err)
 		return nil, err
 	}
 
-	startedQuests, err := c.GetStartedQuests(ctx, userID)
+	acceptedQuests, err := c.GetAcceptedQuests(ctx, userID)
 	if err != nil {
-		log.Printf("Error getting started quests: %v", err)
+		log.Printf("Error getting accepted quests: %v", err)
 		return nil, err
 	}
 
@@ -170,37 +221,49 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		return nil, err
 	}
 
-	groups, err = c.filterQuestsByZoneReputation(ctx, userID, zoneID, groups)
+	acceptedQuests, err = c.filterQuestsByReputation(ctx, userID, acceptedQuests)
 	if err != nil {
-		log.Printf("Error filtering quests by zone reputation: %v", err)
+		log.Printf("Error filtering accepted quests by reputation: %v", err)
 		return nil, err
 	}
-	startedQuests, err = c.filterQuestsByReputation(ctx, userID, startedQuests)
+	acceptedQuests, err = c.filterQuestsByZone(ctx, zoneID, acceptedQuests)
 	if err != nil {
-		log.Printf("Error filtering started quests by reputation: %v", err)
+		log.Printf("Error filtering accepted quests by zone: %v", err)
 		return nil, err
 	}
+	acceptedQuests = c.filterQuestsByTags(acceptedQuests, tags)
+
 	trackedQuests, err = c.filterQuestsByReputation(ctx, userID, trackedQuests)
 	if err != nil {
 		log.Printf("Error filtering tracked quests by reputation: %v", err)
 		return nil, err
 	}
-
-	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
+	trackedQuests, err = c.filterQuestsByZone(ctx, zoneID, trackedQuests)
 	if err != nil {
-		log.Printf("Error getting challenge submissions: %v", err)
+		log.Printf("Error filtering tracked quests by zone: %v", err)
 		return nil, err
 	}
+	trackedQuests = c.filterQuestsByTags(trackedQuests, tags)
 
-	log.Printf("Found %d nearby quests, %d started quests, %d tracked quests, and %d submissions", len(groups), len(startedQuests), len(trackedQuests), len(submissions))
+	log.Printf("Found %d accepted quests, %d tracked quests, and %d submissions", len(acceptedQuests), len(trackedQuests), len(submissions))
 
-	uniqueGroups := c.mergeQuestGroups(groups, startedQuests, trackedQuests)
+	acceptances, err := c.dbClient.QuestAcceptance().FindByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("Error getting quest acceptances: %v", err)
+		return nil, err
+	}
+	turnedInAtByQuest := make(map[uuid.UUID]*time.Time)
+	for _, a := range acceptances {
+		turnedInAtByQuest[a.PointOfInterestGroupID] = a.TurnedInAt
+	}
+
+	uniqueGroups := c.mergeQuestGroups(acceptedQuests, trackedQuests)
 	trackedQuestIDs := c.getTrackedQuestIDs(trackedQuests)
 	allQuests := c.convertToQuestSlice(uniqueGroups)
 
 	pendingTasks := make(map[uuid.UUID][]QuestChallenge)
 	completedTasks := make(map[uuid.UUID][]QuestChallenge)
-	quests := c.buildQuestsWithCompletedNodes(allQuests, submissions, pendingTasks, completedTasks)
+	quests := c.buildQuestsWithCompletedNodes(allQuests, submissions, pendingTasks, completedTasks, turnedInAtByQuest)
 
 	log.Printf("Built quest log with %d quests, %d pending tasks, %d completed tasks", len(quests), len(pendingTasks), len(completedTasks))
 
@@ -248,12 +311,13 @@ func (c *questlogClient) buildQuestsWithCompletedNodes(
 	submissions []models.PointOfInterestChallengeSubmission,
 	pendingTasks map[uuid.UUID][]QuestChallenge,
 	completedTasks map[uuid.UUID][]QuestChallenge,
+	turnedInAtByQuest map[uuid.UUID]*time.Time,
 ) []Quest {
 	log.Printf("Building quests with completed nodes from %d quests and %d submissions", len(quests), len(submissions))
 	result := make([]Quest, 0, len(quests))
 	for i, group := range quests {
 		log.Printf("Processing quest %d/%d: %s", i+1, len(quests), group.Name)
-		quest := c.ConvertToQuestWithCompletedNodes(group, submissions, pendingTasks, completedTasks)
+		quest := c.ConvertToQuestWithCompletedNodes(group, submissions, pendingTasks, completedTasks, turnedInAtByQuest)
 		result = append(result, *quest)
 	}
 	return result
@@ -302,6 +366,33 @@ func (c *questlogClient) GetTrackedQuests(ctx context.Context, userID uuid.UUID)
 	}
 
 	log.Printf("Retrieved %d tracked quests", len(groups))
+	return groups, nil
+}
+
+func (c *questlogClient) GetAcceptedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error) {
+	log.Printf("Getting accepted quests for user %s", userID)
+	acceptances, err := c.dbClient.QuestAcceptance().FindByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("Error getting quest acceptances: %v", err)
+		return nil, err
+	}
+
+	groupIDs := make([]uuid.UUID, 0, len(acceptances))
+	for _, acceptance := range acceptances {
+		groupIDs = append(groupIDs, acceptance.PointOfInterestGroupID)
+	}
+
+	if len(groupIDs) == 0 {
+		return []models.PointOfInterestGroup{}, nil
+	}
+
+	groups, err := c.dbClient.PointOfInterestGroup().FindByIDs(ctx, groupIDs)
+	if err != nil {
+		log.Printf("Error getting accepted quests: %v", err)
+		return nil, err
+	}
+
+	log.Printf("Retrieved %d accepted quests", len(groups))
 	return groups, nil
 }
 
@@ -428,6 +519,7 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 	submissions []models.PointOfInterestChallengeSubmission,
 	pendingTasks map[uuid.UUID][]QuestChallenge,
 	completedTasks map[uuid.UUID][]QuestChallenge,
+	turnedInAtByQuest map[uuid.UUID]*time.Time,
 ) *Quest {
 	log.Printf("Converting group %s to quest with completed nodes", group.ID)
 	submissionsByChallenge := c.GetSubmissionLookup(submissions)
@@ -435,15 +527,24 @@ func (c *questlogClient) ConvertToQuestWithCompletedNodes(
 	rootGroupMember := group.GetRootMember()
 	rootNode := c.buildQuestNodeTree(rootGroupMember, group, submissionsByChallenge, pendingTasks, completedTasks, visited)
 
+	isCompleted := c.isQuestCompleted(rootNode)
+	turnedInAt := turnedInAtByQuest[group.ID]
+	readyToTurnIn := isCompleted && turnedInAt == nil
+
 	quest := &Quest{
-		IsCompleted: c.isQuestCompleted(rootNode),
-		RootNode:    rootNode,
-		ImageUrl:    group.ImageUrl,
-		Name:        group.Name,
-		Description: group.Description,
-		ID:          group.ID,
+		IsCompleted:           isCompleted,
+		RootNode:              rootNode,
+		ImageUrl:              group.ImageUrl,
+		Name:                  group.Name,
+		Description:           group.Description,
+		ID:                    group.ID,
+		Gold:                  group.Gold,
+		InventoryItemID:       group.InventoryItemID,
+		QuestGiverCharacterID: group.QuestGiverCharacterID,
+		TurnedInAt:            turnedInAt,
+		ReadyToTurnIn:         readyToTurnIn,
 	}
-	log.Printf("Converted group %s to quest (completed: %v)", group.ID, quest.IsCompleted)
+	log.Printf("Converted group %s to quest (completed: %v, readyToTurnIn: %v)", group.ID, quest.IsCompleted, quest.ReadyToTurnIn)
 	return quest
 }
 
@@ -556,4 +657,24 @@ func (c *questlogClient) isQuestCompleted(node *QuestNode) bool {
 
 	log.Printf("POI %s and all its children are completed", node.PointOfInterest.ID)
 	return true
+}
+
+func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (bool, error) {
+	group, err := c.dbClient.PointOfInterestGroup().FindByID(ctx, pointOfInterestGroupID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+
+	pendingTasks := make(map[uuid.UUID][]QuestChallenge)
+	completedTasks := make(map[uuid.UUID][]QuestChallenge)
+	quest := c.ConvertToQuestWithCompletedNodes(*group, submissions, pendingTasks, completedTasks, nil)
+	return quest.IsCompleted, nil
 }

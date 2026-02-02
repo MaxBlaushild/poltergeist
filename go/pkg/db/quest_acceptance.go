@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -37,4 +38,12 @@ func (h *questAcceptanceHandle) FindByUserID(ctx context.Context, userID uuid.UU
 		return nil, err
 	}
 	return questAcceptances, nil
+}
+
+func (h *questAcceptanceHandle) MarkTurnedIn(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) error {
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.QuestAcceptance{}).
+		Where("user_id = ? AND point_of_interest_group_id = ?", userID, pointOfInterestGroupID).
+		Update("turned_in_at", now).Error
 }

@@ -52,6 +52,8 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Level Up!';
       case 'reputationUp':
         return 'Reputation Up!';
+      case 'questCompleted':
+        return 'Quest Complete!';
       default:
         return 'Congratulations!';
     }
@@ -59,6 +61,29 @@ class CelebrationModalManager extends StatelessWidget {
 
   Widget _contentFor(String? type, Map<String, dynamic> data, BuildContext context) {
     switch (type) {
+      case 'questCompleted':
+        final questName = data['questName'] as String? ?? 'Quest';
+        final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
+        final itemAwarded = data['itemAwarded'] as Map<String, dynamic>?;
+        final rewards = <Widget>[
+          if (questName.isNotEmpty)
+            Text(
+              questName,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+        ];
+        if (goldAwarded > 0) {
+          rewards.add(Text('+$goldAwarded Gold'));
+        }
+        if (itemAwarded != null) {
+          final name = itemAwarded['name'] as String? ?? 'Item';
+          rewards.add(Text('+1 $name'));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: rewards,
+        );
       case 'levelUp':
         return Column(
           children: [
