@@ -89,6 +89,11 @@ class Quest {
   final String imageUrl;
   final bool isCompleted;
   final QuestNode rootNode;
+  final int gold;
+  final int? inventoryItemId;
+  final String? questGiverCharacterId;
+  final DateTime? turnedInAt;
+  final bool readyToTurnIn;
 
   const Quest({
     required this.id,
@@ -97,10 +102,31 @@ class Quest {
     required this.imageUrl,
     required this.isCompleted,
     required this.rootNode,
+    this.gold = 0,
+    this.inventoryItemId,
+    this.questGiverCharacterId,
+    this.turnedInAt,
+    this.readyToTurnIn = false,
   });
 
   factory Quest.fromJson(Map<String, dynamic> json) {
     final root = json['rootNode'];
+    DateTime? turnedInAt;
+    final t = json['turnedInAt'];
+    if (t != null) {
+      if (t is String) {
+        turnedInAt = DateTime.tryParse(t);
+      }
+    }
+    int? invItemId;
+    final inv = json['inventoryItemId'];
+    if (inv != null) {
+      if (inv is int) {
+        invItemId = inv;
+      } else if (inv is num) {
+        invItemId = inv.toInt();
+      }
+    }
     return Quest(
       id: json['id']?.toString() ?? '',
       name: json['name'] as String? ?? '',
@@ -110,6 +136,11 @@ class Quest {
       rootNode: root is Map<String, dynamic>
           ? QuestNode.fromJson(root)
           : throw Exception('missing rootNode'),
+      gold: (json['gold'] as num?)?.toInt() ?? 0,
+      inventoryItemId: invItemId,
+      questGiverCharacterId: json['questGiverCharacterId']?.toString(),
+      turnedInAt: turnedInAt,
+      readyToTurnIn: json['readyToTurnIn'] as bool? ?? false,
     );
   }
 }

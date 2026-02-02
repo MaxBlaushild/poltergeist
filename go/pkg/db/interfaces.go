@@ -615,6 +615,7 @@ type QuestAcceptanceHandle interface {
 	Create(ctx context.Context, questAcceptance *models.QuestAcceptance) error
 	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.QuestAcceptance, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptance, error)
+	MarkTurnedIn(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) error
 }
 
 type MovementPatternHandle interface {

@@ -168,4 +168,11 @@ class QuestLogProvider with ChangeNotifier {
       await refresh();
     } catch (_) {}
   }
+
+  /// Turn in a completed quest. Returns the response (goldAwarded, itemAwarded).
+  Future<Map<String, dynamic>> turnInQuest(String questId) async {
+    final resp = await _service.turnInQuest(questId);
+    await refresh();
+    return resp;
+  }
 }

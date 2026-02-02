@@ -23,6 +23,7 @@ RUN go build -installsuffix 'static' -o /usr/local/bin/core
 FROM scratch
 
 COPY --from=builder /usr/home/app/core/*.env /etc/core/
+COPY --from=builder /usr/home/app/verifiable-sn/vera-firebase.json /etc/core/vera-firebase.json
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 COPY --from=builder /usr/local/bin/core /usr/local/bin/core
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:skunkworks/constants/app_colors.dart';
-import 'package:skunkworks/models/notification.dart';
+import 'package:skunkworks/models/notification.dart' as models;
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/album_invites_screen.dart';
 import 'package:skunkworks/screens/album_detail_screen.dart';
@@ -25,7 +25,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  String _notificationBody(Notification n) {
+  String _notificationBody(models.Notification n) {
     final actorName = _actorDisplayName(n.actor);
     final albumName = n.album?['name'] as String? ?? 'an album';
     switch (n.type) {
@@ -49,7 +49,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return 'Someone';
   }
 
-  void _onNotificationTap(Notification n) async {
+  void _onNotificationTap(models.Notification n) async {
     final provider = context.read<NotificationProvider>();
     if (n.id != null) {
       await provider.markAsRead(n.id!);
