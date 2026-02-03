@@ -62,6 +62,7 @@ type client struct {
 	activityHandle                    *activityHandle
 	pointOfInterestGroupMemberHandle  *pointOfInterestGroupMemberHandle
 	characterHandle                   *characterHandler
+	characterLocationHandle           *characterLocationHandle
 	characterActionHandle             *characterActionHandler
 	questAcceptanceHandle             *questAcceptanceHandle
 	movementPatternHandle             *movementPatternHandler
@@ -175,6 +176,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		activityHandle:                    &activityHandle{db: db},
 		pointOfInterestGroupMemberHandle:  &pointOfInterestGroupMemberHandle{db: db},
 		characterHandle:                   &characterHandler{db: db},
+		characterLocationHandle:           &characterLocationHandle{db: db},
 		characterActionHandle:             &characterActionHandler{db: db},
 		questAcceptanceHandle:             &questAcceptanceHandle{db: db},
 		movementPatternHandle:             &movementPatternHandler{db: db},
@@ -428,6 +430,10 @@ func (c *client) ImageGeneration() ImageGenerationHandle {
 
 func (c *client) Character() CharacterHandle {
 	return c.characterHandle
+}
+
+func (c *client) CharacterLocation() CharacterLocationHandle {
+	return c.characterLocationHandle
 }
 
 func (c *client) CharacterAction() CharacterActionHandle {

@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 
-	finalfete "github.com/MaxBlaushild/poltergeist/final-fete/pkg"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	sonar "github.com/MaxBlaushild/poltergeist/sonar/pkg"
 	travelangels "github.com/MaxBlaushild/poltergeist/travel-angels/pkg"
@@ -16,8 +15,8 @@ import (
 )
 
 type server struct {
-	router             *gin.Engine
-	finalFeteServer    finalfete.Server
+	router *gin.Engine
+	// finalFeteServer    finalfete.Server
 	sonarServer        sonar.Server
 	travelAngelsServer travelangels.Server
 	verifiableSnServer verifiablesn.Server
@@ -25,9 +24,9 @@ type server struct {
 }
 
 // NewServer creates a new server instance
-func NewServer(finalFeteServer finalfete.Server, sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, texterClient texter.Client) *server {
+func NewServer(sonarServer sonar.Server, travelAngelsServer travelangels.Server, verifiableSnServer verifiablesn.Server, texterClient texter.Client) *server {
 	return &server{
-		finalFeteServer:    finalFeteServer,
+		// finalFeteServer:    finalFeteServer,
 		sonarServer:        sonarServer,
 		travelAngelsServer: travelAngelsServer,
 		verifiableSnServer: verifiableSnServer,
@@ -81,7 +80,7 @@ func (s *server) ListenAndServe(port string) {
 		billingProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
-	s.finalFeteServer.SetupRoutes(router)
+	// s.finalFeteServer.SetupRoutes(router)
 	s.sonarServer.SetupRoutes(router)
 	s.travelAngelsServer.SetupRoutes(router)
 	s.verifiableSnServer.SetupRoutes(router)

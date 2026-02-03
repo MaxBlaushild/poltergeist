@@ -70,7 +70,7 @@ export const FlaggedPhotos = () => {
   };
 
   const handleDelete = async (postId: string) => {
-    if (!postId || !confirm('Delete this post permanently?')) return;
+    if (!postId) return;
     setActioning(postId);
     try {
       await apiClient.delete(

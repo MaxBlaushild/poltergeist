@@ -14,7 +14,8 @@ type QuestArchetypesContextType = {
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
   deleteQuestArchetype: (questArchetypeId: string) => void;
   deleteLocationArchetype: (locationArchetypeId: string) => void;
-  createZoneQuestArchetype: (zoneId: string, questArchetypeId: string, numberOfQuests: number) => void;
+  createZoneQuestArchetype: (zoneId: string, questArchetypeId: string, numberOfQuests: number, characterId?: string | null) => void;
+  updateZoneQuestArchetype: (zoneQuestArchetypeId: string, updates: { characterId?: string | null; numberOfQuests?: number }) => void;
   deleteZoneQuestArchetype: (zoneQuestArchetypeId: string) => void;
 };
 
@@ -31,6 +32,7 @@ export const QuestArchetypesContext = React.createContext<QuestArchetypesContext
   deleteQuestArchetype: () => {},
   deleteLocationArchetype: () => {},
   createZoneQuestArchetype: () => {},
+  updateZoneQuestArchetype: () => {},
   deleteZoneQuestArchetype: () => {},
 });
 
@@ -151,12 +153,24 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     setLocationArchetypes(locationArchetypes.filter(locationArchetype => locationArchetype.id !== locationArchetypeId));
   };
 
-  const createZoneQuestArchetype = async (zoneId: string, questArchetypeId: string, numberOfQuests: number) => {
-    await apiClient.post<ZoneQuestArchetype>("/sonar/zoneQuestArchetypes", {
+  const createZoneQuestArchetype = async (zoneId: string, questArchetypeId: string, numberOfQuests: number, characterId?: string | null) => {
+    const created = await apiClient.post<ZoneQuestArchetype>("/sonar/zoneQuestArchetypes", {
       zoneId,
       questArchetypeId,
       numberOfQuests,
+      characterId,
     });
+    setZoneQuestArchetypes((prev) => [...prev, created]);
+  };
+
+  const updateZoneQuestArchetype = async (
+    zoneQuestArchetypeId: string,
+    updates: { characterId?: string | null; numberOfQuests?: number }
+  ) => {
+    const updated = await apiClient.patch<ZoneQuestArchetype>(`/sonar/zoneQuestArchetypes/${zoneQuestArchetypeId}`, updates);
+    setZoneQuestArchetypes((prev) => prev.map(zoneQuestArchetype =>
+      zoneQuestArchetype.id === updated.id ? updated : zoneQuestArchetype
+    ));
   };
 
   const deleteZoneQuestArchetype = async (zoneQuestArchetypeId: string) => {
@@ -178,6 +192,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       deleteQuestArchetype,
       deleteLocationArchetype,
       createZoneQuestArchetype,
+      updateZoneQuestArchetype,
       deleteZoneQuestArchetype,
     }}>
       {children}

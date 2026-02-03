@@ -24,7 +24,7 @@ type client struct {
 }
 
 type Client interface {
-	GenerateQuest(ctx context.Context, zone *models.Zone, questArchetypeID uuid.UUID) (*models.PointOfInterestGroup, error)
+	GenerateQuest(ctx context.Context, zone *models.Zone, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) (*models.PointOfInterestGroup, error)
 }
 
 func NewClient(
@@ -47,6 +47,7 @@ func (c *client) GenerateQuest(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchetypeID uuid.UUID,
+	questGiverCharacterID *uuid.UUID,
 ) (*models.PointOfInterestGroup, error) {
 	log.Printf("Generating quest for zone %s with quest arch type %+v", zone.Name, questArchetypeID)
 
@@ -107,9 +108,10 @@ func (c *client) GenerateQuest(
 
 	log.Println("Updating quest with generated content")
 	if err := c.dbClient.PointOfInterestGroup().Update(ctx, quest.ID, &models.PointOfInterestGroup{
-		Name:        questCopy.Name,
-		Description: questCopy.Description,
-		ImageUrl:    questImage,
+		Name:                  questCopy.Name,
+		Description:           questCopy.Description,
+		ImageUrl:              questImage,
+		QuestGiverCharacterID: questGiverCharacterID,
 	}); err != nil {
 		log.Printf("Error updating quest: %v", err)
 		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {

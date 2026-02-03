@@ -56,14 +56,6 @@ class AlbumService {
     await _api.delete(ApiConstants.albumTagsEndpoint(albumId), data: {'tag': tag});
   }
 
-  Future<void> addAlbumPost(String albumId, String postId) async {
-    await _api.post(ApiConstants.albumPostsEndpoint(albumId), data: {'postId': postId});
-  }
-
-  Future<void> removeAlbumPost(String albumId, String postId) async {
-    await _api.delete(ApiConstants.albumPostsEndpoint(albumId), data: {'postId': postId});
-  }
-
   Future<Map<String, dynamic>> inviteToAlbum(String albumId, String userId, String role) async {
     final response = await _api.post<Map<String, dynamic>>(
       ApiConstants.albumInviteEndpoint(albumId),

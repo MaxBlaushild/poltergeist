@@ -66,6 +66,7 @@ type DbClient interface {
 	Activity() ActivityHandle
 	PointOfInterestGroupMember() PointOfInterestGroupMemberHandle
 	Character() CharacterHandle
+	CharacterLocation() CharacterLocationHandle
 	CharacterAction() CharacterActionHandle
 	QuestAcceptance() QuestAcceptanceHandle
 	MovementPattern() MovementPatternHandle
@@ -155,7 +156,7 @@ type PointOfInterestHandle interface {
 	Create(ctx context.Context, crystal models.PointOfInterest) error
 	Unlock(ctx context.Context, pointOfInterestID uuid.UUID, teamID *uuid.UUID, userID *uuid.UUID) error
 	FindByGroupID(ctx context.Context, groupID uuid.UUID) ([]models.PointOfInterest, error)
-	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int) error
+	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int, clue string, imageUrl string, originalName string, googleMapsPlaceId *string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
@@ -405,8 +406,10 @@ type QuestArchetypeNodeChallengeHandle interface {
 
 type ZoneQuestArchetypeHandle interface {
 	Create(ctx context.Context, zoneQuestArchetype *models.ZoneQuestArchetype) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneQuestArchetype, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]*models.ZoneQuestArchetype, error)
 	FindByZoneIDAndQuestArchetypeID(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID) (*models.ZoneQuestArchetype, error)
+	Update(ctx context.Context, zoneQuestArchetypeID uuid.UUID, updates map[string]interface{}) error
 	Delete(ctx context.Context, zoneQuestArchetypeID uuid.UUID) error
 	DeleteByZoneIDAndQuestArchetypeID(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID) error
 	DeleteByZoneID(ctx context.Context, zoneID uuid.UUID) error
@@ -466,6 +469,8 @@ type FriendInviteHandle interface {
 
 type PostTagHandle interface {
 	CreateForPost(ctx context.Context, postID uuid.UUID, tags []string) error
+	AddTagsToPost(ctx context.Context, postID uuid.UUID, tags []string) error
+	RemoveTag(ctx context.Context, postID uuid.UUID, tag string) error
 	FindByPostIDs(ctx context.Context, postIDs []uuid.UUID) (map[uuid.UUID][]string, error)
 }
 
@@ -607,6 +612,11 @@ type CharacterHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	FindByMovementPatternType(ctx context.Context, patternType models.MovementPatternType) ([]*models.Character, error)
+}
+
+type CharacterLocationHandle interface {
+	FindByCharacterID(ctx context.Context, characterID uuid.UUID) ([]*models.CharacterLocation, error)
+	ReplaceForCharacter(ctx context.Context, characterID uuid.UUID, locations []models.CharacterLocation) error
 }
 
 type CharacterActionHandle interface {

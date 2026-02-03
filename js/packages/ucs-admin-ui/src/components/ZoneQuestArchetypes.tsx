@@ -1,16 +1,33 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
-import { useZoneContext } from '@poltergeist/contexts';
+import { useAPI, useZoneContext } from '@poltergeist/contexts';
+import { Character } from '@poltergeist/types';
 
 export const ZoneQuestArchetypes = () => {
   const { zones } = useZoneContext();
+  const { apiClient } = useAPI();
   const { zoneQuestArchetypes, createZoneQuestArchetype, deleteZoneQuestArchetype, questArchetypes } = useQuestArchetypes();
   const [shouldShowModal, setShouldShowModal] = useState(false);
   const [zoneSearch, setZoneSearch] = useState('');
   const [questArchetypeSearch, setQuestArchetypeSearch] = useState('');
+  const [characterSearch, setCharacterSearch] = useState('');
   const [selectedZoneId, setSelectedZoneId] = useState('');
   const [selectedQuestArchetypeId, setSelectedQuestArchetypeId] = useState('');
   const [numberOfQuests, setNumberOfQuests] = useState(1);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState('');
+
+  useEffect(() => {
+    const fetchCharacters = async () => {
+      try {
+        const response = await apiClient.get<Character[]>('/sonar/characters');
+        setCharacters(response);
+      } catch (error) {
+        console.error('Error fetching characters:', error);
+      }
+    };
+    fetchCharacters();
+  }, [apiClient]);
 
   return <div className="m-10">
     <h1 className="text-2xl font-bold">Zone Quest Archetypes</h1>
@@ -22,6 +39,7 @@ export const ZoneQuestArchetypes = () => {
             <div className="text-gray-600">
               <p>Zone: {zoneQuestArchetype.zone.name}</p>
               <p>Number of Quests: {zoneQuestArchetype.numberOfQuests}</p>
+              <p>Character: {zoneQuestArchetype.character?.name ?? 'None'}</p>
             </div>
           </div>
           <button
@@ -118,6 +136,37 @@ export const ZoneQuestArchetypes = () => {
                 />
               </div>
 
+              <div>
+                <label className="block mb-2">Character Search</label>
+                <input
+                  type="text"
+                  className="w-full p-2 border rounded"
+                  value={characterSearch}
+                  onChange={(e) => setCharacterSearch(e.target.value)}
+                  placeholder="Search characters..."
+                />
+              </div>
+
+              <div>
+                <label className="block mb-2">Quest Giver Character</label>
+                <select
+                  className="w-full p-2 border rounded"
+                  value={selectedCharacterId}
+                  onChange={(e) => setSelectedCharacterId(e.target.value)}
+                >
+                  <option value="">No character</option>
+                  {characters
+                    .filter((character) =>
+                      character.name.toLowerCase().includes(characterSearch.toLowerCase())
+                    )
+                    .map((character) => (
+                      <option key={character.id} value={character.id}>
+                        {character.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
               <div className="flex justify-end gap-2 mt-4">
                 <button
                   onClick={() => setShouldShowModal(false)}
@@ -131,7 +180,8 @@ export const ZoneQuestArchetypes = () => {
                       await createZoneQuestArchetype(
                         selectedZoneId,
                         selectedQuestArchetypeId,
-                        numberOfQuests
+                        numberOfQuests,
+                        selectedCharacterId || null
                       );
                       setShouldShowModal(false);
                     }
@@ -149,4 +199,3 @@ export const ZoneQuestArchetypes = () => {
     </div>
   </div>;
 };
-

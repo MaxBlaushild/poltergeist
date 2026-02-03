@@ -105,14 +105,8 @@ func (s *server) GetAlbum(ctx *gin.Context) {
 	}
 
 	var posts []models.Post
-	hasExplicit, _ := s.dbClient.AlbumPost().HasAny(ctx, album.ID)
-	if hasExplicit {
-		postIDs, _ := s.dbClient.AlbumPost().FindPostIDsByAlbumID(ctx, album.ID)
-		if len(postIDs) > 0 {
-			posts, _ = s.dbClient.Post().FindByIDs(ctx, postIDs)
-		}
-	}
-	if len(posts) == 0 && len(tags) > 0 {
+	if len(tags) > 0 {
+		var err error
 		posts, err = s.dbClient.Album().FindPostsForAlbum(ctx, user.ID, tags)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

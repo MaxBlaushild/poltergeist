@@ -13,7 +13,10 @@ export const RPGDialogue: React.FC<RPGDialogueProps> = ({
   action,
   onClose,
 }) => {
-  const sortedDialogue = [...action.dialogue].sort((a, b) => a.order - b.order);
+  const baseDialogue = action.dialogue?.length
+    ? action.dialogue
+    : [{ speaker: 'character', text: '...', order: 0 }];
+  const sortedDialogue = [...baseDialogue].sort((a, b) => a.order - b.order);
   const [currentDialogueIndex, setCurrentDialogueIndex] = useState(0);
   const currentDialogue = sortedDialogue[currentDialogueIndex];
   const hasNextDialogue = currentDialogueIndex < sortedDialogue.length - 1;
@@ -108,4 +111,3 @@ export const RPGDialogue: React.FC<RPGDialogueProps> = ({
     </div>
   );
 };
-

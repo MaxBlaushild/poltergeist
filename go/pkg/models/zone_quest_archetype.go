@@ -16,6 +16,8 @@ type ZoneQuestArchetype struct {
 	QuestArchetype   QuestArchetype `json:"questArchetype"`
 	QuestArchetypeID uuid.UUID      `json:"questArchetypeId"`
 	NumberOfQuests   int            `json:"numberOfQuests"`
+	CharacterID      *uuid.UUID     `json:"characterId,omitempty" gorm:"type:uuid"`
+	Character        *Character     `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
 }
 
 func (zqa *ZoneQuestArchetype) TableName() string {

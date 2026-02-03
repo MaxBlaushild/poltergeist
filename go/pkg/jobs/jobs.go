@@ -14,8 +14,9 @@ const (
 )
 
 type GenerateQuestForZoneTaskPayload struct {
-	ZoneID           uuid.UUID `json:"zone_id"`
-	QuestArchetypeID uuid.UUID `json:"quest_archetype_id"`
+	ZoneID                 uuid.UUID  `json:"zone_id"`
+	QuestArchetypeID       uuid.UUID  `json:"quest_archetype_id"`
+	QuestGiverCharacterID  *uuid.UUID `json:"quest_giver_character_id,omitempty"`
 }
 
 type CreateProfilePictureTaskPayload struct {

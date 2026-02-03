@@ -42,6 +42,7 @@ export * from './activityFeed';
 export * from './movementPattern';
 export * from './character';
 export * from './characterAction';
+export * from './characterLocation';
 export * from './treasureChest';
 export * from './feteRoom';
 export * from './feteTeam';

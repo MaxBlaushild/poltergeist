@@ -110,6 +110,24 @@ class PostService {
     }
   }
 
+  /// Adds tags to an existing post.
+  Future<void> addTagsToPost(String postId, List<String> tags) async {
+    await _apiClient.post(
+      ApiConstants.postTagsEndpoint(postId),
+      data: {'tags': tags},
+    );
+  }
+
+  /// Removes a tag from a post. Pass [albumId] when an album admin is removing
+  /// the album tag from another user's post.
+  Future<void> removeTagFromPost(String postId, String tag, {String? albumId}) async {
+    var url = '${ApiConstants.postTagsEndpoint(postId)}?tag=${Uri.encodeComponent(tag)}';
+    if (albumId != null) {
+      url += '&albumId=${Uri.encodeComponent(albumId)}';
+    }
+    await _apiClient.delete(url);
+  }
+
   /// Gets a single post by ID
   /// 
   /// [postId] - The post ID

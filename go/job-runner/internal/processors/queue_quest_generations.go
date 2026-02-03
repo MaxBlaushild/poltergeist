@@ -45,8 +45,9 @@ func (p *QueueQuestGenerationsProcessor) ProcessTask(ctx context.Context, task *
 			log.Printf("Creating quest %d/%d for zone quest archetype", i+1, zoneQuestArchetype.NumberOfQuests)
 
 			payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
-				ZoneID:           zoneQuestArchetype.ZoneID,
-				QuestArchetypeID: zoneQuestArchetype.QuestArchetypeID,
+				ZoneID:                zoneQuestArchetype.ZoneID,
+				QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
+				QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
 			})
 			if err != nil {
 				log.Printf("error marshalling generate quest for zone task payload: %v", err)

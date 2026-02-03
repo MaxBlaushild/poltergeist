@@ -33,6 +33,8 @@ import { FeteRoomLinkedListTeams } from './components/FeteRoomLinkedListTeams.ts
 import { FeteRoomTeams } from './components/FeteRoomTeams.tsx';
 import { UtilityClosetPuzzleAdmin } from './components/UtilityClosetPuzzle.tsx';
 import { FlaggedPhotos } from './components/FlaggedPhotos.tsx';
+import { PointOfInterest } from './components/PointOfInterest.tsx';
+import { PointOfInterestEditor } from './components/PointOfInterestEditor.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -84,6 +86,7 @@ const Navigation = () => {
         <Link to="/fete-room-teams" className="text-white hover:text-gray-300">Team Room Unlocks</Link>
         <Link to="/fete-room-linked-list-teams" className="text-white hover:text-gray-300">Fete Linked List</Link>
         <Link to="/utility-closet-puzzle" className="text-white hover:text-gray-300">Utility Closet Puzzle</Link>
+        <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
       </div>
     </nav>
   );
@@ -217,6 +220,16 @@ const router = createBrowserRouter([
       {
         path: "/flagged-photos",
         element: <FlaggedPhotos />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/points-of-interest",
+        element: <PointOfInterest />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/points-of-interest/:id",
+        element: <PointOfInterestEditor />,
         loader: onlyAuthenticated,
       },
     ]

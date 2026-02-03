@@ -19,6 +19,7 @@ class ApiConstants {
   static const String feedEndpoint = '/verifiable-sn/posts/feed';
   static String userPostsEndpoint(String userId) => '/verifiable-sn/posts/user/$userId';
   static String getPostEndpoint(String postId) => '/verifiable-sn/posts/$postId';
+  static String postTagsEndpoint(String postId) => '/verifiable-sn/posts/$postId/tags';
   static String deletePostEndpoint(String postId) => '/verifiable-sn/posts/$postId';
   static String reactToPostEndpoint(String postId) => '/verifiable-sn/posts/$postId/reactions';
   static String removeReactionEndpoint(String postId) => '/verifiable-sn/posts/$postId/reactions';
@@ -32,7 +33,6 @@ class ApiConstants {
   static const String albumsEndpoint = '/verifiable-sn/albums';
   static String albumEndpoint(String albumId) => '/verifiable-sn/albums/$albumId';
   static String albumTagsEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/tags';
-  static String albumPostsEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/posts';
   static String albumInviteEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/invite';
   static String albumMembersEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/members';
   static String albumInvitesEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/invites';

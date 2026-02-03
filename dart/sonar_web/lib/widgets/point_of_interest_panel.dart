@@ -45,6 +45,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   bool _loading = false;
   bool _justUnlocked = false;
   String? _error;
+  bool _isDescriptionExpanded = false;
 
   static String _formatTagName(String name) {
     final parts = name.split('_');
@@ -422,9 +423,49 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     const SizedBox(height: 16),
                   ],
                   if (poi.description != null && poi.description!.isNotEmpty) ...[
-                    Text(
-                      poi.description!,
-                      style: Theme.of(context).textTheme.bodyLarge,
+                    GestureDetector(
+                      onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Description',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.8),
+                                ),
+                          ),
+                          Icon(
+                            _isDescriptionExpanded
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    AnimatedCrossFade(
+                      firstChild: Text(
+                        poi.description!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      secondChild: Text(
+                        poi.description!,
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      crossFadeState: _isDescriptionExpanded
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 200),
                     ),
                     const SizedBox(height: 12),
                   ],

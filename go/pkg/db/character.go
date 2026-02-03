@@ -21,6 +21,7 @@ func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.
 	if err := h.db.WithContext(ctx).
 		Preload("MovementPattern").
 		Preload("PointOfInterest").
+		Preload("Locations").
 		First(&character, "id = ?", id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil
@@ -35,6 +36,7 @@ func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, er
 	if err := h.db.WithContext(ctx).
 		Preload("MovementPattern").
 		Preload("PointOfInterest").
+		Preload("Locations").
 		Find(&characters).Error; err != nil {
 		return nil, err
 	}
@@ -54,6 +56,7 @@ func (h *characterHandler) FindByMovementPatternType(ctx context.Context, patter
 	if err := h.db.WithContext(ctx).
 		Preload("MovementPattern").
 		Preload("PointOfInterest").
+		Preload("Locations").
 		Joins("JOIN movement_patterns ON characters.movement_pattern_id = movement_patterns.id").
 		Where("movement_patterns.movement_pattern_type = ?", patternType).
 		Find(&characters).Error; err != nil {

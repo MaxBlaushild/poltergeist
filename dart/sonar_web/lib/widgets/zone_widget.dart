@@ -24,11 +24,43 @@ class _ZoneWidgetState extends State<ZoneWidget> {
   bool _showContent = false;
   UserZoneReputation? _reputation;
   bool _loadingReputation = false;
+  String? _lastZoneId;
+  String? _lastLocationKey;
 
   @override
   void initState() {
     super.initState();
-    _updateSelectedZoneFromLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _updateSelectedZoneFromLocation();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final location = context.watch<LocationProvider>().location;
+    final locationKey = location == null
+        ? null
+        : '${location.latitude.toStringAsFixed(5)},${location.longitude.toStringAsFixed(5)}';
+    if (locationKey != _lastLocationKey) {
+      _lastLocationKey = locationKey;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _updateSelectedZoneFromLocation();
+      });
+    }
+
+    final selectedZone = context.watch<ZoneProvider>().selectedZone;
+    if (selectedZone?.id != _lastZoneId) {
+      _lastZoneId = selectedZone?.id;
+      if (selectedZone != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _loadReputation(selectedZone.id);
+        });
+      }
+    }
   }
 
   void _updateSelectedZoneFromLocation() {
@@ -39,7 +71,6 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     final zone = zoneProvider.findZoneAtCoordinate(location.latitude, location.longitude);
     if (zone != null) {
       zoneProvider.setSelectedZone(zone);
-      _loadReputation(zone.id);
     }
   }
 
@@ -67,16 +98,6 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     return Consumer<ZoneProvider>(
       builder: (context, zoneProvider, _) {
         final selectedZone = zoneProvider.selectedZone;
-
-        // Update zone when location changes
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _updateSelectedZoneFromLocation();
-        });
-
-        // Load reputation when zone changes
-        if (selectedZone != null && _reputation?.zoneId != selectedZone.id) {
-          _loadReputation(selectedZone.id);
-        }
 
         return Positioned(
           top: 80,

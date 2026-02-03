@@ -24,13 +24,16 @@ interface MapProps {
   onMapClick?: (lngLat: mapboxgl.LngLat) => void;
   boundaryPoints?: [number, number][];
   selectedZonePoints?: [number, number][];
+  showBoundaryControls?: boolean;
 }
 
-const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, selectedZonePoints }) => {
+const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, selectedZonePoints, showBoundaryControls }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Clean up function to remove sources and layers
   const cleanupBoundary = () => {
@@ -292,10 +295,69 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, selectedZ
   }, [selectedZonePoints, mapLoaded]);
 
   return (
-    <div
-      ref={mapContainer}
-      className="w-full h-96 rounded-lg border border-gray-300"
-    />
+    <div className="relative w-full h-96 rounded-lg border border-gray-300 overflow-hidden">
+      <div
+        ref={mapContainer}
+        className="w-full h-full"
+      />
+      {showBoundaryControls && (
+        <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+          <button
+            type="button"
+            className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+            onClick={() => map.current?.zoomIn()}
+            aria-label="Zoom in"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+            onClick={() => map.current?.zoomOut()}
+            aria-label="Zoom out"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+            onClick={() => {
+              if (!navigator.geolocation) {
+                setLocationError('Geolocation is not supported in this browser.');
+                return;
+              }
+              setIsLocating(true);
+              setLocationError(null);
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  setIsLocating(false);
+                  const { latitude, longitude } = pos.coords;
+                  map.current?.flyTo({
+                    center: [longitude, latitude],
+                    zoom: Math.max(map.current?.getZoom() ?? 14, 16),
+                    essential: true,
+                  });
+                },
+                (err) => {
+                  setIsLocating(false);
+                  setLocationError(err.message || 'Unable to fetch location.');
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+              );
+            }}
+            aria-label="Center on your location"
+            disabled={isLocating}
+          >
+            {isLocating ? '...' : 'My Location'}
+          </button>
+          {locationError && (
+            <div className="bg-white border border-red-200 text-red-600 text-xs rounded px-2 py-1 shadow">
+              {locationError}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -341,11 +403,11 @@ export const Zone = () => {
   const [isEditingZone, setIsEditingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
-  // const {
-  //   candidates,
-  //   loading: candidatesLoading,
-  //   error: candidatesError,
-  // } = useCandidates(query);
+  const {
+    candidates,
+    loading: candidatesLoading,
+    error: candidatesError,
+  } = useCandidates(query);
 
   const {
     loading: generatePointsOfInterestLoading,
@@ -590,6 +652,7 @@ export const Zone = () => {
           onMapClick={isEditingBoundary ? handleMapClick : undefined}
           boundaryPoints={boundaryPoints}
           selectedZonePoints={selectedZone?.points}
+          showBoundaryControls={true}
         />
         {isEditingBoundary && (
           <p className="text-sm text-gray-600 mt-2">
@@ -713,19 +776,37 @@ export const Zone = () => {
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                   onChange={handleQueryChange}
                 />
-                {/* {showPlaces && candidates && candidates.length > 0 && (
+                {showPlaces && (
                   <div className="w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto mt-1">
+                    {candidatesLoading && (
+                      <div className="px-4 py-2 text-sm text-gray-500">
+                        Searching...
+                      </div>
+                    )}
+                    {candidatesError && (
+                      <div className="px-4 py-2 text-sm text-red-600">
+                        {candidatesError.message}
+                      </div>
+                    )}
+                    {!candidatesLoading && candidates.length === 0 && (
+                      <div className="px-4 py-2 text-sm text-gray-500">
+                        No results yet.
+                      </div>
+                    )}
                     {candidates.map((candidate, index) => (
                       <div
-                        key={index}
+                        key={`${candidate.place_id}-${index}`}
                         className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
                         onClick={() => handleCandidateSelect(candidate)}
                       >
-                        {candidate.name}
+                        <div className="font-medium">{candidate.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {candidate.formatted_address}
+                        </div>
                       </div>
                     ))}
                   </div>
-                )} */}
+                )}
               </div>
             </div>
           </div>

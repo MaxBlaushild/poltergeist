@@ -11,6 +11,9 @@ import '../screens/single_player_screen.dart';
 
 const _tokenKey = 'token';
 
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<NavigatorState> shellNavigatorKey = GlobalKey<NavigatorState>();
+
 Future<bool> _hasToken() async {
   final prefs = await SharedPreferences.getInstance();
   final t = prefs.getString(_tokenKey);
@@ -22,9 +25,9 @@ bool _isProtected(String path) {
   return true;
 }
 
-GoRouter createRouter(GlobalKey<NavigatorState> rootKey) {
+GoRouter createRouter() {
   return GoRouter(
-    navigatorKey: rootKey,
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) async {
       final path = state.uri.path;
@@ -44,6 +47,7 @@ GoRouter createRouter(GlobalKey<NavigatorState> rootKey) {
         builder: (context, state) => const LogoutScreen(),
       ),
       ShellRoute(
+        navigatorKey: shellNavigatorKey,
         builder: (context, state, child) => LayoutShell(child: child),
         routes: [
           GoRoute(
