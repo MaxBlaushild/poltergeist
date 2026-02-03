@@ -39,6 +39,9 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
   final _captionController = TextEditingController();
   final _tagInputController = TextEditingController();
   List<String> _selectedTags = [];
+  List<String> _albumTagSuggestions = [];
+  List<String> _recentTagSuggestions = [];
+  bool _loadingSuggestions = false;
   File? _selectedMedia;
   File? _editedImage;
   Draft? _editingDraft;
@@ -46,6 +49,45 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
   bool _isVideoMode = false;
   final ImagePicker _picker = ImagePicker();
   final DraftService _draftService = DraftService();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTagSuggestions());
+  }
+
+  Future<void> _loadTagSuggestions() async {
+    if (!mounted) return;
+    setState(() => _loadingSuggestions = true);
+    try {
+      final resp = await context.read<PostProvider>().getPostTagSuggestions();
+      if (!mounted) return;
+      final albumRaw = resp['albumTags'];
+      final recentRaw = resp['recentTags'];
+      final album = albumRaw is List
+          ? (albumRaw).map((e) => (e is Map ? e['tag']?.toString() : e?.toString()) ?? '').where((t) => t.isNotEmpty).toList()
+          : <String>[];
+      final recent = recentRaw is List
+          ? (recentRaw).map((e) => (e is Map ? e['tag']?.toString() : e?.toString()) ?? '').where((t) => t.isNotEmpty).toList()
+          : <String>[];
+      setState(() {
+        _albumTagSuggestions = album;
+        _recentTagSuggestions = recent;
+      });
+    } catch (_) {
+      if (mounted) setState(() {});
+    } finally {
+      if (mounted) setState(() => _loadingSuggestions = false);
+    }
+  }
+
+  void _addTagFromSuggestion(String tag) {
+    if (tag.isEmpty) return;
+    final t = tag.length > 64 ? tag.substring(0, 64) : tag;
+    if (!_selectedTags.contains(t)) {
+      setState(() => _selectedTags = [..._selectedTags, t]);
+    }
+  }
 
   @override
   void dispose() {
@@ -301,6 +343,7 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
         certFingerprint: certFingerprint,
         assetId: assetId,
         mediaType: mediaType,
+        tags: _selectedTags.isNotEmpty ? _selectedTags : null,
       );
 
       final editingDraft = _editingDraft;
@@ -628,6 +671,55 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        if (_loadingSuggestions)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        else ...[
+                          if (_albumTagSuggestions.isNotEmpty) ...[
+                            Text(
+                              'From your albums',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: _albumTagSuggestions
+                                  .where((t) => !_selectedTags.contains(t))
+                                  .map((tag) => ActionChip(
+                                        label: Text(tag, style: const TextStyle(fontSize: 13)),
+                                        onPressed: () => _addTagFromSuggestion(tag),
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        backgroundColor: Colors.grey.shade200,
+                                      ))
+                                  .toList(),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (_recentTagSuggestions.isNotEmpty) ...[
+                            Text(
+                              'Recently used',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: _recentTagSuggestions
+                                  .where((t) => !_selectedTags.contains(t))
+                                  .map((tag) => ActionChip(
+                                        label: Text(tag, style: const TextStyle(fontSize: 13)),
+                                        onPressed: () => _addTagFromSuggestion(tag),
+                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        backgroundColor: Colors.grey.shade200,
+                                      ))
+                                  .toList(),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
                         Row(
                           children: [
                             Expanded(

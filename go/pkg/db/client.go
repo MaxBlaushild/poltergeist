@@ -88,6 +88,7 @@ type client struct {
 	albumPostHandle                   *albumPostHandle
 	notificationHandle                *notificationHandle
 	userDeviceTokenHandle             *userDeviceTokenHandle
+	userRecentPostTagHandle           *userRecentPostTagHandle
 }
 
 type ClientConfig struct {
@@ -168,6 +169,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		albumPostHandle:                   &albumPostHandle{db: db},
 		notificationHandle:                &notificationHandle{db: db},
 		userDeviceTokenHandle:             &userDeviceTokenHandle{db: db},
+		userRecentPostTagHandle:           &userRecentPostTagHandle{db: db},
 		postReactionHandle:                &postReactionHandle{db: db},
 		postCommentHandle:                 &postCommentHandle{db: db},
 		activityHandle:                    &activityHandle{db: db},
@@ -250,6 +252,10 @@ func (c *client) Notification() NotificationHandle {
 
 func (c *client) UserDeviceToken() UserDeviceTokenHandle {
 	return c.userDeviceTokenHandle
+}
+
+func (c *client) UserRecentPostTag() UserRecentPostTagHandle {
+	return c.userRecentPostTagHandle
 }
 
 func (c *client) PostReaction() PostReactionHandle {

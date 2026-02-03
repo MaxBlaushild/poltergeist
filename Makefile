@@ -114,6 +114,10 @@ sonar/ecr-push:
 	# Push the Docker image to ECR
 	docker push 872408892710.dkr.ecr.us-east-1.amazonaws.com/sonar:latest
 
+PHONY: sonar/ecs-update
+sonar/ecs-update:
+	aws ecs update-service --cluster poltergeist --service sonar_core --force-new-deployment
+
 PHONY: job-runner/build
 job-runner/build:
 	docker build -f ./deploy/services/job-runner/Dockerfile --platform x86_64 -t 872408892710.dkr.ecr.us-east-1.amazonaws.com/job-runner:latest .

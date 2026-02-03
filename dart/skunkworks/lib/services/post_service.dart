@@ -80,6 +80,19 @@ class PostService {
     }
   }
 
+  /// Gets tag suggestions for posts: album tags and recently used tags.
+  /// Returns { albumTags: [{tag, sortOrder}], recentTags: [{tag, sortOrder}] }
+  Future<Map<String, dynamic>> getPostTagSuggestions() async {
+    try {
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        ApiConstants.postTagSuggestionsEndpoint,
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   /// Gets the feed of posts from friends (reverse chronological)
   /// 
   /// Returns list of posts with user information

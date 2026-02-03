@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -76,8 +77,13 @@ func (h *albumInviteHandle) FindByAlbumAndUser(ctx context.Context, albumID, use
 }
 
 func (h *albumInviteHandle) UpdateStatus(ctx context.Context, id uuid.UUID, status string) error {
+	updates := map[string]interface{}{"status": status}
+	if status == "accepted" {
+		now := time.Now()
+		updates["accepted_at"] = now
+	}
 	return h.db.WithContext(ctx).Model(&models.AlbumInvite{}).
-		Where("id = ?", id).Update("status", status).Error
+		Where("id = ?", id).Updates(updates).Error
 }
 
 func (h *albumInviteHandle) Reinvite(ctx context.Context, albumID, userID uuid.UUID, role string) (*models.AlbumInvite, error) {
