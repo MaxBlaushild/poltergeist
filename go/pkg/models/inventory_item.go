@@ -14,8 +14,18 @@ type InventoryItem struct {
 	IsCaptureType bool      `json:"isCaptureType" gorm:"column:is_capture_type"`
 	SellValue     *int      `json:"sellValue" gorm:"column:sell_value"`
 	UnlockTier    *int      `json:"unlockTier" gorm:"column:unlock_tier"`
+	ImageGenerationStatus string  `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 }
 
 func (InventoryItem) TableName() string {
 	return "inventory_items"
 }
+
+const (
+	InventoryImageGenerationStatusNone       = "none"
+	InventoryImageGenerationStatusQueued     = "queued"
+	InventoryImageGenerationStatusInProgress = "in_progress"
+	InventoryImageGenerationStatusComplete   = "complete"
+	InventoryImageGenerationStatusFailed     = "failed"
+)

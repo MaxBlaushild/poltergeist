@@ -1,4 +1,4 @@
-import '../models/quest.dart';
+import '../models/quest_log.dart';
 import 'api_client.dart';
 
 class QuestLogService {
@@ -17,28 +17,51 @@ class QuestLogService {
     return QuestLog.fromJson(map);
   }
 
-  /// POST /sonar/trackedPointOfInterestGroups { pointOfInterestGroupID: questId }
+  /// POST /sonar/trackedQuests { questId }
   Future<void> trackQuest(String questId) async {
     await _api.post<dynamic>(
-      '/sonar/trackedPointOfInterestGroups',
-      data: {'pointOfInterestGroupID': questId},
+      '/sonar/trackedQuests',
+      data: {'questId': questId},
     );
   }
 
-  /// DELETE /sonar/trackedPointOfInterestGroups/:id
+  /// DELETE /sonar/trackedQuests/:id
   Future<void> untrackQuest(String questId) async {
-    await _api.delete<dynamic>('/sonar/trackedPointOfInterestGroups/$questId');
+    await _api.delete<dynamic>('/sonar/trackedQuests/$questId');
   }
 
-  /// DELETE /sonar/trackedPointOfInterestGroups
+  /// DELETE /sonar/trackedQuests
   Future<void> untrackAllQuests() async {
-    await _api.delete<dynamic>('/sonar/trackedPointOfInterestGroups');
+    await _api.delete<dynamic>('/sonar/trackedQuests');
   }
 
   /// POST /sonar/quests/:questId/turnIn
-  /// Returns { goldAwarded: int, itemAwarded?: { id, name, imageUrl } }
+  /// Returns { goldAwarded: int, itemsAwarded?: [{ id, name, imageUrl, quantity }] }
   Future<Map<String, dynamic>> turnInQuest(String questId) async {
     final raw = await _api.post<dynamic>('/sonar/quests/turnIn/$questId');
+    final map = raw is Map
+        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        : <String, dynamic>{};
+    return map;
+  }
+
+  /// POST /sonar/questNodes/:id/submit
+  /// Returns { successful: bool, reason: string, questCompleted: bool }
+  Future<Map<String, dynamic>> submitQuestNodeChallenge(
+    String questNodeId, {
+    String? questNodeChallengeId,
+    String? textSubmission,
+    String? imageSubmissionUrl,
+  }) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/questNodes/$questNodeId/submit',
+      data: {
+        if (questNodeChallengeId != null && questNodeChallengeId.isNotEmpty)
+          'questNodeChallengeId': questNodeChallengeId,
+        if (textSubmission != null) 'textSubmission': textSubmission,
+        if (imageSubmissionUrl != null) 'imageSubmissionUrl': imageSubmissionUrl,
+      },
+    );
     final map = raw is Map
         ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
         : <String, dynamic>{};

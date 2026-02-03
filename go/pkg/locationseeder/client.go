@@ -106,8 +106,15 @@ func (c *client) RefreshPointOfInterest(ctx context.Context, poi *models.PointOf
 		Clue:         fantasyPointOfInterest.Clue,
 		ImageUrl:     imageUrl,
 		OriginalName: place.DisplayName.Text,
-		Geometry:     poi.Geometry,
-		UpdatedAt:    time.Now(),
+		GoogleMapsPlaceName: func() *string {
+			if place.DisplayName.Text == "" {
+				return nil
+			}
+			name := place.DisplayName.Text
+			return &name
+		}(),
+		Geometry:  poi.Geometry,
+		UpdatedAt: time.Now(),
 	}); err != nil {
 		log.Printf("Error updating point of interest: %v", err)
 		return err
@@ -466,10 +473,17 @@ func (c *client) GeneratePointOfInterest(ctx context.Context, place googlemaps.P
 		Clue:              fantasyPointOfInterest.Clue,
 		ImageUrl:          imageUrl,
 		GoogleMapsPlaceID: &place.ID,
-		Lat:               strconv.FormatFloat(place.Location.Latitude, 'f', -1, 64),
-		Lng:               strconv.FormatFloat(place.Location.Longitude, 'f', -1, 64),
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
+		GoogleMapsPlaceName: func() *string {
+			if place.DisplayName.Text == "" {
+				return nil
+			}
+			name := place.DisplayName.Text
+			return &name
+		}(),
+		Lat:       strconv.FormatFloat(place.Location.Latitude, 'f', -1, 64),
+		Lng:       strconv.FormatFloat(place.Location.Longitude, 'f', -1, 64),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	log.Printf("Created point of interest object with ID: %s", poi.ID)

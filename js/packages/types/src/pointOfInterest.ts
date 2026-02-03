@@ -15,6 +15,7 @@ export interface PointOfInterest {
 	pointOfInterestChallenges: PointOfInterestChallenge[];
 	tags: Tag[];
 	googleMapsPlaceId: string;
+	googleMapsPlaceName?: string | null;
 	originalName: string;
 	geometry: string;
 	unlockTier?: number | null;

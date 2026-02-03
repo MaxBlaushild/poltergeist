@@ -2,679 +2,325 @@ package questlog
 
 import (
 	"context"
-	"errors"
 	"log"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/wkt"
 )
 
-type QuestObjective struct {
-	Challenge   models.PointOfInterestChallenge             `json:"challenge"`
-	IsCompleted bool                                        `json:"isCompleted"`
-	Submissions []models.PointOfInterestChallengeSubmission `json:"submissions"`
-	NextNode    *QuestNode                                  `json:"nextNode"`
-	Reward      int                                         `json:"reward"`
+type LatLng struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+type QuestNodeChallenge struct {
+	ID              uuid.UUID `json:"id"`
+	Tier            int       `json:"tier"`
+	Question        string    `json:"question"`
+	Reward          int       `json:"reward"`
+	InventoryItemID *int      `json:"inventoryItemId"`
 }
 
 type QuestNode struct {
-	PointOfInterest models.PointOfInterest   `json:"pointOfInterest"`
-	Objectives      []QuestObjective         `json:"objectives"`
-	Children        map[uuid.UUID]*QuestNode `json:"children"`
+	ID              uuid.UUID               `json:"id"`
+	OrderIndex      int                     `json:"orderIndex"`
+	PointOfInterest *models.PointOfInterest `json:"pointOfInterest,omitempty"`
+	Polygon         []LatLng                `json:"polygon,omitempty"`
+	Challenges      []QuestNodeChallenge    `json:"challenges"`
+}
+
+type QuestItemReward struct {
+	InventoryItemID int                   `json:"inventoryItemId"`
+	InventoryItem   *models.InventoryItem `json:"inventoryItem,omitempty"`
+	Quantity        int                   `json:"quantity"`
 }
 
 type Quest struct {
-	IsCompleted            bool        `json:"isCompleted"`
-	RootNode               *QuestNode  `json:"rootNode"`
-	ImageUrl               string      `json:"imageUrl"`
-	Name                   string      `json:"name"`
-	Description            string      `json:"description"`
-	ID                     uuid.UUID   `json:"id"`
-	Gold                   int         `json:"gold"`
-	InventoryItemID        *int        `json:"inventoryItemId,omitempty"`
-	QuestGiverCharacterID  *uuid.UUID  `json:"questGiverCharacterId,omitempty"`
-	TurnedInAt             *time.Time  `json:"turnedInAt,omitempty"`
-	ReadyToTurnIn          bool        `json:"readyToTurnIn"`
-}
-
-type QuestChallenge struct {
-	Challenge models.PointOfInterestChallenge `json:"challenge"`
-	QuestID   uuid.UUID                       `json:"questId"`
+	ID                    uuid.UUID         `json:"id"`
+	Name                  string            `json:"name"`
+	Description           string            `json:"description"`
+	ImageUrl              string            `json:"imageUrl"`
+	Gold                  int               `json:"gold"`
+	ItemRewards           []QuestItemReward `json:"itemRewards"`
+	QuestGiverCharacterID *uuid.UUID        `json:"questGiverCharacterId,omitempty"`
+	IsAccepted            bool              `json:"isAccepted"`
+	TurnedInAt            *time.Time        `json:"turnedInAt,omitempty"`
+	ReadyToTurnIn         bool              `json:"readyToTurnIn"`
+	CurrentNode           *QuestNode        `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
-	Quests          []Quest                        `json:"quests"`
-	PendingTasks    map[uuid.UUID][]QuestChallenge `json:"pendingTasks"`
-	CompletedTasks  map[uuid.UUID][]QuestChallenge `json:"completedTasks"`
-	TrackedQuestIDs []uuid.UUID                    `json:"trackedQuestIds"`
+	Quests          []Quest     `json:"quests"`
+	TrackedQuestIDs []uuid.UUID `json:"trackedQuestIds"`
 }
 
 type QuestlogClient interface {
 	GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error)
-	AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (bool, error)
+	AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error)
 }
 
 type questlogClient struct {
 	dbClient db.DbClient
 }
 
-const (
-	NearbyDistanceInMeters = 30000 // 30km
-)
-
 func NewClient(dbClient db.DbClient) QuestlogClient {
 	log.Printf("Creating new QuestlogClient")
 	return &questlogClient{dbClient: dbClient}
 }
 
-func (c *questlogClient) filterQuestsByZone(ctx context.Context, zoneID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
-	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
-	for _, group := range groups {
-		groupZoneID, err := c.questGroupZoneID(ctx, group)
-		if err != nil {
-			log.Printf("Skipping quest %s: %v", group.ID, err)
-			continue
-		}
-		if groupZoneID == zoneID {
-			filtered = append(filtered, group)
-		}
-	}
-	return filtered, nil
-}
-
-func (c *questlogClient) filterQuestsByTags(groups []models.PointOfInterestGroup, tags []string) []models.PointOfInterestGroup {
-	if len(tags) == 0 {
-		return groups
-	}
-	tagSet := make(map[string]struct{}, len(tags))
-	for _, t := range tags {
-		tagSet[t] = struct{}{}
-	}
-	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
-	for _, group := range groups {
-		matched := false
-		for _, poi := range group.PointsOfInterest {
-			for _, tag := range poi.Tags {
-				if _, ok := tagSet[tag.Value]; ok {
-					matched = true
-					break
-				}
-			}
-			if matched {
-				break
-			}
-		}
-		if matched {
-			filtered = append(filtered, group)
-		}
-	}
-	return filtered
-}
-
-func (c *questlogClient) requiredReputationLevel(group models.PointOfInterestGroup) int {
-	if group.RequiredReputationLevel == nil {
-		return 0
-	}
-	if *group.RequiredReputationLevel <= 0 {
-		return 0
-	}
-	return *group.RequiredReputationLevel
-}
-
-func (c *questlogClient) userZoneLevel(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) (int, error) {
-	reputation, err := c.dbClient.UserZoneReputation().FindOrCreateForUserAndZone(ctx, userID, zoneID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 1, nil
-		}
-		return 0, err
-	}
-	if reputation.Level <= 0 {
-		return 1, nil
-	}
-	return reputation.Level, nil
-}
-
-func (c *questlogClient) questGroupZoneID(ctx context.Context, group models.PointOfInterestGroup) (uuid.UUID, error) {
-	if len(group.PointsOfInterest) > 0 {
-		zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, group.PointsOfInterest[0].ID)
-		if err != nil {
-			return uuid.Nil, err
-		}
-		return zone.ID, nil
-	}
-	if len(group.GroupMembers) > 0 {
-		zone, err := c.dbClient.Zone().FindByPointOfInterestID(ctx, group.GroupMembers[0].PointOfInterestID)
-		if err != nil {
-			return uuid.Nil, err
-		}
-		return zone.ID, nil
-	}
-	return uuid.Nil, errors.New("quest has no points of interest")
-}
-
-func (c *questlogClient) filterQuestsByZoneReputation(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
-	level, err := c.userZoneLevel(ctx, userID, zoneID)
-	if err != nil {
-		return nil, err
-	}
-	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
-	for _, group := range groups {
-		required := c.requiredReputationLevel(group)
-		if required == 0 || level >= required {
-			filtered = append(filtered, group)
-		}
-	}
-	return filtered, nil
-}
-
-func (c *questlogClient) filterQuestsByReputation(ctx context.Context, userID uuid.UUID, groups []models.PointOfInterestGroup) ([]models.PointOfInterestGroup, error) {
-	filtered := make([]models.PointOfInterestGroup, 0, len(groups))
-	zoneLevels := map[uuid.UUID]int{}
-	for _, group := range groups {
-		required := c.requiredReputationLevel(group)
-		if required == 0 {
-			filtered = append(filtered, group)
-			continue
-		}
-		zoneID, err := c.questGroupZoneID(ctx, group)
-		if err != nil {
-			log.Printf("Skipping quest %s: %v", group.ID, err)
-			continue
-		}
-		level, ok := zoneLevels[zoneID]
-		if !ok {
-			level, err = c.userZoneLevel(ctx, userID, zoneID)
-			if err != nil {
-				return nil, err
-			}
-			zoneLevels[zoneID] = level
-		}
-		if level >= required {
-			filtered = append(filtered, group)
-		}
-	}
-	return filtered, nil
-}
-
 func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) (*QuestLog, error) {
 	log.Printf("Getting quest log for user %s in zone %s with tags %v", userID, zoneID, tags)
 
-	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
+	quests, err := c.dbClient.Quest().FindByZoneID(ctx, zoneID)
 	if err != nil {
-		log.Printf("Error getting challenge submissions: %v", err)
 		return nil, err
 	}
 
-	acceptedQuests, err := c.GetAcceptedQuests(ctx, userID)
+	acceptances, err := c.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
 	if err != nil {
-		log.Printf("Error getting accepted quests: %v", err)
 		return nil, err
 	}
-
-	trackedQuests, err := c.GetTrackedQuests(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting tracked quests: %v", err)
-		return nil, err
+	acceptanceByQuest := map[uuid.UUID]models.QuestAcceptanceV2{}
+	for _, acceptance := range acceptances {
+		acceptanceByQuest[acceptance.QuestID] = acceptance
 	}
 
-	acceptedQuests, err = c.filterQuestsByReputation(ctx, userID, acceptedQuests)
-	if err != nil {
-		log.Printf("Error filtering accepted quests by reputation: %v", err)
-		return nil, err
-	}
-	acceptedQuests, err = c.filterQuestsByZone(ctx, zoneID, acceptedQuests)
-	if err != nil {
-		log.Printf("Error filtering accepted quests by zone: %v", err)
-		return nil, err
-	}
-	acceptedQuests = c.filterQuestsByTags(acceptedQuests, tags)
-
-	trackedQuests, err = c.filterQuestsByReputation(ctx, userID, trackedQuests)
-	if err != nil {
-		log.Printf("Error filtering tracked quests by reputation: %v", err)
-		return nil, err
-	}
-	trackedQuests, err = c.filterQuestsByZone(ctx, zoneID, trackedQuests)
-	if err != nil {
-		log.Printf("Error filtering tracked quests by zone: %v", err)
-		return nil, err
-	}
-	trackedQuests = c.filterQuestsByTags(trackedQuests, tags)
-
-	log.Printf("Found %d accepted quests, %d tracked quests, and %d submissions", len(acceptedQuests), len(trackedQuests), len(submissions))
-
-	acceptances, err := c.dbClient.QuestAcceptance().FindByUserID(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting quest acceptances: %v", err)
-		return nil, err
-	}
-	turnedInAtByQuest := make(map[uuid.UUID]*time.Time)
-	for _, a := range acceptances {
-		turnedInAtByQuest[a.PointOfInterestGroupID] = a.TurnedInAt
-	}
-
-	uniqueGroups := c.mergeQuestGroups(acceptedQuests, trackedQuests)
-	trackedQuestIDs := c.getTrackedQuestIDs(trackedQuests)
-	allQuests := c.convertToQuestSlice(uniqueGroups)
-
-	pendingTasks := make(map[uuid.UUID][]QuestChallenge)
-	completedTasks := make(map[uuid.UUID][]QuestChallenge)
-	quests := c.buildQuestsWithCompletedNodes(allQuests, submissions, pendingTasks, completedTasks, turnedInAtByQuest)
-
-	log.Printf("Built quest log with %d quests, %d pending tasks, %d completed tasks", len(quests), len(pendingTasks), len(completedTasks))
-
-	return &QuestLog{
-		Quests:          quests,
-		PendingTasks:    pendingTasks,
-		CompletedTasks:  completedTasks,
-		TrackedQuestIDs: trackedQuestIDs,
-	}, nil
-}
-
-func (c *questlogClient) mergeQuestGroups(groups ...[]models.PointOfInterestGroup) map[uuid.UUID]models.PointOfInterestGroup {
-	log.Printf("Merging %d quest group sets", len(groups))
-	uniqueGroups := make(map[uuid.UUID]models.PointOfInterestGroup)
-	for i, groupSet := range groups {
-		log.Printf("Processing group set %d with %d groups", i+1, len(groupSet))
-		for _, group := range groupSet {
-			uniqueGroups[group.ID] = group
+	trackedQuestIDs := []uuid.UUID{}
+	tracked, err := c.dbClient.TrackedQuest().GetByUserID(ctx, userID)
+	if err == nil {
+		for _, t := range tracked {
+			trackedQuestIDs = append(trackedQuestIDs, t.QuestID)
 		}
 	}
-	log.Printf("Merged into %d unique groups", len(uniqueGroups))
-	return uniqueGroups
-}
 
-func (c *questlogClient) getTrackedQuestIDs(trackedQuests []models.PointOfInterestGroup) []uuid.UUID {
-	log.Printf("Getting tracked quest IDs from %d quests", len(trackedQuests))
-	ids := make([]uuid.UUID, len(trackedQuests))
-	for i, quest := range trackedQuests {
-		ids[i] = quest.ID
-	}
-	return ids
-}
+	filtered := make([]Quest, 0, len(quests))
+	for _, quest := range quests {
+		if quest.ZoneID != nil && *quest.ZoneID != zoneID {
+			continue
+		}
 
-func (c *questlogClient) convertToQuestSlice(groupMap map[uuid.UUID]models.PointOfInterestGroup) []models.PointOfInterestGroup {
-	log.Printf("Converting map of %d groups to slice", len(groupMap))
-	quests := make([]models.PointOfInterestGroup, 0, len(groupMap))
-	for _, group := range groupMap {
-		quests = append(quests, group)
-	}
-	return quests
-}
+		poiLookup, err := c.loadQuestPointsOfInterest(ctx, &quest)
+		if err != nil {
+			return nil, err
+		}
 
-func (c *questlogClient) buildQuestsWithCompletedNodes(
-	quests []models.PointOfInterestGroup,
-	submissions []models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-	turnedInAtByQuest map[uuid.UUID]*time.Time,
-) []Quest {
-	log.Printf("Building quests with completed nodes from %d quests and %d submissions", len(quests), len(submissions))
-	result := make([]Quest, 0, len(quests))
-	for i, group := range quests {
-		log.Printf("Processing quest %d/%d: %s", i+1, len(quests), group.Name)
-		quest := c.ConvertToQuestWithCompletedNodes(group, submissions, pendingTasks, completedTasks, turnedInAtByQuest)
-		result = append(result, *quest)
-	}
-	return result
-}
+		if !questMatchesTags(&quest, poiLookup, tags) {
+			continue
+		}
 
-func (c *questlogClient) GetQuestsInZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, tags []string) ([]models.PointOfInterestGroup, error) {
-	log.Printf("Getting quests in zone %s for user %s with tags %v", zoneID, userID, tags)
-	groups, err := c.dbClient.PointOfInterestGroup().GetQuestsInZone(ctx, userID, zoneID, tags)
-	if err != nil {
-		log.Printf("Error getting quests in zone: %v", err)
-		return nil, err
-	}
-	log.Printf("Found %d quests in zone", len(groups))
-	return groups, nil
-}
-
-func (c *questlogClient) GetStartedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error) {
-	log.Printf("Getting started quests for user %s", userID)
-	groups, err := c.dbClient.PointOfInterestGroup().GetStartedQuests(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting started quests: %v", err)
-		return nil, err
-	}
-	log.Printf("Found %d started quests", len(groups))
-	return groups, nil
-}
-
-func (c *questlogClient) GetTrackedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error) {
-	log.Printf("Getting tracked quests for user %s", userID)
-	shallowGroups, err := c.dbClient.TrackedPointOfInterestGroup().GetByUserID(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting tracked quest IDs: %v", err)
-		return nil, err
-	}
-
-	groupIDs := make([]uuid.UUID, 0, len(shallowGroups))
-	for _, group := range shallowGroups {
-		groupIDs = append(groupIDs, group.PointOfInterestGroupID)
-	}
-
-	log.Printf("Found %d tracked quest IDs, fetching full quest details", len(groupIDs))
-	groups, err := c.dbClient.PointOfInterestGroup().FindByIDs(ctx, groupIDs)
-	if err != nil {
-		log.Printf("Error getting tracked quests: %v", err)
-		return nil, err
-	}
-
-	log.Printf("Retrieved %d tracked quests", len(groups))
-	return groups, nil
-}
-
-func (c *questlogClient) GetAcceptedQuests(ctx context.Context, userID uuid.UUID) ([]models.PointOfInterestGroup, error) {
-	log.Printf("Getting accepted quests for user %s", userID)
-	acceptances, err := c.dbClient.QuestAcceptance().FindByUserID(ctx, userID)
-	if err != nil {
-		log.Printf("Error getting quest acceptances: %v", err)
-		return nil, err
-	}
-
-	groupIDs := make([]uuid.UUID, 0, len(acceptances))
-	for _, acceptance := range acceptances {
-		groupIDs = append(groupIDs, acceptance.PointOfInterestGroupID)
-	}
-
-	if len(groupIDs) == 0 {
-		return []models.PointOfInterestGroup{}, nil
-	}
-
-	groups, err := c.dbClient.PointOfInterestGroup().FindByIDs(ctx, groupIDs)
-	if err != nil {
-		log.Printf("Error getting accepted quests: %v", err)
-		return nil, err
-	}
-
-	log.Printf("Retrieved %d accepted quests", len(groups))
-	return groups, nil
-}
-
-func (c *questlogClient) GetSubmissionLookup(submissions []models.PointOfInterestChallengeSubmission) map[uuid.UUID][]models.PointOfInterestChallengeSubmission {
-	log.Printf("Building submission lookup from %d submissions", len(submissions))
-	submissionsByChallenge := make(map[uuid.UUID][]models.PointOfInterestChallengeSubmission)
-	for _, submission := range submissions {
-		submissionsByChallenge[submission.PointOfInterestChallengeID] = append(submissionsByChallenge[submission.PointOfInterestChallengeID], submission)
-	}
-	log.Printf("Built lookup with %d challenge entries", len(submissionsByChallenge))
-	return submissionsByChallenge
-}
-
-func (c *questlogClient) IsChallengeCompleted(challenge models.PointOfInterestChallenge, submissionsLookup map[uuid.UUID][]models.PointOfInterestChallengeSubmission) (bool, bool) {
-	log.Printf("Checking completion status for challenge %s", challenge.ID)
-	submissions, exists := submissionsLookup[challenge.ID]
-	if exists {
-		for _, submission := range submissions {
-			if submission.IsCorrect != nil && *submission.IsCorrect {
-				log.Printf("Challenge %s is completed", challenge.ID)
-				return true, exists
+		acceptance, accepted := acceptanceByQuest[quest.ID]
+		progress := map[uuid.UUID]bool{}
+		if accepted {
+			nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range nodeProgress {
+				if p.CompletedAt != nil {
+					progress[p.QuestNodeID] = true
+				}
 			}
 		}
-	}
-	log.Printf("Challenge %s is not completed", challenge.ID)
-	return false, exists
-}
 
-func (c *questlogClient) buildObjectives(
-	poi models.PointOfInterest,
-	group models.PointOfInterestGroup,
-	submissionsByChallenge map[uuid.UUID][]models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-) []QuestObjective {
-	log.Printf("Building objectives for POI %s in group %s", poi.ID, group.ID)
-	objectives := make([]QuestObjective, 0)
-	for _, challenge := range poi.PointOfInterestChallenges {
-		if !c.isChallengeInGroup(challenge, group.ID) {
-			log.Printf("Challenge %s is not in group %s, skipping", challenge.ID, group.ID)
-			continue
+		currentNode := buildCurrentNode(&quest, poiLookup, progress)
+		allCompleted := len(quest.Nodes) > 0 && allNodesCompleted(&quest, progress)
+
+		itemRewards := make([]QuestItemReward, 0, len(quest.ItemRewards))
+		for _, reward := range quest.ItemRewards {
+			var invItem *models.InventoryItem
+			if reward.InventoryItem.ID != 0 {
+				invItem = &reward.InventoryItem
+			}
+			itemRewards = append(itemRewards, QuestItemReward{
+				InventoryItemID: reward.InventoryItemID,
+				InventoryItem:   invItem,
+				Quantity:        reward.Quantity,
+			})
 		}
 
-		objective := c.createObjective(challenge, poi.ID, group.ID, submissionsByChallenge, pendingTasks, completedTasks)
-		objectives = append(objectives, objective)
+		filtered = append(filtered, Quest{
+			ID:                    quest.ID,
+			Name:                  quest.Name,
+			Description:           quest.Description,
+			ImageUrl:              quest.ImageURL,
+			Gold:                  quest.Gold,
+			ItemRewards:           itemRewards,
+			QuestGiverCharacterID: quest.QuestGiverCharacterID,
+			IsAccepted:            accepted,
+			TurnedInAt:            acceptance.TurnedInAt,
+			ReadyToTurnIn:         accepted && acceptance.TurnedInAt == nil && allCompleted,
+			CurrentNode:           currentNode,
+		})
 	}
-	log.Printf("Built %d objectives for POI %s", len(objectives), poi.ID)
-	return objectives
+
+	return &QuestLog{Quests: filtered, TrackedQuestIDs: trackedQuestIDs}, nil
 }
 
-func (c *questlogClient) isChallengeInGroup(challenge models.PointOfInterestChallenge, groupID uuid.UUID) bool {
-	log.Printf("Checking if challenge %s belongs to group %s", challenge.ID, groupID)
-	return challenge.PointOfInterestGroupID != nil && *challenge.PointOfInterestGroupID == groupID
-}
-
-func (c *questlogClient) createObjective(
-	challenge models.PointOfInterestChallenge,
-	poiID uuid.UUID,
-	groupID uuid.UUID,
-	submissionsByChallenge map[uuid.UUID][]models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-) QuestObjective {
-	log.Printf("Creating objective for challenge %s in POI %s", challenge.ID, poiID)
-	isCompleted, exists := c.IsChallengeCompleted(challenge, submissionsByChallenge)
-
-	objective := QuestObjective{
-		Challenge:   challenge,
-		IsCompleted: isCompleted,
-		Submissions: []models.PointOfInterestChallengeSubmission{},
-		Reward:      challenge.InventoryItemID,
+func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error) {
+	acceptance, err := c.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, userID, questID)
+	if err != nil {
+		return false, err
+	}
+	if acceptance == nil {
+		return false, nil
 	}
 
-	if exists {
-		log.Printf("Found %d submissions for challenge %s", len(submissionsByChallenge[challenge.ID]), challenge.ID)
-		objective.Submissions = submissionsByChallenge[challenge.ID]
-	} else {
-		log.Printf("No submissions found for challenge %s", challenge.ID)
-		objective.Submissions = []models.PointOfInterestChallengeSubmission{}
+	quest, err := c.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		return false, err
+	}
+	if quest == nil {
+		return false, nil
 	}
 
-	c.updateTaskMaps(challenge, poiID, groupID, isCompleted, pendingTasks, completedTasks)
-
-	return objective
-}
-
-func (c *questlogClient) updateTaskMaps(
-	challenge models.PointOfInterestChallenge,
-	poiID uuid.UUID,
-	groupID uuid.UUID,
-	isCompleted bool,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-) {
-	log.Printf("Updating task maps for challenge %s in POI %s", challenge.ID, poiID)
-	questChallenge := QuestChallenge{
-		Challenge: challenge,
-		QuestID:   groupID,
+	progressEntries, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
+	if err != nil {
+		return false, err
 	}
 
-	if isCompleted {
-		log.Printf("Adding completed task for challenge %s", challenge.ID)
-		c.addTaskIfNotExists(poiID, questChallenge, completedTasks)
-	} else {
-		log.Printf("Adding pending task for challenge %s", challenge.ID)
-		c.addTaskIfNotExists(poiID, questChallenge, pendingTasks)
-	}
-}
-
-func (c *questlogClient) addTaskIfNotExists(poiID uuid.UUID, task QuestChallenge, taskMap map[uuid.UUID][]QuestChallenge) {
-	log.Printf("Checking if task for challenge %s already exists for POI %s", task.Challenge.ID, poiID)
-	for _, existingTask := range taskMap[poiID] {
-		if existingTask.Challenge.ID == task.Challenge.ID {
-			log.Printf("Task already exists, skipping")
-			return
+	completed := map[uuid.UUID]bool{}
+	for _, p := range progressEntries {
+		if p.CompletedAt != nil {
+			completed[p.QuestNodeID] = true
 		}
 	}
-	log.Printf("Adding new task for challenge %s", task.Challenge.ID)
-	taskMap[poiID] = append(taskMap[poiID], task)
+	return allNodesCompleted(quest, completed), nil
 }
 
-func (c *questlogClient) ConvertToQuestWithCompletedNodes(
-	group models.PointOfInterestGroup,
-	submissions []models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-	turnedInAtByQuest map[uuid.UUID]*time.Time,
-) *Quest {
-	log.Printf("Converting group %s to quest with completed nodes", group.ID)
-	submissionsByChallenge := c.GetSubmissionLookup(submissions)
-	visited := make(map[uuid.UUID]bool)
-	rootGroupMember := group.GetRootMember()
-	rootNode := c.buildQuestNodeTree(rootGroupMember, group, submissionsByChallenge, pendingTasks, completedTasks, visited)
-
-	isCompleted := c.isQuestCompleted(rootNode)
-	turnedInAt := turnedInAtByQuest[group.ID]
-	readyToTurnIn := isCompleted && turnedInAt == nil
-
-	quest := &Quest{
-		IsCompleted:           isCompleted,
-		RootNode:              rootNode,
-		ImageUrl:              group.ImageUrl,
-		Name:                  group.Name,
-		Description:           group.Description,
-		ID:                    group.ID,
-		Gold:                  group.Gold,
-		InventoryItemID:       group.InventoryItemID,
-		QuestGiverCharacterID: group.QuestGiverCharacterID,
-		TurnedInAt:            turnedInAt,
-		ReadyToTurnIn:         readyToTurnIn,
+func allNodesCompleted(quest *models.Quest, completed map[uuid.UUID]bool) bool {
+	if len(quest.Nodes) == 0 {
+		return false
 	}
-	log.Printf("Converted group %s to quest (completed: %v, readyToTurnIn: %v)", group.ID, quest.IsCompleted, quest.ReadyToTurnIn)
-	return quest
-}
-
-func (c *questlogClient) buildQuestNodeTree(
-	member *models.PointOfInterestGroupMember,
-	group models.PointOfInterestGroup,
-	submissionsByChallenge map[uuid.UUID][]models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-	visited map[uuid.UUID]bool,
-) *QuestNode {
-	log.Printf("Building quest node tree for POI %s in group %s", member.PointOfInterest.ID, group.ID)
-
-	if visited[member.PointOfInterest.ID] {
-		log.Printf("Already visited POI %s in group %s, skipping to prevent infinite recursion", member.PointOfInterest.ID, group.ID)
-		return nil
-	}
-	visited[member.PointOfInterest.ID] = true
-
-	objectives := c.buildObjectives(member.PointOfInterest, group, submissionsByChallenge, pendingTasks, completedTasks)
-	log.Printf("Built %d objectives for POI %s", len(objectives), member.PointOfInterest.ID)
-
-	node := &QuestNode{
-		PointOfInterest: member.PointOfInterest,
-		Objectives:      objectives,
-		Children:        make(map[uuid.UUID]*QuestNode),
-	}
-
-	log.Printf("Building child nodes for POI %s, found %d children", member.PointOfInterest.ID, len(member.Children))
-	c.buildChildNodes(node, member.Children, group, submissionsByChallenge, pendingTasks, completedTasks, visited)
-
-	return node
-}
-
-func (c *questlogClient) buildChildNodes(
-	parentNode *QuestNode,
-	children []models.PointOfInterestChildren,
-	group models.PointOfInterestGroup,
-	submissionsByChallenge map[uuid.UUID][]models.PointOfInterestChallengeSubmission,
-	pendingTasks map[uuid.UUID][]QuestChallenge,
-	completedTasks map[uuid.UUID][]QuestChallenge,
-	visited map[uuid.UUID]bool,
-) {
-	for i, child := range children {
-		log.Printf("Processing child %d/%d for POI %s, challenge ID: %s", i+1, len(children), parentNode.PointOfInterest.ID, child.PointOfInterestChallengeID)
-
-		childMember := c.findGroupMember(child.NextPointOfInterestGroupMemberID, group.GroupMembers)
-		if childMember == nil {
-			log.Printf("Could not find group member with ID %s for challenge %s", child.NextPointOfInterestGroupMemberID, child.PointOfInterestChallengeID)
-			continue
-		}
-
-		log.Printf("Found child member %s for challenge %s", childMember.ID, child.PointOfInterestChallengeID)
-		childNode := c.buildQuestNodeTree(childMember, group, submissionsByChallenge, pendingTasks, completedTasks, visited)
-
-		if childNode != nil {
-			log.Printf("Successfully built child node for POI %s, linking to parent POI %s", childNode.PointOfInterest.ID, parentNode.PointOfInterest.ID)
-			parentNode.Children[child.PointOfInterestChallengeID] = childNode
-			c.linkObjectiveToChildNode(parentNode, child.PointOfInterestChallengeID, childNode)
-		} else {
-			log.Printf("Child node was nil for challenge %s", child.PointOfInterestChallengeID)
-		}
-	}
-}
-
-func (c *questlogClient) findGroupMember(memberID uuid.UUID, members []models.PointOfInterestGroupMember) *models.PointOfInterestGroupMember {
-	log.Printf("Searching for group member with ID %s among %d members", memberID, len(members))
-	for _, member := range members {
-		if member.ID == memberID {
-			log.Printf("Found matching group member %s", memberID)
-			return &member
-		}
-	}
-	log.Printf("No matching group member found for ID %s", memberID)
-	return nil
-}
-
-func (c *questlogClient) linkObjectiveToChildNode(node *QuestNode, challengeID uuid.UUID, childNode *QuestNode) {
-	log.Printf("Linking objectives for POI %s to child POI %s", node.PointOfInterest.ID, childNode.PointOfInterest.ID)
-	for i, objective := range node.Objectives {
-		if objective.Challenge.ID == challengeID {
-			log.Printf("Found matching objective for challenge %s, linking to child node", challengeID)
-			node.Objectives[i].NextNode = childNode
-		}
-	}
-}
-
-func (c *questlogClient) isQuestCompleted(node *QuestNode) bool {
-	if node == nil {
-		log.Printf("Node is nil, considering quest completed")
-		return true
-	}
-
-	log.Printf("Checking completion status for POI %s", node.PointOfInterest.ID)
-
-	for _, objective := range node.Objectives {
-		if !objective.IsCompleted {
-			log.Printf("Objective %s for POI %s is not completed", objective.Challenge.ID, node.PointOfInterest.ID)
+	for _, node := range quest.Nodes {
+		if !completed[node.ID] {
 			return false
 		}
 	}
-
-	log.Printf("All objectives completed for POI %s, checking children", node.PointOfInterest.ID)
-	for _, child := range node.Children {
-		if !c.isQuestCompleted(child) {
-			log.Printf("Child POI %s is not completed", child.PointOfInterest.ID)
-			return false
-		}
-	}
-
-	log.Printf("POI %s and all its children are completed", node.PointOfInterest.ID)
 	return true
 }
 
-func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (bool, error) {
-	group, err := c.dbClient.PointOfInterestGroup().FindByID(ctx, pointOfInterestGroupID)
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
+func buildCurrentNode(quest *models.Quest, poiLookup map[uuid.UUID]*models.PointOfInterest, completed map[uuid.UUID]bool) *QuestNode {
+	if quest == nil || len(quest.Nodes) == 0 {
+		return nil
+	}
+	nodes := append([]models.QuestNode(nil), quest.Nodes...)
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].OrderIndex < nodes[j].OrderIndex
+	})
+	for _, node := range nodes {
+		if completed[node.ID] {
+			continue
 		}
-		return false, err
+		return buildQuestNodeView(node, poiLookup)
+	}
+	return nil
+}
+
+func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.PointOfInterest) *QuestNode {
+	var poi *models.PointOfInterest
+	if node.PointOfInterestID != nil {
+		poi = poiLookup[*node.PointOfInterestID]
 	}
 
-	submissions, err := c.dbClient.PointOfInterestChallenge().GetSubmissionsForUser(ctx, userID)
+	challenges := make([]QuestNodeChallenge, 0, len(node.Challenges))
+	for _, ch := range node.Challenges {
+		challenges = append(challenges, QuestNodeChallenge{
+			ID:              ch.ID,
+			Tier:            ch.Tier,
+			Question:        ch.Question,
+			Reward:          ch.Reward,
+			InventoryItemID: ch.InventoryItemID,
+		})
+	}
+
+	return &QuestNode{
+		ID:              node.ID,
+		OrderIndex:      node.OrderIndex,
+		PointOfInterest: poi,
+		Polygon:         parsePolygon(node.Polygon),
+		Challenges:      challenges,
+	}
+}
+
+func questMatchesTags(quest *models.Quest, poiLookup map[uuid.UUID]*models.PointOfInterest, tags []string) bool {
+	if len(tags) == 0 {
+		return true
+	}
+	tagSet := map[string]struct{}{}
+	for _, t := range tags {
+		tagSet[t] = struct{}{}
+	}
+	for _, node := range quest.Nodes {
+		if node.PointOfInterestID == nil {
+			continue
+		}
+		poi := poiLookup[*node.PointOfInterestID]
+		if poi == nil {
+			continue
+		}
+		for _, tag := range poi.Tags {
+			if _, ok := tagSet[tag.Value]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c *questlogClient) loadQuestPointsOfInterest(ctx context.Context, quest *models.Quest) (map[uuid.UUID]*models.PointOfInterest, error) {
+	lookup := map[uuid.UUID]*models.PointOfInterest{}
+	if quest == nil {
+		return lookup, nil
+	}
+	for _, node := range quest.Nodes {
+		if node.PointOfInterestID == nil {
+			continue
+		}
+		if _, ok := lookup[*node.PointOfInterestID]; ok {
+			continue
+		}
+		poi, err := c.dbClient.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
+		if err != nil {
+			return nil, err
+		}
+		if poi != nil {
+			lookup[*node.PointOfInterestID] = poi
+		}
+	}
+	return lookup, nil
+}
+
+func parsePolygon(raw string) []LatLng {
+	if raw == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToUpper(trimmed), "SRID=") {
+		if parts := strings.SplitN(trimmed, ";", 2); len(parts) == 2 {
+			trimmed = parts[1]
+		}
+	}
+	geom, err := wkt.Unmarshal(trimmed)
 	if err != nil {
-		return false, err
+		return nil
 	}
-
-	pendingTasks := make(map[uuid.UUID][]QuestChallenge)
-	completedTasks := make(map[uuid.UUID][]QuestChallenge)
-	quest := c.ConvertToQuestWithCompletedNodes(*group, submissions, pendingTasks, completedTasks, nil)
-	return quest.IsCompleted, nil
+	poly, ok := geom.(orb.Polygon)
+	if !ok || len(poly) == 0 {
+		return nil
+	}
+	ring := poly[0]
+	if len(ring) == 0 {
+		return nil
+	}
+	coords := make([]LatLng, 0, len(ring))
+	for _, pt := range ring {
+		coords = append(coords, LatLng{Latitude: pt[1], Longitude: pt[0]})
+	}
+	return coords
 }

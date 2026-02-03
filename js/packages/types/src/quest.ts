@@ -1,4 +1,13 @@
+import { InventoryItem } from './inventoryItem';
 import { QuestNode } from './questNode';
+
+export interface QuestItemReward {
+  id?: string;
+  questId?: string;
+  inventoryItemId: number;
+  inventoryItem?: InventoryItem;
+  quantity: number;
+}
 
 export interface Quest {
   id: string;
@@ -11,5 +20,6 @@ export interface Quest {
   questArchetypeId?: string | null;
   questGiverCharacterId?: string | null;
   gold?: number;
+  itemRewards?: QuestItemReward[];
   nodes?: QuestNode[];
 }

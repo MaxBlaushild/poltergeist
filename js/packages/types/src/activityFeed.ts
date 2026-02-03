@@ -16,7 +16,7 @@ export interface ChallengeCompletedActivityData {
   submitterId?: string;
   experienceAwarded: number;
   reputationAwarded: number;
-  itemsAwarded: Array<{ id: number; name: string; imageUrl: string }>;
+  itemsAwarded: Array<{ id: number; name: string; imageUrl: string; quantity: number }>;
   goldAwarded: number;
   questId: string;
   questName: string;
@@ -30,7 +30,7 @@ export interface ChallengeCompletedActivityData {
 export interface QuestCompletedActivityData {
   questId: string;
   goldAwarded: number;
-  itemAwarded?: { id: number; name: string; imageUrl: string };
+  itemsAwarded: Array<{ id: number; name: string; imageUrl: string; quantity: number }>;
 }
 
 export interface ItemReceivedActivityData {
@@ -81,4 +81,3 @@ export function isItemReceivedActivity(activity: ActivityFeed): activity is Acti
 export function isReputationUpActivity(activity: ActivityFeed): activity is ActivityFeed & { data: ReputationUpActivityData } {
   return activity.activityType === 'reputation_up';
 }
-

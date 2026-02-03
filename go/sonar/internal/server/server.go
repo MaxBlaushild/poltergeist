@@ -36,6 +36,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/lib/pq"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/wkt"
+	"github.com/paulmach/orb/planar"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -148,11 +151,14 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/matches/current", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCurrentMatch))
 	r.POST("/sonar/media/uploadUrl", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPresignedUploadUrl))
 	r.POST("/sonar/pointOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitAnswerPointOfInterestChallenge))
+	r.POST("/sonar/questNodes/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitQuestNodeChallenge))
 	r.POST("/sonar/teams/:teamID/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editTeamName))
 	r.GET("/sonar/items", s.getInventoryItems)
 	r.GET("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllInventoryItems))
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
+	r.POST("/sonar/inventory-items/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItem))
+	r.POST("/sonar/inventory-items/:id/regenerate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.regenerateInventoryItemImage))
 	r.PUT("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateInventoryItem))
 	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeamsInventory))
@@ -213,11 +219,20 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/zones/:id/pointOfInterest/:pointOfInterestId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removePointOfInterestFromZone))
 	r.GET("/sonar/pointOfInterest/:id/zone", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneForPointOfInterest))
 	r.POST("/sonar/pointOfInterest/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importPointOfInterest))
+	r.GET("/sonar/pointOfInterest/imports", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestImports))
+	r.GET("/sonar/pointOfInterest/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointOfInterestImport))
 	r.POST("/sonar/pointOfInterest/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterest))
 	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterestImage))
 	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlaces))
 	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlace))
 	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuest))
+	r.GET("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuests))
+	r.GET("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuest))
+	r.POST("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuest))
+	r.PATCH("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuest))
+	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
+	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
+	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
 	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetypes))
@@ -243,6 +258,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
 	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
+	r.POST("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTrackedPointOfInterestGroup))
+	r.GET("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
+	r.DELETE("/sonar/trackedQuests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
+	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
@@ -914,49 +933,133 @@ func (s *server) userZoneReputationLevel(ctx context.Context, userID uuid.UUID, 
 	return reputation.Level, nil
 }
 
-func (s *server) questGroupZoneID(ctx context.Context, group *models.PointOfInterestGroup) (uuid.UUID, error) {
-	if len(group.PointsOfInterest) > 0 {
-		zone, err := s.dbClient.Zone().FindByPointOfInterestID(ctx, group.PointsOfInterest[0].ID)
-		if err != nil {
-			return uuid.Nil, err
-		}
-		return zone.ID, nil
-	}
-	if len(group.GroupMembers) > 0 {
-		zone, err := s.dbClient.Zone().FindByPointOfInterestID(ctx, group.GroupMembers[0].PointOfInterestID)
-		if err != nil {
-			return uuid.Nil, err
-		}
-		return zone.ID, nil
-	}
-	return uuid.Nil, fmt.Errorf("quest has no points of interest")
-}
-
-func (s *server) userMeetsQuestReputation(ctx context.Context, userID uuid.UUID, questGroupID uuid.UUID) (bool, int, int, error) {
-	questGroup, err := s.dbClient.PointOfInterestGroup().FindByID(ctx, questGroupID)
+func (s *server) userMeetsQuestReputation(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, int, int, error) {
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
 	if err != nil {
 		return false, 0, 0, err
 	}
-	return s.userMeetsQuestReputationForGroup(ctx, userID, questGroup)
+	if quest == nil {
+		return false, 0, 0, fmt.Errorf("quest not found")
+	}
+	return s.userMeetsQuestReputationForQuest(ctx, userID, quest)
 }
 
-func (s *server) userMeetsQuestReputationForGroup(ctx context.Context, userID uuid.UUID, questGroup *models.PointOfInterestGroup) (bool, int, int, error) {
-	requiredLevel := 0
-	if questGroup.RequiredReputationLevel != nil {
-		requiredLevel = *questGroup.RequiredReputationLevel
+func (s *server) userMeetsQuestReputationForQuest(ctx context.Context, userID uuid.UUID, quest *models.Quest) (bool, int, int, error) {
+	if quest.ZoneID == nil {
+		return true, 0, 0, nil
 	}
-	if requiredLevel <= 0 {
-		return true, 0, requiredLevel, nil
-	}
-	zoneID, err := s.questGroupZoneID(ctx, questGroup)
+	userLevel, err := s.userZoneReputationLevel(ctx, userID, *quest.ZoneID)
 	if err != nil {
-		return false, 0, requiredLevel, err
+		return false, 0, 0, err
 	}
-	userLevel, err := s.userZoneReputationLevel(ctx, userID, zoneID)
+	// Quests currently do not have required reputation levels; treat as unlocked.
+	return true, userLevel, 0, nil
+}
+
+func extractActionQuestID(metadata map[string]interface{}) string {
+	if metadata == nil {
+		return ""
+	}
+	keys := []string{"questId", "pointOfInterestGroupId"}
+	for _, key := range keys {
+		if val, ok := metadata[key]; ok {
+			switch v := val.(type) {
+			case string:
+				return v
+			case uuid.UUID:
+				return v.String()
+			default:
+				return fmt.Sprintf("%v", v)
+			}
+		}
+	}
+	return ""
+}
+
+func (s *server) currentQuestNode(ctx context.Context, quest *models.Quest, acceptanceID uuid.UUID) (*models.QuestNode, error) {
+	if quest == nil {
+		return nil, nil
+	}
+	nodes, err := s.dbClient.QuestNode().FindByQuestID(ctx, quest.ID)
 	if err != nil {
-		return false, 0, requiredLevel, err
+		return nil, err
 	}
-	return userLevel >= requiredLevel, userLevel, requiredLevel, nil
+	progressEntries, err := s.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptanceID)
+	if err != nil {
+		return nil, err
+	}
+	completed := map[uuid.UUID]bool{}
+	for _, p := range progressEntries {
+		if p.CompletedAt != nil {
+			completed[p.QuestNodeID] = true
+		}
+	}
+	for _, node := range nodes {
+		if !completed[node.ID] {
+			return &node, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, float64, error) {
+	locationStr, err := s.livenessClient.GetUserLocation(ctx, userID)
+	if err != nil || locationStr == "" {
+		return 0, 0, fmt.Errorf("user location not available")
+	}
+
+	parts := strings.Split(locationStr, ",")
+	if len(parts) < 2 {
+		return 0, 0, fmt.Errorf("invalid location format")
+	}
+
+	userLat, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid latitude in user location")
+	}
+
+	userLng, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid longitude in user location")
+	}
+
+	return userLat, userLng, nil
+}
+
+func parseQuestNodePolygon(raw string) (orb.Polygon, error) {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(strings.ToUpper(trimmed), "SRID=") {
+		if parts := strings.SplitN(trimmed, ";", 2); len(parts) == 2 {
+			trimmed = parts[1]
+		}
+	}
+	geom, err := wkt.Unmarshal(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	polygon, ok := geom.(orb.Polygon)
+	if !ok {
+		return nil, fmt.Errorf("invalid polygon geometry")
+	}
+	return polygon, nil
+}
+
+func selectQuestNodeChallenge(node *models.QuestNode, challengeID *uuid.UUID) (*models.QuestNodeChallenge, error) {
+	if node == nil || len(node.Challenges) == 0 {
+		return nil, fmt.Errorf("quest node has no challenges")
+	}
+	if challengeID != nil && *challengeID != uuid.Nil {
+		for _, ch := range node.Challenges {
+			if ch.ID == *challengeID {
+				return &ch, nil
+			}
+		}
+		return nil, fmt.Errorf("quest node challenge not found")
+	}
+	if len(node.Challenges) == 1 {
+		return &node.Challenges[0], nil
+	}
+	return nil, fmt.Errorf("questNodeChallengeId is required")
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -968,13 +1071,23 @@ func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
 
 	var requestBody struct {
 		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupID"`
+		QuestID                uuid.UUID `json:"questId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	acceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, requestBody.PointOfInterestGroupID)
+	questID := requestBody.QuestID
+	if questID == uuid.Nil {
+		questID = requestBody.PointOfInterestGroupID
+	}
+	if questID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "questId is required"})
+		return
+	}
+
+	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -983,7 +1096,7 @@ func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": "quest must be accepted before tracking"})
 		return
 	}
-	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputation(ctx, user.ID, requestBody.PointOfInterestGroupID)
+	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputation(ctx, user.ID, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -992,7 +1105,7 @@ func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusForbidden, gin.H{"error": fmt.Sprintf("requires zone reputation level %d", requiredLevel)})
 		return
 	}
-	err = s.dbClient.TrackedPointOfInterestGroup().Create(ctx, requestBody.PointOfInterestGroupID, user.ID)
+	err = s.dbClient.TrackedQuest().Create(ctx, questID, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1007,14 +1120,14 @@ func (s *server) getTrackedPointOfInterestGroups(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
 		return
 	}
-	trackedPointOfInterestGroups, err := s.dbClient.TrackedPointOfInterestGroup().GetByUserID(ctx, user.ID)
+	trackedPointOfInterestGroups, err := s.dbClient.TrackedQuest().GetByUserID(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	filtered := make([]models.TrackedPointOfInterestGroup, 0, len(trackedPointOfInterestGroups))
+	filtered := make([]models.TrackedQuest, 0, len(trackedPointOfInterestGroups))
 	for _, tracked := range trackedPointOfInterestGroups {
-		acceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, tracked.PointOfInterestGroupID)
+		acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, tracked.QuestID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1022,7 +1135,7 @@ func (s *server) getTrackedPointOfInterestGroups(ctx *gin.Context) {
 		if acceptance == nil {
 			continue
 		}
-		meetsReputation, _, _, err := s.userMeetsQuestReputation(ctx, user.ID, tracked.PointOfInterestGroupID)
+		meetsReputation, _, _, err := s.userMeetsQuestReputation(ctx, user.ID, tracked.QuestID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1041,7 +1154,7 @@ func (s *server) deleteTrackedPointOfInterestGroup(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid tracked point of interest group ID"})
 		return
 	}
-	err = s.dbClient.TrackedPointOfInterestGroup().Delete(ctx, groupIDUUID)
+	err = s.dbClient.TrackedQuest().Delete(ctx, groupIDUUID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1055,7 +1168,7 @@ func (s *server) deleteAllTrackedPointOfInterestGroups(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
 		return
 	}
-	err = s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, user.ID)
+	err = s.dbClient.TrackedQuest().DeleteAllForUser(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1072,7 +1185,8 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 
 	var requestBody struct {
 		CharacterID            uuid.UUID `json:"characterId" binding:"required"`
-		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupId" binding:"required"`
+		PointOfInterestGroupID uuid.UUID `json:"pointOfInterestGroupId"`
+		QuestID                uuid.UUID `json:"questId"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -1092,19 +1206,27 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 		return
 	}
 
-	// Verify quest group exists
-	questGroup, err := s.dbClient.PointOfInterestGroup().FindByID(ctx, requestBody.PointOfInterestGroupID)
+	questID := requestBody.QuestID
+	if questID == uuid.Nil {
+		questID = requestBody.PointOfInterestGroupID
+	}
+	if questID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "questId is required"})
+		return
+	}
+
+	// Verify quest exists
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	if questGroup == nil {
+	if quest == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
 		return
 	}
 
-	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputationForGroup(ctx, user.ID, questGroup)
+	meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputationForQuest(ctx, user.ID, quest)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1115,7 +1237,7 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	}
 
 	// Verify quest has this character as quest giver
-	if questGroup.QuestGiverCharacterID == nil || *questGroup.QuestGiverCharacterID != requestBody.CharacterID {
+	if quest.QuestGiverCharacterID == nil || *quest.QuestGiverCharacterID != requestBody.CharacterID {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "character is not the quest giver for this quest"})
 		return
 	}
@@ -1131,18 +1253,8 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	for _, action := range characterActions {
 		if action.ActionType == models.ActionTypeGiveQuest {
 			// Check if metadata contains the quest ID (can be string or UUID)
-			if questIDVal, ok := action.Metadata["pointOfInterestGroupId"]; ok {
-				var questIDStr string
-				switch v := questIDVal.(type) {
-				case string:
-					questIDStr = v
-				case uuid.UUID:
-					questIDStr = v.String()
-				default:
-					// Try to convert to string
-					questIDStr = fmt.Sprintf("%v", v)
-				}
-				if questIDStr == requestBody.PointOfInterestGroupID.String() {
+			if questIDStr := extractActionQuestID(action.Metadata); questIDStr != "" {
+				if questIDStr == questID.String() {
 					hasGiveQuestAction = true
 					break
 				}
@@ -1156,7 +1268,7 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	}
 
 	// Check if user has already accepted this quest
-	existingAcceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, requestBody.PointOfInterestGroupID)
+	existingAcceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1168,19 +1280,22 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	}
 
 	// Create quest acceptance record
-	questAcceptance := &models.QuestAcceptance{
-		UserID:                 user.ID,
-		PointOfInterestGroupID: requestBody.PointOfInterestGroupID,
-		CharacterID:            requestBody.CharacterID,
+	questAcceptance := &models.QuestAcceptanceV2{
+		ID:         uuid.New(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		UserID:     user.ID,
+		QuestID:    questID,
+		AcceptedAt: time.Now(),
 	}
 
-	if err := s.dbClient.QuestAcceptance().Create(ctx, questAcceptance); err != nil {
+	if err := s.dbClient.QuestAcceptanceV2().Create(ctx, questAcceptance); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Automatically track the quest
-	if err := s.dbClient.TrackedPointOfInterestGroup().Create(ctx, requestBody.PointOfInterestGroupID, user.ID); err != nil {
+	if err := s.dbClient.TrackedQuest().Create(ctx, questID, user.ID); err != nil {
 		// Log error but don't fail the request
 		log.Printf("Error tracking quest after acceptance: %v", err)
 	}
@@ -1206,7 +1321,7 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 
-	acceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, questID)
+	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1231,13 +1346,13 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 	}
 
 	// Award gold and items (teamID nil for single-player / user inventory)
-	goldAwarded, itemAwarded, err := s.gameEngineClient.AwardQuestTurnInRewards(ctx, user.ID, questID, nil)
+	goldAwarded, itemsAwarded, err := s.gameEngineClient.AwardQuestTurnInRewards(ctx, user.ID, questID, nil)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := s.dbClient.QuestAcceptance().MarkTurnedIn(ctx, user.ID, questID); err != nil {
+	if err := s.dbClient.QuestAcceptanceV2().MarkTurnedIn(ctx, acceptance.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -1245,12 +1360,8 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 	resp := gin.H{
 		"goldAwarded": goldAwarded,
 	}
-	if itemAwarded != nil {
-		resp["itemAwarded"] = gin.H{
-			"id":       itemAwarded.ID,
-			"name":     itemAwarded.Name,
-			"imageUrl": itemAwarded.ImageURL,
-		}
+	if len(itemsAwarded) > 0 {
+		resp["itemsAwarded"] = itemsAwarded
 	}
 	ctx.JSON(http.StatusOK, resp)
 }
@@ -1696,6 +1807,307 @@ func (s *server) getQuestArchetypes(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, questArchTypes)
 }
 
+func (s *server) getQuests(ctx *gin.Context) {
+	quests, err := s.dbClient.Quest().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, quests)
+}
+
+func (s *server) getQuest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest ID"})
+		return
+	}
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, quest)
+}
+
+func (s *server) createQuest(ctx *gin.Context) {
+	var requestBody struct {
+		Name                  string     `json:"name"`
+		Description           string     `json:"description"`
+		ImageURL              string     `json:"imageUrl"`
+		ZoneID                *uuid.UUID `json:"zoneId"`
+		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
+		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
+		Gold                  *int       `json:"gold"`
+		ItemRewards           *[]struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"itemRewards"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(requestBody.Name) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest name is required"})
+		return
+	}
+
+	quest := &models.Quest{
+		ID:                    uuid.New(),
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
+		Name:                  requestBody.Name,
+		Description:           requestBody.Description,
+		ImageURL:              requestBody.ImageURL,
+		ZoneID:                requestBody.ZoneID,
+		QuestArchetypeID:      requestBody.QuestArchetypeID,
+		QuestGiverCharacterID: requestBody.QuestGiverCharacterID,
+		Gold:                  0,
+	}
+	if requestBody.Gold != nil {
+		quest.Gold = *requestBody.Gold
+	}
+
+	if err := s.dbClient.Quest().Create(ctx, quest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.ItemRewards != nil {
+		rewards := []models.QuestItemReward{}
+		for _, reward := range *requestBody.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				continue
+			}
+			rewards = append(rewards, models.QuestItemReward{
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestID:         quest.ID,
+				InventoryItemID: reward.InventoryItemID,
+				Quantity:        reward.Quantity,
+			})
+		}
+		if err := s.dbClient.QuestItemReward().ReplaceForQuest(ctx, quest.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	createdQuest, err := s.dbClient.Quest().FindByID(ctx, quest.ID)
+	if err != nil || createdQuest == nil {
+		ctx.JSON(http.StatusOK, quest)
+		return
+	}
+	ctx.JSON(http.StatusOK, createdQuest)
+}
+
+func (s *server) updateQuest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest ID"})
+		return
+	}
+
+	var requestBody struct {
+		Name                  string     `json:"name"`
+		Description           string     `json:"description"`
+		ImageURL              string     `json:"imageUrl"`
+		ZoneID                *uuid.UUID `json:"zoneId"`
+		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
+		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
+		Gold                  *int       `json:"gold"`
+		ItemRewards           *[]struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"itemRewards"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+
+	quest.Name = requestBody.Name
+	quest.Description = requestBody.Description
+	quest.ImageURL = requestBody.ImageURL
+	quest.ZoneID = requestBody.ZoneID
+	quest.QuestArchetypeID = requestBody.QuestArchetypeID
+	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
+	if requestBody.Gold != nil {
+		quest.Gold = *requestBody.Gold
+	}
+	quest.UpdatedAt = time.Now()
+
+	if err := s.dbClient.Quest().Update(ctx, questID, quest); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.ItemRewards != nil {
+		rewards := []models.QuestItemReward{}
+		for _, reward := range *requestBody.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				continue
+			}
+			rewards = append(rewards, models.QuestItemReward{
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestID:         quest.ID,
+				InventoryItemID: reward.InventoryItemID,
+				Quantity:        reward.Quantity,
+			})
+		}
+		if err := s.dbClient.QuestItemReward().ReplaceForQuest(ctx, quest.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	updatedQuest, err := s.dbClient.Quest().FindByID(ctx, quest.ID)
+	if err != nil || updatedQuest == nil {
+		ctx.JSON(http.StatusOK, quest)
+		return
+	}
+	ctx.JSON(http.StatusOK, updatedQuest)
+}
+
+func (s *server) createQuestNode(ctx *gin.Context) {
+	var requestBody struct {
+		QuestID           uuid.UUID    `json:"questId"`
+		OrderIndex        int          `json:"orderIndex"`
+		PointOfInterestID *uuid.UUID   `json:"pointOfInterestId"`
+		Polygon           string       `json:"polygon"`
+		PolygonPoints     [][2]float64 `json:"polygonPoints"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.QuestID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "questId is required"})
+		return
+	}
+
+	if requestBody.PointOfInterestID == nil && strings.TrimSpace(requestBody.Polygon) == "" && len(requestBody.PolygonPoints) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId or polygon"})
+		return
+	}
+
+	node := &models.QuestNode{
+		ID:                uuid.New(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+		QuestID:           requestBody.QuestID,
+		OrderIndex:        requestBody.OrderIndex,
+		PointOfInterestID: requestBody.PointOfInterestID,
+	}
+	if len(requestBody.PolygonPoints) > 0 {
+		node.SetPolygonFromPoints(requestBody.PolygonPoints)
+	} else {
+		node.Polygon = requestBody.Polygon
+	}
+
+	if err := s.dbClient.QuestNode().Create(ctx, node); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, node)
+}
+
+func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
+	id := ctx.Param("id")
+	nodeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
+		return
+	}
+
+	var requestBody struct {
+		Tier            int    `json:"tier"`
+		Question        string `json:"question"`
+		Reward          int    `json:"reward"`
+		InventoryItemID *int   `json:"inventoryItemId"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(requestBody.Question) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
+		return
+	}
+
+	challenge := &models.QuestNodeChallenge{
+		ID:              uuid.New(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		QuestNodeID:     nodeID,
+		Tier:            requestBody.Tier,
+		Question:        requestBody.Question,
+		Reward:          requestBody.Reward,
+		InventoryItemID: requestBody.InventoryItemID,
+	}
+
+	if err := s.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, challenge)
+}
+
+func (s *server) deleteQuestNode(ctx *gin.Context) {
+	id := ctx.Param("id")
+	nodeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
+		return
+	}
+
+	if err := s.dbClient.QuestNodeChild().DeleteByNodeID(ctx, nodeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestNodeChild().DeleteByNextNodeID(ctx, nodeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestNodeChallenge().DeleteByNodeID(ctx, nodeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestNodeProgress().DeleteByNodeID(ctx, nodeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestNode().DeleteByID(ctx, nodeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest node deleted"})
+}
+
 func (s *server) getQuestArchetype(ctx *gin.Context) {
 	id := ctx.Param("id")
 	questArchTypeIDUUID, err := uuid.Parse(id)
@@ -1892,20 +2304,81 @@ func (s *server) importPointOfInterest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if requestBody.PlaceID == "" || requestBody.ZoneID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeID and zoneID are required"})
+		return
+	}
 
-	zone, err := s.dbClient.Zone().FindByID(ctx, requestBody.ZoneID)
+	importItem := &models.PointOfInterestImport{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		PlaceID:   requestBody.PlaceID,
+		ZoneID:    requestBody.ZoneID,
+		Status:    "queued",
+	}
+	if err := s.dbClient.PointOfInterestImport().Create(ctx, importItem); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.ImportPointOfInterestTaskPayload{
+		ImportID: importItem.ID,
+	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	poi, err := s.locationSeeder.ImportPlace(ctx, requestBody.PlaceID, *zone)
-	if err != nil {
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ImportPointOfInterestTaskType, payload)); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, poi)
+	ctx.JSON(http.StatusOK, importItem)
+}
+
+func (s *server) getPointOfInterestImports(ctx *gin.Context) {
+	zoneIDParam := ctx.Query("zoneId")
+	limit := 50
+	var (
+		items []models.PointOfInterestImport
+		err   error
+	)
+	if zoneIDParam != "" {
+		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+			return
+		}
+		items, err = s.dbClient.PointOfInterestImport().FindByZoneID(ctx, zoneID, limit)
+	} else {
+		items, err = s.dbClient.PointOfInterestImport().FindRecent(ctx, limit)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (s *server) getPointOfInterestImport(ctx *gin.Context) {
+	id := ctx.Param("id")
+	importID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid import ID"})
+		return
+	}
+	item, err := s.dbClient.PointOfInterestImport().FindByID(ctx, importID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "import not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, item)
 }
 
 func (s *server) refreshPointOfInterest(ctx *gin.Context) {
@@ -2559,14 +3032,14 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name             string  `binding:"required" json:"name"`
-		Description      string  `binding:"required" json:"description"`
-		Lat              string  `binding:"required" json:"lat"`
-		Lng              string  `binding:"required" json:"lng"`
-		UnlockTier       *int    `json:"unlockTier"`
-		Clue             string  `json:"clue"`
-		ImageUrl         string  `json:"imageUrl"`
-		OriginalName     string  `json:"originalName"`
+		Name              string  `binding:"required" json:"name"`
+		Description       string  `binding:"required" json:"description"`
+		Lat               string  `binding:"required" json:"lat"`
+		Lng               string  `binding:"required" json:"lng"`
+		UnlockTier        *int    `json:"unlockTier"`
+		Clue              string  `json:"clue"`
+		ImageUrl          string  `json:"imageUrl"`
+		OriginalName      string  `json:"originalName"`
 		GoogleMapsPlaceID *string `json:"googleMapsPlaceId"`
 	}
 
@@ -3296,6 +3769,12 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier:    requestBody.RarityTier,
 		IsCaptureType: requestBody.IsCaptureType,
 		UnlockTier:    requestBody.UnlockTier,
+		ImageGenerationStatus: func() string {
+			if requestBody.ImageURL != "" {
+				return models.InventoryImageGenerationStatusComplete
+			}
+			return models.InventoryImageGenerationStatusNone
+		}(),
 	}
 
 	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -3304,6 +3783,117 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, item)
+}
+
+func (s *server) generateInventoryItem(ctx *gin.Context) {
+	var requestBody struct {
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description"`
+		RarityTier  string `json:"rarityTier" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	item := &models.InventoryItem{
+		Name:                  requestBody.Name,
+		FlavorText:            requestBody.Description,
+		RarityTier:            requestBody.RarityTier,
+		IsCaptureType:         false,
+		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
+	}
+
+	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create inventory item: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateInventoryItemImageTaskPayload{
+		InventoryItemID: item.ID,
+		Name:            requestBody.Name,
+		Description:     requestBody.Description,
+		RarityTier:      requestBody.RarityTier,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		item.ImageGenerationStatus = models.InventoryImageGenerationStatusFailed
+		item.ImageGenerationError = &errMsg
+		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, item)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, item)
+}
+
+func (s *server) regenerateInventoryItemImage(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+
+	clearErr := ""
+	update := &models.InventoryItem{
+		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
+		ImageGenerationError:  &clearErr,
+	}
+	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, update); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update inventory item: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateInventoryItemImageTaskPayload{
+		InventoryItemID: item.ID,
+		Name:            item.Name,
+		Description:     item.FlavorText,
+		RarityTier:      item.RarityTier,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		failUpdate := &models.InventoryItem{
+			ImageGenerationStatus: models.InventoryImageGenerationStatusFailed,
+			ImageGenerationError:  &errMsg,
+		}
+		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, failUpdate)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedItem)
 }
 
 func (s *server) updateInventoryItem(ctx *gin.Context) {
@@ -3348,6 +3938,12 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		RarityTier:    requestBody.RarityTier,
 		IsCaptureType: requestBody.IsCaptureType,
 		UnlockTier:    requestBody.UnlockTier,
+	}
+
+	if requestBody.ImageURL != "" {
+		clearedErr := ""
+		item.ImageGenerationStatus = models.InventoryImageGenerationStatusComplete
+		item.ImageGenerationError = &clearedErr
 	}
 
 	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, item); err != nil {
@@ -3461,14 +4057,21 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 		return
 	}
 	if challenge.PointOfInterestGroupID != nil {
-		acceptance, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, *challenge.PointOfInterestGroupID)
+		acceptanceV2, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, *challenge.PointOfInterestGroupID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if acceptance == nil {
-			ctx.JSON(http.StatusForbidden, gin.H{"error": "quest must be accepted before completing challenges"})
-			return
+		if acceptanceV2 == nil {
+			acceptanceLegacy, err := s.dbClient.QuestAcceptance().FindByUserAndQuest(ctx, user.ID, *challenge.PointOfInterestGroupID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if acceptanceLegacy == nil {
+				ctx.JSON(http.StatusForbidden, gin.H{"error": "quest must be accepted before completing challenges"})
+				return
+			}
 		}
 		meetsReputation, _, requiredLevel, err := s.userMeetsQuestReputation(ctx, user.ID, *challenge.PointOfInterestGroupID)
 		if err != nil {
@@ -3496,6 +4099,194 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, submissionResult)
+}
+
+func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	nodeIDStr := ctx.Param("id")
+	if nodeIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node id is required"})
+		return
+	}
+	nodeID, err := uuid.Parse(nodeIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node id"})
+		return
+	}
+
+	var requestBody struct {
+		QuestNodeChallengeID *uuid.UUID `json:"questNodeChallengeId"`
+		TextSubmission       string     `json:"textSubmission"`
+		ImageSubmissionUrl   string     `json:"imageSubmissionUrl"`
+		TeamID               *uuid.UUID `json:"teamID"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if node == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node not found"})
+		return
+	}
+
+	quest, err := s.dbClient.Quest().FindByID(ctx, node.QuestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+
+	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, quest.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if acceptance == nil {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "quest must be accepted before completing challenges"})
+		return
+	}
+	if acceptance.TurnedInAt != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already turned in"})
+		return
+	}
+
+	currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if currentNode == nil || currentNode.ID != node.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node is not the current objective"})
+		return
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if node.PointOfInterestID != nil {
+		poi, err := s.dbClient.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
+		if err != nil || poi == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest"})
+			return
+		}
+		poiLat, err := strconv.ParseFloat(poi.Lat, 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest latitude"})
+			return
+		}
+		poiLng, err := strconv.ParseFloat(poi.Lng, 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest longitude"})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, poiLat, poiLng)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
+	} else if node.Polygon != "" {
+		polygon, err := parseQuestNodePolygon(node.Polygon)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest polygon"})
+			return
+		}
+		if !planar.PolygonContains(polygon, orb.Point{userLng, userLat}) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the quest area to submit"})
+			return
+		}
+	} else {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
+		return
+	}
+
+	challenge, err := selectQuestNodeChallenge(node, requestBody.QuestNodeChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
+		Question:           challenge.Question,
+		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
+		TextSubmission:     requestBody.TextSubmission,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if !judgement.IsSuccessful() {
+		ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
+			Successful:     false,
+			Reason:         judgement.Judgement.Reason,
+			QuestCompleted: false,
+		})
+		return
+	}
+
+	progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(ctx, acceptance.ID, node.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	shouldAward := progress == nil || progress.CompletedAt == nil
+	if progress == nil {
+		now := time.Now()
+		progress = &models.QuestNodeProgress{
+			ID:                uuid.New(),
+			CreatedAt:         now,
+			UpdatedAt:         now,
+			QuestAcceptanceID: acceptance.ID,
+			QuestNodeID:       node.ID,
+			CompletedAt:       &now,
+		}
+		if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else if progress.CompletedAt == nil {
+		if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	completed, err := s.questlogClient.AreQuestObjectivesComplete(ctx, user.ID, quest.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if shouldAward {
+		if err := s.gameEngineClient.AwardQuestNodeSubmissionRewards(ctx, user.ID, requestBody.TeamID, quest, node, challenge, completed); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
+		Successful:     true,
+		Reason:         "Challenge completed successfully!",
+		QuestCompleted: completed,
+	})
 }
 
 func (s *server) getPresignedUploadUrl(ctx *gin.Context) {
@@ -4491,7 +5282,7 @@ func (s *server) deleteUser(ctx *gin.Context) {
 	}
 
 	// 4. Delete all tracked point of interest groups
-	if err := s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, userID); err != nil {
+	if err := s.dbClient.TrackedQuest().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete tracked groups: " + err.Error()})
 		return
 	}
@@ -4882,7 +5673,7 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 		}
 
 		// 4. Delete all tracked point of interest groups
-		if err := s.dbClient.TrackedPointOfInterestGroup().DeleteAllForUser(ctx, userID); err != nil {
+		if err := s.dbClient.TrackedQuest().DeleteAllForUser(ctx, userID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete tracked groups for user " + userID.String() + ": " + err.Error()})
 			return
 		}

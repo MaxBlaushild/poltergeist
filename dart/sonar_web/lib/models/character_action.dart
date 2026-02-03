@@ -80,4 +80,5 @@ class CharacterAction {
   }
 
   String? get pointOfInterestGroupId => metadata?['pointOfInterestGroupId'] as String?;
+  String? get questId => (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
 }

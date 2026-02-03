@@ -10,6 +10,8 @@ import '../config/router.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/point_of_interest.dart';
+import '../models/quest.dart';
+import '../models/quest_node.dart';
 import '../models/treasure_chest.dart';
 import '../models/zone.dart';
 import '../providers/activity_feed_provider.dart';
@@ -54,6 +56,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
   List<Line> _zoneLines = [];
+  List<Line> _questLines = [];
   List<Symbol> _poiSymbols = [];
   List<Symbol> _characterSymbols = [];
   List<Symbol> _chestSymbols = [];
@@ -63,6 +66,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _mapLoadFailed = false;
   int _mapKey = 0;
   bool _hasAnimatedToUserLocation = false;
+  QuestLogProvider? _questLogProvider;
 
   @override
   void initState() {
@@ -73,6 +77,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<ZoneProvider>().addListener(_onZoneChanged);
+      _questLogProvider = context.read<QuestLogProvider>();
+      _questLogProvider?.addListener(_onQuestLogChanged);
     });
   }
 
@@ -82,12 +88,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     try {
       context.read<ZoneProvider>().removeListener(_onZoneChanged);
     } catch (_) {}
+    try {
+      _questLogProvider?.removeListener(_onQuestLogChanged);
+    } catch (_) {}
     super.dispose();
   }
 
   void _onZoneChanged() {
     if (!mounted) return;
     unawaited(_loadTreasureChestsForSelectedZone());
+  }
+
+  void _onQuestLogChanged() {
+    if (!mounted) return;
+    if (_styleLoaded && _mapController != null) {
+      setState(() => _markersAdded = false);
+      unawaited(_addPoiMarkers());
+      unawaited(_addQuestPolygons());
+    }
   }
 
   Timer? _mapLoadTimeout;
@@ -114,6 +132,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _mapKey++;
       _poiSymbols = [];
       _chestSymbols = [];
+      _questLines = [];
     });
     _startMapLoadTimeout();
   }
@@ -129,6 +148,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _addPoiMarkers();
     })());
     if (_zones.isNotEmpty) unawaited(_addZoneBoundaries());
+    unawaited(_addQuestPolygons());
     _animateToUserLocationIfReady();
   }
 
@@ -315,6 +335,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _showPointOfInterestPanel(PointOfInterest poi, bool hasDiscovered) {
+    Quest? questForPoi;
+    QuestNode? nodeForPoi;
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      final node = quest.currentNode;
+      if (!quest.isAccepted || node?.pointOfInterest == null) continue;
+      if (node!.pointOfInterest!.id == poi.id) {
+        questForPoi = quest;
+        nodeForPoi = node;
+        break;
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -322,6 +355,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => PointOfInterestPanel(
         pointOfInterest: poi,
         hasDiscovered: hasDiscovered,
+        quest: questForPoi,
+        questNode: nodeForPoi,
         onClose: () => Navigator.of(context).pop(),
         onCharacterTap: (character) {
           Navigator.of(context).pop();
@@ -351,6 +386,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     debugPrint('SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})');
 
     try {
+      final questPoiIds = context.read<QuestLogProvider>().currentNodePoiIds.toSet();
       if (_poiSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_poiSymbols);
@@ -477,6 +513,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final lat = double.tryParse(poi.lat) ?? 0.0;
         final lng = double.tryParse(poi.lng) ?? 0.0;
         final useRealImage = discoveries.hasDiscovered(poi.id);
+        final isQuestCurrent = questPoiIds.contains(poi.id);
         var added = false;
         try {
           String? imageId;
@@ -494,8 +531,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 geometry: LatLng(lat, lng),
                 iconImage: imageId,
                 iconSize: 0.75,
-                iconHaloColor: '#000000',
-                iconHaloWidth: 0.75,
+                iconHaloColor: isQuestCurrent ? '#f5c542' : '#000000',
+                iconHaloWidth: isQuestCurrent ? 2.0 : 0.75,
                 iconAnchor: 'center',
               ),
               {'type': 'poi', 'id': poi.id, 'name': poi.name},
@@ -512,7 +549,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               circleRadius: 24,
               circleColor: '#3388ff',
               circleStrokeWidth: 2,
-              circleStrokeColor: '#ffffff',
+              circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
             ),
             {'type': 'poi', 'id': poi.id, 'name': poi.name},
           );
@@ -579,6 +616,189 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<void> _addQuestPolygons() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) {
+      return;
+    }
+    if (_questLines.isNotEmpty) {
+      try {
+        await c.removeLines(_questLines);
+      } catch (_) {}
+      if (!mounted) return;
+      _questLines.clear();
+    }
+
+    final questLog = context.read<QuestLogProvider>();
+    final polygons = questLog.currentNodePolygons;
+    if (polygons.isEmpty) return;
+
+    final options = <LineOptions>[];
+    for (final poly in polygons) {
+      if (poly.length < 3) continue;
+      final ring = poly
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+      if (ring.length > 1 &&
+          (ring.first.latitude != ring.last.latitude ||
+              ring.first.longitude != ring.last.longitude)) {
+        ring.add(ring.first);
+      }
+      options.add(LineOptions(
+        geometry: ring,
+        lineColor: '#f5c542',
+        lineWidth: 4.0,
+        lineOpacity: 1.0,
+      ));
+    }
+
+    if (options.isEmpty) return;
+    try {
+      final lines = await c.addLines(options);
+      if (!mounted) return;
+      _questLines.addAll(lines);
+    } catch (e, st) {
+      debugPrint('SinglePlayer: _addQuestPolygons error: $e');
+      debugPrint('SinglePlayer: _addQuestPolygons stack: $st');
+    }
+  }
+
+  bool _isInsidePolygon(double lat, double lng, List<QuestNodePolygonPoint> polygon) {
+    if (polygon.length < 3) return false;
+    var inside = false;
+    for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      final xi = polygon[i].longitude;
+      final yi = polygon[i].latitude;
+      final xj = polygon[j].longitude;
+      final yj = polygon[j].latitude;
+      final intersect = ((yi > lat) != (yj > lat)) &&
+          (lng < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  Future<void> _showQuestNodeSubmissionModal(Quest quest, QuestNode node) async {
+    final textController = TextEditingController();
+    final imageController = TextEditingController();
+    String? selectedChallengeId = node.challenges.isNotEmpty
+        ? node.challenges.first.id
+        : null;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+            top: 16,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    quest.name,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (node.challenges.length > 1)
+                    DropdownButtonFormField<String>(
+                      value: selectedChallengeId,
+                      items: node.challenges
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text(c.question),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setModalState(() => selectedChallengeId = value);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Challenge',
+                        border: OutlineInputBorder(),
+                      ),
+                    )
+                  else if (node.challenges.isNotEmpty)
+                    Text(
+                      node.challenges.first.question,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: textController,
+                    decoration: const InputDecoration(
+                      labelText: 'Answer',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: imageController,
+                    decoration: const InputDecoration(
+                      labelText: 'Image URL (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () async {
+                      final resp = await context
+                          .read<QuestLogProvider>()
+                          .submitQuestNodeChallenge(
+                            node.id,
+                            questNodeChallengeId: selectedChallengeId,
+                            textSubmission: textController.text.trim(),
+                            imageSubmissionUrl:
+                                imageController.text.trim().isEmpty
+                                    ? null
+                                    : imageController.text.trim(),
+                          );
+                      if (!mounted) return;
+                      final success = resp['successful'] == true;
+                      final reason = resp['reason']?.toString() ?? '';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? (reason.isNotEmpty
+                                    ? reason
+                                    : 'Challenge completed!')
+                                : (reason.isNotEmpty
+                                    ? reason
+                                    : 'Submission failed'),
+                          ),
+                        ),
+                      );
+                      if (success) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    child: const Text('Submit'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   void _updateSelectedZoneFromLocation() {
     final location = context.read<LocationProvider>().location;
     if (location == null || _zones.isEmpty) return;
@@ -594,12 +814,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Widget build(BuildContext context) {
     final loc = context.watch<LocationProvider>().location;
     final discoveries = context.watch<DiscoveriesProvider>();
+    final questLog = context.watch<QuestLogProvider>();
     final lat = loc?.latitude ?? 0.0;
     final lng = loc?.longitude ?? 0.0;
     final initialPosition = CameraPosition(
       target: LatLng(lat, lng),
       zoom: 15,
     );
+
+    Quest? polygonQuest;
+    QuestNode? polygonNode;
+    if (loc != null) {
+      for (final quest in questLog.quests) {
+        final node = quest.currentNode;
+        if (!quest.isAccepted || node == null || node.polygon.isEmpty) {
+          continue;
+        }
+        if (_isInsidePolygon(loc.latitude, loc.longitude, node.polygon)) {
+          polygonQuest = quest;
+          polygonNode = node;
+          break;
+        }
+      }
+    }
 
     if (_styleLoaded && !_mapLoadFailed && _mapController != null && loc != null && !_hasAnimatedToUserLocation) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -622,6 +859,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         unawaited(_addPoiMarkers());
         unawaited(_addZoneBoundaries());
+        unawaited(_addQuestPolygons());
       });
     }
 
@@ -641,6 +879,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _addedMarkersWithEmptyDiscoveries = false;
         });
         unawaited(_addPoiMarkers());
+        unawaited(_addQuestPolygons());
       });
     }
 
@@ -769,6 +1008,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ],
               ),
             ),
+            if (polygonQuest != null && polygonNode != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 92,
+                child: FilledButton(
+                  onPressed: () => _showQuestNodeSubmissionModal(
+                    polygonQuest!,
+                    polygonNode!,
+                  ),
+                  child: const Text('Submit Quest Challenge'),
+                ),
+              ),
           ],
           const CelebrationModalManager(),
           const NewItemModal(),

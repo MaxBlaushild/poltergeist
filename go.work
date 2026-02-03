@@ -6,6 +6,7 @@ use (
 	./go/authenticator
 	./go/billing
 	./go/core
+	./go/final-fete
 	./go/fount-of-erebos
 	./go/job-runner
 	./go/migrate
@@ -13,9 +14,13 @@ use (
 	./go/pkg/billing
 	./go/pkg/db
 	./go/pkg/deep_priest
+	./go/pkg/dropbox
 	./go/pkg/email
 	./go/pkg/encoding
+	./go/pkg/googledrive
 	./go/pkg/http
+	./go/pkg/hue
+	./go/pkg/jobs
 	./go/pkg/liveness
 	./go/pkg/middleware
 	./go/pkg/models
@@ -23,14 +28,10 @@ use (
 	./go/pkg/texter
 	./go/pkg/twilio
 	./go/pkg/util
-	./go/pkg/googledrive
-	./go/pkg/dropbox
-	./go/pkg/hue
 	./go/proteus
 	./go/scorekeeper
 	./go/sonar
 	./go/texter
-	./go/trivai
 	./go/travel-angels
-	./go/final-fete
+	./go/trivai
 )

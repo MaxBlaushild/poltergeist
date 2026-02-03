@@ -28,6 +28,7 @@ type DbClient interface {
 	VerificationCode() VerificationCodeHandle
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
+	PointOfInterestImport() PointOfInterestImportHandle
 	InventoryItem() InventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
@@ -44,6 +45,7 @@ type DbClient interface {
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
+	TrackedQuest() TrackedQuestHandle
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserZoneReputation() UserZoneReputationHandle
@@ -72,6 +74,7 @@ type DbClient interface {
 	QuestAcceptanceV2() QuestAcceptanceV2Handle
 	MovementPattern() MovementPatternHandle
 	Quest() QuestHandle
+	QuestItemReward() QuestItemRewardHandle
 	QuestNode() QuestNodeHandle
 	QuestNodeChallenge() QuestNodeChallengeHandle
 	QuestNodeChild() QuestNodeChildHandle
@@ -277,6 +280,14 @@ type PointOfInterestChallengeHandle interface {
 	DeleteAllSubmissionsForUser(ctx context.Context, userID uuid.UUID) error
 }
 
+type PointOfInterestImportHandle interface {
+	Create(ctx context.Context, item *models.PointOfInterestImport) error
+	Update(ctx context.Context, item *models.PointOfInterestImport) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestImport, error)
+	FindRecent(ctx context.Context, limit int) ([]models.PointOfInterestImport, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.PointOfInterestImport, error)
+}
+
 type InventoryItemHandle interface {
 	CreateOrIncrementInventoryItem(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, inventoryItemID int, quantity int) error
 	UseInventoryItem(ctx context.Context, ownedInventoryItemID uuid.UUID) error
@@ -428,6 +439,13 @@ type TrackedPointOfInterestGroupHandle interface {
 	Create(ctx context.Context, pointOfInterestGroupID uuid.UUID, userID uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedPointOfInterestGroup, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type TrackedQuestHandle interface {
+	Create(ctx context.Context, questID uuid.UUID, userID uuid.UUID) error
+	Delete(ctx context.Context, questID uuid.UUID) error
+	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedQuest, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -657,15 +675,22 @@ type QuestHandle interface {
 	FindAll(ctx context.Context) ([]models.Quest, error)
 }
 
+type QuestItemRewardHandle interface {
+	ReplaceForQuest(ctx context.Context, questID uuid.UUID, rewards []models.QuestItemReward) error
+	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestItemReward, error)
+}
+
 type QuestNodeHandle interface {
 	Create(ctx context.Context, node *models.QuestNode) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNode, error)
 	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestNode, error)
+	DeleteByID(ctx context.Context, id uuid.UUID) error
 }
 
 type QuestNodeChallengeHandle interface {
 	Create(ctx context.Context, challenge *models.QuestNodeChallenge) error
 	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChallenge, error)
+	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
 
 type QuestNodeChildHandle interface {
@@ -673,6 +698,7 @@ type QuestNodeChildHandle interface {
 	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChild, error)
 	DeleteByQuestID(ctx context.Context, questID uuid.UUID) error
 	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
+	DeleteByNextNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
 
 type QuestNodeProgressHandle interface {
@@ -680,6 +706,7 @@ type QuestNodeProgressHandle interface {
 	FindByAcceptanceID(ctx context.Context, acceptanceID uuid.UUID) ([]models.QuestNodeProgress, error)
 	FindByAcceptanceAndNode(ctx context.Context, acceptanceID uuid.UUID, nodeID uuid.UUID) (*models.QuestNodeProgress, error)
 	MarkCompleted(ctx context.Context, id uuid.UUID) error
+	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
 
 type MovementPatternHandle interface {

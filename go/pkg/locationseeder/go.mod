@@ -1,6 +1,8 @@
 module github.com/MaxBlaushild/poltergeist/pkg/locationseeder
 
-go 1.18
+go 1.24.0
+
+toolchain go1.24.10
 
 replace (
 	github.com/MaxBlaushild/poltergeist/pkg/aws => ../aws
@@ -15,22 +17,31 @@ require (
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/deep_priest v0.0.0-00010101000000-000000000000
-	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/googlemaps v0.0.0
 	github.com/MaxBlaushild/poltergeist/pkg/models v0.0.0-00010101000000-000000000000
+	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
 )
 
 require (
-	github.com/MaxBlaushild/poltergeist/pkg/util v0.0.0-00010101000000-000000000000 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
+	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/pgx/v5 v5.3.1 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
+	github.com/jackc/pgx/v5 v5.5.5 // indirect
+	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	golang.org/x/crypto v0.8.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	github.com/lib/pq v1.11.1 // indirect
+	github.com/paulmach/orb v0.12.0 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
+	gorm.io/datatypes v1.2.7 // indirect
+	gorm.io/driver/mysql v1.5.6 // indirect
 	gorm.io/driver/postgres v1.5.2 // indirect
-	gorm.io/gorm v1.25.4 // indirect
+	gorm.io/gorm v1.30.0 // indirect
 )

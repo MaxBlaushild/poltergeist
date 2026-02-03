@@ -12,6 +12,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
@@ -56,12 +57,13 @@ func main() {
 	googlemapsClient := googlemaps.NewClient(cfg.Secret.GoogleMapsApiKey)
 	locationSeeder := locationseeder.NewClient(googlemapsClient, dbClient, deepPriest, awsClient)
 	dungeonmaster := dungeonmaster.NewClient(googlemapsClient, dbClient, deepPriest, locationSeeder, awsClient)
+	redisAddr := util.NormalizeRedisAddr(cfg.Public.RedisUrl)
 	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Public.RedisUrl,
+		Addr:     redisAddr,
 		Password: "",
 		DB:       0,
 	})
-	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
+	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
 	searchClient := search.NewSearchClient(dbClient, deepPriest)
 	livenessClient := liveness.NewClient(redisClient)
 	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient, livenessClient)

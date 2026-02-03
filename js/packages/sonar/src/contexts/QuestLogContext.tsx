@@ -160,7 +160,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
 
   const trackQuest = useCallback(async (questID: string) => {
     try {
-      await apiClient.post(`/sonar/trackedPointOfInterestGroups`, { pointOfInterestGroupID: questID });
+      await apiClient.post(`/sonar/trackedQuests`, { questId: questID });
       // Don't update state optimistically, wait for refreshQuestLog
       await refreshQuestLog();
     } catch (error) {
@@ -170,7 +170,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
 
   const untrackQuest = useCallback(async (questID: string) => {
     try {
-      await apiClient.delete(`/sonar/trackedPointOfInterestGroups/${questID}`);
+      await apiClient.delete(`/sonar/trackedQuests/${questID}`);
       await refreshQuestLog();
     } catch (error) {
       console.error('Error untracking quest:', error);
@@ -179,7 +179,7 @@ export const QuestLogContextProvider: React.FC<QuestLogProviderProps> = ({ child
 
   const untrackAllQuests = useCallback(async () => {
     try {
-      await apiClient.delete(`/sonar/trackedPointOfInterestGroups`);
+      await apiClient.delete(`/sonar/trackedQuests`);
       await refreshQuestLog();
     } catch (error) {
       console.error('Error untracking all quests:', error);

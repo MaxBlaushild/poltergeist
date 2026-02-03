@@ -14,6 +14,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/mapbox"
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 	"github.com/MaxBlaushild/poltergeist/pkg/useapi"
+	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/charicturist"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/chat"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
@@ -160,12 +161,13 @@ func NewServerFromDependencies(
 	var redisClient *redis.Client
 	var asyncClient *asynq.Client
 	if cfg.Public.RedisUrl != "" {
+		redisAddr := util.NormalizeRedisAddr(cfg.Public.RedisUrl)
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     cfg.Public.RedisUrl,
+			Addr:     redisAddr,
 			Password: "",
 			DB:       0,
 		})
-		asyncClient = asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl})
+		asyncClient = asynq.NewClient(asynq.RedisClientOpt{Addr: redisAddr})
 	}
 
 	searchClient := search.NewSearchClient(dbClient, deepPriest)

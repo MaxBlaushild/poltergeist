@@ -8,7 +8,7 @@ import { CharacterMapPicker } from './CharacterMapPicker.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
 import { ShopActionEditor } from './ShopActionEditor.tsx';
 
-mapboxgl.accessToken = 'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 interface CharacterLocationsMapProps {
   locations: [number, number][];

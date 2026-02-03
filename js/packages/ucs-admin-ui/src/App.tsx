@@ -35,6 +35,7 @@ import { UtilityClosetPuzzleAdmin } from './components/UtilityClosetPuzzle.tsx';
 import { FlaggedPhotos } from './components/FlaggedPhotos.tsx';
 import { PointOfInterest } from './components/PointOfInterest.tsx';
 import { PointOfInterestEditor } from './components/PointOfInterestEditor.tsx';
+import { Quests } from './components/Quests.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -81,12 +82,8 @@ const Navigation = () => {
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
-        <Link to="/fete-rooms" className="text-white hover:text-gray-300">Fete Rooms</Link>
-        <Link to="/fete-teams" className="text-white hover:text-gray-300">Fete Teams</Link>
-        <Link to="/fete-room-teams" className="text-white hover:text-gray-300">Team Room Unlocks</Link>
-        <Link to="/fete-room-linked-list-teams" className="text-white hover:text-gray-300">Fete Linked List</Link>
-        <Link to="/utility-closet-puzzle" className="text-white hover:text-gray-300">Utility Closet Puzzle</Link>
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
+        <Link to="/quests" className="text-white hover:text-gray-300">Quests</Link>
       </div>
     </nav>
   );
@@ -230,6 +227,11 @@ const router = createBrowserRouter([
       {
         path: "/points-of-interest/:id",
         element: <PointOfInterestEditor />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/quests",
+        element: <Quests />,
         loader: onlyAuthenticated,
       },
     ]

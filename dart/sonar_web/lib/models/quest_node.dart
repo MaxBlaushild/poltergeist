@@ -1,29 +1,49 @@
+import 'point_of_interest.dart';
 import 'quest_node_challenge.dart';
+
+class QuestNodePolygonPoint {
+  final double latitude;
+  final double longitude;
+
+  const QuestNodePolygonPoint({
+    required this.latitude,
+    required this.longitude,
+  });
+
+  factory QuestNodePolygonPoint.fromJson(Map<String, dynamic> json) {
+    return QuestNodePolygonPoint(
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}
 
 class QuestNode {
   final String id;
-  final String questId;
   final int orderIndex;
-  final String? pointOfInterestId;
-  final String? polygon;
+  final PointOfInterest? pointOfInterest;
+  final List<QuestNodePolygonPoint> polygon;
   final List<QuestNodeChallenge> challenges;
 
   const QuestNode({
     required this.id,
-    required this.questId,
     required this.orderIndex,
-    this.pointOfInterestId,
-    this.polygon,
+    this.pointOfInterest,
+    this.polygon = const [],
     this.challenges = const [],
   });
 
   factory QuestNode.fromJson(Map<String, dynamic> json) {
     return QuestNode(
       id: json['id'] as String? ?? '',
-      questId: json['questId'] as String? ?? '',
       orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
-      pointOfInterestId: json['pointOfInterestId'] as String?,
-      polygon: json['polygon'] as String?,
+      pointOfInterest: json['pointOfInterest'] is Map<String, dynamic>
+          ? PointOfInterest.fromJson(json['pointOfInterest'] as Map<String, dynamic>)
+          : null,
+      polygon: (json['polygon'] as List<dynamic>?)
+              ?.map((e) => QuestNodePolygonPoint.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       challenges: (json['challenges'] as List<dynamic>?)
               ?.map((e) => QuestNodeChallenge.fromJson(e as Map<String, dynamic>))
               .toList() ??

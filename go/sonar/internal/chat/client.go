@@ -19,6 +19,7 @@ const (
 	CaptureMessage       = "%s captured %s at tier %s."
 	CompleteTaskMessage  = "%s completed a task at %s."
 	CompleteQuestMessage = "%s completed a quest: %s."
+	CompleteQuestTaskMessage = "%s completed a quest task: %s."
 )
 
 type Client interface {
@@ -26,6 +27,8 @@ type Client interface {
 	AddUnlockMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, pointOfInterestID uuid.UUID) error
 	AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error
 	AddCompletedQuestMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, challenge *models.PointOfInterestChallenge) error
+	AddQuestNodeCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, quest *models.Quest, node *models.QuestNode) error
+	AddQuestCompletedMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, quest *models.Quest) error
 }
 
 func NewClient(dbClient db.DbClient, quartermaster quartermaster.Quartermaster) Client {
@@ -45,6 +48,10 @@ func (c *client) makePointOfInterestName(id uuid.UUID) string {
 
 func (c *client) makeInventoryItemName(id int) string {
 	return fmt.Sprintf("{InventoryItem|%d}", id)
+}
+
+func (c *client) makeQuestName(id uuid.UUID) string {
+	return fmt.Sprintf("{Quest|%s}", id)
 }
 
 func (c *client) makeChallengeTierName(tier int) string {
@@ -146,6 +153,67 @@ func (c *client) AddCaptureMessage(ctx context.Context, teamID *uuid.UUID, userI
 		)
 	}
 
+	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
+}
+
+func (c *client) AddQuestNodeCaptureMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, quest *models.Quest, node *models.QuestNode) error {
+	if quest == nil || node == nil {
+		return nil
+	}
+
+	var teamName string
+	var matchID *uuid.UUID
+	if userID != nil {
+		teamName = "You"
+		matchID = nil
+	} else {
+		team, err := c.dbClient.Team().GetByID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, team.ID)
+		if err != nil {
+			return err
+		}
+		teamName = c.makeTeamName(team.ID)
+		matchID = &teamMatch.MatchID
+	}
+
+	var target string
+	if node.PointOfInterestID != nil {
+		target = c.makePointOfInterestName(*node.PointOfInterestID)
+	} else {
+		target = c.makeQuestName(quest.ID)
+	}
+
+	message := fmt.Sprintf(CompleteQuestTaskMessage, teamName, target)
+	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
+}
+
+func (c *client) AddQuestCompletedMessage(ctx context.Context, teamID *uuid.UUID, userID *uuid.UUID, quest *models.Quest) error {
+	if quest == nil {
+		return nil
+	}
+
+	var teamName string
+	var matchID *uuid.UUID
+	if userID != nil {
+		teamName = "You"
+		matchID = nil
+	} else {
+		team, err := c.dbClient.Team().GetByID(ctx, *teamID)
+		if err != nil {
+			return err
+		}
+		teamMatch, err := c.dbClient.Match().FindForTeamID(ctx, team.ID)
+		if err != nil {
+			return err
+		}
+		teamName = c.makeTeamName(team.ID)
+		matchID = &teamMatch.MatchID
+	}
+
+	message := fmt.Sprintf(CompleteQuestMessage, teamName, quest.Name)
 	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }
 

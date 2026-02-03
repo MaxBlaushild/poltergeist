@@ -64,7 +64,11 @@ class CelebrationModalManager extends StatelessWidget {
       case 'questCompleted':
         final questName = data['questName'] as String? ?? 'Quest';
         final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
-        final itemAwarded = data['itemAwarded'] as Map<String, dynamic>?;
+        final itemsAwarded = (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList() ??
+            const [];
         final rewards = <Widget>[
           if (questName.isNotEmpty)
             Text(
@@ -75,9 +79,10 @@ class CelebrationModalManager extends StatelessWidget {
         if (goldAwarded > 0) {
           rewards.add(Text('+$goldAwarded Gold'));
         }
-        if (itemAwarded != null) {
-          final name = itemAwarded['name'] as String? ?? 'Item';
-          rewards.add(Text('+1 $name'));
+        for (final item in itemsAwarded) {
+          final name = item['name'] as String? ?? 'Item';
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+          rewards.add(Text('+$quantity $name'));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

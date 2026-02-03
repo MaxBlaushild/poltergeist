@@ -25,6 +25,7 @@ class PointOfInterest {
   final String? clue;
   final String? originalName;
   final String? googleMapsPlaceId;
+  final String? googleMapsPlaceName;
   final List<PoiTag> tags;
   final List<Character> characters;
 
@@ -38,6 +39,7 @@ class PointOfInterest {
     this.clue,
     this.originalName,
     this.googleMapsPlaceId,
+    this.googleMapsPlaceName,
     this.tags = const [],
     this.characters = const [],
   });
@@ -75,6 +77,7 @@ class PointOfInterest {
       clue: json['clue'] as String?,
       originalName: json['originalName'] as String?,
       googleMapsPlaceId: json['googleMapsPlaceId'] as String?,
+      googleMapsPlaceName: json['googleMapsPlaceName'] as String?,
       tags: tags,
       characters: characters,
     );

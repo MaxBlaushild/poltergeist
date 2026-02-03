@@ -43,7 +43,8 @@ type SubmissionResult struct {
 type GameEngineClient interface {
 	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
-	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemAwarded *models.ItemAwarded, err error)
+	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, err error)
+	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error
 }
 
 type gameEngineClient struct {
@@ -603,76 +604,81 @@ func (c *gameEngineClient) addTaskCompleteMessage(ctx context.Context, submissio
 	return nil
 }
 
-func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemAwarded *models.ItemAwarded, err error) {
-	group, err := c.db.PointOfInterestGroup().FindByID(ctx, pointOfInterestGroupID)
+func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, questID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, err error) {
+	quest, err := c.db.Quest().FindByID(ctx, questID)
+	if err != nil {
+		return 0, nil, err
+	}
+	if quest == nil {
+		return 0, nil, fmt.Errorf("quest not found")
+	}
+
+	var zoneID uuid.UUID
+	if quest.ZoneID != nil {
+		zoneID = *quest.ZoneID
+	} else {
+		for _, node := range quest.Nodes {
+			if node.PointOfInterestID == nil {
+				continue
+			}
+			zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, *node.PointOfInterestID)
+			if err == nil {
+				zoneID = zone.ZoneID
+				break
+			}
+		}
+	}
+	if zoneID == uuid.Nil {
+		return 0, nil, fmt.Errorf("quest has no zone for reward distribution")
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, &userID, zoneID)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	rootMember := group.GetRootMember()
-	if rootMember == nil {
-		return 0, nil, fmt.Errorf("quest group has no root member")
-	}
-
-	zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, rootMember.PointOfInterestID)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	partyMembers, err := c.getPartyMembers(ctx, &userID, zone.ZoneID)
-	if err != nil {
-		return 0, nil, err
-	}
-
-	goldAwarded = group.Gold
+	goldAwarded = quest.Gold
 	if goldAwarded > 0 {
 		for _, member := range partyMembers {
 			if err := c.db.User().AddGold(ctx, member.ID, goldAwarded); err != nil {
-				return goldAwarded, itemAwarded, err
+				return goldAwarded, itemsAwarded, err
 			}
 		}
 	}
 
-	if group.InventoryItemID != nil && *group.InventoryItemID > 0 {
-		item, err := c.quartermaster.FindItemForItemID(*group.InventoryItemID)
-		if err == nil {
-			itemAwarded = &models.ItemAwarded{
-				ID:       item.ID,
-				Name:     item.Name,
-				ImageURL: item.ImageURL,
+	itemsAwarded = []models.ItemAwarded{}
+	for _, reward := range quest.ItemRewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		item := reward.InventoryItem
+		if item.ID == 0 {
+			itemRecord, err := c.db.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+			if err != nil {
+				return goldAwarded, itemsAwarded, err
 			}
-			for _, member := range partyMembers {
-				_, err := c.quartermaster.GetItemSpecificItem(ctx, teamID, &member.ID, *group.InventoryItemID)
-				if err != nil {
-					return goldAwarded, itemAwarded, err
-				}
-				activityData, err := json.Marshal(models.ItemReceivedActivity{
-					ItemID:   item.ID,
-					ItemName: item.Name,
-				})
-				if err != nil {
-					return goldAwarded, itemAwarded, err
-				}
-				if err := c.db.Activity().CreateActivity(ctx, models.Activity{
-					UserID:       member.ID,
-					ActivityType: models.ActivityTypeItemReceived,
-					Data:         activityData,
-					Seen:         false,
-				}); err != nil {
-					return goldAwarded, itemAwarded, err
-				}
+			item = *itemRecord
+		}
+		for _, member := range partyMembers {
+			if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &member.ID, reward.InventoryItemID, reward.Quantity); err != nil {
+				return goldAwarded, itemsAwarded, err
 			}
 		}
+		itemsAwarded = append(itemsAwarded, models.ItemAwarded{
+			ID:       item.ID,
+			Name:     item.Name,
+			ImageURL: item.ImageURL,
+			Quantity: reward.Quantity,
+		})
 	}
 
-	// Create QuestCompleted activity for each party member
 	questActivityData, err := json.Marshal(models.QuestCompletedActivity{
-		QuestID:     pointOfInterestGroupID,
-		GoldAwarded: goldAwarded,
-		ItemAwarded: itemAwarded,
+		QuestID:      quest.ID,
+		GoldAwarded:  goldAwarded,
+		ItemsAwarded: itemsAwarded,
 	})
 	if err != nil {
-		return goldAwarded, itemAwarded, err
+		return goldAwarded, itemsAwarded, err
 	}
 	for _, member := range partyMembers {
 		if err := c.db.Activity().CreateActivity(ctx, models.Activity{
@@ -681,11 +687,11 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 			Data:         questActivityData,
 			Seen:         false,
 		}); err != nil {
-			return goldAwarded, itemAwarded, err
+			return goldAwarded, itemsAwarded, err
 		}
 	}
 
-	return goldAwarded, itemAwarded, nil
+	return goldAwarded, itemsAwarded, nil
 }
 
 func (c *gameEngineClient) trackQuestForPartyMembers(ctx context.Context, challenge *models.PointOfInterestChallenge, userID *uuid.UUID) error {
@@ -820,4 +826,215 @@ func (c *gameEngineClient) awardReputationPoints(ctx context.Context, submission
 	}
 
 	return nil
+}
+
+func (c *gameEngineClient) awardExperiencePointsForZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID, questCompleted bool) (int, error) {
+	experiencePoints := BaseExperiencePointsAwardedForSuccessfulSubmission
+	if questCompleted {
+		experiencePoints += BaseExperiencePointsAwardedForFinishedQuest
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, &userID, zoneID)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, member := range partyMembers {
+		userLevel, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, member.ID, experiencePoints)
+		if err != nil {
+			return 0, err
+		}
+
+		if userLevel.LevelsGained > 0 {
+			activityData, err := json.Marshal(models.LevelUpActivity{
+				NewLevel: userLevel.Level,
+			})
+			if err != nil {
+				return 0, err
+			}
+			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+				UserID:       member.ID,
+				ActivityType: models.ActivityTypeLevelUp,
+				Data:         activityData,
+				Seen:         false,
+			}); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return experiencePoints, nil
+}
+
+func (c *gameEngineClient) awardReputationPointsForZone(ctx context.Context, userID uuid.UUID, zone *models.Zone, questCompleted bool) (int, error) {
+	if zone == nil {
+		return 0, fmt.Errorf("zone is required")
+	}
+	reputationPoints := BaseReputationPointsAwardedForSuccessfulSubmission
+	if questCompleted {
+		reputationPoints += BaseReputationPointsAwardedForFinishedQuest
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, &userID, zone.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, member := range partyMembers {
+		userZoneReputation, err := c.db.UserZoneReputation().ProcessReputationPointAdditions(ctx, member.ID, zone.ID, reputationPoints)
+		if err != nil {
+			return 0, err
+		}
+
+		if userZoneReputation.LevelsGained > 0 {
+			activityData, err := json.Marshal(models.ReputationUpActivity{
+				NewLevel: userZoneReputation.Level,
+				ZoneName: zone.Name,
+				ZoneID:   zone.ID,
+			})
+			if err != nil {
+				return 0, err
+			}
+			if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+				UserID:       member.ID,
+				ActivityType: models.ActivityTypeReputationUp,
+				Data:         activityData,
+				Seen:         false,
+			}); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return reputationPoints, nil
+}
+
+func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error {
+	if quest == nil || node == nil || challenge == nil {
+		return fmt.Errorf("quest, node, and challenge are required")
+	}
+
+	var zone *models.Zone
+	var currentPOI *models.PointOfInterest
+	if node.PointOfInterestID != nil {
+		poi, err := c.db.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
+		if err != nil {
+			return err
+		}
+		currentPOI = poi
+		zoneInfo, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, poi.ID)
+		if err != nil {
+			return err
+		}
+		zone, err = c.db.Zone().FindByID(ctx, zoneInfo.ZoneID)
+		if err != nil {
+			return err
+		}
+	} else if quest.ZoneID != nil {
+		z, err := c.db.Zone().FindByID(ctx, *quest.ZoneID)
+		if err != nil {
+			return err
+		}
+		zone = z
+	}
+	if zone == nil {
+		return fmt.Errorf("quest node has no zone context")
+	}
+
+	experienceAwarded, err := c.awardExperiencePointsForZone(ctx, userID, zone.ID, questCompleted)
+	if err != nil {
+		return err
+	}
+	reputationAwarded, err := c.awardReputationPointsForZone(ctx, userID, zone, questCompleted)
+	if err != nil {
+		return err
+	}
+
+	itemsAwarded := []models.ItemAwarded{}
+	goldAwarded := 0
+
+	var currentPOIInfo models.POIInfo
+	if currentPOI != nil {
+		currentPOIInfo = models.POIInfo{
+			ID:       currentPOI.ID,
+			Name:     currentPOI.Name,
+			ImageURL: currentPOI.ImageUrl,
+		}
+	}
+
+	var nextPOI *models.POIInfo
+	nextNode := c.nextQuestNode(quest, node)
+	if nextNode != nil && nextNode.PointOfInterestID != nil {
+		poi, err := c.db.PointOfInterest().FindByID(ctx, *nextNode.PointOfInterestID)
+		if err == nil && poi != nil {
+			nextPOI = &models.POIInfo{
+				ID:       poi.ID,
+				Name:     poi.Name,
+				ImageURL: poi.ImageUrl,
+			}
+		}
+	}
+
+	challengeActivityData, err := json.Marshal(models.ChallengeCompletedActivity{
+		ChallengeID:       challenge.ID,
+		Successful:        true,
+		Reason:            "Challenge completed successfully!",
+		SubmitterID:       &userID,
+		ExperienceAwarded: experienceAwarded,
+		ReputationAwarded: reputationAwarded,
+		ItemsAwarded:      itemsAwarded,
+		GoldAwarded:       goldAwarded,
+		QuestID:           quest.ID,
+		QuestName:         quest.Name,
+		QuestCompleted:    questCompleted,
+		CurrentPOI:        currentPOIInfo,
+		NextPOI:           nextPOI,
+		ZoneID:            zone.ID,
+		ZoneName:          zone.Name,
+	})
+	if err != nil {
+		return err
+	}
+
+	partyMembers, err := c.getPartyMembers(ctx, &userID, zone.ID)
+	if err != nil {
+		return err
+	}
+	for _, member := range partyMembers {
+		if err := c.db.Activity().CreateActivity(ctx, models.Activity{
+			UserID:       member.ID,
+			ActivityType: models.ActivityTypeChallengeCompleted,
+			Data:         challengeActivityData,
+			Seen:         false,
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := c.chatClient.AddQuestNodeCaptureMessage(ctx, teamID, &userID, quest, node); err != nil {
+		return err
+	}
+	if questCompleted {
+		if err := c.chatClient.AddQuestCompletedMessage(ctx, teamID, &userID, quest); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *gameEngineClient) nextQuestNode(quest *models.Quest, current *models.QuestNode) *models.QuestNode {
+	if quest == nil || current == nil {
+		return nil
+	}
+	var next *models.QuestNode
+	for i := range quest.Nodes {
+		node := &quest.Nodes[i]
+		if node.OrderIndex > current.OrderIndex {
+			if next == nil || node.OrderIndex < next.OrderIndex {
+				next = node
+			}
+		}
+	}
+	return next
 }

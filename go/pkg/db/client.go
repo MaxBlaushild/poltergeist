@@ -31,6 +31,7 @@ type client struct {
 	verificationCodeHandle            *verificationCodeHandler
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
+	pointOfInterestImportHandle       *pointOfInterestImportHandle
 	inventoryItemHandle               *inventoryItemHandler
 	auditItemHandle                   *auditItemHandler
 	imageGenerationHandle             *imageGenerationHandle
@@ -47,6 +48,7 @@ type client struct {
 	questArchetypeNodeChallengeHandle *questArchetypeNodeChallengeHandle
 	zoneQuestArchetypeHandle          *zoneQuestArchetypeHandle
 	trackedPointOfInterestGroupHandle *trackedPointOfInterestGroupHandle
+	trackedQuestHandle                *trackedQuestHandle
 	pointHandle                       *pointHandler
 	userLevelHandle                   *userLevelHandler
 	userZoneReputationHandle          *userZoneReputationHandler
@@ -67,6 +69,7 @@ type client struct {
 	questAcceptanceHandle             *questAcceptanceHandle
 	questAcceptanceV2Handle           *questAcceptanceV2Handle
 	questHandle                       *questHandle
+	questItemRewardHandle             *questItemRewardHandle
 	questNodeHandle                   *questNodeHandle
 	questNodeChallengeHandle          *questNodeChallengeHandle
 	questNodeChildHandle              *questNodeChildHandle
@@ -144,6 +147,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		verificationCodeHandle:            &verificationCodeHandler{db: db},
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
+		pointOfInterestImportHandle:       &pointOfInterestImportHandle{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
@@ -160,6 +164,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questArchetypeNodeChallengeHandle: &questArchetypeNodeChallengeHandle{db: db},
 		zoneQuestArchetypeHandle:          &zoneQuestArchetypeHandle{db: db},
 		trackedPointOfInterestGroupHandle: &trackedPointOfInterestGroupHandle{db: db},
+		trackedQuestHandle:                &trackedQuestHandle{db: db},
 		pointHandle:                       &pointHandler{db: db},
 		userLevelHandle:                   &userLevelHandler{db: db},
 		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
@@ -187,6 +192,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questAcceptanceHandle:             &questAcceptanceHandle{db: db},
 		questAcceptanceV2Handle:           &questAcceptanceV2Handle{db: db},
 		questHandle:                       &questHandle{db: db},
+		questItemRewardHandle:             &questItemRewardHandle{db: db},
 		questNodeHandle:                   &questNodeHandle{db: db},
 		questNodeChallengeHandle:          &questNodeChallengeHandle{db: db},
 		questNodeChildHandle:              &questNodeChildHandle{db: db},
@@ -300,6 +306,10 @@ func (c *client) TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
 	return c.trackedPointOfInterestGroupHandle
 }
 
+func (c *client) TrackedQuest() TrackedQuestHandle {
+	return c.trackedQuestHandle
+}
+
 func (c *client) ZoneQuestArchetype() ZoneQuestArchetypeHandle {
 	return c.zoneQuestArchetypeHandle
 }
@@ -358,6 +368,10 @@ func (c *client) InventoryItem() InventoryItemHandle {
 
 func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {
 	return c.pointOfInterestChallengeHandle
+}
+
+func (c *client) PointOfInterestImport() PointOfInterestImportHandle {
+	return c.pointOfInterestImportHandle
 }
 
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {
@@ -466,6 +480,10 @@ func (c *client) MovementPattern() MovementPatternHandle {
 
 func (c *client) Quest() QuestHandle {
 	return c.questHandle
+}
+
+func (c *client) QuestItemReward() QuestItemRewardHandle {
+	return c.questItemRewardHandle
 }
 
 func (c *client) QuestNode() QuestNodeHandle {

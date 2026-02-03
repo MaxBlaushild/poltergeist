@@ -56,17 +56,17 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         final tracked = ql.quests
             .where((q) => ql.trackedQuestIds.contains(q.id))
             .toList();
-        final discoveredIds = <String>{};
-        for (final d in discoveries.discoveries) {
-          discoveredIds.add(d.pointOfInterestId);
-        }
+        final discoveredIds = <String>{
+          for (final d in discoveries.discoveries) d.pointOfInterestId
+        };
 
         if (tracked.isEmpty) return const SizedBox.shrink();
 
         final screenWidth = MediaQuery.sizeOf(context).width;
         const rightMargin = 16.0;
         const minSideMargin = 16.0;
-        final maxAllowedWidth = (screenWidth - rightMargin - minSideMargin).clamp(80.0, 288.0);
+        final maxAllowedWidth = (screenWidth - rightMargin - minSideMargin)
+            .clamp(80.0, 288.0);
         final width = _expanded ? maxAllowedWidth : 80.0;
 
         return AnimatedContainer(
@@ -92,9 +92,10 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                       children: [
                         Text(
                           'Quests',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                color: Colors.white,
-                              ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(color: Colors.white),
                         ),
                         Icon(
                           _expanded ? Icons.expand_less : Icons.expand_more,
@@ -159,6 +160,9 @@ class _TrackedQuestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final node = quest.currentNode;
+    final poi = node?.pointOfInterest;
+
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -176,110 +180,106 @@ class _TrackedQuestCard extends StatelessWidget {
                 ),
           ),
           const SizedBox(height: 8),
-          _QuestNodeTile(
-            node: quest.rootNode,
-            discoveredIds: discoveredIds,
-            onPoITap: onPoITap,
-            indent: 0,
-          ),
+          if (node == null)
+            const Text(
+              'Quest completed!',
+              style: TextStyle(color: Colors.white70),
+            )
+          else if (poi != null)
+            _QuestPoiTile(
+              poi: poi,
+              discovered: discoveredIds.contains(poi.id),
+              onTap: () => onPoITap(poi),
+              challenges: node.challenges.map((c) => c.question).toList(),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Reach the highlighted area to submit your answer.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.white70),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _QuestNodeTile extends StatelessWidget {
-  const _QuestNodeTile({
-    required this.node,
-    required this.discoveredIds,
-    required this.onPoITap,
-    this.indent = 0,
+class _QuestPoiTile extends StatelessWidget {
+  const _QuestPoiTile({
+    required this.poi,
+    required this.discovered,
+    required this.onTap,
+    required this.challenges,
   });
 
-  final QuestNode node;
-  final Set<String> discoveredIds;
-  final void Function(PointOfInterest) onPoITap;
-  final int indent;
+  final PointOfInterest poi;
+  final bool discovered;
+  final VoidCallback onTap;
+  final List<String> challenges;
 
   @override
   Widget build(BuildContext context) {
-    final poi = node.pointOfInterest;
-    final discovered = discoveredIds.contains(poi.id);
     final imageUrl = discovered &&
             (poi.imageURL != null && poi.imageURL!.isNotEmpty)
         ? poi.imageURL!
         : _placeholderImageUrl;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => onPoITap(poi),
-          borderRadius: BorderRadius.circular(6),
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 8.0 + indent * 16,
-              top: 4,
-              bottom: 4,
-              right: 8,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.network(
-                    imageUrl,
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 24,
-                      height: 24,
-                      color: Colors.grey.shade700,
-                      child: const Icon(Icons.place, size: 14, color: Colors.white70),
-                    ),
-                  ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4, right: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.network(
+                imageUrl,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 28,
+                  height: 28,
+                  color: Colors.grey.shade700,
+                  child: const Icon(Icons.place, size: 14, color: Colors.white70),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        poi.name,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                      ...node.objectives.map(
-                        (o) => Text(
-                          '${o.challenge.question}${o.isCompleted ? ' ✅' : ''}',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.white70,
-                                fontSize: 11,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        ...node.objectives
-            .where((o) => o.isCompleted && o.nextNode != null)
-            .map(
-              (o) => _QuestNodeTile(
-                node: o.nextNode!,
-                discoveredIds: discoveredIds,
-                onPoITap: onPoITap,
-                indent: indent + 1,
               ),
             ),
-      ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    poi.name,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  ...challenges.map(
+                    (q) => Text(
+                      q,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.white70),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 16, color: Colors.white70),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -69,7 +69,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
 
         for (final q in ql.quests) {
           if (ql.trackedQuestIds.contains(q.id)) continue;
-          final tagNames = getQuestTags(q);
+          final tagNames = _questTags(q);
           var added = false;
           for (final g in tags.tagGroups) {
             final hasMatch = tagNames.any((tName) => tags.tags
@@ -87,8 +87,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TabBar(
-                tabs: const [
+              const TabBar(
+                tabs: [
                   Tab(text: 'Quests'),
                   Tab(text: 'Filters'),
                 ],
@@ -164,25 +164,21 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     );
   }
 
+  List<String> _questTags(Quest quest) {
+    final poi = quest.currentNode?.pointOfInterest;
+    if (poi == null) return [];
+    return poi.tags.map((t) => t.name).toList();
+  }
+
   Widget _buildQuestDetail(BuildContext context, Quest quest) {
     return Consumer2<QuestLogProvider, DiscoveriesProvider>(
       builder: (context, ql, discoveries, _) {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
-        final discoveredIds = <String>{};
-        for (final d in discoveries.discoveries) {
-          discoveredIds.add(d.pointOfInterestId);
-        }
-
-        var completed = 0;
-        var total = 0;
-        void count(QuestNode node) {
-          total++;
-          if (node.objectives.every((o) => o.isCompleted)) completed++;
-          for (final o in node.objectives) {
-            if (o.nextNode != null) count(o.nextNode!);
-          }
-        }
-        count(quest.rootNode);
+        final node = quest.currentNode;
+        final poi = node?.pointOfInterest;
+        final discoveredIds = <String>{
+          for (final d in discoveries.discoveries) d.pointOfInterestId
+        };
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -205,8 +201,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(
-                  quest.imageUrl.isNotEmpty
-                      ? quest.imageUrl
+                  quest.imageUrl != null && quest.imageUrl!.isNotEmpty
+                      ? quest.imageUrl!
                       : _placeholderImageUrl,
                   height: 180,
                   width: double.infinity,
@@ -223,7 +219,11 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Tasks completed: $completed/$total',
+                    quest.readyToTurnIn
+                        ? 'Ready to turn in'
+                        : quest.isAccepted
+                            ? 'In progress'
+                            : 'Not accepted',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   FilledButton(
@@ -239,46 +239,156 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 ],
               ),
               const SizedBox(height: 16),
-              DefaultTabController(
-                length: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const TabBar(
-                      tabs: [
-                        Tab(text: 'Description'),
-                        Tab(text: 'Tasks'),
-                      ],
-                    ),
-                    SizedBox(
-                      height: 320,
-                      child: TabBarView(
-                        children: [
-                          SingleChildScrollView(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: Text(
-                              quest.description,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                          ),
-                          SingleChildScrollView(
-                            padding: const EdgeInsets.only(top: 12),
-                            child: _QuestNodeContent(
-                              node: quest.rootNode,
-                              discoveredIds: discoveredIds,
-                              onPoITap: _focusPoI,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              Text(
+                quest.description,
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
+              const SizedBox(height: 16),
+              Text(
+                'Rewards',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              if (quest.gold > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '+${quest.gold} Gold',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              if (quest.itemRewards.isNotEmpty)
+                ...quest.itemRewards.map((reward) {
+                  final itemName = reward.inventoryItem?.name ?? 'Item';
+                  final qty = reward.quantity > 0 ? reward.quantity : 1;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '+$qty $itemName',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  );
+                }),
+              if (quest.gold <= 0 && quest.itemRewards.isEmpty)
+                Text(
+                  'No rewards listed.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+                ),
+              const SizedBox(height: 16),
+              if (node == null)
+                Text(
+                  'Quest completed! Turn it in for rewards.',
+                  style: Theme.of(context).textTheme.titleMedium,
+                )
+              else ...[
+                Text(
+                  'Current Objective',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                if (poi != null)
+                  _QuestPoiCard(
+                    poi: poi,
+                    discovered: discoveredIds.contains(poi.id),
+                    onTap: () => _focusPoI(poi),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.shade200),
+                    ),
+                    child: const Text(
+                      'Reach the highlighted quest area to submit your answer.',
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                Text(
+                  'Challenges',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                ...node.challenges.map(
+                  (c) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '• ${c.question}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
       },
+    );
+  }
+}
+
+class _QuestPoiCard extends StatelessWidget {
+  const _QuestPoiCard({
+    required this.poi,
+    required this.discovered,
+    required this.onTap,
+  });
+
+  final PointOfInterest poi;
+  final bool discovered;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = discovered && poi.imageURL != null && poi.imageURL!.isNotEmpty
+        ? poi.imageURL!
+        : _placeholderImageUrl;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                imageUrl,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 48,
+                  height: 48,
+                  color: Colors.grey.shade300,
+                  child: const Icon(Icons.place, size: 20),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                poi.name,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -365,13 +475,17 @@ class _QuestAccordion extends StatelessWidget {
                             child: Row(
                               children: [
                                 Icon(
-                                  q.isCompleted
+                                  q.readyToTurnIn
                                       ? Icons.check_circle
-                                      : Icons.radio_button_unchecked,
+                                      : q.isAccepted
+                                          ? Icons.play_circle_fill
+                                          : Icons.radio_button_unchecked,
                                   size: 22,
-                                  color: q.isCompleted
+                                  color: q.readyToTurnIn
                                       ? Colors.green
-                                      : Colors.grey.shade400,
+                                      : q.isAccepted
+                                          ? Colors.orange
+                                          : Colors.grey.shade400,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -391,96 +505,6 @@ class _QuestAccordion extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _QuestNodeContent extends StatelessWidget {
-  const _QuestNodeContent({
-    required this.node,
-    required this.discoveredIds,
-    required this.onPoITap,
-  });
-
-  final QuestNode node;
-  final Set<String> discoveredIds;
-  final void Function(PointOfInterest) onPoITap;
-
-  @override
-  Widget build(BuildContext context) {
-    final poi = node.pointOfInterest;
-    final discovered = discoveredIds.contains(poi.id);
-    final imageUrl = discovered &&
-            (poi.imageURL != null && poi.imageURL!.isNotEmpty)
-        ? poi.imageURL!
-        : _placeholderImageUrl;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => onPoITap(poi),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.network(
-                    imageUrl,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 40,
-                      height: 40,
-                      color: Colors.grey.shade300,
-                      child: const Icon(Icons.place, size: 20),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        poi.name,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      ...node.objectives.map(
-                        (o) => Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            '${o.challenge.question}${o.isCompleted ? ' ✅' : ''}',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        ...node.objectives
-            .where((o) => o.isCompleted && o.nextNode != null)
-            .map(
-              (o) => Padding(
-                padding: const EdgeInsets.only(left: 24),
-                child: _QuestNodeContent(
-                  node: o.nextNode!,
-                  discoveredIds: discoveredIds,
-                  onPoITap: onPoITap,
-                ),
-              ),
-            ),
-      ],
     );
   }
 }

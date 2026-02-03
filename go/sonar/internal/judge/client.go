@@ -36,6 +36,7 @@ const (
 
 type Client interface {
 	JudgeSubmission(ctx context.Context, request JudgeSubmissionRequest) (*JudgeSubmissionResponse, error)
+	JudgeFreeform(ctx context.Context, request FreeformJudgeSubmissionRequest) (*FreeformJudgeSubmissionResponse, error)
 }
 
 type client struct {
@@ -63,6 +64,20 @@ type JudgeSubmissionResponse struct {
 }
 
 func (r *JudgeSubmissionResponse) IsSuccessful() bool {
+	return r.Judgement.Judgement
+}
+
+type FreeformJudgeSubmissionRequest struct {
+	Question           string
+	ImageSubmissionUrl string
+	TextSubmission     string
+}
+
+type FreeformJudgeSubmissionResponse struct {
+	Judgement SubmissionJudgement `json:"judgement"`
+}
+
+func (r *FreeformJudgeSubmissionResponse) IsSuccessful() bool {
 	return r.Judgement.Judgement
 }
 
@@ -153,6 +168,35 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 	}, nil
 }
 
+func (c *client) JudgeFreeform(ctx context.Context, request FreeformJudgeSubmissionRequest) (*FreeformJudgeSubmissionResponse, error) {
+	prompt := c.makeJudgementMessageForQuestion(request.Question, request.TextSubmission, request.ImageSubmissionUrl)
+
+	var answer *deep_priest.Answer
+	var err error
+	if request.ImageSubmissionUrl != "" {
+		answer, err = c.deepPriest.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
+			Question: prompt,
+			Image:    request.ImageSubmissionUrl,
+		})
+	} else {
+		answer, err = c.deepPriest.PetitionTheFount(&deep_priest.Question{
+			Question: prompt,
+		})
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	judgementResult := SubmissionJudgement{}
+	if err := json.Unmarshal([]byte(answer.Answer), &judgementResult); err != nil {
+		return nil, fmt.Errorf("error decoding judgement response (%s): %w", answer.Answer, err)
+	}
+
+	return &FreeformJudgeSubmissionResponse{
+		Judgement: judgementResult,
+	}, nil
+}
+
 func (c *client) makeJudgementMessage(challenge *models.PointOfInterestChallenge, request JudgeSubmissionRequest) string {
 	textMessage := ""
 	imageMessage := ""
@@ -166,4 +210,17 @@ func (c *client) makeJudgementMessage(challenge *models.PointOfInterestChallenge
 	}
 
 	return fmt.Sprintf(JudgementMessageTemplate, challenge.Question, textMessage, imageMessage)
+}
+
+func (c *client) makeJudgementMessageForQuestion(question string, textSubmission string, imageSubmissionUrl string) string {
+	textMessage := ""
+	imageMessage := ""
+
+	if textSubmission != "" {
+		textMessage = fmt.Sprintf("Here is the text part of the submission: '%s'", textSubmission)
+	}
+	if imageSubmissionUrl != "" {
+		imageMessage = "You should also look at the image included as part of the submission."
+	}
+	return fmt.Sprintf(JudgementMessageTemplate, question, textMessage, imageMessage)
 }

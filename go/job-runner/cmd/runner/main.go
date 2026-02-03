@@ -70,8 +70,10 @@ func main() {
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
+	generateInventoryItemImageProcessor := processors.NewGenerateInventoryItemImageProcessor(dbClient, deepPriestClient, awsClient)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
+	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient)
 
 	// Initialize Ethereum client for blockchain transaction checking (read-only)
 	var checkBlockchainTransactionsProcessor *processors.CheckBlockchainTransactionsProcessor
@@ -101,8 +103,10 @@ func main() {
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
+	mux.Handle(jobs.GenerateInventoryItemImageTaskType, &generateInventoryItemImageProcessor)
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
+	mux.Handle(jobs.ImportPointOfInterestTaskType, importPointOfInterestProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
 	}

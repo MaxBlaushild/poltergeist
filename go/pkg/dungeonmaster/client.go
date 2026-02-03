@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
@@ -63,13 +64,13 @@ func (c *client) GenerateQuest(
 
 	log.Println("Creating quest")
 	quest := &models.Quest{
-		ID:                   uuid.New(),
-		CreatedAt:            time.Now(),
-		UpdatedAt:            time.Now(),
-		Name:                 "Quest",
-		Description:          "A quest to complete",
-		ZoneID:               &zone.ID,
-		QuestArchetypeID:     &questArchetypeID,
+		ID:                    uuid.New(),
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
+		Name:                  "Quest",
+		Description:           "A quest to complete",
+		ZoneID:                &zone.ID,
+		QuestArchetypeID:      &questArchetypeID,
 		QuestGiverCharacterID: questGiverCharacterID,
 	}
 	if err := c.dbClient.Quest().Create(ctx, quest); err != nil {
@@ -132,6 +133,7 @@ func (c *client) processQuestNode(
 	locations *[]string,
 	descriptions *[]string,
 	challenges *[]string,
+	quest *models.Quest,
 	usedPOIs map[uuid.UUID]bool,
 	orderIndex *int,
 	nodeMap map[uuid.UUID]uuid.UUID,
@@ -189,11 +191,11 @@ func (c *client) processQuestNode(
 	} else {
 		questNodeID = uuid.New()
 		node := &models.QuestNode{
-			ID:               questNodeID,
-			CreatedAt:        time.Now(),
-			UpdatedAt:        time.Now(),
-			QuestID:          quest.ID,
-			OrderIndex:       *orderIndex,
+			ID:                questNodeID,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+			QuestID:           quest.ID,
+			OrderIndex:        *orderIndex,
 			PointOfInterestID: &pointOfInterest.ID,
 		}
 		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
@@ -227,7 +229,7 @@ func (c *client) processQuestNode(
 			Question:    randomChallenge,
 			Reward:      allotedChallenge.Reward,
 		}
-		err := c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
+		err = c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {
 			log.Printf("Error creating challenge: %v", err)
 			return err

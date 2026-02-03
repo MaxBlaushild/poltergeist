@@ -10,6 +10,7 @@ export const InventoryItems = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateItem, setShowCreateItem] = useState(false);
+  const [showGenerateItem, setShowGenerateItem] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
@@ -28,9 +29,28 @@ export const InventoryItems = () => {
     unlockTier: undefined as number | undefined,
   });
 
+  const [generationData, setGenerationData] = useState({
+    name: '',
+    description: '',
+    rarityTier: 'Common' as string,
+  });
+
   useEffect(() => {
     fetchItems();
   }, []);
+
+  useEffect(() => {
+    const hasPending = items.some(item =>
+      ['queued', 'in_progress'].includes(item.imageGenerationStatus || '')
+    );
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      fetchItems();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [items]);
 
   useEffect(() => {
     if (searchQuery === '') {
@@ -71,6 +91,14 @@ export const InventoryItems = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const resetGenerationForm = () => {
+    setGenerationData({
+      name: '',
+      description: '',
+      rarityTier: 'Common',
+    });
   };
 
   const handleCreateItem = async () => {
@@ -153,6 +181,32 @@ export const InventoryItems = () => {
     }
   };
 
+  const handleGenerateItem = async () => {
+    try {
+      const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items/generate', {
+        name: generationData.name,
+        description: generationData.description,
+        rarityTier: generationData.rarityTier,
+      });
+      setItems([...items, newItem]);
+      setShowGenerateItem(false);
+      resetGenerationForm();
+    } catch (error) {
+      console.error('Error generating inventory item:', error);
+      alert('Error generating inventory item. Please check all required fields.');
+    }
+  };
+
+  const handleRegenerateImage = async (item: InventoryItem) => {
+    try {
+      const updated = await apiClient.post<InventoryItem>(`/sonar/inventory-items/${item.id}/regenerate`, {});
+      setItems(items.map(i => i.id === item.id ? updated : i));
+    } catch (error) {
+      console.error('Error regenerating inventory item image:', error);
+      alert('Error regenerating inventory item image.');
+    }
+  };
+
   const handleDeleteItem = async (item: InventoryItem) => {
     setItemToDelete(item);
     setShowDeleteConfirm(true);
@@ -205,6 +259,23 @@ export const InventoryItems = () => {
     }
   };
 
+  const formatGenerationStatus = (status?: string) => {
+    switch (status) {
+      case 'queued':
+        return 'Queued';
+      case 'in_progress':
+        return 'Generating';
+      case 'complete':
+        return 'Complete';
+      case 'failed':
+        return 'Failed';
+      case 'none':
+        return 'Not requested';
+      default:
+        return 'Unknown';
+    }
+  };
+
   if (loading) {
     return <div className="m-10">Loading inventory items...</div>;
   }
@@ -246,6 +317,19 @@ export const InventoryItems = () => {
               margin: '0 0 15px 0',
               color: '#333'
             }}>{item.name}</h2>
+
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              ID: {item.id}
+            </p>
+
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Image Status: {formatGenerationStatus(item.imageGenerationStatus)}
+            </p>
+            {item.imageGenerationStatus === 'failed' && item.imageGenerationError && (
+              <p style={{ margin: '5px 0', color: '#b91c1c', fontSize: '12px' }}>
+                Error: {item.imageGenerationError}
+              </p>
+            )}
             
             <p style={{ margin: '5px 0', color: '#666' }}>
               Rarity: {item.rarityTier}
@@ -285,6 +369,13 @@ export const InventoryItems = () => {
                 Edit
               </button>
               <button
+                onClick={() => handleRegenerateImage(item)}
+                className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
+                disabled={['queued', 'in_progress'].includes(item.imageGenerationStatus || '')}
+              >
+                Regenerate Image
+              </button>
+              <button
                 onClick={() => handleDeleteItem(item)}
                 className="bg-red-500 text-white px-4 py-2 rounded-md"
               >
@@ -295,13 +386,21 @@ export const InventoryItems = () => {
         ))}
       </div>
 
-      {/* Create Item Button */}
-      <button
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-        onClick={() => setShowCreateItem(true)}
-      >
-        Create Inventory Item
-      </button>
+      {/* Create Item Buttons */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+          onClick={() => setShowCreateItem(true)}
+        >
+          Create Inventory Item
+        </button>
+        <button
+          className="bg-green-600 text-white px-4 py-2 rounded-md"
+          onClick={() => setShowGenerateItem(true)}
+        >
+          Generate Inventory Item
+        </button>
+      </div>
 
       {/* Create/Edit Item Modal */}
       {(showCreateItem || editingItem) && (
@@ -471,6 +570,87 @@ export const InventoryItems = () => {
         </div>
       )}
 
+      {/* Generate Item Modal */}
+      {showGenerateItem && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            padding: '30px',
+            borderRadius: '8px',
+            width: '500px',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h2>Generate Inventory Item</h2>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Name *:</label>
+              <input
+                type="text"
+                value={generationData.name}
+                onChange={(e) => setGenerationData({ ...generationData, name: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+              <textarea
+                value={generationData.description}
+                onChange={(e) => setGenerationData({ ...generationData, description: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '80px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Rarity Tier *:</label>
+              <select
+                value={generationData.rarityTier}
+                onChange={(e) => setGenerationData({ ...generationData, rarityTier: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                required
+              >
+                <option value={Rarity.Common}>Common</option>
+                <option value={Rarity.Uncommon}>Uncommon</option>
+                <option value={Rarity.Epic}>Epic</option>
+                <option value={Rarity.Mythic}>Mythic</option>
+                <option value="Not Droppable">Not Droppable</option>
+              </select>
+            </div>
+
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleGenerateItem}
+                className="bg-green-600 text-white px-4 py-2 rounded-md"
+              >
+                Generate
+              </button>
+              <button
+                onClick={() => {
+                  setShowGenerateItem(false);
+                  resetGenerationForm();
+                }}
+                className="bg-gray-500 text-white px-4 py-2 rounded-md"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && itemToDelete && (
         <div style={{
@@ -516,4 +696,3 @@ export const InventoryItems = () => {
     </div>
   );
 };
-

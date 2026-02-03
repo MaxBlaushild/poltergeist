@@ -17,7 +17,7 @@ import * as wellknown from 'wellknown';
 import { Geometry, Polygon } from 'wkx-ts';
 import wkx from 'wkx';
 // Set Mapbox access token
-mapboxgl.accessToken = 'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 interface MapProps {
   center: [number, number];

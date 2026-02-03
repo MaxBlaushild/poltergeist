@@ -8,6 +8,8 @@ export type InventoryItem = {
     isCaptureType: boolean;
     sellValue?: number;
     unlockTier?: number;
+    imageGenerationStatus?: string;
+    imageGenerationError?: string;
     createdAt?: string;
     updatedAt?: string;
 };
