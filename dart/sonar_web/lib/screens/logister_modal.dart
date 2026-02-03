@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 import '../constants/api_constants.dart';
 import '../providers/auth_provider.dart';
@@ -60,6 +61,7 @@ class _LogisterForm extends StatefulWidget {
 }
 
 class _LogisterFormState extends State<_LogisterForm> {
+  final _countryCodeController = TextEditingController(text: '1');
   final _phoneController = TextEditingController();
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
@@ -69,14 +71,22 @@ class _LogisterFormState extends State<_LogisterForm> {
 
   @override
   void dispose() {
+    _countryCodeController.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     _nameController.dispose();
     super.dispose();
   }
 
+  String _formattedPhoneNumber() {
+    final code = _countryCodeController.text.replaceAll(RegExp(r'\D'), '');
+    final local = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+    if (code.isEmpty && local.isEmpty) return '';
+    return '+$code$local';
+  }
+
   Future<void> _getCode() async {
-    final phone = _phoneController.text.trim();
+    final phone = _formattedPhoneNumber();
     if (phone.isEmpty) return;
     setState(() => _loading = true);
     await widget.auth.getVerificationCode(phone);
@@ -84,7 +94,7 @@ class _LogisterFormState extends State<_LogisterForm> {
   }
 
   Future<void> _submit() async {
-    final phone = _phoneController.text.trim();
+    final phone = _formattedPhoneNumber();
     final code = _codeController.text.trim();
     if (phone.isEmpty || code.isEmpty) return;
     setState(() => _loading = true);
@@ -227,15 +237,50 @@ class _LogisterFormState extends State<_LogisterForm> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
-        TextField(
-          controller: _phoneController,
-          decoration: const InputDecoration(
-            labelText: 'Phone number',
-            hintText: '+1 234 567 8900',
-            border: OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.phone,
-          onSubmitted: (_) => _getCode(),
+        Builder(
+          builder: (context) {
+            final isNarrow = MediaQuery.of(context).size.width < 420;
+            final countryField = TextField(
+              controller: _countryCodeController,
+              decoration: const InputDecoration(
+                labelText: 'Country code',
+                prefixText: '+',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+              ],
+            );
+            final phoneField = TextField(
+              controller: _phoneController,
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                hintText: '234 567 8900',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.phone,
+              onSubmitted: (_) => _getCode(),
+            );
+
+            if (isNarrow) {
+              return Column(
+                children: [
+                  countryField,
+                  const SizedBox(height: 12),
+                  phoneField,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                SizedBox(width: 140, child: countryField),
+                const SizedBox(width: 12),
+                Expanded(child: phoneField),
+              ],
+            );
+          },
         ),
         if (waiting) ...[
           const SizedBox(height: 12),

@@ -69,7 +69,13 @@ type DbClient interface {
 	CharacterLocation() CharacterLocationHandle
 	CharacterAction() CharacterActionHandle
 	QuestAcceptance() QuestAcceptanceHandle
+	QuestAcceptanceV2() QuestAcceptanceV2Handle
 	MovementPattern() MovementPatternHandle
+	Quest() QuestHandle
+	QuestNode() QuestNodeHandle
+	QuestNodeChallenge() QuestNodeChallengeHandle
+	QuestNodeChild() QuestNodeChildHandle
+	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
@@ -633,6 +639,47 @@ type QuestAcceptanceHandle interface {
 	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) (*models.QuestAcceptance, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptance, error)
 	MarkTurnedIn(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID) error
+}
+
+type QuestAcceptanceV2Handle interface {
+	Create(ctx context.Context, acceptance *models.QuestAcceptanceV2) error
+	FindByUserAndQuest(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (*models.QuestAcceptanceV2, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.QuestAcceptanceV2, error)
+	MarkTurnedIn(ctx context.Context, id uuid.UUID) error
+}
+
+type QuestHandle interface {
+	Create(ctx context.Context, quest *models.Quest) error
+	Update(ctx context.Context, id uuid.UUID, updates *models.Quest) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error)
+	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)
+	FindAll(ctx context.Context) ([]models.Quest, error)
+}
+
+type QuestNodeHandle interface {
+	Create(ctx context.Context, node *models.QuestNode) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNode, error)
+	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestNode, error)
+}
+
+type QuestNodeChallengeHandle interface {
+	Create(ctx context.Context, challenge *models.QuestNodeChallenge) error
+	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChallenge, error)
+}
+
+type QuestNodeChildHandle interface {
+	Create(ctx context.Context, child *models.QuestNodeChild) error
+	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChild, error)
+	DeleteByQuestID(ctx context.Context, questID uuid.UUID) error
+	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
+}
+
+type QuestNodeProgressHandle interface {
+	Create(ctx context.Context, progress *models.QuestNodeProgress) error
+	FindByAcceptanceID(ctx context.Context, acceptanceID uuid.UUID) ([]models.QuestNodeProgress, error)
+	FindByAcceptanceAndNode(ctx context.Context, acceptanceID uuid.UUID, nodeID uuid.UUID) (*models.QuestNodeProgress, error)
+	MarkCompleted(ctx context.Context, id uuid.UUID) error
 }
 
 type MovementPatternHandle interface {
