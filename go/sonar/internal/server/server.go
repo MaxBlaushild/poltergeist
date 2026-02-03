@@ -1186,7 +1186,7 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 }
 
 func (s *server) turnInQuest(ctx *gin.Context) {
-	user, err := middleware.GetAuthenticatedUser(ctx)
+	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil || user == nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 		return

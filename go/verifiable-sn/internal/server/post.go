@@ -222,6 +222,9 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		} else {
 			post.Tags = requestBody.Tags
 		}
+		if err := s.dbClient.UserRecentPostTag().Upsert(ctx, user.ID, requestBody.Tags); err != nil {
+			fmt.Printf("Warning: failed to update user recent post tags: %v\n", err)
+		}
 	}
 
 	// If manifest was provided, create blockchain transaction for anchoring
@@ -256,6 +259,45 @@ func (s *server) CreatePost(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, post)
+}
+
+type tagSuggestion struct {
+	Tag       string `json:"tag"`
+	SortOrder int    `json:"sortOrder"`
+}
+
+func (s *server) GetPostTagSuggestions(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	albumTags, err := s.dbClient.Album().GetAlbumTagsForUserOrderedByAssociation(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	recentTags, err := s.dbClient.UserRecentPostTag().FindRecentByUserID(ctx, user.ID, 50)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	albumSuggestions := make([]tagSuggestion, len(albumTags))
+	for i, tag := range albumTags {
+		albumSuggestions[i] = tagSuggestion{Tag: tag, SortOrder: i + 1}
+	}
+	recentSuggestions := make([]tagSuggestion, len(recentTags))
+	for i, tag := range recentTags {
+		recentSuggestions[i] = tagSuggestion{Tag: tag, SortOrder: i + 1}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"albumTags":  albumSuggestions,
+		"recentTags": recentSuggestions,
+	})
 }
 
 func (s *server) GetFeed(ctx *gin.Context) {

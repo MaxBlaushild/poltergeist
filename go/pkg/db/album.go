@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"sort"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -160,6 +161,88 @@ func (h *albumHandle) FindPostsForAlbum(ctx context.Context, userID uuid.UUID, a
 		return nil, err
 	}
 	return posts, nil
+}
+
+// GetAlbumTagsForUserOrderedByAssociation returns tags from albums the user can access,
+// ordered reverse chronologically by when they gained access (owner=created, member=joined, invite=accepted).
+func (h *albumHandle) GetAlbumTagsForUserOrderedByAssociation(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	tagToTime := make(map[string]string) // tag -> max sortable timestamp string for consistency
+
+	// Owners: albums where user_id = userID
+	var ownerRows []struct {
+		Tag  string
+		Time string
+	}
+	h.db.WithContext(ctx).Table("album_tags").
+		Select("album_tags.tag as tag, albums.created_at::text as time").
+		Joins("JOIN albums ON albums.id = album_tags.album_id").
+		Where("albums.user_id = ?", userID).
+		Scan(&ownerRows)
+	for _, r := range ownerRows {
+		t := trimTag(r.Tag)
+		if t == "" {
+			continue
+		}
+		if r.Time > tagToTime[t] {
+			tagToTime[t] = r.Time
+		}
+	}
+
+	// Members: album_members where user_id = userID
+	var memberRows []struct {
+		Tag  string
+		Time string
+	}
+	h.db.WithContext(ctx).Table("album_tags").
+		Select("album_tags.tag as tag, album_members.created_at::text as time").
+		Joins("JOIN album_members ON album_members.album_id = album_tags.album_id").
+		Where("album_members.user_id = ?", userID).
+		Scan(&memberRows)
+	for _, r := range memberRows {
+		t := trimTag(r.Tag)
+		if t == "" {
+			continue
+		}
+		if r.Time > tagToTime[t] {
+			tagToTime[t] = r.Time
+		}
+	}
+
+	// Accepted invites: use accepted_at if set, else created_at (for legacy rows)
+	var inviteRows []struct {
+		Tag  string
+		Time string
+	}
+	h.db.WithContext(ctx).Table("album_tags").
+		Select("album_tags.tag as tag, COALESCE(album_invites.accepted_at::text, album_invites.created_at::text) as time").
+		Joins("JOIN album_invites ON album_invites.album_id = album_tags.album_id").
+		Where("album_invites.invited_user_id = ? AND album_invites.status = ?", userID, "accepted").
+		Scan(&inviteRows)
+	for _, r := range inviteRows {
+		t := trimTag(r.Tag)
+		if t == "" {
+			continue
+		}
+		if r.Time > tagToTime[t] {
+			tagToTime[t] = r.Time
+		}
+	}
+
+	// Sort tags by sort time descending
+	type pair struct {
+		tag  string
+		time string
+	}
+	pairs := make([]pair, 0, len(tagToTime))
+	for tag, t := range tagToTime {
+		pairs = append(pairs, pair{tag, t})
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].time > pairs[j].time })
+	result := make([]string, len(pairs))
+	for i, p := range pairs {
+		result[i] = p.tag
+	}
+	return result, nil
 }
 
 func (h *albumHandle) getFriendIDsAndSelf(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {

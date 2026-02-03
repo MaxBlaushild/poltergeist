@@ -57,6 +57,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 
 	// Post routes
 	r.POST("/verifiable-sn/posts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreatePost))
+	r.GET("/verifiable-sn/post-tag-suggestions", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPostTagSuggestions))
 	r.GET("/verifiable-sn/posts/feed", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetFeed))
 	r.GET("/verifiable-sn/posts/user/:userId", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetUserPosts))
 	r.GET("/verifiable-sn/posts/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPost))

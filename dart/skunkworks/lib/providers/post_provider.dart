@@ -14,6 +14,11 @@ class PostProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
+  /// Gets tag suggestions for posts: album tags and recently used tags.
+  Future<Map<String, dynamic>> getPostTagSuggestions() async {
+    return _postService.getPostTagSuggestions();
+  }
+
   /// Loads the feed of posts from friends
   Future<void> loadFeed() async {
     _loading = true;

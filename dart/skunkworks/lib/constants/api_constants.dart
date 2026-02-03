@@ -15,6 +15,7 @@ class ApiConstants {
   
   // Post endpoints
   static const String createPostEndpoint = '/verifiable-sn/posts';
+  static const String postTagSuggestionsEndpoint = '/verifiable-sn/post-tag-suggestions';
   static const String feedEndpoint = '/verifiable-sn/posts/feed';
   static String userPostsEndpoint(String userId) => '/verifiable-sn/posts/user/$userId';
   static String getPostEndpoint(String postId) => '/verifiable-sn/posts/$postId';

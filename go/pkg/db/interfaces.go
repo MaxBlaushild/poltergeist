@@ -59,6 +59,7 @@ type DbClient interface {
 	AlbumPost() AlbumPostHandle
 	Notification() NotificationHandle
 	UserDeviceToken() UserDeviceTokenHandle
+	UserRecentPostTag() UserRecentPostTagHandle
 	PostReaction() PostReactionHandle
 	PostComment() PostCommentHandle
 	PartyInvite() PartyInviteHandle
@@ -487,6 +488,7 @@ type AlbumHandle interface {
 	AddTag(ctx context.Context, albumID uuid.UUID, tag string) error
 	RemoveTag(ctx context.Context, albumID uuid.UUID, tag string) error
 	FindPostsForAlbum(ctx context.Context, userID uuid.UUID, albumTags []string) ([]models.Post, error)
+	GetAlbumTagsForUserOrderedByAssociation(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
 type AlbumMemberHandle interface {
@@ -522,6 +524,11 @@ type NotificationHandle interface {
 type UserDeviceTokenHandle interface {
 	Upsert(ctx context.Context, userID uuid.UUID, token, platform string) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserDeviceToken, error)
+}
+
+type UserRecentPostTagHandle interface {
+	Upsert(ctx context.Context, userID uuid.UUID, tags []string) error
+	FindRecentByUserID(ctx context.Context, userID uuid.UUID, limit int) ([]string, error)
 }
 
 type AlbumPostHandle interface {
