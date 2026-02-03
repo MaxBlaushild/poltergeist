@@ -36,10 +36,10 @@ func (p *GenerateQuestForZoneProcessor) ProcessTask(ctx context.Context, task *a
 	}
 
 	log.Printf("Generating quest for zone ID: %v with quest archetype ID: %v", payload.ZoneID, payload.QuestArchetypeID)
-	return p.generateQuestForZone(ctx, payload.ZoneID, payload.QuestArchetypeID)
+	return p.generateQuestForZone(ctx, payload.ZoneID, payload.QuestArchetypeID, payload.QuestGiverCharacterID)
 }
 
-func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID) error {
+func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) error {
 	log.Printf("Finding zone with ID: %v", zoneID)
 	zone, err := p.dbClient.Zone().FindByID(ctx, zoneID)
 	if err != nil {
@@ -48,7 +48,7 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 	}
 
 	log.Printf("Found zone: %v, generating quest...", zone.Name)
-	_, err = p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID)
+	_, err = p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID, questGiverCharacterID)
 	if err != nil {
 		log.Printf("Failed to generate quest: %v", err)
 		return fmt.Errorf("failed to generate quest: %w", err)

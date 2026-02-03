@@ -19,8 +19,8 @@ class CharacterPanel extends StatefulWidget {
 
   final Character character;
   final VoidCallback onClose;
-  final void Function(Character, CharacterAction)? onStartDialogue;
-  final void Function(Character, CharacterAction)? onStartShop;
+  final void Function(BuildContext, Character, CharacterAction)? onStartDialogue;
+  final void Function(BuildContext, Character, CharacterAction)? onStartShop;
 
   @override
   State<CharacterPanel> createState() => _CharacterPanelState();
@@ -45,6 +45,21 @@ class _CharacterPanelState extends State<CharacterPanel> {
       _actions = await svc.getCharacterActions(widget.character.id);
     } catch (_) {
       _actions = [];
+    }
+    debugPrint('CharacterPanel: loaded ${_actions.length} actions for ${widget.character.id}');
+    final hasTalkAction = _actions.any((action) => action.actionType == 'talk');
+    if (!hasTalkAction) {
+      final fallbackTalk = CharacterAction(
+        id: 'local-talk-${widget.character.id}',
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+        characterId: widget.character.id,
+        actionType: 'talk',
+        dialogue: const [
+          DialogueMessage(speaker: 'character', text: '...', order: 0),
+        ],
+      );
+      _actions = [fallbackTalk, ..._actions];
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -239,7 +254,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                       onTap: widget.onStartShop == null
                                           ? null
                                           : () {
-                                              widget.onStartShop!(widget.character, shopAction);
+                                              widget.onStartShop!(context, widget.character, shopAction);
                                               widget.onClose();
                                             },
                                     ),
@@ -250,8 +265,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                       onTap: widget.onStartDialogue == null
                                           ? null
                                           : () {
-                                              widget.onStartDialogue!(widget.character, talkAction);
-                                              widget.onClose();
+                                              widget.onStartDialogue!(context, widget.character, talkAction);
                                             },
                                     ),
                                 ],

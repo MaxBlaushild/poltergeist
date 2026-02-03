@@ -30,7 +30,20 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
         const response = await apiClient.get<CharacterAction[]>(
           `/sonar/characters/${character.id}/actions`
         );
-        setCharacterActions(response);
+        const hasTalkAction = response.some((action) => action.actionType === 'talk');
+        if (!hasTalkAction) {
+          const fallbackTalkAction: CharacterAction = {
+            id: `local-talk-${character.id}`,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            characterId: character.id,
+            actionType: 'talk',
+            dialogue: [{ speaker: 'character', text: '...', order: 0 }],
+          };
+          setCharacterActions([fallbackTalkAction, ...response]);
+        } else {
+          setCharacterActions(response);
+        }
       } catch (error) {
         console.error('Error fetching character actions:', error);
       } finally {
@@ -146,4 +159,3 @@ export const CharacterPanel: React.FC<CharacterPanelProps> = ({
     </div>
   );
 };
-

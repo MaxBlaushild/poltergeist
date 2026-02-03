@@ -78,8 +78,7 @@ class SonarApp extends StatelessWidget {
     AppLocation? getLocation() => locationProvider.location;
     apiClient.setGetLocation(getLocation);
 
-    final rootKey = GlobalKey<NavigatorState>();
-    final router = createRouter(rootKey);
+    final router = createRouter();
 
     return MultiProvider(
       providers: [

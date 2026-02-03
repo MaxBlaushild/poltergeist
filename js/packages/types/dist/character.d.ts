@@ -10,4 +10,9 @@ export interface Character {
     geometry?: string;
     movementPatternId: string;
     movementPattern: MovementPattern;
+    pointOfInterestId?: string | null;
+    pointOfInterest?: {
+        id: string;
+        name: string;
+    } | null;
 }

@@ -38,7 +38,7 @@ class QuestLogService {
   /// POST /sonar/quests/:questId/turnIn
   /// Returns { goldAwarded: int, itemAwarded?: { id, name, imageUrl } }
   Future<Map<String, dynamic>> turnInQuest(String questId) async {
-    final raw = await _api.post<dynamic>('/sonar/quests/$questId/turnIn');
+    final raw = await _api.post<dynamic>('/sonar/quests/turnIn/$questId');
     final map = raw is Map
         ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
         : <String, dynamic>{};

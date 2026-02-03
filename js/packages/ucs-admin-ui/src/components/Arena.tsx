@@ -3,7 +3,7 @@ import { usePointOfInterestGroups } from '@poltergeist/hooks';
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { AddNewPointOfInterest } from './AddNewPointOfInterest.tsx';
-import { PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
+import { Character, PointOfInterestChallenge, PointOfInterestGroupType } from '@poltergeist/types';
 import { useTagContext } from '@poltergeist/contexts';
 
 export const Arena = () => {
@@ -47,6 +47,8 @@ export const Arena = () => {
   const [arenaType, setArenaType] = useState<PointOfInterestGroupType | undefined>(arena?.type);
   const [arenaGold, setArenaGold] = useState<number>(Number((arena as any)?.gold ?? 0));
   const [arenaInventoryItemId, setArenaInventoryItemId] = useState<number | undefined>((arena as any)?.inventoryItemId);
+  const [arenaQuestGiverCharacterId, setArenaQuestGiverCharacterId] = useState<string>((arena as any)?.questGiverCharacterId ?? '');
+  const [availableCharacters, setAvailableCharacters] = useState<Character[]>([]);
   const [newChild, setNewChild] = useState({
     pointOfInterestId: '',
     pointOfInterestChallengeId: '',
@@ -95,6 +97,19 @@ export const Arena = () => {
     }
   }, [arena?.groupMembers]);
 
+  // Fetch characters for quest giver selector
+  useEffect(() => {
+    const fetchCharacters = async () => {
+      try {
+        const response = await apiClient.get<Character[]>('/sonar/characters');
+        setAvailableCharacters(response);
+      } catch (err) {
+        console.error('Error fetching characters:', err);
+      }
+    };
+    fetchCharacters();
+  }, [apiClient]);
+
   const handleAddToZone = async (pointId: string) => {
     const zoneId = selectedZoneIds[pointId];
     if (!zoneId) return;
@@ -137,6 +152,7 @@ export const Arena = () => {
     setArenaType(arena.type);
     setArenaGold(Number((arena as any)?.gold ?? 0));
     setArenaInventoryItemId((arena as any)?.inventoryItemId);
+    setArenaQuestGiverCharacterId((arena as any)?.questGiverCharacterId ?? '');
   };
 
   const handleArenaSave = async () => {
@@ -144,7 +160,7 @@ export const Arena = () => {
       if (!arenaName || !arenaDescription || !arenaType) {
         throw new Error('Name and description are required');
       }
-      await (updateArena as unknown as (a: any, b: any, c: any, d?: any, e?: any) => Promise<void>)(arenaName, arenaDescription, arenaType!, arenaGold, arenaInventoryItemId);
+      await (updateArena as unknown as (a: any, b: any, c: any, d?: any, e?: any, f?: string | null) => Promise<void>)(arenaName, arenaDescription, arenaType!, arenaGold, arenaInventoryItemId, arenaQuestGiverCharacterId || undefined);
       setEditingArena(false);
     } catch (error) {
       console.error('Error saving arena:', error);
@@ -346,6 +362,21 @@ export const Arena = () => {
                         ))}
                       </select>
                     </div>
+                    <div className="mb-4">
+                      <label className="block text-gray-700 text-sm font-bold mb-2">Quest Giver Character</label>
+                      <select
+                        value={arenaQuestGiverCharacterId}
+                        onChange={(e) => setArenaQuestGiverCharacterId(e.target.value)}
+                        className="text-gray-600 text-lg mb-4 border rounded px-2 py-1 w-full"
+                      >
+                        <option value="">None</option>
+                        {availableCharacters.map((char) => (
+                          <option key={char.id} value={char.id}>
+                            {char.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </>
                 )}
                 <div className="flex gap-2">
@@ -381,6 +412,11 @@ export const Arena = () => {
                     {(arena as any)?.inventoryItemId && (
                       <p className="text-gray-600 text-lg mb-4">
                         Reward Item: {inventoryItems?.find(item => item.id === (arena as any)?.inventoryItemId)?.name || 'Unknown Item'}
+                      </p>
+                    )}
+                    {(arena as any)?.questGiverCharacterId && (
+                      <p className="text-gray-600 text-lg mb-4">
+                        Quest Giver: {availableCharacters.find(c => c.id === (arena as any)?.questGiverCharacterId)?.name ?? (arena as any)?.questGiverCharacter?.name ?? 'Unknown'}
                       </p>
                     )}
                   </>

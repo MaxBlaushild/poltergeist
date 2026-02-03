@@ -75,15 +75,19 @@ func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID
 	}).Error
 }
 
-func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int) error {
+func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int, clue string, imageUrl string, originalName string, googleMapsPlaceId *string) error {
 	pointOfInterest := models.PointOfInterest{
-		ID:          id,
-		Name:        name,
-		Description: description,
-		Lat:         lat,
-		Lng:         lng,
-		UnlockTier:  unlockTier,
-		UpdatedAt:   time.Now(),
+		ID:                id,
+		Name:              name,
+		Description:       description,
+		Lat:               lat,
+		Lng:               lng,
+		UnlockTier:        unlockTier,
+		Clue:              clue,
+		ImageUrl:          imageUrl,
+		OriginalName:      originalName,
+		GoogleMapsPlaceID: googleMapsPlaceId,
+		UpdatedAt:         time.Now(),
 	}
 	if err := pointOfInterest.SetGeometry(lat, lng); err != nil {
 		return err

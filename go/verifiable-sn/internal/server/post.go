@@ -300,6 +300,93 @@ func (s *server) GetPostTagSuggestions(ctx *gin.Context) {
 	})
 }
 
+func (s *server) AddPostTags(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	postID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid post id"})
+		return
+	}
+	var req struct {
+		Tags []string `json:"tags" binding:"required"`
+	}
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	post, err := s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil || post == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
+		return
+	}
+	if post.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "can only add tags to your own posts"})
+		return
+	}
+	if err := s.dbClient.PostTag().AddTagsToPost(ctx, postID, req.Tags); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.UserRecentPostTag().Upsert(ctx, user.ID, req.Tags); err != nil {
+		// Non-fatal
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+func (s *server) RemovePostTag(ctx *gin.Context) {
+	user, err := s.GetAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	postID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid post id"})
+		return
+	}
+	tag := ctx.Query("tag")
+	if tag == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "tag query parameter required"})
+		return
+	}
+	post, err := s.dbClient.Post().FindByID(ctx, postID)
+	if err != nil || post == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "post not found"})
+		return
+	}
+	allowRemoval := post.UserID == user.ID
+	if !allowRemoval {
+		if albumIDStr := ctx.Query("albumId"); albumIDStr != "" {
+			albumID, parseErr := uuid.Parse(albumIDStr)
+			if parseErr == nil {
+				album, albumErr := s.dbClient.Album().FindByID(ctx, albumID)
+				if albumErr == nil && album != nil && s.canAdminAlbum(ctx, album, user.ID) {
+					albumTags, _ := s.dbClient.Album().GetTags(ctx, album.ID)
+					for _, t := range albumTags {
+						if t == tag {
+							allowRemoval = true
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	if !allowRemoval {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "can only remove tags from your own posts"})
+		return
+	}
+	if err := s.dbClient.PostTag().RemoveTag(ctx, postID, tag); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
 func (s *server) GetFeed(ctx *gin.Context) {
 	user, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {

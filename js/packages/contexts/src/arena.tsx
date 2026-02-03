@@ -8,7 +8,7 @@ interface ArenaContextType {
   arena: PointOfInterestGroup | null;
   loading: boolean;
   error: Error | null;
-  updateArena: (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number) => Promise<void>;
+  updateArena: (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number, questGiverCharacterId?: string | null) => Promise<void>;
   updateArenaImage: (id: string, image: File) => Promise<void>;
   createPointOfInterest: (
     name: string,
@@ -68,7 +68,7 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
   };
 
 
-  const updateArena = async (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number) => {
+  const updateArena = async (name: string, description: string, type: PointOfInterestGroupType, gold?: number, inventoryItemId?: number, questGiverCharacterId?: string | null) => {
     setLoading(true);
 
     if (!arena) {
@@ -76,22 +76,19 @@ export const ArenaProvider: React.FC<ArenaProviderProps> = ({ children, arenaId 
     }
 
     try {
-      const response = await apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, {
+      const body: Record<string, unknown> = {
         name,
         description,
         type,
         gold,
         inventoryItemId,
-      });
+      };
+      if (questGiverCharacterId !== undefined) {
+        body.questGiverCharacterId = questGiverCharacterId || null;
+      }
+      await apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, body);
 
-      setArena({
-        ...arena,
-        name,
-        description,
-        type,
-        gold: gold ?? (arena as any).gold,
-        inventoryItemId: inventoryItemId ?? (arena as any).inventoryItemId,
-      } as PointOfInterestGroup);
+      await fetchArena(arenaId!);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('An error occurred'));
     } finally {

@@ -8,7 +8,7 @@ WORKDIR /usr/home/app
 
 COPY ./go/pkg ./pkg
 COPY ./go/core ./core
-COPY ./go/final-fete ./final-fete
+# COPY ./go/final-fete ./final-fete
 COPY ./go/sonar ./sonar
 COPY ./go/travel-angels ./travel-angels
 COPY ./go/verifiable-sn ./verifiable-sn

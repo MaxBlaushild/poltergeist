@@ -1,5 +1,6 @@
 import { Zone } from "./zone";
 import { QuestArchetype } from "./questArchetype";
+import { Character } from "./character";
 
 export type ZoneQuestArchetype = {
   id: string;
@@ -11,4 +12,6 @@ export type ZoneQuestArchetype = {
   questArchetype: QuestArchetype;
   questArchetypeId: string;
   numberOfQuests: number;
+  characterId?: string | null;
+  character?: Character | null;
 };

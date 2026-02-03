@@ -1,12 +1,189 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, Zone, MovementPatternType, Location, CharacterAction, DialogueMessage, ShopInventoryItem } from '@poltergeist/types';
+import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, ShopInventoryItem } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { CharacterMapPicker } from './CharacterMapPicker.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
 import { ShopActionEditor } from './ShopActionEditor.tsx';
 
+mapboxgl.accessToken = 'REDACTED';
+
+interface CharacterLocationsMapProps {
+  locations: [number, number][];
+  onAddLocation: (lng: number, lat: number) => void;
+  onRemoveLocation: (index: number) => void;
+}
+
+const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
+  locations,
+  onAddLocation,
+  onRemoveLocation,
+}) => {
+  const mapContainer = React.useRef<HTMLDivElement>(null);
+  const map = React.useRef<mapboxgl.Map | null>(null);
+  const markers = React.useRef<mapboxgl.Marker[]>([]);
+  const [mapLoaded, setMapLoaded] = React.useState(false);
+  const [isLocating, setIsLocating] = React.useState(false);
+  const [locationError, setLocationError] = React.useState<string | null>(null);
+  const [didAutoLocate, setDidAutoLocate] = React.useState(false);
+
+  React.useEffect(() => {
+    if (mapContainer.current && !map.current) {
+      const initialCenter = locations.length > 0 ? locations[0] : [0, 0];
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: initialCenter,
+        zoom: locations.length > 0 ? 14 : 2,
+        interactive: true,
+      });
+      map.current.on('load', () => setMapLoaded(true));
+      map.current.on('click', (e) => {
+        onAddLocation(e.lngLat.lng, e.lngLat.lat);
+      });
+    }
+
+    return () => {
+      markers.current.forEach(marker => marker.remove());
+      markers.current = [];
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (map.current && mapLoaded && locations.length > 0) {
+      map.current.setCenter(locations[0]);
+      map.current.setZoom(Math.max(map.current.getZoom(), 14));
+      setDidAutoLocate(true);
+    }
+  }, [locations, mapLoaded]);
+
+  React.useEffect(() => {
+    if (!map.current || !mapLoaded || didAutoLocate || locations.length > 0) return;
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocating(false);
+        const { latitude, longitude } = pos.coords;
+        map.current?.flyTo({
+          center: [longitude, latitude],
+          zoom: Math.max(map.current?.getZoom() ?? 14, 16),
+          essential: true,
+        });
+        setDidAutoLocate(true);
+      },
+      (err) => {
+        setIsLocating(false);
+        setLocationError(err.message || 'Unable to fetch location.');
+        setDidAutoLocate(true);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+    );
+  }, [mapLoaded, didAutoLocate, locations.length]);
+
+  React.useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    markers.current.forEach(marker => marker.remove());
+    markers.current = [];
+
+    locations.forEach((location, index) => {
+      const el = document.createElement('div');
+      el.style.width = '18px';
+      el.style.height = '18px';
+      el.style.borderRadius = '9999px';
+      el.style.background = '#2563eb';
+      el.style.border = '2px solid white';
+      el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)';
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onRemoveLocation(index);
+      });
+
+      const marker = new mapboxgl.Marker(el)
+        .setLngLat(location)
+        .addTo(map.current!);
+      markers.current.push(marker);
+    });
+  }, [locations, mapLoaded, onRemoveLocation]);
+
+  return (
+    <div className="relative w-full h-80 rounded-lg border border-gray-300 overflow-hidden">
+      <div ref={mapContainer} className="w-full h-full" />
+      <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+        <button
+          type="button"
+          className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+          onClick={() => map.current?.zoomIn()}
+          aria-label="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+          onClick={() => map.current?.zoomOut()}
+          aria-label="Zoom out"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="bg-white border border-gray-300 rounded shadow px-2 py-1 text-sm hover:bg-gray-50"
+          onClick={() => {
+            if (!navigator.geolocation) {
+              setLocationError('Geolocation is not supported in this browser.');
+              return;
+            }
+            setIsLocating(true);
+            setLocationError(null);
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                setIsLocating(false);
+                const { latitude, longitude } = pos.coords;
+                map.current?.flyTo({
+                  center: [longitude, latitude],
+                  zoom: Math.max(map.current?.getZoom() ?? 14, 16),
+                  essential: true,
+                });
+                setDidAutoLocate(true);
+              },
+              (err) => {
+                setIsLocating(false);
+                setLocationError(err.message || 'Unable to fetch location.');
+                setDidAutoLocate(true);
+              },
+              { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+            );
+          }}
+          aria-label="Center on your location"
+          disabled={isLocating}
+        >
+          {isLocating ? '...' : 'My Location'}
+        </button>
+        {locationError && (
+          <div className="bg-white border border-red-200 text-red-600 text-xs rounded px-2 py-1 shadow">
+            {locationError}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const Characters = () => {
   const { apiClient } = useAPI();
+  const { zoneQuestArchetypes, updateZoneQuestArchetype } = useQuestArchetypes();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [filteredCharacters, setFilteredCharacters] = useState<Character[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -14,6 +191,8 @@ export const Characters = () => {
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [availableZones, setAvailableZones] = useState<Zone[]>([]);
+  const [availablePointsOfInterest, setAvailablePointsOfInterest] = useState<PointOfInterest[]>([]);
+  const [selectedZoneQuestArchetypeIds, setSelectedZoneQuestArchetypeIds] = useState<string[]>([]);
   
   // Dialogue management state
   const [selectedCharacterForDialogue, setSelectedCharacterForDialogue] = useState<Character | null>(null);
@@ -22,6 +201,9 @@ export const Characters = () => {
   const [showDialogueEditor, setShowDialogueEditor] = useState(false);
   const [showDialogueManager, setShowDialogueManager] = useState(false);
   const [showShopEditor, setShowShopEditor] = useState(false);
+  const [characterLocations, setCharacterLocations] = useState<[number, number][]>([]);
+  const [savingLocations, setSavingLocations] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -29,6 +211,8 @@ export const Characters = () => {
     description: '',
     mapIconUrl: '',
     dialogueImageUrl: '',
+    thumbnailUrl: '',
+    pointOfInterestId: '',
     movementPattern: {
       movementPatternType: 'static' as MovementPatternType,
       zoneId: '',
@@ -41,7 +225,17 @@ export const Characters = () => {
   useEffect(() => {
     fetchCharacters();
     fetchZones();
+    fetchPointsOfInterest();
   }, []);
+
+  const fetchPointsOfInterest = async () => {
+    try {
+      const response = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
+      setAvailablePointsOfInterest(response);
+    } catch (error) {
+      console.error('Error fetching points of interest:', error);
+    }
+  };
 
   useEffect(() => {
     if (searchQuery === '') {
@@ -53,6 +247,15 @@ export const Characters = () => {
       setFilteredCharacters(filtered);
     }
   }, [searchQuery, characters]);
+
+  useEffect(() => {
+    if (!editingCharacter) return;
+    setSelectedZoneQuestArchetypeIds(
+      zoneQuestArchetypes
+        .filter((zoneQuestArchetype) => zoneQuestArchetype.characterId === editingCharacter.id)
+        .map((zoneQuestArchetype) => zoneQuestArchetype.id)
+    );
+  }, [editingCharacter, zoneQuestArchetypes]);
 
   const fetchCharacters = async () => {
     try {
@@ -188,6 +391,8 @@ export const Characters = () => {
       description: '',
       mapIconUrl: '',
       dialogueImageUrl: '',
+      thumbnailUrl: '',
+      pointOfInterestId: '',
       movementPattern: {
         movementPatternType: 'static',
         zoneId: '',
@@ -196,12 +401,59 @@ export const Characters = () => {
         path: []
       }
     });
+    setCharacterLocations([]);
+    setLocationsError(null);
+    setSelectedZoneQuestArchetypeIds([]);
+  };
+
+  const applyQuestAssignments = async (characterId: string, nextZoneQuestArchetypeIds: string[]) => {
+    const updates: Promise<void>[] = [];
+    zoneQuestArchetypes.forEach((zoneQuestArchetype) => {
+      const shouldBeAssigned = nextZoneQuestArchetypeIds.includes(zoneQuestArchetype.id);
+      const isAssignedToCharacter = zoneQuestArchetype.characterId === characterId;
+      if (shouldBeAssigned && !isAssignedToCharacter) {
+        updates.push(updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId }));
+      } else if (!shouldBeAssigned && isAssignedToCharacter) {
+        updates.push(updateZoneQuestArchetype(zoneQuestArchetype.id, { characterId: null }));
+      }
+    });
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+    }
+  };
+
+  const saveCharacterLocations = async (characterId: string) => {
+    setSavingLocations(true);
+    setLocationsError(null);
+    try {
+      await apiClient.put(`/sonar/characters/${characterId}/locations`, {
+        locations: characterLocations.map(([lng, lat]) => ({
+          latitude: lat,
+          longitude: lng
+        }))
+      });
+      await fetchCharacters();
+    } catch (error) {
+      console.error('Error saving character locations:', error);
+      setLocationsError('Failed to save character locations.');
+    } finally {
+      setSavingLocations(false);
+    }
   };
 
   const handleCreateCharacter = async () => {
     try {
-      const newCharacter = await apiClient.post<Character>('/sonar/characters', formData);
+      const payload = {
+        ...formData,
+        pointOfInterestId: formData.pointOfInterestId || undefined,
+      };
+      const newCharacter = await apiClient.post<Character>('/sonar/characters', payload);
       setCharacters([...characters, newCharacter]);
+      await applyQuestAssignments(newCharacter.id, selectedZoneQuestArchetypeIds);
+      if (characterLocations.length > 0) {
+        await saveCharacterLocations(newCharacter.id);
+      }
       setShowCreateCharacter(false);
       resetForm();
     } catch (error) {
@@ -213,8 +465,14 @@ export const Characters = () => {
     if (!editingCharacter) return;
     
     try {
-      const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${editingCharacter.id}`, formData);
+      const payload = {
+        ...formData,
+        pointOfInterestId: formData.pointOfInterestId ? formData.pointOfInterestId : null,
+      };
+      const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${editingCharacter.id}`, payload);
       setCharacters(characters.map(c => c.id === editingCharacter.id ? updatedCharacter : c));
+      await applyQuestAssignments(editingCharacter.id, selectedZoneQuestArchetypeIds);
+      await saveCharacterLocations(editingCharacter.id);
       setEditingCharacter(null);
       resetForm();
     } catch (error) {
@@ -238,6 +496,8 @@ export const Characters = () => {
       description: character.description,
       mapIconUrl: character.mapIconUrl,
       dialogueImageUrl: character.dialogueImageUrl,
+      thumbnailUrl: character.thumbnailUrl ?? '',
+      pointOfInterestId: character.pointOfInterestId ?? '',
       movementPattern: {
         movementPatternType: character.movementPattern.movementPatternType,
         zoneId: character.movementPattern.zoneId || '',
@@ -246,6 +506,14 @@ export const Characters = () => {
         path: character.movementPattern.path || []
       }
     });
+    const locations = character.locations?.map(loc => [loc.longitude, loc.latitude] as [number, number]) ?? [];
+    setCharacterLocations(locations);
+    setLocationsError(null);
+    setSelectedZoneQuestArchetypeIds(
+      zoneQuestArchetypes
+        .filter((zoneQuestArchetype) => zoneQuestArchetype.characterId === character.id)
+        .map((zoneQuestArchetype) => zoneQuestArchetype.id)
+    );
   };
 
   const addWaypoint = () => {
@@ -256,6 +524,14 @@ export const Characters = () => {
         path: [...formData.movementPattern.path, { latitude: 0, longitude: 0 }]
       }
     });
+  };
+
+  const addCharacterLocation = (lng: number, lat: number) => {
+    setCharacterLocations(prev => [...prev, [lng, lat]]);
+  };
+
+  const removeCharacterLocation = (index: number) => {
+    setCharacterLocations(prev => prev.filter((_, i) => i !== index));
   };
 
   const updateWaypoint = (index: number, field: 'latitude' | 'longitude', value: number) => {
@@ -368,7 +644,10 @@ export const Characters = () => {
       {/* Create Character Button */}
       <button
         className="bg-blue-500 text-white px-4 py-2 rounded-md"
-        onClick={() => setShowCreateCharacter(true)}
+        onClick={() => {
+          resetForm();
+          setShowCreateCharacter(true);
+        }}
       >
         Create Character
       </button>
@@ -428,6 +707,16 @@ export const Characters = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Thumbnail URL:</label>
+              <input
+                type="text"
+                value={formData.thumbnailUrl}
+                onChange={(e) => setFormData({ ...formData, thumbnailUrl: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>Dialogue Image URL:</label>
               <input
                 type="text"
@@ -435,6 +724,163 @@ export const Characters = () => {
                 onChange={(e) => setFormData({ ...formData, dialogueImageUrl: e.target.value })}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Character Locations</label>
+              <div style={{ marginBottom: '10px', color: '#666', fontSize: '12px' }}>
+                Click on the map to add a pin. Click an existing pin to remove it.
+              </div>
+              <CharacterLocationsMap
+                locations={characterLocations}
+                onAddLocation={addCharacterLocation}
+                onRemoveLocation={removeCharacterLocation}
+              />
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px' }}>
+                  Saved locations ({characterLocations.length})
+                </div>
+                {characterLocations.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#999' }}>
+                    No locations yet.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {characterLocations.map(([lng, lat], index) => (
+                      <div
+                        key={`${lng}-${lat}-${index}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '6px 8px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '4px',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <span>{lat.toFixed(6)}, {lng.toFixed(6)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeCharacterLocation(index)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#c00',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {locationsError && (
+                <div style={{ marginTop: '8px', color: '#c00', fontSize: '12px' }}>
+                  {locationsError}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!editingCharacter) {
+                      setLocationsError('Save the character first to store locations.');
+                      return;
+                    }
+                    saveCharacterLocations(editingCharacter.id);
+                  }}
+                  disabled={savingLocations}
+                  style={{
+                    padding: '8px 12px',
+                    backgroundColor: '#2563eb',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: savingLocations ? 'default' : 'pointer',
+                    opacity: savingLocations ? 0.7 : 1
+                  }}
+                >
+                  {savingLocations ? 'Saving...' : 'Save Locations'}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Point of Interest (optional):</label>
+              <select
+                value={formData.pointOfInterestId}
+                onChange={(e) => setFormData({ ...formData, pointOfInterestId: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              >
+                <option value="">None</option>
+                {availablePointsOfInterest.map((poi) => (
+                  <option key={poi.id} value={poi.id}>
+                    {poi.name || poi.description || poi.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Quest Associations */}
+            <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
+              <h3 style={{ margin: '0 0 15px 0' }}>Quest Associations</h3>
+              {zoneQuestArchetypes.length === 0 ? (
+                <div style={{ color: '#999', fontStyle: 'italic' }}>
+                  No zone quest archetypes available.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '240px', overflow: 'auto' }}>
+                  {zoneQuestArchetypes.map((zoneQuestArchetype) => {
+                    const isAssigned = selectedZoneQuestArchetypeIds.includes(zoneQuestArchetype.id);
+                    const assignedCharacter = zoneQuestArchetype.character?.name
+                      || characters.find((c) => c.id === zoneQuestArchetype.characterId)?.name
+                      || 'Unassigned';
+                    return (
+                      <label
+                        key={zoneQuestArchetype.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                          padding: '10px',
+                          border: '1px solid #ddd',
+                          borderRadius: '6px',
+                          backgroundColor: isAssigned ? '#f0f8ff' : '#fff'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isAssigned}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedZoneQuestArchetypeIds([...selectedZoneQuestArchetypeIds, zoneQuestArchetype.id]);
+                            } else {
+                              setSelectedZoneQuestArchetypeIds(selectedZoneQuestArchetypeIds.filter((id) => id !== zoneQuestArchetype.id));
+                            }
+                          }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600 }}>
+                            {zoneQuestArchetype.questArchetype?.name || zoneQuestArchetype.questArchetypeId}
+                          </div>
+                          <div style={{ color: '#666', fontSize: '13px' }}>
+                            Zone: {zoneQuestArchetype.zone?.name || zoneQuestArchetype.zoneId}
+                          </div>
+                          <div style={{ color: '#666', fontSize: '13px' }}>
+                            Number of Quests: {zoneQuestArchetype.numberOfQuests}
+                          </div>
+                          <div style={{ color: '#999', fontSize: '12px' }}>
+                            Current quest giver: {assignedCharacter}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Character Position Section */}

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
+import '../config/router.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
@@ -54,6 +55,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<TreasureChest> _treasureChests = [];
   List<Line> _zoneLines = [];
   List<Symbol> _poiSymbols = [];
+  List<Symbol> _characterSymbols = [];
   List<Symbol> _chestSymbols = [];
   bool _styleLoaded = false;
   bool _markersAdded = false;
@@ -61,10 +63,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _mapLoadFailed = false;
   int _mapKey = 0;
   bool _hasAnimatedToUserLocation = false;
-  Character? _shopCharacter;
-  CharacterAction? _shopAction;
-  Character? _dialogueCharacter;
-  CharacterAction? _dialogueAction;
 
   @override
   void initState() {
@@ -360,6 +358,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _poiSymbols.clear();
       }
+      if (_characterSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_characterSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _characterSymbols.clear();
+      }
       if (_chestSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_chestSymbols);
@@ -384,17 +389,58 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       } catch (_) {}
 
       for (final ch in _characters) {
-        if (ch.lat == 0 && ch.lng == 0) continue;
-        c.addCircle(
-          CircleOptions(
-            geometry: LatLng(ch.lat, ch.lng),
-            circleRadius: 30,
-            circleColor: '#ff8833',
-            circleStrokeWidth: 2,
-            circleStrokeColor: '#ffffff',
-          ),
-          {'type': 'character', 'id': ch.id, 'name': ch.name},
-        );
+        final points = ch.locations.isNotEmpty
+            ? ch.locations
+                .map((loc) => LatLng(loc.latitude, loc.longitude))
+                .where((p) => p.latitude != 0 || p.longitude != 0)
+                .toList()
+            : (ch.lat == 0 && ch.lng == 0)
+                ? <LatLng>[]
+                : [LatLng(ch.lat, ch.lng)];
+
+        if (points.isEmpty) continue;
+
+        final thumbnailUrl = ch.thumbnailUrl;
+        if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+          try {
+            final imageBytes = await loadPoiThumbnail(thumbnailUrl);
+            if (imageBytes != null) {
+              final imageId = 'character_${ch.id}';
+              try {
+                await c.addImage(imageId, imageBytes);
+              } catch (_) {}
+              for (final point in points) {
+                final sym = await c.addSymbol(
+                  SymbolOptions(
+                    geometry: point,
+                    iconImage: imageId,
+                    iconSize: 0.6,
+                    iconHaloColor: '#000000',
+                    iconHaloWidth: 0.75,
+                    iconAnchor: 'center',
+                  ),
+                  {'type': 'character', 'id': ch.id, 'name': ch.name},
+                );
+                if (!mounted) return;
+                _characterSymbols.add(sym);
+              }
+              continue;
+            }
+          } catch (_) {}
+        }
+
+        for (final point in points) {
+          c.addCircle(
+            CircleOptions(
+              geometry: point,
+              circleRadius: 30,
+              circleColor: '#ff8833',
+              circleStrokeWidth: 2,
+              circleStrokeColor: '#ffffff',
+            ),
+            {'type': 'character', 'id': ch.id, 'name': ch.name},
+          );
+        }
       }
       for (final tc in _treasureChests) {
         if (chestBytes != null) {
@@ -727,24 +773,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           const CelebrationModalManager(),
           const NewItemModal(),
           const UsedItemModal(),
-          if (_shopCharacter != null && _shopAction != null)
-            ShopModal(
-              character: _shopCharacter!,
-              action: _shopAction!,
-              onClose: () => setState(() {
-                _shopCharacter = null;
-                _shopAction = null;
-              }),
-            ),
-          if (_dialogueCharacter != null && _dialogueAction != null)
-            RpgDialogueModal(
-              character: _dialogueCharacter!,
-              action: _dialogueAction!,
-              onClose: () => setState(() {
-                _dialogueCharacter = null;
-                _dialogueAction = null;
-              }),
-            ),
+          // Shop is opened via showDialog from the character panel.
+          // Dialogue is opened via showDialog to avoid overlay rendering issues.
         ],
       ),
     );
@@ -757,22 +787,71 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => CharacterPanel(
         character: ch,
         onClose: () => Navigator.of(context).pop(),
-        onStartDialogue: (character, action) {
-          Navigator.of(context).pop();
-          setState(() {
-            _dialogueCharacter = character;
-            _dialogueAction = action;
-          });
+        onStartDialogue: (dialogContext, character, action) {
+          debugPrint('SinglePlayer: onStartDialogue character=${character.id} action=${action.id}');
+          _showDialogueModal(dialogContext, character, action);
         },
-        onStartShop: (character, action) {
-          Navigator.of(context).pop();
-          setState(() {
-            _shopCharacter = character;
-            _shopAction = action;
-          });
+        onStartShop: (dialogContext, character, action) {
+          _showShopModal(dialogContext, character, action);
         },
       ),
     );
+  }
+
+  Future<void> _showShopModal(
+    BuildContext dialogContext,
+    Character character,
+    CharacterAction action,
+  ) async {
+    if (!dialogContext.mounted) {
+      debugPrint('SinglePlayer: showShopModal skipped (dialogContext unmounted)');
+      return;
+    }
+    debugPrint('SinglePlayer: showShopModal open character=${character.id} action=${action.id}');
+    await showDialog<void>(
+      context: dialogContext,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (context) {
+        debugPrint('SinglePlayer: showShopModal builder');
+        return ShopModal(
+          character: character,
+          action: action,
+          onClose: () => Navigator.of(context).pop(),
+        );
+      },
+    );
+    if (dialogContext.mounted && Navigator.of(dialogContext).canPop()) {
+      Navigator.of(dialogContext).pop();
+    }
+  }
+
+  Future<void> _showDialogueModal(
+    BuildContext dialogContext,
+    Character character,
+    CharacterAction action,
+  ) async {
+    if (!dialogContext.mounted) {
+      debugPrint('SinglePlayer: showDialogueModal skipped (dialogContext unmounted)');
+      return;
+    }
+    debugPrint('SinglePlayer: showDialogueModal open character=${character.id} action=${action.id}');
+    await showDialog<void>(
+      context: dialogContext,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (context) {
+        debugPrint('SinglePlayer: showDialogueModal builder');
+        return RpgDialogueModal(
+          character: character,
+          action: action,
+          onClose: () => Navigator.of(context).pop(),
+        );
+      },
+    );
+    if (dialogContext.mounted && Navigator.of(dialogContext).canPop()) {
+      Navigator.of(dialogContext).pop();
+    }
   }
 
   void _showTreasureChestPanel(TreasureChest tc) {

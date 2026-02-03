@@ -1,4 +1,5 @@
 import 'movement_pattern.dart';
+import 'character_location.dart';
 
 class Character {
   final String id;
@@ -6,7 +7,9 @@ class Character {
   final String? description;
   final String? mapIconUrl;
   final String? dialogueImageUrl;
+  final String? thumbnailUrl;
   final MovementPattern? movementPattern;
+  final List<CharacterLocation> locations;
 
   const Character({
     required this.id,
@@ -14,7 +17,9 @@ class Character {
     this.description,
     this.mapIconUrl,
     this.dialogueImageUrl,
+    this.thumbnailUrl,
     this.movementPattern,
+    this.locations = const [],
   });
 
   factory Character.fromJson(Map<String, dynamic> json) {
@@ -24,6 +29,11 @@ class Character {
       description: json['description'] as String?,
       mapIconUrl: json['mapIconUrl'] as String?,
       dialogueImageUrl: json['dialogueImageUrl'] as String?,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+      locations: (json['locations'] as List<dynamic>?)
+              ?.map((e) => CharacterLocation.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
       movementPattern: json['movementPattern'] != null
           ? MovementPattern.fromJson(json['movementPattern'] as Map<String, dynamic>)
           : null,

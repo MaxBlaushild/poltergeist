@@ -216,6 +216,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   Future<void> _addPost() async {
     if (!_canAddRemovePosts) return;
+    final albumTags = _album?.tags ?? [];
+    if (albumTags.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Add tags to the album first')),
+        );
+      }
+      return;
+    }
     final currentUser = context.read<AuthProvider>().user;
     if (currentUser?.id == null) return;
     try {
@@ -239,7 +248,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             children: [
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Select a post to add', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                child: Text('Select a post', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
               ),
               Expanded(
                 child: ListView.builder(
@@ -262,9 +271,82 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         ),
       );
       if (selected?.id == null || !mounted) return;
-      await AlbumService(apiClient).addAlbumPost(widget.albumId, selected!.id!);
+      final post = selected!;
+      final existingTags = post.tags ?? [];
+      final tagsToAdd = albumTags.where((t) => !existingTags.contains(t)).toList();
+      if (tagsToAdd.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Post already has all album tags')),
+          );
+        }
+        return;
+      }
+      final selectedTags = <String>{};
+      final chosenTags = await showModalBottomSheet<List<String>>(
+        context: context,
+        isScrollControlled: true,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx2, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.4,
+              maxChildSize: 0.6,
+              expand: false,
+              builder: (_, scrollController) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Select album tag(s) to add to this post',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: tagsToAdd.map((tag) {
+                        final isSelected = selectedTags.contains(tag);
+                        return FilterChip(
+                          label: Text(tag),
+                          selected: isSelected,
+                          onSelected: (v) {
+                            setModalState(() {
+                              if (v) {
+                                selectedTags.add(tag);
+                              } else {
+                                selectedTags.remove(tag);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx2, <String>[]),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(ctx2, selectedTags.toList()),
+                          child: const Text('Add tags'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+      if (chosenTags == null || chosenTags.isEmpty || !mounted) return;
+      await postService.addTagsToPost(post.id!, chosenTags);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post added')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tags added to post')));
         _loadAlbum();
       }
     } catch (e) {
@@ -309,11 +391,19 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     if (!_canAddRemovePosts || post.id == null) return;
     final currentUser = context.read<AuthProvider>().user;
     if (_role == 'poster' && post.userId != currentUser?.id) return;
+    final albumTags = _album?.tags ?? [];
+    final postTags = post.tags ?? [];
+    final albumTagsOnPost = albumTags.where((t) => postTags.contains(t)).toList();
+    if (albumTagsOnPost.isEmpty) return;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove Post'),
-        content: const Text('Remove this post from the album?'),
+        title: const Text('Remove from album'),
+        content: Text(
+          albumTagsOnPost.length == 1
+              ? 'Remove tag "${albumTagsOnPost.first}" from this post? It will no longer appear in this album.'
+              : 'Remove ${albumTagsOnPost.length} album tags from this post? It will no longer appear in this album.',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           FilledButton(
@@ -326,9 +416,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
     if (confirm != true || !mounted) return;
     try {
-      await AlbumService(APIClient(ApiConstants.baseUrl)).removeAlbumPost(widget.albumId, post.id!);
+      final postService = PostService(APIClient(ApiConstants.baseUrl));
+      final currentUserId = currentUser?.id;
+      final isOwnPost = post.userId == currentUserId;
+      final albumIdForAdmin = (!isOwnPost && _canAdmin) ? widget.albumId : null;
+      for (final tag in albumTagsOnPost) {
+        await postService.removeTagFromPost(post.id!, tag, albumId: albumIdForAdmin);
+      }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post removed')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post removed from album')));
         _loadAlbum();
       }
     } catch (e) {
@@ -379,7 +475,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             IconButton(
               icon: const Icon(Icons.add_photo_alternate),
               onPressed: _addPost,
-              tooltip: 'Add post',
+              tooltip: 'Add tags to post',
             ),
         ],
       ),
