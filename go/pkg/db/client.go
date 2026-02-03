@@ -65,6 +65,12 @@ type client struct {
 	characterLocationHandle           *characterLocationHandle
 	characterActionHandle             *characterActionHandler
 	questAcceptanceHandle             *questAcceptanceHandle
+	questAcceptanceV2Handle           *questAcceptanceV2Handle
+	questHandle                       *questHandle
+	questNodeHandle                   *questNodeHandle
+	questNodeChallengeHandle          *questNodeChallengeHandle
+	questNodeChildHandle              *questNodeChildHandle
+	questNodeProgressHandle           *questNodeProgressHandle
 	movementPatternHandle             *movementPatternHandler
 	treasureChestHandle               *treasureChestHandle
 	documentHandle                    *documentHandler
@@ -179,6 +185,12 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		characterLocationHandle:           &characterLocationHandle{db: db},
 		characterActionHandle:             &characterActionHandler{db: db},
 		questAcceptanceHandle:             &questAcceptanceHandle{db: db},
+		questAcceptanceV2Handle:           &questAcceptanceV2Handle{db: db},
+		questHandle:                       &questHandle{db: db},
+		questNodeHandle:                   &questNodeHandle{db: db},
+		questNodeChallengeHandle:          &questNodeChallengeHandle{db: db},
+		questNodeChildHandle:              &questNodeChildHandle{db: db},
+		questNodeProgressHandle:           &questNodeProgressHandle{db: db},
 		movementPatternHandle:             &movementPatternHandler{db: db},
 		treasureChestHandle:               &treasureChestHandle{db: db},
 		documentHandle:                    &documentHandler{db: db},
@@ -444,8 +456,32 @@ func (c *client) QuestAcceptance() QuestAcceptanceHandle {
 	return c.questAcceptanceHandle
 }
 
+func (c *client) QuestAcceptanceV2() QuestAcceptanceV2Handle {
+	return c.questAcceptanceV2Handle
+}
+
 func (c *client) MovementPattern() MovementPatternHandle {
 	return c.movementPatternHandle
+}
+
+func (c *client) Quest() QuestHandle {
+	return c.questHandle
+}
+
+func (c *client) QuestNode() QuestNodeHandle {
+	return c.questNodeHandle
+}
+
+func (c *client) QuestNodeChallenge() QuestNodeChallengeHandle {
+	return c.questNodeChallengeHandle
+}
+
+func (c *client) QuestNodeChild() QuestNodeChildHandle {
+	return c.questNodeChildHandle
+}
+
+func (c *client) QuestNodeProgress() QuestNodeProgressHandle {
+	return c.questNodeProgressHandle
 }
 
 func (c *client) TreasureChest() TreasureChestHandle {

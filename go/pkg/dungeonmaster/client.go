@@ -24,7 +24,7 @@ type client struct {
 }
 
 type Client interface {
-	GenerateQuest(ctx context.Context, zone *models.Zone, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) (*models.PointOfInterestGroup, error)
+	GenerateQuest(ctx context.Context, zone *models.Zone, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) (*models.Quest, error)
 }
 
 func NewClient(
@@ -48,7 +48,7 @@ func (c *client) GenerateQuest(
 	zone *models.Zone,
 	questArchetypeID uuid.UUID,
 	questGiverCharacterID *uuid.UUID,
-) (*models.PointOfInterestGroup, error) {
+) (*models.Quest, error) {
 	log.Printf("Generating quest for zone %s with quest arch type %+v", zone.Name, questArchetypeID)
 
 	questArchType, err := c.dbClient.QuestArchetype().FindByID(ctx, questArchetypeID)
@@ -61,16 +61,22 @@ func (c *client) GenerateQuest(
 	descriptions := make([]string, 0)
 	challenges := make([]string, 0)
 
-	log.Println("Creating initial quest point of interest group")
-	quest, err := c.dbClient.PointOfInterestGroup().Create(
-		ctx,
-		"Quest",
-		"A quest to complete",
-		"",
-		models.PointOfInterestGroupTypeQuest,
-	)
+	log.Println("Creating quest")
+	quest := &models.Quest{
+		ID:                   uuid.New(),
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+		Name:                 "Quest",
+		Description:          "A quest to complete",
+		ZoneID:               &zone.ID,
+		QuestArchetypeID:     &questArchetypeID,
+		QuestGiverCharacterID: questGiverCharacterID,
+	}
+	if err := c.dbClient.Quest().Create(ctx, quest); err != nil {
+		log.Printf("Error creating quest: %v", err)
+		return nil, err
+	}
 	if err != nil {
-		log.Printf("Error creating quest group: %v", err)
 		return nil, err
 	}
 
@@ -78,11 +84,10 @@ func (c *client) GenerateQuest(
 	usedPOIs := make(map[uuid.UUID]bool)
 
 	log.Println("Processing quest nodes")
-	if err := c.processNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, nil, usedPOIs, nil); err != nil {
+	orderIndex := 0
+	nodeMap := make(map[uuid.UUID]uuid.UUID)
+	if err := c.processQuestNode(ctx, zone, &questArchType.Root, &locations, &descriptions, &challenges, quest, usedPOIs, &orderIndex, nodeMap); err != nil {
 		log.Printf("Error processing quest nodes: %v", err)
-		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
-			log.Printf("Error deleting quest group after node processing failure: %v", deleteErr)
-		}
 		return nil, err
 	}
 
@@ -107,16 +112,12 @@ func (c *client) GenerateQuest(
 	}
 
 	log.Println("Updating quest with generated content")
-	if err := c.dbClient.PointOfInterestGroup().Update(ctx, quest.ID, &models.PointOfInterestGroup{
-		Name:                  questCopy.Name,
-		Description:           questCopy.Description,
-		ImageUrl:              questImage,
-		QuestGiverCharacterID: questGiverCharacterID,
+	if err := c.dbClient.Quest().Update(ctx, quest.ID, &models.Quest{
+		Name:        questCopy.Name,
+		Description: questCopy.Description,
+		ImageURL:    questImage,
 	}); err != nil {
 		log.Printf("Error updating quest: %v", err)
-		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
-			log.Printf("Error deleting quest group after update failure: %v", deleteErr)
-		}
 		return nil, err
 	}
 
@@ -124,17 +125,16 @@ func (c *client) GenerateQuest(
 	return quest, nil
 }
 
-func (c *client) processNode(
+func (c *client) processQuestNode(
 	ctx context.Context,
 	zone *models.Zone,
 	questArchTypeNode *models.QuestArchetypeNode,
 	locations *[]string,
 	descriptions *[]string,
 	challenges *[]string,
-	quest *models.PointOfInterestGroup,
-	member *models.PointOfInterestGroupMember,
 	usedPOIs map[uuid.UUID]bool,
-	prevChallenge *models.PointOfInterestChallenge,
+	orderIndex *int,
+	nodeMap map[uuid.UUID]uuid.UUID,
 ) error {
 	log.Printf("Processing node for zone %s with place type %s", zone.Name, questArchTypeNode.LocationArchetypeID)
 
@@ -182,17 +182,26 @@ func (c *client) processNode(
 		// Don't fail the quest generation for this, just log the warning
 	}
 
-	newMember, err := c.dbClient.PointOfInterestGroup().AddMember(ctx, pointOfInterest.ID, quest.ID)
-	if err != nil {
-		log.Printf("Error adding member to group: %v", err)
-		return err
-	}
-
-	if prevChallenge != nil && member != nil {
-		if err := c.dbClient.PointOfInterestChildren().Create(ctx, member.ID, newMember.ID, prevChallenge.ID); err != nil {
-			log.Printf("Error creating point of interest children: %v", err)
+	existingNodeID, ok := nodeMap[questArchTypeNode.ID]
+	var questNodeID uuid.UUID
+	if ok {
+		questNodeID = existingNodeID
+	} else {
+		questNodeID = uuid.New()
+		node := &models.QuestNode{
+			ID:               questNodeID,
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
+			QuestID:          quest.ID,
+			OrderIndex:       *orderIndex,
+			PointOfInterestID: &pointOfInterest.ID,
+		}
+		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
+			log.Printf("Error creating quest node: %v", err)
 			return err
 		}
+		nodeMap[questArchTypeNode.ID] = questNodeID
+		*orderIndex++
 	}
 
 	*locations = append(*locations, pointOfInterest.Name)
@@ -209,14 +218,16 @@ func (c *client) processNode(
 		*challenges = append(*challenges, randomChallenge)
 
 		log.Printf("Creating challenge: %s", randomChallenge)
-		challenge, err := c.dbClient.PointOfInterestChallenge().Create(
-			ctx,
-			pointOfInterest.ID,
-			i,
-			randomChallenge,
-			allotedChallenge.Reward,
-			&quest.ID,
-		)
+		challenge := &models.QuestNodeChallenge{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			QuestNodeID: questNodeID,
+			Tier:        i,
+			Question:    randomChallenge,
+			Reward:      allotedChallenge.Reward,
+		}
+		err := c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {
 			log.Printf("Error creating challenge: %v", err)
 			return err
@@ -229,8 +240,21 @@ func (c *client) processNode(
 				return err
 			}
 			log.Printf("Processing child node: %s", unlockedNode.LocationArchetypeID)
-			if err := c.processNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, newMember, usedPOIs, challenge); err != nil {
+			if err := c.processQuestNode(ctx, zone, unlockedNode, locations, descriptions, challenges, quest, usedPOIs, orderIndex, nodeMap); err != nil {
 				log.Printf("Error processing child node: %v", err)
+				return err
+			}
+			childNodeID := nodeMap[unlockedNode.ID]
+			child := &models.QuestNodeChild{
+				ID:                   uuid.New(),
+				CreatedAt:            time.Now(),
+				UpdatedAt:            time.Now(),
+				QuestNodeID:          questNodeID,
+				NextQuestNodeID:      childNodeID,
+				QuestNodeChallengeID: &challenge.ID,
+			}
+			if err := c.dbClient.QuestNodeChild().Create(ctx, child); err != nil {
+				log.Printf("Error creating quest node child: %v", err)
 				return err
 			}
 		}

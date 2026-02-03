@@ -153,6 +153,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
@@ -857,4 +858,3 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 }
-
