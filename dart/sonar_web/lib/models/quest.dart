@@ -10,6 +10,10 @@ class Quest {
   final String? questGiverCharacterId;
   final int gold;
   final List<QuestNode> nodes;
+  final bool isAccepted;
+  final DateTime? turnedInAt;
+  final bool readyToTurnIn;
+  final QuestNode? currentNode;
 
   const Quest({
     required this.id,
@@ -21,6 +25,10 @@ class Quest {
     this.questGiverCharacterId,
     this.gold = 0,
     this.nodes = const [],
+    this.isAccepted = false,
+    this.turnedInAt,
+    this.readyToTurnIn = false,
+    this.currentNode,
   });
 
   factory Quest.fromJson(Map<String, dynamic> json) {
@@ -37,6 +45,14 @@ class Quest {
               ?.map((e) => QuestNode.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      isAccepted: json['isAccepted'] as bool? ?? false,
+      turnedInAt: json['turnedInAt'] != null
+          ? DateTime.tryParse(json['turnedInAt'] as String)
+          : null,
+      readyToTurnIn: json['readyToTurnIn'] as bool? ?? false,
+      currentNode: json['currentNode'] is Map<String, dynamic>
+          ? QuestNode.fromJson(json['currentNode'] as Map<String, dynamic>)
+          : null,
     );
   }
 }

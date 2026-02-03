@@ -86,13 +86,13 @@ class PoiService {
 
   Future<void> acceptQuest({
     required String characterId,
-    required String pointOfInterestGroupId,
+    required String questId,
   }) async {
     await _api.post<dynamic>(
       '/sonar/quests/accept',
       data: {
         'characterId': characterId,
-        'pointOfInterestGroupId': pointOfInterestGroupId,
+        'questId': questId,
       },
     );
   }

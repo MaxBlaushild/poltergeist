@@ -32,7 +32,7 @@ func (h *questNodeProgressHandle) MarkCompleted(ctx context.Context, id uuid.UUI
   return h.db.WithContext(ctx).
     Model(&models.QuestNodeProgress{}).
     Where("id = ?", id).
-    Updates(map[string]interface{}{"	completed_at": now, "updated_at": now}).Error
+    Updates(map[string]interface{}{"completed_at": now, "updated_at": now}).Error
 }
 
 func (h *questNodeProgressHandle) FindByAcceptanceAndNode(ctx context.Context, acceptanceID uuid.UUID, nodeID uuid.UUID) (*models.QuestNodeProgress, error) {

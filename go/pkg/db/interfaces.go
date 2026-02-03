@@ -44,6 +44,7 @@ type DbClient interface {
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
+	TrackedQuest() TrackedQuestHandle
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserZoneReputation() UserZoneReputationHandle
@@ -428,6 +429,13 @@ type TrackedPointOfInterestGroupHandle interface {
 	Create(ctx context.Context, pointOfInterestGroupID uuid.UUID, userID uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedPointOfInterestGroup, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type TrackedQuestHandle interface {
+	Create(ctx context.Context, questID uuid.UUID, userID uuid.UUID) error
+	Delete(ctx context.Context, questID uuid.UUID) error
+	GetByUserID(ctx context.Context, userID uuid.UUID) ([]models.TrackedQuest, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 

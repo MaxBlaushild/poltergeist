@@ -7,8 +7,11 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/character.dart';
 import '../models/point_of_interest.dart';
+import '../models/quest.dart';
+import '../models/quest_node.dart';
 import '../providers/auth_provider.dart';
 import '../providers/location_provider.dart';
+import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
 
 const _placeholderImageUrl =
@@ -25,6 +28,8 @@ class PointOfInterestPanel extends StatefulWidget {
     super.key,
     required this.pointOfInterest,
     required this.hasDiscovered,
+    this.quest,
+    this.questNode,
     required this.onClose,
     this.onUnlocked,
     this.onCharacterTap,
@@ -32,6 +37,8 @@ class PointOfInterestPanel extends StatefulWidget {
 
   final PointOfInterest pointOfInterest;
   final bool hasDiscovered;
+  final Quest? quest;
+  final QuestNode? questNode;
   final VoidCallback onClose;
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
@@ -134,6 +141,131 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         });
       }
     }
+  }
+
+  Future<void> _showQuestSubmissionModal() async {
+    final quest = widget.quest;
+    final node = widget.questNode;
+    if (quest == null || node == null) return;
+
+    final textController = TextEditingController();
+    final imageController = TextEditingController();
+    String? selectedChallengeId = node.challenges.isNotEmpty
+        ? node.challenges.first.id
+        : null;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+            top: 16,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    quest.name,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (node.challenges.length > 1)
+                    DropdownButtonFormField<String>(
+                      value: selectedChallengeId,
+                      items: node.challenges
+                          .map(
+                            (c) => DropdownMenuItem(
+                              value: c.id,
+                              child: Text(c.question),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setModalState(() => selectedChallengeId = value);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Challenge',
+                        border: OutlineInputBorder(),
+                      ),
+                    )
+                  else if (node.challenges.isNotEmpty)
+                    Text(
+                      node.challenges.first.question,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: textController,
+                    decoration: const InputDecoration(
+                      labelText: 'Answer',
+                      border: OutlineInputBorder(),
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: imageController,
+                    decoration: const InputDecoration(
+                      labelText: 'Image URL (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () async {
+                      final resp = await context
+                          .read<QuestLogProvider>()
+                          .submitQuestNodeChallenge(
+                            node.id,
+                            questNodeChallengeId: selectedChallengeId,
+                            textSubmission: textController.text.trim(),
+                            imageSubmissionUrl:
+                                imageController.text.trim().isNotEmpty
+                                    ? imageController.text.trim()
+                                    : null,
+                          );
+                      if (!mounted) return;
+                      final success = resp['successful'] == true;
+                      final reason = resp['reason']?.toString() ?? '';
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? (reason.isNotEmpty
+                                    ? reason
+                                    : 'Challenge completed!')
+                                : (reason.isNotEmpty
+                                    ? reason
+                                    : 'Submission failed'),
+                          ),
+                        ),
+                      );
+                      if (success) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    child: const Text('Submit'),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -392,6 +524,43 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (widget.quest != null && widget.questNode != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quest Objective',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          ...widget.questNode!.challenges.map(
+                                (c) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    '• ${c.question}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ),
+                              ),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                            onPressed: _showQuestSubmissionModal,
+                            child: const Text('Submit Quest Challenge'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   if (tags.isNotEmpty) ...[
                     Text(
                       'Tags',

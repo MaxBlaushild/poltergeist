@@ -2,38 +2,28 @@ import 'package:flutter/foundation.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
+import '../models/quest_node.dart';
 import '../providers/tags_provider.dart';
 import '../providers/zone_provider.dart';
 import '../services/quest_log_service.dart';
 
-/// POIs that appear in the quest log (root or unlocked via completed objectives).
+/// POIs that appear in the quest log (current node only).
 List<PointOfInterest> getMapPointsOfInterest(List<Quest> quests) {
   final out = <PointOfInterest>[];
   for (final quest in quests) {
-    void addFromNode(QuestNode node) {
-      out.add(node.pointOfInterest);
-      for (final o in node.objectives) {
-        if (o.isCompleted && o.nextNode != null) {
-          addFromNode(o.nextNode!);
-        }
-      }
+    final node = quest.currentNode;
+    if (node?.pointOfInterest != null) {
+      out.add(node!.pointOfInterest!);
     }
-    addFromNode(quest.rootNode);
   }
   return out;
 }
 
-/// All POI IDs in a quest's tree (for tracking focus).
+/// All POI IDs in a quest's current node (for tracking focus).
 List<String> getAllPointsOfInterestIdsForQuest(Quest quest) {
-  final ids = <String>[];
-  void visit(QuestNode node) {
-    ids.add(node.pointOfInterest.id);
-    for (final o in node.objectives) {
-      if (o.nextNode != null) visit(o.nextNode!);
-    }
-  }
-  visit(quest.rootNode);
-  return ids;
+  final node = quest.currentNode;
+  if (node?.pointOfInterest == null) return [];
+  return [node!.pointOfInterest!.id];
 }
 
 class QuestLogProvider with ChangeNotifier {
@@ -45,8 +35,8 @@ class QuestLogProvider with ChangeNotifier {
   List<String> _trackedQuestIds = [];
   List<String> _trackedPointOfInterestIds = [];
   List<PointOfInterest> _pointsOfInterest = [];
-  Map<String, List<QuestChallenge>> _pendingTasks = {};
-  Map<String, List<QuestChallenge>> _completedTasks = {};
+  List<String> _currentNodePoiIds = [];
+  List<List<QuestNodePolygonPoint>> _currentNodePolygons = [];
   bool _loading = false;
   String? _lastZoneId;
   List<String> _lastTagNames = [];
@@ -60,13 +50,13 @@ class QuestLogProvider with ChangeNotifier {
   List<String> get trackedQuestIds => _trackedQuestIds;
   List<String> get trackedPointOfInterestIds => _trackedPointOfInterestIds;
   List<PointOfInterest> get pointsOfInterest => _pointsOfInterest;
-  Map<String, List<QuestChallenge>> get pendingTasks => _pendingTasks;
-  Map<String, List<QuestChallenge>> get completedTasks => _completedTasks;
+  List<String> get currentNodePoiIds => _currentNodePoiIds;
+  List<List<QuestNodePolygonPoint>> get currentNodePolygons => _currentNodePolygons;
   bool get loading => _loading;
 
   bool isRootNode(PointOfInterest poi) {
     return _quests.any(
-      (q) => q.rootNode.pointOfInterest.id == poi.id,
+      (q) => q.currentNode?.pointOfInterest?.id == poi.id,
     );
   }
 
@@ -86,8 +76,8 @@ class QuestLogProvider with ChangeNotifier {
       _trackedQuestIds = [];
       _trackedPointOfInterestIds = [];
       _pointsOfInterest = [];
-      _pendingTasks = {};
-      _completedTasks = {};
+      _currentNodePoiIds = [];
+      _currentNodePolygons = [];
       notifyListeners();
     }
   }
@@ -124,8 +114,6 @@ class QuestLogProvider with ChangeNotifier {
       final tagNames = _tagNamesFromSelection();
       final log = await _service.getQuestLog(zoneId, tags: tagNames);
       _quests = log.quests;
-      _pendingTasks = log.pendingTasks;
-      _completedTasks = log.completedTasks;
       _trackedQuestIds = List.from(log.trackedQuestIds);
       _pointsOfInterest = getMapPointsOfInterest(log.quests);
       final tracked = log.quests
@@ -134,6 +122,16 @@ class QuestLogProvider with ChangeNotifier {
       _trackedPointOfInterestIds = tracked
           .expand((q) => getAllPointsOfInterestIdsForQuest(q))
           .toList();
+      _currentNodePoiIds = log.quests
+          .where((q) => q.isAccepted)
+          .expand((q) => getAllPointsOfInterestIdsForQuest(q))
+          .toList();
+      _currentNodePolygons = log.quests
+          .where((q) => q.isAccepted)
+          .map((q) => q.currentNode?.polygon ?? const <QuestNodePolygonPoint>[])
+          .where((poly) => poly.isNotEmpty)
+          .map((poly) => List<QuestNodePolygonPoint>.from(poly))
+          .toList();
       _lastZoneId = zoneId;
       _lastTagNames = tagNames;
     } catch (_) {
@@ -141,8 +139,8 @@ class QuestLogProvider with ChangeNotifier {
       _trackedQuestIds = [];
       _trackedPointOfInterestIds = [];
       _pointsOfInterest = [];
-      _pendingTasks = {};
-      _completedTasks = {};
+      _currentNodePoiIds = [];
+      _currentNodePolygons = [];
     }
     _loading = false;
     notifyListeners();
@@ -172,6 +170,22 @@ class QuestLogProvider with ChangeNotifier {
   /// Turn in a completed quest. Returns the response (goldAwarded, itemAwarded).
   Future<Map<String, dynamic>> turnInQuest(String questId) async {
     final resp = await _service.turnInQuest(questId);
+    await refresh();
+    return resp;
+  }
+
+  Future<Map<String, dynamic>> submitQuestNodeChallenge(
+    String questNodeId, {
+    String? questNodeChallengeId,
+    String? textSubmission,
+    String? imageSubmissionUrl,
+  }) async {
+    final resp = await _service.submitQuestNodeChallenge(
+      questNodeId,
+      questNodeChallengeId: questNodeChallengeId,
+      textSubmission: textSubmission,
+      imageSubmissionUrl: imageSubmissionUrl,
+    );
     await refresh();
     return resp;
   }

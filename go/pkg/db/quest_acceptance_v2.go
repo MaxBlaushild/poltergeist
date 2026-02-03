@@ -45,5 +45,5 @@ func (h *questAcceptanceV2Handle) MarkTurnedIn(ctx context.Context, id uuid.UUID
   return h.db.WithContext(ctx).
     Model(&models.QuestAcceptanceV2{}).
     Where("id = ?", id).
-    Updates(map[string]interface{}{"	turned_in_at": now, "updated_at": now}).Error
+    Updates(map[string]interface{}{"turned_in_at": now, "updated_at": now}).Error
 }

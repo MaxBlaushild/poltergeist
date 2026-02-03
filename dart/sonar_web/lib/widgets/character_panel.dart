@@ -72,13 +72,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   Future<void> _handleQuest(CharacterAction action) async {
-    final questId = action.pointOfInterestGroupId;
+    final questId = action.questId;
     if (questId == null) return;
     setState(() => _acceptingQuest = true);
     try {
       await context.read<PoiService>().acceptQuest(
             characterId: widget.character.id,
-            pointOfInterestGroupId: questId,
+            questId: questId,
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,7 +98,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   Future<void> _handleTurnIn(Quest quest, CharacterAction action) async {
-    final questId = action.pointOfInterestGroupId ?? quest.id;
+    final questId = action.questId ?? quest.id;
     if (questId.isEmpty) return;
     setState(() => _turningInQuest = true);
     try {
@@ -122,7 +122,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   Quest? _questReadyToTurnIn(CharacterAction action) {
-    final questId = action.pointOfInterestGroupId;
+    final questId = action.questId;
     if (questId == null || questId.isEmpty) return null;
     final quests = context.read<QuestLogProvider>().quests;
     try {
@@ -139,7 +139,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
     final questAction = _firstActionOfType('giveQuest');
-    final hasQuest = questAction?.pointOfInterestGroupId != null;
+    final hasQuest = questAction?.questId != null;
     final questReadyToTurnIn = questAction != null ? _questReadyToTurnIn(questAction) : null;
     final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
 
