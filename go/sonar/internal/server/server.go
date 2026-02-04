@@ -35,10 +35,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/lib/pq"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/paulmach/orb/planar"
-	"github.com/lib/pq"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -247,6 +247,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
 	r.DELETE("/sonar/trackedPointOfInterestGroups/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
+	r.POST("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTrackedPointOfInterestGroup))
+	r.GET("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
+	r.DELETE("/sonar/trackedQuests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
+	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
@@ -2659,14 +2663,14 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name             string  `binding:"required" json:"name"`
-		Description      string  `binding:"required" json:"description"`
-		Lat              string  `binding:"required" json:"lat"`
-		Lng              string  `binding:"required" json:"lng"`
-		UnlockTier       *int    `json:"unlockTier"`
-		Clue             string  `json:"clue"`
-		ImageUrl         string  `json:"imageUrl"`
-		OriginalName     string  `json:"originalName"`
+		Name              string  `binding:"required" json:"name"`
+		Description       string  `binding:"required" json:"description"`
+		Lat               string  `binding:"required" json:"lat"`
+		Lng               string  `binding:"required" json:"lng"`
+		UnlockTier        *int    `json:"unlockTier"`
+		Clue              string  `json:"clue"`
+		ImageUrl          string  `json:"imageUrl"`
+		OriginalName      string  `json:"originalName"`
 		GoogleMapsPlaceID *string `json:"googleMapsPlaceId"`
 	}
 
@@ -3702,27 +3706,27 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		}
 		distance := util.HaversineDistance(userLat, userLng, poiLat, poiLng)
 		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(\"you must be within 100 meters of the location to submit an answer. Currently %.0f meters away\", distance)})
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
 			return
 		}
-	} else if node.Polygon != \"\" {
+	} else if node.Polygon != "" {
 		polygon, err := parseQuestNodePolygon(node.Polygon)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{\"error\": \"invalid quest polygon\"})
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest polygon"})
 			return
 		}
 		if !planar.PolygonContains(polygon, orb.Point{userLng, userLat}) {
-			ctx.JSON(http.StatusBadRequest, gin.H{\"error\": \"you must be inside the quest area to submit\"})
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the quest area to submit"})
 			return
 		}
 	} else {
-		ctx.JSON(http.StatusBadRequest, gin.H{\"error\": \"quest node has no location\"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
 		return
 	}
 
 	challenge, err := selectQuestNodeChallenge(node, requestBody.QuestNodeChallengeID)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{\"error\": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -3732,7 +3736,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		TextSubmission:     requestBody.TextSubmission,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -3747,7 +3751,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 
 	progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(ctx, acceptance.ID, node.ID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -3763,32 +3767,34 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			CompletedAt:       &now,
 		}
 		if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	} else if progress.CompletedAt == nil {
 		if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	}
 
 	completed, err := s.questlogClient.AreQuestObjectivesComplete(ctx, user.ID, quest.ID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	if shouldAward {
-		if err := s.gameEngineClient.AwardQuestNodeSubmissionRewards(ctx, user.ID, quest, node, challenge, completed); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{\"error\": err.Error()})
+		if err := s.gameEngineClient.AwardQuestNodeSubmissionRewards(ctx, user.ID, requestBody.TeamID, quest, node, challenge, completed); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 	}
 
 	ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
 		Successful:     true,
-		Reason:         \"Challenge completed successfully!\",\n\t\tQuestCompleted: completed,\n\t})
+		Reason:         "Challenge completed successfully!",
+		QuestCompleted: completed,
+	})
 }
 
 func (s *server) getPresignedUploadUrl(ctx *gin.Context) {

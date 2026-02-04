@@ -17,22 +17,22 @@ class QuestLogService {
     return QuestLog.fromJson(map);
   }
 
-  /// POST /sonar/trackedPointOfInterestGroups { pointOfInterestGroupID: questId }
+  /// POST /sonar/trackedQuests { questId }
   Future<void> trackQuest(String questId) async {
     await _api.post<dynamic>(
-      '/sonar/trackedPointOfInterestGroups',
-      data: {'pointOfInterestGroupID': questId},
+      '/sonar/trackedQuests',
+      data: {'questId': questId},
     );
   }
 
-  /// DELETE /sonar/trackedPointOfInterestGroups/:id
+  /// DELETE /sonar/trackedQuests/:id
   Future<void> untrackQuest(String questId) async {
-    await _api.delete<dynamic>('/sonar/trackedPointOfInterestGroups/$questId');
+    await _api.delete<dynamic>('/sonar/trackedQuests/$questId');
   }
 
-  /// DELETE /sonar/trackedPointOfInterestGroups
+  /// DELETE /sonar/trackedQuests
   Future<void> untrackAllQuests() async {
-    await _api.delete<dynamic>('/sonar/trackedPointOfInterestGroups');
+    await _api.delete<dynamic>('/sonar/trackedQuests');
   }
 
   /// POST /sonar/quests/:questId/turnIn

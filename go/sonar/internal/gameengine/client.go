@@ -44,7 +44,7 @@ type GameEngineClient interface {
 	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
 	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemAwarded *models.ItemAwarded, err error)
-	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error
+	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error
 }
 
 type gameEngineClient struct {
@@ -886,7 +886,7 @@ func (c *gameEngineClient) awardReputationPointsForZone(ctx context.Context, use
 	return reputationPoints, nil
 }
 
-func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error {
+func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error {
 	if quest == nil || node == nil || challenge == nil {
 		return fmt.Errorf("quest, node, and challenge are required")
 	}
@@ -984,6 +984,15 @@ func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, 
 			Data:         challengeActivityData,
 			Seen:         false,
 		}); err != nil {
+			return err
+		}
+	}
+
+	if err := c.chatClient.AddQuestNodeCaptureMessage(ctx, teamID, &userID, quest, node); err != nil {
+		return err
+	}
+	if questCompleted {
+		if err := c.chatClient.AddQuestCompletedMessage(ctx, teamID, &userID, quest); err != nil {
 			return err
 		}
 	}
