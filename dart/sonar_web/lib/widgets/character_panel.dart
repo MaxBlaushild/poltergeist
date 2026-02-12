@@ -7,6 +7,7 @@ import '../models/quest.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
+import 'rpg_dialogue_modal.dart';
 
 class CharacterPanel extends StatefulWidget {
   const CharacterPanel({
@@ -76,6 +77,61 @@ class _CharacterPanelState extends State<CharacterPanel> {
       if (types.contains(action.actionType)) return action;
     }
     return null;
+  }
+
+  Quest? _questForAction(CharacterAction action) {
+    final questId = action.questId;
+    if (questId == null || questId.isEmpty) return null;
+    final quests = context.read<QuestLogProvider>().quests;
+    try {
+      return quests.firstWhere((q) => q.id == questId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  List<DialogueMessage> _buildQuestAcceptanceDialogue(Quest? quest) {
+    final lines = (quest?.acceptanceDialogue ?? const [])
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) {
+      final fallback = quest?.description.trim();
+      if (fallback != null && fallback.isNotEmpty) {
+        lines.add(fallback);
+      } else {
+        lines.add('...');
+      }
+    }
+    return [
+      for (var i = 0; i < lines.length; i++)
+        DialogueMessage(speaker: 'character', text: lines[i], order: i),
+    ];
+  }
+
+  Future<void> _showQuestAcceptanceDialog(CharacterAction action) async {
+    if (_acceptingQuest) return;
+    final quest = _questForAction(action);
+    final accepted = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return RpgDialogueModal(
+          character: widget.character,
+          action: action,
+          dialogueOverride: _buildQuestAcceptanceDialogue(quest),
+          primaryActionLabel: 'Accept quest',
+          secondaryActionLabel: 'Decline',
+          onPrimaryAction: () => Navigator.of(dialogContext).pop(true),
+          onSecondaryAction: () => Navigator.of(dialogContext).pop(false),
+          onClose: () => Navigator.of(dialogContext).pop(false),
+        );
+      },
+    );
+    if (accepted == true) {
+      await _handleQuest(action);
+    }
   }
 
   Future<void> _handleQuest(CharacterAction action) async {
@@ -252,7 +308,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                       icon: Icons.assignment_turned_in,
                                       onTap: _acceptingQuest
                                           ? null
-                                          : () => _handleQuest(questAction!),
+                                          : () => _showQuestAcceptanceDialog(questAction!),
                                     ),
                                   if (shopAction != null)
                                     _DialogueChoiceButton(

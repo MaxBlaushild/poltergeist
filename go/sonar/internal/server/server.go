@@ -1842,6 +1842,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 	var requestBody struct {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
+		AcceptanceDialogue    []string   `json:"acceptanceDialogue"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -1863,12 +1864,18 @@ func (s *server) createQuest(ctx *gin.Context) {
 		return
 	}
 
+	acceptanceDialogue := models.StringArray(requestBody.AcceptanceDialogue)
+	if acceptanceDialogue == nil {
+		acceptanceDialogue = models.StringArray{}
+	}
+
 	quest := &models.Quest{
 		ID:                    uuid.New(),
 		CreatedAt:             time.Now(),
 		UpdatedAt:             time.Now(),
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
+		AcceptanceDialogue:    acceptanceDialogue,
 		ImageURL:              requestBody.ImageURL,
 		ZoneID:                requestBody.ZoneID,
 		QuestArchetypeID:      requestBody.QuestArchetypeID,
@@ -1925,6 +1932,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	var requestBody struct {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
+		AcceptanceDialogue    *[]string  `json:"acceptanceDialogue"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -1954,6 +1962,9 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	previousQuestGiver := quest.QuestGiverCharacterID
 	quest.Name = requestBody.Name
 	quest.Description = requestBody.Description
+	if requestBody.AcceptanceDialogue != nil {
+		quest.AcceptanceDialogue = models.StringArray(*requestBody.AcceptanceDialogue)
+	}
 	quest.ImageURL = requestBody.ImageURL
 	quest.ZoneID = requestBody.ZoneID
 	quest.QuestArchetypeID = requestBody.QuestArchetypeID

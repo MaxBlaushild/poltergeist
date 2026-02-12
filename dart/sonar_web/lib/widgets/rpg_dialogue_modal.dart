@@ -9,11 +9,21 @@ class RpgDialogueModal extends StatefulWidget {
     required this.character,
     required this.action,
     required this.onClose,
+    this.dialogueOverride,
+    this.primaryActionLabel,
+    this.secondaryActionLabel,
+    this.onPrimaryAction,
+    this.onSecondaryAction,
   });
 
   final Character character;
   final CharacterAction action;
   final VoidCallback onClose;
+  final List<DialogueMessage>? dialogueOverride;
+  final String? primaryActionLabel;
+  final String? secondaryActionLabel;
+  final VoidCallback? onPrimaryAction;
+  final VoidCallback? onSecondaryAction;
 
   @override
   State<RpgDialogueModal> createState() => _RpgDialogueModalState();
@@ -42,14 +52,19 @@ class _RpgDialogueModalState extends State<RpgDialogueModal> {
     debugPrint(
       'RpgDialogueModal: build character=${widget.character.id} action=${widget.action.id} dialogueCount=${widget.action.dialogue.length}',
     );
-    final baseDialogue = widget.action.dialogue.isNotEmpty
-        ? widget.action.dialogue
-        : const [DialogueMessage(speaker: 'character', text: '...', order: 0)];
+    final baseDialogue = (widget.dialogueOverride != null &&
+            widget.dialogueOverride!.isNotEmpty)
+        ? widget.dialogueOverride!
+        : (widget.action.dialogue.isNotEmpty
+            ? widget.action.dialogue
+            : const [DialogueMessage(speaker: 'character', text: '...', order: 0)]);
     final sorted = List<DialogueMessage>.from(baseDialogue)
       ..sort((a, b) => a.order.compareTo(b.order));
     final safeIndex = _currentIndex < sorted.length ? _currentIndex : 0;
     final current = sorted[safeIndex];
     final hasNext = safeIndex < sorted.length - 1;
+    final hasDecisionActions = !hasNext &&
+        (widget.onPrimaryAction != null || widget.onSecondaryAction != null);
     final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
 
     return Material(
@@ -117,16 +132,33 @@ class _RpgDialogueModalState extends State<RpgDialogueModal> {
                 const Spacer(),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: () {
-                      if (hasNext) {
-                        setState(() => _currentIndex = safeIndex + 1);
-                      } else {
-                        widget.onClose();
-                      }
-                    },
-                    child: Text(hasNext ? 'Next' : 'Close'),
-                  ),
+                  child: hasDecisionActions
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.onSecondaryAction != null)
+                              OutlinedButton(
+                                onPressed: widget.onSecondaryAction,
+                                child: Text(widget.secondaryActionLabel ?? 'Decline'),
+                              ),
+                            if (widget.onSecondaryAction != null)
+                              const SizedBox(width: 12),
+                            FilledButton(
+                              onPressed: widget.onPrimaryAction,
+                              child: Text(widget.primaryActionLabel ?? 'Accept'),
+                            ),
+                          ],
+                        )
+                      : FilledButton(
+                          onPressed: () {
+                            if (hasNext) {
+                              setState(() => _currentIndex = safeIndex + 1);
+                            } else {
+                              widget.onClose();
+                            }
+                          },
+                          child: Text(hasNext ? 'Next' : 'Close'),
+                        ),
                 ),
               ],
             ),

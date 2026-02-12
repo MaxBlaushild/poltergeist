@@ -23,6 +23,7 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 	payload := map[string]interface{}{
 		"name":                     updates.Name,
 		"description":              updates.Description,
+		"acceptance_dialogue":      updates.AcceptanceDialogue,
 		"image_url":                updates.ImageURL,
 		"zone_id":                  updates.ZoneID,
 		"quest_archetype_id":       updates.QuestArchetypeID,

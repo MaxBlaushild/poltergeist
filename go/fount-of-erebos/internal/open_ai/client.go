@@ -244,7 +244,6 @@ func (c *client) EditImage(ctx context.Context, request deep_priest.EditImageReq
 	}
 
 	// Note: this is base64 PNG data, not a URL.
-	log.Printf("Edited image (base64) length: %d", len(newImage.Data[0].B64JSON))
 	return newImage.Data[0].B64JSON, nil
 }
 

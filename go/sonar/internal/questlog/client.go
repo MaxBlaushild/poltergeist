@@ -45,6 +45,7 @@ type Quest struct {
 	ID                    uuid.UUID         `json:"id"`
 	Name                  string            `json:"name"`
 	Description           string            `json:"description"`
+	AcceptanceDialogue    []string          `json:"acceptanceDialogue,omitempty"`
 	ImageUrl              string            `json:"imageUrl"`
 	Gold                  int               `json:"gold"`
 	ItemRewards           []QuestItemReward `json:"itemRewards"`
@@ -148,6 +149,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			ID:                    quest.ID,
 			Name:                  quest.Name,
 			Description:           quest.Description,
+			AcceptanceDialogue:    []string(quest.AcceptanceDialogue),
 			ImageUrl:              quest.ImageURL,
 			Gold:                  quest.Gold,
 			ItemRewards:           itemRewards,

@@ -23,6 +23,7 @@ mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 const emptyQuestForm = {
   name: '',
   description: '',
+  acceptanceDialogue: [] as string[],
   imageUrl: '',
   zoneId: '',
   questGiverCharacterId: '',
@@ -89,6 +90,9 @@ const parsePolygonWkt = (raw: string): number[][][] | null => {
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
+
+const normalizeAcceptanceDialogue = (lines: string[]) =>
+  lines.map((line) => line.trim()).filter((line) => line.length > 0);
 
 const closePolygonRing = (ring: [number, number][]) => {
   if (ring.length === 0) return ring;
@@ -923,6 +927,7 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
+        acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -951,6 +956,7 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
+        acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -975,6 +981,7 @@ export const Quests = () => {
     setQuestForm({
       name: quest.name ?? '',
       description: quest.description ?? '',
+      acceptanceDialogue: quest.acceptanceDialogue ?? [],
       imageUrl: quest.imageUrl ?? '',
       zoneId: quest.zoneId ?? '',
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
@@ -1283,6 +1290,22 @@ export const Quests = () => {
                 onChange={(e) => setQuestForm((prev) => ({ ...prev, description: e.target.value }))}
               />
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700">Quest Acceptance Dialogue</label>
+              <textarea
+                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                rows={4}
+                placeholder="One line per dialogue message shown before accepting the quest."
+                value={questForm.acceptanceDialogue.join('\n')}
+                onChange={(e) =>
+                  setQuestForm((prev) => ({
+                    ...prev,
+                    acceptanceDialogue: e.target.value.split('\n'),
+                  }))
+                }
+              />
+              <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Zone</label>
               <input
@@ -1481,6 +1504,22 @@ export const Quests = () => {
                     value={questForm.description}
                     onChange={(e) => setQuestForm((prev) => ({ ...prev, description: e.target.value }))}
                   />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Quest Acceptance Dialogue</label>
+                  <textarea
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                    rows={4}
+                    placeholder="One line per dialogue message shown before accepting the quest."
+                    value={questForm.acceptanceDialogue.join('\n')}
+                    onChange={(e) =>
+                      setQuestForm((prev) => ({
+                        ...prev,
+                        acceptanceDialogue: e.target.value.split('\n'),
+                      }))
+                    }
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Zone</label>

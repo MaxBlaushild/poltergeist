@@ -25,7 +25,7 @@ type Character struct {
 	Locations             []CharacterLocation `json:"locations" gorm:"foreignKey:CharacterID"`
 	PointOfInterestID     *uuid.UUID          `json:"pointOfInterestId,omitempty" gorm:"type:uuid"`
 	PointOfInterest       *PointOfInterest    `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
-	Geometry              string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Geometry              *string             `json:"geometry,omitempty" gorm:"type:geometry(Point,4326)"`
 	MovementPattern       MovementPattern     `json:"movementPattern"`
 	MovementPatternID     uuid.UUID           `json:"movementPatternId" gorm:"type:uuid"`
 }
@@ -37,13 +37,14 @@ func (n *Character) TableName() string {
 // SetGeometry creates a PostGIS geometry point from lat/lng coordinates
 func (c *Character) SetGeometry(lat float64, lng float64) {
 	// Create WKT (Well-Known Text) format: 'SRID=4326;POINT(lng lat)'
-	c.Geometry = fmt.Sprintf("SRID=4326;POINT(%f %f)", lng, lat)
+	geom := fmt.Sprintf("SRID=4326;POINT(%f %f)", lng, lat)
+	c.Geometry = &geom
 }
 
 // BeforeSave hook to auto-populate geometry from movement pattern's starting position if geometry is empty
 func (c *Character) BeforeSave(tx *gorm.DB) error {
 	// If geometry is empty and movement pattern is loaded, use starting position
-	if c.Geometry == "" && c.MovementPattern.StartingLatitude != 0 && c.MovementPattern.StartingLongitude != 0 {
+	if c.Geometry == nil && c.MovementPattern.StartingLatitude != 0 && c.MovementPattern.StartingLongitude != 0 {
 		c.SetGeometry(c.MovementPattern.StartingLatitude, c.MovementPattern.StartingLongitude)
 	}
 	return nil

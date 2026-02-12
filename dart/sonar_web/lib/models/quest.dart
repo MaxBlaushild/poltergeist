@@ -27,6 +27,7 @@ class Quest {
   final String id;
   final String name;
   final String description;
+  final List<String> acceptanceDialogue;
   final String? imageUrl;
   final String? zoneId;
   final String? questArchetypeId;
@@ -43,6 +44,7 @@ class Quest {
     required this.id,
     required this.name,
     required this.description,
+    this.acceptanceDialogue = const [],
     this.imageUrl,
     this.zoneId,
     this.questArchetypeId,
@@ -61,6 +63,10 @@ class Quest {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      acceptanceDialogue: (json['acceptanceDialogue'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       imageUrl: json['imageUrl'] as String?,
       zoneId: json['zoneId'] as String?,
       questArchetypeId: json['questArchetypeId'] as String?,

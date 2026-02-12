@@ -15,6 +15,7 @@ export interface Quest {
   updatedAt: string;
   name: string;
   description: string;
+  acceptanceDialogue?: string[];
   imageUrl?: string;
   zoneId?: string | null;
   questArchetypeId?: string | null;

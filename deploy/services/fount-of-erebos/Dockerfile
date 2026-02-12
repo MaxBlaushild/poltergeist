@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM golang:1.22 AS builder
+FROM golang:1.24 AS builder
 
 ENV CGO_ENABLED=0
 ENV GOPATH=/usr/home/app
