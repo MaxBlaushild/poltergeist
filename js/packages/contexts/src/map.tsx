@@ -17,7 +17,7 @@ interface MapContextValue {
 
 const MapContext = createContext<MapContextValue | undefined>(undefined);
 
-mapboxgl.accessToken = 'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 interface MapProviderProps {
   children: ReactNode;

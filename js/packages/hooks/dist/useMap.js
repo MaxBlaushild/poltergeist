@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
-mapboxgl.accessToken = 'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 export const useMap = () => {
     const { location } = useLocation();
     const mapContainerRef = useRef(document.createElement('div'));

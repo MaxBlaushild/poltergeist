@@ -4,7 +4,7 @@ import { useLocation } from './location';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 const MapContext = createContext(undefined);
-mapboxgl.accessToken = 'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 export const MapProvider = ({ children }) => {
     const { location } = useLocation();
     const mapContainerRef = useRef(document.createElement('div'));

@@ -31,8 +31,7 @@ import { SubmissionsContextProvider } from './contexts/SubmissionsContext.tsx';
 import { DiscoveriesContextProvider } from './contexts/DiscoveriesContext.tsx';
 import { LocationError } from './components/LocationError.tsx';
 
-mapboxgl.accessToken =
-  'REDACTED';
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 const HTML5toTouch = {
   backends: [
