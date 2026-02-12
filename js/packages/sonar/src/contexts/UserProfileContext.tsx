@@ -21,34 +21,49 @@ export const UserProfileProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserLoading, setCurrentUserLoading] = useState<boolean>(true);
   const [currentUserError, setCurrentUserError] = useState<Error | null>(null);
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
-    const fetchCurrentUser = async () => {
-      try {
-        const fetchedUser = await apiClient.get<User>('/sonar/whoami');
-        setCurrentUser(fetchedUser);
-      } catch (error: any) {
-        // Silently handle auth errors
-        if (error?.response?.status === 401 || error?.response?.status === 403) {
-          setCurrentUser(null);
-          return;
-        }
-        setCurrentUserError(error);
-      } finally {
-        setCurrentUserLoading(false);
+  const fetchCurrentUser = async () => {
+    if (!user) {
+      setCurrentUser(null);
+      setCurrentUserLoading(false);
+      setCurrentUserError(null);
+      return;
+    }
+
+    setCurrentUserLoading(true);
+    setCurrentUserError(null);
+    try {
+      const fetchedUser = await apiClient.get<User>('/sonar/whoami');
+      setCurrentUser(fetchedUser);
+    } catch (error: any) {
+      // Silently handle auth errors
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        setCurrentUser(null);
+        return;
       }
-    };
+      setCurrentUserError(error);
+    } finally {
+      setCurrentUserLoading(false);
+    }
+  };
 
   useEffect(() => {
-    console.log('user', user);
+    if (authLoading) {
+      setCurrentUserLoading(true);
+      return;
+    }
+
     if (!user) {
       // Clear data when not authenticated
       setCurrentUser(null);
       setCurrentUserLoading(false);
+      setCurrentUserError(null);
+      return;
     }
 
     fetchCurrentUser();
-  }, [apiClient, user]);
+  }, [apiClient, user, authLoading]);
 
   return (
     <UserProfileContext.Provider value={{ currentUser, currentUserLoading, currentUserError, refreshUser: fetchCurrentUser }}>
