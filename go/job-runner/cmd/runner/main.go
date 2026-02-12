@@ -20,6 +20,8 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
+	"github.com/MaxBlaushild/poltergeist/pkg/polymarket"
+	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 
 	"github.com/hibiken/asynq"
 )
@@ -76,6 +78,28 @@ func main() {
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
 	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient)
 
+	var polymarketClient polymarket.Client
+	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
+		polymarketClient = polymarket.NewClient(polymarket.ClientConfig{
+			BaseURL:    cfg.Public.PolymarketBaseURL,
+			TradesPath: cfg.Public.PolymarketTradesPath,
+			TradesURL:  cfg.Public.PolymarketTradesURL,
+			APIKey:     cfg.Secret.PolymarketAPIKey,
+		})
+	}
+
+	texterClient := texter.NewClient()
+	monitorPolymarketTradesProcessor := processors.NewMonitorPolymarketTradesProcessor(
+		dbClient,
+		polymarketClient,
+		texterClient,
+		cfg.Public.PolymarketAlertToNumber,
+		cfg.Public.PolymarketAlertFromNumber,
+		cfg.Public.PolymarketSuspiciousNotionalThreshold,
+		cfg.Public.PolymarketSuspiciousSizeThreshold,
+		cfg.Public.PolymarketTradesLimit,
+	)
+
 	// Initialize Ethereum client for blockchain transaction checking (read-only)
 	var checkBlockchainTransactionsProcessor *processors.CheckBlockchainTransactionsProcessor
 	if cfg.Public.RPCURL != "" && cfg.Public.ChainID != 0 {
@@ -109,6 +133,7 @@ func main() {
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
 	mux.Handle(jobs.ImportPointOfInterestTaskType, importPointOfInterestProcessor)
+	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
 	}
@@ -131,6 +156,10 @@ func main() {
 		if _, err = scheduler.Register("@every 15s", asynq.NewTask(jobs.CheckBlockchainTransactionsTaskType, nil)); err != nil {
 			log.Fatalf("could not register the blockchain transactions check schedule: %v", err)
 		}
+	}
+
+	if _, err = scheduler.Register("@every 1m", asynq.NewTask(jobs.MonitorPolymarketTradesTaskType, nil)); err != nil {
+		log.Fatalf("could not register the polymarket trades monitor schedule: %v", err)
 	}
 
 	go func() {

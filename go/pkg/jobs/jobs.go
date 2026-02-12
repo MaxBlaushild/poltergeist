@@ -14,6 +14,7 @@ const (
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
 	ImportPointOfInterestTaskType         = "import_point_of_interest"
+	MonitorPolymarketTradesTaskType       = "monitor_polymarket_trades"
 )
 
 type GenerateQuestForZoneTaskPayload struct {

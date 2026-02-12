@@ -36,6 +36,7 @@ import { FlaggedPhotos } from './components/FlaggedPhotos.tsx';
 import { PointOfInterest } from './components/PointOfInterest.tsx';
 import { PointOfInterestEditor } from './components/PointOfInterestEditor.tsx';
 import { Quests } from './components/Quests.tsx';
+import { InsiderTrades } from './components/InsiderTrades.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -84,6 +85,7 @@ const Navigation = () => {
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
         <Link to="/quests" className="text-white hover:text-gray-300">Quests</Link>
+        <Link to="/insider-trades" className="text-white hover:text-gray-300">Insider Trades</Link>
       </div>
     </nav>
   );
@@ -232,6 +234,11 @@ const router = createBrowserRouter([
       {
         path: "/quests",
         element: <Quests />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/insider-trades",
+        element: <InsiderTrades />,
         loader: onlyAuthenticated,
       },
     ]

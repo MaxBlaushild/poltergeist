@@ -101,6 +101,7 @@ type client struct {
 	userDeviceTokenHandle             *userDeviceTokenHandle
 	userRecentPostTagHandle           *userRecentPostTagHandle
 	socialAccountHandle               *socialAccountHandler
+	insiderTradeHandle                *insiderTradeHandle
 }
 
 type ClientConfig struct {
@@ -219,6 +220,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		blockchainTransactionHandle:       &blockchainTransactionHandle{db: db},
 		userCertificateHandle:             &userCertificateHandle{db: db},
 		socialAccountHandle:               &socialAccountHandler{db: db},
+		insiderTradeHandle:                &insiderTradeHandle{db: db},
 	}, nil
 }
 
@@ -580,4 +582,8 @@ func (c *client) UserCertificate() UserCertificateHandle {
 
 func (c *client) SocialAccount() SocialAccountHandle {
 	return c.socialAccountHandle
+}
+
+func (c *client) InsiderTrade() InsiderTradeHandle {
+	return c.insiderTradeHandle
 }

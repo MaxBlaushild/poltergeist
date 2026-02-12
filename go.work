@@ -24,6 +24,7 @@ use (
 	./go/pkg/liveness
 	./go/pkg/middleware
 	./go/pkg/models
+	./go/pkg/polymarket
 	./go/pkg/slack
 	./go/pkg/texter
 	./go/pkg/twilio

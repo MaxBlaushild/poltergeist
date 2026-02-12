@@ -170,6 +170,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/generateProfilePictureOptions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateProfilePictureOptions))
 	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCompleteGenerationsForUser))
 	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfilePicture))
+	r.GET("/sonar/admin/insider-trades", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listInsiderTrades))
 	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
 	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
 	r.POST("/sonar/pointsOfInterest/group/bulk-delete", s.bulkDeletePointOfInterestGroups)

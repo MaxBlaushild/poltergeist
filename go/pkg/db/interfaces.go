@@ -98,6 +98,7 @@ type DbClient interface {
 	BlockchainTransaction() BlockchainTransactionHandle
 	UserCertificate() UserCertificateHandle
 	SocialAccount() SocialAccountHandle
+	InsiderTrade() InsiderTradeHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -166,6 +167,12 @@ type SocialAccountHandle interface {
 	FindByUserAndProvider(ctx context.Context, userID uuid.UUID, provider string) (*models.SocialAccount, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.SocialAccount, error)
 	DeleteByUserAndProvider(ctx context.Context, userID uuid.UUID, provider string) error
+}
+
+type InsiderTradeHandle interface {
+	Upsert(ctx context.Context, trade *models.InsiderTrade) (bool, error)
+	List(ctx context.Context, limit, offset int) ([]models.InsiderTrade, error)
+	LatestTradeTime(ctx context.Context) (*time.Time, error)
 }
 
 type PointOfInterestHandle interface {

@@ -13,6 +13,7 @@ type SecretConfig struct {
 	ImagineApiKey    string
 	UseApiKey        string
 	GoogleMapsApiKey string
+	PolymarketAPIKey string
 }
 
 type PublicConfig struct {
@@ -23,6 +24,15 @@ type PublicConfig struct {
 	RedisUrl string `mapstructure:"REDIS_URL"`
 	ChainID  int64  `mapstructure:"CHAIN_ID"`
 	RPCURL   string `mapstructure:"RPC_URL"`
+
+	PolymarketTradesURL                    string  `mapstructure:"POLYMARKET_TRADES_URL"`
+	PolymarketBaseURL                      string  `mapstructure:"POLYMARKET_BASE_URL"`
+	PolymarketTradesPath                   string  `mapstructure:"POLYMARKET_TRADES_PATH"`
+	PolymarketAlertToNumber                string  `mapstructure:"POLYMARKET_ALERT_TO_NUMBER"`
+	PolymarketAlertFromNumber              string  `mapstructure:"POLYMARKET_ALERT_FROM_NUMBER"`
+	PolymarketSuspiciousNotionalThreshold  float64 `mapstructure:"POLYMARKET_SUSPICIOUS_NOTIONAL_THRESHOLD"`
+	PolymarketSuspiciousSizeThreshold      float64 `mapstructure:"POLYMARKET_SUSPICIOUS_SIZE_THRESHOLD"`
+	PolymarketTradesLimit                  int     `mapstructure:"POLYMARKET_TRADES_LIMIT"`
 }
 
 type Config struct {
@@ -74,12 +84,23 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 		publicCfg.RPCURL = os.Getenv("RPC_URL")
 	}
 
+	if publicCfg.PolymarketAlertToNumber == "" {
+		publicCfg.PolymarketAlertToNumber = "14407858475"
+	}
+	if publicCfg.PolymarketSuspiciousNotionalThreshold == 0 {
+		publicCfg.PolymarketSuspiciousNotionalThreshold = 1000
+	}
+	if publicCfg.PolymarketTradesLimit == 0 {
+		publicCfg.PolymarketTradesLimit = 100
+	}
+
 	return &Config{
 		Secret: SecretConfig{
 			DbPassword:       os.Getenv("DB_PASSWORD"),
 			ImagineApiKey:    os.Getenv("IMAGINE_API_KEY"),
 			UseApiKey:        os.Getenv("USE_API_KEY"),
 			GoogleMapsApiKey: os.Getenv("GOOGLE_MAPS_API_KEY"),
+			PolymarketAPIKey: os.Getenv("POLYMARKET_API_KEY"),
 		},
 		Public: publicCfg,
 	}, nil
