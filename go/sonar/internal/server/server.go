@@ -282,6 +282,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacter))
 	r.GET("/sonar/characters/:id/locations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterLocations))
 	r.POST("/sonar/characters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCharacter))
+	r.POST("/sonar/characters/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacter))
+	r.POST("/sonar/characters/:id/regenerate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.regenerateCharacterImage))
 	r.PUT("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacter))
 	r.PUT("/sonar/characters/:id/locations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacterLocations))
 	r.DELETE("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacter))
@@ -1880,6 +1882,9 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if quest.QuestGiverCharacterID != nil {
+		_ = s.ensureQuestActionForCharacter(ctx, quest.ID, *quest.QuestGiverCharacterID)
+	}
 	if requestBody.ItemRewards != nil {
 		rewards := []models.QuestItemReward{}
 		for _, reward := range *requestBody.ItemRewards {
@@ -1945,6 +1950,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		return
 	}
 
+	previousQuestGiver := quest.QuestGiverCharacterID
 	quest.Name = requestBody.Name
 	quest.Description = requestBody.Description
 	quest.ImageURL = requestBody.ImageURL
@@ -1959,6 +1965,12 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	if err := s.dbClient.Quest().Update(ctx, questID, quest); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if previousQuestGiver != nil && (quest.QuestGiverCharacterID == nil || *previousQuestGiver != *quest.QuestGiverCharacterID) {
+		_ = s.removeQuestActionForCharacter(ctx, quest.ID, *previousQuestGiver)
+	}
+	if quest.QuestGiverCharacterID != nil {
+		_ = s.ensureQuestActionForCharacter(ctx, quest.ID, *quest.QuestGiverCharacterID)
 	}
 	if requestBody.ItemRewards != nil {
 		rewards := []models.QuestItemReward{}
@@ -1986,6 +1998,56 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, updatedQuest)
+}
+
+func (s *server) ensureQuestActionForCharacter(ctx *gin.Context, questID uuid.UUID, characterID uuid.UUID) error {
+	actions, err := s.dbClient.CharacterAction().FindByCharacterID(ctx, characterID)
+	if err != nil {
+		return err
+	}
+	questIDStr := questID.String()
+	for _, action := range actions {
+		if action.ActionType != models.ActionTypeGiveQuest {
+			continue
+		}
+		if action.Metadata == nil {
+			continue
+		}
+		if value, ok := action.Metadata["questId"]; ok && fmt.Sprint(value) == questIDStr {
+			return nil
+		}
+	}
+
+	action := &models.CharacterAction{
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CharacterID: characterID,
+		ActionType:  models.ActionTypeGiveQuest,
+		Dialogue:    []models.DialogueMessage{},
+		Metadata:    map[string]interface{}{"questId": questIDStr},
+	}
+	return s.dbClient.CharacterAction().Create(ctx, action)
+}
+
+func (s *server) removeQuestActionForCharacter(ctx *gin.Context, questID uuid.UUID, characterID uuid.UUID) error {
+	actions, err := s.dbClient.CharacterAction().FindByCharacterID(ctx, characterID)
+	if err != nil {
+		return err
+	}
+	questIDStr := questID.String()
+	for _, action := range actions {
+		if action.ActionType != models.ActionTypeGiveQuest {
+			continue
+		}
+		if action.Metadata == nil {
+			continue
+		}
+		if value, ok := action.Metadata["questId"]; ok && fmt.Sprint(value) == questIDStr {
+			_ = s.dbClient.CharacterAction().Delete(ctx, action.ID)
+		}
+	}
+	return nil
 }
 
 func (s *server) createQuestNode(ctx *gin.Context) {
@@ -5820,6 +5882,12 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		PointOfInterestID: requestBody.PointOfInterestID,
 		MovementPatternID: movementPattern.ID,
 		MovementPattern:   *movementPattern,
+		ImageGenerationStatus: func() string {
+			if strings.TrimSpace(requestBody.DialogueImageUrl) != "" {
+				return models.CharacterImageGenerationStatusComplete
+			}
+			return models.CharacterImageGenerationStatusNone
+		}(),
 	}
 
 	if err := s.dbClient.Character().Create(ctx, character); err != nil {
@@ -5828,6 +5896,150 @@ func (s *server) createCharacter(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, character)
+}
+
+func (s *server) generateCharacter(ctx *gin.Context) {
+	var requestBody struct {
+		Name            string `json:"name" binding:"required"`
+		Description     string `json:"description"`
+		MovementPattern *struct {
+			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
+			ZoneID              *uuid.UUID                 `json:"zoneId"`
+			StartingLatitude    float64                    `json:"startingLatitude"`
+			StartingLongitude   float64                    `json:"startingLongitude"`
+			Path                []models.Location          `json:"path"`
+		} `json:"movementPattern"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	movementType := models.MovementPatternStatic
+	var zoneID *uuid.UUID
+	var startingLatitude float64
+	var startingLongitude float64
+	var path []models.Location
+	if requestBody.MovementPattern != nil {
+		if requestBody.MovementPattern.MovementPatternType != "" {
+			movementType = requestBody.MovementPattern.MovementPatternType
+		}
+		zoneID = requestBody.MovementPattern.ZoneID
+		startingLatitude = requestBody.MovementPattern.StartingLatitude
+		startingLongitude = requestBody.MovementPattern.StartingLongitude
+		path = requestBody.MovementPattern.Path
+	}
+
+	movementPattern := &models.MovementPattern{
+		MovementPatternType: movementType,
+		ZoneID:              zoneID,
+		StartingLatitude:    startingLatitude,
+		StartingLongitude:   startingLongitude,
+		Path:                models.LocationPath(path),
+	}
+
+	if err := s.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create movement pattern: " + err.Error()})
+		return
+	}
+
+	character := &models.Character{
+		Name:                  requestBody.Name,
+		Description:           requestBody.Description,
+		MovementPatternID:     movementPattern.ID,
+		MovementPattern:       *movementPattern,
+		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
+	}
+
+	if err := s.dbClient.Character().Create(ctx, character); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create character: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateCharacterImageTaskPayload{
+		CharacterID: character.ID,
+		Name:        requestBody.Name,
+		Description: requestBody.Description,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateCharacterImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		update := &models.Character{
+			ImageGenerationStatus: models.CharacterImageGenerationStatusFailed,
+			ImageGenerationError:  &errMsg,
+		}
+		_ = s.dbClient.Character().Update(ctx, character.ID, update)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, character)
+}
+
+func (s *server) regenerateCharacterImage(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
+		return
+	}
+
+	character, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if character == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+		return
+	}
+
+	clearErr := ""
+	update := &models.Character{
+		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
+		ImageGenerationError:  &clearErr,
+	}
+	if err := s.dbClient.Character().Update(ctx, id, update); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update character: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateCharacterImageTaskPayload{
+		CharacterID: character.ID,
+		Name:        character.Name,
+		Description: character.Description,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateCharacterImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		failUpdate := &models.Character{
+			ImageGenerationStatus: models.CharacterImageGenerationStatusFailed,
+			ImageGenerationError:  &errMsg,
+		}
+		_ = s.dbClient.Character().Update(ctx, id, failUpdate)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedCharacter, err := s.dbClient.Character().FindByID(ctx, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, updatedCharacter)
 }
 
 func (s *server) updateCharacter(ctx *gin.Context) {
@@ -5997,6 +6209,13 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
 		return
+	}
+
+	quests, err := s.dbClient.Quest().FindByQuestGiverCharacterID(ctx, id)
+	if err == nil {
+		for _, quest := range quests {
+			_ = s.ensureQuestActionForCharacter(ctx, quest.ID, id)
+		}
 	}
 
 	actions, err := s.dbClient.CharacterAction().FindByCharacterID(ctx, id)

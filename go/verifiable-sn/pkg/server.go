@@ -1,11 +1,11 @@
 package pkg
 
 import (
-	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/cert"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/push"
 	"github.com/MaxBlaushild/poltergeist/verifiable-sn/internal/server"
 	"github.com/gin-gonic/gin"
@@ -48,5 +48,14 @@ func NewServerFromDependencies(
 
 	ethereumTransactorClient := ethereum_transactor.NewClient(ethereumTransactorURL)
 	pushClient := push.NewClient()
-	return server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, c2PAContractAddress, pushClient)
+	return server.NewServer(
+		authClient,
+		dbClient,
+		awsClient,
+		certClient,
+		ethereumTransactorClient,
+		c2PAContractAddress,
+		pushClient,
+		server.SocialConfig{},
+	)
 }

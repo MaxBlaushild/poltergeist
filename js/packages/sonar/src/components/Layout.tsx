@@ -89,7 +89,7 @@ export function Layout() {
         </button>
 
         <UserContextProvider>
-            <Profile showBackButton={true} />
+            <Profile showBackButton={true} isOwnProfile={true} />
           <SideNavTabs />
         </UserContextProvider>
 

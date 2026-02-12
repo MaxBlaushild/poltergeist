@@ -90,6 +90,21 @@ const parsePolygonWkt = (raw: string): number[][][] | null => {
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
+const closePolygonRing = (ring: [number, number][]) => {
+  if (ring.length === 0) return ring;
+  const [firstLng, firstLat] = ring[0];
+  const [lastLng, lastLat] = ring[ring.length - 1];
+  if (firstLng === lastLng && firstLat === lastLat) return ring;
+  return [...ring, ring[0]];
+};
+
+const normalizePolygonCoordinates = (coords: number[][][] | null) => {
+  if (!coords || coords.length === 0) return null;
+  const ring = coords[0] ?? [];
+  if (ring.length < 3) return null;
+  return [closePolygonRing(ring as [number, number][])] as number[][][];
+};
+
 const matchLocationArchetypeForPoi = (
   poi: PointOfInterest,
   archetypes: LocationArchetype[]
@@ -141,6 +156,7 @@ export const Quests = () => {
   const [showCreateQuest, setShowCreateQuest] = useState(false);
   const [questForm, setQuestForm] = useState({ ...emptyQuestForm });
   const [nodeForm, setNodeForm] = useState({ ...emptyNodeForm });
+  const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   const [challengeDrafts, setChallengeDrafts] = useState<Record<string, typeof emptyChallengeForm>>({});
   const [selectedPoiForModal, setSelectedPoiForModal] = useState<PointOfInterest | null>(null);
   const [characterLocationsOpen, setCharacterLocationsOpen] = useState(false);
@@ -156,6 +172,7 @@ export const Quests = () => {
   const { candidates } = useCandidates(importQuery);
   const [importToasts, setImportToasts] = useState<string[]>([]);
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
+  const [polygonRefreshNonce, setPolygonRefreshNonce] = useState(0);
   const questMapContainer = useRef<HTMLDivElement>(null);
   const questMap = useRef<mapboxgl.Map | null>(null);
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
@@ -327,6 +344,243 @@ export const Quests = () => {
     }
   }, [questMapLoaded, selectedQuest]);
 
+  const questPolygons = useMemo(() => {
+    if (!selectedQuest?.nodes?.length) return [];
+    return selectedQuest.nodes
+      .filter((node) => node.polygon || (node.polygonPoints && node.polygonPoints.length >= 3))
+      .map((node) => ({
+        id: node.id,
+        orderIndex: node.orderIndex,
+        coordinates: normalizePolygonCoordinates(
+          node.polygonPoints && node.polygonPoints.length >= 3
+            ? [node.polygonPoints]
+            : parsePolygonWkt(node.polygon ?? '')
+        ),
+      }))
+      .filter((entry) => entry.coordinates);
+  }, [selectedQuest?.nodes]);
+
+  useEffect(() => {
+    if (!questMap.current || !questMapLoaded) return;
+    const map = questMap.current;
+    if (!map.getSource('quest-node-draft-line')) {
+      map.addSource('quest-node-draft-line', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [] },
+          properties: {},
+        },
+      });
+      map.addLayer({
+        id: 'quest-node-draft-line',
+        type: 'line',
+        source: 'quest-node-draft-line',
+        paint: {
+          'line-color': '#0f766e',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      });
+    }
+
+    if (!map.getSource('quest-node-draft-polygon')) {
+      map.addSource('quest-node-draft-polygon', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [] },
+          properties: {},
+        },
+      });
+      map.addLayer({
+        id: 'quest-node-draft-polygon',
+        type: 'fill',
+        source: 'quest-node-draft-polygon',
+        paint: {
+          'fill-color': '#14b8a6',
+          'fill-opacity': 0.15,
+        },
+      });
+      map.addLayer({
+        id: 'quest-node-draft-polygon-outline',
+        type: 'line',
+        source: 'quest-node-draft-polygon',
+        paint: {
+          'line-color': '#0f766e',
+          'line-width': 2,
+        },
+      });
+    }
+
+    if (!map.getSource('quest-node-polygons')) {
+      map.addSource('quest-node-polygons', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
+      });
+      map.addLayer({
+        id: 'quest-node-polygons-fill',
+        type: 'fill',
+        source: 'quest-node-polygons',
+        paint: {
+          'fill-color': '#f59e0b',
+          'fill-opacity': 0.18,
+        },
+      });
+      map.addLayer({
+        id: 'quest-node-polygons-outline',
+        type: 'line',
+        source: 'quest-node-polygons',
+        paint: {
+          'line-color': '#b45309',
+          'line-width': 2,
+        },
+      });
+    }
+  }, [questMapLoaded]);
+
+  useEffect(() => {
+    if (!questMap.current || !questMapLoaded) return;
+    const map = questMap.current;
+    const lineSource = map.getSource('quest-node-draft-line') as mapboxgl.GeoJSONSource | undefined;
+    const polygonSource = map.getSource('quest-node-draft-polygon') as mapboxgl.GeoJSONSource | undefined;
+
+    const lineCoords = polygonDraftPoints;
+    if (lineSource) {
+      lineSource.setData({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: lineCoords },
+        properties: {},
+      });
+    }
+
+    if (polygonSource) {
+      if (polygonDraftPoints.length >= 3) {
+        const ring = [...polygonDraftPoints, polygonDraftPoints[0]];
+        polygonSource.setData({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [ring] },
+          properties: {},
+        });
+      } else {
+        polygonSource.setData({
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [] },
+          properties: {},
+        });
+      }
+    }
+  }, [polygonDraftPoints, questMapLoaded]);
+
+  useEffect(() => {
+    if (!questMap.current || !questMapLoaded) return;
+    const map = questMap.current;
+    const ensurePolygonSource = () => {
+      if (!map.isStyleLoaded()) {
+        return undefined;
+      }
+      let polygonSource = map.getSource('quest-node-polygons') as mapboxgl.GeoJSONSource | undefined;
+      if (!polygonSource) {
+        map.addSource('quest-node-polygons', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: [],
+          },
+        });
+        map.addLayer({
+          id: 'quest-node-polygons-fill',
+          type: 'fill',
+          source: 'quest-node-polygons',
+          paint: {
+            'fill-color': '#f59e0b',
+            'fill-opacity': 0.18,
+          },
+        });
+        map.addLayer({
+          id: 'quest-node-polygons-outline',
+          type: 'line',
+          source: 'quest-node-polygons',
+          paint: {
+            'line-color': '#b45309',
+            'line-width': 2,
+          },
+        });
+        polygonSource = map.getSource('quest-node-polygons') as mapboxgl.GeoJSONSource | undefined;
+      }
+      return polygonSource;
+    };
+
+    if (!map.isStyleLoaded()) {
+      const handleStyleLoad = () => {
+        setPolygonRefreshNonce((prev) => prev + 1);
+      };
+      map.once('style.load', handleStyleLoad);
+      return () => {
+        map.off('style.load', handleStyleLoad);
+      };
+    }
+
+    const polygonSource = ensurePolygonSource();
+    if (!polygonSource) return;
+
+    const features = questPolygons
+      .filter((entry) => entry.coordinates && entry.coordinates.length > 0)
+      .map((entry) => ({
+        type: 'Feature' as const,
+        properties: {
+          id: entry.id,
+          orderIndex: entry.orderIndex,
+        },
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: entry.coordinates ?? [],
+        },
+      }));
+
+    console.log('Quest Map: polygon refresh', {
+      totalNodes: selectedQuest?.nodes?.length ?? 0,
+      polygonCount: questPolygons.length,
+      features,
+    });
+
+    polygonSource.setData({
+      type: 'FeatureCollection',
+      features,
+    });
+  }, [questPolygons, questMapLoaded, polygonRefreshNonce, selectedQuest?.nodes?.length]);
+
+  useEffect(() => {
+    if (!questMap.current || !questMapLoaded) return;
+    const map = questMap.current;
+    const handleClick = (event: mapboxgl.MapMouseEvent & mapboxgl.EventData) => {
+      if (nodeForm.nodeType !== 'polygon') return;
+      const { lng, lat } = event.lngLat;
+      setPolygonDraftPoints((prev) => {
+        const next = [...prev, [lng, lat]] as [number, number][];
+        setNodeForm((formPrev) => ({
+          ...formPrev,
+          polygonPoints: JSON.stringify(next),
+        }));
+        return next;
+      });
+    };
+    map.on('click', handleClick);
+    return () => {
+      map.off('click', handleClick);
+    };
+  }, [nodeForm.nodeType, questMapLoaded]);
+
+  useEffect(() => {
+    if (nodeForm.nodeType !== 'polygon') {
+      setPolygonDraftPoints([]);
+      setNodeForm((prev) => ({ ...prev, polygonPoints: '' }));
+    }
+  }, [nodeForm.nodeType]);
+
 
   const filteredQuests = useMemo(() => {
     if (!searchQuery.trim()) return quests;
@@ -453,18 +707,6 @@ export const Quests = () => {
         .map((node) => node.pointOfInterestId)
         .filter((id): id is string => Boolean(id))
     );
-  }, [selectedQuest?.nodes]);
-
-  const questPolygons = useMemo(() => {
-    if (!selectedQuest?.nodes?.length) return [];
-    return selectedQuest.nodes
-      .filter((node) => node.polygon)
-      .map((node) => ({
-        id: node.id,
-        orderIndex: node.orderIndex,
-        coordinates: parsePolygonWkt(node.polygon ?? ''),
-      }))
-      .filter((entry) => entry.coordinates);
   }, [selectedQuest?.nodes]);
 
   const snapToZone = () => {
@@ -681,7 +923,6 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
-        imageUrl: questForm.imageUrl,
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -710,7 +951,6 @@ export const Quests = () => {
       const payload = {
         name: questForm.name,
         description: questForm.description,
-        imageUrl: questForm.imageUrl,
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -1034,14 +1274,6 @@ export const Quests = () => {
                 onChange={(e) => setQuestForm((prev) => ({ ...prev, name: e.target.value }))}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Image URL</label>
-              <input
-                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                value={questForm.imageUrl}
-                onChange={(e) => setQuestForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
-              />
-            </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700">Description</label>
               <textarea
@@ -1239,14 +1471,6 @@ export const Quests = () => {
                     className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                     value={questForm.name}
                     onChange={(e) => setQuestForm((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Image URL</label>
-                  <input
-                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                    value={questForm.imageUrl}
-                    onChange={(e) => setQuestForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
                   />
                 </div>
                 <div className="md:col-span-2">
@@ -1501,8 +1725,47 @@ export const Quests = () => {
                           rows={3}
                           placeholder='[[lng,lat],[lng,lat],[lng,lat]]'
                           value={nodeForm.polygonPoints}
-                          onChange={(e) => setNodeForm((prev) => ({ ...prev, polygonPoints: e.target.value }))}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setNodeForm((prev) => ({ ...prev, polygonPoints: value }));
+                            const parsed = parsePolygonPoints(value);
+                            if (parsed) {
+                              setPolygonDraftPoints(parsed);
+                            }
+                          }}
                         />
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                          <span className="rounded-md bg-teal-50 px-2 py-1 text-teal-700">
+                            Click on the map to add polygon points.
+                          </span>
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                            onClick={() => {
+                              setPolygonDraftPoints([]);
+                              setNodeForm((prev) => ({ ...prev, polygonPoints: '' }));
+                            }}
+                          >
+                            Clear polygon
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                            onClick={() => {
+                              setPolygonDraftPoints((prev) => {
+                                if (prev.length === 0) return prev;
+                                const next = prev.slice(0, -1);
+                                setNodeForm((formPrev) => ({
+                                  ...formPrev,
+                                  polygonPoints: JSON.stringify(next),
+                                }));
+                                return next;
+                              });
+                            }}
+                          >
+                            Undo last point
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1518,13 +1781,22 @@ export const Quests = () => {
                 <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-semibold">Quest Map</h4>
-                    <button
-                      type="button"
-                      className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                      onClick={snapToZone}
-                    >
-                      Snap to Zone
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={snapToZone}
+                      >
+                        Snap to Zone
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        onClick={() => setPolygonRefreshNonce((prev) => prev + 1)}
+                      >
+                        Add Polygons to Map
+                      </button>
+                    </div>
                     <div className="flex items-center gap-3 text-xs text-gray-600">
                       <span className="flex items-center gap-1">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 border border-amber-800" />

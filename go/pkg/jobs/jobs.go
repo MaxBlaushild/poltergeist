@@ -9,6 +9,7 @@ const (
 	QueueQuestGenerationsTaskType         = "queue_quest_generations"
 	CreateProfilePictureTaskType          = "create_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
+	GenerateCharacterImageTaskType        = "generate_character_image"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
@@ -31,6 +32,12 @@ type GenerateInventoryItemImageTaskPayload struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	RarityTier      string `json:"rarityTier"`
+}
+
+type GenerateCharacterImageTaskPayload struct {
+	CharacterID uuid.UUID `json:"characterId"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
 }
 
 type ImportPointOfInterestTaskPayload struct {

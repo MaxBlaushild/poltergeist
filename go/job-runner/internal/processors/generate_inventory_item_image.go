@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -66,21 +68,17 @@ func (p *GenerateInventoryItemImageProcessor) ProcessTask(ctx context.Context, t
 		description = "A unique fantasy item"
 	}
 	prompt := fmt.Sprintf(inventoryItemPromptTemplate, payload.Name, description, payload.RarityTier)
-	imageB64, err := p.deepPriestClient.GenerateImage(deep_priest.GenerateImageRequest{
-		Prompt:         prompt,
-		Model:          "gpt-image-1",
-		N:              1,
-		Quality:        "standard",
-		Size:           "512x512",
-		ResponseFormat: "b64_json",
-		User:           "poltergeist",
-	})
+	request := deep_priest.GenerateImageRequest{
+		Prompt: prompt,
+	}
+	deep_priest.ApplyGenerateImageDefaults(&request)
+	imageB64, err := p.deepPriestClient.GenerateImage(request)
 	if err != nil {
 		log.Printf("Failed to generate inventory item image: %v", err)
 		return p.markFailed(ctx, payload.InventoryItemID, err)
 	}
 
-	imageBytes, err := decodeBase64Image(imageB64)
+	imageBytes, err := decodeImagePayload(imageB64)
 	if err != nil {
 		log.Printf("Failed to decode generated image: %v", err)
 		return p.markFailed(ctx, payload.InventoryItemID, err)
@@ -119,8 +117,45 @@ func (p *GenerateInventoryItemImageProcessor) markFailed(ctx context.Context, it
 	return err
 }
 
-func decodeBase64Image(encoded string) ([]byte, error) {
+func decodeImagePayload(encoded string) ([]byte, error) {
 	trimmed := strings.TrimSpace(encoded)
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty image payload")
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return downloadImage(trimmed)
+	}
+
+	// Handle JSON array of base64 strings (some backends return this)
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []string
+		if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+			for _, entry := range arr {
+				entry = strings.TrimSpace(entry)
+				if entry == "" {
+					continue
+				}
+				return decodeImagePayload(entry)
+			}
+			return nil, fmt.Errorf("image payload array contained no data")
+		}
+	}
+
+	// Handle JSON object with data[0].b64_json shape
+	if strings.HasPrefix(trimmed, "{") {
+		var payload struct {
+			Data []struct {
+				B64JSON string `json:"b64_json"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
+			if len(payload.Data) == 0 || strings.TrimSpace(payload.Data[0].B64JSON) == "" {
+				return nil, fmt.Errorf("image payload object contained no data")
+			}
+			return decodeImagePayload(payload.Data[0].B64JSON)
+		}
+	}
+
 	if strings.HasPrefix(trimmed, "data:") {
 		if comma := strings.Index(trimmed, ","); comma != -1 {
 			trimmed = trimmed[comma+1:]
@@ -130,7 +165,31 @@ func decodeBase64Image(encoded string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(decoded) == 0 {
+		return nil, fmt.Errorf("decoded image was empty")
+	}
 	return decoded, nil
+}
+
+func downloadImage(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("failed to download image: status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("downloaded image was empty")
+	}
+	return body, nil
 }
 
 func (p *GenerateInventoryItemImageProcessor) uploadImage(ctx context.Context, itemID int, imageBytes []byte) (string, error) {

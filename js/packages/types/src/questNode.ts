@@ -6,5 +6,6 @@ export interface QuestNode {
   orderIndex: number;
   pointOfInterestId?: string | null;
   polygon?: string | null;
+  polygonPoints?: [number, number][];
   challenges?: QuestNodeChallenge[];
 }

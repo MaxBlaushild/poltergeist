@@ -10,9 +10,46 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 )
+
+// ExtractManifestTimestamp tries to read the C2PA claim created timestamp from the manifest.
+// Returns nil if no timestamp is found.
+func ExtractManifestTimestamp(manifestBytes []byte) (*time.Time, error) {
+	var manifestInterface interface{}
+	if err := cbor.Unmarshal(manifestBytes, &manifestInterface); err != nil {
+		return nil, fmt.Errorf("failed to parse CBOR manifest (size: %d bytes): %w", len(manifestBytes), err)
+	}
+
+	manifestMap, ok := coerceStringMap(manifestInterface)
+	if !ok || len(manifestMap) == 0 {
+		return nil, fmt.Errorf("manifest is not a map (type: %T)", manifestInterface)
+	}
+
+	claimInterface, exists := manifestMap["claim"]
+	if !exists {
+		return nil, fmt.Errorf("manifest missing claim field")
+	}
+
+	claimMap, ok := coerceStringMap(claimInterface)
+	if !ok {
+		return nil, fmt.Errorf("manifest claim has invalid type: %T", claimInterface)
+	}
+
+	createdValue, exists := claimMap["created"]
+	if !exists || createdValue == nil {
+		return nil, nil
+	}
+
+	parsed, err := parseManifestTime(createdValue)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
 
 // C2PAManifest represents a simplified C2PA manifest structure
 type C2PAManifest struct {
@@ -276,6 +313,59 @@ func DownloadManifestFromS3(manifestURI string) ([]byte, error) {
 	}
 
 	return manifestBytes, nil
+}
+
+func coerceStringMap(value interface{}) (map[string]interface{}, bool) {
+	switch m := value.(type) {
+	case map[string]interface{}:
+		return m, true
+	case map[interface{}]interface{}:
+		converted := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			if keyStr, ok := k.(string); ok {
+				converted[keyStr] = v
+			}
+		}
+		return converted, true
+	default:
+		return nil, false
+	}
+}
+
+func parseManifestTime(value interface{}) (*time.Time, error) {
+	switch v := value.(type) {
+	case string:
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return &t, nil
+		}
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			return &t, nil
+		}
+		return nil, fmt.Errorf("unsupported created timestamp format: %q", v)
+	case []byte:
+		str := string(v)
+		if t, err := time.Parse(time.RFC3339Nano, str); err == nil {
+			return &t, nil
+		}
+		if t, err := time.Parse(time.RFC3339, str); err == nil {
+			return &t, nil
+		}
+		return nil, fmt.Errorf("unsupported created timestamp format: %q", str)
+	case int64:
+		t := time.Unix(v, 0).UTC()
+		return &t, nil
+	case uint64:
+		t := time.Unix(int64(v), 0).UTC()
+		return &t, nil
+	case int:
+		t := time.Unix(int64(v), 0).UTC()
+		return &t, nil
+	case float64:
+		t := time.Unix(int64(v), 0).UTC()
+		return &t, nil
+	default:
+		return nil, fmt.Errorf("unsupported created timestamp type: %T", value)
+	}
 }
 
 // HexToBytes converts a hex string to bytes

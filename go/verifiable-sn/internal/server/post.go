@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"time"
 
 	ethereum_transactor "github.com/MaxBlaushild/poltergeist/pkg/ethereum_transactor"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -60,6 +61,7 @@ func (s *server) CreatePost(ctx *gin.Context) {
 	var manifestURI *string
 	var certFingerprintBytes []byte
 	var assetID *string
+	var manifestCreatedAt *time.Time
 
 	// If manifest data is provided, validate it
 	if requestBody.ManifestURL != nil && *requestBody.ManifestURL != "" &&
@@ -187,6 +189,11 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		if requestBody.AssetID != nil {
 			assetID = requestBody.AssetID
 		}
+
+		manifestCreatedAt, err = ExtractManifestTimestamp(manifestBytes)
+		if err != nil {
+			fmt.Printf("Warning: failed to extract manifest timestamp: %v\n", err)
+		}
 	}
 
 	// Default mediaType to "image" if not provided (backward compatibility)
@@ -207,6 +214,7 @@ func (s *server) CreatePost(ctx *gin.Context) {
 		certFingerprintBytes,
 		assetID,
 		mediaType,
+		manifestCreatedAt,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{

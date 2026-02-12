@@ -23,6 +23,7 @@ func (h *questNodeHandle) Create(ctx context.Context, node *models.QuestNode) er
 func (h *questNodeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNode, error) {
 	var node models.QuestNode
 	if err := h.db.WithContext(ctx).
+		Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon").
 		Preload("Challenges").
 		Preload("Children").
 		First(&node, "id = ?", id).Error; err != nil {
@@ -37,6 +38,7 @@ func (h *questNodeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Q
 func (h *questNodeHandle) FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestNode, error) {
 	var nodes []models.QuestNode
 	if err := h.db.WithContext(ctx).
+		Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon").
 		Preload("Challenges").
 		Preload("Children").
 		Where("quest_id = ?", questID).

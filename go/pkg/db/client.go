@@ -96,9 +96,11 @@ type client struct {
 	albumMemberHandle                 *albumMemberHandle
 	albumInviteHandle                 *albumInviteHandle
 	albumPostHandle                   *albumPostHandle
+	albumShareHandle                  *albumShareHandle
 	notificationHandle                *notificationHandle
 	userDeviceTokenHandle             *userDeviceTokenHandle
 	userRecentPostTagHandle           *userRecentPostTagHandle
+	socialAccountHandle               *socialAccountHandler
 }
 
 type ClientConfig struct {
@@ -179,6 +181,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		albumMemberHandle:                 &albumMemberHandle{db: db},
 		albumInviteHandle:                 &albumInviteHandle{db: db},
 		albumPostHandle:                   &albumPostHandle{db: db},
+		albumShareHandle:                  &albumShareHandle{db: db},
 		notificationHandle:                &notificationHandle{db: db},
 		userDeviceTokenHandle:             &userDeviceTokenHandle{db: db},
 		userRecentPostTagHandle:           &userRecentPostTagHandle{db: db},
@@ -215,6 +218,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		feteRoomTeamHandle:                &feteRoomTeamHandler{db: db},
 		blockchainTransactionHandle:       &blockchainTransactionHandle{db: db},
 		userCertificateHandle:             &userCertificateHandle{db: db},
+		socialAccountHandle:               &socialAccountHandler{db: db},
 	}, nil
 }
 
@@ -264,6 +268,10 @@ func (c *client) AlbumInvite() AlbumInviteHandle {
 
 func (c *client) AlbumPost() AlbumPostHandle {
 	return c.albumPostHandle
+}
+
+func (c *client) AlbumShare() AlbumShareHandle {
+	return c.albumShareHandle
 }
 
 func (c *client) Notification() NotificationHandle {
@@ -568,4 +576,8 @@ func (c *client) BlockchainTransaction() BlockchainTransactionHandle {
 
 func (c *client) UserCertificate() UserCertificateHandle {
 	return c.userCertificateHandle
+}
+
+func (c *client) SocialAccount() SocialAccountHandle {
+	return c.socialAccountHandle
 }

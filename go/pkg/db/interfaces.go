@@ -59,6 +59,7 @@ type DbClient interface {
 	AlbumMember() AlbumMemberHandle
 	AlbumInvite() AlbumInviteHandle
 	AlbumPost() AlbumPostHandle
+	AlbumShare() AlbumShareHandle
 	Notification() NotificationHandle
 	UserDeviceToken() UserDeviceTokenHandle
 	UserRecentPostTag() UserRecentPostTagHandle
@@ -96,6 +97,7 @@ type DbClient interface {
 	FeteRoomTeam() FeteRoomTeamHandle
 	BlockchainTransaction() BlockchainTransactionHandle
 	UserCertificate() UserCertificateHandle
+	SocialAccount() SocialAccountHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -157,6 +159,13 @@ type TeamHandle interface {
 
 type UserTeamHandle interface {
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type SocialAccountHandle interface {
+	Upsert(ctx context.Context, account *models.SocialAccount) error
+	FindByUserAndProvider(ctx context.Context, userID uuid.UUID, provider string) (*models.SocialAccount, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.SocialAccount, error)
+	DeleteByUserAndProvider(ctx context.Context, userID uuid.UUID, provider string) error
 }
 
 type PointOfInterestHandle interface {
@@ -567,8 +576,14 @@ type AlbumPostHandle interface {
 	HasAny(ctx context.Context, albumID uuid.UUID) (bool, error)
 }
 
+type AlbumShareHandle interface {
+	Create(ctx context.Context, albumID, createdBy uuid.UUID, token string) (*models.AlbumShare, error)
+	FindByAlbumID(ctx context.Context, albumID uuid.UUID) (*models.AlbumShare, error)
+	FindByToken(ctx context.Context, token string) (*models.AlbumShare, error)
+}
+
 type PostHandle interface {
-	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string) (*models.Post, error)
+	Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string, manifestCreatedAt *time.Time) (*models.Post, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.Post, error)
 	FindByUserIDs(ctx context.Context, userIDs []uuid.UUID) ([]models.Post, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Post, error)
@@ -672,6 +687,7 @@ type QuestHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Quest, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)
+	FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error)
 	FindAll(ctx context.Context) ([]models.Quest, error)
 }
 

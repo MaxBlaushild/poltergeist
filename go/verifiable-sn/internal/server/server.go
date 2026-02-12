@@ -21,11 +21,27 @@ type server struct {
 	ethereumTransactorClient ethereum_transactor.Client
 	c2PAContractAddress      string
 	pushClient               push.Client
+	socialConfig             SocialConfig
 }
 
 type Server interface {
 	ListenAndServe(port string)
 	SetupRoutes(r *gin.Engine)
+}
+
+type SocialConfig struct {
+	InstagramClientID     string
+	InstagramClientSecret string
+	InstagramRedirectURL  string
+	InstagramAuthURL      string
+	InstagramTokenURL     string
+	InstagramScopes       []string
+	TwitterClientID       string
+	TwitterClientSecret   string
+	TwitterRedirectURL    string
+	TwitterAuthURL        string
+	TwitterTokenURL       string
+	TwitterScopes         []string
 }
 
 func NewServer(
@@ -36,6 +52,7 @@ func NewServer(
 	ethereumTransactorClient ethereum_transactor.Client,
 	c2PAContractAddress string,
 	pushClient push.Client,
+	socialConfig SocialConfig,
 ) Server {
 	return &server{
 		authClient:               authClient,
@@ -45,6 +62,7 @@ func NewServer(
 		ethereumTransactorClient: ethereumTransactorClient,
 		c2PAContractAddress:      c2PAContractAddress,
 		pushClient:               pushClient,
+		socialConfig:             socialConfig,
 	}
 }
 
@@ -76,6 +94,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/verifiable-sn/albums", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateAlbum))
 	r.GET("/verifiable-sn/albums", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbums))
 	r.GET("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbum))
+	r.POST("/verifiable-sn/albums/:id/share", middleware.WithAuthenticationWithoutLocation(s.authClient, s.CreateAlbumShare))
 	r.DELETE("/verifiable-sn/albums/:id", middleware.WithAuthenticationWithoutLocation(s.authClient, s.DeleteAlbum))
 	r.POST("/verifiable-sn/albums/:id/tags", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AddAlbumTag))
 	r.DELETE("/verifiable-sn/albums/:id/tags", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RemoveAlbumTag))
@@ -87,6 +106,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/verifiable-sn/album-invites", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetAlbumInvites))
 	r.POST("/verifiable-sn/album-invites/:inviteId/accept", middleware.WithAuthenticationWithoutLocation(s.authClient, s.AcceptAlbumInvite))
 	r.POST("/verifiable-sn/album-invites/:inviteId/reject", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RejectAlbumInvite))
+	r.GET("/verifiable-sn/album-shares/:token", s.GetAlbumShare)
+	r.GET("/verifiable-sn/album-shares/:token/open", s.OpenAlbumShare)
 
 	// Notification routes
 	r.GET("/verifiable-sn/notifications", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetNotifications))
@@ -96,6 +117,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 
 	// Media routes
 	r.POST("/verifiable-sn/media/uploadUrl", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetPresignedUploadUrl))
+
+	// Social routes
+	r.GET("/verifiable-sn/social/accounts", middleware.WithAuthenticationWithoutLocation(s.authClient, s.ListSocialAccounts))
+	r.GET("/verifiable-sn/social/:provider/auth", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetSocialAuthURL))
+	r.GET("/verifiable-sn/social/:provider/callback", s.SocialCallback)
+	r.POST("/verifiable-sn/social/:provider/revoke", middleware.WithAuthenticationWithoutLocation(s.authClient, s.RevokeSocial))
+	r.POST("/verifiable-sn/social/:provider/post", middleware.WithAuthenticationWithoutLocation(s.authClient, s.PostToSocial))
 
 	// Friend routes
 	r.GET("/verifiable-sn/friends", middleware.WithAuthenticationWithoutLocation(s.authClient, s.GetFriends))

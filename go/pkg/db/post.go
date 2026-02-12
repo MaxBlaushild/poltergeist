@@ -13,7 +13,7 @@ type postHandle struct {
 	db *gorm.DB
 }
 
-func (h *postHandle) Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string) (*models.Post, error) {
+func (h *postHandle) Create(ctx context.Context, userID uuid.UUID, imageURL string, caption *string, manifestHash []byte, manifestURI *string, certFingerprint []byte, assetID *string, mediaType *string, manifestCreatedAt *time.Time) (*models.Post, error) {
 	post := &models.Post{
 		UserID:          userID,
 		ImageURL:        imageURL,
@@ -23,6 +23,7 @@ func (h *postHandle) Create(ctx context.Context, userID uuid.UUID, imageURL stri
 		ManifestURI:     manifestURI,
 		CertFingerprint: certFingerprint,
 		AssetID:         assetID,
+		ManifestCreatedAt: manifestCreatedAt,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 	}
@@ -103,4 +104,3 @@ func (h *postHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.P
 func (h *postHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Post{}, "id = ?", id).Error
 }
-

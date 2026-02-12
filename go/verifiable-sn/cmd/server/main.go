@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/cert"
@@ -49,5 +51,45 @@ func main() {
 	ethereumTransactorClient := ethereum_transactor.NewClient(cfg.Public.EthereumTransactorURL)
 	pushClient := push.NewClient()
 
-	server.NewServer(authClient, dbClient, awsClient, certClient, ethereumTransactorClient, cfg.Public.C2PAContractAddress, pushClient).ListenAndServe("8087")
+	parseScopes := func(scopes string) []string {
+		if scopes == "" {
+			return nil
+		}
+		parts := strings.FieldsFunc(scopes, func(r rune) bool {
+			return r == ',' || r == ' ' || r == '\n' || r == '\t'
+		})
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+
+	socialConfig := server.SocialConfig{
+		InstagramClientID:     cfg.Public.InstagramClientID,
+		InstagramClientSecret: cfg.Secret.InstagramClientSecret,
+		InstagramRedirectURL:  cfg.Public.InstagramRedirectURL,
+		InstagramAuthURL:      cfg.Public.InstagramAuthURL,
+		InstagramTokenURL:     cfg.Public.InstagramTokenURL,
+		InstagramScopes:       parseScopes(cfg.Public.InstagramScopes),
+		TwitterClientID:       cfg.Public.TwitterClientID,
+		TwitterClientSecret:   cfg.Secret.TwitterClientSecret,
+		TwitterRedirectURL:    cfg.Public.TwitterRedirectURL,
+		TwitterAuthURL:        cfg.Public.TwitterAuthURL,
+		TwitterTokenURL:       cfg.Public.TwitterTokenURL,
+		TwitterScopes:         parseScopes(cfg.Public.TwitterScopes),
+	}
+
+	server.NewServer(
+		authClient,
+		dbClient,
+		awsClient,
+		certClient,
+		ethereumTransactorClient,
+		cfg.Public.C2PAContractAddress,
+		pushClient,
+		socialConfig,
+	).ListenAndServe("8087")
 }

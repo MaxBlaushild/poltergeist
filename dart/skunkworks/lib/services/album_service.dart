@@ -44,6 +44,21 @@ class AlbumService {
     };
   }
 
+  Future<Map<String, dynamic>> getSharedAlbum(String token) async {
+    final response = await _api.get<Map<String, dynamic>>(
+      ApiConstants.albumShareEndpoint(token),
+    );
+    final album = Album.fromJson(response['album'] as Map<String, dynamic>);
+    final postsRaw = response['posts'] as List<dynamic>? ?? [];
+    final posts = postsRaw
+        .map((p) => Post.fromJson(p as Map<String, dynamic>))
+        .toList();
+    return {
+      'album': album,
+      'posts': posts,
+    };
+  }
+
   Future<void> deleteAlbum(String albumId) async {
     await _api.delete(ApiConstants.albumEndpoint(albumId));
   }
@@ -93,5 +108,12 @@ class AlbumService {
 
   Future<void> rejectAlbumInvite(String inviteId) async {
     await _api.post(ApiConstants.rejectAlbumInviteEndpoint(inviteId));
+  }
+
+  Future<Map<String, dynamic>> createAlbumShareLink(String albumId) async {
+    final response = await _api.post<Map<String, dynamic>>(
+      ApiConstants.createAlbumShareEndpoint(albumId),
+    );
+    return response;
   }
 }

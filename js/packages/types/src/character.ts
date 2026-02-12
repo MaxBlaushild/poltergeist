@@ -10,6 +10,8 @@ export interface Character {
   mapIconUrl: string;
   dialogueImageUrl: string;
   thumbnailUrl?: string;
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
   locations?: CharacterLocation[];
   geometry?: string;
   movementPatternId: string;

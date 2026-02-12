@@ -5,7 +5,12 @@ import 'package:skunkworks/models/draft.dart';
 import 'package:skunkworks/services/draft_service.dart';
 
 class DraftsScreen extends StatefulWidget {
-  const DraftsScreen({super.key});
+  final bool selectOnTap;
+
+  const DraftsScreen({
+    super.key,
+    this.selectOnTap = false,
+  });
 
   @override
   State<DraftsScreen> createState() => _DraftsScreenState();
@@ -159,7 +164,17 @@ class _DraftsScreenState extends State<DraftsScreen> {
                     margin: const EdgeInsets.only(bottom: 12),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
-                      onTap: () => Navigator.of(context).pop(draft),
+                      onTap: () {
+                        if (widget.selectOnTap) {
+                          Navigator.of(context).pop(draft);
+                        } else {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => DraftPreviewScreen(draft: draft),
+                            ),
+                          );
+                        }
+                      },
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -218,6 +233,64 @@ class _DraftsScreenState extends State<DraftsScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class DraftPreviewScreen extends StatelessWidget {
+  final Draft draft;
+
+  const DraftPreviewScreen({super.key, required this.draft});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.warmWhite,
+      appBar: AppBar(
+        backgroundColor: AppColors.warmWhite,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: AppColors.graphiteInk),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Draft',
+          style: TextStyle(
+            color: AppColors.graphiteInk,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.file(
+              File(draft.imagePath),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 240,
+                color: Colors.grey.shade300,
+                child: Icon(
+                  Icons.broken_image,
+                  color: Colors.grey.shade600,
+                  size: 40,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            draft.caption?.isNotEmpty == true ? draft.caption! : 'No caption',
+            style: TextStyle(
+              color: AppColors.graphiteInk,
+              fontSize: 15,
+            ),
+          ),
+        ],
       ),
     );
   }

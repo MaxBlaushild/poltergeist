@@ -189,6 +189,7 @@ export const Characters = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
+  const [showGenerateCharacter, setShowGenerateCharacter] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [availableZones, setAvailableZones] = useState<Zone[]>([]);
   const [availablePointsOfInterest, setAvailablePointsOfInterest] = useState<PointOfInterest[]>([]);
@@ -204,6 +205,10 @@ export const Characters = () => {
   const [characterLocations, setCharacterLocations] = useState<[number, number][]>([]);
   const [savingLocations, setSavingLocations] = useState(false);
   const [locationsError, setLocationsError] = useState<string | null>(null);
+  const [generationData, setGenerationData] = useState({
+    name: '',
+    description: ''
+  });
 
   // Form state
   const [formData, setFormData] = useState({
@@ -227,6 +232,19 @@ export const Characters = () => {
     fetchZones();
     fetchPointsOfInterest();
   }, []);
+
+  useEffect(() => {
+    const hasPending = characters.some(character =>
+      ['queued', 'in_progress'].includes(character.imageGenerationStatus || '')
+    );
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      fetchCharacters();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [characters]);
 
   const fetchPointsOfInterest = async () => {
     try {
@@ -406,6 +424,13 @@ export const Characters = () => {
     setSelectedZoneQuestArchetypeIds([]);
   };
 
+  const resetGenerationForm = () => {
+    setGenerationData({
+      name: '',
+      description: ''
+    });
+  };
+
   const applyQuestAssignments = async (characterId: string, nextZoneQuestArchetypeIds: string[]) => {
     const updates: Promise<void>[] = [];
     zoneQuestArchetypes.forEach((zoneQuestArchetype) => {
@@ -477,6 +502,31 @@ export const Characters = () => {
       resetForm();
     } catch (error) {
       console.error('Error updating character:', error);
+    }
+  };
+
+  const handleGenerateCharacter = async () => {
+    try {
+      const newCharacter = await apiClient.post<Character>('/sonar/characters/generate', {
+        name: generationData.name,
+        description: generationData.description
+      });
+      setCharacters([...characters, newCharacter]);
+      setShowGenerateCharacter(false);
+      resetGenerationForm();
+    } catch (error) {
+      console.error('Error generating character:', error);
+      alert('Error generating character. Please check all required fields.');
+    }
+  };
+
+  const handleRegenerateCharacterImage = async (character: Character) => {
+    try {
+      const updated = await apiClient.post<Character>(`/sonar/characters/${character.id}/regenerate`, {});
+      setCharacters(characters.map(c => c.id === character.id ? updated : c));
+    } catch (error) {
+      console.error('Error regenerating character image:', error);
+      alert('Error regenerating character image.');
     }
   };
 
@@ -556,6 +606,23 @@ export const Characters = () => {
     });
   };
 
+  const formatGenerationStatus = (status?: string) => {
+    switch (status) {
+      case 'queued':
+        return 'Queued';
+      case 'in_progress':
+        return 'Generating';
+      case 'complete':
+        return 'Complete';
+      case 'failed':
+        return 'Failed';
+      case 'none':
+        return 'Not requested';
+      default:
+        return 'Unknown';
+    }
+  };
+
   if (loading) {
     return <div className="m-10">Loading characters...</div>;
   }
@@ -609,6 +676,14 @@ export const Characters = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Dialogue Image URL: {character.dialogueImageUrl || '—'}
             </p>
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Image Status: {formatGenerationStatus(character.imageGenerationStatus)}
+            </p>
+            {character.imageGenerationStatus === 'failed' && character.imageGenerationError && (
+              <p style={{ margin: '5px 0', color: '#b91c1c', fontSize: '12px' }}>
+                Error: {character.imageGenerationError}
+              </p>
+            )}
             {character.dialogueImageUrl && (
               <img
                 src={character.dialogueImageUrl}
@@ -631,6 +706,13 @@ export const Characters = () => {
                 Manage Dialogue
               </button>
               <button
+                onClick={() => handleRegenerateCharacterImage(character)}
+                className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
+                disabled={['queued', 'in_progress'].includes(character.imageGenerationStatus || '')}
+              >
+                Regenerate Image
+              </button>
+              <button
                 onClick={() => handleDeleteCharacter(character)}
                 className="bg-red-500 text-white px-4 py-2 rounded-md"
               >
@@ -641,16 +723,27 @@ export const Characters = () => {
         ))}
       </div>
 
-      {/* Create Character Button */}
-      <button
-        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-        onClick={() => {
-          resetForm();
-          setShowCreateCharacter(true);
-        }}
-      >
-        Create Character
-      </button>
+      {/* Create Character Buttons */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+          onClick={() => {
+            resetForm();
+            setShowCreateCharacter(true);
+          }}
+        >
+          Create Character
+        </button>
+        <button
+          className="bg-green-600 text-white px-4 py-2 rounded-md"
+          onClick={() => {
+            resetGenerationForm();
+            setShowGenerateCharacter(true);
+          }}
+        >
+          Generate Character
+        </button>
+      </div>
 
       {/* Create/Edit Character Modal */}
       {(showCreateCharacter || editingCharacter) && (
@@ -1042,6 +1135,71 @@ export const Characters = () => {
                 className="bg-blue-500 text-white px-4 py-2 rounded-md"
               >
                 {editingCharacter ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generate Character Modal */}
+      {showGenerateCharacter && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            padding: '30px',
+            borderRadius: '8px',
+            width: '500px',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h2>Generate Character</h2>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Name *:</label>
+              <input
+                type="text"
+                value={generationData.name}
+                onChange={(e) => setGenerationData({ ...generationData, name: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                required
+              />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Description:</label>
+              <textarea
+                value={generationData.description}
+                onChange={(e) => setGenerationData({ ...generationData, description: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '80px' }}
+              />
+            </div>
+
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+              <button
+                onClick={handleGenerateCharacter}
+                className="bg-green-600 text-white px-4 py-2 rounded-md"
+              >
+                Generate
+              </button>
+              <button
+                onClick={() => {
+                  setShowGenerateCharacter(false);
+                  resetGenerationForm();
+                }}
+                className="bg-gray-500 text-white px-4 py-2 rounded-md"
+              >
+                Cancel
               </button>
             </div>
           </div>

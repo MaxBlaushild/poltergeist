@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/constants/app_colors.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
@@ -238,7 +237,7 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
     final draft = await Navigator.push<Draft?>(
       context,
       MaterialPageRoute(
-        builder: (context) => const DraftsScreen(),
+        builder: (context) => const DraftsScreen(selectOnTap: true),
       ),
     );
     if (draft == null || !mounted) return;
@@ -282,7 +281,7 @@ class _UploadPostScreenState extends State<UploadPostScreen> {
     });
 
     try {
-      final apiClient = APIClient(ApiConstants.baseUrl);
+      final apiClient = context.read<APIClient>();
       final mediaService = MediaService(apiClient);
       final certificateService = CertificateService(apiClient);
       final c2paService = C2PAService(certificateService);
@@ -914,4 +913,3 @@ class _VideoFilePreviewDialogState extends State<_VideoFilePreviewDialog> {
     );
   }
 }
-

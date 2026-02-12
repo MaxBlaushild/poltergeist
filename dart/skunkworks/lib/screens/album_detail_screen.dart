@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/constants/app_colors.dart';
@@ -137,7 +140,52 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     if (!_canAdmin) return;
     final controller = TextEditingController();
     String role = 'poster';
-    final result = await showDialog<bool>(
+    final apiClient = APIClient(ApiConstants.baseUrl);
+    Timer? debounce;
+    bool searching = false;
+    String? searchError;
+    List<Map<String, dynamic>> results = [];
+    Map<String, dynamic>? selectedUser;
+
+    Future<void> runSearch(String query, void Function(void Function()) setState) async {
+      final trimmed = query.trim();
+      if (trimmed.isEmpty) {
+        setState(() {
+          searching = false;
+          searchError = null;
+          results = [];
+          selectedUser = null;
+        });
+        return;
+      }
+      setState(() {
+        searching = true;
+        searchError = null;
+      });
+      try {
+        final users = await apiClient.get<List<dynamic>>(
+          ApiConstants.searchUsersEndpoint(Uri.encodeComponent(trimmed)),
+        );
+        final mapped = users.whereType<Map<String, dynamic>>().toList();
+        setState(() {
+          results = mapped;
+          searching = false;
+          final selectedId = selectedUser?['id']?.toString();
+          if (selectedId != null && !mapped.any((u) => u['id']?.toString() == selectedId)) {
+            selectedUser = null;
+          }
+        });
+      } catch (e) {
+        setState(() {
+          searching = false;
+          searchError = 'Failed to search';
+          results = [];
+          selectedUser = null;
+        });
+      }
+    }
+
+    final selected = await showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
@@ -154,7 +202,65 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   hintText: 'Username',
                   border: OutlineInputBorder(),
                 ),
+                onChanged: (value) {
+                  debounce?.cancel();
+                  debounce = Timer(const Duration(milliseconds: 300), () {
+                    runSearch(value, setState);
+                  });
+                },
               ),
+              if (searching)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(minHeight: 2),
+                ),
+              if (searchError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(searchError!, style: TextStyle(color: Colors.red.shade600)),
+                ),
+              if (!searching && controller.text.trim().isNotEmpty && results.isEmpty && searchError == null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('No matches found', style: TextStyle(color: Colors.grey)),
+                ),
+              if (results.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    height: 220,
+                    child: ListView.builder(
+                      itemCount: results.length,
+                      itemBuilder: (_, i) {
+                        final u = results[i];
+                        final userId = u['id']?.toString();
+                        final username = u['username'] ?? u['phoneNumber'] ?? 'Unknown';
+                        final subtitle = u['phoneNumber'] ?? u['email'] ?? '';
+                        final isSelected = userId != null && selectedUser?['id']?.toString() == userId;
+                        return ListTile(
+                          dense: true,
+                          leading: CircleAvatar(
+                            backgroundColor: Colors.grey.shade300,
+                            backgroundImage: u['profilePictureUrl'] != null
+                                ? NetworkImage(u['profilePictureUrl'] as String)
+                                : null,
+                            child: u['profilePictureUrl'] == null ? Text('${username[0]}'.toUpperCase()) : null,
+                          ),
+                          title: Text(username),
+                          subtitle: subtitle.isNotEmpty ? Text(subtitle) : null,
+                          trailing: isSelected ? const Icon(Icons.check_circle, color: AppColors.softRealBlue) : null,
+                          onTap: userId == null
+                              ? null
+                              : () {
+                                  setState(() {
+                                    selectedUser = u;
+                                  });
+                                },
+                        );
+                      },
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
               const Text('Role:'),
               SegmentedButton<String>(
@@ -171,37 +277,22 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(ctx, null),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: selectedUser == null ? null : () => Navigator.pop(ctx, selectedUser),
               child: const Text('Invite'),
             ),
           ],
         ),
       ),
     );
-    if (result != true || !mounted) return;
-    final query = controller.text.trim();
-    if (query.isEmpty) return;
+    debounce?.cancel();
+    if (selected == null || !mounted) return;
+    final userId = selected['id']?.toString();
+    if (userId == null) return;
     try {
-      final apiClient = APIClient(ApiConstants.baseUrl);
-      final users = await apiClient.get<List<dynamic>>(ApiConstants.searchUsersEndpoint(query));
-      if (users.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No users found')));
-        }
-        return;
-      }
-      final userMap = users[0] as Map<String, dynamic>;
-      final userId = userMap['id']?.toString();
-      if (userId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not found')));
-        }
-        return;
-      }
       await AlbumService(apiClient).inviteToAlbum(widget.albumId, userId, role);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invite sent')));
@@ -434,6 +525,29 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     }
   }
 
+  Future<void> _shareAlbum() async {
+    if (!_canAdmin || _album?.id == null) return;
+    try {
+      final albumService = AlbumService(APIClient(ApiConstants.baseUrl));
+      final result = await albumService.createAlbumShareLink(widget.albumId);
+      final shareUrl = result['shareUrl'] as String? ?? '';
+      if (shareUrl.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Share link unavailable')));
+        }
+        return;
+      }
+      Share.share(
+        'Check out this album on Vera! $shareUrl',
+        subject: 'Album on Vera',
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -465,6 +579,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           ],
         ),
         actions: [
+          if (_canAdmin)
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              onPressed: _shareAlbum,
+              tooltip: 'Share',
+            ),
           if (_canAdmin)
             IconButton(
               icon: const Icon(Icons.person_add),

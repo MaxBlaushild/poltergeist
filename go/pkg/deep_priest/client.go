@@ -118,6 +118,7 @@ func (d *deepPriest) PetitionTheFountWithImage(question *QuestionWithImage) (*An
 }
 
 func (d *deepPriest) GenerateImage(request GenerateImageRequest) (string, error) {
+	ApplyGenerateImageDefaults(&request)
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
 		return "", err
@@ -144,6 +145,7 @@ func (d *deepPriest) GenerateImage(request GenerateImageRequest) (string, error)
 }
 
 func (d *deepPriest) EditImage(request EditImageRequest) (string, error) {
+	ApplyEditImageDefaults(&request)
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)

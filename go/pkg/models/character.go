@@ -12,20 +12,22 @@ import (
 )
 
 type Character struct {
-	ID                uuid.UUID       `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	UpdatedAt         time.Time       `json:"updatedAt"`
-	Name              string          `json:"name"`
-	Description       string          `json:"description"`
-	MapIconURL        string          `json:"mapIconUrl"`
-	DialogueImageURL  string          `json:"dialogueImageUrl"`
-	ThumbnailURL      string          `json:"thumbnailUrl"`
-	Locations         []CharacterLocation `json:"locations" gorm:"foreignKey:CharacterID"`
-	PointOfInterestID *uuid.UUID      `json:"pointOfInterestId,omitempty" gorm:"type:uuid"`
-	PointOfInterest   *PointOfInterest `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
-	Geometry          string          `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	MovementPattern   MovementPattern `json:"movementPattern"`
-	MovementPatternID uuid.UUID       `json:"movementPatternId" gorm:"type:uuid"`
+	ID                    uuid.UUID           `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt             time.Time           `json:"createdAt"`
+	UpdatedAt             time.Time           `json:"updatedAt"`
+	Name                  string              `json:"name"`
+	Description           string              `json:"description"`
+	MapIconURL            string              `json:"mapIconUrl"`
+	DialogueImageURL      string              `json:"dialogueImageUrl"`
+	ThumbnailURL          string              `json:"thumbnailUrl"`
+	ImageGenerationStatus string              `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string             `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	Locations             []CharacterLocation `json:"locations" gorm:"foreignKey:CharacterID"`
+	PointOfInterestID     *uuid.UUID          `json:"pointOfInterestId,omitempty" gorm:"type:uuid"`
+	PointOfInterest       *PointOfInterest    `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
+	Geometry              string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	MovementPattern       MovementPattern     `json:"movementPattern"`
+	MovementPatternID     uuid.UUID           `json:"movementPatternId" gorm:"type:uuid"`
 }
 
 func (n *Character) TableName() string {
@@ -53,6 +55,14 @@ const (
 	MovementPatternStatic MovementPatternType = "static"
 	MovementPatternRandom MovementPatternType = "random"
 	MovementPatternPath   MovementPatternType = "path"
+)
+
+const (
+	CharacterImageGenerationStatusNone       = "none"
+	CharacterImageGenerationStatusQueued     = "queued"
+	CharacterImageGenerationStatusInProgress = "in_progress"
+	CharacterImageGenerationStatusComplete   = "complete"
+	CharacterImageGenerationStatusFailed     = "failed"
 )
 
 // LocationPath is a custom type for []Location that implements sql.Scanner and driver.Valuer

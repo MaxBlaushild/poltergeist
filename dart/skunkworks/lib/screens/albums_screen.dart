@@ -8,6 +8,7 @@ import 'package:skunkworks/services/album_service.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/album_detail_screen.dart';
 import 'package:skunkworks/screens/album_invites_screen.dart';
+import 'package:skunkworks/screens/drafts_screen.dart';
 import 'package:skunkworks/screens/notifications_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:skunkworks/providers/notification_provider.dart';
@@ -235,6 +236,74 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     }
   }
 
+  Widget _buildDraftsSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppColors.graphiteInk.withOpacity(0.08)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DraftsScreen()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.coralPop.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.drafts_outlined,
+                    color: AppColors.coralPop,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Drafts',
+                        style: TextStyle(
+                          color: AppColors.graphiteInk,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'View your image drafts',
+                        style: TextStyle(
+                          color: AppColors.graphiteInk.withOpacity(0.6),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right,
+                  color: AppColors.graphiteInk,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -303,90 +372,117 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
-                      const SizedBox(height: 16),
-                      TextButton(
-                        onPressed: _loadAlbums,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _albums.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.photo_album_outlined, size: 64, color: Colors.grey.shade400),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No albums yet',
-                            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Create an album and link it to tags.\nPosts with those tags will appear in the album.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _albums.length,
-                      itemBuilder: (context, index) {
-                        final album = _albums[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.softRealBlue.withValues(alpha: 0.2),
-                              child: Icon(Icons.photo_album, color: AppColors.softRealBlue),
-                            ),
-                            title: Text(album.name),
-                            subtitle: album.tags.isEmpty
-                                ? null
-                                : Text(
-                                    album.tags.map((t) => '#$t').join(' '),
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey.shade600),
-                                  onPressed: () => _confirmDeleteAlbum(album),
-                                  tooltip: 'Delete album',
-                                ),
-                                const Icon(Icons.chevron_right),
-                              ],
-                            ),
-                            onTap: () {
-                              if (album.id != null) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => AlbumDetailScreen(
-                                      albumId: album.id!,
-                                      albumName: album.name,
-                                      onNavigate: widget.onNavigate,
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                        );
-                      },
+      body: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: _loading || _error != null || _albums.isEmpty ? 2 : _albums.length + 1,
+        itemBuilder: (context, index) {
+          final draftsIndex = _loading || _error != null || _albums.isEmpty ? 1 : _albums.length;
+          if (index == draftsIndex) {
+            return _buildDraftsSection(context);
+          }
+
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.only(top: 32),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
+          if (_error != null) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade700)),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: _loadAlbums,
+                      child: const Text('Retry'),
                     ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          if (_albums.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.photo_album_outlined, size: 64, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No albums yet',
+                      style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Create an album and link it to tags.\nPosts with those tags will appear in the album.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final album = _albums[index];
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: index == 1 ? 8 : 0,
+              bottom: 12,
+            ),
+            child: Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.softRealBlue.withValues(alpha: 0.2),
+                  child: Icon(Icons.photo_album, color: AppColors.softRealBlue),
+                ),
+                title: Text(album.name),
+                subtitle: album.tags.isEmpty
+                    ? null
+                    : Text(
+                        album.tags.map((t) => '#$t').join(' '),
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey.shade600),
+                      onPressed: () => _confirmDeleteAlbum(album),
+                      tooltip: 'Delete album',
+                    ),
+                    const Icon(Icons.chevron_right),
+                  ],
+                ),
+                onTap: () {
+                  if (album.id != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AlbumDetailScreen(
+                          albumId: album.id!,
+                          albumName: album.name,
+                          onNavigate: widget.onNavigate,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showCreateAlbumDialog,
         child: const Icon(Icons.add),

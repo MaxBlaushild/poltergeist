@@ -88,16 +88,13 @@ func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Plac
 		return "", err
 	}
 
-	base64Image, err := c.deepPriest.GenerateImage(deep_priest.GenerateImageRequest{
-		Prompt:         prompt,
-		Style:          style,
-		Size:           "1024x1024",
-		N:              1,
-		ResponseFormat: "b64_json",
-		User:           "poltergeist",
-		Model:          "dall-e-3",
-		Quality:        "standard",
-	})
+	request := deep_priest.GenerateImageRequest{
+		Prompt: prompt,
+		Style:  style,
+		Model:  "dall-e-3",
+	}
+	deep_priest.ApplyGenerateImageDefaults(&request)
+	base64Image, err := c.deepPriest.GenerateImage(request)
 	if err != nil {
 		log.Printf("Error generating image: %v", err)
 		return "", err

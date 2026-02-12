@@ -71,6 +71,13 @@ class _CharacterPanelState extends State<CharacterPanel> {
     return null;
   }
 
+  CharacterAction? _firstActionOfTypes(List<String> types) {
+    for (final action in _actions) {
+      if (types.contains(action.actionType)) return action;
+    }
+    return null;
+  }
+
   Future<void> _handleQuest(CharacterAction action) async {
     final questId = action.questId;
     if (questId == null) return;
@@ -138,7 +145,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Widget build(BuildContext context) {
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
-    final questAction = _firstActionOfType('giveQuest');
+    final questAction = _firstActionOfTypes(['giveQuest', 'quest', 'quests']);
     final hasQuest = questAction?.questId != null;
     final questReadyToTurnIn = questAction != null ? _questReadyToTurnIn(questAction) : null;
     final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;

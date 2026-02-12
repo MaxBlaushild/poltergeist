@@ -37,7 +37,7 @@ const strictPixelPrompt = `
 
 // Tunables
 const (
-	genSize           = "512x512" // generation size; then we'll enforce pixel look
+	genSize           = "1024x1024" // generation size; then we'll enforce pixel look
 	iconSize          = 128       // pixel icon size (downscale target before quantize)
 	quantColors       = 20        // ~16–24 is a sweet spot; adjust to taste
 	upscaleOutput     = 512       // final upscaled display size with nearest neighbor
@@ -80,18 +80,17 @@ func (p *CreateProfilePictureProcessor) ProcessTask(ctx context.Context, task *a
 	log.Printf("Generating pixel avatar for user ID: %v", payload.UserID)
 
 	// Ask for multiple candidates; we'll pick the crispest one.
-	resp, err := p.deepPriestClient.EditImage(deep_priest.EditImageRequest{
-		Prompt:         strictPixelPrompt,
-		ImageUrl:       payload.ProfilePictureUrl,
-		Model:          "gpt-image-1",
-		N:              1,          // multiple for selection
-		Quality:        "standard", // "hd" often reintroduces gradients for edits
-		Size:           genSize,    // generate smaller; we'll downscale further
-		User:           "poltergeist",
-		ResponseFormat: "b64_json", // we will handle array or single
+	editRequest := deep_priest.EditImageRequest{
+		Prompt:   strictPixelPrompt,
+		ImageUrl: payload.ProfilePictureUrl,
+		Model:    "gpt-image-1",
+		N:        1,       // multiple for selection
+		Size:     genSize, // generate smaller; we'll downscale further
 		// If your backend supports: TransparentBackground: true,
 		// If you add masks later: MaskUrl: payload.FaceMaskURL,
-	})
+	}
+	deep_priest.ApplyEditImageDefaults(&editRequest)
+	resp, err := p.deepPriestClient.EditImage(editRequest)
 	if err != nil {
 		log.Printf("Failed to generate profile picture(s): %v", err)
 		return fmt.Errorf("failed to generate profile picture: %w", err)

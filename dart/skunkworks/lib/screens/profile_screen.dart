@@ -13,6 +13,8 @@ import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
 import 'package:skunkworks/screens/post_detail_screen.dart';
+import 'package:skunkworks/models/social_account.dart';
+import 'package:skunkworks/services/social_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   final Function(NavTab) onNavigate;
@@ -35,6 +37,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = false;
   Certificate? _certificate;
   bool _loadingCertificate = false;
+  bool _loadingSocial = false;
+  List<SocialAccount> _socialAccounts = [];
   User? _displayUser;
   bool _hasLoadedForUser = false;
 
@@ -43,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loadUserPosts();
     _loadCertificate();
+    _loadSocialAccounts();
   }
 
   @override
@@ -153,6 +158,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _loadSocialAccounts() async {
+    if (!_isViewingOwnProfile()) return;
+    setState(() {
+      _loadingSocial = true;
+    });
+
+    try {
+      final apiClient = APIClient(ApiConstants.baseUrl);
+      final socialService = SocialService(apiClient);
+      final accounts = await socialService.getAccounts();
+      if (mounted) {
+        setState(() {
+          _socialAccounts = accounts;
+          _loadingSocial = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingSocial = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load social accounts: $e')),
+        );
+      }
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -245,6 +278,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                       // Certificate section
                       _buildCertificateSection(),
+
+                      // Social accounts
+                      if (isOwnProfile) _buildSocialAccountsSection(),
                       
                       // Posts grid – show loading only for this section
                       if (_loading)
@@ -842,6 +878,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildSocialAccountsSection() {
+    final instagramAccount = _socialAccounts
+        .where((a) => a.provider == 'instagram')
+        .cast<SocialAccount?>()
+        .firstWhere((a) => a != null, orElse: () => null);
+    final twitterAccount = _socialAccounts
+        .where((a) => a.provider == 'twitter')
+        .cast<SocialAccount?>()
+        .firstWhere((a) => a != null, orElse: () => null);
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          children: [
+            const ListTile(
+              leading: Icon(Icons.share),
+              title: Text(
+                'Social Accounts',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              subtitle: Text('Connect to share to Instagram and Twitter'),
+            ),
+            const Divider(height: 1),
+            _buildSocialRow(
+              label: 'Instagram',
+              connected: instagramAccount != null,
+              username: instagramAccount?.username,
+              onTap: () => _handleSocialAction('instagram', instagramAccount != null),
+            ),
+            const Divider(height: 1),
+            _buildSocialRow(
+              label: 'Twitter',
+              connected: twitterAccount != null,
+              username: twitterAccount?.username,
+              onTap: () => _handleSocialAction('twitter', twitterAccount != null),
+            ),
+            if (_loadingSocial)
+              const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: LinearProgressIndicator(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialRow({
+    required String label,
+    required bool connected,
+    String? username,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      title: Text(label),
+      subtitle: Text(
+        connected
+            ? (username != null && username.isNotEmpty ? '@$username' : 'Connected')
+            : 'Not connected',
+      ),
+      trailing: TextButton(
+        onPressed: _loadingSocial ? null : onTap,
+        child: Text(connected ? 'Disconnect' : 'Connect'),
+      ),
+    );
+  }
+
+  Future<void> _handleSocialAction(String provider, bool connected) async {
+    final apiClient = APIClient(ApiConstants.baseUrl);
+    final socialService = SocialService(apiClient);
+
+    setState(() {
+      _loadingSocial = true;
+    });
+
+    try {
+      if (connected) {
+        await socialService.revoke(provider);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$provider disconnected')),
+          );
+        }
+      } else {
+        final authUrl = await socialService.getAuthUrl(provider);
+        final uri = Uri.parse(authUrl);
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          throw Exception('Could not open authorization page');
+        }
+      }
+      await _loadSocialAccounts();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loadingSocial = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Social action failed: $e')),
+        );
+      }
+    }
   }
 
   String _getBlockExplorerUrl(String txHash, int? chainId) {

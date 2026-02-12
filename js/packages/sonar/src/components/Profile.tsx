@@ -1,13 +1,14 @@
-import React, { useEffect, useState, FC } from 'react';
+import React, { useEffect, useRef, useState, FC } from 'react';
 import { useUserContext } from '../contexts/UserContext.tsx';
-import { UserIcon, PhoneIcon, IdentificationIcon, UserGroupIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
-import { useAuth, useAPI } from '@poltergeist/contexts';
+import { UserIcon, PhoneIcon, IdentificationIcon, UserGroupIcon, ArrowLeftIcon, CameraIcon } from '@heroicons/react/24/outline';
+import { useAuth, useAPI, useMediaContext } from '@poltergeist/contexts';
 import { useZoneContext } from '@poltergeist/contexts';
 import { UserZoneReputation } from '@poltergeist/types';
 import { useUserLevel } from '@poltergeist/hooks';
 import { User } from '@poltergeist/types';
 import { useNavigate } from 'react-router-dom';
 import { useParty } from '../contexts/PartyContext.tsx';
+import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 
 interface ProfileProps {
   isOwnProfile?: boolean;
@@ -19,14 +20,19 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
   const userCtx = useUserContext();
   const { user: contextUser, loading: contextLoading, error: contextError, setUsername } = userCtx || { user: null, loading: false, error: null, setUsername: () => {} } as any;
   const { user: authUser, logout } = useAuth();
+  const { currentUser, currentUserLoading, currentUserError, refreshUser } = useUserProfiles();
   const { userLevel } = useUserLevel();
   const navigate = useNavigate();
   const { apiClient } = useAPI();
+  const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { zones } = useZoneContext();
   const [isInviting, setIsInviting] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const { inviteToParty } = useParty();
   const [reputations, setReputations] = useState<UserZoneReputation[]>([]);
+  const [isUpdatingProfilePicture, setIsUpdatingProfilePicture] = useState(false);
+  const [profilePictureError, setProfilePictureError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -43,10 +49,40 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
     };
   }, [apiClient]);
 
-  // Use auth user for own profile, context user for viewing others
-  const user = isOwnProfile ? authUser : contextUser;
-  const loading = isOwnProfile ? false : contextLoading;
-  const error = isOwnProfile ? null : contextError;
+  // Use current user for own profile, context user for viewing others
+  const ownUser = currentUser ?? authUser;
+  const user = isOwnProfile ? ownUser : contextUser;
+  const loading = isOwnProfile ? currentUserLoading : contextLoading;
+  const error = isOwnProfile ? currentUserError : contextError;
+  const canEditProfile = !!authUser && !!user && authUser.id === user.id;
+
+  const handleProfilePictureUpload = async (file: File) => {
+    if (!user) return;
+    setProfilePictureError(null);
+    setIsUpdatingProfilePicture(true);
+    try {
+      const timestamp = new Date().getTime().toString();
+      const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const presignedUrl = await getPresignedUploadURL(
+        'crew-profile-icons',
+        `${user.id}-${timestamp}.${extension}`
+      );
+      if (!presignedUrl) {
+        throw new Error('Failed to get upload URL');
+      }
+      await uploadMedia(presignedUrl, file);
+      const imageUrl = presignedUrl.split('?')[0];
+      await apiClient.post('/sonar/generateProfilePictureOptions', {
+        profilePictureUrl: imageUrl,
+      });
+      await refreshUser();
+    } catch (e) {
+      console.error('Failed to update profile picture', e);
+      setProfilePictureError('Failed to update profile picture. Please try again.');
+    } finally {
+      setIsUpdatingProfilePicture(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -145,6 +181,38 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
                   )}
                 </div>
                 <div className={`absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-white ${user.isActive ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                {canEditProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUpdatingProfilePicture}
+                    className={`absolute -bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full border-2 border-gray-900 shadow-md transition-colors ${
+                      isUpdatingProfilePicture
+                        ? 'bg-gray-200 text-gray-500 cursor-wait'
+                        : 'bg-white text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    <CameraIcon className="h-4 w-4" />
+                    {isUpdatingProfilePicture
+                      ? 'Updating...'
+                      : user.profilePictureUrl
+                      ? 'Change Photo'
+                      : 'Add Photo'}
+                  </button>
+                ) : null}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => {
+                    const selectedFile = event.target.files?.[0];
+                    if (selectedFile) {
+                      handleProfilePictureUpload(selectedFile);
+                    }
+                    event.target.value = '';
+                  }}
+                />
               </div>
 
               {/* Username and Level */}
@@ -155,6 +223,9 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
                 {user.name && (
                   <p className="text-lg text-gray-600">{user.name}</p>
                 )}
+                {profilePictureError ? (
+                  <p className="mt-2 text-sm text-red-600">{profilePictureError}</p>
+                ) : null}
               </div>
             </div>
 

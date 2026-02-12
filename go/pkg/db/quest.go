@@ -17,8 +17,20 @@ func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
 }
 
 func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Quest) error {
-	updates.ID = id
-	return h.db.WithContext(ctx).Save(updates).Error
+	if updates == nil {
+		return nil
+	}
+	payload := map[string]interface{}{
+		"name":                     updates.Name,
+		"description":              updates.Description,
+		"image_url":                updates.ImageURL,
+		"zone_id":                  updates.ZoneID,
+		"quest_archetype_id":       updates.QuestArchetypeID,
+		"quest_giver_character_id": updates.QuestGiverCharacterID,
+		"gold":                     updates.Gold,
+		"updated_at":               updates.UpdatedAt,
+	}
+	return h.db.WithContext(ctx).Model(&models.Quest{}).Where("id = ?", id).Updates(payload).Error
 }
 
 func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest, error) {
@@ -26,7 +38,9 @@ func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
-		Preload("Nodes").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
+		}).
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		First(&quest, "id = ?", id).Error; err != nil {
@@ -43,7 +57,9 @@ func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
-		Preload("Nodes").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
+		}).
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("id IN ?", ids).
@@ -58,10 +74,29 @@ func (h *questHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]mod
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
-		Preload("Nodes").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
+		}).
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("zone_id = ?", zoneID).
+		Find(&quests).Error; err != nil {
+		return nil, err
+	}
+	return quests, nil
+}
+
+func (h *questHandle) FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error) {
+	var quests []models.Quest
+	if err := h.db.WithContext(ctx).
+		Preload("ItemRewards").
+		Preload("ItemRewards.InventoryItem").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
+		}).
+		Preload("Nodes.Challenges").
+		Preload("Nodes.Children").
+		Where("quest_giver_character_id = ?", characterID).
 		Find(&quests).Error; err != nil {
 		return nil, err
 	}
@@ -73,7 +108,9 @@ func (h *questHandle) FindAll(ctx context.Context) ([]models.Quest, error) {
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
-		Preload("Nodes").
+		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
+			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
+		}).
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Find(&quests).Error; err != nil {

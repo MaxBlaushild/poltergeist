@@ -39,6 +39,8 @@ class ApiConstants {
   static const String albumInvitesListEndpoint = '/verifiable-sn/album-invites';
   static String acceptAlbumInviteEndpoint(String inviteId) => '/verifiable-sn/album-invites/$inviteId/accept';
   static String rejectAlbumInviteEndpoint(String inviteId) => '/verifiable-sn/album-invites/$inviteId/reject';
+  static String createAlbumShareEndpoint(String albumId) => '/verifiable-sn/albums/$albumId/share';
+  static String albumShareEndpoint(String token) => '/verifiable-sn/album-shares/$token';
 
   // Notification endpoints
   static const String notificationsEndpoint = '/verifiable-sn/notifications';
@@ -48,6 +50,13 @@ class ApiConstants {
 
   // Media endpoints
   static const String presignedUploadUrlEndpoint = '/verifiable-sn/media/uploadUrl';
+
+  // Social endpoints
+  static const String socialAccountsEndpoint = '/verifiable-sn/social/accounts';
+  static String socialAuthEndpoint(String provider) => '/verifiable-sn/social/$provider/auth';
+  static String socialCallbackEndpoint(String provider) => '/verifiable-sn/social/$provider/callback';
+  static String socialRevokeEndpoint(String provider) => '/verifiable-sn/social/$provider/revoke';
+  static String socialPostEndpoint(String provider) => '/verifiable-sn/social/$provider/post';
   
   // Friend endpoints
   static const String friendsEndpoint = '/verifiable-sn/friends';
@@ -69,6 +78,9 @@ class ApiConstants {
 
   static String sharePostUrl(String postId) =>
       '$shareTestFlightUrl?post=${Uri.encodeComponent(postId)}';
+
+  static String shareAlbumUrl(String token) =>
+      '$baseUrl/verifiable-sn/album-shares/${Uri.encodeComponent(token)}/open';
 
   /// Builds vera:// deep link for export QR code.
   /// m=manifestHash, t=txHash (blockchain). Omit params if null.

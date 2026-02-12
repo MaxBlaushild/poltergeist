@@ -198,23 +198,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     ),
               ),
               const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  quest.imageUrl != null && quest.imageUrl!.isNotEmpty
-                      ? quest.imageUrl!
-                      : _placeholderImageUrl,
-                  height: 180,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 180,
-                    color: Colors.grey.shade300,
-                    child: const Icon(Icons.help_outline, size: 48),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [

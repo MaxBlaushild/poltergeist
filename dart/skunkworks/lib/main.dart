@@ -21,6 +21,7 @@ import 'package:skunkworks/screens/upload_post_screen.dart';
 import 'package:skunkworks/screens/notifications_screen.dart';
 import 'package:skunkworks/screens/album_detail_screen.dart';
 import 'package:skunkworks/screens/album_invites_screen.dart';
+import 'package:skunkworks/screens/shared_album_screen.dart';
 import 'package:skunkworks/services/api_client.dart';
 import 'package:skunkworks/services/auth_service.dart';
 import 'package:skunkworks/services/certificate_service.dart';
@@ -74,6 +75,7 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        Provider.value(value: apiClient),
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: postProvider),
         ChangeNotifierProvider.value(value: friendProvider),
@@ -120,6 +122,7 @@ class _HomeWidgetState extends State<HomeWidget> {
   bool _hasInitializedFcm = false;
   StreamSubscription<Uri>? _linkSubscription;
   final AppLinks _appLinks = AppLinks();
+  String? _pendingSharedAlbumToken;
 
   @override
   void initState() {
@@ -207,20 +210,46 @@ class _HomeWidgetState extends State<HomeWidget> {
   }
 
   void _handleDeepLink(Uri uri) {
-    if (uri.scheme != 'vera' || uri.host != 'post') return;
+    if (uri.scheme != 'vera') return;
     final pathSegments = uri.pathSegments;
     if (pathSegments.isEmpty) return;
-    final postId = pathSegments.first;
-    if (postId.isEmpty) return;
 
-    navigatorKey.currentState?.push(
-      MaterialPageRoute(
-        builder: (context) => PostDetailScreen(
-          postId: postId,
-          onNavigate: _onTabChanged,
+    if (uri.host == 'post') {
+      final postId = pathSegments.first;
+      if (postId.isEmpty) return;
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(
+          builder: (context) => PostDetailScreen(
+            postId: postId,
+            onNavigate: _onTabChanged,
+          ),
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    if (uri.host == 'album') {
+      final token = pathSegments.first;
+      if (token.isEmpty) return;
+      final navContext = navigatorKey.currentContext;
+      if (navContext != null) {
+        final authProvider = Provider.of<AuthProvider>(navContext, listen: false);
+        if (authProvider.isAuthenticated) {
+          navigatorKey.currentState?.push(
+            MaterialPageRoute(
+              builder: (context) => SharedAlbumScreen(
+                shareToken: token,
+                onNavigate: _onTabChanged,
+              ),
+            ),
+          );
+          return;
+        }
+      }
+      setState(() {
+        _pendingSharedAlbumToken = token;
+      });
+    }
   }
 
   void _onTabChanged(NavTab tab) {
@@ -246,6 +275,17 @@ class _HomeWidgetState extends State<HomeWidget> {
   Widget build(BuildContext context) {
     return Consumer2<AuthProvider, CertificateProvider>(
       builder: (context, authProvider, certProvider, child) {
+        if (_pendingSharedAlbumToken != null) {
+          return SharedAlbumScreen(
+            shareToken: _pendingSharedAlbumToken!,
+            onNavigate: (tab) {
+              setState(() {
+                _pendingSharedAlbumToken = null;
+                _currentTab = tab;
+              });
+            },
+          );
+        }
         // Show loading screen while checking authentication
         if (authProvider.loading) {
           return const Scaffold(

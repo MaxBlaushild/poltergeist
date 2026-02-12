@@ -11,6 +11,7 @@ import 'package:skunkworks/models/post.dart';
 import 'package:skunkworks/providers/auth_provider.dart';
 import 'package:skunkworks/providers/post_provider.dart';
 import 'package:skunkworks/services/api_client.dart';
+import 'package:skunkworks/services/social_service.dart';
 import 'package:skunkworks/services/post_service.dart';
 import 'package:skunkworks/constants/api_constants.dart';
 import 'package:skunkworks/widgets/bottom_nav.dart';
@@ -458,11 +459,86 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _handleSharePost() {
     if (_post?.id == null) return;
+    _showShareOptions();
+  }
+
+  void _showShareOptions() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('Share link'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareLink();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Post to Instagram'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareToSocial('instagram');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.alternate_email),
+                title: const Text('Post to Twitter'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _shareToSocial('twitter');
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _shareLink() {
     final url = ApiConstants.sharePostUrl(_post!.id!);
     Share.share(
       'Check out this post on Vera! $url',
       subject: 'Post on Vera',
     );
+  }
+
+  Future<void> _shareToSocial(String provider) async {
+    if (_post?.id == null) return;
+    try {
+      final apiClient = APIClient(ApiConstants.baseUrl);
+      final socialService = SocialService(apiClient);
+      await socialService.postToSocial(provider: provider, postId: _post!.id!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Posted to $provider')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to post to $provider: $e')),
+      );
+    }
   }
 
   String _getBlockExplorerUrl(String txHash, int? chainId) {
