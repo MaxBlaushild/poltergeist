@@ -184,6 +184,7 @@ type PointOfInterestHandle interface {
 	Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int, clue string, imageUrl string, originalName string, googleMapsPlaceId *string) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error
+	UpdateImageGenerationStatus(ctx context.Context, id uuid.UUID, status string, errMsg *string) error
 	CreateForGroup(ctx context.Context, pointOfInterest *models.PointOfInterest, pointOfInterestGroupID uuid.UUID) error
 	FindAllForZone(ctx context.Context, zoneID uuid.UUID) ([]models.PointOfInterest, error)
 	FindByGoogleMapsPlaceID(ctx context.Context, googleMapsPlaceID string) (*models.PointOfInterest, error)

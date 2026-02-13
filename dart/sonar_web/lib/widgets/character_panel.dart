@@ -143,6 +143,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
             characterId: widget.character.id,
             questId: questId,
           );
+      await context.read<QuestLogProvider>().refresh();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Quest accepted')),

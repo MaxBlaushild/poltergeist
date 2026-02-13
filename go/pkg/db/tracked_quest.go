@@ -2,6 +2,7 @@ package db
 
 import (
   "context"
+  "time"
 
   "github.com/MaxBlaushild/poltergeist/pkg/models"
   "github.com/google/uuid"
@@ -21,6 +22,9 @@ func (h *trackedQuestHandle) Create(ctx context.Context, questID uuid.UUID, user
   }
 
   return h.db.WithContext(ctx).Create(&models.TrackedQuest{
+    ID:        uuid.New(),
+    CreatedAt: time.Now(),
+    UpdatedAt: time.Now(),
     QuestID: questID,
     UserID:  userID,
   }).Error

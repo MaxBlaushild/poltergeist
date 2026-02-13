@@ -19,6 +19,8 @@ type PointOfInterest struct {
 	Lat                       string                     `json:"lat"`
 	Lng                       string                     `json:"lng"`
 	ImageUrl                  string                     `json:"imageURL"`
+	ImageGenerationStatus     string                     `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError      *string                    `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 	Description               string                     `json:"description"`
 	PointOfInterestChallenges []PointOfInterestChallenge `json:"pointOfInterestChallenges"`
 	Characters                []Character                `json:"characters" gorm:"foreignKey:PointOfInterestID"`
@@ -33,6 +35,14 @@ type PointOfInterest struct {
 func (p *PointOfInterest) TableName() string {
 	return "points_of_interest"
 }
+
+const (
+	PointOfInterestImageGenerationStatusNone       = "none"
+	PointOfInterestImageGenerationStatusQueued     = "queued"
+	PointOfInterestImageGenerationStatusInProgress = "in_progress"
+	PointOfInterestImageGenerationStatusComplete   = "complete"
+	PointOfInterestImageGenerationStatusFailed     = "failed"
+)
 
 func (p *PointOfInterest) BeforeSave(tx *gorm.DB) error {
 	if p.Lat != "" && p.Lng != "" {

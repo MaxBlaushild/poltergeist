@@ -8,11 +8,13 @@ import '../services/poi_service.dart';
 class ZoneWidget extends StatefulWidget {
   final VoidCallback? onWidgetOpen;
   final VoidCallback? onWidgetClose;
+  final double top;
 
   const ZoneWidget({
     super.key,
     this.onWidgetOpen,
     this.onWidgetClose,
+    this.top = 80,
   });
 
   @override
@@ -100,7 +102,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final selectedZone = zoneProvider.selectedZone;
 
         return Positioned(
-          top: 80,
+          top: widget.top,
           left: 0,
           right: 0,
           child: Center(

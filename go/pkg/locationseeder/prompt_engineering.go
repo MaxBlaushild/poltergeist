@@ -49,10 +49,17 @@ const generatePointOfInterestPromptTemplate = premise + `
 const generateImagePromptPromptTemplate = premise + `
 	Please describe how the location would look from the outside if it was in a fantasy role playing video game.
 
+	The image should match the aesthetic of retro 16-bit RPG pixel art item and character images:
+	- Crisp outlines, limited color palette, clean background
+	- Centered subject, readable silhouette
+	- No text, no logos, no UI
+	- Exterior view, 3/4 angle or slight isometric perspective
+	- Keep the prompt focused on a single iconic exterior scene
+
 	Please format your response as a JSON object with the following fields:
 	
 	{
-		"text": "string", // Include your whole response here
+		"text": "string", // A single concise image prompt in the above style
 	}
 `
 

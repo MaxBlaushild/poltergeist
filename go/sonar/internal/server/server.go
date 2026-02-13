@@ -333,7 +333,135 @@ func (s *server) getActivities(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, activities)
+	enriched, err := s.enrichActivities(ctx, activities)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, enriched)
+}
+
+type activityFeedItem struct {
+	ID           uuid.UUID            `json:"id"`
+	CreatedAt    time.Time            `json:"createdAt"`
+	UpdatedAt    time.Time            `json:"updatedAt"`
+	UserID       uuid.UUID            `json:"userId"`
+	ActivityType models.ActivityType  `json:"activityType"`
+	Data         map[string]interface{} `json:"data"`
+	Seen         bool                 `json:"seen"`
+}
+
+func (s *server) enrichActivities(ctx context.Context, activities []models.Activity) ([]activityFeedItem, error) {
+	out := make([]activityFeedItem, 0, len(activities))
+	for _, activity := range activities {
+		data := map[string]interface{}{}
+		if len(activity.Data) > 0 {
+			_ = json.Unmarshal(activity.Data, &data)
+		}
+
+		entities := map[string]interface{}{}
+		switch activity.ActivityType {
+		case models.ActivityTypeQuestCompleted:
+			var payload models.QuestCompletedActivity
+			if err := json.Unmarshal(activity.Data, &payload); err == nil {
+				if payload.QuestID != uuid.Nil {
+					if quest, err := s.dbClient.Quest().FindByID(ctx, payload.QuestID); err == nil && quest != nil {
+						entities["quest"] = map[string]interface{}{
+							"id":                    quest.ID,
+							"name":                  quest.Name,
+							"imageUrl":              quest.ImageURL,
+							"zoneId":                quest.ZoneID,
+							"questGiverCharacterId": quest.QuestGiverCharacterID,
+						}
+					}
+				}
+			}
+		case models.ActivityTypeChallengeCompleted:
+			var payload models.ChallengeCompletedActivity
+			if err := json.Unmarshal(activity.Data, &payload); err == nil {
+				if payload.ChallengeID != uuid.Nil {
+					if challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, payload.ChallengeID); err == nil && challenge != nil {
+						entities["challenge"] = map[string]interface{}{
+							"id":                    challenge.ID,
+							"question":              challenge.Question,
+							"tier":                  challenge.Tier,
+							"pointOfInterestId":     challenge.PointOfInterestID,
+							"pointOfInterestGroupId": challenge.PointOfInterestGroupID,
+						}
+					}
+				}
+				if payload.QuestID != uuid.Nil || payload.QuestName != "" {
+					entities["quest"] = map[string]interface{}{
+						"id":   payload.QuestID,
+						"name": payload.QuestName,
+					}
+				}
+				if payload.ZoneID != uuid.Nil || payload.ZoneName != "" {
+					entities["zone"] = map[string]interface{}{
+						"id":   payload.ZoneID,
+						"name": payload.ZoneName,
+					}
+				}
+				entities["currentPoi"] = map[string]interface{}{
+					"id":       payload.CurrentPOI.ID,
+					"name":     payload.CurrentPOI.Name,
+					"imageUrl": payload.CurrentPOI.ImageURL,
+				}
+				if payload.NextPOI != nil {
+					entities["nextPoi"] = map[string]interface{}{
+						"id":       payload.NextPOI.ID,
+						"name":     payload.NextPOI.Name,
+						"imageUrl": payload.NextPOI.ImageURL,
+					}
+				}
+			}
+		case models.ActivityTypeItemReceived:
+			var payload models.ItemReceivedActivity
+			if err := json.Unmarshal(activity.Data, &payload); err == nil {
+				itemInfo := map[string]interface{}{
+					"id":   payload.ItemID,
+					"name": payload.ItemName,
+				}
+				if payload.ItemID != 0 {
+					if item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, payload.ItemID); err == nil && item != nil {
+						itemInfo["imageUrl"] = item.ImageURL
+					}
+				}
+				entities["item"] = itemInfo
+			}
+		case models.ActivityTypeReputationUp:
+			var payload models.ReputationUpActivity
+			if err := json.Unmarshal(activity.Data, &payload); err == nil {
+				entities["zone"] = map[string]interface{}{
+					"id":   payload.ZoneID,
+					"name": payload.ZoneName,
+				}
+			}
+		case models.ActivityTypeLevelUp:
+			var payload models.LevelUpActivity
+			if err := json.Unmarshal(activity.Data, &payload); err == nil {
+				entities["level"] = map[string]interface{}{
+					"newLevel": payload.NewLevel,
+				}
+			}
+		}
+
+		if len(entities) > 0 {
+			data["entities"] = entities
+		}
+
+		out = append(out, activityFeedItem{
+			ID:           activity.ID,
+			CreatedAt:    activity.CreatedAt,
+			UpdatedAt:    activity.UpdatedAt,
+			UserID:       activity.UserID,
+			ActivityType: activity.ActivityType,
+			Data:         data,
+			Seen:         activity.Seen,
+		})
+	}
+	return out, nil
 }
 
 func (s *server) getReputations(ctx *gin.Context) {
@@ -1278,6 +1406,11 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	}
 
 	if existingAcceptance != nil {
+		// Ensure accepted quests stay tracked even if acceptance predates tracking.
+		if err := s.dbClient.TrackedQuest().Create(ctx, questID, user.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusOK, gin.H{"message": "quest already accepted"})
 		return
 	}
@@ -2359,13 +2492,51 @@ func (s *server) refreshPointOfInterestImage(ctx *gin.Context) {
 		return
 	}
 
-	err = s.locationSeeder.RefreshPointOfInterestImage(ctx, poi)
+	if poi == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "point of interest not found"})
+		return
+	}
+
+	clearErr := ""
+	if err := s.dbClient.PointOfInterest().UpdateImageGenerationStatus(
+		ctx,
+		requestBody.PointOfInterestID,
+		models.PointOfInterestImageGenerationStatusQueued,
+		&clearErr,
+	); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update point of interest: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GeneratePointOfInterestImageTaskPayload{
+		PointOfInterestID: requestBody.PointOfInterestID,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, poi)
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GeneratePointOfInterestImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		_ = s.dbClient.PointOfInterest().UpdateImageGenerationStatus(
+			ctx,
+			requestBody.PointOfInterestID,
+			models.PointOfInterestImageGenerationStatusFailed,
+			&errMsg,
+		)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedPoi, err := s.dbClient.PointOfInterest().FindByID(ctx, requestBody.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedPoi)
 }
 
 func (s *server) importPointOfInterest(ctx *gin.Context) {

@@ -10,6 +10,7 @@ const (
 	CreateProfilePictureTaskType          = "create_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateCharacterImageTaskType        = "generate_character_image"
+	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
@@ -39,6 +40,10 @@ type GenerateCharacterImageTaskPayload struct {
 	CharacterID uuid.UUID `json:"characterId"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+}
+
+type GeneratePointOfInterestImageTaskPayload struct {
+	PointOfInterestID uuid.UUID `json:"pointOfInterestId"`
 }
 
 type ImportPointOfInterestTaskPayload struct {

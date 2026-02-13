@@ -34,6 +34,7 @@ export const PointOfInterestEditor = () => {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refreshingImage, setRefreshingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -47,6 +48,23 @@ export const PointOfInterestEditor = () => {
     googleMapsPlaceId: '',
     unlockTier: '' as string,
   });
+
+  const formatGenerationStatus = (status?: string) => {
+    switch (status) {
+      case 'queued':
+        return 'Queued';
+      case 'in_progress':
+        return 'Generating';
+      case 'complete':
+        return 'Complete';
+      case 'failed':
+        return 'Failed';
+      case 'none':
+        return 'Not requested';
+      default:
+        return 'Unknown';
+    }
+  };
 
   const assignedCharacters = useMemo(() => {
     if (!pointOfInterest) return [];
@@ -177,6 +195,26 @@ export const PointOfInterestEditor = () => {
       setError('Failed to save changes.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRefreshImage = async () => {
+    if (!id) return;
+    setRefreshingImage(true);
+    setError(null);
+    try {
+      const updated = await apiClient.post<PointOfInterest>('/sonar/pointOfInterest/image/refresh', {
+        pointOfInterestID: id,
+      });
+      setPointOfInterest(updated);
+      setFormData(prev => ({ ...prev, imageURL: updated.imageURL ?? '' }));
+      setImageFile(null);
+      setImagePreview(updated.imageURL ?? null);
+    } catch (err) {
+      console.error('Error refreshing point of interest image:', err);
+      setError('Failed to refresh point of interest image.');
+    } finally {
+      setRefreshingImage(false);
     }
   };
 
@@ -352,6 +390,24 @@ export const PointOfInterestEditor = () => {
                 className="mt-2 h-32 w-full object-cover rounded"
               />
             )}
+            <p className="mt-2 text-sm text-gray-600">
+              Image Status: {formatGenerationStatus(pointOfInterest.imageGenerationStatus)}
+            </p>
+            {pointOfInterest.imageGenerationStatus === 'failed' && pointOfInterest.imageGenerationError && (
+              <p className="mt-1 text-xs text-red-600">
+                Error: {pointOfInterest.imageGenerationError}
+              </p>
+            )}
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={handleRefreshImage}
+                disabled={refreshingImage || ['queued', 'in_progress'].includes(pointOfInterest.imageGenerationStatus || '')}
+                className="px-3 py-2 bg-yellow-500 text-white rounded-md disabled:bg-gray-300"
+              >
+                {refreshingImage ? 'Refreshing Image...' : 'Refresh Image'}
+              </button>
+            </div>
           </div>
         </div>
 

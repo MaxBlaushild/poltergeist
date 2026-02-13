@@ -15,10 +15,12 @@ class TrackedQuestsOverlay extends StatefulWidget {
   const TrackedQuestsOverlay({
     super.key,
     required this.onFocusPoI,
+    required this.onFocusNode,
   });
 
   /// When user taps a POI: fly to location then open POI panel.
   final void Function(PointOfInterest poi) onFocusPoI;
+  final void Function(QuestNode node) onFocusNode;
 
   @override
   State<TrackedQuestsOverlay> createState() => _TrackedQuestsOverlayState();
@@ -124,6 +126,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                                           quest: quest,
                                           discoveredIds: discoveredIds,
                                           onPoITap: _onPoITap,
+                                          onNodeTap: widget.onFocusNode,
                                         ),
                                       ),
                                     )
@@ -152,11 +155,13 @@ class _TrackedQuestCard extends StatelessWidget {
     required this.quest,
     required this.discoveredIds,
     required this.onPoITap,
+    required this.onNodeTap,
   });
 
   final Quest quest;
   final Set<String> discoveredIds;
   final void Function(PointOfInterest) onPoITap;
+  final void Function(QuestNode) onNodeTap;
 
   @override
   Widget build(BuildContext context) {
@@ -190,18 +195,40 @@ class _TrackedQuestCard extends StatelessWidget {
               poi: poi,
               discovered: discoveredIds.contains(poi.id),
               onTap: () => onPoITap(poi),
+              onChallengeTap: () => onNodeTap(node),
               challenges: node.challenges.map((c) => c.question).toList(),
             )
           else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                'Reach the highlighted area to submit your answer.',
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: Colors.white70),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'Reach the highlighted area to submit your answer.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.white70),
+                  ),
+                ),
+                ...node.challenges.map(
+                  (q) => GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onNodeTap(node),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        q.question,
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
         ],
       ),
@@ -214,12 +241,14 @@ class _QuestPoiTile extends StatelessWidget {
     required this.poi,
     required this.discovered,
     required this.onTap,
+    required this.onChallengeTap,
     required this.challenges,
   });
 
   final PointOfInterest poi;
   final bool discovered;
   final VoidCallback onTap;
+  final VoidCallback onChallengeTap;
   final List<String> challenges;
 
   @override
@@ -265,12 +294,19 @@ class _QuestPoiTile extends StatelessWidget {
                         ),
                   ),
                   ...challenges.map(
-                    (q) => Text(
-                      q,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white70),
+                    (q) => GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onChallengeTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Text(
+                          q,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Colors.white70),
+                        ),
+                      ),
                     ),
                   ),
                 ],

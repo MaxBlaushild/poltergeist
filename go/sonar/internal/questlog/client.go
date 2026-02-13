@@ -106,6 +106,11 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			continue
 		}
 
+		acceptance, accepted := acceptanceByQuest[quest.ID]
+		if !accepted {
+			continue
+		}
+
 		poiLookup, err := c.loadQuestPointsOfInterest(ctx, &quest)
 		if err != nil {
 			return nil, err
@@ -115,17 +120,14 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			continue
 		}
 
-		acceptance, accepted := acceptanceByQuest[quest.ID]
 		progress := map[uuid.UUID]bool{}
-		if accepted {
-			nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
-			if err != nil {
-				return nil, err
-			}
-			for _, p := range nodeProgress {
-				if p.CompletedAt != nil {
-					progress[p.QuestNodeID] = true
-				}
+		nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range nodeProgress {
+			if p.CompletedAt != nil {
+				progress[p.QuestNodeID] = true
 			}
 		}
 
@@ -161,7 +163,14 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		})
 	}
 
-	return &QuestLog{Quests: filtered, TrackedQuestIDs: trackedQuestIDs}, nil
+	trackedAccepted := []uuid.UUID{}
+	for _, questID := range trackedQuestIDs {
+		if _, ok := acceptanceByQuest[questID]; ok {
+			trackedAccepted = append(trackedAccepted, questID)
+		}
+	}
+
+	return &QuestLog{Quests: filtered, TrackedQuestIDs: trackedAccepted}, nil
 }
 
 func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error) {

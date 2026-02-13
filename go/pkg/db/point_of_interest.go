@@ -75,6 +75,14 @@ func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID
 	}).Error
 }
 
+func (c *pointOfInterestHandle) UpdateImageGenerationStatus(ctx context.Context, id uuid.UUID, status string, errMsg *string) error {
+	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"image_generation_status": status,
+		"image_generation_error":  errMsg,
+		"updated_at":              time.Now(),
+	}).Error
+}
+
 func (c *pointOfInterestHandle) Edit(ctx context.Context, id uuid.UUID, name string, description string, lat string, lng string, unlockTier *int, clue string, imageUrl string, originalName string, googleMapsPlaceId *string) error {
 	pointOfInterest := models.PointOfInterest{
 		ID:                id,

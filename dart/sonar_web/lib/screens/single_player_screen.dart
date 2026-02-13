@@ -79,6 +79,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       context.read<ZoneProvider>().addListener(_onZoneChanged);
       _questLogProvider = context.read<QuestLogProvider>();
       _questLogProvider?.addListener(_onQuestLogChanged);
+      context.read<ActivityFeedProvider>().refresh();
     });
   }
 
@@ -210,6 +211,83 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _flyToLocation(lat, lng);
     final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(poi.id);
     _showPointOfInterestPanel(poi, hasDiscovered);
+  }
+
+  void _focusQuestNode(QuestNode node) {
+    final poi = node.pointOfInterest;
+    if (poi != null) {
+      final lat = double.tryParse(poi.lat) ?? 0.0;
+      final lng = double.tryParse(poi.lng) ?? 0.0;
+      _flyToLocation(lat, lng);
+      _pulsePoi(lat, lng);
+      return;
+    }
+    if (node.polygon.isNotEmpty) {
+      final center = _polygonCenter(node.polygon);
+      _flyToLocation(center.latitude, center.longitude);
+      _pulsePolygon(node.polygon);
+    }
+  }
+
+  LatLng _polygonCenter(List<QuestNodePolygonPoint> polygon) {
+    double latSum = 0;
+    double lngSum = 0;
+    var count = 0;
+    for (final p in polygon) {
+      latSum += p.latitude;
+      lngSum += p.longitude;
+      count++;
+    }
+    if (count == 0) return const LatLng(0, 0);
+    return LatLng(latSum / count, lngSum / count);
+  }
+
+  Future<void> _pulsePoi(double lat, double lng) async {
+    final c = _mapController;
+    if (c == null) return;
+    try {
+      final circle = await c.addCircle(
+        CircleOptions(
+          geometry: LatLng(lat, lng),
+          circleRadius: 36,
+          circleColor: '#f5c542',
+          circleOpacity: 0.35,
+          circleStrokeWidth: 3,
+          circleStrokeColor: '#f5c542',
+        ),
+      );
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        await c.removeCircle(circle);
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  Future<void> _pulsePolygon(List<QuestNodePolygonPoint> polygon) async {
+    final c = _mapController;
+    if (c == null || polygon.length < 3) return;
+    final ring = polygon
+        .map((p) => LatLng(p.latitude, p.longitude))
+        .toList();
+    if (ring.length > 1 &&
+        (ring.first.latitude != ring.last.latitude ||
+            ring.first.longitude != ring.last.longitude)) {
+      ring.add(ring.first);
+    }
+    try {
+      final lines = await c.addLines([
+        LineOptions(
+          geometry: ring,
+          lineColor: '#f5c542',
+          lineWidth: 8.0,
+          lineOpacity: 0.8,
+        ),
+      ]);
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        await c.removeLines(lines);
+      } catch (_) {}
+    } catch (_) {}
   }
 
   Future<void> _loadAll() async {
@@ -957,37 +1035,74 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               ),
             ),
           if (_styleLoaded && !_mapLoadFailed) ...[
-            // Top-right: icon buttons in a compact row
+            // Top-left: ship icon opens notifications
+            Positioned(
+              top: 16,
+              left: 16,
+              child: Consumer<ActivityFeedProvider>(
+                builder: (context, feed, _) {
+                  final hasUnseen = feed.unseenActivities.isNotEmpty;
+                  return GestureDetector(
+                    onTap: () => _showActivityFeed(context),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.black87, width: 2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Colors.black26,
+                                blurRadius: 6,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.directions_boat_filled, size: 22),
+                        ),
+                        if (hasUnseen)
+                          Positioned(
+                            top: -1,
+                            right: -1,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade600,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            // Top-right: tag filter button
             Positioned(
               top: 16,
               right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _OverlayButton(
-                    icon: Icons.notifications,
-                    onTap: () => _showActivityFeed(context),
-                  ),
-                  const SizedBox(width: 6),
-                  _OverlayButton(
-                    icon: Icons.chat,
-                    onTap: () => _showLog(context),
-                  ),
-                  const SizedBox(width: 6),
-                  _OverlayButton(
-                    icon: Icons.label,
-                    onTap: () => _showTagFilter(context),
-                  ),
-                ],
+              child: _OverlayButton(
+                icon: Icons.label,
+                onTap: () => _showTagFilter(context),
               ),
             ),
-            // Zone selector: centered at top (ZoneWidget uses top: 80 internally)
-            const ZoneWidget(),
+            // Zone selector: centered at top, aligned with top controls
+            const ZoneWidget(top: 16),
             // Tracked quests: below zone to avoid overlap
             Positioned(
               top: 142,
               right: 16,
-              child: TrackedQuestsOverlay(onFocusPoI: _focusQuestPoI),
+              child: TrackedQuestsOverlay(
+                onFocusPoI: _focusQuestPoI,
+                onFocusNode: _focusQuestNode,
+              ),
             ),
             // Bottom: primary actions
             Positioned(
