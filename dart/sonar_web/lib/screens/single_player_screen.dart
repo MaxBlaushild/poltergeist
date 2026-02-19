@@ -1244,9 +1244,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (ring.length < 2) continue;
       options.add(LineOptions(
         geometry: ring,
-        lineColor: '#4A90E2',
-        lineWidth: 3.0,
-        lineOpacity: 1.0,
+        lineColor: '#000000',
+        lineWidth: 7.0,
+        lineOpacity: 0.18,
+        lineBlur: 1.6,
+        lineJoin: 'round',
+      ));
+      options.add(LineOptions(
+        geometry: ring,
+        lineColor: '#000000',
+        lineWidth: 2.8,
+        lineOpacity: 0.95,
+        lineJoin: 'round',
       ));
     }
     debugPrint('SinglePlayer: _addZoneBoundaries zones=${_zones.length} rings=${options.length}');

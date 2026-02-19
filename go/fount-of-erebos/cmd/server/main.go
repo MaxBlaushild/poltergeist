@@ -64,7 +64,7 @@ func main() {
 
 		answer, err := openApiClient.GetAnswerWithImage(ctx, judgeSubmission.Question, judgeSubmission.Image)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 			return
 		}
 
@@ -85,7 +85,7 @@ func main() {
 		imageUrl, err := openApiClient.GenerateImage(ctx, generateImageRequest)
 		if err != nil {
 			log.Printf("Error generating image: %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 			return
 		}
 
@@ -104,7 +104,7 @@ func main() {
 		imageUrl, err := openApiClient.EditImage(ctx, editImageRequest)
 		if err != nil {
 			log.Printf("Error editing image: %v", err)
-			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "something went wrong"})
+			ctx.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 			return
 		}
 

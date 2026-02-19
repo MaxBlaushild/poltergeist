@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -71,18 +72,40 @@ func (p *GenerateOutfitProfilePictureProcessor) ProcessTask(ctx context.Context,
 		outfitName = "a fantasy adventurer outfit"
 	}
 
+	selfieUrl := p.resolveSelfieURL(payload.SelfieUrl)
+	hairDescriptor := p.inferHairDescriptor(ctx, selfieUrl)
+	prompt := fmt.Sprintf(outfitPromptTemplate, outfitName)
+	if hairDescriptor != "" {
+		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly. Hair: %s.", prompt, hairDescriptor)
+	} else {
+		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly; if bald or shaved, keep them bald (no hair).", prompt)
+	}
 	editRequest := deep_priest.EditImageRequest{
-		Prompt:   fmt.Sprintf(outfitPromptTemplate, outfitName),
-		ImageUrl: payload.SelfieUrl,
+		Prompt:   prompt,
+		ImageUrl: selfieUrl,
 		Model:    "gpt-image-1",
 		N:        1,
 		Size:     genSize,
 	}
 	deep_priest.ApplyEditImageDefaults(&editRequest)
+	// The edit endpoint does not accept these fields; ensure they're unset.
+	editRequest.Quality = ""
+	editRequest.ResponseFormat = ""
 	resp, err := p.deepPriestClient.EditImage(editRequest)
 	if err != nil {
-		log.Printf("Failed to generate outfit profile picture: %v", err)
-		return p.markOutfitFailed(ctx, gen.ID, err)
+		log.Printf("Failed to edit outfit image, falling back to generation: %v", err)
+		genRequest := deep_priest.GenerateImageRequest{
+			Prompt: prompt,
+			Model:  "gpt-image-1",
+			N:      1,
+			Size:   genSize,
+		}
+		deep_priest.ApplyGenerateImageDefaults(&genRequest)
+		resp, err = p.deepPriestClient.GenerateImage(genRequest)
+		if err != nil {
+			log.Printf("Fallback generation failed: %v", err)
+			return p.markOutfitFailed(ctx, gen.ID, err)
+		}
 	}
 
 	candidates, err := decodeBase64Candidates(resp)
@@ -141,6 +164,76 @@ func (p *GenerateOutfitProfilePictureProcessor) markOutfitFailed(ctx context.Con
 		log.Printf("Failed to mark outfit generation failed: %v", dbErr)
 	}
 	return err
+}
+
+func (p *GenerateOutfitProfilePictureProcessor) inferHairDescriptor(ctx context.Context, selfieURL string) string {
+	if strings.TrimSpace(selfieURL) == "" {
+		return ""
+	}
+	answer, err := p.deepPriestClient.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
+		Question: "Describe the person's hair in a short phrase (e.g., bald, shaved head, short brown hair, long curly hair). If no hair, say bald.",
+		Image:    selfieURL,
+	})
+	if err != nil || answer == nil {
+		return ""
+	}
+	desc := strings.TrimSpace(answer.Answer)
+	if desc == "" {
+		return ""
+	}
+	return desc
+}
+
+func (p *GenerateOutfitProfilePictureProcessor) resolveSelfieURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+	// If already presigned, keep as-is.
+	if strings.Contains(raw, "X-Amz-") || strings.Contains(raw, "X-Amz-Signature") {
+		return raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return raw
+	}
+	bucket, key := parseS3BucketKey(parsed)
+	if bucket == "" || key == "" {
+		return raw
+	}
+	signed, err := p.awsClient.GeneratePresignedURL(bucket, key, time.Hour)
+	if err != nil {
+		log.Printf("Failed to presign selfie url: %v", err)
+		return raw
+	}
+	return signed
+}
+
+func parseS3BucketKey(u *url.URL) (string, string) {
+	host := u.Hostname()
+	path := strings.TrimPrefix(u.Path, "/")
+	if host == "" || path == "" {
+		return "", ""
+	}
+
+	if strings.HasPrefix(host, "s3.") || host == "s3.amazonaws.com" {
+		parts := strings.Split(path, "/")
+		if len(parts) < 2 {
+			return "", ""
+		}
+		return parts[0], strings.Join(parts[1:], "/")
+	}
+
+	if idx := strings.Index(host, ".s3."); idx > 0 {
+		return host[:idx], path
+	}
+
+	if strings.HasSuffix(host, ".s3.amazonaws.com") {
+		bucket := strings.TrimSuffix(host, ".s3.amazonaws.com")
+		return bucket, path
+	}
+
+	return "", ""
 }
 
 func (p *GenerateOutfitProfilePictureProcessor) uploadOutfitImage(ctx context.Context, userID string, imageBytes []byte) (string, error) {

@@ -1,10 +1,94 @@
 import { useAPI, useMediaContext } from '@poltergeist/contexts';
 import { InventoryItem, Rarity } from '@poltergeist/types';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { useUsers } from '../hooks/useUsers.ts';
+
+type SelectOption = {
+  value: string;
+  label: string;
+  secondary?: string;
+};
+
+const SearchableSelect = ({
+  label,
+  placeholder,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  options: SelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const selected = options.find((o) => o.value === value);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => {
+      const hay = `${o.label} ${o.secondary ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [options, query]);
+
+  const displayValue = open ? query : selected?.label ?? '';
+
+  return (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700">{label}</label>
+      <input
+        value={displayValue}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          setQuery('');
+        }}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 150);
+        }}
+        placeholder={placeholder}
+        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+          {filtered.length === 0 && (
+            <div className="px-3 py-2 text-sm text-gray-500">No matches found</div>
+          )}
+          {filtered.map((option) => (
+            <button
+              type="button"
+              key={option.value}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+                setQuery('');
+              }}
+              className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-indigo-50"
+            >
+              <span className="font-medium text-gray-900">{option.label}</span>
+              {option.secondary && (
+                <span className="text-xs text-gray-500">{option.secondary}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const InventoryItems = () => {
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
+  const { users } = useUsers();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,6 +101,12 @@ export const InventoryItems = () => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [useOutfitItem, setUseOutfitItem] = useState<InventoryItem | null>(null);
+  const [useOutfitUser, setUseOutfitUser] = useState('');
+  const [useOutfitSelfieUrl, setUseOutfitSelfieUrl] = useState('');
+  const [useOutfitStatus, setUseOutfitStatus] = useState<string | null>(null);
+  const [useOutfitStatusKind, setUseOutfitStatusKind] = useState<'success' | 'error' | null>(null);
+  const [useOutfitSubmitting, setUseOutfitSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -34,6 +124,19 @@ export const InventoryItems = () => {
     description: '',
     rarityTier: 'Common' as string,
   });
+
+  const userOptions = useMemo(() => {
+    return (users ?? []).map((user) => {
+      const username = user.username?.trim() ? `@${user.username}` : '';
+      const display = username || user.name || user.phoneNumber;
+      const secondary = username ? user.name : user.phoneNumber;
+      return {
+        value: user.id,
+        label: display,
+        secondary: secondary && secondary !== display ? secondary : undefined,
+      };
+    });
+  }, [users]);
 
   useEffect(() => {
     fetchItems();
@@ -207,6 +310,31 @@ export const InventoryItems = () => {
     }
   };
 
+  const handleUseOutfit = async () => {
+    if (!useOutfitItem) return;
+    try {
+      setUseOutfitSubmitting(true);
+      setUseOutfitStatus(null);
+      setUseOutfitStatusKind(null);
+      await apiClient.post('/sonar/admin/useOutfitItem', {
+        userID: useOutfitUser,
+        itemID: useOutfitItem.id,
+        selfieUrl: useOutfitSelfieUrl,
+      });
+      setUseOutfitStatus('Outfit generation queued.');
+      setUseOutfitStatusKind('success');
+    } catch (error) {
+      console.error('Error using outfit item:', error);
+      setUseOutfitStatus('Failed to start outfit generation.');
+      setUseOutfitStatusKind('error');
+    } finally {
+      setUseOutfitSubmitting(false);
+    }
+  };
+
+  const isOutfitName = (name?: string) =>
+    (name || '').trim().toLowerCase().endsWith('outfit');
+
   const handleDeleteItem = async (item: InventoryItem) => {
     setItemToDelete(item);
     setShowDeleteConfirm(true);
@@ -368,6 +496,20 @@ export const InventoryItems = () => {
               >
                 Edit
               </button>
+              {isOutfitName(item.name) && (
+                <button
+                  onClick={() => {
+                    setUseOutfitItem(item);
+                    setUseOutfitUser('');
+                    setUseOutfitSelfieUrl('');
+                    setUseOutfitStatus(null);
+                    setUseOutfitStatusKind(null);
+                  }}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-md mr-2"
+                >
+                  Use Outfit
+                </button>
+              )}
               <button
                 onClick={() => handleRegenerateImage(item)}
                 className="bg-yellow-500 text-white px-4 py-2 rounded-md mr-2"
@@ -564,6 +706,93 @@ export const InventoryItems = () => {
                 className="bg-gray-500 text-white px-4 py-2 rounded-md"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {useOutfitItem && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            padding: '30px',
+            borderRadius: '8px',
+            width: '520px',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Use Outfit</h2>
+              <button
+                onClick={() => setUseOutfitItem(null)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-4 text-sm text-gray-600">
+              Selected item: <span className="font-medium text-gray-900">{useOutfitItem.name}</span>
+            </div>
+
+            <div className="mb-4">
+              <SearchableSelect
+                label="User"
+                placeholder="Search by username or name…"
+                options={userOptions}
+                value={useOutfitUser}
+                onChange={setUseOutfitUser}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700">Selfie URL</label>
+              <input
+                type="text"
+                value={useOutfitSelfieUrl}
+                onChange={(e) => setUseOutfitSelfieUrl(e.target.value)}
+                placeholder="https://..."
+                className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+
+            {useOutfitStatus && (
+              <div
+                className={`mb-4 rounded-md border px-3 py-2 text-sm ${
+                  useOutfitStatusKind === 'error'
+                    ? 'border-rose-200 bg-rose-50 text-rose-800'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                }`}
+              >
+                {useOutfitStatus}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleUseOutfit}
+                disabled={!useOutfitUser || !useOutfitSelfieUrl || useOutfitSubmitting}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
+              >
+                {useOutfitSubmitting ? 'Starting…' : 'Start Generation'}
+              </button>
+              <button
+                onClick={() => setUseOutfitItem(null)}
+                className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md"
+              >
+                Close
               </button>
             </div>
           </div>

@@ -3,6 +3,8 @@ package open_ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -11,14 +13,18 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	openai "github.com/sashabaranov/go-openai"
 )
 
 type client struct {
-	ai *openai.Client
+	ai     *openai.Client
+	apiKey string
 }
 
 type ClientConfig struct {
@@ -30,7 +36,8 @@ func NewClient(config ClientConfig) OpenAiClient {
 	ai := openai.NewClient(config.ApiKey)
 
 	return &client{
-		ai: ai,
+		ai:     ai,
+		apiKey: config.ApiKey,
 	}
 }
 
@@ -223,28 +230,95 @@ func (c *client) EditImage(ctx context.Context, request deep_priest.EditImageReq
 		request.User,
 		request.ImageUrl)
 
-	// 6) Call the image edit endpoint WITH the transparent mask
-	newImage, err := c.ai.CreateEditImage(
-		ctx,
-		openai.ImageEditRequest{
-			Prompt:         request.Prompt,
-			Image:          wrappedImage,
-			Mask:           wrappedMask, // <-- the important part
-			Model:          request.Model,
-			N:              request.N,
-			Quality:        request.Quality,
-			Size:           request.Size,
-			ResponseFormat: request.ResponseFormat,
-			User:           request.User,
-		},
-	)
+	// 6) Call the image edit endpoint WITH the transparent mask.
+	// Use a manual multipart request to ensure `model` is always included.
+	if request.Model == "" {
+		request.Model = "gpt-image-1"
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("prompt", request.Prompt)
+	_ = writer.WriteField("model", request.Model)
+	if request.N > 0 {
+		_ = writer.WriteField("n", strconv.Itoa(request.N))
+	}
+	if request.Size != "" {
+		_ = writer.WriteField("size", request.Size)
+	}
+	if request.User != "" {
+		_ = writer.WriteField("user", request.User)
+	}
+
+	imagePart, err := writer.CreateFormFile("image", "image.png")
 	if err != nil {
-		log.Printf("Error editing image: %v", err)
+		return "", err
+	}
+	if _, err := io.Copy(imagePart, bytes.NewReader(pngData)); err != nil {
+		return "", err
+	}
+	maskPart, err := writer.CreateFormFile("mask", "mask.png")
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(maskPart, bytes.NewReader(maskBuf.Bytes())); err != nil {
+		return "", err
+	}
+	_ = wrappedImage
+	_ = wrappedMask
+	if err := writer.Close(); err != nil {
 		return "", err
 	}
 
-	// Note: this is base64 PNG data, not a URL.
-	return newImage.Data[0].B64JSON, nil
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/images/edits", &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("openai image edit failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var parsed struct {
+		Data []struct {
+			B64JSON string `json:"b64_json"`
+			URL     string `json:"url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return "", fmt.Errorf("failed to parse edit response: %w", err)
+	}
+	if len(parsed.Data) == 0 {
+		return "", fmt.Errorf("image edit returned empty payload")
+	}
+	if parsed.Data[0].B64JSON != "" {
+		return parsed.Data[0].B64JSON, nil
+	}
+	if parsed.Data[0].URL != "" {
+		imgResp, err := http.Get(parsed.Data[0].URL)
+		if err != nil {
+			return "", err
+		}
+		defer imgResp.Body.Close()
+		imgBytes, err := io.ReadAll(imgResp.Body)
+		if err != nil {
+			return "", err
+		}
+		return base64.StdEncoding.EncodeToString(imgBytes), nil
+	}
+	return "", fmt.Errorf("image edit returned no usable data")
 }
 
 func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl string) (string, error) {

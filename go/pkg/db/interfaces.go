@@ -30,6 +30,7 @@ type DbClient interface {
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	PointOfInterestImport() PointOfInterestImportHandle
 	InventoryItem() InventoryItemHandle
+	NewUserStarterConfig() NewUserStarterConfigHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
 	OutfitProfileGeneration() OutfitProfileGenerationHandle
@@ -322,6 +323,12 @@ type InventoryItemHandle interface {
 	FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
 	UpdateInventoryItem(ctx context.Context, id int, item *models.InventoryItem) error
 	DeleteInventoryItem(ctx context.Context, id int) error
+}
+
+type NewUserStarterConfigHandle interface {
+	Get(ctx context.Context) (*models.NewUserStarterConfig, error)
+	Upsert(ctx context.Context, config *models.NewUserStarterConfig) (*models.NewUserStarterConfig, error)
+	ApplyToUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type AuditItemHandle interface {

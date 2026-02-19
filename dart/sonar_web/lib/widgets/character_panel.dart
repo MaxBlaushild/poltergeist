@@ -358,7 +358,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                     ),
                                   if (talkAction != null)
                                     _DialogueChoiceButton(
-                                      label: 'Dialogue',
+                                      label: 'Talk',
                                       icon: Icons.chat_bubble_outline,
                                       onTap: widget.onStartDialogue == null
                                           ? null

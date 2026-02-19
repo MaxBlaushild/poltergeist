@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
@@ -35,6 +37,8 @@ class InventoryPanel extends StatefulWidget {
 }
 
 class _InventoryPanelState extends State<InventoryPanel> {
+  static const String _dismissedOutfitStatusPrefsKey =
+      'dismissed_outfit_statuses';
   List<InventoryItem> _items = [];
   List<OwnedInventoryItem> _owned = [];
   bool _loading = true;
@@ -45,15 +49,25 @@ class _InventoryPanelState extends State<InventoryPanel> {
   bool _loadingOutfitStatus = false;
   String? _outfitError;
   Timer? _outfitPoller;
+  final Set<String> _dismissedOutfitStatuses = {};
 
   @override
   void initState() {
     super.initState();
+    _loadDismissedOutfitStatuses();
     _load();
   }
 
   @override
   void dispose() {
+    final selectedId = _selected?.id;
+    final status = _outfitGeneration;
+    if (selectedId != null &&
+        status != null &&
+        (status.isComplete || status.isFailed)) {
+      _dismissedOutfitStatuses.add('$selectedId::${status.status}');
+      _persistDismissedOutfitStatuses();
+    }
     _outfitPoller?.cancel();
     super.dispose();
   }
@@ -98,6 +112,25 @@ class _InventoryPanelState extends State<InventoryPanel> {
     }
   }
 
+  Future<void> _loadDismissedOutfitStatuses() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_dismissedOutfitStatusPrefsKey) ?? [];
+    if (!mounted) return;
+    setState(() {
+      _dismissedOutfitStatuses
+        ..clear()
+        ..addAll(list);
+    });
+  }
+
+  Future<void> _persistDismissedOutfitStatuses() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _dismissedOutfitStatusPrefsKey,
+      _dismissedOutfitStatuses.toList(),
+    );
+  }
+
   InventoryItem? _itemFor(OwnedInventoryItem o) {
     for (final i in _items) {
       if (i.id == o.inventoryItemId) return i;
@@ -110,7 +143,21 @@ class _InventoryPanelState extends State<InventoryPanel> {
   }
 
   bool _isOutfitItem(InventoryItem inv) {
-    return inv.name.trim().toLowerCase().endsWith('outfit');
+    String normalize(String input) {
+      final lower = input.toLowerCase();
+      return lower.replaceAll(RegExp(r'[^a-z]'), '');
+    }
+
+    final name = normalize(inv.name);
+    if (name.contains('outfit')) return true;
+
+    final flavor = normalize(inv.flavorText);
+    if (flavor.contains('outfit')) return true;
+
+    final effect = normalize(inv.effectText);
+    if (effect.contains('outfit')) return true;
+
+    return false;
   }
 
   Future<void> _loadOutfitStatus(String ownedInventoryItemId, {bool silent = false}) async {
@@ -122,11 +169,20 @@ class _InventoryPanelState extends State<InventoryPanel> {
           .read<InventoryService>()
           .getOutfitGenerationStatus(ownedInventoryItemId);
       if (!mounted) return;
+      bool clearedDismissal = false;
       setState(() {
         _outfitGeneration = status;
         _loadingOutfitStatus = false;
         _outfitError = status?.error;
+        if (status != null && status.isPending) {
+          _dismissedOutfitStatuses
+              .removeWhere((key) => key.startsWith('$ownedInventoryItemId::'));
+          clearedDismissal = true;
+        }
       });
+      if (clearedDismissal) {
+        await _persistDismissedOutfitStatuses();
+      }
       if (status != null && status.isPending) {
         _startOutfitPolling(ownedInventoryItemId);
       } else {
@@ -144,6 +200,13 @@ class _InventoryPanelState extends State<InventoryPanel> {
         _outfitError = e.toString();
       });
     }
+  }
+
+  bool _isOutfitStatusDismissed(String ownedId, OutfitGeneration status) {
+    if (!(status.isComplete || status.isFailed)) {
+      return false;
+    }
+    return _dismissedOutfitStatuses.contains('$ownedId::${status.status}');
   }
 
   void _startOutfitPolling(String ownedInventoryItemId) {
@@ -228,10 +291,21 @@ class _InventoryPanelState extends State<InventoryPanel> {
         _startOutfitPolling(owned.id);
       }
     } catch (e) {
+      String message = e.toString();
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final err = data['error'];
+          if (err is String && err.trim().isNotEmpty) {
+            message = err;
+          }
+        }
+      }
       if (mounted) {
         setState(() {
           _using = false;
-          _outfitError = e.toString();
+          _outfitGeneration = null;
+          _outfitError = message;
         });
       }
     }
@@ -252,10 +326,33 @@ class _InventoryPanelState extends State<InventoryPanel> {
       if (!mounted) return;
       widget.onClose();
     } catch (e) {
+      String message = e.toString();
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final err = data['error'];
+          if (err is String && err.trim().isNotEmpty) {
+            message = err;
+          }
+        }
+      }
+      if (message.toLowerCase().contains('outfit items require a selfie')) {
+        final inv = _itemFor(owned);
+        if (inv != null) {
+          if (mounted) {
+            setState(() {
+              _using = false;
+              _error = null;
+            });
+          }
+          await _useOutfitItem(owned, inv);
+          return;
+        }
+      }
       if (mounted) {
         setState(() {
           _using = false;
-          _error = e.toString();
+          _error = message;
         });
       }
     }
@@ -276,8 +373,16 @@ class _InventoryPanelState extends State<InventoryPanel> {
             alignment: Alignment.centerLeft,
             child: IconButton(
               icon: const Icon(Icons.arrow_back),
-              onPressed: () {
+              onPressed: () async {
                 _outfitPoller?.cancel();
+                final selectedId = _selected?.id;
+                final status = _outfitGeneration;
+                if (selectedId != null &&
+                    status != null &&
+                    (status.isComplete || status.isFailed)) {
+                  _dismissedOutfitStatuses.add('$selectedId::${status.status}');
+                  await _persistDismissedOutfitStatuses();
+                }
                 setState(() {
                   _selected = null;
                   _outfitGeneration = null;
@@ -363,88 +468,177 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Widget _buildGrid(BuildContext context) {
     const slots = 12;
     const crossAxisCount = 3;
+    final theme = Theme.of(context);
+    final filled = _owned.length.clamp(0, slots);
 
-    return LayoutGrid(
-      crossAxisCount: crossAxisCount,
-      childAspectRatio: 1,
-      children: List.generate(slots, (i) {
-        if (i >= _owned.length) {
-          return Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: BorderRadius.circular(12),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Inventory',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          );
-        }
-        final o = _owned[i];
-        final inv = _itemFor(o);
-        if (inv == null) {
-          return Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: BorderRadius.circular(12),
+            Text(
+              '$filled / $slots slots',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          );
-        }
-        return InkWell(
-          onTap: () {
-            setState(() {
-              _selected = o;
-              _outfitGeneration = null;
-              _outfitError = null;
-            });
-            final inv = _itemFor(o);
-            if (inv != null && _isOutfitItem(inv)) {
-              _loadOutfitStatus(o.id);
-            } else {
-              _outfitPoller?.cancel();
-            }
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Image.network(
-                    inv.imageUrl,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Icon(
-                      Icons.inventory_2_outlined,
-                      size: 32,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 6,
-                  bottom: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${o.quantity}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: LayoutGrid(
+            crossAxisCount: crossAxisCount,
+            childAspectRatio: 1,
+            children: List.generate(slots, (i) {
+              if (i >= _owned.length) {
+                return _buildEmptySlot(context);
+              }
+              final o = _owned[i];
+              final inv = _itemFor(o);
+              if (inv == null) {
+                return _buildEmptySlot(context);
+              }
+              return _buildFilledSlot(context, inv, o);
+            }),
           ),
-        );
-      }),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptySlot(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        border: Border.all(color: theme.dividerColor),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 28,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Empty',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilledSlot(
+    BuildContext context,
+    InventoryItem inv,
+    OwnedInventoryItem owned,
+  ) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selected = owned;
+          _outfitGeneration = null;
+          _outfitError = null;
+        });
+        if (_isOutfitItem(inv)) {
+          _loadOutfitStatus(owned.id);
+        } else {
+          _outfitPoller?.cancel();
+        }
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          border: Border.all(color: theme.dividerColor),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withOpacity(0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 30),
+              child: Image.network(
+                inv.imageUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.inventory_2_outlined,
+                  size: 32,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${owned.quantity}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface.withOpacity(0.92),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                  border: Border(
+                    top: BorderSide(color: theme.dividerColor),
+                  ),
+                ),
+                child: Text(
+                  inv.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -453,72 +647,213 @@ class _InventoryPanelState extends State<InventoryPanel> {
     InventoryItem inv,
     OwnedInventoryItem owned,
   ) {
+    final theme = Theme.of(context);
     final isOutfit = _isOutfitItem(inv);
     final outfitStatus = _outfitGeneration;
     final outfitPending = isOutfit && (outfitStatus?.isPending ?? false);
     final canUse =
         owned.quantity > 0 && (isOutfit || _isUsableInMenu(inv.id)) && !outfitPending;
+    final hasDetails = inv.flavorText.isNotEmpty || inv.effectText.isNotEmpty;
 
-    return SingleChildScrollView(
-      child: Column(
+    final metaChips = <Widget>[
+      _buildMetaChip(
+        context,
+        icon: Icons.inventory_2_outlined,
+        label: 'Owned ${owned.quantity}',
+      ),
+      if (inv.sellValue != null)
+        _buildMetaChip(
+          context,
+          icon: Icons.sell_outlined,
+          label: 'Sell ${inv.sellValue}',
+        ),
+      if (inv.unlockTier != null)
+        _buildMetaChip(
+          context,
+          icon: Icons.lock_open,
+          label: 'Tier ${inv.unlockTier}',
+        ),
+      if (isOutfit)
+        _buildMetaChip(
+          context,
+          icon: Icons.auto_awesome,
+          label: 'Outfit item',
+        ),
+    ];
+
+    Widget actionArea = const SizedBox.shrink();
+    if (isOutfit) {
+      actionArea = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: AspectRatio(
-              aspectRatio: 1.2,
-              child: Image.network(
-                inv.imageUrl,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.inventory_2_outlined,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+          _buildOutfitStatus(context, outfitStatus),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _using || outfitPending ? null : () => _useOutfitItem(owned, inv),
+            child: Text(
+              outfitPending
+                  ? 'Generating…'
+                  : _using
+                      ? 'Using…'
+                      : (outfitStatus?.isFailed == true ? 'Try Again' : 'Take Selfie'),
+            ),
+          ),
+        ],
+      );
+    } else if (canUse) {
+      actionArea = FilledButton(
+        onPressed: _using ? null : () => _use(owned),
+        child: Text(_using ? 'Using…' : 'Use'),
+      );
+    }
+
+    return SingleChildScrollView(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 520;
+          final image = _buildDetailImage(context, inv);
+          final metaRow = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: metaChips,
+          );
+          final infoColumn = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              metaRow,
+              if (actionArea is! SizedBox) const SizedBox(height: 16),
+              if (actionArea is! SizedBox) actionArea,
+            ],
+          );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isWide)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 5, child: image),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 7, child: infoColumn),
+                  ],
+                )
+              else ...[
+                image,
+                const SizedBox(height: 16),
+                infoColumn,
+              ],
+              if (hasDetails) const SizedBox(height: 16),
+              if (inv.flavorText.isNotEmpty)
+                _buildDetailSection(
+                  context,
+                  title: 'Story',
+                  child: Text(
+                    inv.flavorText,
+                    style: theme.textTheme.bodyLarge,
                   ),
                 ),
+              if (inv.flavorText.isNotEmpty && inv.effectText.isNotEmpty)
+                const SizedBox(height: 12),
+              if (inv.effectText.isNotEmpty)
+                _buildDetailSection(
+                  context,
+                  title: 'Effect',
+                  child: Text(
+                    inv.effectText,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDetailImage(BuildContext context, InventoryItem inv) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Image.network(
+            inv.imageUrl,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Center(
+              child: Icon(
+                Icons.inventory_2_outlined,
+                size: 64,
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          if (inv.flavorText.isNotEmpty)
-            Text(
-              inv.flavorText,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetaChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-          if (inv.flavorText.isNotEmpty) const SizedBox(height: 8),
-          if (inv.effectText.isNotEmpty)
-            Text(
-              inv.effectText,
-              style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailSection(
+    BuildContext context, {
+    required String title,
+    required Widget child,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelLarge?.copyWith(
+              letterSpacing: 0.6,
+              fontWeight: FontWeight.w700,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-          if (inv.effectText.isNotEmpty) const SizedBox(height: 20),
-          if (isOutfit) ...[
-            _buildOutfitStatus(context, outfitStatus),
-            const SizedBox(height: 16),
-          ],
-          if (canUse)
-            FilledButton(
-              onPressed: _using
-                  ? null
-                  : () {
-                      if (isOutfit) {
-                        _useOutfitItem(owned, inv);
-                      } else {
-                        _use(owned);
-                      }
-                    },
-              child: Text(
-                _using
-                    ? 'Using…'
-                    : isOutfit
-                        ? (outfitStatus?.isFailed == true ? 'Try Again' : 'Take Selfie')
-                        : 'Use',
-              ),
-            ),
+          ),
+          const SizedBox(height: 8),
+          child,
         ],
       ),
     );
@@ -528,6 +863,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final theme = Theme.of(context);
     final surface = theme.colorScheme.surfaceVariant;
     final textStyle = theme.textTheme.bodyMedium;
+    final selectedId = _selected?.id;
     if (_loadingOutfitStatus) {
       return Container(
         padding: const EdgeInsets.all(12),
@@ -573,6 +909,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
           ],
         ),
       );
+    }
+
+    if (selectedId != null && _isOutfitStatusDismissed(selectedId, status)) {
+      return const SizedBox.shrink();
     }
 
     if (status.isPending) {

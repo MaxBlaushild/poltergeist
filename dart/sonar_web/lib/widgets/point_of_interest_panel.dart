@@ -9,12 +9,15 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/api_constants.dart';
 import '../models/character.dart';
+import '../models/inventory_item.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../providers/auth_provider.dart';
+import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
+import '../services/inventory_service.dart';
 import '../services/media_service.dart';
 import '../services/poi_service.dart';
 import '../utils/camera_capture.dart';
@@ -68,6 +71,95 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   bool _justUnlocked = false;
   String? _error;
   bool _isDescriptionExpanded = false;
+  bool _loadingTelescope = false;
+  bool _usingTelescope = false;
+  bool _telescopeChecked = false;
+  String? _telescopeError;
+  InventoryItem? _telescopeItem;
+  OwnedInventoryItem? _ownedTelescope;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybeLoadTelescope();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant PointOfInterestPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hasDiscovered != widget.hasDiscovered ||
+        oldWidget.pointOfInterest.id != widget.pointOfInterest.id) {
+      _telescopeChecked = false;
+      _ownedTelescope = null;
+      _telescopeItem = null;
+      _telescopeError = null;
+      _maybeLoadTelescope();
+    }
+  }
+
+  Future<void> _maybeLoadTelescope() async {
+    if (_telescopeChecked || widget.hasDiscovered) return;
+    _telescopeChecked = true;
+    await _loadTelescope();
+  }
+
+  Future<void> _loadTelescope() async {
+    if (_loadingTelescope) return;
+    setState(() {
+      _loadingTelescope = true;
+      _telescopeError = null;
+    });
+    try {
+      final svc = context.read<InventoryService>();
+      final itemsFuture = svc.getInventoryItems();
+      final ownedFuture = svc.getOwnedInventoryItems();
+      final items = await itemsFuture;
+      final owned = await ownedFuture;
+      if (!mounted) return;
+      final item = items.firstWhere(
+        (i) => i.name.trim().toLowerCase() == 'golden telescope',
+        orElse: () => const InventoryItem(
+          id: 0,
+          name: '',
+          imageUrl: '',
+          flavorText: '',
+          effectText: '',
+        ),
+      );
+      InventoryItem? telescopeItem =
+          item.id == 0 ? null : item;
+      OwnedInventoryItem? telescopeOwned;
+      if (telescopeItem != null) {
+        telescopeOwned = owned.firstWhere(
+          (o) =>
+              o.inventoryItemId == telescopeItem.id &&
+              o.quantity > 0,
+          orElse: () => const OwnedInventoryItem(
+            id: '',
+            inventoryItemId: 0,
+            quantity: 0,
+          ),
+        );
+        if (telescopeOwned.id.isEmpty || telescopeOwned.quantity <= 0) {
+          telescopeOwned = null;
+        }
+      }
+      setState(() {
+        _telescopeItem = telescopeItem;
+        _ownedTelescope = telescopeOwned;
+        _loadingTelescope = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingTelescope = false;
+        _telescopeError = _errorMessage(e);
+      });
+    }
+  }
 
   static String _formatTagName(String name) {
     final parts = name.split('_');
@@ -106,8 +198,41 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     return e.toString();
   }
 
+  bool _isDiscoveryDuplicateError(Object e) {
+    final msg = _errorMessage(e).toLowerCase();
+    final mentionsDiscovery = msg.contains('discover') || msg.contains('point_of_interest');
+    final mentionsDuplicate = msg.contains('duplicate') ||
+        msg.contains('already') ||
+        msg.contains('unique') ||
+        msg.contains('constraint');
+    return mentionsDiscovery && mentionsDuplicate;
+  }
+
+  bool _isAlreadyDiscovered() {
+    if (widget.hasDiscovered || _justUnlocked) return true;
+    try {
+      return context
+          .read<DiscoveriesProvider>()
+          .hasDiscovered(widget.pointOfInterest.id);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _handleUnlock() async {
     if (_loading) return;
+    if (_isAlreadyDiscovered()) {
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _error = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Already discovered.')),
+      );
+      return;
+    }
     final loc = context.read<LocationProvider>().location;
     if (loc == null) {
       setState(() => _error = 'Location not available. Enable location access.');
@@ -149,12 +274,112 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         const SnackBar(content: Text('Discovered!')),
       );
     } catch (e) {
+      if (_isDiscoveryDuplicateError(e)) {
+        if (!mounted) return;
+        await widget.onUnlocked?.call();
+        if (!mounted) return;
+        setState(() {
+          _justUnlocked = true;
+          _loading = false;
+          _error = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Already discovered.')),
+        );
+        return;
+      }
       if (mounted) {
         setState(() {
           _loading = false;
           _error = _errorMessage(e);
         });
       }
+    }
+  }
+
+  Future<void> _handleTelescopeUnlock() async {
+    if (_usingTelescope) return;
+    if (_isAlreadyDiscovered()) {
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _usingTelescope = false;
+        _telescopeError = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Already discovered.')),
+      );
+      return;
+    }
+    final owned = _ownedTelescope;
+    if (owned == null || owned.quantity <= 0) {
+      setState(() => _telescopeError = 'No Golden Telescope available.');
+      return;
+    }
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) {
+      setState(() => _telescopeError = 'Please log in to use the Golden Telescope.');
+      return;
+    }
+    final poi = widget.pointOfInterest;
+    final plat = double.tryParse(poi.lat) ?? 0.0;
+    final plng = double.tryParse(poi.lng) ?? 0.0;
+    setState(() {
+      _usingTelescope = true;
+      _telescopeError = null;
+    });
+    try {
+      await context.read<PoiService>().unlockPointOfInterest(
+            poi.id,
+            plat,
+            plng,
+            userId: userId,
+          );
+      String? consumeWarning;
+      try {
+        await context.read<InventoryService>().useItem(owned.id);
+      } catch (e) {
+        consumeWarning =
+            'Discovered, but we could not consume the Golden Telescope. Please check your inventory.';
+        debugPrint('Golden Telescope consumption failed: $e');
+      }
+      if (!mounted) return;
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _usingTelescope = false;
+      });
+      await _loadTelescope();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            consumeWarning ?? 'Discovered with the Golden Telescope!',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (_isDiscoveryDuplicateError(e)) {
+        if (!mounted) return;
+        await widget.onUnlocked?.call();
+        if (!mounted) return;
+        setState(() {
+          _justUnlocked = true;
+          _usingTelescope = false;
+          _telescopeError = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Already discovered.')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _usingTelescope = false;
+        _telescopeError = _errorMessage(e);
+      });
     }
   }
 
@@ -533,6 +758,95 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
                         fontSize: 14,
+                      ),
+                    ),
+                  ],
+                  if (_loadingTelescope) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Checking Golden Telescope…',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (!_loadingTelescope && _ownedTelescope != null) ...[
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.remove_red_eye_outlined,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Golden Telescope',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                              ),
+                              const Spacer(),
+                              Text(
+                                'x${_ownedTelescope!.quantity}',
+                                style: Theme.of(context).textTheme.labelLarge,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Reveal this hidden point of interest from anywhere. Consumes one Golden Telescope.',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          if (_telescopeError != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              _telescopeError!,
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: _usingTelescope ? null : _handleTelescopeUnlock,
+                            child: Text(
+                              _usingTelescope
+                                  ? 'Revealing…'
+                                  : 'Use Golden Telescope',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (_telescopeError != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _telescopeError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                   ],

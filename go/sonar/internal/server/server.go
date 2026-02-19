@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	stdErrors "errors"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
@@ -195,6 +196,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/matches/hasCurrentMatch", middleware.WithAuthentication(s.authClient, s.livenessClient, s.hasCurrentMatch))
 	r.GET("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getAllUsers))
 	r.POST("/sonar/users/giveItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.giveItem))
+	r.GET("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getNewUserStarterConfig))
+	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
+	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
 	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
@@ -3030,6 +3034,82 @@ func (s *server) giveItem(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "item given to user successfully"})
 }
 
+func (s *server) getNewUserStarterConfig(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	config, err := s.dbClient.NewUserStarterConfig().Get(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, config)
+}
+
+func (s *server) updateNewUserStarterConfig(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		Gold  int                     `json:"gold"`
+		Items []models.NewUserStarterItem `json:"items"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Gold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "gold must be non-negative"})
+		return
+	}
+
+	// Deduplicate and validate items.
+	itemMap := map[int]int{}
+	for _, item := range requestBody.Items {
+		if item.InventoryItemID <= 0 || item.Quantity <= 0 {
+			continue
+		}
+		itemMap[item.InventoryItemID] += item.Quantity
+	}
+
+	items := make([]models.NewUserStarterItem, 0, len(itemMap))
+	for itemID, qty := range itemMap {
+		if _, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, itemID); err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("inventory item %d not found", itemID)})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items = append(items, models.NewUserStarterItem{
+			InventoryItemID: itemID,
+			Quantity:        qty,
+		})
+	}
+
+	config := &models.NewUserStarterConfig{
+		Gold:  requestBody.Gold,
+		Items: items,
+	}
+	updated, err := s.dbClient.NewUserStarterConfig().Upsert(ctx, config)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updated)
+}
+
 func (s *server) hasCurrentMatch(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -4119,74 +4199,15 @@ func (s *server) useOutfitItem(ctx *gin.Context) {
 		return
 	}
 
-	var existing *models.OutfitProfileGeneration
-	existing, err = s.dbClient.OutfitProfileGeneration().FindByOwnedInventoryItemID(ctx, ownedInventoryItemID)
-	if err != nil && err != gorm.ErrRecordNotFound {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var generation *models.OutfitProfileGeneration
-	if existing != nil && (existing.Status == models.OutfitGenerationStatusQueued || existing.Status == models.OutfitGenerationStatusInProgress) {
-		ctx.JSON(http.StatusOK, existing)
-		return
-	}
-
-	if existing != nil && existing.Status == models.OutfitGenerationStatusFailed {
-		clearErr := ""
-		update := &models.OutfitProfileGeneration{
-			SelfieUrl:         requestBody.SelfieUrl,
-			Status:            models.OutfitGenerationStatusQueued,
-			ErrorMessage:      &clearErr,
-			ProfilePictureUrl: nil,
-		}
-		if err := s.dbClient.OutfitProfileGeneration().Update(ctx, existing.ID, update); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		updated, err := s.dbClient.OutfitProfileGeneration().FindByID(ctx, existing.ID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		generation = updated
-	} else {
-		generation = &models.OutfitProfileGeneration{
-			ID:                   uuid.New(),
-			UserID:               user.ID,
-			OwnedInventoryItemID: ownedInventoryItemID,
-			InventoryItemID:      ownedInventoryItem.InventoryItemID,
-			OutfitName:           inventoryItem.Name,
-			SelfieUrl:            requestBody.SelfieUrl,
-			Status:               models.OutfitGenerationStatusQueued,
-		}
-		if err := s.dbClient.OutfitProfileGeneration().Create(ctx, generation); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	}
-
-	payload := jobs.GenerateOutfitProfilePictureTaskPayload{
-		GenerationID:         generation.ID,
-		UserID:               user.ID,
-		OwnedInventoryItemID: ownedInventoryItemID,
-		SelfieUrl:            requestBody.SelfieUrl,
-		OutfitName:           inventoryItem.Name,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+	generation, err := s.startOutfitGeneration(
+		ctx,
+		user.ID,
+		ownedInventoryItemID,
+		ownedInventoryItem.InventoryItemID,
+		inventoryItem.Name,
+		requestBody.SelfieUrl,
+	)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateOutfitProfilePictureTaskType, payloadBytes)); err != nil {
-		errMsg := err.Error()
-		update := &models.OutfitProfileGeneration{
-			Status:       models.OutfitGenerationStatusFailed,
-			ErrorMessage: &errMsg,
-		}
-		_ = s.dbClient.OutfitProfileGeneration().Update(ctx, generation.ID, update)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -4232,8 +4253,163 @@ func (s *server) getOutfitGeneration(ctx *gin.Context) {
 }
 
 func isOutfitItemName(name string) bool {
-	normalized := strings.TrimSpace(strings.ToLower(name))
-	return strings.HasSuffix(normalized, "outfit")
+	normalized := strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	b.Grow(len(normalized))
+	for _, r := range normalized {
+		if r >= 'a' && r <= 'z' {
+			b.WriteRune(r)
+		}
+	}
+	return strings.Contains(b.String(), "outfit")
+}
+
+func (s *server) startOutfitGeneration(
+	ctx context.Context,
+	userID uuid.UUID,
+	ownedInventoryItemID uuid.UUID,
+	inventoryItemID int,
+	outfitName string,
+	selfieUrl string,
+) (*models.OutfitProfileGeneration, error) {
+	var existing *models.OutfitProfileGeneration
+	existing, err := s.dbClient.OutfitProfileGeneration().FindByOwnedInventoryItemID(ctx, ownedInventoryItemID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, err
+	}
+
+	var generation *models.OutfitProfileGeneration
+	if existing != nil && (existing.Status == models.OutfitGenerationStatusQueued || existing.Status == models.OutfitGenerationStatusInProgress) {
+		return existing, nil
+	}
+
+	if existing != nil && existing.Status == models.OutfitGenerationStatusFailed {
+		clearErr := ""
+		update := &models.OutfitProfileGeneration{
+			SelfieUrl:         selfieUrl,
+			Status:            models.OutfitGenerationStatusQueued,
+			ErrorMessage:      &clearErr,
+			ProfilePictureUrl: nil,
+		}
+		if err := s.dbClient.OutfitProfileGeneration().Update(ctx, existing.ID, update); err != nil {
+			return nil, err
+		}
+		updated, err := s.dbClient.OutfitProfileGeneration().FindByID(ctx, existing.ID)
+		if err != nil {
+			return nil, err
+		}
+		generation = updated
+	} else {
+		generation = &models.OutfitProfileGeneration{
+			ID:                   uuid.New(),
+			UserID:               userID,
+			OwnedInventoryItemID: ownedInventoryItemID,
+			InventoryItemID:      inventoryItemID,
+			OutfitName:           outfitName,
+			SelfieUrl:            selfieUrl,
+			Status:               models.OutfitGenerationStatusQueued,
+		}
+		if err := s.dbClient.OutfitProfileGeneration().Create(ctx, generation); err != nil {
+			return nil, err
+		}
+	}
+
+	payload := jobs.GenerateOutfitProfilePictureTaskPayload{
+		GenerationID:         generation.ID,
+		UserID:               userID,
+		OwnedInventoryItemID: ownedInventoryItemID,
+		SelfieUrl:            selfieUrl,
+		OutfitName:           outfitName,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateOutfitProfilePictureTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		update := &models.OutfitProfileGeneration{
+			Status:       models.OutfitGenerationStatusFailed,
+			ErrorMessage: &errMsg,
+		}
+		_ = s.dbClient.OutfitProfileGeneration().Update(ctx, generation.ID, update)
+		return nil, err
+	}
+
+	return generation, nil
+}
+
+func (s *server) adminUseOutfitItem(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		UserID    uuid.UUID `json:"userID" binding:"required"`
+		ItemID    int       `json:"itemID" binding:"required"`
+		SelfieUrl string    `json:"selfieUrl" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(requestBody.SelfieUrl) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "selfieUrl is required"})
+		return
+	}
+
+	inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, requestBody.ItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if inventoryItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+	if !isOutfitItemName(inventoryItem.Name) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item is not an outfit"})
+		return
+	}
+
+	items, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &requestBody.UserID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var owned *models.OwnedInventoryItem
+	for i := range items {
+		item := items[i]
+		if item.InventoryItemID == requestBody.ItemID && item.Quantity > 0 {
+			owned = &item
+			break
+		}
+	}
+	if owned == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user does not own this item"})
+		return
+	}
+
+	generation, err := s.startOutfitGeneration(
+		ctx,
+		requestBody.UserID,
+		owned.ID,
+		owned.InventoryItemID,
+		inventoryItem.Name,
+		requestBody.SelfieUrl,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, generation)
 }
 
 func (s *server) getTeamsInventory(ctx *gin.Context) {
@@ -5387,6 +5563,13 @@ func (s *server) register(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.dbClient.NewUserStarterConfig().ApplyToUser(ctx, authenticateResponse.User.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("failed to apply starter config: %s", err.Error()),
 		})
 		return
 	}

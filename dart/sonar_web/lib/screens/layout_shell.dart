@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
@@ -101,10 +102,10 @@ class _LayoutHeader extends StatelessWidget {
                   children: [
                     Text(
                       'unclaimed streets',
-                      style: TextStyle(
-                        fontFamily: 'Cinzel',
-                        fontWeight: FontWeight.bold,
+                      style: GoogleFonts.cinzelDecorative(
+                        fontWeight: FontWeight.w700,
                         fontSize: 24,
+                        letterSpacing: 0.6,
                         color: theme.colorScheme.onSurface,
                       ),
                     ),
@@ -181,18 +182,82 @@ class _SideDrawerState extends State<_SideDrawer> {
               builder: (context, auth, _) {
                 final u = auth.user;
                 if (u == null) return const SizedBox.shrink();
+                void showProfileImage() {
+                  if (u.profilePictureUrl.isEmpty) return;
+                  showDialog<void>(
+                    context: context,
+                    barrierColor: Colors.black54,
+                    builder: (context) {
+                      final theme = Theme.of(context);
+                      return Dialog(
+                        backgroundColor: Colors.transparent,
+                        insetPadding: const EdgeInsets.all(24),
+                        child: Stack(
+                          alignment: Alignment.topRight,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: theme.colorScheme.outlineVariant,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 18,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.network(
+                                  u.profilePictureUrl,
+                                  width: 320,
+                                  height: 320,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    width: 320,
+                                    height: 320,
+                                    color: theme.colorScheme.surfaceVariant,
+                                    child: const Icon(Icons.person, size: 96),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close),
+                              style: IconButton.styleFrom(
+                                backgroundColor:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                shape: const CircleBorder(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                }
                 return Row(
                   children: [
-                    CircleAvatar(
-                      radius: 24,
-                      backgroundColor: Colors.grey.shade300,
-                      backgroundImage:
-                          u.profilePictureUrl.isNotEmpty
-                              ? NetworkImage(u.profilePictureUrl)
-                              : null,
-                      child: u.profilePictureUrl.isEmpty
-                          ? const Icon(Icons.person)
-                          : null,
+                    GestureDetector(
+                      onTap:
+                          u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
+                      child: CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Colors.grey.shade300,
+                        backgroundImage:
+                            u.profilePictureUrl.isNotEmpty
+                                ? NetworkImage(u.profilePictureUrl)
+                                : null,
+                        child: u.profilePictureUrl.isEmpty
+                            ? const Icon(Icons.person)
+                            : null,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -251,20 +316,6 @@ class _SideDrawerState extends State<_SideDrawer> {
                       : const FriendsTabContent(key: ValueKey('friends')),
             ),
             const Divider(),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.go('/create-point-of-interest');
-              },
-              child: const Text('Create POI'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.go('/adminfuckoff');
-              },
-              child: const Text('Admin'),
-            ),
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
