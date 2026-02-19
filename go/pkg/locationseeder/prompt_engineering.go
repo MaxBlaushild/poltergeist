@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
@@ -67,7 +68,7 @@ const generateImagePromptPromptTemplate = premise + `
 // 	The goal is to take these real-world values and translate them into fantasy-themed locations while maintaining their core concept but enhancing them with magical, mythical, and pixelated video game-style elements. Each location should evoke a sense of nostalgia for retro video games, with blocky shapes, pixelated visuals, and vibrant colors that evoke classic RPG vibes.
 // `
 
-const style = "natural"
+const style = ""
 
 func (c *client) generateFantasyTheming(place googlemaps.Place, zone *models.Zone) (*FantasyPointOfInterest, error) {
 	answer, err := c.deepPriest.PetitionTheFount(&deep_priest.Question{
@@ -94,11 +95,12 @@ func (c *client) generateFantasyImage(ctx context.Context, place googlemaps.Plac
 		log.Printf("Error generating fantasy image prompt: %v", err)
 		return "", err
 	}
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("generated image prompt was empty")
+	}
 
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
-		Style:  style,
-		Model:  "dall-e-3",
 	}
 	deep_priest.ApplyGenerateImageDefaults(&request)
 	base64Image, err := c.deepPriest.GenerateImage(request)

@@ -18,6 +18,7 @@ class ApiConstants {
   static const String mediaUploadUrlEndpoint = '/sonar/media/uploadUrl';
 
   static const String crewProfileBucket = 'crew-profile-icons';
+  static const String crewPointsOfInterestBucket = 'crew-points-of-interest';
 
   // Party
   static const String partyEndpoint = '/sonar/party';

@@ -12,6 +12,7 @@ class TagsProvider with ChangeNotifier {
   List<TagGroup> _tagGroups = [];
   Set<String> _selectedTagIds = {};
   bool _loading = false;
+  bool _hasInitializedSelection = false;
 
   List<Tag> get tags => _tags;
   List<TagGroup> get tagGroups => _tagGroups;
@@ -24,6 +25,10 @@ class TagsProvider with ChangeNotifier {
     try {
       _tags = await _service.getTags();
       _tagGroups = await _service.getTagGroups();
+      if (!_hasInitializedSelection) {
+        _selectedTagIds = {};
+        _hasInitializedSelection = true;
+      }
     } catch (_) {
       _tags = [];
       _tagGroups = [];
@@ -43,6 +48,18 @@ class TagsProvider with ChangeNotifier {
 
   void clearFilters() {
     _selectedTagIds.clear();
+    notifyListeners();
+  }
+
+  void selectAll() {
+    _selectedTagIds = _tags.map((t) => t.id).toSet();
+    _hasInitializedSelection = true;
+    notifyListeners();
+  }
+
+  void deselectAll() {
+    _selectedTagIds.clear();
+    _hasInitializedSelection = true;
     notifyListeners();
   }
 }

@@ -35,6 +35,7 @@ type client struct {
 	inventoryItemHandle               *inventoryItemHandler
 	auditItemHandle                   *auditItemHandler
 	imageGenerationHandle             *imageGenerationHandle
+	outfitProfileGenerationHandle     *outfitProfileGenerationHandle
 	pointOfInterestChildrenHandle     *pointOfInterestChildrenHandle
 	pointOfInterestDiscoveryHandle    *pointOfInterestDiscoveryHandle
 	matchUserHandle                   *matchUserHandle
@@ -154,6 +155,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
+		outfitProfileGenerationHandle:     &outfitProfileGenerationHandle{db: db},
 		pointOfInterestChildrenHandle:     &pointOfInterestChildrenHandle{db: db},
 		pointOfInterestDiscoveryHandle:    &pointOfInterestDiscoveryHandle{db: db},
 		matchUserHandle:                   &matchUserHandle{db: db},
@@ -462,6 +464,10 @@ func (c *client) SonarCategory() SonarCategoryHandle {
 
 func (c *client) ImageGeneration() ImageGenerationHandle {
 	return c.imageGenerationHandle
+}
+
+func (c *client) OutfitProfileGeneration() OutfitProfileGenerationHandle {
+	return c.outfitProfileGenerationHandle
 }
 
 func (c *client) Character() CharacterHandle {

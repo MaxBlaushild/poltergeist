@@ -57,8 +57,9 @@ type Quest struct {
 }
 
 type QuestLog struct {
-	Quests          []Quest     `json:"quests"`
-	TrackedQuestIDs []uuid.UUID `json:"trackedQuestIds"`
+	Quests           []Quest     `json:"quests"`
+	CompletedQuests  []Quest     `json:"completedQuests"`
+	TrackedQuestIDs  []uuid.UUID `json:"trackedQuestIds"`
 }
 
 type QuestlogClient interface {
@@ -101,6 +102,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 	}
 
 	filtered := make([]Quest, 0, len(quests))
+	completed := make([]Quest, 0, len(quests))
 	for _, quest := range quests {
 		if quest.ZoneID != nil && *quest.ZoneID != zoneID {
 			continue
@@ -116,10 +118,6 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			return nil, err
 		}
 
-		if !questMatchesTags(&quest, poiLookup, tags) {
-			continue
-		}
-
 		progress := map[uuid.UUID]bool{}
 		nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
 		if err != nil {
@@ -133,7 +131,6 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 
 		currentNode := buildCurrentNode(&quest, poiLookup, progress)
 		allCompleted := len(quest.Nodes) > 0 && allNodesCompleted(&quest, progress)
-
 		itemRewards := make([]QuestItemReward, 0, len(quest.ItemRewards))
 		for _, reward := range quest.ItemRewards {
 			var invItem *models.InventoryItem
@@ -147,7 +144,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			})
 		}
 
-		filtered = append(filtered, Quest{
+		entry := Quest{
 			ID:                    quest.ID,
 			Name:                  quest.Name,
 			Description:           quest.Description,
@@ -160,17 +157,26 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			TurnedInAt:            acceptance.TurnedInAt,
 			ReadyToTurnIn:         accepted && acceptance.TurnedInAt == nil && allCompleted,
 			CurrentNode:           currentNode,
-		})
+		}
+		if acceptance.TurnedInAt != nil {
+			completed = append(completed, entry)
+		} else {
+			filtered = append(filtered, entry)
+		}
 	}
 
 	trackedAccepted := []uuid.UUID{}
 	for _, questID := range trackedQuestIDs {
-		if _, ok := acceptanceByQuest[questID]; ok {
+		if acc, ok := acceptanceByQuest[questID]; ok && acc.TurnedInAt == nil {
 			trackedAccepted = append(trackedAccepted, questID)
 		}
 	}
 
-	return &QuestLog{Quests: filtered, TrackedQuestIDs: trackedAccepted}, nil
+	return &QuestLog{
+		Quests:          filtered,
+		CompletedQuests: completed,
+		TrackedQuestIDs: trackedAccepted,
+	}, nil
 }
 
 func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error) {
@@ -265,8 +271,9 @@ func questMatchesTags(quest *models.Quest, poiLookup map[uuid.UUID]*models.Point
 	}
 	tagSet := map[string]struct{}{}
 	for _, t := range tags {
-		tagSet[t] = struct{}{}
+		tagSet[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
 	}
+	hasAnyTags := false
 	for _, node := range quest.Nodes {
 		if node.PointOfInterestID == nil {
 			continue
@@ -276,10 +283,14 @@ func questMatchesTags(quest *models.Quest, poiLookup map[uuid.UUID]*models.Point
 			continue
 		}
 		for _, tag := range poi.Tags {
-			if _, ok := tagSet[tag.Value]; ok {
+			hasAnyTags = true
+			if _, ok := tagSet[strings.ToLower(tag.Value)]; ok {
 				return true
 			}
 		}
+	}
+	if !hasAnyTags {
+		return true
 	}
 	return false
 }

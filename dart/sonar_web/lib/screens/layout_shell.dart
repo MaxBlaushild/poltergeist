@@ -20,7 +20,7 @@ class LayoutShell extends StatelessWidget {
       child: Scaffold(
         endDrawer: const _SideDrawer(),
         body: SafeArea(
-          top: true,
+          top: false,
           bottom: false,
           left: false,
           right: false,
@@ -70,27 +70,42 @@ class _LayoutHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
+        final theme = Theme.of(context);
+        final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+        final topPadding = MediaQuery.of(context).padding.top;
         return Container(
-          height: 61,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          height: 61 + topPadding,
+          padding: EdgeInsets.fromLTRB(16, topPadding + 8, 16, 8),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.8),
-            border: Border(bottom: BorderSide(color: Colors.black, width: 3)),
+            color: surfaceColor,
+            border: Border(
+              bottom: BorderSide(
+                color: theme.colorScheme.outlineVariant,
+                width: 1.5,
+              ),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0x332D2416),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             children: [
               GestureDetector(
                 onTap: () => context.go('/'),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.sailing, size: 37),
-                    SizedBox(width: 8),
                     Text(
-                      'crew',
+                      'unclaimed streets',
                       style: TextStyle(
+                        fontFamily: 'Cinzel',
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ],

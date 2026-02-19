@@ -81,4 +81,11 @@ class CharacterAction {
 
   String? get pointOfInterestGroupId => metadata?['pointOfInterestGroupId'] as String?;
   String? get questId => (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
+  String? get questName => metadata?['questName'] as String?;
+  String? get questDescription => metadata?['questDescription'] as String?;
+  List<String> get questAcceptanceDialogue {
+    final raw = metadata?['acceptanceDialogue'] as List<dynamic>?;
+    if (raw == null) return const [];
+    return raw.map((e) => e.toString()).toList();
+  }
 }

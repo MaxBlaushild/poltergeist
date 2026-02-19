@@ -6,7 +6,6 @@ import '../models/quest.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
-import 'tag_filter_chips.dart';
 
 const _placeholderImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
@@ -14,16 +13,19 @@ const _placeholderImageUrl =
 /// Bottom-sheet content for Quest Log.
 /// [onFocusPoI] when user taps a POI in a quest: close sheet, fly to POI, open POI panel.
 typedef OnFocusPoI = void Function(PointOfInterest poi);
+typedef OnFocusTurnInQuest = void Function(Quest quest);
 
 class QuestLogPanel extends StatefulWidget {
   const QuestLogPanel({
     super.key,
     required this.onClose,
     required this.onFocusPoI,
+    required this.onFocusTurnInQuest,
   });
 
   final VoidCallback onClose;
   final OnFocusPoI onFocusPoI;
+  final OnFocusTurnInQuest onFocusTurnInQuest;
 
   @override
   State<QuestLogPanel> createState() => _QuestLogPanelState();
@@ -36,6 +38,11 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   void _focusPoI(PointOfInterest poi) {
     widget.onClose();
     widget.onFocusPoI(poi);
+  }
+
+  void _focusTurnInQuest(Quest quest) {
+    widget.onClose();
+    widget.onFocusTurnInQuest(quest);
   }
 
   @override
@@ -57,9 +64,15 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
             ),
           );
         }
-
+        final readyToTurnIn = ql.quests
+            .where((q) =>
+                q.turnedInAt == null &&
+                (q.readyToTurnIn || (q.currentNode == null && q.isAccepted)))
+            .toList();
+        final readyIds = readyToTurnIn.map((q) => q.id).toSet();
         final tracked = ql.quests
-            .where((q) => ql.trackedQuestIds.contains(q.id))
+            .where((q) =>
+                ql.trackedQuestIds.contains(q.id) && !readyIds.contains(q.id))
             .toList();
         final tagBuckets = <String, List<Quest>>{};
         for (final g in tags.tagGroups) {
@@ -68,6 +81,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         final untagged = <Quest>[];
 
         for (final q in ql.quests) {
+          if (readyIds.contains(q.id)) continue;
           if (ql.trackedQuestIds.contains(q.id)) continue;
           final tagNames = _questTags(q);
           var added = false;
@@ -82,6 +96,13 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           if (!added) untagged.add(q);
         }
 
+        final completed = ql.completedQuests;
+
+        final hasQuestListItems = readyToTurnIn.isNotEmpty ||
+            tracked.isNotEmpty ||
+            tagBuckets.values.any((list) => list.isNotEmpty) ||
+            untagged.isNotEmpty;
+
         return DefaultTabController(
           length: 2,
           child: Column(
@@ -90,7 +111,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               const TabBar(
                 tabs: [
                   Tab(text: 'Quests'),
-                  Tab(text: 'Filters'),
+                  Tab(text: 'Completed'),
                 ],
               ),
               Expanded(
@@ -98,62 +119,109 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   children: [
                     SingleChildScrollView(
                       padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (tracked.isNotEmpty)
-                            _QuestAccordion(
-                              title: 'Tracked Quests',
-                              quests: tracked,
-                              expanded: _expanded['tracked'] ?? false,
-                              onToggle: () {
-                                setState(() {
-                                  _expanded['tracked'] =
-                                      !(_expanded['tracked'] ?? false);
-                                });
-                              },
-                              onQuestTap: (q) =>
-                                  setState(() => _selectedQuest = q),
+                      child: hasQuestListItems
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (readyToTurnIn.isNotEmpty)
+                                  _QuestAccordion(
+                                    title: 'Ready to Turn In',
+                                    quests: readyToTurnIn,
+                                    expanded: _expanded['ready'] ?? true,
+                                    onToggle: () {
+                                      setState(() {
+                                        _expanded['ready'] =
+                                            !(_expanded['ready'] ?? true);
+                                      });
+                                    },
+                                    onQuestTap: (q) =>
+                                        setState(() => _selectedQuest = q),
+                                    onReadyQuestTap: _focusTurnInQuest,
+                                  ),
+                                if (tracked.isNotEmpty)
+                                  _QuestAccordion(
+                                    title: 'Tracked Quests',
+                                    quests: tracked,
+                                    expanded: _expanded['tracked'] ?? false,
+                                    onToggle: () {
+                                      setState(() {
+                                        _expanded['tracked'] =
+                                            !(_expanded['tracked'] ?? false);
+                                      });
+                                    },
+                                    onQuestTap: (q) =>
+                                        setState(() => _selectedQuest = q),
+                                    onReadyQuestTap: _focusTurnInQuest,
+                                  ),
+                                ...tags.tagGroups.map((g) {
+                                  final list = tagBuckets[g.id] ?? [];
+                                  if (list.isEmpty) return const SizedBox.shrink();
+                                  return _QuestAccordion(
+                                    key: ValueKey(g.id),
+                                    title: g.name,
+                                    quests: list,
+                                    expanded: _expanded[g.id] ?? false,
+                                    onToggle: () {
+                                      setState(() {
+                                        _expanded[g.id] =
+                                            !(_expanded[g.id] ?? false);
+                                      });
+                                    },
+                                    onQuestTap: (q) =>
+                                        setState(() => _selectedQuest = q),
+                                    onReadyQuestTap: _focusTurnInQuest,
+                                  );
+                                }),
+                                if (untagged.isNotEmpty)
+                                  _QuestAccordion(
+                                    title: 'The Rest',
+                                    quests: untagged,
+                                    expanded: _expanded['untagged'] ?? false,
+                                    onToggle: () {
+                                      setState(() {
+                                        _expanded['untagged'] =
+                                            !(_expanded['untagged'] ?? false);
+                                      });
+                                    },
+                                    onQuestTap: (q) =>
+                                        setState(() => _selectedQuest = q),
+                                    onReadyQuestTap: _focusTurnInQuest,
+                                  ),
+                              ],
+                            )
+                          : const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 48),
+                              child: Center(
+                                child: Text(
+                                  'No quests yet. Explore to discover new adventures.',
+                                ),
+                              ),
                             ),
-                          ...tags.tagGroups.map((g) {
-                            final list = tagBuckets[g.id] ?? [];
-                            if (list.isEmpty) return const SizedBox.shrink();
-                            return _QuestAccordion(
-                              key: ValueKey(g.id),
-                              title: g.name,
-                              quests: list,
-                              expanded: _expanded[g.id] ?? false,
-                              onToggle: () {
-                                setState(() {
-                                  _expanded[g.id] =
-                                      !(_expanded[g.id] ?? false);
-                                });
-                              },
-                              onQuestTap: (q) =>
-                                  setState(() => _selectedQuest = q),
-                            );
-                          }),
-                          if (untagged.isNotEmpty)
-                            _QuestAccordion(
-                              title: 'The Rest',
-                              quests: untagged,
-                              expanded: _expanded['untagged'] ?? false,
-                              onToggle: () {
-                                setState(() {
-                                  _expanded['untagged'] =
-                                      !(_expanded['untagged'] ?? false);
-                                });
-                              },
-                              onQuestTap: (q) =>
-                                  setState(() => _selectedQuest = q),
-                            ),
-                        ],
+                    ),
+                    if (completed.isEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('No completed quests yet.'),
+                        ),
+                      )
+                    else
+                      SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: _QuestAccordion(
+                          title: 'Completed Quests',
+                          quests: completed,
+                          expanded: _expanded['completed'] ?? true,
+                          onToggle: () {
+                            setState(() {
+                              _expanded['completed'] =
+                                  !(_expanded['completed'] ?? true);
+                            });
+                          },
+                          onQuestTap: (q) =>
+                              setState(() => _selectedQuest = q),
+                        ),
                       ),
-                    ),
-                    SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: const TagFilterChips(),
-                    ),
                   ],
                 ),
               ),
@@ -203,23 +271,26 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    quest.readyToTurnIn
-                        ? 'Ready to turn in'
-                        : quest.isAccepted
-                            ? 'In progress'
-                            : 'Not accepted',
+                    quest.turnedInAt != null
+                        ? 'Completed'
+                        : quest.readyToTurnIn
+                            ? 'Ready to turn in'
+                            : quest.isAccepted
+                                ? 'In progress'
+                                : 'Not accepted',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
-                  FilledButton(
-                    onPressed: () async {
-                      if (isTracked) {
-                        await ql.untrackQuest(quest.id);
-                      } else {
-                        await ql.trackQuest(quest.id);
-                      }
-                    },
-                    child: Text(isTracked ? 'Untrack Quest' : 'Track Quest'),
-                  ),
+                  if (quest.turnedInAt == null)
+                    FilledButton(
+                      onPressed: () async {
+                        if (isTracked) {
+                          await ql.untrackQuest(quest.id);
+                        } else {
+                          await ql.trackQuest(quest.id);
+                        }
+                      },
+                      child: Text(isTracked ? 'Untrack Quest' : 'Track Quest'),
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -263,7 +334,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               const SizedBox(height: 16),
               if (node == null)
                 Text(
-                  'Quest completed! Turn it in for rewards.',
+                  quest.turnedInAt != null
+                      ? 'Quest turned in. Well done!'
+                      : 'Quest completed! Turn it in for rewards.',
                   style: Theme.of(context).textTheme.titleMedium,
                 )
               else ...[
@@ -385,6 +458,7 @@ class _QuestAccordion extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     required this.onQuestTap,
+    this.onReadyQuestTap,
   });
 
   final String title;
@@ -392,6 +466,7 @@ class _QuestAccordion extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggle;
   final void Function(Quest) onQuestTap;
+  final void Function(Quest)? onReadyQuestTap;
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +524,13 @@ class _QuestAccordion extends StatelessWidget {
                   children: quests
                       .map(
                         (q) => InkWell(
-                          onTap: () => onQuestTap(q),
+                          onTap: () {
+                            if (q.readyToTurnIn && onReadyQuestTap != null) {
+                              onReadyQuestTap!(q);
+                              return;
+                            }
+                            onQuestTap(q);
+                          },
                           borderRadius: BorderRadius.circular(8),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(
@@ -458,18 +539,46 @@ class _QuestAccordion extends StatelessWidget {
                             ),
                             child: Row(
                               children: [
-                                Icon(
-                                  q.readyToTurnIn
-                                      ? Icons.check_circle
-                                      : q.isAccepted
-                                          ? Icons.play_circle_fill
-                                          : Icons.radio_button_unchecked,
-                                  size: 22,
-                                  color: q.readyToTurnIn
-                                      ? Colors.green
-                                      : q.isAccepted
-                                          ? Colors.orange
-                                          : Colors.grey.shade400,
+                                q.turnedInAt != null || q.readyToTurnIn
+                                    ? Container(
+                                        width: 22,
+                                        height: 22,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF3BB54A),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.check,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        q.isAccepted
+                                            ? Icons.play_circle_fill
+                                            : Icons.radio_button_unchecked,
+                                        size: 22,
+                                        color: q.isAccepted
+                                            ? Colors.orange
+                                            : Colors.grey.shade400,
+                                      ),
+                                const SizedBox(width: 12),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Image.network(
+                                    (q.currentNode?.pointOfInterest?.imageURL ?? '').isNotEmpty
+                                        ? q.currentNode!.pointOfInterest!.imageURL!
+                                        : _placeholderImageUrl,
+                                    width: 36,
+                                    height: 36,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      width: 36,
+                                      height: 36,
+                                      color: Colors.grey.shade300,
+                                      child: const Icon(Icons.place, size: 18),
+                                    ),
+                                  ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

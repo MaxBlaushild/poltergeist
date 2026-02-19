@@ -1,9 +1,16 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/inventory_item.dart';
+import '../models/outfit_generation.dart';
 import '../providers/auth_provider.dart';
+import '../services/media_service.dart';
 import '../services/inventory_service.dart';
+import '../utils/camera_capture.dart';
+import '../constants/api_constants.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
@@ -34,11 +41,21 @@ class _InventoryPanelState extends State<InventoryPanel> {
   bool _using = false;
   String? _error;
   OwnedInventoryItem? _selected;
+  OutfitGeneration? _outfitGeneration;
+  bool _loadingOutfitStatus = false;
+  String? _outfitError;
+  Timer? _outfitPoller;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _outfitPoller?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -47,13 +64,28 @@ class _InventoryPanelState extends State<InventoryPanel> {
       _error = null;
     });
     try {
+      final authProvider = context.read<AuthProvider>();
       final svc = context.read<InventoryService>();
-      final items = await svc.getInventoryItems();
-      final owned = await svc.getOwnedInventoryItems();
+      final itemsFuture = svc.getInventoryItems();
+      final ownedFuture = svc.getOwnedInventoryItems();
+      try {
+        await authProvider.refresh();
+      } catch (_) {}
+      final items = await itemsFuture;
+      final owned = await ownedFuture;
       if (!mounted) return;
       setState(() {
         _items = items;
         _owned = owned.where((o) => o.quantity > 0).toList();
+        if (_selected != null) {
+          final stillOwned = _owned.any((o) => o.id == _selected!.id);
+          if (!stillOwned) {
+            _selected = null;
+            _outfitGeneration = null;
+            _outfitError = null;
+            _outfitPoller?.cancel();
+          }
+        }
         _loading = false;
       });
     } catch (e) {
@@ -75,6 +107,134 @@ class _InventoryPanelState extends State<InventoryPanel> {
 
   bool _isUsableInMenu(int inventoryItemId) {
     return _itemsUsableInMenu.contains(inventoryItemId);
+  }
+
+  bool _isOutfitItem(InventoryItem inv) {
+    return inv.name.trim().toLowerCase().endsWith('outfit');
+  }
+
+  Future<void> _loadOutfitStatus(String ownedInventoryItemId, {bool silent = false}) async {
+    if (!silent) {
+      setState(() => _loadingOutfitStatus = true);
+    }
+    try {
+      final status = await context
+          .read<InventoryService>()
+          .getOutfitGenerationStatus(ownedInventoryItemId);
+      if (!mounted) return;
+      setState(() {
+        _outfitGeneration = status;
+        _loadingOutfitStatus = false;
+        _outfitError = status?.error;
+      });
+      if (status != null && status.isPending) {
+        _startOutfitPolling(ownedInventoryItemId);
+      } else {
+        _outfitPoller?.cancel();
+      }
+      if (status != null && status.isComplete) {
+        await context.read<AuthProvider>().refresh();
+        if (!mounted) return;
+        await _load();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingOutfitStatus = false;
+        _outfitError = e.toString();
+      });
+    }
+  }
+
+  void _startOutfitPolling(String ownedInventoryItemId) {
+    _outfitPoller?.cancel();
+    _outfitPoller = Timer.periodic(const Duration(seconds: 5), (_) {
+      _loadOutfitStatus(ownedInventoryItemId, silent: true);
+    });
+  }
+
+  String _extensionFromMime(String? mimeType, String? name) {
+    if (name != null && name.contains('.')) {
+      return name.split('.').last.toLowerCase();
+    }
+    switch (mimeType) {
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      default:
+        return 'jpg';
+    }
+  }
+
+  Future<void> _useOutfitItem(OwnedInventoryItem owned, InventoryItem inv) async {
+    if (_using) return;
+    setState(() {
+      _using = true;
+      _error = null;
+      _outfitError = null;
+    });
+    try {
+      final captured = await captureImageFromCamera(useFrontCamera: true);
+      if (captured == null) {
+        if (mounted) {
+          setState(() => _using = false);
+        }
+        return;
+      }
+      final mediaService = context.read<MediaService>();
+      final userId = context.read<AuthProvider>().user?.id ?? 'anonymous';
+      final ext = _extensionFromMime(captured.mimeType, captured.name);
+      final key =
+          'selfies/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final presigned = await mediaService.getPresignedUploadUrl(
+        ApiConstants.crewProfileBucket,
+        key,
+      );
+      if (presigned == null) {
+        if (mounted) {
+          setState(() {
+            _using = false;
+            _outfitError = 'Failed to prepare selfie upload.';
+          });
+        }
+        return;
+      }
+      final ok = await mediaService.uploadToPresigned(
+        presigned,
+        Uint8List.fromList(captured.bytes),
+        captured.mimeType ?? 'image/jpeg',
+      );
+      if (!ok) {
+        if (mounted) {
+          setState(() {
+            _using = false;
+            _outfitError = 'Failed to upload selfie.';
+          });
+        }
+        return;
+      }
+      final selfieUrl = presigned.split('?').first;
+      final status = await context.read<InventoryService>().useOutfitItem(
+            owned.id,
+            selfieUrl: selfieUrl,
+          );
+      if (!mounted) return;
+      setState(() {
+        _using = false;
+        _outfitGeneration = status;
+      });
+      if (status.isPending) {
+        _startOutfitPolling(owned.id);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _using = false;
+          _outfitError = e.toString();
+        });
+      }
+    }
   }
 
   Future<void> _use(OwnedInventoryItem owned) async {
@@ -116,7 +276,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
             alignment: Alignment.centerLeft,
             child: IconButton(
               icon: const Icon(Icons.arrow_back),
-              onPressed: () => setState(() => _selected = null),
+              onPressed: () {
+                _outfitPoller?.cancel();
+                setState(() {
+                  _selected = null;
+                  _outfitGeneration = null;
+                  _outfitError = null;
+                });
+              },
             ),
           ),
         if (showDetail || user != null)
@@ -220,7 +387,19 @@ class _InventoryPanelState extends State<InventoryPanel> {
           );
         }
         return InkWell(
-          onTap: () => setState(() => _selected = o),
+          onTap: () {
+            setState(() {
+              _selected = o;
+              _outfitGeneration = null;
+              _outfitError = null;
+            });
+            final inv = _itemFor(o);
+            if (inv != null && _isOutfitItem(inv)) {
+              _loadOutfitStatus(o.id);
+            } else {
+              _outfitPoller?.cancel();
+            }
+          },
           borderRadius: BorderRadius.circular(12),
           child: Container(
             decoration: BoxDecoration(
@@ -274,7 +453,11 @@ class _InventoryPanelState extends State<InventoryPanel> {
     InventoryItem inv,
     OwnedInventoryItem owned,
   ) {
-    final canUse = _isUsableInMenu(inv.id) && owned.quantity > 0;
+    final isOutfit = _isOutfitItem(inv);
+    final outfitStatus = _outfitGeneration;
+    final outfitPending = isOutfit && (outfitStatus?.isPending ?? false);
+    final canUse =
+        owned.quantity > 0 && (isOutfit || _isUsableInMenu(inv.id)) && !outfitPending;
 
     return SingleChildScrollView(
       child: Column(
@@ -313,14 +496,141 @@ class _InventoryPanelState extends State<InventoryPanel> {
               style: Theme.of(context).textTheme.bodyLarge,
             ),
           if (inv.effectText.isNotEmpty) const SizedBox(height: 20),
+          if (isOutfit) ...[
+            _buildOutfitStatus(context, outfitStatus),
+            const SizedBox(height: 16),
+          ],
           if (canUse)
             FilledButton(
-              onPressed: _using ? null : () => _use(owned),
-              child: Text(_using ? 'Using…' : 'Use'),
+              onPressed: _using
+                  ? null
+                  : () {
+                      if (isOutfit) {
+                        _useOutfitItem(owned, inv);
+                      } else {
+                        _use(owned);
+                      }
+                    },
+              child: Text(
+                _using
+                    ? 'Using…'
+                    : isOutfit
+                        ? (outfitStatus?.isFailed == true ? 'Try Again' : 'Take Selfie')
+                        : 'Use',
+              ),
             ),
         ],
       ),
     );
+  }
+
+  Widget _buildOutfitStatus(BuildContext context, OutfitGeneration? status) {
+    final theme = Theme.of(context);
+    final surface = theme.colorScheme.surfaceVariant;
+    final textStyle = theme.textTheme.bodyMedium;
+    if (_loadingOutfitStatus) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 12),
+            Text('Checking portrait status…', style: textStyle),
+          ],
+        ),
+      );
+    }
+
+    if (status == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Use this outfit to craft a personalized portrait from your selfie.',
+              style: textStyle,
+            ),
+            if (_outfitError != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _outfitError!,
+                style: textStyle?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (status.isPending) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('The dungeon artist is at work…', style: textStyle),
+            const SizedBox(height: 8),
+            const LinearProgressIndicator(),
+          ],
+        ),
+      );
+    }
+
+    if (status.isFailed) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Portrait generation failed.', style: textStyle),
+            if (status.error != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                status.error!,
+                style: textStyle?.copyWith(color: theme.colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    if (status.isComplete) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          'Your new portrait is ready and equipped.',
+          style: textStyle,
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 }
 

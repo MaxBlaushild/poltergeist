@@ -28,6 +28,7 @@ type Character struct {
 	Geometry              *string             `json:"geometry,omitempty" gorm:"type:geometry(Point,4326)"`
 	MovementPattern       MovementPattern     `json:"movementPattern"`
 	MovementPatternID     uuid.UUID           `json:"movementPatternId" gorm:"type:uuid"`
+	HasAvailableQuest     bool                `json:"hasAvailableQuest" gorm:"-"`
 }
 
 func (n *Character) TableName() string {

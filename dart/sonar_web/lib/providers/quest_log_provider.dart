@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
+import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
 import '../providers/zone_provider.dart';
 import '../services/quest_log_service.dart';
@@ -30,8 +31,10 @@ class QuestLogProvider with ChangeNotifier {
   final QuestLogService _service;
   final ZoneProvider _zone;
   final TagsProvider _tags;
+  final QuestFilterProvider _filters;
 
   List<Quest> _quests = [];
+  List<Quest> _completedQuests = [];
   List<String> _trackedQuestIds = [];
   List<String> _trackedPointOfInterestIds = [];
   List<PointOfInterest> _pointsOfInterest = [];
@@ -41,12 +44,13 @@ class QuestLogProvider with ChangeNotifier {
   String? _lastZoneId;
   List<String> _lastTagNames = [];
 
-  QuestLogProvider(this._service, this._zone, this._tags) {
+  QuestLogProvider(this._service, this._zone, this._tags, this._filters) {
     _zone.addListener(_onZoneOrTagsChanged);
-    _tags.addListener(_onZoneOrTagsChanged);
+    _filters.addListener(_onZoneOrTagsChanged);
   }
 
   List<Quest> get quests => _quests;
+  List<Quest> get completedQuests => _completedQuests;
   List<String> get trackedQuestIds => _trackedQuestIds;
   List<String> get trackedPointOfInterestIds => _trackedPointOfInterestIds;
   List<PointOfInterest> get pointsOfInterest => _pointsOfInterest;
@@ -63,31 +67,18 @@ class QuestLogProvider with ChangeNotifier {
   void _onZoneOrTagsChanged() {
     final zoneId = _zone.selectedZone?.id;
     final tagNames = _tagNamesFromSelection();
-    if (zoneId == _lastZoneId &&
+    final effectiveZoneId = zoneId ?? '';
+    if (effectiveZoneId == (_lastZoneId ?? '') &&
         _listEquals(tagNames, _lastTagNames)) {
       return;
     }
-    _lastZoneId = zoneId;
+    _lastZoneId = effectiveZoneId;
     _lastTagNames = tagNames;
-    if (zoneId != null && zoneId.isNotEmpty) {
-      Future.microtask(() => refresh());
-    } else {
-      _quests = [];
-      _trackedQuestIds = [];
-      _trackedPointOfInterestIds = [];
-      _pointsOfInterest = [];
-      _currentNodePoiIds = [];
-      _currentNodePolygons = [];
-      notifyListeners();
-    }
+    Future.microtask(() => refresh());
   }
 
   List<String> _tagNamesFromSelection() {
-    final ids = _tags.selectedTagIds;
-    return _tags.tags
-        .where((t) => ids.contains(t.id))
-        .map((t) => t.name)
-        .toList();
+    return [];
   }
 
   bool _listEquals<T>(List<T> a, List<T> b) {
@@ -101,19 +92,19 @@ class QuestLogProvider with ChangeNotifier {
   @override
   void dispose() {
     _zone.removeListener(_onZoneOrTagsChanged);
-    _tags.removeListener(_onZoneOrTagsChanged);
+    _filters.removeListener(_onZoneOrTagsChanged);
     super.dispose();
   }
 
   Future<void> refresh() async {
     final zoneId = _zone.selectedZone?.id;
-    if (zoneId == null || zoneId.isEmpty) return;
     _loading = true;
     notifyListeners();
     try {
       final tagNames = _tagNamesFromSelection();
-      final log = await _service.getQuestLog(zoneId, tags: tagNames);
+      final log = await _service.getQuestLog(zoneId: zoneId, tags: tagNames);
       _quests = log.quests;
+      _completedQuests = log.completedQuests;
       _trackedQuestIds = List.from(log.trackedQuestIds);
       _pointsOfInterest = getMapPointsOfInterest(log.quests);
       final tracked = log.quests
@@ -132,10 +123,11 @@ class QuestLogProvider with ChangeNotifier {
           .where((poly) => poly.isNotEmpty)
           .map((poly) => List<QuestNodePolygonPoint>.from(poly))
           .toList();
-      _lastZoneId = zoneId;
+      _lastZoneId = zoneId ?? '';
       _lastTagNames = tagNames;
     } catch (_) {
       _quests = [];
+      _completedQuests = [];
       _trackedQuestIds = [];
       _trackedPointOfInterestIds = [];
       _pointsOfInterest = [];

@@ -30,6 +30,7 @@ type PointOfInterest struct {
 	GoogleMapsPlaceName       *string                    `json:"googleMapsPlaceName"`
 	LastUsedInQuestAt         *time.Time                 `json:"lastUsedInQuestAt,omitempty"`
 	UnlockTier                *int                       `json:"unlockTier" gorm:"column:unlock_tier"`
+	HasAvailableQuest         bool                       `json:"hasAvailableQuest" gorm:"-"`
 }
 
 func (p *PointOfInterest) TableName() string {

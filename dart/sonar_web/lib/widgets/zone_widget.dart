@@ -100,6 +100,16 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     return Consumer<ZoneProvider>(
       builder: (context, zoneProvider, _) {
         final selectedZone = zoneProvider.selectedZone;
+        final theme = Theme.of(context);
+        final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+        final borderColor = theme.colorScheme.outlineVariant;
+        final textStyle = theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.onSurface,
+          fontWeight: FontWeight.w600,
+        );
+        final subTextStyle = theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurface,
+        );
 
         return Positioned(
           top: widget.top,
@@ -131,9 +141,16 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                 ),
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black, width: 2),
+                  color: surfaceColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor, width: 1.5),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x332D2416),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -145,13 +162,14 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                         Expanded(
                           child: Text(
                             selectedZone?.name ?? 'Hinterlands',
-                            style: const TextStyle(fontSize: 14),
+                            style: textStyle,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Icon(
                           _isOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
                           size: 16,
+                          color: theme.colorScheme.onSurface,
                         ),
                       ],
                     ),
@@ -166,7 +184,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                   const SizedBox(height: 8),
                                   Text(
                                     selectedZone!.description!,
-                                    style: const TextStyle(fontSize: 14),
+                                    style: subTextStyle,
                                   ),
                                 ],
                                 if (_reputation != null) ...[
@@ -176,11 +194,11 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                     children: [
                                       Text(
                                         'Reputation: ${_reputation!.name.name}',
-                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                        style: textStyle?.copyWith(fontSize: 14),
                                       ),
                                       Text(
                                         '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
-                                        style: const TextStyle(fontSize: 12),
+                                        style: subTextStyle,
                                       ),
                                     ],
                                   ),
@@ -191,6 +209,10 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                                       value: _reputation!.reputationToNextLevel > 0
                                           ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
                                           : 0.0,
+                                      backgroundColor: theme.colorScheme.surfaceVariant,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        theme.colorScheme.primary,
+                                      ),
                                     ),
                                   ),
                                 ],

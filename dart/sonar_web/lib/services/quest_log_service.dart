@@ -7,8 +7,11 @@ class QuestLogService {
   QuestLogService(this._api);
 
   /// GET /sonar/questlog?zoneId=...&tags=name1,name2
-  Future<QuestLog> getQuestLog(String zoneId, {List<String> tags = const []}) async {
-    final params = <String, dynamic>{'zoneId': zoneId};
+  Future<QuestLog> getQuestLog({String? zoneId, List<String> tags = const []}) async {
+    final params = <String, dynamic>{};
+    if (zoneId != null && zoneId.isNotEmpty) {
+      params['zoneId'] = zoneId;
+    }
     if (tags.isNotEmpty) {
       params['tags'] = tags.join(',');
     }

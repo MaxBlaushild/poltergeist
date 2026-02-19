@@ -10,6 +10,7 @@ class Character {
   final String? thumbnailUrl;
   final MovementPattern? movementPattern;
   final List<CharacterLocation> locations;
+  final bool hasAvailableQuest;
 
   const Character({
     required this.id,
@@ -20,6 +21,7 @@ class Character {
     this.thumbnailUrl,
     this.movementPattern,
     this.locations = const [],
+    this.hasAvailableQuest = false,
   });
 
   factory Character.fromJson(Map<String, dynamic> json) {
@@ -37,6 +39,7 @@ class Character {
       movementPattern: json['movementPattern'] != null
           ? MovementPattern.fromJson(json['movementPattern'] as Map<String, dynamic>)
           : null,
+      hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
     );
   }
 

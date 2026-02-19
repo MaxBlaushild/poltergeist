@@ -28,6 +28,7 @@ class PointOfInterest {
   final String? googleMapsPlaceName;
   final List<PoiTag> tags;
   final List<Character> characters;
+  final bool hasAvailableQuest;
 
   const PointOfInterest({
     required this.id,
@@ -42,6 +43,7 @@ class PointOfInterest {
     this.googleMapsPlaceName,
     this.tags = const [],
     this.characters = const [],
+    this.hasAvailableQuest = false,
   });
 
   factory PointOfInterest.fromJson(Map<String, dynamic> json) {
@@ -80,6 +82,7 @@ class PointOfInterest {
       googleMapsPlaceName: json['googleMapsPlaceName'] as String?,
       tags: tags,
       characters: characters,
+      hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
     );
   }
 }

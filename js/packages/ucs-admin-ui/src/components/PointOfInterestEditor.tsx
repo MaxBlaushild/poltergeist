@@ -36,6 +36,7 @@ export const PointOfInterestEditor = () => {
   const [saving, setSaving] = useState(false);
   const [refreshingImage, setRefreshingImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -149,6 +150,8 @@ export const PointOfInterestEditor = () => {
     };
     reader.readAsDataURL(file);
   };
+
+  const previewSrc = imagePreview || formData.imageURL || null;
 
   const uploadImageIfNeeded = async () => {
     if (!imageFile || !id) return null;
@@ -385,9 +388,10 @@ export const PointOfInterestEditor = () => {
             />
             {(imagePreview || formData.imageURL) && (
               <img
-                src={imagePreview || formData.imageURL}
+                src={previewSrc ?? undefined}
                 alt="Preview"
-                className="mt-2 h-32 w-full object-cover rounded"
+                className="mt-2 h-32 w-full object-cover rounded cursor-pointer"
+                onClick={() => setIsPreviewOpen(true)}
               />
             )}
             <p className="mt-2 text-sm text-gray-600">
@@ -489,6 +493,30 @@ export const PointOfInterestEditor = () => {
           </button>
         </div>
       </div>
+      {isPreviewOpen && previewSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-4xl w-full"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsPreviewOpen(false)}
+              className="absolute -top-10 right-0 text-white text-sm underline"
+            >
+              Close
+            </button>
+            <img
+              src={previewSrc}
+              alt="Point of interest preview"
+              className="max-h-[90vh] w-full rounded-lg object-contain bg-black"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

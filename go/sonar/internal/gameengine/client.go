@@ -158,22 +158,39 @@ func (c *gameEngineClient) getPartyMembers(ctx context.Context, userID *uuid.UUI
 		isActive, err := c.livenessClient.IsActive(ctx, member.ID)
 		if err != nil {
 			log.Printf("[DEBUG] Error checking if member %s is active: %v", member.ID, err)
-			continue
+			if member.ID == *userID {
+				log.Printf("[DEBUG] Treating requestor %s as active due to liveness error", member.ID)
+			} else {
+				continue
+			}
 		}
-		if !isActive {
+		if !isActive && member.ID != *userID {
 			log.Printf("[DEBUG] Member %s is not active, skipping", member.ID)
 			continue
 		}
-		log.Printf("[DEBUG] Member %s is active", member.ID)
+		if isActive {
+			log.Printf("[DEBUG] Member %s is active", member.ID)
+		} else {
+			log.Printf("[DEBUG] Member %s is not active but is requestor, continuing", member.ID)
+		}
 
 		// Get user location
 		locationStr, err := c.livenessClient.GetUserLocation(ctx, member.ID)
 		if err != nil {
 			log.Printf("[DEBUG] Error getting location for member %s: %v", member.ID, err)
+			if member.ID == *userID {
+				log.Printf("[DEBUG] No location for requestor %s; skipping zone filter", member.ID)
+				filteredMembers = append(filteredMembers, member)
+				continue
+			}
 			continue
 		}
 		if locationStr == "" {
 			log.Printf("[DEBUG] No location data for member %s, skipping", member.ID)
+			if member.ID == *userID {
+				log.Printf("[DEBUG] No location for requestor %s; skipping zone filter", member.ID)
+				filteredMembers = append(filteredMembers, member)
+			}
 			continue
 		}
 		log.Printf("[DEBUG] Member %s location string: %s", member.ID, locationStr)
@@ -182,18 +199,30 @@ func (c *gameEngineClient) getPartyMembers(ctx context.Context, userID *uuid.UUI
 		parts := strings.Split(locationStr, ",")
 		if len(parts) < 2 {
 			log.Printf("[DEBUG] Invalid location format for member %s: %s (expected lat,lng,accuracy)", member.ID, locationStr)
+			if member.ID == *userID {
+				log.Printf("[DEBUG] Invalid location for requestor %s; skipping zone filter", member.ID)
+				filteredMembers = append(filteredMembers, member)
+			}
 			continue
 		}
 
 		lat, err := strconv.ParseFloat(parts[0], 64)
 		if err != nil {
 			log.Printf("[DEBUG] Error parsing latitude for member %s: %v (value: %s)", member.ID, err, parts[0])
+			if member.ID == *userID {
+				log.Printf("[DEBUG] Invalid latitude for requestor %s; skipping zone filter", member.ID)
+				filteredMembers = append(filteredMembers, member)
+			}
 			continue
 		}
 
 		lng, err := strconv.ParseFloat(parts[1], 64)
 		if err != nil {
 			log.Printf("[DEBUG] Error parsing longitude for member %s: %v (value: %s)", member.ID, err, parts[1])
+			if member.ID == *userID {
+				log.Printf("[DEBUG] Invalid longitude for requestor %s; skipping zone filter", member.ID)
+				filteredMembers = append(filteredMembers, member)
+			}
 			continue
 		}
 
@@ -205,6 +234,10 @@ func (c *gameEngineClient) getPartyMembers(ctx context.Context, userID *uuid.UUI
 
 		if !isInZone {
 			log.Printf("[DEBUG] Member %s is not in zone, skipping", member.ID)
+			if member.ID == *userID {
+				log.Printf("[DEBUG] Requestor %s not in zone; including anyway", member.ID)
+				filteredMembers = append(filteredMembers, member)
+			}
 			continue
 		}
 
@@ -635,6 +668,16 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 	partyMembers, err := c.getPartyMembers(ctx, &userID, zoneID)
 	if err != nil {
 		return 0, nil, err
+	}
+	if len(partyMembers) == 0 {
+		user, err := c.db.User().FindByID(ctx, userID)
+		if err != nil {
+			return 0, nil, err
+		}
+		if user != nil {
+			log.Printf("[DEBUG] No eligible party members for rewards, falling back to user %s", userID)
+			partyMembers = []models.User{*user}
+		}
 	}
 
 	goldAwarded = quest.Gold

@@ -1,10 +1,13 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../constants/api_constants.dart';
 import '../models/character.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -12,10 +15,20 @@ import '../models/quest_node.dart';
 import '../providers/auth_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
+import '../services/media_service.dart';
 import '../services/poi_service.dart';
+import '../utils/camera_capture.dart';
+import '../widgets/paper_texture.dart';
 
 const _placeholderImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+
+enum QuestSubmissionOverlayPhase { hidden, loading, success, failure }
+
+typedef QuestSubmissionOverlayCallback = void Function(
+  QuestSubmissionOverlayPhase phase, {
+  String? message,
+});
 
 /// Unlock radius in meters. Must match backend (POST /sonar/pointOfInterest/unlock).
 const _unlockRadiusMeters = 200.0;
@@ -33,6 +46,7 @@ class PointOfInterestPanel extends StatefulWidget {
     required this.onClose,
     this.onUnlocked,
     this.onCharacterTap,
+    this.onQuestSubmissionState,
   });
 
   final PointOfInterest pointOfInterest;
@@ -43,6 +57,7 @@ class PointOfInterestPanel extends StatefulWidget {
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
   final void Function(Character character)? onCharacterTap;
+  final QuestSubmissionOverlayCallback? onQuestSubmissionState;
 
   @override
   State<PointOfInterestPanel> createState() => _PointOfInterestPanelState();
@@ -149,7 +164,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     if (quest == null || node == null) return;
 
     final textController = TextEditingController();
-    final imageController = TextEditingController();
+    CapturedImage? capturedImage;
+    bool uploadingImage = false;
     String? selectedChallengeId = node.challenges.isNotEmpty
         ? node.challenges.first.id
         : null;
@@ -171,6 +187,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           ),
           child: StatefulBuilder(
             builder: (context, setModalState) {
+              final canUseCamera = kIsWeb ||
+                  defaultTargetPlatform == TargetPlatform.iOS ||
+                  defaultTargetPlatform == TargetPlatform.android;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -216,47 +235,142 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     maxLines: 3,
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: imageController,
-                    decoration: const InputDecoration(
-                      labelText: 'Image URL (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      final resp = await context
-                          .read<QuestLogProvider>()
-                          .submitQuestNodeChallenge(
-                            node.id,
-                            questNodeChallengeId: selectedChallengeId,
-                            textSubmission: textController.text.trim(),
-                            imageSubmissionUrl:
-                                imageController.text.trim().isNotEmpty
-                                    ? imageController.text.trim()
-                                    : null,
-                          );
-                      if (!mounted) return;
-                      final success = resp['successful'] == true;
-                      final reason = resp['reason']?.toString() ?? '';
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            success
-                                ? (reason.isNotEmpty
-                                    ? reason
-                                    : 'Challenge completed!')
-                                : (reason.isNotEmpty
-                                    ? reason
-                                    : 'Submission failed'),
+                  if (canUseCamera)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: uploadingImage
+                                ? null
+                                : () async {
+                                    final result = await captureImageFromCamera();
+                                    if (!mounted) return;
+                                    if (result == null || result.bytes.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('No photo captured.'),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    setModalState(() => capturedImage = result);
+                                  },
+                            icon: const Icon(Icons.photo_camera),
+                            label: const Text('Take photo'),
                           ),
                         ),
-                      );
-                      if (success) {
-                        Navigator.of(context).pop();
-                      }
-                    },
+                        if (capturedImage != null) ...[
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () => setModalState(() => capturedImage = null),
+                            child: const Text('Clear'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  if (capturedImage != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        capturedImage!.bytes,
+                        height: 160,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Captured photo will be uploaded on submit.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: uploadingImage
+                        ? null
+                        : () async {
+                            final mediaService = context.read<MediaService>();
+                            final questLogProvider = context.read<QuestLogProvider>();
+                            final userId =
+                                context.read<AuthProvider>().user?.id ?? 'anonymous';
+                            final startedAt = DateTime.now();
+                            setModalState(() => uploadingImage = true);
+                            Navigator.of(context).pop();
+                            widget.onClose();
+                            widget.onQuestSubmissionState?.call(
+                              QuestSubmissionOverlayPhase.loading,
+                            );
+                            String? imageSubmissionUrl;
+                            if (capturedImage != null) {
+                              final ext = _extensionFromMime(
+                                    capturedImage!.mimeType,
+                                    capturedImage!.name,
+                                  ) ??
+                                  'jpg';
+                              final key =
+                                  'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              final url = await mediaService.getPresignedUploadUrl(
+                                ApiConstants.crewPointsOfInterestBucket,
+                                key,
+                              );
+                              if (url == null) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                widget.onQuestSubmissionState?.call(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to prepare image upload.',
+                                );
+                                return;
+                              }
+                              final ok = await mediaService.uploadToPresigned(
+                                url,
+                                Uint8List.fromList(capturedImage!.bytes),
+                                capturedImage!.mimeType ?? 'image/jpeg',
+                              );
+                              if (!ok) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                widget.onQuestSubmissionState?.call(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to upload photo.',
+                                );
+                                return;
+                              }
+                              imageSubmissionUrl = url.split('?').first;
+                            }
+                            final resp = await questLogProvider.submitQuestNodeChallenge(
+                              node.id,
+                              questNodeChallengeId: selectedChallengeId,
+                              textSubmission: textController.text.trim(),
+                              imageSubmissionUrl: imageSubmissionUrl,
+                            );
+                            final elapsed = DateTime.now().difference(startedAt);
+                            if (elapsed < const Duration(milliseconds: 700)) {
+                              await Future<void>.delayed(
+                                const Duration(milliseconds: 700),
+                              );
+                            }
+                            final success = resp['successful'] == true;
+                            final reason = resp['reason']?.toString() ?? '';
+                            widget.onQuestSubmissionState?.call(
+                              success
+                                  ? QuestSubmissionOverlayPhase.success
+                                  : QuestSubmissionOverlayPhase.failure,
+                              message: success
+                                  ? (reason.isNotEmpty
+                                      ? reason
+                                      : 'Challenge completed!')
+                                  : (reason.isNotEmpty ? reason : 'Submission failed'),
+                            );
+                          },
                     child: const Text('Submit'),
                   ),
                 ],
@@ -266,6 +380,27 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         );
       },
     );
+  }
+
+  String? _extensionFromMime(String? mimeType, String? filename) {
+    final name = filename ?? '';
+    final dot = name.lastIndexOf('.');
+    if (dot != -1 && dot < name.length - 1) {
+      return name.substring(dot + 1).toLowerCase();
+    }
+    switch (mimeType) {
+      case 'image/png':
+        return 'png';
+      case 'image/gif':
+        return 'gif';
+      case 'image/webp':
+        return 'webp';
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'jpg';
+      default:
+        return null;
+    }
   }
 
   @override
@@ -289,14 +424,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final tags = poi.tags;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.3,
+      initialChildSize: 0.9,
+      minChildSize: 0.4,
       maxChildSize: 0.95,
-      builder: (_, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
+      builder: (_, scrollController) => PaperSheet(
         child: Column(
           children: [
             Padding(
@@ -434,13 +565,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
-      minChildSize: 0.3,
+      minChildSize: 0.4,
       maxChildSize: 0.95,
-      builder: (_, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
+      builder: (_, scrollController) => PaperSheet(
         child: Column(
           children: [
             Container(
@@ -554,7 +681,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                           const SizedBox(height: 8),
                           FilledButton(
                             onPressed: _showQuestSubmissionModal,
-                            child: const Text('Submit Quest Challenge'),
+                            child: Text('Quest: ${widget.quest!.name}'),
                           ),
                         ],
                       ),
@@ -675,14 +802,57 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  CircleAvatar(
-                                    radius: 28,
-                                    backgroundColor: Colors.grey.shade300,
-                                    backgroundImage:
-                                        imageUrl != null ? NetworkImage(imageUrl) : null,
-                                    child: imageUrl == null
-                                        ? const Icon(Icons.person)
-                                        : null,
+                                  SizedBox(
+                                    width: 56,
+                                    height: 56,
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 28,
+                                          backgroundColor: Colors.grey.shade300,
+                                          backgroundImage:
+                                              imageUrl != null ? NetworkImage(imageUrl) : null,
+                                          child: imageUrl == null
+                                              ? const Icon(Icons.person)
+                                              : null,
+                                        ),
+                                        if (ch.hasAvailableQuest)
+                                          Positioned(
+                                            right: -2,
+                                            top: -2,
+                                            child: Container(
+                                              width: 20,
+                                              height: 20,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF5C542),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 2,
+                                                ),
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                    color: Colors.black26,
+                                                    blurRadius: 4,
+                                                    offset: Offset(0, 2),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: const Center(
+                                                child: Text(
+                                                  '!',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: Color(0xFF3A2400),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(

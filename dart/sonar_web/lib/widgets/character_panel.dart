@@ -4,9 +4,11 @@ import 'package:provider/provider.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/quest.dart';
+import '../providers/auth_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
+import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
 
 class CharacterPanel extends StatefulWidget {
@@ -14,12 +16,14 @@ class CharacterPanel extends StatefulWidget {
     super.key,
     required this.character,
     required this.onClose,
+    this.onQuestAccepted,
     this.onStartDialogue,
     this.onStartShop,
   });
 
   final Character character;
   final VoidCallback onClose;
+  final VoidCallback? onQuestAccepted;
   final void Function(BuildContext, Character, CharacterAction)? onStartDialogue;
   final void Function(BuildContext, Character, CharacterAction)? onStartShop;
 
@@ -90,23 +94,41 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
   }
 
-  List<DialogueMessage> _buildQuestAcceptanceDialogue(Quest? quest) {
-    final lines = (quest?.acceptanceDialogue ?? const [])
+  List<DialogueMessage> _buildQuestAcceptanceDialogue(Quest? quest, CharacterAction action) {
+    final questLines = (quest?.acceptanceDialogue ?? const [])
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    if (lines.isEmpty) {
-      final fallback = quest?.description.trim();
-      if (fallback != null && fallback.isNotEmpty) {
-        lines.add(fallback);
-      } else {
-        lines.add('...');
-      }
+    if (questLines.isNotEmpty) {
+      return [
+        for (var i = 0; i < questLines.length; i++)
+          DialogueMessage(speaker: 'character', text: questLines[i], order: i),
+      ];
     }
-    return [
-      for (var i = 0; i < lines.length; i++)
-        DialogueMessage(speaker: 'character', text: lines[i], order: i),
-    ];
+
+    if (action.dialogue.isNotEmpty) {
+      return action.dialogue;
+    }
+
+    final actionLines = action.questAcceptanceDialogue
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    if (actionLines.isNotEmpty) {
+      return [
+        for (var i = 0; i < actionLines.length; i++)
+          DialogueMessage(speaker: 'character', text: actionLines[i], order: i),
+      ];
+    }
+
+    final fallback = quest?.description.trim() ??
+        action.questDescription?.trim() ??
+        '';
+    if (fallback.isNotEmpty) {
+      return [DialogueMessage(speaker: 'character', text: fallback, order: 0)];
+    }
+
+    return const [DialogueMessage(speaker: 'character', text: '...', order: 0)];
   }
 
   Future<void> _showQuestAcceptanceDialog(CharacterAction action) async {
@@ -120,7 +142,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
         return RpgDialogueModal(
           character: widget.character,
           action: action,
-          dialogueOverride: _buildQuestAcceptanceDialogue(quest),
+          dialogueOverride: _buildQuestAcceptanceDialogue(quest, action),
           primaryActionLabel: 'Accept quest',
           secondaryActionLabel: 'Decline',
           onPrimaryAction: () => Navigator.of(dialogContext).pop(true),
@@ -149,6 +171,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
           const SnackBar(content: Text('Quest accepted')),
         );
         widget.onClose();
+        widget.onQuestAccepted?.call();
       }
     } catch (_) {
       if (mounted) {
@@ -168,6 +191,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
     try {
       final resp = await context.read<QuestLogProvider>().turnInQuest(questId);
       if (mounted) {
+        try {
+          await context.read<AuthProvider>().refresh();
+        } catch (_) {}
         context.read<CompletedTaskProvider>().showModal('questCompleted', data: {
           'questName': quest.name,
           ...resp,
@@ -202,20 +228,17 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Widget build(BuildContext context) {
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
-    final questAction = _firstActionOfTypes(['giveQuest', 'quest', 'quests']);
-    final hasQuest = questAction?.questId != null;
-    final questReadyToTurnIn = questAction != null ? _questReadyToTurnIn(questAction) : null;
+    final questActions = _actions
+        .where((action) => ['giveQuest', 'quest', 'quests'].contains(action.actionType))
+        .where((action) => action.questId != null && action.questId!.isNotEmpty)
+        .toList();
     final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.3,
-      maxChildSize: 0.9,
-      builder: (_, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-        ),
+      initialChildSize: 0.9,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) => PaperSheet(
         child: Column(
           children: [
             Container(
@@ -295,22 +318,33 @@ class _CharacterPanelState extends State<CharacterPanel> {
                                     style: TextStyle(color: Colors.white70),
                                   ),
                                   const SizedBox(height: 12),
-                                  if (questReadyToTurnIn != null)
-                                    _DialogueChoiceButton(
-                                      label: _turningInQuest ? 'Turning in…' : 'Turn in',
-                                      icon: Icons.assignment_turned_in,
-                                      onTap: _turningInQuest
-                                          ? null
-                                          : () => _handleTurnIn(questReadyToTurnIn, questAction!),
-                                    )
-                                  else if (hasQuest)
-                                    _DialogueChoiceButton(
-                                      label: _acceptingQuest ? 'Accepting quest…' : 'Quest',
+                                  ...questActions.map((action) {
+                                    final quest = _questForAction(action);
+                                    final questReadyToTurnIn = _questReadyToTurnIn(action);
+                                    if (questReadyToTurnIn != null) {
+                                      return _DialogueChoiceButton(
+                                        label: _turningInQuest
+                                            ? 'Turning in…'
+                                            : 'Turn in: ${questReadyToTurnIn.name}',
+                                        icon: Icons.assignment_turned_in,
+                                        onTap: _turningInQuest
+                                            ? null
+                                            : () => _handleTurnIn(questReadyToTurnIn, action),
+                                      );
+                                    }
+                                    if (quest?.isAccepted == true) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return _DialogueChoiceButton(
+                                      label: _acceptingQuest
+                                          ? 'Accepting quest…'
+                                          : 'Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
                                       icon: Icons.assignment_turned_in,
                                       onTap: _acceptingQuest
                                           ? null
-                                          : () => _showQuestAcceptanceDialog(questAction!),
-                                    ),
+                                          : () => _showQuestAcceptanceDialog(action),
+                                    );
+                                  }),
                                   if (shopAction != null)
                                     _DialogueChoiceButton(
                                       label: 'Shop',

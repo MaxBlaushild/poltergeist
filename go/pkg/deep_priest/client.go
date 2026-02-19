@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
 type deepPriest struct{}
@@ -134,11 +135,17 @@ func (d *deepPriest) GenerateImage(request GenerateImageRequest) (string, error)
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("image generation failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 
 	var response ImageGenerationResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal image generation response: %w", err)
+	}
+	if strings.TrimSpace(response.ImageUrl) == "" {
+		return "", fmt.Errorf("image generation returned empty payload: %s", strings.TrimSpace(string(body)))
 	}
 
 	return response.ImageUrl, nil
@@ -161,11 +168,17 @@ func (d *deepPriest) EditImage(request EditImageRequest) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("image edit failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 
 	var response ImageGenerationResponse
 	err = json.Unmarshal(body, &response)
 	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	if strings.TrimSpace(response.ImageUrl) == "" {
+		return "", fmt.Errorf("image edit returned empty payload: %s", strings.TrimSpace(string(body)))
 	}
 
 	return response.ImageUrl, nil

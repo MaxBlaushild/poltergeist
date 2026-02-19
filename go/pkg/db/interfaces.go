@@ -32,6 +32,7 @@ type DbClient interface {
 	InventoryItem() InventoryItemHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
+	OutfitProfileGeneration() OutfitProfileGenerationHandle
 	PointOfInterestChildren() PointOfInterestChildrenHandle
 	PointOfInterestDiscovery() PointOfInterestDiscoveryHandle
 	MatchUser() MatchUserHandle
@@ -340,6 +341,13 @@ type ImageGenerationHandle interface {
 	Updates(ctx context.Context, imageGenerationID uuid.UUID, updates *models.ImageGeneration) error
 	GetCompleteGenerationsForUser(ctx context.Context, userID uuid.UUID) ([]models.ImageGeneration, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type OutfitProfileGenerationHandle interface {
+	Create(ctx context.Context, gen *models.OutfitProfileGeneration) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.OutfitProfileGeneration, error)
+	FindByOwnedInventoryItemID(ctx context.Context, ownedItemID uuid.UUID) (*models.OutfitProfileGeneration, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.OutfitProfileGeneration) error
 }
 
 type PointOfInterestChildrenHandle interface {

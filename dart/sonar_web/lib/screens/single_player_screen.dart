@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
 import '../config/router.dart';
@@ -15,14 +16,19 @@ import '../models/quest_node.dart';
 import '../models/treasure_chest.dart';
 import '../models/zone.dart';
 import '../providers/activity_feed_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
 import '../providers/quest_log_provider.dart';
+import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
 import '../providers/zone_provider.dart';
+import '../services/media_service.dart';
 import '../services/poi_service.dart';
 import '../utils/poi_image_util.dart';
+import '../utils/camera_capture.dart';
+import '../constants/api_constants.dart';
 import '../widgets/activity_feed_panel.dart';
 import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
@@ -34,13 +40,21 @@ import '../widgets/quest_log_panel.dart';
 import '../widgets/rpg_dialogue_modal.dart';
 import '../widgets/tracked_quests_overlay.dart';
 import '../widgets/shop_modal.dart';
-import '../widgets/tag_filter_chips.dart';
+import '../widgets/quest_filter_panel.dart';
 import '../widgets/treasure_chest_panel.dart';
 import '../widgets/used_item_modal.dart';
 import '../widgets/zone_widget.dart';
+import '../widgets/paper_texture.dart';
 
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
+const _stamenWatercolorStyleBase =
+    'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
+const _stamenWatercolorApiKey =
+    String.fromEnvironment('STADIA_MAPS_API_KEY', defaultValue: '');
+final String _stamenWatercolorStyle = _stamenWatercolorApiKey.isNotEmpty
+    ? '$_stamenWatercolorStyleBase?api_key=$_stamenWatercolorApiKey'
+    : _stamenWatercolorStyleBase;
 
 class SinglePlayerScreen extends StatefulWidget {
   const SinglePlayerScreen({super.key});
@@ -57,9 +71,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<TreasureChest> _treasureChests = [];
   List<Line> _zoneLines = [];
   List<Line> _questLines = [];
+  List<Fill> _questFills = [];
   List<Symbol> _poiSymbols = [];
+  final Map<String, Symbol> _poiSymbolById = {};
+  List<Symbol> _questPoiHighlightSymbols = [];
   List<Symbol> _characterSymbols = [];
   List<Symbol> _chestSymbols = [];
+  List<Circle> _chestCircles = [];
+  final Map<String, Symbol> _chestSymbolById = {};
+  final Map<String, Circle> _chestCircleById = {};
+  final Map<String, bool> _chestCircleOpened = {};
+  Uint8List? _chestThumbnailBytes;
+  bool _chestThumbnailAdded = false;
   bool _styleLoaded = false;
   bool _markersAdded = false;
   bool _addedMarkersWithEmptyDiscoveries = false;
@@ -67,6 +90,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   int _mapKey = 0;
   bool _hasAnimatedToUserLocation = false;
   QuestLogProvider? _questLogProvider;
+  Timer? _questGlowTimer;
+  bool _isQuestGlowPulsing = false;
+  Timer? _questPoiPulseTimer;
+  bool _isQuestPoiPulseActive = false;
+  bool _questPoiPulseUp = false;
+  String? _questLogRequestedZoneId;
+  bool _questLogRefreshInFlight = false;
+  DateTime? _lastQuestLogRefreshAt;
+  bool _questLogNeedsOverlayApply = false;
+  Set<String> _lastQuestPoiIds = <String>{};
+  int _lastQuestPolygonHash = 0;
+  String _lastMapFilterKey = '';
+  QuestSubmissionOverlayPhase _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
+  String? _questSubmissionMessage;
+  Timer? _questSubmissionTimer;
+  final TrackedQuestsOverlayController _trackedQuestsController =
+      TrackedQuestsOverlayController();
 
   @override
   void initState() {
@@ -77,8 +117,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<ZoneProvider>().addListener(_onZoneChanged);
+      context.read<LocationProvider>().addListener(_onLocationChanged);
+      context.read<AuthProvider>().addListener(_onAuthChanged);
+      context.read<QuestFilterProvider>().addListener(_onFilterChanged);
+      context.read<TagsProvider>().addListener(_onTagFilterChanged);
+      unawaited(context.read<LocationProvider>().ensureLoaded());
       _questLogProvider = context.read<QuestLogProvider>();
       _questLogProvider?.addListener(_onQuestLogChanged);
+      _updateSelectedZoneFromLocation();
+      _requestQuestLogIfReady();
       context.read<ActivityFeedProvider>().refresh();
     });
   }
@@ -86,8 +133,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   @override
   void dispose() {
     _mapLoadTimeout?.cancel();
+    _questGlowTimer?.cancel();
+    _questPoiPulseTimer?.cancel();
+    _questSubmissionTimer?.cancel();
+    _trackedQuestsController.dispose();
     try {
       context.read<ZoneProvider>().removeListener(_onZoneChanged);
+    } catch (_) {}
+    try {
+      context.read<LocationProvider>().removeListener(_onLocationChanged);
+    } catch (_) {}
+    try {
+      context.read<AuthProvider>().removeListener(_onAuthChanged);
+    } catch (_) {}
+    try {
+      context.read<QuestFilterProvider>().removeListener(_onFilterChanged);
+    } catch (_) {}
+    try {
+      context.read<TagsProvider>().removeListener(_onTagFilterChanged);
     } catch (_) {}
     try {
       _questLogProvider?.removeListener(_onQuestLogChanged);
@@ -98,15 +161,181 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _onZoneChanged() {
     if (!mounted) return;
     unawaited(_loadTreasureChestsForSelectedZone());
+    _requestQuestLogIfReady();
+  }
+
+  void _onLocationChanged() {
+    if (!mounted) return;
+    _updateSelectedZoneFromLocation();
+    _requestQuestLogIfReady();
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    _requestQuestLogIfReady(force: true);
+  }
+
+  void _onFilterChanged() {
+    if (!mounted) return;
+    _maybeApplyMapFilters();
+  }
+
+  void _onTagFilterChanged() {
+    if (!mounted) return;
+    _maybeApplyMapFilters();
+  }
+
+  void _maybeApplyMapFilters() {
+    final key = _buildMapFilterKey();
+    if (key == _lastMapFilterKey) return;
+    _lastMapFilterKey = key;
+    if (_styleLoaded && _mapController != null) {
+      setState(() => _markersAdded = false);
+      unawaited(_addPoiMarkers());
+    }
+  }
+
+  void _requestQuestLogIfReady({bool force = false}) {
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) {
+      return;
+    }
+    if (!auth.isAuthenticated) return;
+    _updateSelectedZoneFromLocation();
+    final zoneId = context.read<ZoneProvider>().selectedZone?.id;
+    if (zoneId == null || zoneId.isEmpty) {
+      final loc = context.read<LocationProvider>().location;
+      if (loc == null) return;
+      if (!force &&
+          _lastQuestLogRefreshAt != null &&
+          DateTime.now().difference(_lastQuestLogRefreshAt!) <
+              const Duration(seconds: 20)) {
+        return;
+      }
+      _refreshQuestLog();
+      return;
+    }
+    if (!force && _questLogRequestedZoneId == zoneId) return;
+    _questLogRequestedZoneId = zoneId;
+    _refreshQuestLog();
   }
 
   void _onQuestLogChanged() {
     if (!mounted) return;
-    if (_styleLoaded && _mapController != null) {
-      setState(() => _markersAdded = false);
-      unawaited(_addPoiMarkers());
-      unawaited(_addQuestPolygons());
+    final questLog = context.read<QuestLogProvider>();
+    if (questLog.loading) return;
+    _applyQuestLogOverlaysIfChanged();
+  }
+
+  void _refreshQuestLog() {
+    if (_questLogRefreshInFlight) return;
+    _questLogRefreshInFlight = true;
+    _lastQuestLogRefreshAt = DateTime.now();
+    unawaited(() async {
+      try {
+        await context.read<QuestLogProvider>().refresh();
+      } finally {
+        _questLogRefreshInFlight = false;
+      }
+    }());
+  }
+
+  void _applyQuestLogOverlaysIfChanged() {
+    if (!_styleLoaded || _mapController == null) {
+      _questLogNeedsOverlayApply = true;
+      return;
     }
+    final questLog = context.read<QuestLogProvider>();
+    final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+    final polygonHash = _hashQuestPolygons(questLog.currentNodePolygons);
+    debugPrint(
+      'SinglePlayer: quest overlay check poiIds=${questPoiIds.length} polys=${questLog.currentNodePolygons.length}',
+    );
+    final poiChanged = !_setEquals(_lastQuestPoiIds, questPoiIds);
+    final polyChanged = polygonHash != _lastQuestPolygonHash;
+    if (!poiChanged && !polyChanged) return;
+    final newlyAddedPoiIds = questPoiIds.difference(_lastQuestPoiIds);
+    final removedPoiIds = _lastQuestPoiIds.difference(questPoiIds);
+    _lastQuestPoiIds = questPoiIds;
+    _lastQuestPolygonHash = polygonHash;
+    if (poiChanged && newlyAddedPoiIds.isNotEmpty) {
+      for (final poiId in newlyAddedPoiIds) {
+        unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: true));
+        final poi = _pois.firstWhere(
+          (p) => p.id == poiId,
+          orElse: () => PointOfInterest(
+            id: '',
+            name: '',
+            lat: '0',
+            lng: '0',
+          ),
+        );
+        if (poi.id.isEmpty) continue;
+        final lat = double.tryParse(poi.lat) ?? 0.0;
+        final lng = double.tryParse(poi.lng) ?? 0.0;
+        unawaited(_pulsePoi(lat, lng));
+      }
+    }
+    if (poiChanged && removedPoiIds.isNotEmpty) {
+      for (final poiId in removedPoiIds) {
+        unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: false));
+      }
+    }
+    if (polyChanged) {
+      unawaited(_addQuestPolygons());
+      for (final poly in questLog.currentNodePolygons) {
+        unawaited(_pulsePolygon(poly));
+      }
+    }
+  }
+
+  bool _setEquals<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    for (final v in a) {
+      if (!b.contains(v)) return false;
+    }
+    return true;
+  }
+
+  int _hashQuestPolygons(List<List<QuestNodePolygonPoint>> polygons) {
+    var hash = polygons.length;
+    for (final poly in polygons) {
+      hash = hash * 31 + poly.length;
+      for (final p in poly) {
+        hash = hash * 31 + (p.latitude * 100000).round();
+        hash = hash * 31 + (p.longitude * 100000).round();
+      }
+    }
+    return hash;
+  }
+
+  String _buildMapFilterKey() {
+    final filters = context.read<QuestFilterProvider>();
+    return [
+      filters.showCurrentQuestPoints,
+      filters.showQuestAvailablePoints,
+      filters.showTreasureChests,
+    ].join('|');
+  }
+
+  Set<String> _currentQuestPoiIdsForFilter(QuestLogProvider questLog) {
+    final ids = questLog.currentNodePoiIds.toSet();
+    if (_pois.isEmpty) return ids;
+    final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
+    if (turnInCharacterIds.isEmpty) return ids;
+    for (final poi in _pois) {
+      if (poi.characters.any((ch) => turnInCharacterIds.contains(ch.id))) {
+        ids.add(poi.id);
+      }
+    }
+    return ids;
+  }
+
+  Set<String> _currentQuestTurnInCharacterIds(QuestLogProvider questLog) {
+    return questLog.quests
+        .where((q) => q.readyToTurnIn && q.questGiverCharacterId != null)
+        .map((q) => q.questGiverCharacterId!)
+        .toSet();
   }
 
   Timer? _mapLoadTimeout;
@@ -133,6 +362,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _mapKey++;
       _poiSymbols = [];
       _chestSymbols = [];
+      _chestCircles = [];
+      _chestSymbolById.clear();
+      _chestCircleById.clear();
+      _chestCircleOpened.clear();
+      _chestThumbnailBytes = null;
+      _chestThumbnailAdded = false;
       _questLines = [];
     });
     _startMapLoadTimeout();
@@ -150,6 +385,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     })());
     if (_zones.isNotEmpty) unawaited(_addZoneBoundaries());
     unawaited(_addQuestPolygons());
+    if (_questLogNeedsOverlayApply) {
+      _questLogNeedsOverlayApply = false;
+      _applyQuestLogOverlaysIfChanged();
+    }
     _animateToUserLocationIfReady();
   }
 
@@ -211,6 +450,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _flyToLocation(lat, lng);
     final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(poi.id);
     _showPointOfInterestPanel(poi, hasDiscovered);
+  }
+
+  void _focusQuestTurnIn(Quest quest) {
+    final questGiverId = quest.questGiverCharacterId;
+    if (questGiverId == null || questGiverId.isEmpty) {
+      return;
+    }
+    PointOfInterest? poi;
+    for (final candidate in _pois) {
+      final hasMatch = candidate.characters.any((c) => c.id == questGiverId);
+      if (hasMatch) {
+        poi = candidate;
+        break;
+      }
+    }
+    if (poi == null) {
+      return;
+    }
+    final lat = double.tryParse(poi.lat) ?? 0.0;
+    final lng = double.tryParse(poi.lng) ?? 0.0;
+    _flyToLocation(lat, lng);
+    _pulsePoi(lat, lng);
   }
 
   void _focusQuestNode(QuestNode node) {
@@ -290,6 +551,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
   }
 
+  Future<void> _pulseQuestGlow(List<List<QuestNodePolygonPoint>> polygons) async {
+    if (_isQuestGlowPulsing) return;
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    _isQuestGlowPulsing = true;
+    final options = <LineOptions>[];
+    for (final poly in polygons) {
+      if (poly.length < 3) continue;
+      final ring = poly
+          .map((p) => LatLng(p.latitude, p.longitude))
+          .toList();
+      if (ring.length > 1 &&
+          (ring.first.latitude != ring.last.latitude ||
+              ring.first.longitude != ring.last.longitude)) {
+        ring.add(ring.first);
+      }
+      options.add(LineOptions(
+        geometry: ring,
+        lineColor: '#f5c542',
+        lineWidth: 8.0,
+        lineOpacity: 0.35,
+      ));
+    }
+    if (options.isEmpty) {
+      _isQuestGlowPulsing = false;
+      return;
+    }
+    try {
+      final lines = await c.addLines(options);
+      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        await c.removeLines(lines);
+      } catch (_) {}
+    } catch (_) {}
+    _isQuestGlowPulsing = false;
+  }
+
   Future<void> _loadAll() async {
     debugPrint('SinglePlayer: _loadAll start');
     final svc = context.read<PoiService>();
@@ -309,6 +607,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _markersAdded = false;
       });
       _updateSelectedZoneFromLocation();
+      _requestQuestLogIfReady(force: true);
       await _loadTreasureChestsForSelectedZone();
       await _addPoiMarkers();
       await _addZoneBoundaries();
@@ -332,12 +631,39 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (!mounted) return;
       setState(() {
         _treasureChests = chests;
-        _markersAdded = false;
       });
-      await _addPoiMarkers();
+      if (_styleLoaded && _mapController != null && _markersAdded) {
+        await _refreshTreasureChestSymbols();
+      }
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests error: $e');
-      if (mounted) setState(() => _treasureChests = []);
+      if (mounted) {
+        setState(() => _treasureChests = []);
+        if (_styleLoaded && _mapController != null && _markersAdded) {
+          await _refreshTreasureChestSymbols();
+        }
+      }
+    }
+  }
+
+  String? _extensionFromMime(String? mimeType, String? filename) {
+    final name = filename ?? '';
+    final dot = name.lastIndexOf('.');
+    if (dot != -1 && dot < name.length - 1) {
+      return name.substring(dot + 1).toLowerCase();
+    }
+    switch (mimeType) {
+      case 'image/png':
+        return 'png';
+      case 'image/gif':
+        return 'gif';
+      case 'image/webp':
+        return 'webp';
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'jpg';
+      default:
+        return null;
     }
   }
 
@@ -389,6 +715,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           }
           return;
         }
+        if (type == 'character') {
+          final ch = _characters.where((x) => x.id == idStr).toList();
+          if (ch.isNotEmpty) {
+            _showCharacterPanel(ch.first);
+          }
+          return;
+        }
+        if (type == 'poiBorder') {
+          final pois = _pois.where((p) => p.id == idStr).toList();
+          if (pois.isNotEmpty && mounted) {
+            _showPointOfInterestPanel(pois.first, context.read<DiscoveriesProvider>().hasDiscovered(idStr));
+          }
+          return;
+        }
         if (type != 'poi') {
           debugPrint('SinglePlayer: symbol tap skip type=$type id=$idStr');
           return;
@@ -430,12 +770,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => PointOfInterestPanel(
         pointOfInterest: poi,
         hasDiscovered: hasDiscovered,
         quest: questForPoi,
         questNode: nodeForPoi,
         onClose: () => Navigator.of(context).pop(),
+        onQuestSubmissionState: _setQuestSubmissionOverlay,
         onCharacterTap: (character) {
           Navigator.of(context).pop();
           _showCharacterPanel(character);
@@ -464,7 +809,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     debugPrint('SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})');
 
     try {
-      final questPoiIds = context.read<QuestLogProvider>().currentNodePoiIds.toSet();
+      final questLog = context.read<QuestLogProvider>();
+      final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+      final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
+      final filters = context.read<QuestFilterProvider>();
+      final categoryFilterActive =
+          filters.showCurrentQuestPoints || filters.showQuestAvailablePoints;
+      final anyFilterActive = categoryFilterActive;
+      debugPrint('SinglePlayer: _addPoiMarkers questPoiIds=${questPoiIds.length}');
+      _lastMapFilterKey = _buildMapFilterKey();
       if (_poiSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_poiSymbols);
@@ -472,6 +825,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _poiSymbols.clear();
       }
+      _poiSymbolById.clear();
+      if (_questPoiHighlightSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_questPoiHighlightSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _questPoiHighlightSymbols.clear();
+      }
+      _questPoiPulseTimer?.cancel();
+      _questPoiPulseTimer = null;
       if (_characterSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_characterSymbols);
@@ -486,23 +849,58 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _chestSymbols.clear();
       }
+      _chestSymbolById.clear();
+      if (_chestCircles.isNotEmpty) {
+        for (final circle in _chestCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _chestCircles.clear();
+      }
+      _chestCircleById.clear();
+      _chestCircleOpened.clear();
       try {
         await c.clearCircles();
       } catch (_) {}
 
       Uint8List? placeholderBytes;
+      Uint8List? questPlaceholderBytes;
+      Uint8List? availablePlaceholderBytes;
       try {
         placeholderBytes = await loadPoiThumbnail(null);
         if (placeholderBytes != null) await c.addImage('poi_placeholder', placeholderBytes);
+      } catch (_) {}
+      try {
+        questPlaceholderBytes = await loadPoiThumbnailWithBorder(null);
+        if (questPlaceholderBytes != null) {
+          await c.addImage('poi_placeholder_quest', questPlaceholderBytes);
+        }
+      } catch (_) {}
+      try {
+        availablePlaceholderBytes = await loadPoiThumbnailWithQuestMarker(null);
+        if (availablePlaceholderBytes != null) {
+          await c.addImage('poi_placeholder_available', availablePlaceholderBytes);
+        }
       } catch (_) {}
 
       Uint8List? chestBytes;
       try {
         chestBytes = await loadPoiThumbnail(_chestImageUrl);
-        if (chestBytes != null) await c.addImage('chest_thumbnail', chestBytes);
+        if (chestBytes != null) {
+          _chestThumbnailBytes = chestBytes;
+          _chestThumbnailAdded = true;
+          await c.addImage('chest_thumbnail', chestBytes);
+        }
       } catch (_) {}
 
       for (final ch in _characters) {
+        final matchesAvailable = filters.showQuestAvailablePoints && ch.hasAvailableQuest;
+        final matchesTurnIn = filters.showCurrentQuestPoints && turnInCharacterIds.contains(ch.id);
+        if (anyFilterActive && !(matchesAvailable || matchesTurnIn)) {
+          continue;
+        }
         final points = ch.locations.isNotEmpty
             ? ch.locations
                 .map((loc) => LatLng(loc.latitude, loc.longitude))
@@ -515,11 +913,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (points.isEmpty) continue;
 
         final thumbnailUrl = ch.thumbnailUrl;
+        final hasQuestAvailable = ch.hasAvailableQuest;
         if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
           try {
-            final imageBytes = await loadPoiThumbnail(thumbnailUrl);
+            final imageBytes = hasQuestAvailable
+                ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
+                : await loadPoiThumbnail(thumbnailUrl);
             if (imageBytes != null) {
-              final imageId = 'character_${ch.id}';
+              final imageId =
+                  hasQuestAvailable ? 'character_${ch.id}_quest' : 'character_${ch.id}';
               try {
                 await c.addImage(imageId, imageBytes);
               } catch (_) {}
@@ -556,8 +958,205 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           );
         }
       }
-      for (final tc in _treasureChests) {
-        if (chestBytes != null) {
+      if (filters.showTreasureChests) {
+        for (final tc in _treasureChests) {
+          if (tc.openedByUser == true) continue;
+          if (chestBytes != null) {
+            final sym = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(tc.latitude, tc.longitude),
+                iconImage: 'chest_thumbnail',
+                iconSize: 0.75,
+                iconHaloColor: '#000000',
+                iconHaloWidth: 0.75,
+                iconAnchor: 'center',
+              ),
+              {'type': 'chest', 'id': tc.id},
+            );
+            if (!mounted) return;
+            _chestSymbols.add(sym);
+            _chestSymbolById[tc.id] = sym;
+          } else {
+            final circle = await c.addCircle(
+              CircleOptions(
+                geometry: LatLng(tc.latitude, tc.longitude),
+                circleRadius: 24,
+                circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
+                circleStrokeWidth: 2,
+                circleStrokeColor: '#ffffff',
+              ),
+              {'type': 'chest', 'id': tc.id},
+            );
+            if (!mounted) return;
+            _chestCircles.add(circle);
+            _chestCircleById[tc.id] = circle;
+            _chestCircleOpened[tc.id] = tc.openedByUser == true;
+          }
+        }
+      }
+
+      final discoveries = context.read<DiscoveriesProvider>();
+      final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
+      for (final poi in _pois) {
+        final lat = double.tryParse(poi.lat) ?? 0.0;
+        final lng = double.tryParse(poi.lng) ?? 0.0;
+        final useRealImage = discoveries.hasDiscovered(poi.id);
+        final undiscovered = !useRealImage;
+        final isQuestCurrent = questPoiIds.contains(poi.id);
+        final hasQuestAvailable = poi.hasAvailableQuest;
+        final hasCharacter = poi.characters.isNotEmpty;
+        final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
+        if (!baseEligible) {
+          continue;
+        }
+        final categoryMatch = !categoryFilterActive ||
+            (filters.showCurrentQuestPoints && isQuestCurrent) ||
+            (filters.showQuestAvailablePoints && hasQuestAvailable);
+        if (!categoryMatch) {
+          continue;
+        }
+        var added = false;
+        try {
+          String? imageId;
+          Uint8List? imageBytes;
+          if (isQuestCurrent) {
+            imageBytes = await loadPoiThumbnailWithBorder(useRealImage ? poi.imageURL : null);
+            if (imageBytes != null) {
+              imageId = 'poi_${poi.id}_quest';
+            } else {
+              imageId = questPlaceholderBytes != null ? 'poi_placeholder_quest' : null;
+            }
+          } else if (hasQuestAvailable) {
+            imageBytes = await loadPoiThumbnailWithQuestMarker(useRealImage ? poi.imageURL : null);
+            if (imageBytes != null) {
+              imageId = 'poi_${poi.id}_available';
+            } else {
+              imageId = availablePlaceholderBytes != null ? 'poi_placeholder_available' : null;
+            }
+          } else if (useRealImage) {
+            imageBytes = await loadPoiThumbnail(poi.imageURL);
+            imageId = imageBytes != null ? 'poi_${poi.id}' : (placeholderBytes != null ? 'poi_placeholder' : null);
+          } else {
+            imageId = placeholderBytes != null ? 'poi_placeholder' : null;
+          }
+          if (imageId != null) {
+            if (imageBytes != null) await c.addImage(imageId, imageBytes);
+            final sym = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(lat, lng),
+                iconImage: imageId,
+                iconSize: isQuestCurrent ? 0.82 : 0.75,
+                iconHaloColor: isQuestCurrent ? '#000000' : '#000000',
+                iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
+                iconHaloBlur: 0.0,
+                iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+                iconAnchor: 'center',
+                zIndex: 2,
+              ),
+              {'type': 'poi', 'id': poi.id, 'name': poi.name},
+            );
+            if (!mounted) return;
+            _poiSymbols.add(sym);
+            _poiSymbolById[poi.id] = sym;
+            if (isQuestCurrent) {
+              _setQuestPoiHighlight(sym, true);
+            }
+            added = true;
+          }
+        } catch (_) {}
+        if (!added) {
+          c.addCircle(
+            CircleOptions(
+              geometry: LatLng(lat, lng),
+              circleRadius: 24,
+              circleColor: '#3388ff',
+              circleOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+              circleStrokeWidth: 2,
+              circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
+            ),
+            {'type': 'poi', 'id': poi.id, 'name': poi.name},
+          );
+        }
+      }
+      _ensureQuestPoiPulseTimer();
+      if (mounted && hadEmptyDiscoveries) {
+        setState(() => _addedMarkersWithEmptyDiscoveries = true);
+      }
+      debugPrint('SinglePlayer: _addPoiMarkers done');
+    } catch (e, st) {
+      debugPrint('SinglePlayer: _addPoiMarkers error: $e');
+      debugPrint('SinglePlayer: _addPoiMarkers stack: $st');
+      if (mounted) setState(() => _markersAdded = false);
+    }
+  }
+
+  Future<void> _refreshTreasureChestSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    final filters = context.read<QuestFilterProvider>();
+    if (!filters.showTreasureChests) {
+      for (final sym in _chestSymbols) {
+        try {
+          await c.removeSymbols([sym]);
+        } catch (_) {}
+      }
+      for (final circle in _chestCircles) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      _chestSymbols.clear();
+      _chestCircles.clear();
+      _chestSymbolById.clear();
+      _chestCircleById.clear();
+      _chestCircleOpened.clear();
+      return;
+    }
+
+    if (_chestThumbnailBytes == null) {
+      try {
+        _chestThumbnailBytes = await loadPoiThumbnail(_chestImageUrl);
+      } catch (_) {}
+    }
+    if (_chestThumbnailBytes != null && !_chestThumbnailAdded) {
+      try {
+        await c.addImage('chest_thumbnail', _chestThumbnailBytes!);
+        _chestThumbnailAdded = true;
+      } catch (_) {}
+    }
+
+    final useImage = _chestThumbnailBytes != null;
+    final desiredIds = _treasureChests
+        .where((t) => t.openedByUser != true)
+        .map((t) => t.id)
+        .toSet();
+
+    for (final entry in _chestSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key) || !useImage) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _chestSymbols.remove(entry.value);
+        _chestSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _chestCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key) || useImage) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _chestCircles.remove(entry.value);
+        _chestCircleById.remove(entry.key);
+        _chestCircleOpened.remove(entry.key);
+      }
+    }
+
+    for (final tc in _treasureChests) {
+      if (tc.openedByUser == true) continue;
+      if (useImage) {
+        final existing = _chestSymbolById[tc.id];
+        if (existing == null) {
           final sym = await c.addSymbol(
             SymbolOptions(
               geometry: LatLng(tc.latitude, tc.longitude),
@@ -571,76 +1170,45 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           );
           if (!mounted) return;
           _chestSymbols.add(sym);
+          _chestSymbolById[tc.id] = sym;
         } else {
-          c.addCircle(
+          try {
+            await c.updateSymbol(
+              existing,
+              SymbolOptions(
+                geometry: LatLng(tc.latitude, tc.longitude),
+              ),
+            );
+          } catch (_) {}
+        }
+      } else {
+        final existing = _chestCircleById[tc.id];
+        final opened = tc.openedByUser == true;
+        final needsUpdate = existing == null || _chestCircleOpened[tc.id] != opened;
+        if (needsUpdate) {
+          if (existing != null) {
+            try {
+              await c.removeCircle(existing);
+            } catch (_) {}
+            _chestCircles.remove(existing);
+            _chestCircleById.remove(tc.id);
+          }
+          final circle = await c.addCircle(
             CircleOptions(
               geometry: LatLng(tc.latitude, tc.longitude),
               circleRadius: 24,
-              circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
+              circleColor: opened ? '#888888' : '#ffcc00',
               circleStrokeWidth: 2,
               circleStrokeColor: '#ffffff',
             ),
             {'type': 'chest', 'id': tc.id},
           );
+          if (!mounted) return;
+          _chestCircles.add(circle);
+          _chestCircleById[tc.id] = circle;
+          _chestCircleOpened[tc.id] = opened;
         }
       }
-
-      final discoveries = context.read<DiscoveriesProvider>();
-      final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
-      for (final poi in _pois) {
-        final lat = double.tryParse(poi.lat) ?? 0.0;
-        final lng = double.tryParse(poi.lng) ?? 0.0;
-        final useRealImage = discoveries.hasDiscovered(poi.id);
-        final isQuestCurrent = questPoiIds.contains(poi.id);
-        var added = false;
-        try {
-          String? imageId;
-          Uint8List? imageBytes;
-          if (useRealImage) {
-            imageBytes = await loadPoiThumbnail(poi.imageURL);
-            imageId = imageBytes != null ? 'poi_${poi.id}' : (placeholderBytes != null ? 'poi_placeholder' : null);
-          } else {
-            imageId = placeholderBytes != null ? 'poi_placeholder' : null;
-          }
-          if (imageId != null) {
-            if (imageBytes != null) await c.addImage(imageId, imageBytes);
-            final sym = await c.addSymbol(
-              SymbolOptions(
-                geometry: LatLng(lat, lng),
-                iconImage: imageId,
-                iconSize: 0.75,
-                iconHaloColor: isQuestCurrent ? '#f5c542' : '#000000',
-                iconHaloWidth: isQuestCurrent ? 2.0 : 0.75,
-                iconAnchor: 'center',
-              ),
-              {'type': 'poi', 'id': poi.id, 'name': poi.name},
-            );
-            if (!mounted) return;
-            _poiSymbols.add(sym);
-            added = true;
-          }
-        } catch (_) {}
-        if (!added) {
-          c.addCircle(
-            CircleOptions(
-              geometry: LatLng(lat, lng),
-              circleRadius: 24,
-              circleColor: '#3388ff',
-              circleStrokeWidth: 2,
-              circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
-            ),
-            {'type': 'poi', 'id': poi.id, 'name': poi.name},
-          );
-        }
-      }
-      if (mounted && hadEmptyDiscoveries) {
-        setState(() => _addedMarkersWithEmptyDiscoveries = true);
-      }
-      debugPrint('SinglePlayer: _addPoiMarkers done');
-    } catch (e, st) {
-      debugPrint('SinglePlayer: _addPoiMarkers error: $e');
-      debugPrint('SinglePlayer: _addPoiMarkers stack: $st');
-      if (mounted) setState(() => _markersAdded = false);
     }
   }
 
@@ -699,6 +1267,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (c == null || !_styleLoaded) {
       return;
     }
+    _questGlowTimer?.cancel();
+    _questGlowTimer = null;
     if (_questLines.isNotEmpty) {
       try {
         await c.removeLines(_questLines);
@@ -706,12 +1276,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (!mounted) return;
       _questLines.clear();
     }
+    if (_questFills.isNotEmpty) {
+      try {
+        await c.removeFills(_questFills);
+      } catch (_) {}
+      if (!mounted) return;
+      _questFills.clear();
+    }
 
     final questLog = context.read<QuestLogProvider>();
     final polygons = questLog.currentNodePolygons;
     if (polygons.isEmpty) return;
 
     final options = <LineOptions>[];
+    final fillOptions = <FillOptions>[];
     for (final poly in polygons) {
       if (poly.length < 3) continue;
       final ring = poly
@@ -722,23 +1300,197 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               ring.first.longitude != ring.last.longitude)) {
         ring.add(ring.first);
       }
+      fillOptions.add(FillOptions(
+        geometry: [ring],
+        fillColor: '#f5c542',
+        fillOpacity: 0.5,
+      ));
       options.add(LineOptions(
         geometry: ring,
         lineColor: '#f5c542',
-        lineWidth: 4.0,
+        lineWidth: 3.0,
         lineOpacity: 1.0,
       ));
     }
 
-    if (options.isEmpty) return;
+    if (options.isEmpty || fillOptions.isEmpty) return;
     try {
+      final fills = await c.addFills(fillOptions);
+      if (!mounted) return;
+      _questFills.addAll(fills);
       final lines = await c.addLines(options);
       if (!mounted) return;
       _questLines.addAll(lines);
+      _questGlowTimer = Timer.periodic(const Duration(milliseconds: 1400), (_) {
+        unawaited(_pulseQuestGlow(polygons));
+      });
     } catch (e, st) {
       debugPrint('SinglePlayer: _addQuestPolygons error: $e');
       debugPrint('SinglePlayer: _addQuestPolygons stack: $st');
     }
+  }
+
+  void _setQuestPoiHighlight(Symbol sym, bool enabled) {
+    if (enabled) {
+      if (!_questPoiHighlightSymbols.contains(sym)) {
+        _questPoiHighlightSymbols.add(sym);
+      }
+    } else {
+      _questPoiHighlightSymbols.remove(sym);
+    }
+    _ensureQuestPoiPulseTimer();
+  }
+
+  void _ensureQuestPoiPulseTimer() {
+    if (_questPoiHighlightSymbols.isEmpty) {
+      _questPoiPulseTimer?.cancel();
+      _questPoiPulseTimer = null;
+      return;
+    }
+    _questPoiPulseTimer ??=
+        Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      unawaited(_pulseQuestPoiBorders());
+    });
+  }
+
+  Future<void> _updatePoiSymbolForQuestState(
+    String poiId, {
+    required bool isQuestCurrent,
+  }) async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    PointOfInterest? poi;
+    for (final candidate in _pois) {
+      if (candidate.id == poiId) {
+        poi = candidate;
+        break;
+      }
+    }
+    if (poi == null) return;
+
+    final filters = context.read<QuestFilterProvider>();
+    final categoryFilterActive =
+        filters.showCurrentQuestPoints || filters.showQuestAvailablePoints;
+    final discoveries = context.read<DiscoveriesProvider>();
+    final useRealImage = discoveries.hasDiscovered(poi.id);
+    final undiscovered = !useRealImage;
+    final hasQuestAvailable = poi.hasAvailableQuest;
+    final hasCharacter = poi.characters.isNotEmpty;
+    final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
+    final categoryMatch = !categoryFilterActive ||
+        (filters.showCurrentQuestPoints && isQuestCurrent) ||
+        (filters.showQuestAvailablePoints && hasQuestAvailable);
+    if (!(baseEligible && categoryMatch)) {
+      final existing = _poiSymbolById.remove(poiId);
+      if (existing != null) {
+        _poiSymbols.remove(existing);
+        _setQuestPoiHighlight(existing, false);
+        try {
+          await c.removeSymbols([existing]);
+        } catch (_) {}
+      }
+      return;
+    }
+
+    final sym = _poiSymbolById[poiId];
+
+    String? imageId;
+    Uint8List? imageBytes;
+    if (isQuestCurrent) {
+      imageBytes = await loadPoiThumbnailWithBorder(useRealImage ? poi.imageURL : null);
+      imageId = imageBytes != null ? 'poi_${poi.id}_quest' : 'poi_placeholder_quest';
+    } else if (hasQuestAvailable) {
+      imageBytes = await loadPoiThumbnailWithQuestMarker(useRealImage ? poi.imageURL : null);
+      imageId =
+          imageBytes != null ? 'poi_${poi.id}_available' : 'poi_placeholder_available';
+    } else if (useRealImage) {
+      imageBytes = await loadPoiThumbnail(poi.imageURL);
+      imageId = imageBytes != null ? 'poi_${poi.id}' : 'poi_placeholder';
+    } else {
+      imageId = 'poi_placeholder';
+    }
+
+    if (imageId == null) return;
+    if (imageBytes == null) {
+      try {
+        if (imageId == 'poi_placeholder') {
+          imageBytes = await loadPoiThumbnail(null);
+        } else if (imageId == 'poi_placeholder_quest') {
+          imageBytes = await loadPoiThumbnailWithBorder(null);
+        } else if (imageId == 'poi_placeholder_available') {
+          imageBytes = await loadPoiThumbnailWithQuestMarker(null);
+        }
+      } catch (_) {}
+    }
+    if (imageBytes != null) {
+      try {
+        await c.addImage(imageId, imageBytes);
+      } catch (_) {}
+    }
+
+    if (sym == null) {
+      final lat = double.tryParse(poi.lat) ?? 0.0;
+      final lng = double.tryParse(poi.lng) ?? 0.0;
+      try {
+        final newSym = await c.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(lat, lng),
+            iconImage: imageId,
+            iconSize: isQuestCurrent ? 0.82 : 0.75,
+            iconHaloColor: '#000000',
+            iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
+            iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+            iconAnchor: 'center',
+            zIndex: 2,
+          ),
+          {'type': 'poi', 'id': poi.id, 'name': poi.name},
+        );
+        if (!mounted) return;
+        _poiSymbols.add(newSym);
+        _poiSymbolById[poi.id] = newSym;
+        _setQuestPoiHighlight(newSym, isQuestCurrent);
+      } catch (_) {}
+      return;
+    }
+
+    try {
+      await c.updateSymbol(
+        sym,
+        SymbolOptions(
+          iconImage: imageId,
+          iconSize: isQuestCurrent ? 0.82 : 0.75,
+          iconHaloColor: '#000000',
+          iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
+          iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+          iconAnchor: 'center',
+          zIndex: 2,
+        ),
+      );
+      _setQuestPoiHighlight(sym, isQuestCurrent);
+    } catch (_) {}
+  }
+
+  Future<void> _pulseQuestPoiBorders() async {
+    if (_isQuestPoiPulseActive) return;
+    if (_questPoiHighlightSymbols.isEmpty) return;
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    _isQuestPoiPulseActive = true;
+    _questPoiPulseUp = !_questPoiPulseUp;
+    final targetSize = _questPoiPulseUp ? 0.86 : 0.78;
+    final targetOpacity = _questPoiPulseUp ? 1.0 : 0.85;
+    try {
+      for (final border in _questPoiHighlightSymbols) {
+        await c.updateSymbol(
+          border,
+          SymbolOptions(
+            iconSize: targetSize,
+            iconOpacity: targetOpacity,
+          ),
+        );
+      }
+    } catch (_) {}
+    _isQuestPoiPulseActive = false;
   }
 
   bool _isInsidePolygon(double lat, double lng, List<QuestNodePolygonPoint> polygon) {
@@ -758,10 +1510,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<void> _showQuestNodeSubmissionModal(Quest quest, QuestNode node) async {
     final textController = TextEditingController();
-    final imageController = TextEditingController();
+    CapturedImage? capturedImage;
+    bool uploadingImage = false;
     String? selectedChallengeId = node.challenges.isNotEmpty
         ? node.challenges.first.id
         : null;
+    final questLogProvider = context.read<QuestLogProvider>();
+    final mediaService = context.read<MediaService>();
+    final userId = context.read<AuthProvider>().user?.id ?? 'anonymous';
 
     await showModalBottomSheet(
       context: context,
@@ -780,6 +1536,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           ),
           child: StatefulBuilder(
             builder: (context, setModalState) {
+              final canUseCamera = kIsWeb ||
+                  defaultTargetPlatform == TargetPlatform.iOS ||
+                  defaultTargetPlatform == TargetPlatform.android;
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -825,48 +1584,138 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     maxLines: 3,
                   ),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: imageController,
-                    decoration: const InputDecoration(
-                      labelText: 'Image URL (optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () async {
-                      final resp = await context
-                          .read<QuestLogProvider>()
-                          .submitQuestNodeChallenge(
-                            node.id,
-                            questNodeChallengeId: selectedChallengeId,
-                            textSubmission: textController.text.trim(),
-                            imageSubmissionUrl:
-                                imageController.text.trim().isEmpty
-                                    ? null
-                                    : imageController.text.trim(),
-                          );
-                      if (!mounted) return;
-                      final success = resp['successful'] == true;
-                      final reason = resp['reason']?.toString() ?? '';
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            success
-                                ? (reason.isNotEmpty
-                                    ? reason
-                                    : 'Challenge completed!')
-                                : (reason.isNotEmpty
-                                    ? reason
-                                    : 'Submission failed'),
+                  if (canUseCamera)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: uploadingImage
+                                ? null
+                                : () async {
+                                    final result = await captureImageFromCamera();
+                                    if (!mounted) return;
+                                    if (result == null || result.bytes.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('No photo captured.'),
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    setModalState(() => capturedImage = result);
+                                  },
+                            icon: const Icon(Icons.photo_camera),
+                            label: const Text('Take photo'),
                           ),
                         ),
-                      );
-                      if (success) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    child: const Text('Submit'),
+                        if (capturedImage != null) ...[
+                          const SizedBox(width: 12),
+                          TextButton(
+                            onPressed: () => setModalState(() => capturedImage = null),
+                            child: const Text('Clear'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  if (capturedImage != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.memory(
+                        capturedImage!.bytes,
+                        height: 160,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Captured photo will be uploaded on submit.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: uploadingImage
+                        ? null
+                        : () async {
+                            final startedAt = DateTime.now();
+                            setModalState(() => uploadingImage = true);
+                            Navigator.of(context).pop();
+                            _setQuestSubmissionOverlay(
+                              QuestSubmissionOverlayPhase.loading,
+                            );
+                            String? imageSubmissionUrl;
+                            if (capturedImage != null) {
+                              final ext = _extensionFromMime(
+                                    capturedImage!.mimeType,
+                                    capturedImage!.name,
+                                  ) ??
+                                  'jpg';
+                              final key =
+                                  'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              final url = await mediaService.getPresignedUploadUrl(
+                                ApiConstants.crewPointsOfInterestBucket,
+                                key,
+                              );
+                              if (url == null) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                _setQuestSubmissionOverlay(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to prepare image upload.',
+                                );
+                                return;
+                              }
+                              final ok = await mediaService.uploadToPresigned(
+                                url,
+                                Uint8List.fromList(capturedImage!.bytes),
+                                capturedImage!.mimeType ?? 'image/jpeg',
+                              );
+                              if (!ok) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                _setQuestSubmissionOverlay(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to upload photo.',
+                                );
+                                return;
+                              }
+                              imageSubmissionUrl = url.split('?').first;
+                            }
+                            final resp = await questLogProvider.submitQuestNodeChallenge(
+                              node.id,
+                              questNodeChallengeId: selectedChallengeId,
+                              textSubmission: textController.text.trim(),
+                              imageSubmissionUrl: imageSubmissionUrl,
+                            );
+                            final elapsed = DateTime.now().difference(startedAt);
+                            if (elapsed < const Duration(milliseconds: 700)) {
+                              await Future<void>.delayed(
+                                const Duration(milliseconds: 700),
+                              );
+                            }
+                            final success = resp['successful'] == true;
+                            final reason = resp['reason']?.toString() ?? '';
+                            _setQuestSubmissionOverlay(
+                              success
+                                  ? QuestSubmissionOverlayPhase.success
+                                  : QuestSubmissionOverlayPhase.failure,
+                              message: success
+                                  ? (reason.isNotEmpty
+                                      ? reason
+                                      : 'Challenge completed!')
+                                  : (reason.isNotEmpty ? reason : 'Submission failed'),
+                            );
+                          },
+                    child: Text('Quest: ${quest.name}'),
                   ),
                 ],
               );
@@ -886,6 +1735,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (zone != null && zoneProvider.selectedZone?.id != zone.id) {
       zoneProvider.setSelectedZone(zone);
     }
+  }
+
+  void _setQuestSubmissionOverlay(
+    QuestSubmissionOverlayPhase phase, {
+    String? message,
+  }) {
+    _questSubmissionTimer?.cancel();
+    setState(() {
+      _questSubmissionPhase = phase;
+      _questSubmissionMessage = message;
+    });
+    if (phase == QuestSubmissionOverlayPhase.success ||
+        phase == QuestSubmissionOverlayPhase.failure) {
+      _questSubmissionTimer = Timer(const Duration(seconds: 2), () {
+        if (!mounted) return;
+        _dismissQuestSubmissionOverlay();
+      });
+    }
+  }
+
+  void _dismissQuestSubmissionOverlay() {
+    _questSubmissionTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
+      _questSubmissionMessage = null;
+    });
   }
 
   @override
@@ -920,14 +1796,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _animateToUserLocationIfReady();
-      });
-    }
-
-    // Update selected zone when location changes
-    if (loc != null && _zones.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _updateSelectedZoneFromLocation();
       });
     }
 
@@ -968,7 +1836,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           MapLibreMap(
             key: ValueKey(_mapKey),
             initialCameraPosition: initialPosition,
-            styleString: MapLibreStyles.openfreemapLiberty,
+            styleString: _stamenWatercolorStyle,
+            minMaxZoomPreference: const MinMaxZoomPreference(null, 16),
             onMapCreated: (c) {
               debugPrint('SinglePlayer: map created');
               _mapController = c;
@@ -1035,13 +1904,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               ),
             ),
           if (_styleLoaded && !_mapLoadFailed) ...[
-            // Top-left: ship icon opens notifications
+            // Top-left: notifications
             Positioned(
               top: 16,
               left: 16,
               child: Consumer<ActivityFeedProvider>(
                 builder: (context, feed, _) {
                   final hasUnseen = feed.unseenActivities.isNotEmpty;
+                  final theme = Theme.of(context);
+                  final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+                  final borderColor = theme.colorScheme.outlineVariant;
                   return GestureDetector(
                     onTap: () => _showActivityFeed(context),
                     child: Stack(
@@ -1051,18 +1923,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: surfaceColor,
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black87, width: 2),
+                            border: Border.all(color: borderColor, width: 2),
                             boxShadow: const [
                               BoxShadow(
-                                color: Colors.black26,
+                                color: Color(0x332D2416),
                                 blurRadius: 6,
                                 offset: Offset(0, 2),
                               ),
                             ],
                           ),
-                          child: const Icon(Icons.directions_boat_filled, size: 22),
+                          child: Icon(
+                            Icons.campaign,
+                            size: 22,
+                            color: theme.colorScheme.onSurface,
+                          ),
                         ),
                         if (hasUnseen)
                           Positioned(
@@ -1072,9 +1948,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               width: 10,
                               height: 10,
                               decoration: BoxDecoration(
-                                color: Colors.red.shade600,
+                                color: const Color(0xFFB87333),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1),
+                                border: Border.all(color: surfaceColor, width: 1),
                               ),
                             ),
                           ),
@@ -1088,9 +1964,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             Positioned(
               top: 16,
               right: 16,
-              child: _OverlayButton(
-                icon: Icons.label,
-                onTap: () => _showTagFilter(context),
+              child: Consumer2<QuestFilterProvider, TagsProvider>(
+                builder: (context, filters, tags, _) {
+                  final hasActiveFilters = filters.showCurrentQuestPoints ||
+                      filters.showQuestAvailablePoints ||
+                      !filters.showTreasureChests ||
+                      (filters.enableTagFilter && tags.selectedTagIds.isNotEmpty);
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      _OverlayButton(
+                        icon: Icons.tune,
+                        onTap: () => _showTagFilter(context),
+                      ),
+                      if (hasActiveFilters)
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5C542),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
             // Zone selector: centered at top, aligned with top controls
@@ -1100,6 +2010,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               top: 142,
               right: 16,
               child: TrackedQuestsOverlay(
+                controller: _trackedQuestsController,
                 onFocusPoI: _focusQuestPoI,
                 onFocusNode: _focusQuestNode,
               ),
@@ -1133,10 +2044,99 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     polygonQuest!,
                     polygonNode!,
                   ),
-                  child: const Text('Submit Quest Challenge'),
+                  child: Text('Quest: ${polygonQuest!.name}'),
                 ),
               ),
           ],
+          if (_questSubmissionPhase != QuestSubmissionOverlayPhase.hidden)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _questSubmissionPhase == QuestSubmissionOverlayPhase.loading
+                    ? null
+                    : _dismissQuestSubmissionOverlay,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: 1,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.45),
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface.withOpacity(0.98),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFF5C542),
+                            width: 2,
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 14,
+                              offset: Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _questSubmissionPhase == QuestSubmissionOverlayPhase.success
+                                  ? Icons.verified
+                                  : _questSubmissionPhase == QuestSubmissionOverlayPhase.failure
+                                      ? Icons.error
+                                      : Icons.casino,
+                              size: 36,
+                              color: _questSubmissionPhase == QuestSubmissionOverlayPhase.failure
+                                  ? Theme.of(context).colorScheme.error
+                                  : const Color(0xFFF5C542),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _questSubmissionPhase == QuestSubmissionOverlayPhase.loading
+                                  ? 'The Dungeonmaster is weighing your offering…'
+                                  : _questSubmissionMessage ??
+                                      (_questSubmissionPhase ==
+                                              QuestSubmissionOverlayPhase.success
+                                          ? 'Challenge completed!'
+                                          : 'Submission failed'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            if (_questSubmissionPhase ==
+                                QuestSubmissionOverlayPhase.loading)
+                              Text(
+                                'Dice roll behind the screen. The verdict is near.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            if (_questSubmissionPhase ==
+                                QuestSubmissionOverlayPhase.loading)
+                              const SizedBox(height: 16),
+                            if (_questSubmissionPhase ==
+                                QuestSubmissionOverlayPhase.loading)
+                              const CircularProgressIndicator(),
+                            if (_questSubmissionPhase !=
+                                QuestSubmissionOverlayPhase.loading)
+                              const SizedBox(height: 12),
+                            if (_questSubmissionPhase !=
+                                QuestSubmissionOverlayPhase.loading)
+                              Text(
+                                'Tap anywhere to dismiss.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           const CelebrationModalManager(),
           const NewItemModal(),
           const UsedItemModal(),
@@ -1147,13 +2147,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  void _showCharacterPanel(Character ch) {
-    showModalBottomSheet(
+  Future<void> _showCharacterPanel(Character ch) async {
+    var openTrackedQuests = false;
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => CharacterPanel(
         character: ch,
         onClose: () => Navigator.of(context).pop(),
+        onQuestAccepted: () => openTrackedQuests = true,
         onStartDialogue: (dialogContext, character, action) {
           debugPrint('SinglePlayer: onStartDialogue character=${character.id} action=${action.id}');
           _showDialogueModal(dialogContext, character, action);
@@ -1163,6 +2170,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         },
       ),
     );
+    if (!mounted || !openTrackedQuests) return;
+    _trackedQuestsController.open();
   }
 
   Future<void> _showShopModal(
@@ -1226,6 +2235,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => TreasureChestPanel(
         treasureChest: tc,
         onClose: () {
@@ -1240,42 +2253,46 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     context.read<ActivityFeedProvider>().refresh();
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,
         minChildSize: 0.3,
         maxChildSize: 0.95,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Activity Feed',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: ActivityFeedPanel(),
+        builder: (_, scrollController) => PaperSheet(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Activity Feed',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  child: const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: ActivityFeedPanel(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1286,86 +2303,91 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,
         minChildSize: 0.3,
         maxChildSize: 0.95,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Inventory',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: InventoryPanel(
-                  onClose: () => Navigator.of(context).pop(),
+        builder: (_, scrollController) => PaperSheet(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Inventory',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: InventoryPanel(
+                    onClose: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
   void _showQuestLog(BuildContext context) {
-    context.read<QuestLogProvider>().refresh();
+    _refreshQuestLog();
     context.read<TagsProvider>().refresh();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,
         minChildSize: 0.3,
         maxChildSize: 0.95,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        builder: (_, scrollController) => PaperSheet(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Quest Log',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Quest Log',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
+              Expanded(
+                child: QuestLogPanel(
+                  onClose: () => Navigator.of(context).pop(),
+                  onFocusPoI: _focusQuestPoI,
+                  onFocusTurnInQuest: _focusQuestTurnIn,
+                ),
               ),
-            ),
-            Expanded(
-              child: QuestLogPanel(
-                onClose: () => Navigator.of(context).pop(),
-                onFocusPoI: _focusQuestPoI,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1375,42 +2397,46 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     context.read<LogProvider>().refresh();
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (context) => DraggableScrollableSheet(
         initialChildSize: 0.9,
         minChildSize: 0.3,
         maxChildSize: 0.95,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Log',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: LogPanel(),
+        builder: (_, scrollController) => PaperSheet(
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Log',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  child: const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: LogPanel(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1420,42 +2446,66 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     context.read<TagsProvider>().refresh();
     showModalBottomSheet(
       context: context,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.2,
-        maxChildSize: 0.7,
-        builder: (_, scrollController) => Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Tag Filter',
-                    style: Theme.of(context).textTheme.titleLarge,
+      isScrollControlled: true,
+      useSafeArea: false,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        top: false,
+        child: DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) => PaperSheet(
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Filters',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                child: const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: TagFilterChips(),
                 ),
-              ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: QuestFilterPanel(),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1471,15 +2521,25 @@ class _MapButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+    final borderColor = theme.colorScheme.outlineVariant;
+    final textStyle = GoogleFonts.cinzel(
+      fontWeight: FontWeight.w600,
+      color: theme.colorScheme.onSurface,
+    );
     return Material(
-      color: Colors.white.withValues(alpha: 0.9),
-      borderRadius: BorderRadius.circular(8),
+      color: surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: borderColor),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          child: Text(label, style: textStyle),
         ),
       ),
     );
@@ -1494,15 +2554,21 @@ class _OverlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
+    final borderColor = theme.colorScheme.outlineVariant;
     return Material(
-      color: Colors.white.withValues(alpha: 0.9),
-      borderRadius: BorderRadius.circular(8),
+      color: surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: borderColor),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(12),
-          child: Icon(icon, size: 24),
+          child: Icon(icon, size: 24, color: theme.colorScheme.onSurface),
         ),
       ),
     );

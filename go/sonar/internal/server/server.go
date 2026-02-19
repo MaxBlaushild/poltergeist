@@ -163,6 +163,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
 	r.GET("/sonar/teams/:teamID/inventory", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTeamsInventory))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
+	r.POST("/sonar/inventory/:ownedInventoryItemID/use-outfit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useOutfitItem))
+	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockPointOfInterestForTeam))
@@ -1107,6 +1109,92 @@ func extractActionQuestID(metadata map[string]interface{}) string {
 	return ""
 }
 
+func (s *server) questAvailabilityByCharacter(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
+	actions, err := s.dbClient.CharacterAction().FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	questsByCharacter := map[uuid.UUID][]uuid.UUID{}
+	questIDsSet := map[uuid.UUID]struct{}{}
+	for _, action := range actions {
+		if action == nil || action.ActionType != models.ActionTypeGiveQuest {
+			continue
+		}
+		questIDStr := extractActionQuestID(action.Metadata)
+		if questIDStr == "" {
+			continue
+		}
+		questID, err := uuid.Parse(questIDStr)
+		if err != nil || questID == uuid.Nil {
+			continue
+		}
+		questsByCharacter[action.CharacterID] = append(
+			questsByCharacter[action.CharacterID],
+			questID,
+		)
+		questIDsSet[questID] = struct{}{}
+	}
+
+	if len(questIDsSet) == 0 {
+		return map[uuid.UUID]bool{}, nil
+	}
+
+	acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	acceptedByQuest := map[uuid.UUID]models.QuestAcceptanceV2{}
+	for _, acc := range acceptances {
+		acceptedByQuest[acc.QuestID] = acc
+	}
+
+	questIDs := make([]uuid.UUID, 0, len(questIDsSet))
+	for questID := range questIDsSet {
+		questIDs = append(questIDs, questID)
+	}
+
+	quests, err := s.dbClient.Quest().FindByIDs(ctx, questIDs)
+	if err != nil {
+		return nil, err
+	}
+	questByID := map[uuid.UUID]*models.Quest{}
+	for i := range quests {
+		questByID[quests[i].ID] = &quests[i]
+	}
+
+	availableQuestIDs := map[uuid.UUID]bool{}
+	for _, questID := range questIDs {
+		if acc, ok := acceptedByQuest[questID]; ok {
+			if acc.TurnedInAt == nil {
+				continue
+			}
+			continue
+		}
+		quest := questByID[questID]
+		if quest == nil {
+			continue
+		}
+		meets, _, _, err := s.userMeetsQuestReputationForQuest(ctx, userID, quest)
+		if err != nil || !meets {
+			continue
+		}
+		availableQuestIDs[questID] = true
+	}
+
+	hasAvailable := map[uuid.UUID]bool{}
+	for characterID, questIDs := range questsByCharacter {
+		for _, questID := range questIDs {
+			if availableQuestIDs[questID] {
+				hasAvailable[characterID] = true
+				break
+			}
+		}
+	}
+
+	return hasAvailable, nil
+}
+
 func (s *server) currentQuestNode(ctx context.Context, quest *models.Quest, acceptanceID uuid.UUID) (*models.QuestNode, error) {
 	if quest == nil {
 		return nil, nil
@@ -1456,6 +1544,7 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questId"})
 		return
 	}
+	log.Printf("turnInQuest: userId=%s questId=%s", user.ID, questID.String())
 
 	acceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
 	if err != nil {
@@ -1463,10 +1552,12 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	if acceptance == nil {
+		log.Printf("turnInQuest: no acceptance found userId=%s questId=%s", user.ID, questID.String())
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not accepted"})
 		return
 	}
 	if acceptance.TurnedInAt != nil {
+		log.Printf("turnInQuest: already turned in userId=%s questId=%s", user.ID, questID.String())
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest already turned in"})
 		return
 	}
@@ -1477,16 +1568,20 @@ func (s *server) turnInQuest(ctx *gin.Context) {
 		return
 	}
 	if !objectivesComplete {
+		log.Printf("turnInQuest: objectives incomplete userId=%s questId=%s", user.ID, questID.String())
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest objectives not complete"})
 		return
 	}
 
 	// Award gold and items (teamID nil for single-player / user inventory)
+	log.Printf("turnInQuest: awarding rewards userId=%s questId=%s", user.ID, questID.String())
 	goldAwarded, itemsAwarded, err := s.gameEngineClient.AwardQuestTurnInRewards(ctx, user.ID, questID, nil)
 	if err != nil {
+		log.Printf("turnInQuest: reward error userId=%s questId=%s err=%v", user.ID, questID.String(), err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf("turnInQuest: rewards awarded userId=%s questId=%s gold=%d items=%d", user.ID, questID.String(), goldAwarded, len(itemsAwarded))
 
 	if err := s.dbClient.QuestAcceptanceV2().MarkTurnedIn(ctx, acceptance.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2962,10 +3057,39 @@ func (s *server) getQuestLog(ctx *gin.Context) {
 	}
 
 	stringZoneID := ctx.Query("zoneId")
-	zoneID, err := uuid.Parse(stringZoneID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
-		return
+	zoneID := uuid.UUID{}
+	if stringZoneID != "" {
+		parsed, err := uuid.Parse(stringZoneID)
+		if err != nil {
+			log.Printf("getQuestLog: invalid zoneId '%s', will try location-based fallback", stringZoneID)
+		} else {
+			zoneID = parsed
+		}
+	}
+	if zoneID == uuid.Nil {
+		userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "zone ID is required when user location is unavailable"})
+			return
+		}
+		zones, err := s.dbClient.Zone().FindAll(ctx)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		for _, zone := range zones {
+			if zone == nil {
+				continue
+			}
+			if zone.IsPointInBoundary(userLat, userLng) {
+				zoneID = zone.ID
+				break
+			}
+		}
+		if zoneID == uuid.Nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "no zone found for user location"})
+			return
+		}
 	}
 	var tags []string
 	if tagsQuery := ctx.Query("tags"); tagsQuery != "" {
@@ -3866,13 +3990,6 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.quartermaster.UseItem(ctx, ownedInventoryItemID, &request); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	ownedInventoryItem, err := s.dbClient.InventoryItem().FindByID(ctx, ownedInventoryItemID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -3881,15 +3998,29 @@ func (s *server) useItem(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.chatClient.AddUseItemMessage(ctx, *ownedInventoryItem, request); err != nil {
+	inventoryItem, err := s.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	inventoryItem, err := s.quartermaster.FindItemForItemID(ownedInventoryItem.InventoryItemID)
-	if err != nil {
+	if isOutfitItemName(inventoryItem.Name) {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "outfit items require a selfie. Use the outfit endpoint.",
+		})
+		return
+	}
+
+	if err := s.quartermaster.UseItem(ctx, ownedInventoryItemID, &request); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err := s.chatClient.AddUseItemMessage(ctx, *ownedInventoryItem, request); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
@@ -3925,6 +4056,184 @@ func (s *server) useItem(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "item used successfully",
 	})
+}
+
+func (s *server) useOutfitItem(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	stringOwnedInventoryItemID := ctx.Param("ownedInventoryItemID")
+	if stringOwnedInventoryItemID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "owned inventory item ID is required"})
+		return
+	}
+
+	ownedInventoryItemID, err := uuid.Parse(stringOwnedInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid owned inventory item ID"})
+		return
+	}
+
+	var requestBody struct {
+		SelfieUrl string `json:"selfieUrl" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(requestBody.SelfieUrl) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "selfieUrl is required"})
+		return
+	}
+
+	ownedInventoryItem, err := s.dbClient.InventoryItem().FindByID(ctx, ownedInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if ownedInventoryItem == nil || ownedInventoryItem.UserID == nil || *ownedInventoryItem.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "item does not belong to user"})
+		return
+	}
+	if ownedInventoryItem.Quantity <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item is no longer available"})
+		return
+	}
+
+	inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedInventoryItem.InventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if inventoryItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+	if !isOutfitItemName(inventoryItem.Name) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item is not an outfit"})
+		return
+	}
+
+	var existing *models.OutfitProfileGeneration
+	existing, err = s.dbClient.OutfitProfileGeneration().FindByOwnedInventoryItemID(ctx, ownedInventoryItemID)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var generation *models.OutfitProfileGeneration
+	if existing != nil && (existing.Status == models.OutfitGenerationStatusQueued || existing.Status == models.OutfitGenerationStatusInProgress) {
+		ctx.JSON(http.StatusOK, existing)
+		return
+	}
+
+	if existing != nil && existing.Status == models.OutfitGenerationStatusFailed {
+		clearErr := ""
+		update := &models.OutfitProfileGeneration{
+			SelfieUrl:         requestBody.SelfieUrl,
+			Status:            models.OutfitGenerationStatusQueued,
+			ErrorMessage:      &clearErr,
+			ProfilePictureUrl: nil,
+		}
+		if err := s.dbClient.OutfitProfileGeneration().Update(ctx, existing.ID, update); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		updated, err := s.dbClient.OutfitProfileGeneration().FindByID(ctx, existing.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		generation = updated
+	} else {
+		generation = &models.OutfitProfileGeneration{
+			ID:                   uuid.New(),
+			UserID:               user.ID,
+			OwnedInventoryItemID: ownedInventoryItemID,
+			InventoryItemID:      ownedInventoryItem.InventoryItemID,
+			OutfitName:           inventoryItem.Name,
+			SelfieUrl:            requestBody.SelfieUrl,
+			Status:               models.OutfitGenerationStatusQueued,
+		}
+		if err := s.dbClient.OutfitProfileGeneration().Create(ctx, generation); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	payload := jobs.GenerateOutfitProfilePictureTaskPayload{
+		GenerationID:         generation.ID,
+		UserID:               user.ID,
+		OwnedInventoryItemID: ownedInventoryItemID,
+		SelfieUrl:            requestBody.SelfieUrl,
+		OutfitName:           inventoryItem.Name,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateOutfitProfilePictureTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		update := &models.OutfitProfileGeneration{
+			Status:       models.OutfitGenerationStatusFailed,
+			ErrorMessage: &errMsg,
+		}
+		_ = s.dbClient.OutfitProfileGeneration().Update(ctx, generation.ID, update)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, generation)
+}
+
+func (s *server) getOutfitGeneration(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	stringOwnedInventoryItemID := ctx.Param("ownedInventoryItemID")
+	if stringOwnedInventoryItemID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "owned inventory item ID is required"})
+		return
+	}
+
+	ownedInventoryItemID, err := uuid.Parse(stringOwnedInventoryItemID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid owned inventory item ID"})
+		return
+	}
+
+	gen, err := s.dbClient.OutfitProfileGeneration().FindByOwnedInventoryItemID(ctx, ownedInventoryItemID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "outfit generation not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if gen.UserID != user.ID {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gen)
+}
+
+func isOutfitItemName(name string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(name))
+	return strings.HasSuffix(normalized, "outfit")
 }
 
 func (s *server) getTeamsInventory(ctx *gin.Context) {
@@ -5174,6 +5483,23 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 			})
 			return
 		}
+		availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		for i := range match.PointsOfInterest {
+			poi := match.PointsOfInterest[i]
+			hasAvailable := false
+			for j := range poi.Characters {
+				ch := poi.Characters[j]
+				if availability[ch.ID] {
+					hasAvailable = true
+				}
+				poi.Characters[j].HasAvailableQuest = availability[ch.ID]
+			}
+			match.PointsOfInterest[i].HasAvailableQuest = hasAvailable
+		}
 		ctx.JSON(200, match.PointsOfInterest)
 		return
 	}
@@ -5183,7 +5509,23 @@ func (s *server) getPointsOfInterest(ctx *gin.Context) {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-
+	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range pointOfInterests {
+		poi := pointOfInterests[i]
+		hasAvailable := false
+		for j := range poi.Characters {
+			ch := poi.Characters[j]
+			if availability[ch.ID] {
+				hasAvailable = true
+			}
+			poi.Characters[j].HasAvailableQuest = availability[ch.ID]
+		}
+		pointOfInterests[i].HasAvailableQuest = hasAvailable
+	}
 	ctx.JSON(200, pointOfInterests)
 }
 
@@ -5959,10 +6301,29 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 
 // Character handlers
 func (s *server) getCharacters(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	characters, err := s.dbClient.Character().FindAll(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	availability, err := s.questAvailabilityByCharacter(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	for i := range characters {
+		ch := characters[i]
+		if ch != nil {
+			ch.HasAvailableQuest = availability[ch.ID]
+		}
 	}
 
 	ctx.JSON(http.StatusOK, characters)
@@ -6393,9 +6754,17 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid character ID"})
 		return
 	}
+	log.Printf("getCharacterActions: characterId=%s", id.String())
+
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 
 	quests, err := s.dbClient.Quest().FindByQuestGiverCharacterID(ctx, id)
 	if err == nil {
+		log.Printf("getCharacterActions: found %d quests for characterId=%s", len(quests), id.String())
 		for _, quest := range quests {
 			_ = s.ensureQuestActionForCharacter(ctx, quest.ID, id)
 		}
@@ -6405,6 +6774,100 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	log.Printf("getCharacterActions: found %d actions for characterId=%s", len(actions), id.String())
+
+	acceptedV2 := map[uuid.UUID]models.QuestAcceptanceV2{}
+	if acceptances, accErr := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, user.ID); accErr == nil {
+		for _, acc := range acceptances {
+			acceptedV2[acc.QuestID] = acc
+		}
+	}
+	acceptedLegacy := map[uuid.UUID]struct{}{}
+	if legacy, accErr := s.dbClient.QuestAcceptance().FindByUserID(ctx, user.ID); accErr == nil {
+		for _, acc := range legacy {
+			acceptedLegacy[acc.PointOfInterestGroupID] = struct{}{}
+		}
+	}
+
+	if len(acceptedV2) > 0 || len(acceptedLegacy) > 0 {
+		filtered := actions[:0]
+		for _, action := range actions {
+			if action == nil || action.ActionType != models.ActionTypeGiveQuest {
+				filtered = append(filtered, action)
+				continue
+			}
+			if action.Metadata == nil {
+				filtered = append(filtered, action)
+				continue
+			}
+			questIDStr := extractActionQuestID(action.Metadata)
+			if questIDStr == "" {
+				filtered = append(filtered, action)
+				continue
+			}
+			questID, err := uuid.Parse(questIDStr)
+			if err != nil || questID == uuid.Nil {
+				filtered = append(filtered, action)
+				continue
+			}
+			if acc, exists := acceptedV2[questID]; exists {
+				if acc.TurnedInAt != nil {
+					log.Printf("getCharacterActions: hiding turned-in quest action=%s questId=%v userId=%s", action.ID, questID, user.ID)
+					continue
+				}
+				filtered = append(filtered, action)
+				continue
+			}
+			if _, exists := acceptedLegacy[questID]; exists {
+				log.Printf("getCharacterActions: hiding legacy accepted quest action=%s questId=%v userId=%s", action.ID, questID, user.ID)
+				continue
+			}
+			filtered = append(filtered, action)
+		}
+		actions = filtered
+	}
+
+	if len(actions) > 0 && len(quests) > 0 {
+		questByID := make(map[string]*models.Quest, len(quests))
+		for i := range quests {
+			quest := quests[i]
+			questByID[quest.ID.String()] = &quest
+		}
+		for _, action := range actions {
+			if action == nil || action.ActionType != models.ActionTypeGiveQuest {
+				continue
+			}
+			if action.Metadata == nil {
+				action.Metadata = models.MetadataJSONB{}
+			}
+			questID, ok := action.Metadata["questId"]
+			if !ok {
+				log.Printf("getCharacterActions: giveQuest action=%s missing questId metadata", action.ID)
+				continue
+			}
+			quest, ok := questByID[fmt.Sprint(questID)]
+			if !ok || quest == nil {
+				log.Printf("getCharacterActions: giveQuest action=%s questId=%v not found in questByID", action.ID, questID)
+				continue
+			}
+			if quest.Name != "" {
+				action.Metadata["questName"] = quest.Name
+			}
+			if quest.Description != "" {
+				action.Metadata["questDescription"] = quest.Description
+			}
+			if len(quest.AcceptanceDialogue) > 0 {
+				action.Metadata["acceptanceDialogue"] = quest.AcceptanceDialogue
+			}
+			log.Printf(
+				"getCharacterActions: giveQuest action=%s questId=%s questName=%s acceptanceDialogue=%d",
+				action.ID,
+				quest.ID.String(),
+				quest.Name,
+				len(quest.AcceptanceDialogue),
+			)
+		}
 	}
 
 	ctx.JSON(http.StatusOK, actions)

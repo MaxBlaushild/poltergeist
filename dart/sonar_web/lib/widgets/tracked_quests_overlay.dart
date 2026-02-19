@@ -3,11 +3,18 @@ import 'package:provider/provider.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
+import '../models/quest_node.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/quest_log_provider.dart';
 
 const _placeholderImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+
+class TrackedQuestsOverlayController extends ChangeNotifier {
+  void open() {
+    notifyListeners();
+  }
+}
 
 /// Expandable "Quests" overlay on the map. Lists tracked quests; tap a POI to
 /// fly to it and open the POI panel.
@@ -16,11 +23,13 @@ class TrackedQuestsOverlay extends StatefulWidget {
     super.key,
     required this.onFocusPoI,
     required this.onFocusNode,
+    this.controller,
   });
 
   /// When user taps a POI: fly to location then open POI panel.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
+  final TrackedQuestsOverlayController? controller;
 
   @override
   State<TrackedQuestsOverlay> createState() => _TrackedQuestsOverlayState();
@@ -29,6 +38,35 @@ class TrackedQuestsOverlay extends StatefulWidget {
 class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   bool _expanded = false;
   bool _showContent = false;
+  TrackedQuestsOverlayController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = widget.controller;
+    _controller?.addListener(_handleController);
+  }
+
+  @override
+  void didUpdateWidget(covariant TrackedQuestsOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_handleController);
+      _controller = widget.controller;
+      _controller?.addListener(_handleController);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_handleController);
+    super.dispose();
+  }
+
+  void _handleController() {
+    if (!mounted) return;
+    _expand();
+  }
 
   void _toggle() {
     setState(() {
@@ -40,6 +78,17 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
       } else {
         _showContent = false;
       }
+    });
+  }
+
+  void _expand() {
+    if (_expanded) return;
+    setState(() {
+      _expanded = true;
+      _showContent = false;
+    });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() => _showContent = true);
     });
   }
 
@@ -187,7 +236,7 @@ class _TrackedQuestCard extends StatelessWidget {
           const SizedBox(height: 8),
           if (node == null)
             const Text(
-              'Quest completed!',
+              'Quest completed! Turn it in for rewards.',
               style: TextStyle(color: Colors.white70),
             )
           else if (poi != null)

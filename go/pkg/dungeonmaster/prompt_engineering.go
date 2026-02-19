@@ -105,7 +105,6 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
 		Style:  style,
-		Model:  "dall-e-3",
 	}
 	deep_priest.ApplyGenerateImageDefaults(&request)
 	base64Image, err := c.deepPriest.GenerateImage(request)

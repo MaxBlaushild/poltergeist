@@ -1,4 +1,5 @@
 import '../models/inventory_item.dart';
+import '../models/outfit_generation.dart';
 import 'api_client.dart';
 
 class InventoryService {
@@ -40,5 +41,27 @@ class InventoryService {
         if (targetTeamId != null && targetTeamId.isNotEmpty) 'targetTeamId': targetTeamId,
       },
     );
+  }
+
+  Future<OutfitGeneration?> getOutfitGenerationStatus(String ownedInventoryItemId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/inventory/$ownedInventoryItemId/outfit-generation',
+      );
+      return OutfitGeneration.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<OutfitGeneration> useOutfitItem(
+    String ownedInventoryItemId, {
+    required String selfieUrl,
+  }) async {
+    final data = await _api.post<Map<String, dynamic>>(
+      '/sonar/inventory/$ownedInventoryItemId/use-outfit',
+      data: {'selfieUrl': selfieUrl},
+    );
+    return OutfitGeneration.fromJson(data);
   }
 }

@@ -1,6 +1,10 @@
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import { TreasureChest, Zone, InventoryItem } from '@poltergeist/types';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 interface TreasureChestItemForm {
   inventoryItemId: number;
@@ -20,6 +24,8 @@ export const TreasureChests = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [chestToDelete, setChestToDelete] = useState<TreasureChest | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [zoneQuery, setZoneQuery] = useState('');
+  const [showZoneSuggestions, setShowZoneSuggestions] = useState(false);
 
   const [formData, setFormData] = useState({
     latitude: '',
@@ -65,6 +71,8 @@ export const TreasureChests = () => {
       gold: '',
       items: [],
     });
+    setZoneQuery('');
+    setShowZoneSuggestions(false);
   };
 
   const handleCreateChest = async () => {
@@ -146,6 +154,7 @@ export const TreasureChests = () => {
 
   const handleEditChest = (chest: TreasureChest) => {
     setEditingChest(chest);
+    const zoneName = zones.find(z => z.id === chest.zoneId)?.name || '';
     setFormData({
       latitude: chest.latitude.toString(),
       longitude: chest.longitude.toString(),
@@ -156,6 +165,7 @@ export const TreasureChests = () => {
         quantity: item.quantity,
       })),
     });
+    setZoneQuery(zoneName);
   };
 
   const addItem = () => {
@@ -182,9 +192,30 @@ export const TreasureChests = () => {
     return <div className="m-10">Loading treasure chests...</div>;
   }
 
+  const filteredZones = zones.filter(zone =>
+    zone.name.toLowerCase().includes(zoneQuery.toLowerCase())
+  );
+
   return (
     <div className="m-10">
-      <h1 className="text-2xl font-bold mb-4">Treasure Chests</h1>
+      <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl font-bold">Treasure Chests</h1>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="bg-blue-500 text-white px-4 py-2 rounded-md"
+            onClick={() => setShowCreateChest(true)}
+          >
+            Create Treasure Chest
+          </button>
+          <button
+            className="bg-green-500 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSeedTreasureChests}
+            disabled={seeding}
+          >
+            {seeding ? 'Queuing...' : 'Seed Treasure Chests'}
+          </button>
+        </div>
+      </div>
       
       {/* Search */}
       <div className="mb-4">
@@ -268,23 +299,6 @@ export const TreasureChests = () => {
         })}
       </div>
 
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          onClick={() => setShowCreateChest(true)}
-        >
-          Create Treasure Chest
-        </button>
-        <button
-          className="bg-green-500 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleSeedTreasureChests}
-          disabled={seeding}
-        >
-          {seeding ? 'Queuing...' : 'Seed Treasure Chests'}
-        </button>
-      </div>
-
       {/* Create/Edit Chest Modal */}
       {(showCreateChest || editingChest) && (
         <div style={{
@@ -311,17 +325,86 @@ export const TreasureChests = () => {
             
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '5px' }}>Zone *:</label>
-              <select
-                value={formData.zoneId}
-                onChange={(e) => setFormData({ ...formData, zoneId: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                required
-              >
-                <option value="">Select a zone</option>
-                {zones.map(zone => (
-                  <option key={zone.id} value={zone.id}>{zone.name}</option>
-                ))}
-              </select>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  value={zoneQuery}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setZoneQuery(value);
+                    setShowZoneSuggestions(true);
+                    if (value.trim() === '') {
+                      setFormData({ ...formData, zoneId: '' });
+                    }
+                  }}
+                  onFocus={() => setShowZoneSuggestions(true)}
+                  onBlur={() => {
+                    setTimeout(() => setShowZoneSuggestions(false), 120);
+                  }}
+                  placeholder="Type to filter zones..."
+                  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                />
+                {showZoneSuggestions && filteredZones.length > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      right: 0,
+                      backgroundColor: '#fff',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      marginTop: '4px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      zIndex: 20,
+                    }}
+                  >
+                    {filteredZones.map(zone => (
+                      <button
+                        type="button"
+                        key={zone.id}
+                        onClick={() => {
+                          setFormData({ ...formData, zoneId: zone.id });
+                          setZoneQuery(zone.name);
+                          setShowZoneSuggestions(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {zone.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {!formData.zoneId && (
+                <div style={{ marginTop: '6px', fontSize: '12px', color: '#999' }}>
+                  Select a zone to continue.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Placement *:</label>
+              <TreasureChestMapPicker
+                latitude={parseFloat(formData.latitude) || 0}
+                longitude={parseFloat(formData.longitude) || 0}
+                onChange={(lat, lng) =>
+                  setFormData({
+                    ...formData,
+                    latitude: lat.toFixed(6),
+                    longitude: lng.toFixed(6),
+                  })
+                }
+              />
             </div>
 
             <div style={{ marginBottom: '15px' }}>
@@ -483,3 +566,226 @@ export const TreasureChests = () => {
   );
 };
 
+interface TreasureChestMapPickerProps {
+  latitude: number;
+  longitude: number;
+  onChange: (lat: number, lng: number) => void;
+}
+
+const TreasureChestMapPicker: React.FC<TreasureChestMapPickerProps> = ({
+  latitude,
+  longitude,
+  onChange,
+}) => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const marker = useRef<mapboxgl.Marker | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const locateTimeout = useRef<number | null>(null);
+  const locateWatchId = useRef<number | null>(null);
+
+  const defaultLat = 40.7128;
+  const defaultLng = -74.0060;
+  const initialLat = latitude || defaultLat;
+  const initialLng = longitude || defaultLng;
+
+  useEffect(() => {
+    if (!mapContainer.current || map.current) return;
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/maxblaushild/clzq7o8pr00ce01qgey4y0g31',
+      center: [initialLng, initialLat],
+      zoom: 16,
+    });
+
+    map.current.addControl(new mapboxgl.NavigationControl());
+
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.style.width = '30px';
+    el.style.height = '30px';
+    el.style.backgroundImage = 'url(https://docs.mapbox.com/mapbox-gl-js/assets/custom_marker.png)';
+    el.style.backgroundSize = 'cover';
+    el.style.cursor = 'grab';
+
+    marker.current = new mapboxgl.Marker({ element: el, draggable: true })
+      .setLngLat([initialLng, initialLat])
+      .addTo(map.current);
+
+    marker.current.on('dragend', () => {
+      const lngLat = marker.current!.getLngLat();
+      onChange(lngLat.lat, lngLat.lng);
+    });
+
+    map.current.on('click', (e) => {
+      if (marker.current) {
+        marker.current.setLngLat([e.lngLat.lng, e.lngLat.lat]);
+        onChange(e.lngLat.lat, e.lngLat.lng);
+      }
+    });
+
+    map.current.on('load', () => {
+      setIsLoaded(true);
+      map.current?.resize();
+    });
+
+    return () => {
+      if (locateTimeout.current) {
+        window.clearTimeout(locateTimeout.current);
+        locateTimeout.current = null;
+      }
+      if (locateWatchId.current !== null) {
+        navigator.geolocation?.clearWatch(locateWatchId.current);
+        locateWatchId.current = null;
+      }
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, [initialLat, initialLng, onChange]);
+
+  useEffect(() => {
+    if (map.current && isLoaded && marker.current) {
+      const current = marker.current.getLngLat();
+      if (
+        Math.abs(current.lat - initialLat) > 0.0001 ||
+        Math.abs(current.lng - initialLng) > 0.0001
+      ) {
+        marker.current.setLngLat([initialLng, initialLat]);
+        map.current.easeTo({ center: [initialLng, initialLat] });
+      }
+    }
+  }, [initialLat, initialLng, isLoaded]);
+
+  const handleSnapToLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.');
+      return;
+    }
+    const startWatch = () => {
+      setLocating(true);
+      setLocationError(null);
+      if (locateTimeout.current) {
+        window.clearTimeout(locateTimeout.current);
+      }
+      if (locateWatchId.current !== null) {
+        navigator.geolocation.clearWatch(locateWatchId.current);
+        locateWatchId.current = null;
+      }
+      locateTimeout.current = window.setTimeout(() => {
+        if (locateWatchId.current !== null) {
+          navigator.geolocation.clearWatch(locateWatchId.current);
+          locateWatchId.current = null;
+        }
+        setLocationError('Location request timed out.');
+        setLocating(false);
+        locateTimeout.current = null;
+      }, 12000);
+      locateWatchId.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude: lat, longitude: lng } = pos.coords;
+          if (locateTimeout.current) {
+            window.clearTimeout(locateTimeout.current);
+            locateTimeout.current = null;
+          }
+          if (locateWatchId.current !== null) {
+            navigator.geolocation.clearWatch(locateWatchId.current);
+            locateWatchId.current = null;
+          }
+          onChange(lat, lng);
+          if (marker.current) {
+            marker.current.setLngLat([lng, lat]);
+          }
+          map.current?.easeTo({ center: [lng, lat], zoom: 16 });
+          setLocating(false);
+        },
+        (err) => {
+          if (locateTimeout.current) {
+            window.clearTimeout(locateTimeout.current);
+            locateTimeout.current = null;
+          }
+          if (locateWatchId.current !== null) {
+            navigator.geolocation.clearWatch(locateWatchId.current);
+            locateWatchId.current = null;
+          }
+          setLocationError(err.message || 'Unable to fetch location.');
+          setLocating(false);
+        },
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+    };
+
+    const permissions = (navigator as any).permissions;
+    if (permissions?.query) {
+      permissions
+        .query({ name: 'geolocation' })
+        .then((status: { state?: string }) => {
+          if (status.state === 'denied') {
+            setLocationError('Location permission denied in browser settings.');
+            setLocating(false);
+            return;
+          }
+          startWatch();
+        })
+        .catch(() => startWatch());
+    } else {
+      startWatch();
+    }
+  };
+
+  return (
+    <div>
+      <div
+        ref={mapContainer}
+        style={{
+          width: '100%',
+          height: '320px',
+          borderRadius: '8px',
+          border: '1px solid #ccc',
+          overflow: 'hidden',
+        }}
+      />
+      <div
+        style={{
+          marginTop: '8px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '14px',
+          color: '#666',
+        }}
+      >
+        <span>Latitude: {latitude ? latitude.toFixed(6) : 'Not set'}</span>
+        <span>Longitude: {longitude ? longitude.toFixed(6) : 'Not set'}</span>
+        <button
+          type="button"
+          onClick={handleSnapToLocation}
+          className="bg-slate-800 text-white px-3 py-1 rounded-md text-sm"
+        >
+          {locating ? 'Locating...' : 'Use current location'}
+        </button>
+      </div>
+      {locationError && (
+        <p style={{ marginTop: '6px', color: '#c53030', fontSize: '12px' }}>
+          {locationError}
+        </p>
+      )}
+      <p
+        style={{
+          marginTop: '4px',
+          fontSize: '12px',
+          color: '#999',
+          fontStyle: 'italic',
+        }}
+      >
+        Click on the map or drag the marker to set the treasure chest location.
+      </p>
+    </div>
+  );
+};

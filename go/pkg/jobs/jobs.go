@@ -8,6 +8,7 @@ const (
 	GenerateQuestForZoneTaskType          = "generate_quest_for_zone"
 	QueueQuestGenerationsTaskType         = "queue_quest_generations"
 	CreateProfilePictureTaskType          = "create_profile_picture"
+	GenerateOutfitProfilePictureTaskType  = "generate_outfit_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
@@ -27,6 +28,14 @@ type GenerateQuestForZoneTaskPayload struct {
 type CreateProfilePictureTaskPayload struct {
 	UserID            uuid.UUID `json:"userId"`
 	ProfilePictureUrl string    `json:"profilePictureUrl"`
+}
+
+type GenerateOutfitProfilePictureTaskPayload struct {
+	GenerationID         uuid.UUID `json:"generationId"`
+	UserID               uuid.UUID `json:"userId"`
+	OwnedInventoryItemID uuid.UUID `json:"ownedInventoryItemId"`
+	SelfieUrl            string    `json:"selfieUrl"`
+	OutfitName           string    `json:"outfitName"`
 }
 
 type GenerateInventoryItemImageTaskPayload struct {
