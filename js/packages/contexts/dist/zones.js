@@ -129,9 +129,18 @@ export const ZoneProvider = ({ children }) => {
         setZones(prev => [...prev, response]);
         setSelectedZone(response);
     });
-    const deleteZone = (zone) => {
-        setZones(prev => prev.filter(z => z.id !== zone.id));
-    };
+    const deleteZone = (zone) => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            yield apiClient.delete(`/sonar/zones/${zone.id}`);
+            setZones(prev => prev.filter(z => z.id !== zone.id));
+            if ((selectedZone === null || selectedZone === void 0 ? void 0 : selectedZone.id) === zone.id) {
+                setSelectedZone(null);
+            }
+        }
+        catch (error) {
+            console.error('Error deleting zone:', error);
+        }
+    });
     const editZone = (name, description, id) => __awaiter(void 0, void 0, void 0, function* () {
         const response = yield apiClient.patch(`/sonar/zones/${id}/edit`, { name, description });
         setZones(prev => prev.map(z => z.id === id ? Object.assign(Object.assign({}, z), { name: response.name, description: response.description }) : z));

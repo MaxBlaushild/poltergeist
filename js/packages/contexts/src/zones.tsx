@@ -162,8 +162,16 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSelectedZone(response);
   };
 
-  const deleteZone = (zone: Zone) => {
-    setZones(prev => prev.filter(z => z.id !== zone.id));
+  const deleteZone = async (zone: Zone) => {
+    try {
+      await apiClient.delete(`/sonar/zones/${zone.id}`);
+      setZones(prev => prev.filter(z => z.id !== zone.id));
+      if (selectedZone?.id === zone.id) {
+        setSelectedZone(null);
+      }
+    } catch (error) {
+      console.error('Error deleting zone:', error);
+    }
   };
 
   const editZone = async (name: string, description: string, id: string) => {

@@ -44,7 +44,73 @@ func (h *zoneHandler) Update(ctx context.Context, zone *models.Zone) error {
 }
 
 func (h *zoneHandler) Delete(ctx context.Context, zoneID uuid.UUID) error {
-	return h.db.WithContext(ctx).Delete(&models.Zone{}, "id = ?", zoneID).Error
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.BoundaryPoint{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Unscoped().Where("zone_id = ?", zoneID).Delete(&models.PointOfInterestZone{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.ZoneQuestArchetype{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.UserZoneReputation{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.TreasureChest{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.MovementPattern{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id = ?", zoneID).Delete(&models.Quest{}).Error; err != nil {
+			return err
+		}
+		return tx.WithContext(ctx).Delete(&models.Zone{}, "id = ?", zoneID).Error
+	})
+}
+
+func (h *zoneHandler) DeleteByImportID(ctx context.Context, importID uuid.UUID) (int, error) {
+	var zoneIDs []uuid.UUID
+	if err := h.db.WithContext(ctx).
+		Model(&models.Zone{}).
+		Where("zone_import_id = ?", importID).
+		Pluck("id", &zoneIDs).Error; err != nil {
+		return 0, err
+	}
+	if len(zoneIDs) == 0 {
+		return 0, nil
+	}
+
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.BoundaryPoint{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Unscoped().Where("zone_id IN ?", zoneIDs).Delete(&models.PointOfInterestZone{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.ZoneQuestArchetype{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.UserZoneReputation{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.TreasureChest{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.MovementPattern{}).Error; err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Where("zone_id IN ?", zoneIDs).Delete(&models.Quest{}).Error; err != nil {
+			return err
+		}
+		return tx.WithContext(ctx).Where("id IN ?", zoneIDs).Delete(&models.Zone{}).Error
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return len(zoneIDs), nil
 }
 
 func (h *zoneHandler) AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error {

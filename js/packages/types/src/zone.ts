@@ -9,6 +9,7 @@ export type Zone = {
   createdAt: string;
   updatedAt: string;
   description: string;
+  zoneImportId?: string | null;
   boundary: number[][];
   boundaryCoords: {
     latitude: number;

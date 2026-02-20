@@ -137,12 +137,13 @@ func (p *ImportZonesForMetroProcessor) ProcessTask(ctx context.Context, task *as
 		}
 
 		zone := &models.Zone{
-			ID:          uuid.New(),
-			Name:        name,
-			Description: fmt.Sprintf("Imported from OSM neighborhoods for %s", metroName),
-			Latitude:    centroidLat,
-			Longitude:   centroidLon,
-			Radius:      radius,
+			ID:           uuid.New(),
+			Name:         name,
+			Description:  fmt.Sprintf("Imported from OSM neighborhoods for %s", metroName),
+			Latitude:     centroidLat,
+			Longitude:    centroidLon,
+			Radius:       radius,
+			ZoneImportID: &importItem.ID,
 		}
 
 		if err := p.dbClient.Zone().Create(ctx, zone); err != nil {

@@ -39,22 +39,24 @@ export const ArenaProvider = ({ children, arenaId }) => {
             setLoading(false);
         }
     });
-    const updateArena = (name, description, type, gold, inventoryItemId) => __awaiter(void 0, void 0, void 0, function* () {
+    const updateArena = (name, description, type, gold, inventoryItemId, questGiverCharacterId) => __awaiter(void 0, void 0, void 0, function* () {
         setLoading(true);
         if (!arena) {
             return;
         }
         try {
-            const response = yield apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, {
+            const body = {
                 name,
                 description,
                 type,
                 gold,
                 inventoryItemId,
-            });
-            setArena(Object.assign(Object.assign({}, arena), { name,
-                description,
-                type, gold: gold !== null && gold !== void 0 ? gold : arena.gold, inventoryItemId: inventoryItemId !== null && inventoryItemId !== void 0 ? inventoryItemId : arena.inventoryItemId }));
+            };
+            if (questGiverCharacterId !== undefined) {
+                body.questGiverCharacterId = questGiverCharacterId || null;
+            }
+            yield apiClient.patch(`/sonar/pointsOfInterest/group/${arenaId}`, body);
+            yield fetchArena(arenaId);
         }
         catch (err) {
             setError(err instanceof Error ? err : new Error('An error occurred'));

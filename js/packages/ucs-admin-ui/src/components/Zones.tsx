@@ -18,6 +18,7 @@ export const Zones = () => {
   const [importPolling, setImportPolling] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
 
@@ -72,6 +73,25 @@ export const Zones = () => {
       setImportPolling(hasPending);
     } catch (error) {
       console.error('Failed to fetch zone import status', error);
+    }
+  };
+
+  const handleDeleteImportZones = async (importId: string) => {
+    const confirmed = window.confirm('Delete all zones created by this import? This cannot be undone.');
+    if (!confirmed) {
+      return;
+    }
+    setImportError(null);
+    setDeletingImportId(importId);
+    try {
+      await apiClient.delete(`/sonar/zones/imports/${importId}`);
+      await fetchImportJobs();
+      await refreshZones();
+    } catch (error) {
+      console.error('Failed to delete imported zones', error);
+      setImportError('Failed to delete imported zones.');
+    } finally {
+      setDeletingImportId(null);
     }
   };
 
@@ -171,7 +191,16 @@ export const Zones = () => {
                   <div className="text-xs text-slate-500">Status: {job.status}</div>
                   {job.errorMessage && <div className="text-xs text-red-600">{job.errorMessage}</div>}
                 </div>
-                <div className="text-xs text-slate-500">Zones: {job.zoneCount}</div>
+                <div className="flex items-center gap-3">
+                  <div className="text-xs text-slate-500">Zones: {job.zoneCount}</div>
+                  <button
+                    className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:text-slate-800 disabled:opacity-60"
+                    onClick={() => handleDeleteImportZones(job.id)}
+                    disabled={deletingImportId === job.id}
+                  >
+                    {deletingImportId === job.id ? 'Deleting...' : 'Delete Zones'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

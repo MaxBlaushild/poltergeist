@@ -35,6 +35,7 @@ type Zone struct {
 	Latitude       float64      `json:"latitude"`
 	Longitude      float64      `json:"longitude"`
 	Radius         float64      `json:"radius"`
+	ZoneImportID   *uuid.UUID   `json:"zoneImportId" gorm:"type:uuid"`
 	Boundary       string       `json:"boundary"`
 	BoundaryCoords []Location   `json:"boundaryCoords" gorm:"-"`
 	Polygon        *orb.Polygon `json:"polygon" gorm:"-"`

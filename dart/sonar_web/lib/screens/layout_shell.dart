@@ -474,9 +474,19 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
 
   String? _lastUserId;
   Map<String, int> _pending = {};
+  final ScrollController _scrollController = ScrollController();
+  bool _showTopFade = false;
+  bool _showBottomFade = false;
 
   int get _pendingTotal =>
       _pending.values.where((value) => value > 0).fold(0, (a, b) => a + b);
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateFades);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
+  }
 
   @override
   void didChangeDependencies() {
@@ -490,6 +500,14 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
     if (unspent == 0 && _pending.isNotEmpty) {
       _pending = {};
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_updateFades);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _bumpStat(String key, int delta, int remaining) {
@@ -503,6 +521,7 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
         _pending[key] = next;
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
   }
 
   Future<void> _confirmAllocations(CharacterStatsProvider stats) async {
@@ -511,6 +530,7 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
     if (!mounted) return;
     if (success) {
       setState(() => _pending = {});
+      WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -521,6 +541,7 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFades());
     final auth = context.watch<AuthProvider>();
     final levels = context.watch<UserLevelProvider>();
     final statsProvider = context.watch<CharacterStatsProvider>();
@@ -597,265 +618,330 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Stack(
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            GestureDetector(
-              onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
-              child: CircleAvatar(
-                radius: 28,
-                backgroundColor: Colors.grey.shade300,
-                backgroundImage:
-                    u.profilePictureUrl.isNotEmpty ? NetworkImage(u.profilePictureUrl) : null,
-                child: u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    u.username.isNotEmpty ? u.username : u.name,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (u.username.isNotEmpty && u.name != u.username)
-                    Text(
-                      u.name,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: levelLoading
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Level',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    LinearProgressIndicator(
-                      minHeight: 8,
-                      color: theme.colorScheme.primary,
-                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    ),
-                  ],
-                )
-              : userLevel == null
-                  ? Text(
-                      'Level data unavailable right now.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Level ${userLevel.level}',
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              '${userLevel.experiencePointsOnLevel} / ${userLevel.experienceToNextLevel} XP',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: userLevel.experienceToNextLevel > 0
-                                ? (userLevel.experiencePointsOnLevel /
-                                        userLevel.experienceToNextLevel)
-                                    .clamp(0.0, 1.0)
-                                : 0.0,
-                            minHeight: 8,
-                            color: theme.colorScheme.primary,
-                            backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                          ),
-                        ),
-                      ],
-                    ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
+        SingleChildScrollView(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Character stats',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
+                child: CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.grey.shade300,
+                  backgroundImage: u.profilePictureUrl.isNotEmpty
+                      ? NetworkImage(u.profilePictureUrl)
+                      : null,
+                  child: u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    'Level $displayLevel',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      u.username.isNotEmpty ? u.username : u.name,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    'Unspent: ${statsProvider.unspentPoints}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: statsProvider.hasUnspentPoints
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              if (_pendingTotal > 0) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Remaining after pending: ${statsProvider.unspentPoints - _pendingTotal}',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                    if (u.username.isNotEmpty && u.name != u.username)
+                      Text(
+                        u.name,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 12),
-              Column(
-                children: CharacterStatsProvider.statKeys.map((key) {
-                  final label = _labels[key] ?? key;
-                  final baseValue = statsProvider.stats[key] ??
-                      CharacterStatsProvider.baseStatValue;
-                  final pendingValue = _pending[key] ?? 0;
-                  final displayValue = baseValue + pendingValue;
-                  final remaining = statsProvider.unspentPoints - _pendingTotal;
-                  final canAdd = remaining > 0;
-                  final canRemove = pendingValue > 0;
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: theme.colorScheme.outlineVariant),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: levelLoading
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Level',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        minHeight: 8,
+                        color: theme.colorScheme.primary,
+                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                      ),
+                    ],
+                  )
+                : userLevel == null
+                    ? Text(
+                        'Level data unavailable right now.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
                             children: [
                               Text(
-                                label,
-                                style: theme.textTheme.bodyMedium?.copyWith(
+                                'Level ${userLevel.level}',
+                                style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              if (pendingValue > 0)
-                                Text(
-                                  '+$pendingValue pending',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.primary,
-                                  ),
+                              const Spacer(),
+                              Text(
+                                '${userLevel.experiencePointsOnLevel} / ${userLevel.experienceToNextLevel} XP',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
                                 ),
+                              ),
                             ],
                           ),
-                        ),
-                        Text(
-                          '$displayValue',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: userLevel.experienceToNextLevel > 0
+                                  ? (userLevel.experiencePointsOnLevel /
+                                          userLevel.experienceToNextLevel)
+                                      .clamp(0.0, 1.0)
+                                  : 0.0,
+                              minHeight: 8,
+                              color: theme.colorScheme.primary,
+                              backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          onPressed:
-                              canRemove ? () => _bumpStat(key, -1, remaining) : null,
-                          icon: const Icon(Icons.remove_circle_outline),
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          onPressed:
-                              canAdd ? () => _bumpStat(key, 1, remaining) : null,
-                          icon: const Icon(Icons.add_circle_outline),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-              if (_pendingTotal > 0) ...[
+                        ],
+                      ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Character stats',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => setState(() => _pending = {}),
-                        child: const Text('Cancel'),
+                    Text(
+                      'Level $displayLevel',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => _confirmAllocations(statsProvider),
-                        child: const Text('Confirm'),
+                    const Spacer(),
+                    Text(
+                      'Unspent: ${statsProvider.unspentPoints}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: statsProvider.hasUnspentPoints
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
+                if (_pendingTotal > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Remaining after pending: ${statsProvider.unspentPoints - _pendingTotal}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Column(
+                  children: CharacterStatsProvider.statKeys.map((key) {
+                    final label = _labels[key] ?? key;
+                    final baseValue = statsProvider.stats[key] ??
+                        CharacterStatsProvider.baseStatValue;
+                    final pendingValue = _pending[key] ?? 0;
+                    final displayValue = baseValue + pendingValue;
+                    final remaining = statsProvider.unspentPoints - _pendingTotal;
+                    final canAdd = remaining > 0;
+                    final canRemove = pendingValue > 0;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: theme.colorScheme.outlineVariant),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (pendingValue > 0)
+                                  Text(
+                                    '+$pendingValue pending',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '$displayValue',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: canRemove
+                                ? () => _bumpStat(key, -1, remaining)
+                                : null,
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: canAdd
+                                ? () => _bumpStat(key, 1, remaining)
+                                : null,
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+                if (_pendingTotal > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setState(() => _pending = {}),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => _confirmAllocations(statsProvider),
+                          child: const Text('Confirm'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              context.go('/logout');
+            },
+            child: const Text('Log out'),
+          ),
             ],
           ),
         ),
-        const Spacer(),
-        OutlinedButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-            context.go('/logout');
-          },
-          child: const Text('Log out'),
-        ),
+        if (_showTopFade)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 18,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      theme.colorScheme.surface,
+                      theme.colorScheme.surface.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_showBottomFade)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 20,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      theme.colorScheme.surface,
+                      theme.colorScheme.surface.withOpacity(0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
+  }
+
+  void _updateFades() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final showTop = position.pixels > 0.5;
+    final showBottom = position.pixels < position.maxScrollExtent - 0.5;
+    if (showTop == _showTopFade && showBottom == _showBottomFade) return;
+    setState(() {
+      _showTopFade = showTop;
+      _showBottomFade = showBottom;
+    });
   }
 }

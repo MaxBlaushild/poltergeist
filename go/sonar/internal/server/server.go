@@ -221,6 +221,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/zones/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importZonesForMetro))
 	r.GET("/sonar/zones/imports", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImports))
 	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
+	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -2946,6 +2947,37 @@ func (s *server) getZoneImport(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, item)
+}
+
+func (s *server) deleteZoneImport(ctx *gin.Context) {
+	id := ctx.Param("id")
+	importID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid import ID"})
+		return
+	}
+
+	item, err := s.dbClient.ZoneImport().FindByID(ctx, importID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "import not found"})
+		return
+	}
+
+	deletedCount, err := s.dbClient.Zone().DeleteByImportID(ctx, importID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	item.Status = "deleted"
+	item.UpdatedAt = time.Now()
+	_ = s.dbClient.ZoneImport().Update(ctx, item)
+
+	ctx.JSON(http.StatusOK, gin.H{"deletedCount": deletedCount})
 }
 
 func (s *server) getZones(ctx *gin.Context) {

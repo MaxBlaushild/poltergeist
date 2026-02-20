@@ -415,6 +415,7 @@ type ZoneHandle interface {
 	Update(ctx context.Context, zone *models.Zone) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Zone, error)
 	Delete(ctx context.Context, zoneID uuid.UUID) error
+	DeleteByImportID(ctx context.Context, importID uuid.UUID) (int, error)
 	AddPointOfInterestToZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	RemovePointOfInterestFromZone(ctx context.Context, zoneID uuid.UUID, pointOfInterestID uuid.UUID) error
 	UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boundary [][]float64) error
