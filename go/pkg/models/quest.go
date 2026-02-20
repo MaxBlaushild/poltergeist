@@ -13,6 +13,7 @@ type Quest struct {
 	Name                  string            `json:"name"`
 	Description           string            `json:"description"`
 	AcceptanceDialogue    StringArray       `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
+	StatTags              StringArray       `json:"statTags,omitempty" gorm:"type:jsonb"`
 	ImageURL              string            `json:"imageUrl"`
 	ZoneID                *uuid.UUID        `json:"zoneId" gorm:"type:uuid"`
 	QuestArchetypeID      *uuid.UUID        `json:"questArchetypeId" gorm:"type:uuid"`

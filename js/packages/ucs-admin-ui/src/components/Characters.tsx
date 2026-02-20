@@ -431,6 +431,17 @@ export const Characters = () => {
     });
   };
 
+  const buildCharacterPayload = () => {
+    return {
+      ...formData,
+      pointOfInterestId: formData.pointOfInterestId || null,
+      movementPattern: {
+        ...formData.movementPattern,
+        zoneId: formData.movementPattern.zoneId || null,
+      },
+    };
+  };
+
   const applyQuestAssignments = async (characterId: string, nextZoneQuestArchetypeIds: string[]) => {
     const updates: Promise<void>[] = [];
     zoneQuestArchetypes.forEach((zoneQuestArchetype) => {
@@ -469,10 +480,7 @@ export const Characters = () => {
 
   const handleCreateCharacter = async () => {
     try {
-      const payload = {
-        ...formData,
-        pointOfInterestId: formData.pointOfInterestId || undefined,
-      };
+      const payload = buildCharacterPayload();
       const newCharacter = await apiClient.post<Character>('/sonar/characters', payload);
       setCharacters([...characters, newCharacter]);
       await applyQuestAssignments(newCharacter.id, selectedZoneQuestArchetypeIds);
@@ -490,10 +498,7 @@ export const Characters = () => {
     if (!editingCharacter) return;
     
     try {
-      const payload = {
-        ...formData,
-        pointOfInterestId: formData.pointOfInterestId ? formData.pointOfInterestId : null,
-      };
+      const payload = buildCharacterPayload();
       const updatedCharacter = await apiClient.put<Character>(`/sonar/characters/${editingCharacter.id}`, payload);
       setCharacters(characters.map(c => c.id === editingCharacter.id ? updatedCharacter : c));
       await applyQuestAssignments(editingCharacter.id, selectedZoneQuestArchetypeIds);

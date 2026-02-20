@@ -174,6 +174,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCompleteGenerationsForUser))
 	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfilePicture))
 	r.GET("/sonar/admin/insider-trades", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listInsiderTrades))
+	r.GET("/sonar/admin/parties", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminListParties))
+	r.POST("/sonar/admin/parties", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateParty))
+	r.GET("/sonar/admin/parties/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminGetParty))
+	r.PATCH("/sonar/admin/parties/:id/leader", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminSetPartyLeader))
+	r.POST("/sonar/admin/parties/:id/members", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAddPartyMember))
+	r.DELETE("/sonar/admin/parties/:id/members/:userId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminRemovePartyMember))
+	r.DELETE("/sonar/admin/parties/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminDeleteParty))
 	r.PATCH("/sonar/pointsOfInterest/group/:id", s.editPointOfInterestGroup)
 	r.DELETE("/sonar/pointsOfInterest/group/:id", s.deletePointOfInterestGroup)
 	r.POST("/sonar/pointsOfInterest/group/bulk-delete", s.bulkDeletePointOfInterestGroups)
@@ -538,6 +545,10 @@ func (s *server) setPartyLeader(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid leader ID"})
 		return
 	}
+	if leaderID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "leader ID cannot be empty"})
+		return
+	}
 
 	err = s.dbClient.Party().SetLeader(ctx, *user.PartyID, leaderID, user.ID)
 	if err != nil {
@@ -583,6 +594,243 @@ func (s *server) leaveParty(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "party left successfully"})
+}
+
+func (s *server) adminListParties(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	parties, err := s.dbClient.Party().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, parties)
+}
+
+func (s *server) adminGetParty(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid party ID"})
+		return
+	}
+
+	party, err := s.dbClient.Party().FindByID(ctx, partyID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "party not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, party)
+}
+
+func (s *server) adminCreateParty(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		LeaderID  string   `json:"leaderId" binding:"required"`
+		MemberIDs []string `json:"memberIds"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	leaderID, err := uuid.Parse(requestBody.LeaderID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid leader ID"})
+		return
+	}
+	if leaderID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "leader ID cannot be empty"})
+		return
+	}
+
+	memberIDs := make([]uuid.UUID, 0, len(requestBody.MemberIDs))
+	for _, id := range requestBody.MemberIDs {
+		memberID, err := uuid.Parse(id)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid member ID"})
+			return
+		}
+		memberIDs = append(memberIDs, memberID)
+	}
+
+	party, err := s.dbClient.Party().CreateWithMembers(ctx, leaderID, memberIDs)
+	if err != nil {
+		if stdErrors.Is(err, db.ErrMaxPartySizeReached) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, party)
+}
+
+func (s *server) adminSetPartyLeader(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid party ID"})
+		return
+	}
+
+	var requestBody struct {
+		LeaderID string `json:"leaderId" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	leaderID, err := uuid.Parse(requestBody.LeaderID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid leader ID"})
+		return
+	}
+
+	if err := s.dbClient.Party().SetLeaderAdmin(ctx, partyID, leaderID); err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "party or user not found"})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party leader set successfully"})
+}
+
+func (s *server) adminAddPartyMember(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid party ID"})
+		return
+	}
+
+	var requestBody struct {
+		UserID string `json:"userId" binding:"required"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(requestBody.UserID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := s.dbClient.Party().AddMember(ctx, partyID, userID); err != nil {
+		if stdErrors.Is(err, db.ErrMaxPartySizeReached) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "party or user not found"})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party member added successfully"})
+}
+
+func (s *server) adminRemovePartyMember(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid party ID"})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("userId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	if err := s.dbClient.Party().RemoveMember(ctx, partyID, userID); err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "party or user not found"})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party member removed successfully"})
+}
+
+func (s *server) adminDeleteParty(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid party ID"})
+		return
+	}
+
+	if _, err := s.dbClient.Party().FindByID(ctx, partyID); err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "party not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Party().Delete(ctx, partyID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "party deleted successfully"})
 }
 
 func (s *server) getPartyInvites(ctx *gin.Context) {
@@ -2081,6 +2329,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
 		AcceptanceDialogue    []string   `json:"acceptanceDialogue"`
+		StatTags              []string   `json:"statTags"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -2106,6 +2355,10 @@ func (s *server) createQuest(ctx *gin.Context) {
 	if acceptanceDialogue == nil {
 		acceptanceDialogue = models.StringArray{}
 	}
+	statTags := models.StringArray(requestBody.StatTags)
+	if statTags == nil {
+		statTags = models.StringArray{}
+	}
 
 	quest := &models.Quest{
 		ID:                    uuid.New(),
@@ -2114,6 +2367,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
 		AcceptanceDialogue:    acceptanceDialogue,
+		StatTags:              statTags,
 		ImageURL:              requestBody.ImageURL,
 		ZoneID:                requestBody.ZoneID,
 		QuestArchetypeID:      requestBody.QuestArchetypeID,
@@ -2171,6 +2425,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
 		AcceptanceDialogue    *[]string  `json:"acceptanceDialogue"`
+		StatTags              *[]string  `json:"statTags"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -2202,6 +2457,9 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.Description = requestBody.Description
 	if requestBody.AcceptanceDialogue != nil {
 		quest.AcceptanceDialogue = models.StringArray(*requestBody.AcceptanceDialogue)
+	}
+	if requestBody.StatTags != nil {
+		quest.StatTags = models.StringArray(*requestBody.StatTags)
 	}
 	quest.ImageURL = requestBody.ImageURL
 	quest.ZoneID = requestBody.ZoneID

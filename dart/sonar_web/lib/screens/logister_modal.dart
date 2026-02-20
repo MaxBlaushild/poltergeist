@@ -249,14 +249,14 @@ class _LogisterFormState extends State<_LogisterForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Forge your identity',
+            'Set up your profile',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
           ),
           const SizedBox(height: 16),
           Text(
-            'Choose a call sign and crest so your crew can recognize you on the map.',
+            'Add a name or a profile image so your crew can recognize you.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
                 ),
@@ -301,27 +301,17 @@ class _LogisterFormState extends State<_LogisterForm> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Signal the expedition gate',
+          'Sign in to Unclaimed Streets',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Enter your phone number to receive the access pulse. Once verified, you can explore the world, gain strength, and complete quests with your crew.',
+          'Enter your phone number to receive a verification code.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
               ),
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: const [
-            _StepChip(label: '1. Send signal'),
-            _StepChip(label: '2. Confirm code'),
-            _StepChip(label: '3. Launch map'),
-          ],
         ),
         const SizedBox(height: 16),
         if (auth.error != null)
@@ -380,7 +370,7 @@ class _LogisterFormState extends State<_LogisterForm> {
         if (waiting) ...[
           const SizedBox(height: 12),
           const Text(
-            "We've sent a 6-digit access pulse. It may take a moment to arrive.",
+            "We've sent a 6-digit verification code. It may take a moment to arrive.",
             style: TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -420,12 +410,12 @@ class _LogisterFormState extends State<_LogisterForm> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Send signal'),
+                    : const Text('Send code'),
               ),
             const SizedBox(width: 12),
             TextButton(
               onPressed: widget.onSkip,
-              child: const Text('Return to landing'),
+              child: const Text('Back'),
             ),
           ],
         ),
@@ -446,45 +436,18 @@ class _LogisterIntroPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Welcome to the Sonar Dart expedition',
+          'Unclaimed Streets',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
         ),
         const SizedBox(height: 12),
         Text(
-          'You are about to step into a world where real places hide mythic layers. Discover new locations, gain strength with every mission, and complete quests to unlock the next realm.',
+          'Sign in to continue and access your map, quests, and crew.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurface.withOpacity(0.75),
                 height: 1.4,
               ),
-        ),
-        const SizedBox(height: 20),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: const [
-            _LegendItem(
-              icon: Icons.public,
-              title: 'Explore the world',
-              description: 'Track real-world landmarks and hidden routes.',
-            ),
-            _LegendItem(
-              icon: Icons.auto_awesome,
-              title: 'Discover mythic sites',
-              description: 'Find ley lines and spectral waypoints.',
-            ),
-            _LegendItem(
-              icon: Icons.fitness_center,
-              title: 'Gain strength',
-              description: 'Earn upgrades and new abilities.',
-            ),
-            _LegendItem(
-              icon: Icons.task_alt,
-              title: 'Complete quests',
-              description: 'Finish chains to open new realms.',
-            ),
-          ],
         ),
         const SizedBox(height: 20),
         Container(
@@ -500,7 +463,7 @@ class _LogisterIntroPanel extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Signal status: strong. Your crew is ready for launch.',
+                  'Use your phone number to receive a one-time code.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurface.withOpacity(0.8),
                       ),
@@ -508,84 +471,12 @@ class _LogisterIntroPanel extends StatelessWidget {
               ),
               TextButton(
                 onPressed: onSkip,
-                child: const Text('Not now'),
+                child: const Text('Back'),
               ),
             ],
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LegendItem extends StatelessWidget {
-  const _LegendItem({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colorScheme.surface.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: colorScheme.primary),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            description,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.7),
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StepChip extends StatelessWidget {
-  const _StepChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: colorScheme.primary.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: colorScheme.primary.withOpacity(0.35)),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-      ),
     );
   }
 }

@@ -92,7 +92,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.0,
                     child: Text(
-                      'Sonar Dart',
+                      'Unclaimed Streets',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             letterSpacing: 3,
                             fontWeight: FontWeight.w600,
@@ -104,7 +104,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.06,
                     child: Text(
-                      'Step through the veil and chart the world that waits.',
+                      'Step into the uncharted and map what the world hides.',
                       style: Theme.of(context).textTheme.displaySmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: colorScheme.onBackground,
@@ -115,7 +115,7 @@ class _HomeContentState extends State<_HomeContent> {
                   _AnimatedReveal(
                     delay: 0.12,
                     child: Text(
-                      'Explore real landscapes, uncover mythic locations, and grow your strength with every quest. Sonar Dart guides your crew through discoveries that feel grounded, mysterious, and alive.',
+                      'Explore real landscapes, uncover mythic locations, and grow your strength with every quest. Unclaimed Streets guides your crew through discoveries that feel grounded, mysterious, and alive.',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: colorScheme.onBackground.withOpacity(0.8),
                             height: 1.4,
@@ -325,9 +325,9 @@ class _LandingBackground extends StatelessWidget {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                const Color(0xFF151311),
-                colorScheme.background,
-                const Color(0xFFF7EAD3),
+                const Color(0xFFFFF4E2),
+                const Color(0xFFF6EAD2),
+                const Color(0xFFE9D3AE),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -495,14 +495,14 @@ class _ExpeditionCallout extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'The expedition begins with your signal.',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'The expedition begins with your signal.',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface,
                 ),
           ),
           const SizedBox(height: 12),

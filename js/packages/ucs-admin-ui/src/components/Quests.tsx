@@ -24,6 +24,7 @@ const emptyQuestForm = {
   name: '',
   description: '',
   acceptanceDialogue: [] as string[],
+  statTags: [] as string[],
   imageUrl: '',
   zoneId: '',
   questGiverCharacterId: '',
@@ -31,6 +32,15 @@ const emptyQuestForm = {
   gold: 0,
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
 };
+
+const questStatOptions = [
+  { id: 'strength', label: 'Strength' },
+  { id: 'dexterity', label: 'Dexterity' },
+  { id: 'constitution', label: 'Constitution' },
+  { id: 'intelligence', label: 'Intelligence' },
+  { id: 'wisdom', label: 'Wisdom' },
+  { id: 'charisma', label: 'Charisma' },
+];
 
 const emptyNodeForm = {
   orderIndex: 1,
@@ -93,6 +103,9 @@ const normalizeText = (value: string) => value.trim().toLowerCase();
 
 const normalizeAcceptanceDialogue = (lines: string[]) =>
   lines.map((line) => line.trim()).filter((line) => line.length > 0);
+
+const normalizeStatTags = (tags: string[]) =>
+  Array.from(new Set(tags.map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0)));
 
 const closePolygonRing = (ring: [number, number][]) => {
   if (ring.length === 0) return ring;
@@ -928,6 +941,7 @@ export const Quests = () => {
         name: questForm.name,
         description: questForm.description,
         acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
+        statTags: normalizeStatTags(questForm.statTags),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -957,6 +971,7 @@ export const Quests = () => {
         name: questForm.name,
         description: questForm.description,
         acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
+        statTags: normalizeStatTags(questForm.statTags),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -982,6 +997,7 @@ export const Quests = () => {
       name: quest.name ?? '',
       description: quest.description ?? '',
       acceptanceDialogue: quest.acceptanceDialogue ?? [],
+      statTags: normalizeStatTags(quest.statTags ?? []),
       imageUrl: quest.imageUrl ?? '',
       zoneId: quest.zoneId ?? '',
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
@@ -1306,6 +1322,29 @@ export const Quests = () => {
               />
               <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
             </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700">Quest Stat Tags</label>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {questStatOptions.map((stat) => (
+                  <label key={stat.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={questForm.statTags.includes(stat.id)}
+                      onChange={(e) => {
+                        setQuestForm((prev) => {
+                          const next = e.target.checked
+                            ? [...prev.statTags, stat.id]
+                            : prev.statTags.filter((tag) => tag !== stat.id);
+                          return { ...prev, statTags: next };
+                        });
+                      }}
+                    />
+                    {stat.label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-gray-500">Select any stats this quest should emphasize (optional).</p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Zone</label>
               <input
@@ -1520,6 +1559,29 @@ export const Quests = () => {
                     }
                   />
                   <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Quest Stat Tags</label>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {questStatOptions.map((stat) => (
+                      <label key={stat.id} className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={questForm.statTags.includes(stat.id)}
+                          onChange={(e) => {
+                            setQuestForm((prev) => {
+                              const next = e.target.checked
+                                ? [...prev.statTags, stat.id]
+                                : prev.statTags.filter((tag) => tag !== stat.id);
+                              return { ...prev, statTags: next };
+                            });
+                          }}
+                        />
+                        {stat.label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">Select any stats this quest should emphasize (optional).</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Zone</label>

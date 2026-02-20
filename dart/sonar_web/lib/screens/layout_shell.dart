@@ -182,19 +182,19 @@ class _UserAvatar extends StatelessWidget {
               right: -2,
               top: -2,
               child: Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: const Color(0xFFFFD54F),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: Theme.of(context).colorScheme.surface,
                     width: 1.2,
                   ),
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.arrow_upward,
-                  size: 12,
-                  color: Theme.of(context).colorScheme.onPrimary,
+                  size: 10,
+                  color: Colors.white,
                 ),
               ),
             ),
@@ -212,7 +212,7 @@ class _SideDrawer extends StatefulWidget {
 }
 
 class _SideDrawerState extends State<_SideDrawer> {
-  int _tabIndex = 1;
+  int _tabIndex = 0;
 
   void _selectTab(int index) {
     final shouldRefreshQuestLog = index == 2;
@@ -629,17 +629,45 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              GestureDetector(
-                onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: Colors.grey.shade300,
-                  backgroundImage: u.profilePictureUrl.isNotEmpty
-                      ? NetworkImage(u.profilePictureUrl)
-                      : null,
-                  child: u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
-                ),
+            GestureDetector(
+              onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.grey.shade300,
+                    backgroundImage: u.profilePictureUrl.isNotEmpty
+                        ? NetworkImage(u.profilePictureUrl)
+                        : null,
+                    child: u.profilePictureUrl.isEmpty
+                        ? const Icon(Icons.person)
+                        : null,
+                  ),
+                  if (statsProvider.hasUnspentPoints)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFD54F),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: theme.colorScheme.surface,
+                            width: 1.2,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_upward,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
+            ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -774,6 +802,17 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
                     ),
                   ],
                 ),
+                if (statsProvider.hasUnspentPoints) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Level up!',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: const Color(0xFFC58A00),
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
                 if (_pendingTotal > 0) ...[
                   const SizedBox(height: 6),
                   Text(

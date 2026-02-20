@@ -24,6 +24,65 @@ func (h *partyHandle) Create(ctx context.Context) (*models.Party, error) {
 	return party, nil
 }
 
+func (h *partyHandle) CreateWithMembers(ctx context.Context, leaderID uuid.UUID, memberIDs []uuid.UUID) (*models.Party, error) {
+	if leaderID == uuid.Nil {
+		return nil, errors.New("leader ID is required")
+	}
+
+	uniqueIDs := map[uuid.UUID]struct{}{
+		leaderID: {},
+	}
+	for _, id := range memberIDs {
+		uniqueIDs[id] = struct{}{}
+	}
+
+	if len(uniqueIDs) > MaxPartySize {
+		return nil, ErrMaxPartySizeReached
+	}
+
+	ids := make([]uuid.UUID, 0, len(uniqueIDs))
+	for id := range uniqueIDs {
+		ids = append(ids, id)
+	}
+
+	var createdParty *models.Party
+
+	if err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var users []models.User
+		if err := tx.Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return err
+		}
+
+		if len(users) != len(ids) {
+			return errors.New("one or more users not found")
+		}
+
+		for _, user := range users {
+			if user.PartyID != nil {
+				return errors.New("user already in a party")
+			}
+		}
+
+		party := &models.Party{
+			LeaderID: leaderID,
+		}
+		if err := tx.Create(party).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&models.User{}).Where("id IN ?", ids).Update("party_id", party.ID).Error; err != nil {
+			return err
+		}
+
+		createdParty = party
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return h.FindByID(ctx, createdParty.ID)
+}
+
 func (h *partyHandle) SetLeader(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID, userID uuid.UUID) error {
 	party := &models.Party{}
 	if err := h.db.WithContext(ctx).Where("id = ?", partyID).First(party).Error; err != nil {
@@ -35,6 +94,26 @@ func (h *partyHandle) SetLeader(ctx context.Context, partyID uuid.UUID, leaderID
 	}
 
 	return h.db.WithContext(ctx).Model(&models.Party{}).Where("id = ?", partyID).Update("leader_id", leaderID).Error
+}
+
+func (h *partyHandle) SetLeaderAdmin(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var party models.Party
+		if err := tx.Where("id = ?", partyID).First(&party).Error; err != nil {
+			return err
+		}
+
+		var user models.User
+		if err := tx.Where("id = ?", leaderID).First(&user).Error; err != nil {
+			return err
+		}
+
+		if user.PartyID == nil || *user.PartyID != partyID {
+			return errors.New("leader must be a party member")
+		}
+
+		return tx.Model(&models.Party{}).Where("id = ?", partyID).Update("leader_id", leaderID).Error
+	})
 }
 
 func (h *partyHandle) LeaveParty(ctx context.Context, user *models.User) error {
@@ -76,6 +155,91 @@ func (h *partyHandle) LeaveParty(ctx context.Context, user *models.User) error {
 
 	// Clear the user's party ID when leaving
 	return h.db.WithContext(ctx).Model(user).Update("party_id", nil).Error
+}
+
+func (h *partyHandle) AddMember(ctx context.Context, partyID uuid.UUID, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var party models.Party
+		if err := tx.Preload("Members").Where("id = ?", partyID).First(&party).Error; err != nil {
+			return err
+		}
+
+		var user models.User
+		if err := tx.Where("id = ?", userID).First(&user).Error; err != nil {
+			return err
+		}
+
+		if user.PartyID != nil {
+			if *user.PartyID == partyID {
+				return nil
+			}
+			return errors.New("user already in a party")
+		}
+
+		if len(party.Members) >= MaxPartySize {
+			return ErrMaxPartySizeReached
+		}
+
+		return tx.Model(&models.User{}).Where("id = ?", userID).Update("party_id", partyID).Error
+	})
+}
+
+func (h *partyHandle) RemoveMember(ctx context.Context, partyID uuid.UUID, userID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var party models.Party
+		if err := tx.Where("id = ?", partyID).First(&party).Error; err != nil {
+			return err
+		}
+
+		if party.LeaderID == userID {
+			return errors.New("cannot remove party leader")
+		}
+
+		var user models.User
+		if err := tx.Where("id = ?", userID).First(&user).Error; err != nil {
+			return err
+		}
+
+		if user.PartyID == nil || *user.PartyID != partyID {
+			return errors.New("user not in party")
+		}
+
+		return tx.Model(&models.User{}).Where("id = ?", userID).Update("party_id", nil).Error
+	})
+}
+
+func (h *partyHandle) Delete(ctx context.Context, partyID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.User{}).Where("party_id = ?", partyID).Update("party_id", nil).Error; err != nil {
+			return err
+		}
+
+		return tx.Where("id = ?", partyID).Delete(&models.Party{}).Error
+	})
+}
+
+func (h *partyHandle) FindAll(ctx context.Context) ([]models.Party, error) {
+	var parties []models.Party
+	if err := h.db.WithContext(ctx).
+		Preload("Members").
+		Preload("Leader").
+		Order("created_at desc").
+		Find(&parties).Error; err != nil {
+		return nil, err
+	}
+	return parties, nil
+}
+
+func (h *partyHandle) FindByID(ctx context.Context, partyID uuid.UUID) (*models.Party, error) {
+	var party models.Party
+	if err := h.db.WithContext(ctx).
+		Preload("Members").
+		Preload("Leader").
+		Where("id = ?", partyID).
+		First(&party).Error; err != nil {
+		return nil, err
+	}
+	return &party, nil
 }
 
 func (h *partyHandle) FindUsersParty(ctx context.Context, partyID uuid.UUID) (*models.Party, error) {

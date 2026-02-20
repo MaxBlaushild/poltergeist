@@ -25,6 +25,7 @@ import { QuestArchetypeComponent } from './components/QuestArchetype.tsx';
 import { ZoneQuestArchetypes } from './components/ZoneQuestArchetypes.tsx';
 import { Users } from './components/Users.tsx';
 import { Characters } from './components/Characters.tsx';
+import { Parties } from './components/Parties.tsx';
 import { InventoryItems } from './components/InventoryItems.tsx';
 import { TreasureChests } from './components/TreasureChests.tsx';
 import NewUserStarterConfig from './components/NewUserStarterConfig.tsx';
@@ -81,6 +82,7 @@ const Navigation = () => {
         <Link to="/quest-archetypes" className="text-white hover:text-gray-300">Quest Archetypes</Link>
         <Link to="/zone-quest-archetypes" className="text-white hover:text-gray-300">Zone Quest Archetypes</Link>
         <Link to="/users" className="text-white hover:text-gray-300">Users</Link>
+        <Link to="/parties" className="text-white hover:text-gray-300">Parties</Link>
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
         <Link to="/starter-config" className="text-white hover:text-gray-300">Starter Config</Link>
@@ -176,6 +178,11 @@ const router = createBrowserRouter([
       {
         path: "/users",
         element: <Users />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/parties",
+        element: <Parties />,
         loader: onlyAuthenticated,
       },
       {

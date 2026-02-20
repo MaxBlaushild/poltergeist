@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -127,7 +128,16 @@ func (p *ImportZonesForMetroProcessor) ProcessTask(ctx context.Context, task *as
 
 		boundary := simplifyBoundary(neighborhood.Boundary)
 		if len(boundary) < 3 {
+			boundary = convexHull(neighborhood.RawPoints)
+		}
+		if len(boundary) < 3 {
 			continue
+		}
+		if math.Abs(polygonArea(boundary)) < 1e-8 {
+			hull := convexHull(neighborhood.RawPoints)
+			if len(hull) >= 3 {
+				boundary = hull
+			}
 		}
 
 		centroidLat, centroidLon := polygonCentroid(boundary)
@@ -253,8 +263,9 @@ type overpassCoord struct {
 }
 
 type neighborhoodBoundary struct {
-	Name     string
-	Boundary []overpassCoord
+	Name      string
+	Boundary  []overpassCoord
+	RawPoints []overpassCoord
 }
 
 func (p *ImportZonesForMetroProcessor) fetchNeighborhoods(ctx context.Context, areaID int64) ([]neighborhoodBoundary, error) {
@@ -310,13 +321,17 @@ out body geom;`, areaID)
 		}
 
 		var geometry []overpassCoord
+		var rawPoints []overpassCoord
 		switch element.Type {
 		case "way":
 			geometry = element.Geometry
+			rawPoints = element.Geometry
 		case "relation":
 			geometry = mergeRelationOuterMembers(element.Members)
+			rawPoints = collectRelationOuterPoints(element.Members)
 			if len(geometry) == 0 && len(element.Geometry) > 2 {
 				geometry = element.Geometry
+				rawPoints = element.Geometry
 			}
 		}
 
@@ -325,8 +340,9 @@ out body geom;`, areaID)
 		}
 
 		out = append(out, neighborhoodBoundary{
-			Name:     name,
-			Boundary: geometry,
+			Name:      name,
+			Boundary:  geometry,
+			RawPoints: rawPoints,
 		})
 	}
 
@@ -356,6 +372,20 @@ func simplifyBoundary(points []overpassCoord) []overpassCoord {
 	}
 	if len(out) < 3 {
 		return nil
+	}
+	return out
+}
+
+func collectRelationOuterPoints(members []overpassMember) []overpassCoord {
+	out := make([]overpassCoord, 0)
+	for _, member := range members {
+		if member.Role != "outer" {
+			continue
+		}
+		if len(member.Geometry) == 0 {
+			continue
+		}
+		out = append(out, member.Geometry...)
 	}
 	return out
 }
@@ -481,6 +511,76 @@ func polygonCentroid(points []overpassCoord) (float64, float64) {
 	}
 	count := float64(len(points))
 	return sumLat / count, sumLon / count
+}
+
+func polygonArea(points []overpassCoord) float64 {
+	if len(points) < 3 {
+		return 0
+	}
+	area := 0.0
+	for i := 0; i < len(points); i++ {
+		j := (i + 1) % len(points)
+		area += points[i].Lon*points[j].Lat - points[j].Lon*points[i].Lat
+	}
+	return area / 2.0
+}
+
+func convexHull(points []overpassCoord) []overpassCoord {
+	if len(points) < 3 {
+		return nil
+	}
+
+	unique := make([]overpassCoord, 0, len(points))
+	seen := map[string]struct{}{}
+	for _, point := range points {
+		key := fmt.Sprintf("%.6f|%.6f", point.Lon, point.Lat)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, point)
+	}
+	if len(unique) < 3 {
+		return nil
+	}
+
+	sort.Slice(unique, func(i, j int) bool {
+		if unique[i].Lon == unique[j].Lon {
+			return unique[i].Lat < unique[j].Lat
+		}
+		return unique[i].Lon < unique[j].Lon
+	})
+
+	cross := func(o, a, b overpassCoord) float64 {
+		return (a.Lon-o.Lon)*(b.Lat-o.Lat) - (a.Lat-o.Lat)*(b.Lon-o.Lon)
+	}
+
+	lower := make([]overpassCoord, 0)
+	for _, p := range unique {
+		for len(lower) >= 2 && cross(lower[len(lower)-2], lower[len(lower)-1], p) <= 0 {
+			lower = lower[:len(lower)-1]
+		}
+		lower = append(lower, p)
+	}
+
+	upper := make([]overpassCoord, 0)
+	for i := len(unique) - 1; i >= 0; i-- {
+		p := unique[i]
+		for len(upper) >= 2 && cross(upper[len(upper)-2], upper[len(upper)-1], p) <= 0 {
+			upper = upper[:len(upper)-1]
+		}
+		upper = append(upper, p)
+	}
+
+	if len(lower) < 2 || len(upper) < 2 {
+		return nil
+	}
+
+	hull := append(lower[:len(lower)-1], upper[:len(upper)-1]...)
+	if len(hull) < 3 {
+		return nil
+	}
+	return hull
 }
 
 func maxDistanceMeters(lat float64, lon float64, points []overpassCoord) float64 {

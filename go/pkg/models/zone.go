@@ -4,9 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"log"
-	"math"
 	mathrand "math/rand"
-	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,28 +47,16 @@ func (z *Zone) AfterFind(tx *gorm.DB) (err error) {
 
 func (z *Zone) LoadPoints(db *gorm.DB) error {
 	points := []Point{}
-	if err := db.Model(z).Association("Points").Find(&points); err != nil {
+	if err := db.Table("points").
+		Joins("JOIN boundary_points ON boundary_points.point_id = points.id").
+		Where("boundary_points.zone_id = ?", z.ID).
+		Order("boundary_points.created_at ASC").
+		Find(&points).Error; err != nil {
 		return err
 	}
 	if len(points) == 0 {
 		return nil
 	}
-
-	// Calculate centroid of all points
-	var sumX, sumY float64
-	for _, point := range points {
-		sumX += point.Longitude
-		sumY += point.Latitude
-	}
-	centroidX := sumX / float64(len(points))
-	centroidY := sumY / float64(len(points))
-
-	// Sort points by angle around centroid
-	sort.Slice(points, func(i, j int) bool {
-		angleI := math.Atan2(points[i].Latitude-centroidY, points[i].Longitude-centroidX)
-		angleJ := math.Atan2(points[j].Latitude-centroidY, points[j].Longitude-centroidX)
-		return angleI < angleJ
-	})
 
 	z.Points = points
 

@@ -521,8 +521,15 @@ type UserZoneReputationHandle interface {
 
 type PartyHandle interface {
 	Create(ctx context.Context) (*models.Party, error)
+	CreateWithMembers(ctx context.Context, leaderID uuid.UUID, memberIDs []uuid.UUID) (*models.Party, error)
 	SetLeader(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID, userID uuid.UUID) error
+	SetLeaderAdmin(ctx context.Context, partyID uuid.UUID, leaderID uuid.UUID) error
 	LeaveParty(ctx context.Context, user *models.User) error
+	AddMember(ctx context.Context, partyID uuid.UUID, userID uuid.UUID) error
+	RemoveMember(ctx context.Context, partyID uuid.UUID, userID uuid.UUID) error
+	Delete(ctx context.Context, partyID uuid.UUID) error
+	FindAll(ctx context.Context) ([]models.Party, error)
+	FindByID(ctx context.Context, partyID uuid.UUID) (*models.Party, error)
 	FindUsersParty(ctx context.Context, partyID uuid.UUID) (*models.Party, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
