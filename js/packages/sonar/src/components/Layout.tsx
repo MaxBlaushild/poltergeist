@@ -13,7 +13,6 @@ import { ImageBadge } from './shared/ImageBadge.tsx';
 import { Modal, ModalSize } from './shared/Modal.tsx';
 import useHasCurrentMatch from '../hooks/useHasCurrentMatch.ts';
 import useLeaveMatch from '../hooks/useLeaveMatch.ts';
-import { useUserLevel } from '@poltergeist/hooks';
 import { SideNavTabs } from './SideNavTabs.tsx';
 import { UserContextProvider } from '../contexts/UserContext.tsx';
 import Profile from './Profile.tsx';
@@ -26,7 +25,6 @@ export function Layout() {
   const { currentUser } = useUserProfiles();
   const { hasCurrentMatch, matchID } = useHasCurrentMatch();
   const { leaveMatch } = useLeaveMatch();
-  const { userLevel } = useUserLevel();
   const [username, setUsername] = useState<string | null>(null);
 
   const toggleNav = () => {

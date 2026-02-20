@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -46,56 +47,107 @@ class ApiClient {
       onError: (error, handler) async {
         if (error.response?.statusCode == 401 ||
             error.response?.statusCode == 403) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.remove(_tokenKey);
-          _onAuthError?.call();
+          final skipAuthError =
+              error.requestOptions.extra['skipAuthError'] == true;
+          if (kDebugMode) {
+            final status = error.response?.statusCode;
+            final method = error.requestOptions.method;
+            final uri = error.requestOptions.uri;
+            final hadAuthHeader =
+                error.requestOptions.headers['Authorization'] != null;
+            debugPrint(
+              'ApiClient auth error: $status $method $uri '
+              '(skipAuthError=$skipAuthError, hadAuthHeader=$hadAuthHeader)',
+            );
+            debugPrint('ApiClient auth error body: ${error.response?.data}');
+          }
+          if (!skipAuthError) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.remove(_tokenKey);
+            _onAuthError?.call();
+          }
         }
         return handler.next(error);
       },
     ));
   }
 
-  Future<T> get<T>(String url, {Map<String, dynamic>? params}) async {
+  Future<T> get<T>(
+    String url, {
+    Map<String, dynamic>? params,
+    bool skipAuthError = false,
+  }) async {
     final response = await _client.get<T>(
       url,
       queryParameters: params,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'skipAuthError': skipAuthError},
+      ),
     );
     return response.data as T;
   }
 
-  Future<T> post<T>(String url, {dynamic data}) async {
+  Future<T> post<T>(
+    String url, {
+    dynamic data,
+    bool skipAuthError = false,
+  }) async {
     final response = await _client.post<T>(
       url,
       data: data,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'skipAuthError': skipAuthError},
+      ),
     );
     return response.data as T;
   }
 
-  Future<T> put<T>(String url, {dynamic data}) async {
+  Future<T> put<T>(
+    String url, {
+    dynamic data,
+    bool skipAuthError = false,
+  }) async {
     final response = await _client.put<T>(
       url,
       data: data,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'skipAuthError': skipAuthError},
+      ),
     );
     return response.data as T;
   }
 
-  Future<T> patch<T>(String url, {dynamic data}) async {
+  Future<T> patch<T>(
+    String url, {
+    dynamic data,
+    bool skipAuthError = false,
+  }) async {
     final response = await _client.patch<T>(
       url,
       data: data,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'skipAuthError': skipAuthError},
+      ),
     );
     return response.data as T;
   }
 
-  Future<T> delete<T>(String url, {dynamic data}) async {
+  Future<T> delete<T>(
+    String url, {
+    dynamic data,
+    bool skipAuthError = false,
+  }) async {
     final response = await _client.delete<T>(
       url,
       data: data,
-      options: Options(responseType: ResponseType.json),
+      options: Options(
+        responseType: ResponseType.json,
+        extra: {'skipAuthError': skipAuthError},
+      ),
     );
     return response.data as T;
   }

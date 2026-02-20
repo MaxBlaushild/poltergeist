@@ -8,13 +8,13 @@ import '../services/poi_service.dart';
 class ZoneWidget extends StatefulWidget {
   final VoidCallback? onWidgetOpen;
   final VoidCallback? onWidgetClose;
-  final double top;
+  final ZoneWidgetController? controller;
 
   const ZoneWidget({
     super.key,
     this.onWidgetOpen,
     this.onWidgetClose,
-    this.top = 80,
+    this.controller,
   });
 
   @override
@@ -32,10 +32,20 @@ class _ZoneWidgetState extends State<ZoneWidget> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(_setOpen, () => _isOpen);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _updateSelectedZoneFromLocation();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant ZoneWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach();
+      widget.controller?._attach(_setOpen, () => _isOpen);
+    }
   }
 
   @override
@@ -71,9 +81,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
 
     final zoneProvider = context.read<ZoneProvider>();
     final zone = zoneProvider.findZoneAtCoordinate(location.latitude, location.longitude);
-    if (zone != null) {
-      zoneProvider.setSelectedZone(zone);
-    }
+    zoneProvider.setSelectedZone(zone);
   }
 
   Future<void> _loadReputation(String zoneId) async {
@@ -95,6 +103,29 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     }
   }
 
+  void _setOpen(bool value) {
+    if (_isOpen == value) return;
+    setState(() {
+      _isOpen = value;
+      if (_isOpen) {
+        widget.onWidgetOpen?.call();
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            setState(() => _showContent = true);
+          }
+        });
+      } else {
+        _showContent = false;
+        widget.onWidgetClose?.call();
+      }
+    });
+  }
+
+  String _capitalize(String value) {
+    if (value.isEmpty) return value;
+    return value[0].toUpperCase() + value.substring(1);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ZoneProvider>(
@@ -111,117 +142,101 @@ class _ZoneWidgetState extends State<ZoneWidget> {
           color: theme.colorScheme.onSurface,
         );
 
-        return Positioned(
-          top: widget.top,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: GestureDetector(
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: _isOpen ? 256 : 144,
+          constraints: BoxConstraints(
+            minHeight: _isOpen ? 0 : 40,
+          ),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x332D2416),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
               onTap: () {
-                setState(() {
-                  _isOpen = !_isOpen;
-                  if (_isOpen) {
-                    widget.onWidgetOpen?.call();
-                    Future.delayed(const Duration(milliseconds: 300), () {
-                      if (mounted) {
-                        setState(() => _showContent = true);
-                      }
-                    });
-                  } else {
-                    _showContent = false;
-                    widget.onWidgetClose?.call();
-                  }
-                });
+                _setOpen(!_isOpen);
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: _isOpen ? 256 : 144,
-                constraints: BoxConstraints(
-                  minHeight: _isOpen ? 0 : 40,
-                ),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: surfaceColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: borderColor, width: 1.5),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x332D2416),
-                      blurRadius: 10,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            selectedZone?.name ?? 'Hinterlands',
-                            style: textStyle,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          selectedZone?.name ?? 'Hinterlands',
+                          style: textStyle,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        Icon(
-                          _isOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                          size: 16,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ],
-                    ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 300),
-                      child: _showContent && _isOpen
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                if (selectedZone?.description != null) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    selectedZone!.description!,
-                                    style: subTextStyle,
-                                  ),
-                                ],
-                                if (_reputation != null) ...[
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        'Reputation: ${_reputation!.name.name}',
-                                        style: textStyle?.copyWith(fontSize: 14),
-                                      ),
-                                      Text(
-                                        '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
-                                        style: subTextStyle,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 4),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: LinearProgressIndicator(
-                                      value: _reputation!.reputationToNextLevel > 0
-                                          ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
-                                          : 0.0,
-                                      backgroundColor: theme.colorScheme.surfaceVariant,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        theme.colorScheme.primary,
-                                      ),
+                      ),
+                      Icon(
+                        _isOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                        size: 16,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    child: _showContent && _isOpen
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (selectedZone?.description != null) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  selectedZone!.description!,
+                                  style: subTextStyle,
+                                ),
+                              ],
+                              if (_reputation != null) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Reputation: ${_capitalize(_reputation!.name.name)}',
+                                      style: textStyle?.copyWith(fontSize: 14),
+                                    ),
+                                    Text(
+                                      '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
+                                      style: subTextStyle,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: _reputation!.reputationToNextLevel > 0
+                                        ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
+                                        : 0.0,
+                                    backgroundColor: theme.colorScheme.surfaceVariant,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      theme.colorScheme.primary,
                                     ),
                                   ),
-                                ],
+                                ),
                               ],
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ],
-                ),
+                            ],
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ),
             ),
           ),
@@ -229,4 +244,25 @@ class _ZoneWidgetState extends State<ZoneWidget> {
       },
     );
   }
+}
+
+class ZoneWidgetController {
+  void Function(bool isOpen)? _setOpen;
+  bool Function()? _isOpen;
+
+  void _attach(void Function(bool) setOpen, bool Function() isOpen) {
+    _setOpen = setOpen;
+    _isOpen = isOpen;
+  }
+
+  void _detach() {
+    _setOpen = null;
+    _isOpen = null;
+  }
+
+  bool get isOpen => _isOpen?.call() ?? false;
+
+  void open() => _setOpen?.call(true);
+  void close() => _setOpen?.call(false);
+  void toggle() => _setOpen?.call(!isOpen);
 }

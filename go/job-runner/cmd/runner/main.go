@@ -79,6 +79,7 @@ func main() {
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
 	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient)
+	importZonesForMetroProcessor := processors.NewImportZonesForMetroProcessor(dbClient)
 
 	var polymarketClient polymarket.Client
 	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
@@ -137,6 +138,7 @@ func main() {
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
 	mux.Handle(jobs.ImportPointOfInterestTaskType, importPointOfInterestProcessor)
+	mux.Handle(jobs.ImportZonesForMetroTaskType, importZonesForMetroProcessor)
 	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -28,6 +29,7 @@ Future<Uint8List?> loadPoiThumbnail(String? imageUrl) async {
       radius: _cornerRadius,
       antialias: true,
     );
+    _applyParchmentFrame(square);
     return Uint8List.fromList(img.encodePng(square));
   } catch (_) {
     return null;
@@ -56,6 +58,7 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
       radius: _cornerRadius,
       antialias: true,
     );
+    _applyParchmentFrame(square);
     final borderedSize = _thumbnailSize + borderWidth * 2;
     final bordered = img.Image(width: borderedSize, height: borderedSize);
     img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
@@ -95,10 +98,46 @@ Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) async {
       radius: _cornerRadius,
       antialias: true,
     );
+    _applyParchmentFrame(square);
     _drawQuestMarker(square);
     return Uint8List.fromList(img.encodePng(square));
   } catch (_) {
     return null;
+  }
+}
+
+void _applyParchmentFrame(img.Image image) {
+  final width = image.width;
+  final height = image.height;
+  final edge = math.max(2, (width * 0.06).round());
+  final vignette = img.Image(width: width, height: height);
+
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final dx = math.min(x, width - 1 - x);
+      final dy = math.min(y, height - 1 - y);
+      final dist = math.min(dx, dy);
+      final t = (dist / edge).clamp(0.0, 1.0);
+      final alpha = (1.0 - t) * 0.55;
+      final color = img.ColorRgba8(224, 207, 170, (alpha * 255).round());
+      vignette.setPixel(x, y, color);
+    }
+  }
+
+  img.compositeImage(image, vignette, blend: img.BlendMode.multiply);
+  img.gaussianBlur(image, radius: 1);
+
+  final border = math.max(2, (width * 0.02).round());
+  final stroke = img.ColorRgba8(0, 0, 0, 210);
+  for (var i = 0; i < border; i++) {
+    img.drawRect(
+      image,
+      x1: i,
+      y1: i,
+      x2: width - 1 - i,
+      y2: height - 1 - i,
+      color: stroke,
+    );
   }
 }
 

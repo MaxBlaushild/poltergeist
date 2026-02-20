@@ -83,7 +83,7 @@ func (p *GenerateOutfitProfilePictureProcessor) ProcessTask(ctx context.Context,
 	editRequest := deep_priest.EditImageRequest{
 		Prompt:   prompt,
 		ImageUrl: selfieUrl,
-		Model:    "gpt-image-1",
+		Model:    "dall-e-2",
 		N:        1,
 		Size:     genSize,
 	}

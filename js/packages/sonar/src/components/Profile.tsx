@@ -13,10 +13,11 @@ import { useUserProfiles } from '../contexts/UserProfileContext.tsx';
 interface ProfileProps {
   isOwnProfile?: boolean;
   showBackButton?: boolean;
+  showLevelProgress?: boolean;
   onBack?: () => void;
 }
 
-const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = false, onBack }) => {
+const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = false, showLevelProgress = true, onBack }) => {
   const userCtx = useUserContext();
   const { user: contextUser, loading: contextLoading, error: contextError, setUsername } = userCtx || { user: null, loading: false, error: null, setUsername: () => {} } as any;
   const { user: authUser, logout } = useAuth();
@@ -143,6 +144,8 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
     return phoneNumber;
   };
 
+  const earnedReputations = reputations.filter((rep) => rep.totalReputation > 0);
+
   return (
     <div className="bg-gradient-to-br from-pink-50 via-blue-50 to-purple-50 py-4 px-4 h-screen">
       <div className="max-w-4xl mx-auto">
@@ -230,7 +233,7 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
             </div>
 
             {/* Experience Bar */}
-            {userLevel && (
+            {showLevelProgress && userLevel && (
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold">Level {userLevel.level}</span>
@@ -271,15 +274,12 @@ const Profile: FC<ProfileProps> = ({ isOwnProfile = false, showBackButton = fals
               <h2 className="text-xl font-bold text-gray-900">Zone Reputation</h2>
             </div>
             <div className="p-6">
-              {reputations.length === 0 ? (
+              {earnedReputations.length === 0 ? (
                 <p className="text-gray-600">No reputation yet.</p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {reputations.map((rep) => {
+                  {earnedReputations.map((rep) => {
                     const zone = zones.find(z => z.id === rep.zoneId);
-                    console.log('zones', zones);
-                    console.log('zone', zone);
-                    console.log('rep', rep);
                     const zoneName = zone?.name || rep.zoneId.substring(0, 8);
                     return (
                       <li key={rep.zoneId} className="py-3 flex items-center justify-between">

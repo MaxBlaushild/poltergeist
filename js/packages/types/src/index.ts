@@ -35,6 +35,7 @@ export * from './questArchetype';
 export * from './locationArchetype';
 export * from './zoneQuestArchetype';
 export * from './zone';
+export * from './zoneImport';
 export * from './point';
 export * from './submissionResult';
 export * from './userLevel';

@@ -61,27 +61,40 @@ class _PartyTabContentState extends State<PartyTabContent> {
 
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Invite to party'),
-        content: SizedBox(
-          width: 320,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: searchController,
-                decoration: const InputDecoration(
-                  hintText: 'Search by username...',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final scheme = theme.colorScheme;
+        return AlertDialog(
+          backgroundColor: scheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
+          title: Text(
+            'Invite to party',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                TextField(
+                  controller: searchController,
+                  decoration: const InputDecoration(
+                    hintText: 'Search by username...',
+                    prefixIcon: Icon(Icons.search),
+                    isDense: true,
+                  ),
+                  onChanged: (q) => fp.searchForFriends(q),
                 ),
-                onChanged: (q) => fp.searchForFriends(q),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 240,
-                child: Consumer<FriendProvider>(
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 240,
+                  child: Consumer<FriendProvider>(
                     builder: (context, fp2, _) {
                       final results = fp2.searchResults
                           .where((u) => !memberIds.contains(u.id))
@@ -91,26 +104,41 @@ class _PartyTabContentState extends State<PartyTabContent> {
                         itemCount: results.length,
                         itemBuilder: (_, i) {
                           final u = results[i];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: Colors.grey.shade300,
-                              backgroundImage:
-                                  u.profilePictureUrl.isNotEmpty
-                                      ? NetworkImage(u.profilePictureUrl)
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Material(
+                              color: scheme.surfaceContainerHighest,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(color: scheme.outlineVariant),
+                              ),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: scheme.surfaceVariant,
+                                  backgroundImage:
+                                      u.profilePictureUrl.isNotEmpty
+                                          ? NetworkImage(u.profilePictureUrl)
+                                          : null,
+                                  child: u.profilePictureUrl.isEmpty
+                                      ? Icon(
+                                          Icons.person,
+                                          size: 18,
+                                          color: scheme.onSurfaceVariant,
+                                        )
                                       : null,
-                              child: u.profilePictureUrl.isEmpty
-                                  ? const Icon(Icons.person, size: 18)
-                                  : null,
-                            ),
-                            title: Text(
-                                u.username.isNotEmpty ? u.username : u.name),
-                            trailing: TextButton(
-                              onPressed: () async {
-                                await party.inviteToParty(u);
-                                if (ctx.mounted) Navigator.of(ctx).pop();
-                              },
-                              child: const Text('Invite'),
+                                ),
+                                title: Text(
+                                  u.username.isNotEmpty ? u.username : u.name,
+                                ),
+                                trailing: FilledButton.tonal(
+                                  onPressed: () async {
+                                    await party.inviteToParty(u);
+                                    if (ctx.mounted) Navigator.of(ctx).pop();
+                                  },
+                                  child: const Text('Invite'),
+                                ),
+                              ),
                             ),
                           );
                         },
@@ -118,16 +146,17 @@ class _PartyTabContentState extends State<PartyTabContent> {
                     },
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     ).then((_) {
       searchController.dispose();
       fp.clearSearch();
@@ -209,43 +238,55 @@ class _PartyTabContentState extends State<PartyTabContent> {
     User user,
     bool isLeader,
   ) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final p = party.party!;
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.purple.shade900.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.purple.shade700),
+          Material(
+            color: scheme.surfaceVariant,
+            elevation: 1,
+            shadowColor: const Color(0x332D2416),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: scheme.outlineVariant),
             ),
-            child: Row(
-              children: [
-                const Icon(Icons.group, color: Colors.white70, size: 24),
-                const SizedBox(width: 8),
-                Text(
-                  'Party (${p.members.length}/5)',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                if (isLeader) ...[
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.shade700,
-                      borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.group, color: scheme.primary, size: 24),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Party (${p.members.length}/5)',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: scheme.onSurface,
                     ),
-                    child: const Text('LEADER', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
+                  if (isLeader) ...[
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: scheme.tertiary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'LEADER',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: scheme.onTertiary,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -283,24 +324,38 @@ class _PartyTabContentState extends State<PartyTabContent> {
               onPressed: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Leave party?'),
-                    content: Text(
-                      isLeader
-                          ? 'You are the leader. Are you sure you want to leave?'
-                          : 'Are you sure you want to leave the party?',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Cancel'),
+                  builder: (ctx) {
+                    final theme = Theme.of(ctx);
+                    final scheme = theme.colorScheme;
+                    return AlertDialog(
+                      backgroundColor: scheme.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: scheme.outlineVariant),
                       ),
-                      FilledButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Leave'),
+                      title: Text(
+                        'Leave party?',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ],
-                  ),
+                      content: Text(
+                        isLeader
+                            ? 'You are the leader. Are you sure you want to leave?'
+                            : 'Are you sure you want to leave the party?',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('Leave'),
+                        ),
+                      ],
+                    );
+                  },
                 );
                 if (confirm == true && context.mounted) {
                   await party.leaveParty();
@@ -309,8 +364,8 @@ class _PartyTabContentState extends State<PartyTabContent> {
               icon: const Icon(Icons.logout, size: 20),
               label: const Text('Leave Party'),
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-                foregroundColor: Colors.white,
+                backgroundColor: scheme.error,
+                foregroundColor: scheme.onError,
               ),
             ),
           ),
@@ -320,25 +375,27 @@ class _PartyTabContentState extends State<PartyTabContent> {
   }
 
   Widget _noPartyPlaceholder(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Column(
         children: [
-          Icon(Icons.group_off, size: 64, color: Colors.grey.shade600),
+          Icon(Icons.group_off, size: 64, color: scheme.onSurfaceVariant),
           const SizedBox(height: 12),
           Text(
             'No Active Party',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey.shade400,
-                  fontWeight: FontWeight.bold,
-                ),
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: scheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             'Accept an invite or get invited by a friend!',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.grey.shade500,
-                ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -391,60 +448,68 @@ class _AccordionSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final accentColor = accent ? scheme.tertiary : scheme.primary;
+    final accentText = accent ? scheme.onTertiary : scheme.onPrimary;
+
     return Container(
       margin: const EdgeInsets.only(top: 16),
-      decoration: BoxDecoration(
-        color: accent
-            ? Colors.amber.shade900.withValues(alpha: 0.2)
-            : Colors.grey.shade900.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: accent ? Colors.amber.shade700 : Colors.grey.shade700),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          InkWell(
-            onTap: onToggle,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(
-                    expanded ? Icons.expand_more : Icons.chevron_right,
-                    color: accent ? Colors.amber.shade300 : Colors.grey.shade400,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: accent ? Colors.amber.shade100 : Colors.grey.shade300,
+      child: Material(
+        color: scheme.surface,
+        elevation: 1,
+        shadowColor: const Color(0x332D2416),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Icon(
+                      expanded ? Icons.expand_more : Icons.chevron_right,
+                      color: scheme.onSurfaceVariant,
+                      size: 24,
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: accent ? Colors.amber.shade700 : Colors.grey.shade600,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '$badge',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    const SizedBox(width: 8),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: scheme.onSurface,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: accentColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$badge',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: accentText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          if (expanded) Padding(padding: const EdgeInsets.all(12), child: child),
-        ],
+            if (expanded) Divider(height: 1, color: scheme.outlineVariant),
+            if (expanded) Padding(padding: const EdgeInsets.all(12), child: child),
+          ],
+        ),
       ),
     );
   }
@@ -465,13 +530,16 @@ class _PartyInviteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final user = received ? invite.inviter : invite.invitee;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.black26,
-        borderRadius: BorderRadius.circular(8),
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
       ),
       child: Row(
         children: [
@@ -483,14 +551,16 @@ class _PartyInviteTile extends StatelessWidget {
               children: [
                 Text(
                   user.username.isNotEmpty ? user.username : user.name,
-                  style: const TextStyle(
+                  style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: scheme.onSurface,
                   ),
                 ),
                 Text(
                   received ? 'invited you to their party' : 'Invite pending...',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -498,12 +568,12 @@ class _PartyInviteTile extends StatelessWidget {
           if (received) ...[
             IconButton(
               onPressed: onAccept,
-              icon: const Icon(Icons.check, color: Colors.green),
+              icon: Icon(Icons.check, color: scheme.secondary),
               tooltip: 'Accept',
             ),
             IconButton(
               onPressed: onReject,
-              icon: const Icon(Icons.close, color: Colors.red),
+              icon: Icon(Icons.close, color: scheme.error),
               tooltip: 'Decline',
             ),
           ] else
@@ -536,17 +606,21 @@ class _PartyMemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: isLeader
-            ? Colors.amber.shade900.withValues(alpha: 0.3)
-            : Colors.black26,
-        borderRadius: BorderRadius.circular(8),
-        border: isLeader
-            ? Border.all(color: Colors.amber.shade700.withValues(alpha: 0.5))
-            : Border.all(color: Colors.grey.shade700),
+            ? scheme.tertiary.withValues(alpha: 0.12)
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isLeader
+              ? scheme.tertiary.withValues(alpha: 0.45)
+              : scheme.outlineVariant,
+        ),
       ),
       child: Row(
         children: [
@@ -562,7 +636,7 @@ class _PartyMemberTile extends StatelessWidget {
                       member.username.isNotEmpty ? member.username : member.name,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: isLeader ? Colors.amber.shade300 : Colors.white,
+                        color: isLeader ? scheme.tertiary : scheme.onSurface,
                       ),
                     ),
                     if (isCurrentUser)
@@ -570,7 +644,7 @@ class _PartyMemberTile extends StatelessWidget {
                         ' (You)',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey.shade400,
+                          color: scheme.onSurfaceVariant,
                         ),
                       ),
                   ],
@@ -578,7 +652,9 @@ class _PartyMemberTile extends StatelessWidget {
                 if (member.name.isNotEmpty && member.name != member.username)
                   Text(
                     member.name,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
               ],
             ),
@@ -602,14 +678,19 @@ class _UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return CircleAvatar(
       radius: size / 2,
-      backgroundColor: Colors.grey.shade700,
+      backgroundColor: scheme.surfaceVariant,
       backgroundImage: user.profilePictureUrl.isNotEmpty
           ? NetworkImage(user.profilePictureUrl)
           : null,
       child: user.profilePictureUrl.isEmpty
-          ? Icon(Icons.person, size: size * 0.5, color: Colors.grey.shade400)
+          ? Icon(
+              Icons.person,
+              size: size * 0.5,
+              color: scheme.onSurfaceVariant,
+            )
           : null,
     );
   }

@@ -16,6 +16,7 @@ const (
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
 	ImportPointOfInterestTaskType         = "import_point_of_interest"
+	ImportZonesForMetroTaskType           = "import_zones_for_metro"
 	MonitorPolymarketTradesTaskType       = "monitor_polymarket_trades"
 )
 
@@ -56,5 +57,9 @@ type GeneratePointOfInterestImageTaskPayload struct {
 }
 
 type ImportPointOfInterestTaskPayload struct {
+	ImportID uuid.UUID `json:"importId"`
+}
+
+type ImportZonesForMetroTaskPayload struct {
 	ImportID uuid.UUID `json:"importId"`
 }

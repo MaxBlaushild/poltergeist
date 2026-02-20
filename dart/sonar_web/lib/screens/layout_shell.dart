@@ -6,19 +6,32 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/party_provider.dart';
-import '../widgets/character_tab_content.dart';
+import '../providers/quest_log_provider.dart';
+import '../providers/map_focus_provider.dart';
 import '../widgets/friends_tab_content.dart';
+import '../widgets/inventory_panel.dart';
 import '../widgets/party_tab_content.dart';
+import '../widgets/quest_log_panel.dart';
+import '../widgets/reputation_tab_content.dart';
 
-class LayoutShell extends StatelessWidget {
+class LayoutShell extends StatefulWidget {
   const LayoutShell({super.key, required this.child});
 
   final Widget child;
 
   @override
+  State<LayoutShell> createState() => _LayoutShellState();
+}
+
+class _LayoutShellState extends State<LayoutShell> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
   Widget build(BuildContext context) {
     return _LogoutCleaner(
+      scaffoldKey: _scaffoldKey,
       child: Scaffold(
+        key: _scaffoldKey,
         endDrawer: const _SideDrawer(),
         body: SafeArea(
           top: false,
@@ -28,7 +41,7 @@ class LayoutShell extends StatelessWidget {
           child: Column(
             children: [
               _LayoutHeader(),
-              Expanded(child: child),
+              Expanded(child: widget.child),
             ],
           ),
         ),
@@ -38,9 +51,13 @@ class LayoutShell extends StatelessWidget {
 }
 
 class _LogoutCleaner extends StatefulWidget {
-  const _LogoutCleaner({required this.child});
+  const _LogoutCleaner({
+    required this.child,
+    required this.scaffoldKey,
+  });
 
   final Widget child;
+  final GlobalKey<ScaffoldState> scaffoldKey;
 
   @override
   State<_LogoutCleaner> createState() => _LogoutCleanerState();
@@ -57,6 +74,7 @@ class _LogoutCleanerState extends State<_LogoutCleaner> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         context.read<PartyProvider>().clear();
         context.read<FriendProvider>().clear();
+        widget.scaffoldKey.currentState?.closeEndDrawer();
       });
       _lastUserId = null;
     } else if (uid != null) {
@@ -75,8 +93,8 @@ class _LayoutHeader extends StatelessWidget {
         final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.95);
         final topPadding = MediaQuery.of(context).padding.top;
         return Container(
-          height: 61 + topPadding,
-          padding: EdgeInsets.fromLTRB(16, topPadding + 8, 16, 8),
+          height: 52 + topPadding,
+          padding: EdgeInsets.fromLTRB(16, topPadding + 4, 16, 4),
           decoration: BoxDecoration(
             color: surfaceColor,
             border: Border(
@@ -164,159 +182,373 @@ class _SideDrawer extends StatefulWidget {
 }
 
 class _SideDrawerState extends State<_SideDrawer> {
-  int _tabIndex = 0;
+  int _tabIndex = 1;
+
+  void _selectTab(int index) {
+    final shouldRefreshQuestLog = index == 2;
+    if (_tabIndex == index) {
+      if (shouldRefreshQuestLog) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          context.read<QuestLogProvider>().refresh();
+        });
+      }
+      return;
+    }
+    setState(() => _tabIndex = index);
+    if (shouldRefreshQuestLog) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<QuestLogProvider>().refresh();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final drawerWidth = (screenWidth * 0.9).clamp(320.0, 520.0);
+    final theme = Theme.of(context);
     return Drawer(
+      width: drawerWidth,
       child: SafeArea(
-        child: ListView(
+        child: Padding(
           padding: const EdgeInsets.all(16),
-          children: [
-            const Text(
-              'Profile',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Consumer<AuthProvider>(
-              builder: (context, auth, _) {
-                final u = auth.user;
-                if (u == null) return const SizedBox.shrink();
-                void showProfileImage() {
-                  if (u.profilePictureUrl.isEmpty) return;
-                  showDialog<void>(
-                    context: context,
-                    barrierColor: Colors.black54,
-                    builder: (context) {
-                      final theme = Theme.of(context);
-                      return Dialog(
-                        backgroundColor: Colors.transparent,
-                        insetPadding: const EdgeInsets.all(24),
-                        child: Stack(
-                          alignment: Alignment.topRight,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surface,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: theme.colorScheme.outlineVariant,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 18,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Image.network(
-                                  u.profilePictureUrl,
-                                  width: 320,
-                                  height: 320,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    width: 320,
-                                    height: 320,
-                                    color: theme.colorScheme.surfaceVariant,
-                                    child: const Icon(Icons.person, size: 96),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close),
-                              style: IconButton.styleFrom(
-                                backgroundColor:
-                                    theme.colorScheme.surfaceContainerHighest,
-                                shape: const CircleBorder(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                }
-                return Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    GestureDetector(
-                      onTap:
-                          u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
-                      child: CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.grey.shade300,
-                        backgroundImage:
-                            u.profilePictureUrl.isNotEmpty
-                                ? NetworkImage(u.profilePictureUrl)
-                                : null,
-                        child: u.profilePictureUrl.isEmpty
-                            ? const Icon(Icons.person)
-                            : null,
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                          width: 1.2,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Text(
-                            u.username.isNotEmpty ? u.username : u.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
+                          _DrawerMenuButton(
+                            label: 'Character',
+                            icon: Icons.person,
+                            selected: _tabIndex == 0,
+                            onTap: () => _selectTab(0),
                           ),
-                          if (u.username.isNotEmpty && u.name != u.username)
-                            Text(
-                              u.name,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
+                          _DrawerMenuButton(
+                            label: 'Inventory',
+                            icon: Icons.inventory_2,
+                            selected: _tabIndex == 1,
+                            onTap: () => _selectTab(1),
+                          ),
+                          _DrawerMenuButton(
+                            label: 'Quest Log',
+                            icon: Icons.menu_book,
+                            selected: _tabIndex == 2,
+                            onTap: () => _selectTab(2),
+                          ),
+                          _DrawerMenuButton(
+                            label: 'Party',
+                            icon: Icons.groups,
+                            selected: _tabIndex == 3,
+                            onTap: () => _selectTab(3),
+                          ),
+                          _DrawerMenuButton(
+                            label: 'Friends',
+                            icon: Icons.people,
+                            selected: _tabIndex == 4,
+                            onTap: () => _selectTab(4),
+                          ),
+                          _DrawerMenuButton(
+                            label: 'Reputation',
+                            icon: Icons.stars,
+                            selected: _tabIndex == 5,
+                            onTap: () => _selectTab(5),
+                          ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: SizedBox.expand(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: _tabIndex == 0
+                              ? const _CharacterTabContent(
+                                  key: ValueKey('character'),
+                                )
+                              : _tabIndex == 1
+                                  ? InventoryPanel(
+                                      key: const ValueKey('inventory'),
+                                      onClose: () => Navigator.of(context).pop(),
+                                    )
+                                  : _tabIndex == 2
+                                  ? QuestLogPanel(
+                                      key: const ValueKey('quest-log'),
+                                      onClose: () => Navigator.of(context).pop(),
+                                      onFocusPoI: (poi) {
+                                        context.read<MapFocusProvider>().focusPoi(poi);
+                                        context.go('/single-player');
+                                      },
+                                      onFocusTurnInQuest: (quest) {
+                                        context
+                                            .read<MapFocusProvider>()
+                                            .focusTurnInQuest(quest);
+                                        context.go('/single-player');
+                                      },
+                                    )
+                                  : _tabIndex == 3
+                                      ? const PartyTabContent(
+                                          key: ValueKey('party'),
+                                        )
+                                      : _tabIndex == 4
+                                          ? const FriendsTabContent(
+                                              key: ValueKey('friends'),
+                                            )
+                                          : const ReputationTabContent(
+                                              key: ValueKey('reputation'),
+                                            ),
+                        ),
+                      ),
+                    ),
                   ],
-                );
-              },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerMenuButton extends StatelessWidget {
+  const _DrawerMenuButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = theme.colorScheme.primary;
+    final textColor =
+        selected ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurface;
+    final bgColor =
+        selected ? theme.colorScheme.primaryContainer : theme.colorScheme.surface;
+    final borderColor = selected ? accent : theme.colorScheme.outlineVariant;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: borderColor, width: selected ? 1.4 : 1.0),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x1F2D2416),
+                      blurRadius: 8,
+                      offset: Offset(0, 3),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color:
+                    selected ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: textColor,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CharacterTabContent extends StatelessWidget {
+  const _CharacterTabContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        final u = auth.user;
+        if (u == null) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Log in to see your character.'),
             ),
-            const SizedBox(height: 16),
+          );
+        }
+
+        void showProfileImage() {
+          if (u.profilePictureUrl.isEmpty) return;
+          showDialog<void>(
+            context: context,
+            barrierColor: Colors.black54,
+            builder: (context) {
+              final theme = Theme.of(context);
+              return Dialog(
+                backgroundColor: Colors.transparent,
+                insetPadding: const EdgeInsets.all(24),
+                child: Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 18,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.network(
+                          u.profilePictureUrl,
+                          width: 320,
+                          height: 320,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 320,
+                            height: 320,
+                            color: theme.colorScheme.surfaceVariant,
+                            child: const Icon(Icons.person, size: 96),
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      style: IconButton.styleFrom(
+                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                        shape: const CircleBorder(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _TabButton(
-                  label: 'Character',
-                  selected: _tabIndex == 0,
-                  onTap: () => setState(() => _tabIndex = 0),
+                GestureDetector(
+                  onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
+                  child: CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.grey.shade300,
+                    backgroundImage: u.profilePictureUrl.isNotEmpty
+                        ? NetworkImage(u.profilePictureUrl)
+                        : null,
+                    child:
+                        u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
+                  ),
                 ),
-                _TabButton(
-                  label: 'Party',
-                  selected: _tabIndex == 1,
-                  onTap: () => setState(() => _tabIndex = 1),
-                ),
-                _TabButton(
-                  label: 'Friends',
-                  selected: _tabIndex == 2,
-                  onTap: () => setState(() => _tabIndex = 2),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        u.username.isNotEmpty ? u.username : u.name,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (u.username.isNotEmpty && u.name != u.username)
+                        Text(
+                          u.name,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: _tabIndex == 0
-                  ? const CharacterTabContent(key: ValueKey('char'))
-                  : _tabIndex == 1
-                      ? const PartyTabContent(key: ValueKey('party'))
-                      : const FriendsTabContent(key: ValueKey('friends')),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: theme.colorScheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Character details',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'More character stats and customization options will show up here soon.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const Divider(),
-            TextButton(
+            const Spacer(),
+            OutlinedButton(
               onPressed: () {
                 Navigator.of(context).pop();
                 context.go('/logout');
@@ -324,40 +556,8 @@ class _SideDrawerState extends State<_SideDrawer> {
               child: const Text('Log out'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TabButton extends StatelessWidget {
-  const _TabButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: TextButton(
-        onPressed: onTap,
-        style: TextButton.styleFrom(
-          foregroundColor: selected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.grey.shade600,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

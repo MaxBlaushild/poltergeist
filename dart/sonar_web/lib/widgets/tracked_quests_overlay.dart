@@ -39,6 +39,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
   bool _expanded = false;
   bool _showContent = false;
   TrackedQuestsOverlayController? _controller;
+  List<Quest> _cachedTracked = const [];
 
   @override
   void initState() {
@@ -107,11 +108,22 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         final tracked = ql.quests
             .where((q) => ql.trackedQuestIds.contains(q.id))
             .toList();
+        if (tracked.isNotEmpty) {
+          _cachedTracked = List<Quest>.from(tracked);
+        } else if (ql.trackedQuestIds.isEmpty) {
+          _cachedTracked = const [];
+        } else if (_cachedTracked.isNotEmpty) {
+          _cachedTracked = _cachedTracked
+              .where((q) => ql.trackedQuestIds.contains(q.id))
+              .toList();
+        }
+        final visibleTracked =
+            tracked.isNotEmpty ? tracked : _cachedTracked;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId
         };
 
-        if (tracked.isEmpty) return const SizedBox.shrink();
+        if (visibleTracked.isEmpty) return const SizedBox.shrink();
 
         final screenWidth = MediaQuery.sizeOf(context).width;
         const rightMargin = 16.0;
@@ -167,7 +179,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                             child: SingleChildScrollView(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: tracked
+                                children: visibleTracked
                                     .map(
                                       (quest) => Padding(
                                         padding: const EdgeInsets.only(bottom: 8),

@@ -232,8 +232,9 @@ func (c *client) EditImage(ctx context.Context, request deep_priest.EditImageReq
 
 	// 6) Call the image edit endpoint WITH the transparent mask.
 	// Use a manual multipart request to ensure `model` is always included.
-	if request.Model == "" {
-		request.Model = "gpt-image-1"
+	// Image edits currently require dall-e-2.
+	if request.Model == "" || request.Model == "gpt-image-1" {
+		request.Model = "dall-e-2"
 	}
 
 	var body bytes.Buffer

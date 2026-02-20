@@ -83,7 +83,7 @@ func (p *CreateProfilePictureProcessor) ProcessTask(ctx context.Context, task *a
 	editRequest := deep_priest.EditImageRequest{
 		Prompt:   strictPixelPrompt,
 		ImageUrl: payload.ProfilePictureUrl,
-		Model:    "gpt-image-1",
+		Model:    "dall-e-2",
 		N:        1,       // multiple for selection
 		Size:     genSize, // generate smaller; we'll downscale further
 		// If your backend supports: TransparentBackground: true,

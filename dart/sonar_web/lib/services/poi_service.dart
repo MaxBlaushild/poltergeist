@@ -142,7 +142,10 @@ class PoiService {
 
   Future<UserZoneReputation?> getUserZoneReputation(String zoneId) async {
     try {
-      final json = await _api.get<Map<String, dynamic>>('/sonar/zones/$zoneId/reputation');
+      final json = await _api.get<Map<String, dynamic>>(
+        '/sonar/zones/$zoneId/reputation',
+        skipAuthError: true,
+      );
       return UserZoneReputation.fromJson(json);
     } catch (_) {
       return null;

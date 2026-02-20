@@ -31,6 +31,7 @@ import 'providers/tags_provider.dart';
 import 'providers/quest_log_provider.dart';
 import 'providers/quest_filter_provider.dart';
 import 'providers/zone_provider.dart';
+import 'providers/map_focus_provider.dart';
 
 void main() {
   runApp(const SonarApp());
@@ -72,6 +73,7 @@ class SonarApp extends StatelessWidget {
     final completedTaskProvider = CompletedTaskProvider();
     final zoneProvider = ZoneProvider();
     final discoveriesProvider = DiscoveriesProvider(poiService, authProvider);
+    final mapFocusProvider = MapFocusProvider();
 
     apiClient.setOnAuthError(() {
       authProvider.logout();
@@ -80,7 +82,7 @@ class SonarApp extends StatelessWidget {
     AppLocation? getLocation() => locationProvider.location;
     apiClient.setGetLocation(getLocation);
 
-    final router = createRouter();
+    final router = createRouter(refreshListenable: authProvider);
 
     return MultiProvider(
       providers: [
@@ -100,6 +102,7 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<CompletedTaskProvider>.value(value: completedTaskProvider),
         ChangeNotifierProvider<ZoneProvider>.value(value: zoneProvider),
         ChangeNotifierProvider<DiscoveriesProvider>.value(value: discoveriesProvider),
+        ChangeNotifierProvider<MapFocusProvider>.value(value: mapFocusProvider),
         ChangeNotifierProvider<QuestLogProvider>.value(
           value: QuestLogProvider(
             questLogService,

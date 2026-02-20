@@ -29,6 +29,7 @@ type DbClient interface {
 	PointOfInterestGroup() PointOfInterestGroupHandle
 	PointOfInterestChallenge() PointOfInterestChallengeHandle
 	PointOfInterestImport() PointOfInterestImportHandle
+	ZoneImport() ZoneImportHandle
 	InventoryItem() InventoryItemHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	AuditItem() AuditItemHandle
@@ -305,6 +306,14 @@ type PointOfInterestImportHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.PointOfInterestImport, error)
 	FindRecent(ctx context.Context, limit int) ([]models.PointOfInterestImport, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.PointOfInterestImport, error)
+}
+
+type ZoneImportHandle interface {
+	Create(ctx context.Context, item *models.ZoneImport) error
+	Update(ctx context.Context, item *models.ZoneImport) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneImport, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ZoneImport, error)
+	FindByMetroName(ctx context.Context, metroName string, limit int) ([]models.ZoneImport, error)
 }
 
 type InventoryItemHandle interface {

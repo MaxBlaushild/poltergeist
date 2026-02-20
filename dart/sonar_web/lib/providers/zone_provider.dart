@@ -4,18 +4,33 @@ import '../models/zone.dart';
 class ZoneProvider extends ChangeNotifier {
   List<Zone> _zones = [];
   Zone? _selectedZone;
+  bool _selectionLocked = false;
 
   List<Zone> get zones => _zones;
   Zone? get selectedZone => _selectedZone;
+  bool get isSelectionLocked => _selectionLocked;
 
   void setZones(List<Zone> zones) {
     _zones = zones;
     notifyListeners();
   }
 
-  void setSelectedZone(Zone? zone) {
+  void setSelectedZone(Zone? zone, {bool manual = false}) {
+    if (manual) {
+      _selectionLocked = zone != null;
+    } else if (_selectionLocked) {
+      return;
+    }
+
     if (_selectedZone?.id != zone?.id) {
       _selectedZone = zone;
+      notifyListeners();
+    }
+  }
+
+  void unlockSelection() {
+    if (_selectionLocked) {
+      _selectionLocked = false;
       notifyListeners();
     }
   }

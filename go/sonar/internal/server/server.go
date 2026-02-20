@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	stdErrors "errors"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
@@ -218,6 +218,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZones))
 	r.GET("/sonar/zones/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZone))
 	r.POST("/sonar/zones", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZone))
+	r.POST("/sonar/zones/import", middleware.WithAuthentication(s.authClient, s.livenessClient, s.importZonesForMetro))
+	r.GET("/sonar/zones/imports", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImports))
+	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -349,13 +352,13 @@ func (s *server) getActivities(ctx *gin.Context) {
 }
 
 type activityFeedItem struct {
-	ID           uuid.UUID            `json:"id"`
-	CreatedAt    time.Time            `json:"createdAt"`
-	UpdatedAt    time.Time            `json:"updatedAt"`
-	UserID       uuid.UUID            `json:"userId"`
-	ActivityType models.ActivityType  `json:"activityType"`
+	ID           uuid.UUID              `json:"id"`
+	CreatedAt    time.Time              `json:"createdAt"`
+	UpdatedAt    time.Time              `json:"updatedAt"`
+	UserID       uuid.UUID              `json:"userId"`
+	ActivityType models.ActivityType    `json:"activityType"`
 	Data         map[string]interface{} `json:"data"`
-	Seen         bool                 `json:"seen"`
+	Seen         bool                   `json:"seen"`
 }
 
 func (s *server) enrichActivities(ctx context.Context, activities []models.Activity) ([]activityFeedItem, error) {
@@ -389,10 +392,10 @@ func (s *server) enrichActivities(ctx context.Context, activities []models.Activ
 				if payload.ChallengeID != uuid.Nil {
 					if challenge, err := s.dbClient.PointOfInterestChallenge().FindByID(ctx, payload.ChallengeID); err == nil && challenge != nil {
 						entities["challenge"] = map[string]interface{}{
-							"id":                    challenge.ID,
-							"question":              challenge.Question,
-							"tier":                  challenge.Tier,
-							"pointOfInterestId":     challenge.PointOfInterestID,
+							"id":                     challenge.ID,
+							"question":               challenge.Question,
+							"tier":                   challenge.Tier,
+							"pointOfInterestId":      challenge.PointOfInterestID,
 							"pointOfInterestGroupId": challenge.PointOfInterestGroupID,
 						}
 					}
@@ -2861,6 +2864,88 @@ func (s *server) createZone(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, zone)
 }
 
+func (s *server) importZonesForMetro(ctx *gin.Context) {
+	var requestBody struct {
+		MetroName string `json:"metroName"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	metroName := strings.TrimSpace(requestBody.MetroName)
+	if metroName == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "metroName is required"})
+		return
+	}
+
+	importItem := &models.ZoneImport{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		MetroName: metroName,
+		Status:    "queued",
+		ZoneCount: 0,
+	}
+	if err := s.dbClient.ZoneImport().Create(ctx, importItem); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.ImportZonesForMetroTaskPayload{
+		ImportID: importItem.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ImportZonesForMetroTaskType, payload)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, importItem)
+}
+
+func (s *server) getZoneImports(ctx *gin.Context) {
+	metroName := strings.TrimSpace(ctx.Query("metroName"))
+	limit := 50
+	var (
+		items []models.ZoneImport
+		err   error
+	)
+	if metroName != "" {
+		items, err = s.dbClient.ZoneImport().FindByMetroName(ctx, metroName, limit)
+	} else {
+		items, err = s.dbClient.ZoneImport().FindRecent(ctx, limit)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, items)
+}
+
+func (s *server) getZoneImport(ctx *gin.Context) {
+	id := ctx.Param("id")
+	importID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid import ID"})
+		return
+	}
+	item, err := s.dbClient.ZoneImport().FindByID(ctx, importID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if item == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "import not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, item)
+}
+
 func (s *server) getZones(ctx *gin.Context) {
 	zones, err := s.dbClient.Zone().FindAll(ctx)
 	if err != nil {
@@ -3058,7 +3143,7 @@ func (s *server) updateNewUserStarterConfig(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Gold  int                     `json:"gold"`
+		Gold  int                         `json:"gold"`
 		Items []models.NewUserStarterItem `json:"items"`
 	}
 

@@ -32,6 +32,7 @@ type client struct {
 	pointOfInterestGroupHandle        *pointOfInterestGroupHandle
 	pointOfInterestChallengeHandle    *pointOfInterestChallengeHandle
 	pointOfInterestImportHandle       *pointOfInterestImportHandle
+	zoneImportHandle                  *zoneImportHandle
 	inventoryItemHandle               *inventoryItemHandler
 	newUserStarterConfigHandle        *newUserStarterConfigHandle
 	auditItemHandle                   *auditItemHandler
@@ -153,6 +154,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		pointOfInterestGroupHandle:        &pointOfInterestGroupHandle{db: db},
 		pointOfInterestChallengeHandle:    &pointOfInterestChallengeHandle{db: db},
 		pointOfInterestImportHandle:       &pointOfInterestImportHandle{db: db},
+		zoneImportHandle:                  &zoneImportHandle{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		newUserStarterConfigHandle:        &newUserStarterConfigHandle{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
@@ -390,6 +392,10 @@ func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {
 
 func (c *client) PointOfInterestImport() PointOfInterestImportHandle {
 	return c.pointOfInterestImportHandle
+}
+
+func (c *client) ZoneImport() ZoneImportHandle {
+	return c.zoneImportHandle
 }
 
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {

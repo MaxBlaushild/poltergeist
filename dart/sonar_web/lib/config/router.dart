@@ -25,10 +25,11 @@ bool _isProtected(String path) {
   return true;
 }
 
-GoRouter createRouter() {
+GoRouter createRouter({Listenable? refreshListenable}) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/',
+    refreshListenable: refreshListenable,
     redirect: (context, state) async {
       final path = state.uri.path;
       if (path == '/logout') return null;

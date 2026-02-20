@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import RBush from 'rbush';
 import { Zone } from '@poltergeist/types';
 import * as turf from '@turf/turf';
@@ -46,6 +46,7 @@ type ZoneContextType = {
   deleteZone: (zone: Zone) => void;
   findZoneAtCoordinate: (lng: number, lat: number) => Zone | null;
   editZone: (name: string, description: string, id: string) => void;
+  refreshZones: () => Promise<void>;
 };
 
 const ZoneContext = createContext<ZoneContextType | null>(null);
@@ -58,17 +59,21 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [spatialIndex] = useState(() => new RBush<ZoneIndexNode>());
   const { location } = useLocation();
   const previousLocation = useRef(location);
+  const refreshZones = useCallback(async () => {
+    try {
+      const response = await apiClient.get<Zone[]>('/sonar/zones');
+      setZones(response);
+    } catch (error) {
+      console.error('Error fetching zones:', error);
+    }
+  }, [apiClient]);
+
   useEffect(() => {
-    const fetchZones = async () => {
-      try {
-        const response = await apiClient.get<Zone[]>('/sonar/zones');
-        setZones(response);
-      } catch (error) {
-        console.error('Error fetching zones:', error);
-      }
-    };
-    fetchZones();
-  }, [user]);
+    if (!user) {
+      return;
+    }
+    refreshZones();
+  }, [user, refreshZones]);
 
   // Update spatial index when zones change
   useEffect(() => {
@@ -174,7 +179,8 @@ export const ZoneProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createZone,
       deleteZone,
       findZoneAtCoordinate,
-      editZone
+      editZone,
+      refreshZones
     }}>
       {children}
     </ZoneContext.Provider>
