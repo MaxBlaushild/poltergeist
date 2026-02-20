@@ -17,11 +17,13 @@ import 'services/media_service.dart';
 import 'services/activity_service.dart';
 import 'services/admin_service.dart';
 import 'services/chat_service.dart';
+import 'services/character_stats_service.dart';
 import 'services/inventory_service.dart';
 import 'services/party_service.dart';
 import 'services/poi_service.dart';
 import 'services/quest_log_service.dart';
 import 'services/tags_service.dart';
+import 'services/user_level_service.dart';
 import 'providers/activity_feed_provider.dart';
 import 'providers/completed_task_provider.dart';
 import 'providers/discoveries_provider.dart';
@@ -32,6 +34,8 @@ import 'providers/quest_log_provider.dart';
 import 'providers/quest_filter_provider.dart';
 import 'providers/zone_provider.dart';
 import 'providers/map_focus_provider.dart';
+import 'providers/character_stats_provider.dart';
+import 'providers/user_level_provider.dart';
 
 void main() {
   runApp(const SonarApp());
@@ -60,9 +64,11 @@ class SonarApp extends StatelessWidget {
     final friendService = FriendService(apiClient);
     final activityService = ActivityService(apiClient);
     final chatService = ChatService(apiClient);
+    final characterStatsService = CharacterStatsService(apiClient);
     final tagsService = TagsService(apiClient);
     final questLogService = QuestLogService(apiClient);
     final inventoryService = InventoryService(apiClient);
+    final userLevelService = UserLevelService(apiClient);
     final partyProvider = PartyProvider(partyService);
     final friendProvider = FriendProvider(friendService);
     final activityFeedProvider = ActivityFeedProvider(activityService);
@@ -74,6 +80,7 @@ class SonarApp extends StatelessWidget {
     final zoneProvider = ZoneProvider();
     final discoveriesProvider = DiscoveriesProvider(poiService, authProvider);
     final mapFocusProvider = MapFocusProvider();
+    final userLevelProvider = UserLevelProvider(userLevelService, authProvider);
 
     apiClient.setOnAuthError(() {
       authProvider.logout();
@@ -95,6 +102,16 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<PartyProvider>.value(value: partyProvider),
         ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
         ChangeNotifierProvider<ActivityFeedProvider>.value(value: activityFeedProvider),
+        ChangeNotifierProxyProvider2<AuthProvider, ActivityFeedProvider,
+            CharacterStatsProvider>(
+          create: (_) => CharacterStatsProvider(characterStatsService),
+          update: (_, auth, feed, stats) {
+            stats ??= CharacterStatsProvider(characterStatsService);
+            stats.updateAuth(auth);
+            stats.updateActivityFeed(feed);
+            return stats;
+          },
+        ),
         ChangeNotifierProvider<LogProvider>.value(value: logProvider),
         ChangeNotifierProvider<TagsProvider>.value(value: tagsProvider),
         ChangeNotifierProvider<QuestFilterProvider>.value(value: questFilterProvider),
@@ -103,6 +120,7 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<ZoneProvider>.value(value: zoneProvider),
         ChangeNotifierProvider<DiscoveriesProvider>.value(value: discoveriesProvider),
         ChangeNotifierProvider<MapFocusProvider>.value(value: mapFocusProvider),
+        ChangeNotifierProvider<UserLevelProvider>.value(value: userLevelProvider),
         ChangeNotifierProvider<QuestLogProvider>.value(
           value: QuestLogProvider(
             questLogService,

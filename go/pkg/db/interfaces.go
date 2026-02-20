@@ -51,6 +51,7 @@ type DbClient interface {
 	TrackedQuest() TrackedQuestHandle
 	Point() PointHandle
 	UserLevel() UserLevelHandle
+	UserCharacterStats() UserCharacterStatsHandle
 	UserZoneReputation() UserZoneReputationHandle
 	Friend() FriendHandle
 	Party() PartyHandle
@@ -499,6 +500,14 @@ type UserLevelHandle interface {
 	FindOrCreateForUser(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserLevel, error)
 	Create(ctx context.Context, userLevel *models.UserLevel) error
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type UserCharacterStatsHandle interface {
+	FindOrCreateForUser(ctx context.Context, userID uuid.UUID) (*models.UserCharacterStats, error)
+	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserCharacterStats, error)
+	EnsureLevelPoints(ctx context.Context, userID uuid.UUID, currentLevel int) (*models.UserCharacterStats, error)
+	ApplyAllocations(ctx context.Context, userID uuid.UUID, currentLevel int, allocations map[string]int) (*models.UserCharacterStats, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 

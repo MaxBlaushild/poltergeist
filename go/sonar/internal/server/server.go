@@ -277,6 +277,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
+	r.GET("/sonar/character-stats", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterStats))
+	r.PUT("/sonar/character-stats/allocate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.allocateCharacterStats))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneReputation))
 	r.GET("/sonar/reputations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getReputations))
 	r.POST("/sonar/partyInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.inviteToParty))

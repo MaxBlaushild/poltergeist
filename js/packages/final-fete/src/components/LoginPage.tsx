@@ -60,18 +60,96 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="bg-black/90 backdrop-blur-sm p-4 md:p-6 lg:p-8 rounded-lg border-2 border-[#00ff00] shadow-[0_0_20px_rgba(0,255,0,0.5)] w-full max-w-md mx-4 matrix-card">
-        <h1 className="text-xl md:text-2xl font-bold mb-6 text-center text-[#00ff00]">BlauberTech BunkerKey</h1>
-        <Logister
-          logister={handleLogister}
-          getVerificationCode={getVerificationCode}
-          isWaitingOnVerificationCode={isWaitingForVerificationCode}
-          isRegister={isRegister}
-          error={error ? String(error) : undefined}
-        />
+    <div className="min-h-screen flex items-center justify-center px-4 py-10">
+      <div className="login-shell w-full max-w-6xl">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <section className="login-panel login-hero">
+            <div className="login-glow" aria-hidden="true" />
+            <div className="login-map" aria-hidden="true" />
+            <div className="login-orb" aria-hidden="true" />
+            <div className="login-spark login-spark--one" aria-hidden="true" />
+            <div className="login-spark login-spark--two" aria-hidden="true" />
+
+            <div className="relative z-10 flex flex-col gap-6">
+              <div className="flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.35em] text-[#9ef9b0]">
+                <span className="login-badge">Worldwalker Initiative</span>
+                <span className="text-[#00cc00]">Expedition Cycle 07</span>
+              </div>
+
+              <header className="flex flex-col gap-4">
+                <p className="text-sm uppercase tracking-[0.4em] text-[#00ff41]">BlauberTech Field Ops</p>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold text-[#00ff00] leading-tight">
+                  Step through the gate. The world is larger than you remember.
+                </h1>
+                <p className="text-base md:text-lg text-[#b9f8c6] max-w-xl">
+                  Build your strength, map the unknown, and uncover both real and mystical locations. Each quest
+                  unlocks new routes, deeper lore, and the next surge of power.
+                </p>
+              </header>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="login-quest-card">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#f9d65c]">Quest Prime</p>
+                  <p className="text-lg font-semibold text-[#e9fbe8]">Chart the wild corridors</p>
+                  <p className="text-sm text-[#9ef9b0]">Reveal real-world landmarks and hidden paths.</p>
+                </div>
+                <div className="login-quest-card">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#f9d65c]">Quest Prime</p>
+                  <p className="text-lg font-semibold text-[#e9fbe8]">Awaken your strength</p>
+                  <p className="text-sm text-[#9ef9b0]">Grow your abilities with every discovery.</p>
+                </div>
+                <div className="login-quest-card">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#f9d65c]">Quest Prime</p>
+                  <p className="text-lg font-semibold text-[#e9fbe8]">Trace the mythic sites</p>
+                  <p className="text-sm text-[#9ef9b0]">Locate ruins, ley lines, and spectral waypoints.</p>
+                </div>
+                <div className="login-quest-card">
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#f9d65c]">Quest Prime</p>
+                  <p className="text-lg font-semibold text-[#e9fbe8]">Complete the chain</p>
+                  <p className="text-sm text-[#9ef9b0]">Finish quests to open the next realm.</p>
+                </div>
+              </div>
+
+              <div className="login-steps">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-[#00ff41]">Your Path</p>
+                  <p className="text-sm text-[#c9f9d3]">1. Receive your signal 2. Join your expedition 3. Launch the map</p>
+                </div>
+                <div className="login-signal">
+                  <span className="login-signal__dot" />
+                  <span className="text-xs uppercase tracking-[0.3em] text-[#f9d65c]">Signal Strong</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="login-panel login-auth">
+            <div className="bg-black/90 backdrop-blur-sm p-6 md:p-8 rounded-lg border-2 border-[#00ff00] shadow-[0_0_20px_rgba(0,255,0,0.5)] matrix-card">
+              <div className="flex flex-col gap-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-[#00cc00]">Access Gate</p>
+                <h2 className="text-2xl font-bold text-[#00ff00]">BlauberTech BunkerKey</h2>
+                <p className="text-sm text-[#9ef9b0]">
+                  Enter your field number to receive the access pulse. Your expedition awaits.
+                </p>
+              </div>
+
+              <div className="mt-6">
+                <Logister
+                  logister={handleLogister}
+                  getVerificationCode={getVerificationCode}
+                  isWaitingOnVerificationCode={isWaitingForVerificationCode}
+                  isRegister={isRegister}
+                  error={error ? String(error) : undefined}
+                />
+              </div>
+
+              <div className="mt-6 text-xs text-[#9ef9b0]">
+                By entering, you accept the expedition protocol and confirm you are ready for the next realm.
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
 };
-

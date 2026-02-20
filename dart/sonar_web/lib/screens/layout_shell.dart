@@ -4,10 +4,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/activity_feed_provider.dart';
 import '../providers/friend_provider.dart';
 import '../providers/party_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/map_focus_provider.dart';
+import '../providers/character_stats_provider.dart';
+import '../providers/user_level_provider.dart';
 import '../widgets/friends_tab_content.dart';
 import '../widgets/inventory_panel.dart';
 import '../widgets/party_tab_content.dart';
@@ -154,21 +157,48 @@ class _UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasUnspentPoints = context.watch<CharacterStatsProvider>().hasUnspentPoints;
     return GestureDetector(
       onTap: () {
         Scaffold.of(context).openEndDrawer();
       },
-      child: CircleAvatar(
-        radius: 20,
-        backgroundColor: Colors.grey.shade300,
-        backgroundImage: auth.user?.profilePictureUrl != null &&
-                auth.user!.profilePictureUrl.isNotEmpty
-            ? NetworkImage(auth.user!.profilePictureUrl)
-            : null,
-        child: auth.user?.profilePictureUrl == null ||
-                auth.user!.profilePictureUrl.isEmpty
-            ? const Icon(Icons.person)
-            : null,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.grey.shade300,
+            backgroundImage: auth.user?.profilePictureUrl != null &&
+                    auth.user!.profilePictureUrl.isNotEmpty
+                ? NetworkImage(auth.user!.profilePictureUrl)
+                : null,
+            child: auth.user?.profilePictureUrl == null ||
+                    auth.user!.profilePictureUrl.isEmpty
+                ? const Icon(Icons.person)
+                : null,
+          ),
+          if (hasUnspentPoints)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: 1.2,
+                  ),
+                ),
+                child: Icon(
+                  Icons.arrow_upward,
+                  size: 12,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -186,11 +216,25 @@ class _SideDrawerState extends State<_SideDrawer> {
 
   void _selectTab(int index) {
     final shouldRefreshQuestLog = index == 2;
+    final shouldRefreshActivityFeed = index == 0;
+    final shouldRefreshCharacterStats = index == 0;
     if (_tabIndex == index) {
       if (shouldRefreshQuestLog) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           context.read<QuestLogProvider>().refresh();
+        });
+      }
+      if (shouldRefreshActivityFeed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          context.read<ActivityFeedProvider>().refresh();
+        });
+      }
+      if (shouldRefreshCharacterStats) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          context.read<CharacterStatsProvider>().refresh();
         });
       }
       return;
@@ -200,6 +244,18 @@ class _SideDrawerState extends State<_SideDrawer> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         context.read<QuestLogProvider>().refresh();
+      });
+    }
+    if (shouldRefreshActivityFeed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<ActivityFeedProvider>().refresh();
+      });
+    }
+    if (shouldRefreshCharacterStats) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<CharacterStatsProvider>().refresh();
       });
     }
   }
@@ -399,165 +455,407 @@ class _DrawerMenuButton extends StatelessWidget {
   }
 }
 
-class _CharacterTabContent extends StatelessWidget {
+class _CharacterTabContent extends StatefulWidget {
   const _CharacterTabContent({super.key});
+
+  @override
+  State<_CharacterTabContent> createState() => _CharacterTabContentState();
+}
+
+class _CharacterTabContentState extends State<_CharacterTabContent> {
+  static const Map<String, String> _labels = {
+    'strength': 'Strength',
+    'dexterity': 'Dexterity',
+    'constitution': 'Constitution',
+    'intelligence': 'Intelligence',
+    'wisdom': 'Wisdom',
+    'charisma': 'Charisma',
+  };
+
+  String? _lastUserId;
+  Map<String, int> _pending = {};
+
+  int get _pendingTotal =>
+      _pending.values.where((value) => value > 0).fold(0, (a, b) => a + b);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final uid = context.watch<AuthProvider>().user?.id;
+    if (uid != _lastUserId) {
+      _lastUserId = uid;
+      _pending = {};
+    }
+    final unspent = context.watch<CharacterStatsProvider>().unspentPoints;
+    if (unspent == 0 && _pending.isNotEmpty) {
+      _pending = {};
+    }
+  }
+
+  void _bumpStat(String key, int delta, int remaining) {
+    if (delta > 0 && remaining <= 0) return;
+    final current = _pending[key] ?? 0;
+    final next = (current + delta).clamp(0, 999);
+    setState(() {
+      if (next == 0) {
+        _pending.remove(key);
+      } else {
+        _pending[key] = next;
+      }
+    });
+  }
+
+  Future<void> _confirmAllocations(CharacterStatsProvider stats) async {
+    if (_pendingTotal == 0) return;
+    final success = await stats.applyAllocations(_pending);
+    if (!mounted) return;
+    if (success) {
+      setState(() => _pending = {});
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Unable to apply stat points.')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Consumer<AuthProvider>(
-      builder: (context, auth, _) {
-        final u = auth.user;
-        if (u == null) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('Log in to see your character.'),
-            ),
-          );
-        }
+    final auth = context.watch<AuthProvider>();
+    final levels = context.watch<UserLevelProvider>();
+    final statsProvider = context.watch<CharacterStatsProvider>();
+    final u = auth.user;
+    if (u == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Log in to see your character.'),
+        ),
+      );
+    }
+    final userLevel = levels.userLevel;
+    final levelLoading = levels.loading;
+    final displayLevel = userLevel?.level ?? statsProvider.level;
 
-        void showProfileImage() {
-          if (u.profilePictureUrl.isEmpty) return;
-          showDialog<void>(
-            context: context,
-            barrierColor: Colors.black54,
-            builder: (context) {
-              final theme = Theme.of(context);
-              return Dialog(
-                backgroundColor: Colors.transparent,
-                insetPadding: const EdgeInsets.all(24),
-                child: Stack(
-                  alignment: Alignment.topRight,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.2),
-                            blurRadius: 18,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          u.profilePictureUrl,
-                          width: 320,
-                          height: 320,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 320,
-                            height: 320,
-                            color: theme.colorScheme.surfaceVariant,
-                            child: const Icon(Icons.person, size: 96),
-                          ),
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close),
-                      style: IconButton.styleFrom(
-                        backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                        shape: const CircleBorder(),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+    void showProfileImage() {
+      if (u.profilePictureUrl.isEmpty) return;
+      showDialog<void>(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (context) {
+          final theme = Theme.of(context);
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(24),
+            child: Stack(
+              alignment: Alignment.topRight,
               children: [
-                GestureDetector(
-                  onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.grey.shade300,
-                    backgroundImage: u.profilePictureUrl.isNotEmpty
-                        ? NetworkImage(u.profilePictureUrl)
-                        : null,
-                    child:
-                        u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: theme.colorScheme.outlineVariant,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 18,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.network(
+                      u.profilePictureUrl,
+                      width: 320,
+                      height: 320,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 320,
+                        height: 320,
+                        color: theme.colorScheme.surfaceVariant,
+                        child: const Icon(Icons.person, size: 96),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        u.username.isNotEmpty ? u.username : u.name,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (u.username.isNotEmpty && u.name != u.username)
-                        Text(
-                          u.name,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close),
+                  style: IconButton.styleFrom(
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    shape: const CircleBorder(),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: theme.colorScheme.outlineVariant),
+          );
+        },
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: u.profilePictureUrl.isNotEmpty ? showProfileImage : null,
+              child: CircleAvatar(
+                radius: 28,
+                backgroundColor: Colors.grey.shade300,
+                backgroundImage:
+                    u.profilePictureUrl.isNotEmpty ? NetworkImage(u.profilePictureUrl) : null,
+                child: u.profilePictureUrl.isEmpty ? const Icon(Icons.person) : null,
               ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Character details',
-                    style: theme.textTheme.titleSmall?.copyWith(
+                    u.username.isNotEmpty ? u.username : u.name,
+                    style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  if (u.username.isNotEmpty && u.name != u.username)
+                    Text(
+                      u.name,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: levelLoading
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Level',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      minHeight: 8,
+                      color: theme.colorScheme.primary,
+                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                    ),
+                  ],
+                )
+              : userLevel == null
+                  ? Text(
+                      'Level data unavailable right now.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'Level ${userLevel.level}',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${userLevel.experiencePointsOnLevel} / ${userLevel.experienceToNextLevel} XP',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: userLevel.experienceToNextLevel > 0
+                                ? (userLevel.experiencePointsOnLevel /
+                                        userLevel.experienceToNextLevel)
+                                    .clamp(0.0, 1.0)
+                                : 0.0,
+                            minHeight: 8,
+                            color: theme.colorScheme.primary,
+                            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                          ),
+                        ),
+                      ],
+                    ),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Character stats',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
                   Text(
-                    'More character stats and customization options will show up here soon.',
+                    'Level $displayLevel',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Unspent: ${statsProvider.unspentPoints}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: statsProvider.hasUnspentPoints
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
-            ),
-            const Spacer(),
-            OutlinedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                context.go('/logout');
-              },
-              child: const Text('Log out'),
-            ),
-          ],
-        );
-      },
+              if (_pendingTotal > 0) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Remaining after pending: ${statsProvider.unspentPoints - _pendingTotal}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Column(
+                children: CharacterStatsProvider.statKeys.map((key) {
+                  final label = _labels[key] ?? key;
+                  final baseValue = statsProvider.stats[key] ??
+                      CharacterStatsProvider.baseStatValue;
+                  final pendingValue = _pending[key] ?? 0;
+                  final displayValue = baseValue + pendingValue;
+                  final remaining = statsProvider.unspentPoints - _pendingTotal;
+                  final canAdd = remaining > 0;
+                  final canRemove = pendingValue > 0;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.colorScheme.outlineVariant),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                label,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              if (pendingValue > 0)
+                                Text(
+                                  '+$pendingValue pending',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          '$displayValue',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed:
+                              canRemove ? () => _bumpStat(key, -1, remaining) : null,
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed:
+                              canAdd ? () => _bumpStat(key, 1, remaining) : null,
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+              if (_pendingTotal > 0) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => _pending = {}),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () => _confirmAllocations(statsProvider),
+                        child: const Text('Confirm'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const Spacer(),
+        OutlinedButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+            context.go('/logout');
+          },
+          child: const Text('Log out'),
+        ),
+      ],
     );
   }
 }

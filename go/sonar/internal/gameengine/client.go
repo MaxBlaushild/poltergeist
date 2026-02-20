@@ -796,6 +796,9 @@ func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission
 
 		// Only create level-up activity for this member if they actually leveled up
 		if userLevel.LevelsGained > 0 {
+			if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
+				return err
+			}
 			activityData, err := json.Marshal(models.LevelUpActivity{
 				NewLevel: userLevel.Level,
 			})
@@ -889,6 +892,9 @@ func (c *gameEngineClient) awardExperiencePointsForZone(ctx context.Context, use
 		}
 
 		if userLevel.LevelsGained > 0 {
+			if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
+				return 0, err
+			}
 			activityData, err := json.Marshal(models.LevelUpActivity{
 				NewLevel: userLevel.Level,
 			})

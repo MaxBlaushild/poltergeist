@@ -10,6 +10,7 @@ type ZoneContextType = {
     deleteZone: (zone: Zone) => void;
     findZoneAtCoordinate: (lng: number, lat: number) => Zone | null;
     editZone: (name: string, description: string, id: string) => void;
+    refreshZones: () => Promise<void>;
 };
 export declare const ZoneProvider: React.FC<{
     children: React.ReactNode;

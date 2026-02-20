@@ -54,6 +54,7 @@ type client struct {
 	trackedQuestHandle                *trackedQuestHandle
 	pointHandle                       *pointHandler
 	userLevelHandle                   *userLevelHandler
+	userCharacterStatsHandle          *userCharacterStatsHandler
 	userZoneReputationHandle          *userZoneReputationHandler
 	partyHandle                       *partyHandle
 	friendHandle                      *friendHandle
@@ -176,6 +177,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		trackedQuestHandle:                &trackedQuestHandle{db: db},
 		pointHandle:                       &pointHandler{db: db},
 		userLevelHandle:                   &userLevelHandler{db: db},
+		userCharacterStatsHandle:          &userCharacterStatsHandler{db: db},
 		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
 		partyHandle:                       &partyHandle{db: db},
 		friendHandle:                      &friendHandle{db: db},
@@ -312,6 +314,10 @@ func (c *client) UserZoneReputation() UserZoneReputationHandle {
 
 func (c *client) UserLevel() UserLevelHandle {
 	return c.userLevelHandle
+}
+
+func (c *client) UserCharacterStats() UserCharacterStatsHandle {
+	return c.userCharacterStatsHandle
 }
 
 func (c *client) Point() PointHandle {

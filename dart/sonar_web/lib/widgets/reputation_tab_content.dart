@@ -262,7 +262,7 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
             child: Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('No zones found yet.'),
+                child: Text('No reputation yet.'),
               ),
             ),
           )
@@ -287,6 +287,10 @@ class _ReputationTabContentState extends State<ReputationTabContent> {
   List<_ZoneRep> _applySortAndFilter(List<_ZoneRep> items) {
     final query = _query.trim().toLowerCase();
     final filtered = items.where((item) {
+      if (item.reputation == null ||
+          item.reputation!.totalReputation <= 0) {
+        return false;
+      }
       if (query.isNotEmpty &&
           !item.zone.name.toLowerCase().contains(query)) {
         return false;

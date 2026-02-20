@@ -8,7 +8,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import RBush from 'rbush';
 import * as turf from '@turf/turf';
 import { useAPI, useLocation, useAuth } from '@poltergeist/contexts';
@@ -39,18 +39,21 @@ export const ZoneProvider = ({ children }) => {
     const [spatialIndex] = useState(() => new RBush());
     const { location } = useLocation();
     const previousLocation = useRef(location);
+    const refreshZones = useCallback(() => __awaiter(void 0, void 0, void 0, function* () {
+        try {
+            const response = yield apiClient.get('/sonar/zones');
+            setZones(response);
+        }
+        catch (error) {
+            console.error('Error fetching zones:', error);
+        }
+    }), [apiClient]);
     useEffect(() => {
-        const fetchZones = () => __awaiter(void 0, void 0, void 0, function* () {
-            try {
-                const response = yield apiClient.get('/sonar/zones');
-                setZones(response);
-            }
-            catch (error) {
-                console.error('Error fetching zones:', error);
-            }
-        });
-        fetchZones();
-    }, [user]);
+        if (!user) {
+            return;
+        }
+        refreshZones();
+    }, [user, refreshZones]);
     // Update spatial index when zones change
     useEffect(() => {
         // Clear existing data
@@ -140,7 +143,8 @@ export const ZoneProvider = ({ children }) => {
             createZone,
             deleteZone,
             findZoneAtCoordinate,
-            editZone
+            editZone,
+            refreshZones
         } }, { children: children })));
 };
 export const useZoneContext = () => {

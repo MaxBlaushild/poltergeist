@@ -313,12 +313,7 @@ out body geom;`, areaID)
 		case "way":
 			geometry = element.Geometry
 		case "relation":
-			for _, member := range element.Members {
-				if member.Role == "outer" && len(member.Geometry) > 2 {
-					geometry = member.Geometry
-					break
-				}
-			}
+			geometry = mergeRelationOuterMembers(element.Members)
 			if len(geometry) == 0 && len(element.Geometry) > 2 {
 				geometry = element.Geometry
 			}
@@ -362,6 +357,116 @@ func simplifyBoundary(points []overpassCoord) []overpassCoord {
 		return nil
 	}
 	return out
+}
+
+func mergeRelationOuterMembers(members []overpassMember) []overpassCoord {
+	segments := make([][]overpassCoord, 0)
+	for _, member := range members {
+		if member.Role != "outer" {
+			continue
+		}
+		if len(member.Geometry) < 2 {
+			continue
+		}
+		segment := make([]overpassCoord, len(member.Geometry))
+		copy(segment, member.Geometry)
+		segments = append(segments, segment)
+	}
+	if len(segments) == 0 {
+		return nil
+	}
+
+	used := make([]bool, len(segments))
+	rings := make([][]overpassCoord, 0)
+
+	for i := range segments {
+		if used[i] {
+			continue
+		}
+		ring := make([]overpassCoord, len(segments[i]))
+		copy(ring, segments[i])
+		used[i] = true
+
+		for {
+			extended := false
+			for j := range segments {
+				if used[j] {
+					continue
+				}
+				segment := segments[j]
+				if len(segment) < 2 {
+					used[j] = true
+					continue
+				}
+				first := segment[0]
+				last := segment[len(segment)-1]
+
+				switch {
+				case coordsEqual(ring[len(ring)-1], first):
+					ring = append(ring, segment[1:]...)
+					used[j] = true
+					extended = true
+				case coordsEqual(ring[len(ring)-1], last):
+					reversed := reverseCoords(segment)
+					ring = append(ring, reversed[1:]...)
+					used[j] = true
+					extended = true
+				case coordsEqual(ring[0], last):
+					ring = append(segment[:len(segment)-1], ring...)
+					used[j] = true
+					extended = true
+				case coordsEqual(ring[0], first):
+					reversed := reverseCoords(segment)
+					ring = append(reversed[:len(reversed)-1], ring...)
+					used[j] = true
+					extended = true
+				}
+
+				if extended {
+					break
+				}
+			}
+			if !extended {
+				break
+			}
+			if coordsEqual(ring[0], ring[len(ring)-1]) {
+				break
+			}
+		}
+
+		rings = append(rings, ring)
+	}
+
+	if len(rings) == 0 {
+		return nil
+	}
+
+	longest := rings[0]
+	for _, ring := range rings[1:] {
+		if len(ring) > len(longest) {
+			longest = ring
+		}
+	}
+	return longest
+}
+
+func reverseCoords(points []overpassCoord) []overpassCoord {
+	if len(points) == 0 {
+		return nil
+	}
+	out := make([]overpassCoord, len(points))
+	for i := range points {
+		out[len(points)-1-i] = points[i]
+	}
+	return out
+}
+
+func coordsEqual(a overpassCoord, b overpassCoord) bool {
+	return round6(a.Lat) == round6(b.Lat) && round6(a.Lon) == round6(b.Lon)
+}
+
+func round6(val float64) float64 {
+	return math.Round(val*1e6) / 1e6
 }
 
 func polygonCentroid(points []overpassCoord) (float64, float64) {

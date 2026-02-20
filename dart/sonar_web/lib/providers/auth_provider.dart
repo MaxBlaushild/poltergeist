@@ -24,6 +24,13 @@ class AuthProvider with ChangeNotifier {
     _user = await _auth.verifyToken();
     _loading = false;
     notifyListeners();
+    if (_user == null) return;
+    try {
+      _user = await _auth.whoami();
+      notifyListeners();
+    } catch (_) {
+      // Keep the verified user if refresh fails (e.g. transient network error).
+    }
   }
 
   Future<void> getVerificationCode(String phoneNumber) async {
