@@ -5,6 +5,7 @@ import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/quest.dart';
 import '../providers/auth_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
@@ -94,6 +95,153 @@ class _CharacterPanelState extends State<CharacterPanel> {
     }
   }
 
+  double _averageNodeDifficulty(Quest quest) {
+    final nodeDifficulties = <double>[];
+    for (final node in quest.nodes) {
+      if (node.challenges.isEmpty) continue;
+      var sum = 0.0;
+      for (final challenge in node.challenges) {
+        sum += challenge.difficulty.toDouble();
+      }
+      nodeDifficulties.add(sum / node.challenges.length);
+    }
+    if (nodeDifficulties.isEmpty) return 0;
+    final total = nodeDifficulties.reduce((a, b) => a + b);
+    return total / nodeDifficulties.length;
+  }
+
+  int _roundToNearestFive(double value) {
+    if (value.isNaN || value.isInfinite) return 0;
+    return (value / 5).round() * 5;
+  }
+
+  Set<String> _questStatTags(Quest quest) {
+    final tags = <String>{};
+    for (final node in quest.nodes) {
+      for (final challenge in node.challenges) {
+        for (final tag in challenge.statTags) {
+          final normalized = tag.trim().toLowerCase();
+          if (normalized.isNotEmpty) {
+            tags.add(normalized);
+          }
+        }
+      }
+    }
+    return tags;
+  }
+
+  double _averageStatValue(Map<String, int> stats, Set<String> tags) {
+    if (stats.isEmpty) return 0;
+    if (tags.isEmpty) {
+      final values = stats.values;
+      final total = values.fold<int>(0, (sum, value) => sum + value);
+      return total / values.length;
+    }
+    var total = 0;
+    var count = 0;
+    for (final tag in tags) {
+      if (!stats.containsKey(tag)) continue;
+      total += stats[tag] ?? 0;
+      count += 1;
+    }
+    if (count == 0) return 0;
+    return total / count;
+  }
+
+  Color _difficultyColor(double statAverage, int difficulty) {
+    if (statAverage > difficulty) {
+      return const Color(0xFFC9C2B2);
+    }
+    if (statAverage > difficulty - 25) {
+      return const Color(0xFF6F8F5E);
+    }
+    if (statAverage > difficulty - 50) {
+      return const Color(0xFFC89A3A);
+    }
+    return const Color(0xFFA35B4B);
+  }
+
+  Widget _buildQuestDifficultySummary(BuildContext context, Quest quest) {
+    final statsProvider = context.watch<CharacterStatsProvider>();
+    final avgDifficulty = _averageNodeDifficulty(quest);
+    final roundedDifficulty = _roundToNearestFive(avgDifficulty);
+    final tags = _questStatTags(quest);
+    final statAverage = _averageStatValue(statsProvider.stats, tags);
+    final difficultyColor = _difficultyColor(statAverage, roundedDifficulty);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Difficulty',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          Text(
+            '$roundedDifficulty',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: difficultyColor,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuestDifficultySummaryFromMetadata(
+    BuildContext context,
+    double avgDifficulty,
+    List<String> tags,
+  ) {
+    final statsProvider = context.watch<CharacterStatsProvider>();
+    final roundedDifficulty = _roundToNearestFive(avgDifficulty);
+    final tagSet = tags.map((tag) => tag.trim().toLowerCase()).where((tag) => tag.isNotEmpty).toSet();
+    final statAverage = _averageStatValue(statsProvider.stats, tagSet);
+    final difficultyColor = _difficultyColor(statAverage, roundedDifficulty);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Difficulty',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          Text(
+            '$roundedDifficulty',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: difficultyColor,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
   List<DialogueMessage> _buildQuestAcceptanceDialogue(Quest? quest, CharacterAction action) {
     final questLines = (quest?.acceptanceDialogue ?? const [])
         .map((line) => line.trim())
@@ -134,15 +282,28 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Future<void> _showQuestAcceptanceDialog(CharacterAction action) async {
     if (_acceptingQuest) return;
     final quest = _questForAction(action);
+    final questId = action.questId;
+    final metaDifficulty = action.questAverageDifficulty;
+    final metaTags = action.questStatTags;
     final accepted = await showDialog<bool>(
       context: context,
       useRootNavigator: true,
       barrierDismissible: true,
       builder: (dialogContext) {
+        final footer = metaDifficulty != null
+            ? _buildQuestDifficultySummaryFromMetadata(
+                dialogContext,
+                metaDifficulty,
+                metaTags,
+              )
+            : (quest == null
+                ? (questId == null ? null : _QuestDifficultyFooter(questId: questId))
+                : _buildQuestDifficultySummary(dialogContext, quest));
         return RpgDialogueModal(
           character: widget.character,
           action: action,
           dialogueOverride: _buildQuestAcceptanceDialogue(quest, action),
+          footerContent: footer,
           primaryActionLabel: 'Accept quest',
           secondaryActionLabel: 'Decline',
           onPrimaryAction: () => Navigator.of(dialogContext).pop(true),
@@ -383,6 +544,215 @@ class _CharacterPanelState extends State<CharacterPanel> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _QuestDifficultyFooter extends StatefulWidget {
+  const _QuestDifficultyFooter({
+    required this.questId,
+  });
+
+  final String questId;
+
+  @override
+  State<_QuestDifficultyFooter> createState() => _QuestDifficultyFooterState();
+}
+
+class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
+  late Future<Quest?> _questFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _questFuture = _resolveQuest();
+  }
+
+  Future<Quest?> _resolveQuest() async {
+    final quests = context.read<QuestLogProvider>().quests;
+    try {
+      return quests.firstWhere((q) => q.id == widget.questId);
+    } catch (_) {}
+    return context.read<PoiService>().getQuestById(widget.questId);
+  }
+
+  double _averageNodeDifficulty(Quest quest) {
+    final nodeDifficulties = <double>[];
+    for (final node in quest.nodes) {
+      if (node.challenges.isEmpty) continue;
+      var sum = 0.0;
+      for (final challenge in node.challenges) {
+        sum += challenge.difficulty.toDouble();
+      }
+      nodeDifficulties.add(sum / node.challenges.length);
+    }
+    if (nodeDifficulties.isEmpty) return 0;
+    final total = nodeDifficulties.reduce((a, b) => a + b);
+    return total / nodeDifficulties.length;
+  }
+
+  int _roundToNearestFive(double value) {
+    if (value.isNaN || value.isInfinite) return 0;
+    return (value / 5).round() * 5;
+  }
+
+  Set<String> _questStatTags(Quest quest) {
+    final tags = <String>{};
+    for (final node in quest.nodes) {
+      for (final challenge in node.challenges) {
+        for (final tag in challenge.statTags) {
+          final normalized = tag.trim().toLowerCase();
+          if (normalized.isNotEmpty) {
+            tags.add(normalized);
+          }
+        }
+      }
+    }
+    return tags;
+  }
+
+  double _averageStatValue(Map<String, int> stats, Set<String> tags) {
+    if (stats.isEmpty) return 0;
+    if (tags.isEmpty) {
+      final values = stats.values;
+      final total = values.fold<int>(0, (sum, value) => sum + value);
+      return total / values.length;
+    }
+    var total = 0;
+    var count = 0;
+    for (final tag in tags) {
+      if (!stats.containsKey(tag)) continue;
+      total += stats[tag] ?? 0;
+      count += 1;
+    }
+    if (count == 0) return 0;
+    return total / count;
+  }
+
+  Color _difficultyColor(double statAverage, int difficulty) {
+    if (statAverage > difficulty) {
+      return const Color(0xFFCBD5E1);
+    }
+    if (statAverage > difficulty - 25) {
+      return const Color(0xFF22C55E);
+    }
+    if (statAverage > difficulty - 50) {
+      return const Color(0xFFF59E0B);
+    }
+    return const Color(0xFFEF4444);
+  }
+
+  Widget _buildQuestDifficultySummary(
+    BuildContext context,
+    Quest quest,
+    Map<String, int> stats,
+  ) {
+    final avgDifficulty = _averageNodeDifficulty(quest);
+    final roundedDifficulty = _roundToNearestFive(avgDifficulty);
+    final tags = _questStatTags(quest);
+    final statAverage = _averageStatValue(stats, tags);
+    final difficultyColor = _difficultyColor(statAverage, roundedDifficulty);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Difficulty',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+          Text(
+            '$roundedDifficulty',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: difficultyColor,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = context.watch<CharacterStatsProvider>().stats;
+    return FutureBuilder<Quest?>(
+      future: _questFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Difficulty',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
+            ),
+          );
+        }
+        final quest = snapshot.data;
+        if (quest == null) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Difficulty',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+                Text(
+                  '—',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                ),
+              ],
+            ),
+          );
+        }
+        return _buildQuestDifficultySummary(context, quest, stats);
+      },
     );
   }
 }

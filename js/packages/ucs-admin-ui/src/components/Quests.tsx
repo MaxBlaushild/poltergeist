@@ -57,7 +57,19 @@ const emptyChallengeForm = {
   locationChallenge: '',
   statTags: [] as string[],
   difficulty: 25,
+  proficiency: '',
 };
+
+const buildChallengeFormFromChallenge = (challenge: QuestNodeChallenge) => ({
+  ...emptyChallengeForm,
+  tier: challenge.tier ?? 1,
+  question: challenge.question ?? '',
+  reward: challenge.reward ?? 0,
+  inventoryItemId: challenge.inventoryItemId ? String(challenge.inventoryItemId) : '',
+  statTags: challenge.statTags ?? [],
+  difficulty: challenge.difficulty ?? 0,
+  proficiency: challenge.proficiency ?? '',
+});
 
 const emptyQuestReward = {
   inventoryItemId: '',
@@ -176,6 +188,7 @@ export const Quests = () => {
   const [nodeForm, setNodeForm] = useState({ ...emptyNodeForm });
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   const [challengeDrafts, setChallengeDrafts] = useState<Record<string, typeof emptyChallengeForm>>({});
+  const [challengeEdits, setChallengeEdits] = useState<Record<string, typeof emptyChallengeForm>>({});
   const [selectedPoiForModal, setSelectedPoiForModal] = useState<PointOfInterest | null>(null);
   const [characterLocationsOpen, setCharacterLocationsOpen] = useState(false);
   const [selectedCharacterLocations, setSelectedCharacterLocations] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -1066,6 +1079,28 @@ export const Quests = () => {
     }));
   };
 
+  const handleEditChallengeDraftChange = (challengeId: string, updates: Partial<typeof emptyChallengeForm>) => {
+    setChallengeEdits((prev) => ({
+      ...prev,
+      [challengeId]: { ...emptyChallengeForm, ...prev[challengeId], ...updates },
+    }));
+  };
+
+  const handleStartEditChallenge = (challenge: QuestNodeChallenge) => {
+    setChallengeEdits((prev) => ({
+      ...prev,
+      [challenge.id]: buildChallengeFormFromChallenge(challenge),
+    }));
+  };
+
+  const handleCancelEditChallenge = (challengeId: string) => {
+    setChallengeEdits((prev) => {
+      const next = { ...prev };
+      delete next[challengeId];
+      return next;
+    });
+  };
+
   const handleCreateChallenge = async (node: QuestNode) => {
     const draft = challengeDrafts[node.id] ?? emptyChallengeForm;
     if (!draft.question.trim()) {
@@ -1080,6 +1115,7 @@ export const Quests = () => {
         inventoryItemId: draft.inventoryItemId ? Number(draft.inventoryItemId) : null,
         statTags: normalizeStatTags(draft.statTags),
         difficulty: Number(draft.difficulty) || 0,
+        proficiency: draft.proficiency.trim(),
       };
       const created = await apiClient.post<QuestNodeChallenge>(`/sonar/questNodes/${node.id}/challenges`, payload);
       updateQuestState(node.questId, (quest) => ({
@@ -1092,6 +1128,42 @@ export const Quests = () => {
     } catch (error) {
       console.error('Failed to create challenge', error);
       alert('Failed to create challenge.');
+    }
+  };
+
+  const handleUpdateChallenge = async (node: QuestNode, challenge: QuestNodeChallenge) => {
+    const draft = challengeEdits[challenge.id];
+    if (!draft) return;
+    if (!draft.question.trim()) {
+      alert('Please enter a question for this challenge.');
+      return;
+    }
+    try {
+      const payload = {
+        tier: Number(draft.tier) || 1,
+        question: draft.question,
+        reward: Number(draft.reward) || 0,
+        inventoryItemId: draft.inventoryItemId ? Number(draft.inventoryItemId) : null,
+        statTags: normalizeStatTags(draft.statTags),
+        difficulty: Number(draft.difficulty) || 0,
+        proficiency: draft.proficiency.trim(),
+      };
+      const updated = await apiClient.patch<QuestNodeChallenge>(
+        `/sonar/questNodes/${node.id}/challenges/${challenge.id}`,
+        payload
+      );
+      updateQuestState(node.questId, (quest) => ({
+        ...quest,
+        nodes: (quest.nodes ?? []).map((n) =>
+          n.id === node.id
+            ? { ...n, challenges: (n.challenges ?? []).map((c) => (c.id === challenge.id ? updated : c)) }
+            : n
+        ),
+      }));
+      handleCancelEditChallenge(challenge.id);
+    } catch (error) {
+      console.error('Failed to update challenge', error);
+      alert('Failed to update challenge.');
     }
   };
 
@@ -2157,19 +2229,155 @@ export const Quests = () => {
                         <div className="mt-3">
                           <h4 className="font-semibold mb-2">Challenges</h4>
                           <div className="space-y-2 mb-3">
-                            {(node.challenges ?? []).map((challenge) => (
-                              <div key={challenge.id} className="border border-gray-200 rounded-md p-2 text-sm">
-                                <div>
-                                  Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward}
-                                </div>
-                                <div className="text-gray-600">{challenge.question}</div>
-                                {challenge.statTags && challenge.statTags.length > 0 && (
-                                  <div className="text-xs text-gray-500">
-                                    Stats: {challenge.statTags.map((tag) => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
+                            {(node.challenges ?? []).map((challenge) => {
+                              const editDraft = challengeEdits[challenge.id] ?? emptyChallengeForm;
+                              const isEditing = Boolean(challengeEdits[challenge.id]);
+                              return (
+                                <div key={challenge.id} className="border border-gray-200 rounded-md p-2 text-sm">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div>
+                                        Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward}
+                                      </div>
+                                      {!isEditing && (
+                                        <>
+                                          <div className="text-gray-600">{challenge.question}</div>
+                                          {challenge.statTags && challenge.statTags.length > 0 && (
+                                            <div className="text-xs text-gray-500">
+                                              Stats:{' '}
+                                              {challenge.statTags
+                                                .map((tag) => tag.charAt(0).toUpperCase() + tag.slice(1))
+                                                .join(', ')}
+                                            </div>
+                                          )}
+                                          {challenge.proficiency && (
+                                            <div className="text-xs text-gray-500">Proficiency: {challenge.proficiency}</div>
+                                          )}
+                                        </>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                      onClick={() =>
+                                        isEditing ? handleCancelEditChallenge(challenge.id) : handleStartEditChallenge(challenge)
+                                      }
+                                    >
+                                      {isEditing ? 'Cancel' : 'Edit'}
+                                    </button>
                                   </div>
-                                )}
-                              </div>
-                            ))}
+                                  {isEditing && (
+                                    <div className="mt-3">
+                                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700">Tier</label>
+                                          <input
+                                            type="number"
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.tier}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, { tier: Number(e.target.value) })
+                                            }
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700">Difficulty</label>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.difficulty}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, {
+                                                difficulty: Number(e.target.value),
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700">Reward</label>
+                                          <input
+                                            type="number"
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.reward}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, { reward: Number(e.target.value) })
+                                            }
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700">Inventory Item</label>
+                                          <select
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.inventoryItemId}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, { inventoryItemId: e.target.value })
+                                            }
+                                          >
+                                            <option value="">None</option>
+                                            {inventoryItems.map((item) => (
+                                              <option key={item.id} value={item.id}>
+                                                {item.name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="md:col-span-4">
+                                          <label className="block text-xs font-medium text-gray-700">Stat Tags</label>
+                                          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                            {questStatOptions.map((stat) => (
+                                              <label key={stat.id} className="flex items-center gap-2 text-xs text-gray-700">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={editDraft.statTags.includes(stat.id)}
+                                                  onChange={(e) => {
+                                                    const current = editDraft.statTags;
+                                                    const next = e.target.checked
+                                                      ? [...current, stat.id]
+                                                      : current.filter((tag) => tag !== stat.id);
+                                                    handleEditChallengeDraftChange(challenge.id, { statTags: next });
+                                                  }}
+                                                />
+                                                {stat.label}
+                                              </label>
+                                            ))}
+                                          </div>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <label className="block text-xs font-medium text-gray-700">Proficiency</label>
+                                          <input
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.proficiency}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, { proficiency: e.target.value })
+                                            }
+                                            placeholder="Drawing"
+                                          />
+                                        </div>
+                                        <div className="md:col-span-4">
+                                          <label className="block text-xs font-medium text-gray-700">Question</label>
+                                          <textarea
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            rows={2}
+                                            value={editDraft.question}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, { question: e.target.value })
+                                            }
+                                          />
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="mt-3 bg-blue-600 text-white px-3 py-2 rounded-md"
+                                        onClick={() => handleUpdateChallenge(node, challenge)}
+                                      >
+                                        Save Changes
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                             {(node.challenges ?? []).length === 0 && (
                               <div className="text-sm text-gray-500">No challenges yet.</div>
                             )}
@@ -2299,6 +2507,15 @@ export const Quests = () => {
                                     </label>
                                   ))}
                                 </div>
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-700">Proficiency</label>
+                                <input
+                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                  value={(challengeDrafts[node.id] ?? emptyChallengeForm).proficiency}
+                                  onChange={(e) => handleChallengeDraftChange(node.id, { proficiency: e.target.value })}
+                                  placeholder="Drawing"
+                                />
                               </div>
                               <div className="md:col-span-4">
                                 <label className="block text-xs font-medium text-gray-700">Question</label>

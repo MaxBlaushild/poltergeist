@@ -83,6 +83,17 @@ class CharacterAction {
   String? get questId => (metadata?['questId'] as String?) ?? pointOfInterestGroupId;
   String? get questName => metadata?['questName'] as String?;
   String? get questDescription => metadata?['questDescription'] as String?;
+  double? get questAverageDifficulty {
+    final raw = metadata?['questAverageDifficulty'];
+    if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw);
+    return null;
+  }
+  List<String> get questStatTags {
+    final raw = metadata?['questStatTags'] as List<dynamic>?;
+    if (raw == null) return const [];
+    return raw.map((e) => e.toString()).toList();
+  }
   List<String> get questAcceptanceDialogue {
     final raw = metadata?['acceptanceDialogue'] as List<dynamic>?;
     if (raw == null) return const [];

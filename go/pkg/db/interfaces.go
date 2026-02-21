@@ -52,6 +52,7 @@ type DbClient interface {
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserCharacterStats() UserCharacterStatsHandle
+	UserProficiency() UserProficiencyHandle
 	UserZoneReputation() UserZoneReputationHandle
 	Friend() FriendHandle
 	Party() PartyHandle
@@ -163,6 +164,12 @@ type TeamHandle interface {
 }
 
 type UserTeamHandle interface {
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type UserProficiencyHandle interface {
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserProficiency, error)
+	Increment(ctx context.Context, userID uuid.UUID, proficiency string, delta int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -755,7 +762,9 @@ type QuestNodeHandle interface {
 
 type QuestNodeChallengeHandle interface {
 	Create(ctx context.Context, challenge *models.QuestNodeChallenge) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNodeChallenge, error)
 	FindByNodeID(ctx context.Context, nodeID uuid.UUID) ([]models.QuestNodeChallenge, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.QuestNodeChallenge) (*models.QuestNodeChallenge, error)
 	DeleteByNodeID(ctx context.Context, nodeID uuid.UUID) error
 }
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -251,6 +252,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuest))
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
 	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
+	r.PATCH("/sonar/questNodes/:nodeId/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
 	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
@@ -2603,12 +2605,13 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Tier            int    `json:"tier"`
-		Question        string `json:"question"`
-		Reward          int    `json:"reward"`
-		InventoryItemID *int   `json:"inventoryItemId"`
+		Tier            int      `json:"tier"`
+		Question        string   `json:"question"`
+		Reward          int      `json:"reward"`
+		InventoryItemID *int     `json:"inventoryItemId"`
 		StatTags        []string `json:"statTags"`
-		Difficulty      int    `json:"difficulty"`
+		Difficulty      int      `json:"difficulty"`
+		Proficiency     string   `json:"proficiency"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2629,6 +2632,11 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 	if statTags == nil {
 		statTags = models.StringArray{}
 	}
+	proficiency := strings.TrimSpace(requestBody.Proficiency)
+	var proficiencyPtr *string
+	if proficiency != "" {
+		proficiencyPtr = &proficiency
+	}
 
 	challenge := &models.QuestNodeChallenge{
 		ID:              uuid.New(),
@@ -2641,6 +2649,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		InventoryItemID: requestBody.InventoryItemID,
 		Difficulty:      requestBody.Difficulty,
 		StatTags:        statTags,
+		Proficiency:     proficiencyPtr,
 	}
 
 	if err := s.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
@@ -2648,6 +2657,86 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, challenge)
+}
+
+func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
+	nodeIDParam := ctx.Param("nodeId")
+	challengeIDParam := ctx.Param("challengeId")
+
+	nodeID, err := uuid.Parse(nodeIDParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
+		return
+	}
+
+	challengeID, err := uuid.Parse(challengeIDParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node challenge ID"})
+		return
+	}
+
+	existing, err := s.dbClient.QuestNodeChallenge().FindByID(ctx, challengeID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
+		return
+	}
+	if existing.QuestNodeID != nodeID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge does not belong to quest node"})
+		return
+	}
+
+	var requestBody struct {
+		Tier            int      `json:"tier"`
+		Question        string   `json:"question"`
+		Reward          int      `json:"reward"`
+		InventoryItemID *int     `json:"inventoryItemId"`
+		StatTags        []string `json:"statTags"`
+		Difficulty      int      `json:"difficulty"`
+		Proficiency     string   `json:"proficiency"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if strings.TrimSpace(requestBody.Question) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
+		return
+	}
+	if requestBody.Difficulty < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
+		return
+	}
+
+	statTags := models.StringArray(requestBody.StatTags)
+	if statTags == nil {
+		statTags = models.StringArray{}
+	}
+	proficiency := strings.TrimSpace(requestBody.Proficiency)
+	var proficiencyPtr *string
+	if proficiency != "" {
+		proficiencyPtr = &proficiency
+	}
+
+	updates := &models.QuestNodeChallenge{
+		Tier:            requestBody.Tier,
+		Question:        requestBody.Question,
+		Reward:          requestBody.Reward,
+		InventoryItemID: requestBody.InventoryItemID,
+		Difficulty:      requestBody.Difficulty,
+		StatTags:        statTags,
+		Proficiency:     proficiencyPtr,
+		UpdatedAt:       time.Now(),
+	}
+
+	updated, err := s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, updates)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updated)
 }
 
 func (s *server) deleteQuestNode(ctx *gin.Context) {
@@ -5376,19 +5465,35 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	combinedScore := score
+	var statValues map[string]int
 	if len(statTags) > 0 {
-		combinedScore = score * len(statTags)
-	}
-
-	if score > 0 && len(statTags) > 0 {
-		additions := map[string]int{}
-		for _, tag := range statTags {
-			additions[tag] += score
-		}
-		if _, err := s.dbClient.UserCharacterStats().AddStatPoints(ctx, user.ID, additions); err != nil {
+		stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, user.ID)
+		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		statValues = map[string]int{}
+		statValueSum := 0
+		for _, tag := range statTags {
+			value := 0
+			switch tag {
+			case "strength":
+				value = stats.Strength
+			case "dexterity":
+				value = stats.Dexterity
+			case "constitution":
+				value = stats.Constitution
+			case "intelligence":
+				value = stats.Intelligence
+			case "wisdom":
+				value = stats.Wisdom
+			case "charisma":
+				value = stats.Charisma
+			}
+			statValues[tag] = value
+			statValueSum += value
+		}
+		combinedScore = score + statValueSum
 	}
 
 	difficulty := challenge.Difficulty
@@ -5408,6 +5513,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			Difficulty:     &difficultyValue,
 			CombinedScore:  &combinedValue,
 			StatTags:       statTags,
+			StatValues:     statValues,
 		})
 		return
 	}
@@ -5468,6 +5574,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		Difficulty:     &difficultyValue,
 		CombinedScore:  &combinedValue,
 		StatTags:       statTags,
+		StatValues:     statValues,
 	})
 }
 
@@ -6575,25 +6682,31 @@ func (s *server) deleteUser(ctx *gin.Context) {
 		return
 	}
 
-	// 16. Delete all owned inventory items
+	// 16. Delete all user proficiencies
+	if err := s.dbClient.UserProficiency().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user proficiencies: " + err.Error()})
+		return
+	}
+
+	// 17. Delete all owned inventory items
 	if err := s.dbClient.InventoryItem().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete owned inventory items: " + err.Error()})
 		return
 	}
 
-	// 17. Delete all user team relationships
+	// 18. Delete all user team relationships
 	if err := s.dbClient.UserTeam().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user team relationships: " + err.Error()})
 		return
 	}
 
-	// 18. Delete all parties where user is leader
+	// 19. Delete all parties where user is leader
 	if err := s.dbClient.Party().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete parties: " + err.Error()})
 		return
 	}
 
-	// 19. Finally, delete the user
+	// 20. Finally, delete the user
 	if err := s.dbClient.User().Delete(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -6924,7 +7037,13 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 			return
 		}
 
-		// 9. Finally, delete the user
+		// 9. Delete all user proficiencies
+		if err := s.dbClient.UserProficiency().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user proficiencies for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 10. Finally, delete the user
 		if err := s.dbClient.User().Delete(ctx, userID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user " + userID.String() + ": " + err.Error()})
 			return
@@ -7469,6 +7588,14 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			quest := quests[i]
 			questByID[quest.ID.String()] = &quest
 		}
+		validStats := map[string]struct{}{
+			"strength":     {},
+			"dexterity":    {},
+			"constitution": {},
+			"intelligence": {},
+			"wisdom":       {},
+			"charisma":     {},
+		}
 		for _, action := range actions {
 			if action == nil || action.ActionType != models.ActionTypeGiveQuest {
 				continue
@@ -7495,6 +7622,43 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 			if len(quest.AcceptanceDialogue) > 0 {
 				action.Metadata["acceptanceDialogue"] = quest.AcceptanceDialogue
 			}
+			var nodeAvgs []float64
+			tags := map[string]struct{}{}
+			for _, node := range quest.Nodes {
+				if len(node.Challenges) == 0 {
+					continue
+				}
+				sum := 0.0
+				for _, challenge := range node.Challenges {
+					sum += float64(challenge.Difficulty)
+					for _, tag := range []string(challenge.StatTags) {
+						normalized := strings.ToLower(strings.TrimSpace(tag))
+						if normalized == "" {
+							continue
+						}
+						if _, ok := validStats[normalized]; !ok {
+							continue
+						}
+						tags[normalized] = struct{}{}
+					}
+				}
+				nodeAvgs = append(nodeAvgs, sum/float64(len(node.Challenges)))
+			}
+			avgDifficulty := 0.0
+			if len(nodeAvgs) > 0 {
+				sum := 0.0
+				for _, value := range nodeAvgs {
+					sum += value
+				}
+				avgDifficulty = sum / float64(len(nodeAvgs))
+			}
+			tagList := make([]string, 0, len(tags))
+			for tag := range tags {
+				tagList = append(tagList, tag)
+			}
+			sort.Strings(tagList)
+			action.Metadata["questAverageDifficulty"] = avgDifficulty
+			action.Metadata["questStatTags"] = tagList
 			log.Printf(
 				"getCharacterActions: giveQuest action=%s questId=%s questName=%s acceptanceDialogue=%d",
 				action.ID,

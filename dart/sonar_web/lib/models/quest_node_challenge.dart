@@ -6,6 +6,7 @@ class QuestNodeChallenge {
   final int? inventoryItemId;
   final int difficulty;
   final List<String> statTags;
+  final String? proficiency;
 
   const QuestNodeChallenge({
     required this.id,
@@ -15,6 +16,7 @@ class QuestNodeChallenge {
     this.inventoryItemId,
     this.difficulty = 0,
     this.statTags = const [],
+    this.proficiency,
   });
 
   factory QuestNodeChallenge.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class QuestNodeChallenge {
               ?.map((tag) => tag.toString())
               .toList() ??
           const [],
+      proficiency: json['proficiency'] as String?,
     );
   }
 }

@@ -10,14 +10,20 @@ import (
 )
 
 type characterStatsResponse struct {
-	Strength      int `json:"strength"`
-	Dexterity     int `json:"dexterity"`
-	Constitution  int `json:"constitution"`
-	Intelligence  int `json:"intelligence"`
-	Wisdom        int `json:"wisdom"`
-	Charisma      int `json:"charisma"`
-	UnspentPoints int `json:"unspentPoints"`
-	Level         int `json:"level"`
+	Strength      int                            `json:"strength"`
+	Dexterity     int                            `json:"dexterity"`
+	Constitution  int                            `json:"constitution"`
+	Intelligence  int                            `json:"intelligence"`
+	Wisdom        int                            `json:"wisdom"`
+	Charisma      int                            `json:"charisma"`
+	UnspentPoints int                            `json:"unspentPoints"`
+	Level         int                            `json:"level"`
+	Proficiencies []characterProficiencyResponse `json:"proficiencies"`
+}
+
+type characterProficiencyResponse struct {
+	Proficiency string `json:"proficiency"`
+	Level       int    `json:"level"`
 }
 
 type characterStatsAllocationRequest struct {
@@ -43,7 +49,13 @@ func (s *server) getCharacterStats(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level))
+	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies))
 }
 
 func (s *server) allocateCharacterStats(ctx *gin.Context) {
@@ -78,10 +90,23 @@ func (s *server) allocateCharacterStats(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level))
+	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies))
 }
 
-func characterStatsResponseFrom(stats *models.UserCharacterStats, level int) characterStatsResponse {
+func characterStatsResponseFrom(stats *models.UserCharacterStats, level int, proficiencies []models.UserProficiency) characterStatsResponse {
+	proficiencyResponse := make([]characterProficiencyResponse, 0, len(proficiencies))
+	for _, proficiency := range proficiencies {
+		proficiencyResponse = append(proficiencyResponse, characterProficiencyResponse{
+			Proficiency: proficiency.Proficiency,
+			Level:       proficiency.Level,
+		})
+	}
 	return characterStatsResponse{
 		Strength:      stats.Strength,
 		Dexterity:     stats.Dexterity,
@@ -91,5 +116,6 @@ func characterStatsResponseFrom(stats *models.UserCharacterStats, level int) cha
 		Charisma:      stats.Charisma,
 		UnspentPoints: stats.UnspentPoints,
 		Level:         level,
+		Proficiencies: proficiencyResponse,
 	}
 }

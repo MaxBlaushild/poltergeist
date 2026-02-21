@@ -1,3 +1,24 @@
+class CharacterProficiency {
+  final String proficiency;
+  final int level;
+
+  const CharacterProficiency({
+    required this.proficiency,
+    required this.level,
+  });
+
+  factory CharacterProficiency.fromJson(Map<String, dynamic> json) {
+    final rawLevel = json['level'];
+    final levelValue = rawLevel is num
+        ? rawLevel.toInt()
+        : int.tryParse(rawLevel?.toString() ?? '') ?? 0;
+    return CharacterProficiency(
+      proficiency: json['proficiency']?.toString() ?? '',
+      level: levelValue,
+    );
+  }
+}
+
 class CharacterStats {
   final int strength;
   final int dexterity;
@@ -7,6 +28,7 @@ class CharacterStats {
   final int charisma;
   final int unspentPoints;
   final int level;
+  final List<CharacterProficiency> proficiencies;
 
   const CharacterStats({
     required this.strength,
@@ -17,6 +39,7 @@ class CharacterStats {
     required this.charisma,
     required this.unspentPoints,
     required this.level,
+    this.proficiencies = const [],
   });
 
   factory CharacterStats.fromJson(Map<String, dynamic> json) {
@@ -35,6 +58,12 @@ class CharacterStats {
       charisma: _int('charisma', 'Charisma'),
       unspentPoints: _int('unspentPoints', 'unspent_points'),
       level: _int('level', 'Level'),
+      proficiencies: (json['proficiencies'] as List<dynamic>?)
+              ?.map((entry) =>
+                  CharacterProficiency.fromJson(entry as Map<String, dynamic>))
+              .where((entry) => entry.proficiency.isNotEmpty)
+              .toList() ??
+          const [],
     );
   }
 

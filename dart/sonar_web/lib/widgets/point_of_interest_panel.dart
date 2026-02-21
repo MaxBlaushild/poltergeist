@@ -14,6 +14,7 @@ import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../providers/auth_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
@@ -31,6 +32,11 @@ enum QuestSubmissionOverlayPhase { hidden, loading, success, failure }
 typedef QuestSubmissionOverlayCallback = void Function(
   QuestSubmissionOverlayPhase phase, {
   String? message,
+  int? score,
+  int? difficulty,
+  int? combinedScore,
+  List<String>? statTags,
+  Map<String, int>? statValues,
 });
 
 /// Unlock radius in meters. Must match backend (POST /sonar/pointOfInterest/unlock).
@@ -174,6 +180,37 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
               : s.toLowerCase();
         })
         .join(' ');
+  }
+
+  Color _difficultyColor(double statAverage, int difficulty) {
+    if (statAverage > difficulty) {
+      return const Color(0xFFC9C2B2);
+    }
+    if (statAverage > difficulty - 25) {
+      return const Color(0xFF6F8F5E);
+    }
+    if (statAverage > difficulty - 50) {
+      return const Color(0xFFC89A3A);
+    }
+    return const Color(0xFFA35B4B);
+  }
+
+  double _averageStatValue(Map<String, int> stats, List<String> tags) {
+    if (stats.isEmpty) return 0;
+    if (tags.isEmpty) {
+      final values = stats.values;
+      final total = values.fold<int>(0, (sum, value) => sum + value);
+      return total / values.length;
+    }
+    var total = 0;
+    var count = 0;
+    for (final tag in tags) {
+      if (!stats.containsKey(tag)) continue;
+      total += stats[tag] ?? 0;
+      count += 1;
+    }
+    if (count == 0) return 0;
+    return total / count;
   }
 
   double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
@@ -423,6 +460,15 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                           (c) => c.id == selectedChallengeId,
                           orElse: () => node.challenges.first,
                         ));
+              final statValues = context.watch<CharacterStatsProvider>().stats;
+              final statTags = (selectedChallenge?.statTags ?? const [])
+                  .map((tag) => tag.trim().toLowerCase())
+                  .where((tag) => tag.isNotEmpty)
+                  .toList();
+              final difficultyValue = selectedChallenge?.difficulty ?? 0;
+              final statAverage = _averageStatValue(statValues, statTags);
+              final difficultyColor =
+                  _difficultyColor(statAverage, difficultyValue);
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -462,7 +508,51 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     const SizedBox(height: 6),
                     Text(
                       'Difficulty: ${selectedChallenge.difficulty}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: difficultyColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                  if (statTags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Stat modifiers',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: statTags.map((tag) {
+                        final label = _formatTagName(tag);
+                        final value = statValues[tag] ??
+                            CharacterStatsProvider.baseStatValue;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceVariant
+                                .withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
+                          ),
+                          child: Text(
+                            '+$value $label',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -603,28 +693,25 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             final score = (resp['score'] as num?)?.toInt();
                             final difficulty = (resp['difficulty'] as num?)?.toInt();
                             final combined = (resp['combinedScore'] as num?)?.toInt();
-                            String? scoreLine;
-                            if (score != null || difficulty != null || combined != null) {
-                              final scoreValue = score ?? 0;
-                              final difficultyValue = difficulty ?? 0;
-                              if (combined != null && combined != scoreValue) {
-                                scoreLine =
-                                    'Score: $scoreValue (Total $combined) vs Difficulty: $difficultyValue';
-                              } else {
-                                scoreLine = 'Score: $scoreValue / Difficulty: $difficultyValue';
-                              }
-                            }
+                            final statTags = (resp['statTags'] as List?)
+                                ?.map((tag) => tag.toString())
+                                .toList();
+                            final statValues = (resp['statValues'] as Map?)
+                                ?.map((key, value) =>
+                                    MapEntry(key.toString(), (value as num?)?.toInt() ?? 0));
                             final baseMessage = success
                                 ? (reason.isNotEmpty ? reason : 'Challenge completed!')
                                 : (reason.isNotEmpty ? reason : 'Submission failed');
-                            final message = scoreLine == null
-                                ? baseMessage
-                                : '$baseMessage\n$scoreLine';
                             widget.onQuestSubmissionState?.call(
                               success
                                   ? QuestSubmissionOverlayPhase.success
                                   : QuestSubmissionOverlayPhase.failure,
-                              message: message,
+                              message: baseMessage,
+                              score: score,
+                              difficulty: difficulty,
+                              combinedScore: combined,
+                              statTags: statTags,
+                              statValues: statValues,
                             );
                           },
                     child: const Text('Submit'),
@@ -1113,7 +1200,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                   if (characters.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Characters',
+                      'Patrons',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: Theme.of(context)

@@ -22,6 +22,7 @@ import '../providers/auth_provider.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
@@ -112,7 +113,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   String _lastMapFilterKey = '';
   QuestSubmissionOverlayPhase _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
   String? _questSubmissionMessage;
-  Timer? _questSubmissionTimer;
+  int? _questSubmissionScore;
+  int? _questSubmissionDifficulty;
+  int? _questSubmissionCombinedScore;
+  List<String> _questSubmissionStatTags = const [];
+  Map<String, int> _questSubmissionStatValues = const <String, int>{};
+  int _questSubmissionRevealStep = 0;
+  final List<Timer> _questSubmissionRevealTimers = [];
   final TrackedQuestsOverlayController _trackedQuestsController =
       TrackedQuestsOverlayController();
 
@@ -146,7 +153,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _questGlowTimer?.cancel();
     _questPoiPulseTimer?.cancel();
     _zoneAutoSelectTimer?.cancel();
-    _questSubmissionTimer?.cancel();
+    _clearQuestSubmissionRevealTimers();
     _trackedQuestsController.dispose();
     try {
       context.read<ZoneProvider>().removeListener(_onZoneChanged);
@@ -694,6 +701,83 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       default:
         return null;
     }
+  }
+
+  String _formatStatLabel(String raw) {
+    final trimmed = raw.trim().toLowerCase();
+    if (trimmed.isEmpty) return raw;
+    return trimmed[0].toUpperCase() + trimmed.substring(1);
+  }
+
+  Color _difficultyColor(double statAverage, int difficulty) {
+    if (statAverage > difficulty) {
+      return const Color(0xFFC9C2B2);
+    }
+    if (statAverage > difficulty - 25) {
+      return const Color(0xFF6F8F5E);
+    }
+    if (statAverage > difficulty - 50) {
+      return const Color(0xFFC89A3A);
+    }
+    return const Color(0xFFA35B4B);
+  }
+
+  double _averageStatValue(Map<String, int> stats, List<String> tags) {
+    if (stats.isEmpty) return 0;
+    if (tags.isEmpty) {
+      final values = stats.values;
+      final total = values.fold<int>(0, (sum, value) => sum + value);
+      return total / values.length;
+    }
+    var total = 0;
+    var count = 0;
+    for (final tag in tags) {
+      if (!stats.containsKey(tag)) continue;
+      total += stats[tag] ?? 0;
+      count += 1;
+    }
+    if (count == 0) return 0;
+    return total / count;
+  }
+
+  void _clearQuestSubmissionRevealTimers() {
+    for (final timer in _questSubmissionRevealTimers) {
+      timer.cancel();
+    }
+    _questSubmissionRevealTimers.clear();
+  }
+
+  void _startQuestSubmissionRevealSequence() {
+    _clearQuestSubmissionRevealTimers();
+    const initialDelay = Duration(milliseconds: 250);
+    const stepDelay = Duration(milliseconds: 320);
+    var delay = initialDelay;
+    for (var step = 1; step <= 5; step++) {
+      _questSubmissionRevealTimers.add(
+        Timer(delay, () {
+          if (!mounted) return;
+          setState(() => _questSubmissionRevealStep = step);
+        }),
+      );
+      delay += stepDelay;
+    }
+  }
+
+  Widget _buildRevealSection(int step, Widget child) {
+    final visible = _questSubmissionRevealStep >= step;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 240),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
+          child: child,
+        ),
+      ),
+      child: visible ? child : const SizedBox.shrink(),
+    );
   }
 
   void _setupTapHandlers(MapLibreMapController c) {
@@ -1709,6 +1793,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           (c) => c.id == selectedChallengeId,
                           orElse: () => node.challenges.first,
                         ));
+              final statValues = context.watch<CharacterStatsProvider>().stats;
+              final statTags = (selectedChallenge?.statTags ?? const [])
+                  .map((tag) => tag.trim().toLowerCase())
+                  .where((tag) => tag.isNotEmpty)
+                  .toList();
+              final difficultyValue = selectedChallenge?.difficulty ?? 0;
+              final statAverage = _averageStatValue(statValues, statTags);
+              final difficultyColor =
+                  _difficultyColor(statAverage, difficultyValue);
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1748,7 +1841,51 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     const SizedBox(height: 6),
                     Text(
                       'Difficulty: ${selectedChallenge.difficulty}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: difficultyColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ],
+                  if (statTags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Stat modifiers',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: statTags.map((tag) {
+                        final label = _formatStatLabel(tag);
+                        final value = statValues[tag] ??
+                            CharacterStatsProvider.baseStatValue;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceVariant
+                                .withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
+                          ),
+                          child: Text(
+                            '+$value $label',
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ],
                   const SizedBox(height: 12),
@@ -1884,28 +2021,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             final score = (resp['score'] as num?)?.toInt();
                             final difficulty = (resp['difficulty'] as num?)?.toInt();
                             final combined = (resp['combinedScore'] as num?)?.toInt();
-                            String? scoreLine;
-                            if (score != null || difficulty != null || combined != null) {
-                              final scoreValue = score ?? 0;
-                              final difficultyValue = difficulty ?? 0;
-                              if (combined != null && combined != scoreValue) {
-                                scoreLine =
-                                    'Score: $scoreValue (Total $combined) vs Difficulty: $difficultyValue';
-                              } else {
-                                scoreLine = 'Score: $scoreValue / Difficulty: $difficultyValue';
-                              }
-                            }
+                            final statTags = (resp['statTags'] as List?)
+                                ?.map((tag) => tag.toString())
+                                .toList();
+                            final statValues = (resp['statValues'] as Map?)
+                                ?.map((key, value) =>
+                                    MapEntry(key.toString(), (value as num?)?.toInt() ?? 0));
                             final baseMessage = success
                                 ? (reason.isNotEmpty ? reason : 'Challenge completed!')
                                 : (reason.isNotEmpty ? reason : 'Submission failed');
-                            final message = scoreLine == null
-                                ? baseMessage
-                                : '$baseMessage\n$scoreLine';
                             _setQuestSubmissionOverlay(
                               success
                                   ? QuestSubmissionOverlayPhase.success
                                   : QuestSubmissionOverlayPhase.failure,
-                              message: message,
+                              message: baseMessage,
+                              score: score,
+                              difficulty: difficulty,
+                              combinedScore: combined,
+                              statTags: statTags,
+                              statValues: statValues,
                             );
                           },
                     child: Text('Quest: ${quest.name}'),
@@ -1931,27 +2065,59 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _setQuestSubmissionOverlay(
     QuestSubmissionOverlayPhase phase, {
     String? message,
+    int? score,
+    int? difficulty,
+    int? combinedScore,
+    List<String>? statTags,
+    Map<String, int>? statValues,
   }) {
-    _questSubmissionTimer?.cancel();
+    final hasDetails = score != null ||
+        difficulty != null ||
+        combinedScore != null ||
+        statTags != null ||
+        statValues != null;
+    _clearQuestSubmissionRevealTimers();
     setState(() {
       _questSubmissionPhase = phase;
       _questSubmissionMessage = message;
+      if (phase == QuestSubmissionOverlayPhase.loading || !hasDetails) {
+        _questSubmissionScore = null;
+        _questSubmissionDifficulty = null;
+        _questSubmissionCombinedScore = null;
+        _questSubmissionStatTags = const [];
+        _questSubmissionStatValues = const <String, int>{};
+        _questSubmissionRevealStep = 0;
+      } else {
+        _questSubmissionScore = score;
+        _questSubmissionDifficulty = difficulty;
+        _questSubmissionCombinedScore = combinedScore;
+        _questSubmissionStatTags = statTags ?? const [];
+        _questSubmissionStatValues = statValues ?? const <String, int>{};
+        _questSubmissionRevealStep = 0;
+      }
     });
-    if (phase == QuestSubmissionOverlayPhase.success ||
-        phase == QuestSubmissionOverlayPhase.failure) {
-      _questSubmissionTimer = Timer(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        _dismissQuestSubmissionOverlay();
-      });
+    if (phase != QuestSubmissionOverlayPhase.loading && hasDetails) {
+      _startQuestSubmissionRevealSequence();
+    } else if (phase != QuestSubmissionOverlayPhase.loading) {
+      setState(() => _questSubmissionRevealStep = 5);
+    }
+    if (phase != QuestSubmissionOverlayPhase.loading && hasDetails) {
+      unawaited(context.read<CharacterStatsProvider>().refresh());
     }
   }
 
   void _dismissQuestSubmissionOverlay() {
-    _questSubmissionTimer?.cancel();
     if (!mounted) return;
+    _clearQuestSubmissionRevealTimers();
     setState(() {
       _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
       _questSubmissionMessage = null;
+      _questSubmissionScore = null;
+      _questSubmissionDifficulty = null;
+      _questSubmissionCombinedScore = null;
+      _questSubmissionStatTags = const [];
+      _questSubmissionStatValues = const <String, int>{};
+      _questSubmissionRevealStep = 0;
     });
   }
 
@@ -2271,7 +2437,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _questSubmissionPhase == QuestSubmissionOverlayPhase.loading
+                onTap: _questSubmissionPhase == QuestSubmissionOverlayPhase.loading ||
+                        _questSubmissionRevealStep < 5
                     ? null
                     : _dismissQuestSubmissionOverlay,
                 child: AnimatedOpacity(
@@ -2280,76 +2447,391 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   child: Container(
                     color: Colors.black.withOpacity(0.45),
                     child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface.withOpacity(0.98),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: const Color(0xFFF5C542),
-                            width: 2,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 14,
-                              offset: Offset(0, 6),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isLoading = _questSubmissionPhase ==
+                              QuestSubmissionOverlayPhase.loading;
+                          final isFailure = _questSubmissionPhase ==
+                              QuestSubmissionOverlayPhase.failure;
+                          final accentColor = isFailure
+                              ? Theme.of(context).colorScheme.error
+                              : const Color(0xFFF5C542);
+                          final statsProvider =
+                              context.watch<CharacterStatsProvider>();
+                          final statValues = _questSubmissionStatValues.isNotEmpty
+                              ? _questSubmissionStatValues
+                              : statsProvider.stats;
+                          final statTags = _questSubmissionStatTags;
+                          final hasDetails = _questSubmissionScore != null ||
+                              _questSubmissionDifficulty != null ||
+                              _questSubmissionCombinedScore != null ||
+                              statTags.isNotEmpty ||
+                              _questSubmissionStatValues.isNotEmpty;
+                          final scoreValue = _questSubmissionScore ?? 0;
+                          final combinedValue = _questSubmissionCombinedScore ??
+                              (scoreValue +
+                                  statTags.fold<int>(
+                                    0,
+                                    (sum, tag) =>
+                                        sum +
+                                        (statValues[tag] ??
+                                            CharacterStatsProvider
+                                                .baseStatValue),
+                                  ));
+                          final difficultyValue =
+                              _questSubmissionDifficulty ?? 0;
+                          final availableWidth = constraints.maxWidth * 0.9;
+                          final maxWidth =
+                              availableWidth > 420 ? 420.0 : availableWidth;
+                          final minWidth = maxWidth < 280 ? maxWidth : 280.0;
+                          final borderRadius = BorderRadius.circular(20);
+
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: minWidth,
+                              maxWidth: maxWidth,
                             ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _questSubmissionPhase == QuestSubmissionOverlayPhase.success
-                                  ? Icons.verified
-                                  : _questSubmissionPhase == QuestSubmissionOverlayPhase.failure
-                                      ? Icons.error
-                                      : Icons.casino,
-                              size: 36,
-                              color: _questSubmissionPhase == QuestSubmissionOverlayPhase.failure
-                                  ? Theme.of(context).colorScheme.error
-                                  : const Color(0xFFF5C542),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _questSubmissionPhase == QuestSubmissionOverlayPhase.loading
-                                  ? 'The Dungeonmaster is weighing your offering…'
-                                  : _questSubmissionMessage ??
-                                      (_questSubmissionPhase ==
-                                              QuestSubmissionOverlayPhase.success
-                                          ? 'Challenge completed!'
-                                          : 'Submission failed'),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
+                            child: PaperTexture(
+                              borderRadius: borderRadius,
+                              opacity: 0.1,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 22,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surface
+                                      .withOpacity(0.98),
+                                  borderRadius: borderRadius,
+                                  border: Border.all(
+                                    color: accentColor.withOpacity(0.9),
+                                    width: 1.5,
                                   ),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black26,
+                                      blurRadius: 18,
+                                      offset: Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Center(
+                                      child: Text(
+                                        "Dungeonmaster's score",
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    if (isLoading ||
+                                        _questSubmissionRevealStep == 0) ...[
+                                      Center(
+                                        child: Text(
+                                          'Calculating...',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      LinearProgressIndicator(
+                                        minHeight: 6,
+                                        color: accentColor,
+                                        backgroundColor:
+                                            accentColor.withOpacity(0.15),
+                                      ),
+                                    ],
+                                    if (hasDetails) ...[
+                                      _buildRevealSection(
+                                        1,
+                                        Center(
+                                          child: Column(
+                                            children: [
+                                              Text(
+                                                '$scoreValue',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .displaySmall
+                                                    ?.copyWith(
+                                                      fontWeight: FontWeight.w700,
+                                                      color: accentColor,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      _buildRevealSection(
+                                        2,
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Stat modifiers',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelLarge,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              if (statTags.isEmpty)
+                                                Text(
+                                                  'None',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall,
+                                                )
+                                              else
+                                                Wrap(
+                                                  spacing: 8,
+                                                  runSpacing: 8,
+                                                  children: statTags.map((tag) {
+                                                    final label =
+                                                        _formatStatLabel(tag);
+                                                    final value =
+                                                        statValues[tag] ??
+                                                            CharacterStatsProvider
+                                                                .baseStatValue;
+                                                  return Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .surfaceVariant
+                                                          .withOpacity(0.6),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                      border: Border.all(
+                                                        color: accentColor
+                                                            .withOpacity(0.2),
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      '+$value $label',
+                                                      style: Theme.of(context)
+                                                          .textTheme
+                                                          .labelSmall,
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      _buildRevealSection(
+                                        3,
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                'Difficulty',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelLarge,
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '$difficultyValue',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      _buildRevealSection(
+                                        4,
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const SizedBox(height: 16),
+                                            Text(
+                                              'Scoring',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelLarge,
+                                            ),
+                                            const SizedBox(height: 6),
+                                            if (statTags.isNotEmpty)
+                                              Text(
+                                                'Modifiers: ${statTags.map((tag) {
+                                                  final label =
+                                                      _formatStatLabel(tag);
+                                                  final value =
+                                                      statValues[tag] ??
+                                                          CharacterStatsProvider
+                                                              .baseStatValue;
+                                                  return '+$value $label';
+                                                }).join(' · ')}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall,
+                                              ),
+                                            Text(
+                                              () {
+                                                final parts = <String>['Score $scoreValue'];
+                                                for (final tag in statTags) {
+                                                  final label = _formatStatLabel(tag);
+                                                  final value = statValues[tag] ??
+                                                      CharacterStatsProvider.baseStatValue;
+                                                  parts.add('+$value $label');
+                                                }
+                                                return '${parts.join(' ')} = $combinedValue';
+                                              }(),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall,
+                                              ),
+                                              Text(
+                                                'Difficulty = $difficultyValue',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      _buildRevealSection(
+                                        5,
+                                        Column(
+                                          children: [
+                                            const SizedBox(height: 18),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Icon(
+                                                  _questSubmissionPhase ==
+                                                          QuestSubmissionOverlayPhase
+                                                              .success
+                                                      ? Icons.emoji_events
+                                                      : Icons
+                                                          .sentiment_very_dissatisfied,
+                                                  size: 22,
+                                                  color: accentColor,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  _questSubmissionPhase ==
+                                                          QuestSubmissionOverlayPhase
+                                                              .success
+                                                      ? 'Victory!'
+                                                      : 'Defeat',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleMedium
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: accentColor,
+                                                      ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              _questSubmissionMessage ??
+                                                  (_questSubmissionPhase ==
+                                                          QuestSubmissionOverlayPhase
+                                                              .success
+                                                      ? 'Challenge completed!'
+                                                      : 'Submission failed'),
+                                              textAlign: TextAlign.center,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Text(
+                                              'Tap anywhere to dismiss.',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ] else if (!isLoading) ...[
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            _questSubmissionPhase ==
+                                                    QuestSubmissionOverlayPhase
+                                                        .success
+                                                ? Icons.emoji_events
+                                                : Icons.error,
+                                            size: 22,
+                                            color: accentColor,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Flexible(
+                                            child: Text(
+                                              _questSubmissionMessage ??
+                                                  (_questSubmissionPhase ==
+                                                          QuestSubmissionOverlayPhase
+                                                              .success
+                                                      ? 'Challenge completed!'
+                                                      : 'Submission failed'),
+                                              textAlign: TextAlign.center,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.w700,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        'Tap anywhere to dismiss.',
+                                        textAlign: TextAlign.center,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
                             ),
-                            const SizedBox(height: 6),
-                            if (_questSubmissionPhase ==
-                                QuestSubmissionOverlayPhase.loading)
-                              Text(
-                                'Dice roll behind the screen. The verdict is near.',
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            if (_questSubmissionPhase ==
-                                QuestSubmissionOverlayPhase.loading)
-                              const SizedBox(height: 16),
-                            if (_questSubmissionPhase ==
-                                QuestSubmissionOverlayPhase.loading)
-                              const CircularProgressIndicator(),
-                            if (_questSubmissionPhase !=
-                                QuestSubmissionOverlayPhase.loading)
-                              const SizedBox(height: 12),
-                            if (_questSubmissionPhase !=
-                                QuestSubmissionOverlayPhase.loading)
-                              Text(
-                                'Tap anywhere to dismiss.',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                          ],
-                        ),
+                          );
+                        },
                       ),
                     ),
                   ),

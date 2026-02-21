@@ -2,6 +2,7 @@ import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
+import '../models/quest.dart';
 import '../models/treasure_chest.dart';
 import '../models/user_zone_reputation.dart';
 import '../models/zone.dart';
@@ -15,6 +16,15 @@ class PoiService {
   Future<List<Character>> getCharacters() async {
     final list = await _api.get<List<dynamic>>('/sonar/characters');
     return list.map((e) => Character.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<Quest?> getQuestById(String questId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>('/sonar/quests/$questId');
+      return Quest.fromJson(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<TreasureChest>> getTreasureChestsForZone(String zoneId) async {

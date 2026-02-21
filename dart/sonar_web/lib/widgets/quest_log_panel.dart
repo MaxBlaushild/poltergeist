@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
+import '../models/quest_node_challenge.dart';
 import '../providers/discoveries_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
 
@@ -238,9 +240,47 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     return poi.tags.map((t) => t.name).toList();
   }
 
+  double _averageStatValueForChallenge(
+    Map<String, int> stats,
+    QuestNodeChallenge challenge,
+  ) {
+    if (stats.isEmpty) return 0;
+    final tags = challenge.statTags
+        .map((tag) => tag.trim().toLowerCase())
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
+    if (tags.isEmpty) {
+      final values = stats.values;
+      final total = values.fold<int>(0, (sum, value) => sum + value);
+      return total / values.length;
+    }
+    var total = 0;
+    var count = 0;
+    for (final tag in tags) {
+      if (!stats.containsKey(tag)) continue;
+      total += stats[tag] ?? 0;
+      count += 1;
+    }
+    if (count == 0) return 0;
+    return total / count;
+  }
+
+  Color _difficultyColor(double statAverage, int difficulty) {
+    if (statAverage > difficulty) {
+      return const Color(0xFFC9C2B2);
+    }
+    if (statAverage > difficulty - 25) {
+      return const Color(0xFF6F8F5E);
+    }
+    if (statAverage > difficulty - 50) {
+      return const Color(0xFFC89A3A);
+    }
+    return const Color(0xFFA35B4B);
+  }
+
   Widget _buildQuestDetail(BuildContext context, Quest quest) {
-    return Consumer2<QuestLogProvider, DiscoveriesProvider>(
-      builder: (context, ql, discoveries, _) {
+    return Consumer3<QuestLogProvider, DiscoveriesProvider, CharacterStatsProvider>(
+      builder: (context, ql, discoveries, statsProvider, _) {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
         final node = quest.currentNode;
         final poi = node?.pointOfInterest;
@@ -373,15 +413,39 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                       ),
                 ),
                 const SizedBox(height: 8),
-                ...node.challenges.map(
-                  (c) => Padding(
+                ...node.challenges.map((c) {
+                  final statAvg = _averageStatValueForChallenge(
+                    statsProvider.stats,
+                    c,
+                  );
+                  final color = _difficultyColor(statAvg, c.difficulty);
+                  return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '• ${c.question} (Difficulty ${c.difficulty})',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 6),
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            c.question,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: color,
+                                ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ),
+                  );
+                }),
               ],
             ],
           ),

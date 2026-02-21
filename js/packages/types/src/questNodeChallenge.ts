@@ -7,4 +7,5 @@ export interface QuestNodeChallenge {
   inventoryItemId?: number | null;
   difficulty?: number;
   statTags?: string[];
+  proficiency?: string | null;
 }

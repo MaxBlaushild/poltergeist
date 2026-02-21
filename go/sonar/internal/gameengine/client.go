@@ -35,13 +35,14 @@ type Submission struct {
 }
 
 type SubmissionResult struct {
-	Successful     bool     `json:"successful"`
-	Reason         string   `json:"reason"`
-	QuestCompleted bool     `json:"questCompleted"`
-	Score          *int     `json:"score,omitempty"`
-	Difficulty     *int     `json:"difficulty,omitempty"`
-	CombinedScore  *int     `json:"combinedScore,omitempty"`
-	StatTags       []string `json:"statTags,omitempty"`
+	Successful     bool           `json:"successful"`
+	Reason         string         `json:"reason"`
+	QuestCompleted bool           `json:"questCompleted"`
+	Score          *int           `json:"score,omitempty"`
+	Difficulty     *int           `json:"difficulty,omitempty"`
+	CombinedScore  *int           `json:"combinedScore,omitempty"`
+	StatTags       []string       `json:"statTags,omitempty"`
+	StatValues     map[string]int `json:"statValues,omitempty"`
 }
 
 type GameEngineClient interface {
@@ -719,6 +720,17 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		})
 	}
 
+	proficiencies := questProficiencies(quest)
+	if len(proficiencies) > 0 {
+		for _, member := range partyMembers {
+			for _, proficiency := range proficiencies {
+				if err := c.db.UserProficiency().Increment(ctx, member.ID, proficiency, 1); err != nil {
+					return goldAwarded, itemsAwarded, err
+				}
+			}
+		}
+	}
+
 	questActivityData, err := json.Marshal(models.QuestCompletedActivity{
 		QuestID:      quest.ID,
 		GoldAwarded:  goldAwarded,
@@ -1090,4 +1102,30 @@ func (c *gameEngineClient) nextQuestNode(quest *models.Quest, current *models.Qu
 		}
 	}
 	return next
+}
+
+func questProficiencies(quest *models.Quest) []string {
+	if quest == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	result := []string{}
+	for _, node := range quest.Nodes {
+		for _, challenge := range node.Challenges {
+			if challenge.Proficiency == nil {
+				continue
+			}
+			value := strings.TrimSpace(*challenge.Proficiency)
+			if value == "" {
+				continue
+			}
+			key := strings.ToLower(value)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, value)
+		}
+	}
+	return result
 }

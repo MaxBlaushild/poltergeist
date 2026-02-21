@@ -13,6 +13,7 @@ class RpgDialogueModal extends StatefulWidget {
     required this.action,
     required this.onClose,
     this.dialogueOverride,
+    this.footerContent,
     this.primaryActionLabel,
     this.secondaryActionLabel,
     this.onPrimaryAction,
@@ -23,6 +24,7 @@ class RpgDialogueModal extends StatefulWidget {
   final CharacterAction action;
   final VoidCallback onClose;
   final List<DialogueMessage>? dialogueOverride;
+  final Widget? footerContent;
   final String? primaryActionLabel;
   final String? secondaryActionLabel;
   final VoidCallback? onPrimaryAction;
@@ -170,6 +172,10 @@ class _RpgDialogueModalState extends State<RpgDialogueModal> {
                         ),
                       ),
                     ),
+                    if (widget.footerContent != null) ...[
+                      const SizedBox(height: 14),
+                      widget.footerContent!,
+                    ],
                     const SizedBox(height: 18),
                     Align(
                       alignment: Alignment.centerRight,

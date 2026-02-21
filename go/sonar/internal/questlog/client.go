@@ -27,6 +27,7 @@ type QuestNodeChallenge struct {
 	InventoryItemID *int      `json:"inventoryItemId"`
 	Difficulty      int       `json:"difficulty"`
 	StatTags        []string  `json:"statTags,omitempty"`
+	Proficiency     *string   `json:"proficiency,omitempty"`
 }
 
 type QuestNode struct {
@@ -59,9 +60,9 @@ type Quest struct {
 }
 
 type QuestLog struct {
-	Quests           []Quest     `json:"quests"`
-	CompletedQuests  []Quest     `json:"completedQuests"`
-	TrackedQuestIDs  []uuid.UUID `json:"trackedQuestIds"`
+	Quests          []Quest     `json:"quests"`
+	CompletedQuests []Quest     `json:"completedQuests"`
+	TrackedQuestIDs []uuid.UUID `json:"trackedQuestIds"`
 }
 
 type QuestlogClient interface {
@@ -257,6 +258,7 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 			InventoryItemID: ch.InventoryItemID,
 			Difficulty:      ch.Difficulty,
 			StatTags:        []string(ch.StatTags),
+			Proficiency:     ch.Proficiency,
 		})
 	}
 

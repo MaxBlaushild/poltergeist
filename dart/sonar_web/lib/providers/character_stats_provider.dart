@@ -34,6 +34,9 @@ class CharacterStatsProvider with ChangeNotifier {
   int get unspentPoints => _stats?.unspentPoints ?? 0;
   bool get hasUnspentPoints => unspentPoints > 0;
   Map<String, int> get stats => _stats?.toMap() ?? _defaultStats();
+  List<CharacterProficiency> get proficiencies =>
+      _stats?.proficiencies ?? const [];
+  bool get hasProficiencies => proficiencies.isNotEmpty;
 
   void updateAuth(AuthProvider auth) {
     final newUserId = auth.user?.id;
