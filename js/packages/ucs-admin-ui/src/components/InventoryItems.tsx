@@ -85,6 +85,42 @@ const SearchableSelect = ({
   );
 };
 
+const equipSlotOptions: SelectOption[] = [
+  { value: '', label: 'Not equippable' },
+  { value: 'hat', label: 'Hat' },
+  { value: 'necklace', label: 'Necklace' },
+  { value: 'chest', label: 'Chest' },
+  { value: 'legs', label: 'Legs' },
+  { value: 'shoes', label: 'Shoes' },
+  { value: 'gloves', label: 'Gloves' },
+  { value: 'dominant_hand', label: 'Dominant Hand' },
+  { value: 'off_hand', label: 'Off-hand' },
+  { value: 'ring', label: 'Ring (Either Hand)' },
+  { value: 'ring_left', label: 'Ring (Left)' },
+  { value: 'ring_right', label: 'Ring (Right)' },
+];
+
+const equipSlotLabel = (slot?: string | null) => {
+  if (!slot) return 'Not equippable';
+  const found = equipSlotOptions.find((opt) => opt.value === slot);
+  return found?.label || slot;
+};
+
+const statModSummary = (item: InventoryItem) => {
+  const mods: string[] = [];
+  const push = (label: string, value?: number) => {
+    if (!value || value === 0) return;
+    mods.push(`${label} +${value}`);
+  };
+  push('STR', item.strengthMod);
+  push('DEX', item.dexterityMod);
+  push('CON', item.constitutionMod);
+  push('INT', item.intelligenceMod);
+  push('WIS', item.wisdomMod);
+  push('CHA', item.charismaMod);
+  return mods.join(', ');
+};
+
 export const InventoryItems = () => {
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
@@ -117,6 +153,13 @@ export const InventoryItems = () => {
     isCaptureType: false,
     sellValue: undefined as number | undefined,
     unlockTier: undefined as number | undefined,
+    equipSlot: '',
+    strengthMod: 0,
+    dexterityMod: 0,
+    constitutionMod: 0,
+    intelligenceMod: 0,
+    wisdomMod: 0,
+    charismaMod: 0,
   });
 
   const [generationData, setGenerationData] = useState({
@@ -188,6 +231,13 @@ export const InventoryItems = () => {
       isCaptureType: false,
       sellValue: undefined,
       unlockTier: undefined,
+      equipSlot: '',
+      strengthMod: 0,
+      dexterityMod: 0,
+      constitutionMod: 0,
+      intelligenceMod: 0,
+      wisdomMod: 0,
+      charismaMod: 0,
     });
     setImageFile(null);
     setImagePreview(null);
@@ -365,6 +415,13 @@ export const InventoryItems = () => {
       isCaptureType: item.isCaptureType,
       sellValue: item.sellValue,
       unlockTier: item.unlockTier,
+      equipSlot: item.equipSlot || '',
+      strengthMod: item.strengthMod ?? 0,
+      dexterityMod: item.dexterityMod ?? 0,
+      constitutionMod: item.constitutionMod ?? 0,
+      intelligenceMod: item.intelligenceMod ?? 0,
+      wisdomMod: item.wisdomMod ?? 0,
+      charismaMod: item.charismaMod ?? 0,
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -466,6 +523,16 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Capture Type: {item.isCaptureType ? 'Yes' : 'No'}
             </p>
+
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Equip Slot: {equipSlotLabel(item.equipSlot)}
+            </p>
+
+            {statModSummary(item) && (
+              <p style={{ margin: '5px 0', color: '#666' }}>
+                Stat Mods: {statModSummary(item)}
+              </p>
+            )}
             
             {item.sellValue !== undefined && item.sellValue !== null && (
               <p style={{ margin: '5px 0', color: '#666' }}>
@@ -682,6 +749,108 @@ export const InventoryItems = () => {
               <small style={{ color: '#666', fontSize: '12px' }}>
                 Set the tier level required to unlock this item. Leave empty if no tier requirement.
               </small>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Equip Slot:</label>
+              <select
+                value={formData.equipSlot}
+                onChange={(e) => setFormData({ ...formData, equipSlot: e.target.value })}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              >
+                {equipSlotOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Choose a slot to make the item equippable. Leave as not equippable for consumables.
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '8px' }}>Stat Modifiers (while equipped):</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Strength</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.strengthMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      strengthMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Dexterity</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.dexterityMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      dexterityMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Constitution</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.constitutionMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      constitutionMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Intelligence</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.intelligenceMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      intelligenceMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Wisdom</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.wisdomMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      wisdomMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Charisma</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.charismaMod}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      charismaMod: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+              </div>
             </div>
 
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>

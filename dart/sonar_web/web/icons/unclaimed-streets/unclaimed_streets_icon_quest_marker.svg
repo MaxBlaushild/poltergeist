@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F6EEDB"/>
+      <stop offset="1" stop-color="#EEDDBF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="20" flood-color="#1E1A16" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="180" fill="url(#bg)"/>
+  <rect x="70" y="70" width="884" height="884" rx="160" fill="none" stroke="#D2C1A1" stroke-width="8"/>
+
+  <g transform="rotate(-6 512 512)" opacity="0.9">
+    <rect x="160" y="210" width="704" height="600" rx="56" fill="#EADCC4" stroke="#C9B38E" stroke-width="6"/>
+    <g stroke="#D8A451" stroke-width="12">
+      <line x1="200" y1="300" x2="820" y2="300"/>
+      <line x1="200" y1="380" x2="820" y2="380"/>
+      <line x1="200" y1="460" x2="820" y2="460"/>
+      <line x1="200" y1="540" x2="820" y2="540"/>
+      <line x1="200" y1="620" x2="820" y2="620"/>
+    </g>
+    <g stroke="#E7C372" stroke-width="10">
+      <line x1="300" y1="250" x2="300" y2="760"/>
+      <line x1="420" y1="250" x2="420" y2="760"/>
+      <line x1="540" y1="250" x2="540" y2="760"/>
+      <line x1="660" y1="250" x2="660" y2="760"/>
+    </g>
+    <path d="M180 520 C280 460, 380 470, 480 520 C580 570, 660 590, 800 570 L800 700 C650 720, 520 690, 420 640 C300 580, 220 560, 180 560 Z" fill="#78B6C4" opacity="0.88"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M512 270 C392 270, 300 360, 300 480 C300 626, 512 790, 512 790 C512 790, 724 626, 724 480 C724 360, 632 270, 512 270 Z" fill="#2F2A24"/>
+    <path d="M512 300 C404 300, 324 380, 324 480 C324 608, 512 748, 512 748 C512 748, 700 608, 700 480 C700 380, 620 300, 512 300 Z" fill="none" stroke="#F1C87B" stroke-width="16"/>
+  </g>
+
+  <g>
+    <rect x="430" y="460" width="164" height="120" rx="12" fill="#7D4B2E" stroke="#F1C87B" stroke-width="10"/>
+    <rect x="430" y="430" width="164" height="54" rx="10" fill="#8E5633" stroke="#F1C87B" stroke-width="10"/>
+    <rect x="500" y="460" width="24" height="120" fill="#F1C87B"/>
+  </g>
+</svg>

@@ -10,14 +10,17 @@ import (
 )
 
 const (
-	activeKey   = "last_active:%s"
-	locationKey = "user_location:%s"
-	ttl         = 1 * time.Minute
-	locationTTL = 5 * time.Minute
+	activeKey       = "last_active:%s"
+	locationKey     = "user_location:%s"
+	locationSeenKey = "last_location_seen:%s"
+	ttl             = 1 * time.Minute
+	locationTTL     = 5 * time.Minute
+	locationSeenTTL = 30 * time.Minute
 )
 
 type LivenessClient interface {
 	IsActive(ctx context.Context, userID uuid.UUID) (bool, error)
+	HasRecentLocation(ctx context.Context, userID uuid.UUID) (bool, error)
 	SetLastActive(ctx context.Context, userID uuid.UUID) error
 	SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error
 	GetUserLocation(ctx context.Context, userID uuid.UUID) (string, error)
@@ -47,7 +50,19 @@ func (c *livenessClient) SetLastActive(ctx context.Context, userID uuid.UUID) er
 }
 
 func (c *livenessClient) SetUserLocation(ctx context.Context, userID uuid.UUID, location string) error {
-	return c.redisClient.Set(ctx, c.makeLocationKey(userID), location, locationTTL).Err()
+	pipe := c.redisClient.TxPipeline()
+	pipe.Set(ctx, c.makeLocationKey(userID), location, locationTTL)
+	pipe.Set(ctx, c.makeLocationSeenKey(userID), time.Now().Unix(), locationSeenTTL)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (c *livenessClient) HasRecentLocation(ctx context.Context, userID uuid.UUID) (bool, error) {
+	result, err := c.redisClient.Exists(ctx, c.makeLocationSeenKey(userID)).Result()
+	if err != nil {
+		return false, err
+	}
+	return result > 0, nil
 }
 
 func (c *livenessClient) GetUserLocation(ctx context.Context, userID uuid.UUID) (string, error) {
@@ -67,4 +82,8 @@ func (c *livenessClient) makeKey(userID uuid.UUID) string {
 
 func (c *livenessClient) makeLocationKey(userID uuid.UUID) string {
 	return fmt.Sprintf(locationKey, userID.String())
+}
+
+func (c *livenessClient) makeLocationSeenKey(userID uuid.UUID) string {
+	return fmt.Sprintf(locationSeenKey, userID.String())
 }

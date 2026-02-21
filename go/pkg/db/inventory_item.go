@@ -121,7 +121,15 @@ func (h *inventoryItemHandler) UseInventoryItem(ctx context.Context, ownedInvent
 		return result.Error
 	}
 	item.Quantity -= 1
-	return h.db.Save(&item).Error
+	if err := h.db.Save(&item).Error; err != nil {
+		return err
+	}
+	if item.Quantity <= 0 {
+		_ = h.db.WithContext(ctx).
+			Where("owned_inventory_item_id = ?", item.ID).
+			Delete(&models.UserEquipment{}).Error
+	}
+	return nil
 }
 
 func (h *inventoryItemHandler) ApplyInventoryItem(ctx context.Context, matchID uuid.UUID, inventoryItemID int, teamID uuid.UUID, duration time.Duration) error {
@@ -165,10 +173,12 @@ func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]mod
 	return items, nil
 }
 
-func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, item *models.InventoryItem) error {
-	item.ID = id
-	item.UpdatedAt = time.Now()
-	return h.db.WithContext(ctx).Model(&models.InventoryItem{}).Where("id = ?", id).Updates(item).Error
+func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error {
+	if updates == nil {
+		return nil
+	}
+	updates["updated_at"] = time.Now()
+	return h.db.WithContext(ctx).Model(&models.InventoryItem{}).Where("id = ?", id).Updates(updates).Error
 }
 
 func (h *inventoryItemHandler) DeleteInventoryItem(ctx context.Context, id int) error {

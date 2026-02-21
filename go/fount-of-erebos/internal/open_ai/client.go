@@ -15,6 +15,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strconv"
 	"strings"
 
@@ -251,14 +252,20 @@ func (c *client) EditImage(ctx context.Context, request deep_priest.EditImageReq
 		_ = writer.WriteField("user", request.User)
 	}
 
-	imagePart, err := writer.CreateFormFile("image", "image.png")
+	imageHeader := make(textproto.MIMEHeader)
+	imageHeader.Set("Content-Disposition", `form-data; name="image"; filename="image.png"`)
+	imageHeader.Set("Content-Type", "image/png")
+	imagePart, err := writer.CreatePart(imageHeader)
 	if err != nil {
 		return "", err
 	}
 	if _, err := io.Copy(imagePart, bytes.NewReader(pngData)); err != nil {
 		return "", err
 	}
-	maskPart, err := writer.CreateFormFile("mask", "mask.png")
+	maskHeader := make(textproto.MIMEHeader)
+	maskHeader.Set("Content-Disposition", `form-data; name="mask"; filename="mask.png"`)
+	maskHeader.Set("Content-Type", "image/png")
+	maskPart, err := writer.CreatePart(maskHeader)
 	if err != nil {
 		return "", err
 	}

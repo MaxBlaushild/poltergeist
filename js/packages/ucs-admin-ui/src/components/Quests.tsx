@@ -189,6 +189,8 @@ export const Quests = () => {
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   const [challengeDrafts, setChallengeDrafts] = useState<Record<string, typeof emptyChallengeForm>>({});
   const [challengeEdits, setChallengeEdits] = useState<Record<string, typeof emptyChallengeForm>>({});
+  const [proficiencySearch, setProficiencySearch] = useState('');
+  const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [selectedPoiForModal, setSelectedPoiForModal] = useState<PointOfInterest | null>(null);
   const [characterLocationsOpen, setCharacterLocationsOpen] = useState(false);
   const [selectedCharacterLocations, setSelectedCharacterLocations] = useState<{ latitude: number; longitude: number }[]>([]);
@@ -259,6 +261,29 @@ export const Quests = () => {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const query = proficiencySearch.trim();
+    let active = true;
+    const handle = window.setTimeout(async () => {
+      try {
+        const results = await apiClient.get<string[]>(
+          `/sonar/proficiencies?query=${encodeURIComponent(query)}&limit=25`
+        );
+        if (!active) return;
+        setProficiencyOptions(Array.isArray(results) ? results : []);
+      } catch (error) {
+        if (active) {
+          console.error('Failed to load proficiencies', error);
+          setProficiencyOptions([]);
+        }
+      }
+    }, 200);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, [apiClient, proficiencySearch]);
 
   const refreshPointsOfInterest = async () => {
     try {
@@ -1086,6 +1111,10 @@ export const Quests = () => {
     }));
   };
 
+  const handleProficiencyInputChange = (value: string) => {
+    setProficiencySearch(value);
+  };
+
   const handleStartEditChallenge = (challenge: QuestNodeChallenge) => {
     setChallengeEdits((prev) => ({
       ...prev,
@@ -1330,6 +1359,11 @@ export const Quests = () => {
 
   return (
     <div className="m-10">
+      <datalist id="proficiency-options">
+        {proficiencyOptions.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
       {importToasts.length > 0 && (
         <div className="fixed right-4 top-4 z-50 space-y-2">
           {importToasts.map((toast, index) => (
@@ -2348,9 +2382,11 @@ export const Quests = () => {
                                           <input
                                             className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                                             value={editDraft.proficiency}
-                                            onChange={(e) =>
-                                              handleEditChallengeDraftChange(challenge.id, { proficiency: e.target.value })
-                                            }
+                                            list="proficiency-options"
+                                            onChange={(e) => {
+                                              handleEditChallengeDraftChange(challenge.id, { proficiency: e.target.value });
+                                              handleProficiencyInputChange(e.target.value);
+                                            }}
                                             placeholder="Drawing"
                                           />
                                         </div>
@@ -2513,7 +2549,11 @@ export const Quests = () => {
                                 <input
                                   className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                                   value={(challengeDrafts[node.id] ?? emptyChallengeForm).proficiency}
-                                  onChange={(e) => handleChallengeDraftChange(node.id, { proficiency: e.target.value })}
+                                  list="proficiency-options"
+                                  onChange={(e) => {
+                                    handleChallengeDraftChange(node.id, { proficiency: e.target.value });
+                                    handleProficiencyInputChange(e.target.value);
+                                  }}
                                   placeholder="Drawing"
                                 />
                               </div>

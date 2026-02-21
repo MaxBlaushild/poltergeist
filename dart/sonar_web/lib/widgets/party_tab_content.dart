@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/party_invite.dart';
@@ -53,114 +54,192 @@ class _PartyTabContentState extends State<PartyTabContent> {
     BuildContext context,
     PartyProvider party,
     List<User> members,
+    List<PartyInvite> invites,
+    String currentUserId,
   ) {
     final fp = context.read<FriendProvider>();
+    fp.fetchFriends();
     final memberIds = members.map((m) => m.id).toSet();
+    final pendingIds = invites
+        .map((invite) =>
+            invite.inviterId == currentUserId ? invite.inviteeId : invite.inviterId)
+        .toSet();
+    final blockedIds = <String>{...memberIds, ...pendingIds, currentUserId};
     final searchController = TextEditingController();
-    fp.clearSearch();
+    final inviting = <String>{};
+    String query = '';
 
     showDialog<void>(
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final scheme = theme.colorScheme;
-        return AlertDialog(
-          backgroundColor: scheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: scheme.outlineVariant),
-          ),
-          title: Text(
-            'Invite to party',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: searchController,
-                  decoration: const InputDecoration(
-                    hintText: 'Search by username...',
-                    prefixIcon: Icon(Icons.search),
-                    isDense: true,
-                  ),
-                  onChanged: (q) => fp.searchForFriends(q),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: scheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: scheme.outlineVariant),
+              ),
+              title: Text(
+                'Invite friends',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 240,
-                  child: Consumer<FriendProvider>(
-                    builder: (context, fp2, _) {
-                      final results = fp2.searchResults
-                          .where((u) => !memberIds.contains(u.id))
-                          .toList();
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: results.length,
-                        itemBuilder: (_, i) {
-                          final u = results[i];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Material(
-                              color: scheme.surfaceContainerHighest,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: scheme.outlineVariant),
+              ),
+              content: SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: searchController,
+                      decoration: const InputDecoration(
+                        hintText: 'Search your friends...',
+                        prefixIcon: Icon(Icons.search),
+                        isDense: true,
+                      ),
+                      onChanged: (q) => setState(() => query = q),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Send invites to start a party or add members.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 240,
+                      child: Consumer<FriendProvider>(
+                        builder: (context, fp2, _) {
+                          final friends = fp2.friends;
+                          if (friends.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No friends available yet.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor: scheme.surfaceVariant,
-                                  backgroundImage:
-                                      u.profilePictureUrl.isNotEmpty
-                                          ? NetworkImage(u.profilePictureUrl)
+                            );
+                          }
+                          final q = query.trim().toLowerCase();
+                          final results = friends
+                              .where((u) => !blockedIds.contains(u.id))
+                              .where((u) {
+                                if (q.isEmpty) return true;
+                                final haystack =
+                                    '${u.username} ${u.name}'.toLowerCase();
+                                return haystack.contains(q);
+                              })
+                              .toList();
+
+                          if (results.isEmpty) {
+                            return Center(
+                              child: Text(
+                                q.isEmpty
+                                    ? 'No friends to invite.'
+                                    : 'No matching friends found.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: results.length,
+                            itemBuilder: (_, i) {
+                              final u = results[i];
+                              final isInviting = inviting.contains(u.id);
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Material(
+                                  color: scheme.surfaceContainerHighest,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side:
+                                        BorderSide(color: scheme.outlineVariant),
+                                  ),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      radius: 16,
+                                      backgroundColor: scheme.surfaceVariant,
+                                      backgroundImage:
+                                          u.profilePictureUrl.isNotEmpty
+                                              ? NetworkImage(u.profilePictureUrl)
+                                              : null,
+                                      child: u.profilePictureUrl.isEmpty
+                                          ? Icon(
+                                              Icons.person,
+                                              size: 18,
+                                              color: scheme.onSurfaceVariant,
+                                            )
                                           : null,
-                                  child: u.profilePictureUrl.isEmpty
-                                      ? Icon(
-                                          Icons.person,
-                                          size: 18,
-                                          color: scheme.onSurfaceVariant,
-                                        )
-                                      : null,
+                                    ),
+                                    title: Text(
+                                      u.username.isNotEmpty
+                                          ? u.username
+                                          : u.name,
+                                    ),
+                                    trailing: FilledButton.tonal(
+                                      onPressed: isInviting
+                                          ? null
+                                          : () async {
+                                              setState(
+                                                  () => inviting.add(u.id));
+                                              try {
+                                                await party.inviteToParty(u);
+                                                if (!ctx.mounted) return;
+                                                setState(() {
+                                                  pendingIds.add(u.id);
+                                                  blockedIds.add(u.id);
+                                                });
+                                              } finally {
+                                                if (ctx.mounted) {
+                                                  setState(() =>
+                                                      inviting.remove(u.id));
+                                                }
+                                              }
+                                            },
+                                      child: Text(isInviting ? '…' : 'Invite'),
+                                    ),
+                                  ),
                                 ),
-                                title: Text(
-                                  u.username.isNotEmpty ? u.username : u.name,
-                                ),
-                                trailing: FilledButton.tonal(
-                                  onPressed: () async {
-                                    await party.inviteToParty(u);
-                                    if (ctx.mounted) Navigator.of(ctx).pop();
-                                  },
-                                  child: const Text('Invite'),
-                                ),
-                              ),
-                            ),
+                              );
+                            },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close'),
-            ),
-          ],
+            );
+          },
         );
       },
-    ).then((_) {
-      searchController.dispose();
-      fp.clearSearch();
-    });
+    ).then((_) => searchController.dispose());
+  }
+
+  void _openCharacterProfile(
+    BuildContext context,
+    User target,
+    String currentUserId,
+  ) {
+    if (target.id.isEmpty || target.id == currentUserId) return;
+    Navigator.of(context).pop();
+    context.go('/character/${target.id}');
   }
 
   @override
@@ -194,11 +273,23 @@ class _PartyTabContentState extends State<PartyTabContent> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (receivedInvites.isNotEmpty) _partyInvitesSection(context, party, receivedInvites, true),
-            if (party.party != null) _currentPartySection(context, party, user, isLeader),
-            if (party.party == null && receivedInvites.isEmpty)
-              _noPartyPlaceholder(context),
-            if (sentInvites.isNotEmpty) _sentInvitesSection(context, party, sentInvites),
+            if (receivedInvites.isNotEmpty)
+              _partyInvitesSection(context, party, receivedInvites, true, user.id),
+            if (party.party != null)
+              _currentPartySection(context, party, user, isLeader),
+            if (party.party == null)
+              _noPartyPlaceholder(
+                context,
+                onCreate: () => _showInviteToPartyDialog(
+                  context,
+                  party,
+              const [],
+              party.partyInvites,
+              user.id,
+            ),
+          ),
+            if (sentInvites.isNotEmpty)
+              _sentInvitesSection(context, party, sentInvites, user.id),
             const SizedBox(height: 24),
           ],
         );
@@ -211,6 +302,7 @@ class _PartyTabContentState extends State<PartyTabContent> {
     PartyProvider party,
     List<PartyInvite> invites,
     bool received,
+    String currentUserId,
   ) {
     return _AccordionSection(
       title: 'Party Invites',
@@ -224,6 +316,11 @@ class _PartyTabContentState extends State<PartyTabContent> {
             .map((invite) => _PartyInviteTile(
                   invite: invite,
                   received: received,
+                  onViewProfile: () => _openCharacterProfile(
+                    context,
+                    received ? invite.inviter : invite.invitee,
+                    currentUserId,
+                  ),
                   onAccept: () => party.acceptPartyInvite(invite.id),
                   onReject: () => party.rejectPartyInvite(invite.id),
                 ))
@@ -299,6 +396,9 @@ class _PartyTabContentState extends State<PartyTabContent> {
               isCurrentUser: isCurrentUser,
               canPromote: isLeader && !isCurrentUser && !isMemberLeader,
               promoting: _promotingMemberId == member.id,
+              onViewProfile: isCurrentUser
+                  ? null
+                  : () => _openCharacterProfile(context, member, user.id),
               onPromote: () async {
                 setState(() => _promotingMemberId = member.id);
                 try {
@@ -312,7 +412,13 @@ class _PartyTabContentState extends State<PartyTabContent> {
           if (isLeader && p.members.length < 5) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: () => _showInviteToPartyDialog(context, party, p.members),
+              onPressed: () => _showInviteToPartyDialog(
+                context,
+                party,
+                p.members,
+                party.partyInvites,
+                user.id,
+              ),
               icon: const Icon(Icons.person_add, size: 18),
               label: const Text('Invite to party'),
             ),
@@ -374,7 +480,7 @@ class _PartyTabContentState extends State<PartyTabContent> {
     );
   }
 
-  Widget _noPartyPlaceholder(BuildContext context) {
+  Widget _noPartyPlaceholder(BuildContext context, {VoidCallback? onCreate}) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Padding(
@@ -392,12 +498,20 @@ class _PartyTabContentState extends State<PartyTabContent> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Accept an invite or get invited by a friend!',
+            'Start a party by inviting friends.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
             textAlign: TextAlign.center,
           ),
+          if (onCreate != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onCreate,
+              icon: const Icon(Icons.group_add, size: 18),
+              label: const Text('Create Party'),
+            ),
+          ],
         ],
       ),
     );
@@ -407,6 +521,7 @@ class _PartyTabContentState extends State<PartyTabContent> {
     BuildContext context,
     PartyProvider party,
     List<PartyInvite> invites,
+    String currentUserId,
   ) {
     return _AccordionSection(
       title: 'Pending Invites',
@@ -420,6 +535,11 @@ class _PartyTabContentState extends State<PartyTabContent> {
             .map((invite) => _PartyInviteTile(
                   invite: invite,
                   received: false,
+                  onViewProfile: () => _openCharacterProfile(
+                    context,
+                    invite.invitee,
+                    currentUserId,
+                  ),
                   onAccept: () {},
                   onReject: () => party.rejectPartyInvite(invite.id),
                 ))
@@ -519,12 +639,14 @@ class _PartyInviteTile extends StatelessWidget {
   const _PartyInviteTile({
     required this.invite,
     required this.received,
+    required this.onViewProfile,
     required this.onAccept,
     required this.onReject,
   });
 
   final PartyInvite invite;
   final bool received;
+  final VoidCallback onViewProfile;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -543,17 +665,23 @@ class _PartyInviteTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _UserAvatar(user: user, size: 40),
+          GestureDetector(
+            onTap: onViewProfile,
+            child: _UserAvatar(user: user, size: 40),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.username.isNotEmpty ? user.username : user.name,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+                GestureDetector(
+                  onTap: onViewProfile,
+                  child: Text(
+                    user.username.isNotEmpty ? user.username : user.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
                 Text(
@@ -594,6 +722,7 @@ class _PartyMemberTile extends StatelessWidget {
     required this.isCurrentUser,
     required this.canPromote,
     required this.promoting,
+    required this.onViewProfile,
     required this.onPromote,
   });
 
@@ -602,12 +731,17 @@ class _PartyMemberTile extends StatelessWidget {
   final bool isCurrentUser;
   final bool canPromote;
   final bool promoting;
+  final VoidCallback? onViewProfile;
   final VoidCallback onPromote;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final isInactive = member.isActive != true;
+    final nameColor = isInactive
+        ? scheme.onSurfaceVariant
+        : (isLeader ? scheme.tertiary : scheme.onSurface);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -624,30 +758,46 @@ class _PartyMemberTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _UserAvatar(user: member, size: 48),
+          GestureDetector(
+            onTap: onViewProfile,
+            child: _UserAvatar(user: member, size: 48),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      member.username.isNotEmpty ? member.username : member.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isLeader ? scheme.tertiary : scheme.onSurface,
-                      ),
-                    ),
-                    if (isCurrentUser)
+                GestureDetector(
+                  onTap: onViewProfile,
+                  child: Row(
+                    children: [
                       Text(
-                        ' (You)',
+                        member.username.isNotEmpty
+                            ? member.username
+                            : member.name,
                         style: TextStyle(
-                          fontSize: 14,
-                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.bold,
+                          color: nameColor,
                         ),
                       ),
-                  ],
+                      if (isCurrentUser)
+                        Text(
+                          ' (You)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (isInactive)
+                        Text(
+                          ' (inactive)',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 if (member.name.isNotEmpty && member.name != member.username)
                   Text(

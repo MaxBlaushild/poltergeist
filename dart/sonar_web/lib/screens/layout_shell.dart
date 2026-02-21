@@ -826,8 +826,10 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
                 Column(
                   children: CharacterStatsProvider.statKeys.map((key) {
                     final label = _labels[key] ?? key;
-                    final baseValue = statsProvider.stats[key] ??
+                    final baseValue = statsProvider.baseStats[key] ??
                         CharacterStatsProvider.baseStatValue;
+                    final bonusValue =
+                        statsProvider.equipmentBonuses[key] ?? 0;
                     final pendingValue = _pending[key] ?? 0;
                     final displayValue = baseValue + pendingValue;
                     final remaining = statsProvider.unspentPoints - _pendingTotal;
@@ -872,6 +874,16 @@ class _CharacterTabContentState extends State<_CharacterTabContent> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
+                          if (bonusValue > 0) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '+$bonusValue',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                           const SizedBox(width: 8),
                           IconButton(
                             visualDensity: VisualDensity.compact,

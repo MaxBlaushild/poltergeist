@@ -6,9 +6,11 @@ import 'package:dio/dio.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
 import '../providers/auth_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../services/media_service.dart';
 import '../services/inventory_service.dart';
 import '../utils/camera_capture.dart';
@@ -22,6 +24,33 @@ const _itemsUsableInMenu = <int>{
   9,  // Dagger
   12, // Ale
   14, // WickedSpellbook
+};
+
+const _equipmentSlots = <String>[
+  'hat',
+  'necklace',
+  'chest',
+  'legs',
+  'shoes',
+  'gloves',
+  'dominant_hand',
+  'off_hand',
+  'ring_left',
+  'ring_right',
+];
+
+const _equipmentSlotLabels = <String, String>{
+  'hat': 'Hat',
+  'necklace': 'Necklace',
+  'chest': 'Chest',
+  'legs': 'Legs',
+  'shoes': 'Shoes',
+  'gloves': 'Gloves',
+  'dominant_hand': 'Dominant Hand',
+  'off_hand': 'Off-hand',
+  'ring_left': 'Ring (Left)',
+  'ring_right': 'Ring (Right)',
+  'ring': 'Ring',
 };
 
 class InventoryPanel extends StatefulWidget {
@@ -41,6 +70,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
       'dismissed_outfit_statuses';
   List<InventoryItem> _items = [];
   List<OwnedInventoryItem> _owned = [];
+  List<EquippedItem> _equipment = [];
+  Map<String, EquippedItem> _equipmentBySlot = {};
+  Map<String, EquippedItem> _equipmentByOwnedId = {};
   bool _loading = true;
   bool _using = false;
   String? _error;
@@ -82,15 +114,24 @@ class _InventoryPanelState extends State<InventoryPanel> {
       final svc = context.read<InventoryService>();
       final itemsFuture = svc.getInventoryItems();
       final ownedFuture = svc.getOwnedInventoryItems();
+      final equipmentFuture = svc.getEquipment();
       try {
         await authProvider.refresh();
       } catch (_) {}
       final items = await itemsFuture;
       final owned = await ownedFuture;
+      final equipment = await equipmentFuture;
       if (!mounted) return;
       setState(() {
         _items = items;
         _owned = owned.where((o) => o.quantity > 0).toList();
+        _equipment = equipment;
+        _equipmentBySlot = {
+          for (final entry in equipment) entry.slot: entry,
+        };
+        _equipmentByOwnedId = {
+          for (final entry in equipment) entry.ownedInventoryItemId: entry,
+        };
         if (_selected != null) {
           final stillOwned = _owned.any((o) => o.id == _selected!.id);
           if (!stillOwned) {
@@ -138,6 +179,19 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return null;
   }
 
+  void _selectOwnedItem(OwnedInventoryItem owned, InventoryItem inv) {
+    setState(() {
+      _selected = owned;
+      _outfitGeneration = null;
+      _outfitError = null;
+    });
+    if (_isOutfitItem(inv)) {
+      _loadOutfitStatus(owned.id);
+    } else {
+      _outfitPoller?.cancel();
+    }
+  }
+
   bool _isUsableInMenu(int inventoryItemId) {
     return _itemsUsableInMenu.contains(inventoryItemId);
   }
@@ -158,6 +212,20 @@ class _InventoryPanelState extends State<InventoryPanel> {
     if (effect.contains('outfit')) return true;
 
     return false;
+  }
+
+  bool _isEquippable(InventoryItem inv) {
+    final slot = inv.equipSlot;
+    if (slot == null) return false;
+    return slot.trim().isNotEmpty;
+  }
+
+  EquippedItem? _equippedForOwned(OwnedInventoryItem owned) {
+    return _equipmentByOwnedId[owned.id];
+  }
+
+  String _slotLabel(String slot) {
+    return _equipmentSlotLabels[slot] ?? slot;
   }
 
   Future<void> _loadOutfitStatus(String ownedInventoryItemId, {bool silent = false}) async {
@@ -307,6 +375,113 @@ class _InventoryPanelState extends State<InventoryPanel> {
           _outfitGeneration = null;
           _outfitError = message;
         });
+      }
+    }
+  }
+
+  Future<String?> _pickRingSlot() async {
+    final leftItem = _equipmentBySlot['ring_left']?.inventoryItem?.name;
+    final rightItem = _equipmentBySlot['ring_right']?.inventoryItem?.name;
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Choose ring slot'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Left ring'),
+              subtitle: leftItem != null ? Text('Replaces $leftItem') : null,
+              onTap: () => Navigator.of(context).pop('ring_left'),
+            ),
+            ListTile(
+              title: const Text('Right ring'),
+              subtitle: rightItem != null ? Text('Replaces $rightItem') : null,
+              onTap: () => Navigator.of(context).pop('ring_right'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _equip(OwnedInventoryItem owned, InventoryItem inv) async {
+    if (_using) return;
+    final slot = inv.equipSlot?.trim();
+    if (slot == null || slot.isEmpty) {
+      return;
+    }
+    String? resolvedSlot = slot;
+    if (slot == 'ring') {
+      resolvedSlot = await _pickRingSlot();
+      if (resolvedSlot == null) return;
+    }
+    setState(() {
+      _using = true;
+      _error = null;
+    });
+    try {
+      await context
+          .read<InventoryService>()
+          .equipItem(owned.id, slot: resolvedSlot);
+      if (!mounted) return;
+      await context.read<CharacterStatsProvider>().refresh();
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      String message = e.toString();
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final err = data['error'];
+          if (err is String && err.trim().isNotEmpty) {
+            message = err;
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _error = message;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _using = false);
+      }
+    }
+  }
+
+  Future<void> _unequip(String slot) async {
+    if (_using) return;
+    setState(() {
+      _using = true;
+      _error = null;
+    });
+    try {
+      await context.read<InventoryService>().unequipSlot(slot);
+      if (!mounted) return;
+      await context.read<CharacterStatsProvider>().refresh();
+      if (!mounted) return;
+      await _load();
+    } catch (e) {
+      String message = e.toString();
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final err = data['error'];
+          if (err is String && err.trim().isNotEmpty) {
+            message = err;
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _error = message;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _using = false);
       }
     }
   }
@@ -474,6 +649,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _buildEquipmentSection(context),
+        const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerRight,
           child: Text(
@@ -502,6 +679,126 @@ class _InventoryPanelState extends State<InventoryPanel> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildEquipmentSection(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Equipment',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${_equipment.length}/${_equipmentSlots.length} equipped',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LayoutGrid(
+          crossAxisCount: 2,
+          childAspectRatio: 2.6,
+          children: _equipmentSlots
+              .map((slot) => _buildEquipmentSlotCard(context, slot))
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEquipmentSlotCard(BuildContext context, String slot) {
+    final theme = Theme.of(context);
+    final entry = _equipmentBySlot[slot];
+    final inv = entry?.inventoryItem;
+    final hasItem = entry != null && inv != null;
+
+    void handleTap() {
+      if (!hasItem || entry == null || inv == null) return;
+      OwnedInventoryItem? owned;
+      for (final o in _owned) {
+        if (o.id == entry.ownedInventoryItemId) {
+          owned = o;
+          break;
+        }
+      }
+      if (owned == null) return;
+      _selectOwnedItem(owned, inv);
+    }
+
+    return InkWell(
+      onTap: hasItem ? handleTap : null,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.dividerColor),
+        ),
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: theme.dividerColor),
+              ),
+              child: hasItem
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        inv!.imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.inventory_2_outlined,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      Icons.inventory_2_outlined,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _slotLabel(slot),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasItem ? inv!.name : 'Empty',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -541,18 +838,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     OwnedInventoryItem owned,
   ) {
     final theme = Theme.of(context);
+    final equipped = _equippedForOwned(owned);
     return InkWell(
       onTap: () {
-        setState(() {
-          _selected = owned;
-          _outfitGeneration = null;
-          _outfitError = null;
-        });
-        if (_isOutfitItem(inv)) {
-          _loadOutfitStatus(owned.id);
-        } else {
-          _outfitPoller?.cancel();
-        }
+        _selectOwnedItem(owned, inv);
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -602,6 +891,26 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 ),
               ),
             ),
+            if (equipped != null)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade700,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _slotLabel(equipped.slot),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               left: 0,
               right: 0,
@@ -643,6 +952,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final isOutfit = _isOutfitItem(inv);
     final outfitStatus = _outfitGeneration;
     final outfitPending = isOutfit && (outfitStatus?.isPending ?? false);
+    final isEquippable = _isEquippable(inv);
+    final equippedEntry = _equippedForOwned(owned);
+    final equippedSlot = equippedEntry?.slot;
+    final isEquipped = equippedSlot != null;
     final canUse =
         owned.quantity > 0 && (isOutfit || _isUsableInMenu(inv.id)) && !outfitPending;
     final hasDetails = inv.flavorText.isNotEmpty || inv.effectText.isNotEmpty;
@@ -665,6 +978,18 @@ class _InventoryPanelState extends State<InventoryPanel> {
           icon: Icons.lock_open,
           label: 'Tier ${inv.unlockTier}',
         ),
+      if (isEquippable)
+        _buildMetaChip(
+          context,
+          icon: Icons.checkroom_outlined,
+          label: 'Slot ${_slotLabel(inv.equipSlot?.trim() ?? '')}',
+        ),
+      if (isEquipped)
+        _buildMetaChip(
+          context,
+          icon: Icons.verified,
+          label: 'Equipped ${_slotLabel(equippedSlot!)}',
+        ),
       if (isOutfit)
         _buildMetaChip(
           context,
@@ -672,6 +997,11 @@ class _InventoryPanelState extends State<InventoryPanel> {
           label: 'Outfit item',
         ),
     ];
+
+    final statChips = _buildStatModifierChips(context, inv);
+    if (statChips.isNotEmpty) {
+      metaChips.addAll(statChips);
+    }
 
     Widget actionArea = const SizedBox.shrink();
     if (isOutfit) {
@@ -688,6 +1018,34 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   : _using
                       ? 'Using…'
                       : (outfitStatus?.isFailed == true ? 'Try Again' : 'Take Selfie'),
+            ),
+          ),
+        ],
+      );
+    } else if (isEquippable) {
+      actionArea = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (isEquipped)
+            Text(
+              'Equipped in ${_slotLabel(equippedSlot!)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (isEquipped) const SizedBox(height: 8),
+          FilledButton(
+            onPressed: _using
+                ? null
+                : isEquipped
+                    ? () => _unequip(equippedSlot!)
+                    : () => _equip(owned, inv),
+            child: Text(
+              _using
+                  ? 'Working…'
+                  : isEquipped
+                      ? 'Unequip'
+                      : 'Equip',
             ),
           ),
         ],
@@ -818,6 +1176,30 @@ class _InventoryPanelState extends State<InventoryPanel> {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildStatModifierChips(
+    BuildContext context,
+    InventoryItem inv,
+  ) {
+    final mods = <MapEntry<String, int>>[
+      MapEntry('STR', inv.strengthMod),
+      MapEntry('DEX', inv.dexterityMod),
+      MapEntry('CON', inv.constitutionMod),
+      MapEntry('INT', inv.intelligenceMod),
+      MapEntry('WIS', inv.wisdomMod),
+      MapEntry('CHA', inv.charismaMod),
+    ].where((entry) => entry.value > 0);
+
+    return mods
+        .map(
+          (entry) => _buildMetaChip(
+            context,
+            icon: Icons.trending_up,
+            label: '${entry.key} +${entry.value}',
+          ),
+        )
+        .toList();
   }
 
   Widget _buildDetailSection(

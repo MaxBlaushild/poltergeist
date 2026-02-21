@@ -1,3 +1,4 @@
+import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
 import 'api_client.dart';
@@ -27,6 +28,44 @@ class InventoryService {
     } catch (_) {
       return [];
     }
+  }
+
+  Future<List<EquippedItem>> getEquipment() async {
+    try {
+      final list = await _api.get<List<dynamic>>('/sonar/equipment');
+      return list
+          .map((e) => EquippedItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> equipItem(
+    String ownedInventoryItemId, {
+    required String slot,
+  }) async {
+    await _api.post<dynamic>(
+      '/sonar/equipment/equip',
+      data: {
+        'ownedInventoryItemId': ownedInventoryItemId,
+        'slot': slot,
+      },
+    );
+  }
+
+  Future<void> unequipSlot(String slot) async {
+    await _api.post<dynamic>(
+      '/sonar/equipment/unequip',
+      data: {'slot': slot},
+    );
+  }
+
+  Future<void> unequipItem(String ownedInventoryItemId) async {
+    await _api.post<dynamic>(
+      '/sonar/equipment/unequip',
+      data: {'ownedInventoryItemId': ownedInventoryItemId},
+    );
   }
 
   /// POST /sonar/inventory/:ownedInventoryItemID/use

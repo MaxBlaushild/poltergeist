@@ -26,6 +26,26 @@ func (h *userProficiencyHandle) FindByUserID(ctx context.Context, userID uuid.UU
 	return rows, nil
 }
 
+func (h *userProficiencyHandle) FindDistinctProficiencies(ctx context.Context, query string, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 25
+	}
+	search := strings.TrimSpace(query)
+	db := h.db.WithContext(ctx).Model(&models.UserProficiency{})
+	if search != "" {
+		db = db.Where("proficiency ILIKE ?", "%"+search+"%")
+	}
+	var rows []string
+	if err := db.
+		Select("DISTINCT proficiency").
+		Order("proficiency ASC").
+		Limit(limit).
+		Pluck("proficiency", &rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 func (h *userProficiencyHandle) Increment(ctx context.Context, userID uuid.UUID, proficiency string, delta int) error {
 	if delta == 0 {
 		return nil

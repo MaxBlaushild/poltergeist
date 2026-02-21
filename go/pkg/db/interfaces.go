@@ -52,6 +52,7 @@ type DbClient interface {
 	Point() PointHandle
 	UserLevel() UserLevelHandle
 	UserCharacterStats() UserCharacterStatsHandle
+	UserEquipment() UserEquipmentHandle
 	UserProficiency() UserProficiencyHandle
 	UserZoneReputation() UserZoneReputationHandle
 	Friend() FriendHandle
@@ -169,6 +170,7 @@ type UserTeamHandle interface {
 
 type UserProficiencyHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserProficiency, error)
+	FindDistinctProficiencies(ctx context.Context, query string, limit int) ([]string, error)
 	Increment(ctx context.Context, userID uuid.UUID, proficiency string, delta int) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
@@ -338,7 +340,7 @@ type InventoryItemHandle interface {
 	CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error
 	FindInventoryItemByID(ctx context.Context, id int) (*models.InventoryItem, error)
 	FindAllInventoryItems(ctx context.Context) ([]models.InventoryItem, error)
-	UpdateInventoryItem(ctx context.Context, id int, item *models.InventoryItem) error
+	UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error
 	DeleteInventoryItem(ctx context.Context, id int) error
 }
 
@@ -518,6 +520,14 @@ type UserCharacterStatsHandle interface {
 	ApplyAllocations(ctx context.Context, userID uuid.UUID, currentLevel int, allocations map[string]int) (*models.UserCharacterStats, error)
 	AddStatPoints(ctx context.Context, userID uuid.UUID, additions map[string]int) (*models.UserCharacterStats, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type UserEquipmentHandle interface {
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserEquipment, error)
+	Equip(ctx context.Context, userID uuid.UUID, slot string, ownedInventoryItemID uuid.UUID) (*models.UserEquipment, error)
+	UnequipSlot(ctx context.Context, userID uuid.UUID, slot string) error
+	UnequipOwnedItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
+	GetStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
 }
 
 type UserZoneReputationHandle interface {

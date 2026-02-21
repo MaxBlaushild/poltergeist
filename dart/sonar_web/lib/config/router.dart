@@ -8,6 +8,7 @@ import '../screens/home_screen.dart';
 import '../screens/layout_shell.dart';
 import '../screens/logout_screen.dart';
 import '../screens/single_player_screen.dart';
+import '../screens/user_character_screen.dart';
 
 const _tokenKey = 'token';
 
@@ -69,6 +70,14 @@ GoRouter createRouter({Listenable? refreshListenable}) {
             path: '/create-point-of-interest',
             pageBuilder: (_, state) =>
                 const NoTransitionPage(child: CreatePoiScreen()),
+          ),
+          GoRoute(
+            path: '/character/:id',
+            pageBuilder: (_, state) => NoTransitionPage(
+              child: UserCharacterScreen(
+                userId: state.pathParameters['id'] ?? '',
+              ),
+            ),
           ),
         ],
       ),

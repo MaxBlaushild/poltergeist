@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/friend_invite.dart';
@@ -59,6 +60,13 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
     poll();
   }
 
+  void _openCharacterProfile(BuildContext context, User target) {
+    final currentUserId = context.read<AuthProvider>().user?.id;
+    if (currentUserId == null || target.id == currentUserId) return;
+    Navigator.of(context).pop();
+    context.go('/character/${target.id}');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<AuthProvider, FriendProvider>(
@@ -95,7 +103,11 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                     ? const _Empty(message: 'No friends yet')
                     : Column(
                         children: fp.friends
-                            .map((f) => _FriendTile(friend: f))
+                            .map((f) => _FriendTile(
+                                  friend: f,
+                                  onViewProfile: () =>
+                                      _openCharacterProfile(context, f),
+                                ))
                             .toList(),
                       ),
               ),
@@ -127,6 +139,8 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                                         currentUserId: user.id,
                                         friends: fp.friends,
                                         sending: _sending.contains(u.id),
+                                        onViewProfile: () =>
+                                            _openCharacterProfile(context, u),
                                         onInvite: () async {
                                           setState(
                                               () => _sending.add(u.id));
@@ -162,6 +176,8 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                                   received: true,
                                   accepting: _accepting.contains(i.id),
                                   rejecting: _rejecting.contains(i.id),
+                                  onViewProfile: () =>
+                                      _openCharacterProfile(context, i.inviter),
                                   onAccept: () async {
                                     setState(() => _accepting.add(i.id));
                                     try {
@@ -201,6 +217,8 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                                   received: false,
                                   accepting: false,
                                   rejecting: _rejecting.contains(i.id),
+                                  onViewProfile: () =>
+                                      _openCharacterProfile(context, i.invitee),
                                   onAccept: () {},
                                   onReject: () async {
                                     setState(() => _rejecting.add(i.id));

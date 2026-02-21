@@ -6,6 +6,13 @@ class InventoryItem {
   final String effectText;
   final int? sellValue;
   final int? unlockTier;
+  final String? equipSlot;
+  final int strengthMod;
+  final int dexterityMod;
+  final int constitutionMod;
+  final int intelligenceMod;
+  final int wisdomMod;
+  final int charismaMod;
 
   const InventoryItem({
     required this.id,
@@ -15,6 +22,13 @@ class InventoryItem {
     required this.effectText,
     this.sellValue,
     this.unlockTier,
+    this.equipSlot,
+    this.strengthMod = 0,
+    this.dexterityMod = 0,
+    this.constitutionMod = 0,
+    this.intelligenceMod = 0,
+    this.wisdomMod = 0,
+    this.charismaMod = 0,
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -26,6 +40,13 @@ class InventoryItem {
       effectText: json['effectText'] as String? ?? '',
       sellValue: (json['sellValue'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
+      equipSlot: json['equipSlot'] as String?,
+      strengthMod: (json['strengthMod'] as num?)?.toInt() ?? 0,
+      dexterityMod: (json['dexterityMod'] as num?)?.toInt() ?? 0,
+      constitutionMod: (json['constitutionMod'] as num?)?.toInt() ?? 0,
+      intelligenceMod: (json['intelligenceMod'] as num?)?.toInt() ?? 0,
+      wisdomMod: (json['wisdomMod'] as num?)?.toInt() ?? 0,
+      charismaMod: (json['charismaMod'] as num?)?.toInt() ?? 0,
     );
   }
 }

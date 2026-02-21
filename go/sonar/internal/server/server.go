@@ -168,6 +168,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useItem))
 	r.POST("/sonar/inventory/:ownedInventoryItemID/use-outfit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useOutfitItem))
 	r.GET("/sonar/inventory/:ownedInventoryItemID/outfit-generation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getOutfitGeneration))
+	r.GET("/sonar/equipment", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserEquipment))
+	r.POST("/sonar/equipment/equip", middleware.WithAuthentication(s.authClient, s.livenessClient, s.equipInventoryItem))
+	r.POST("/sonar/equipment/unequip", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unequipInventoryItem))
 	r.GET("/sonar/chat", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChat))
 	r.POST("/sonar/teams/:teamID/inventory/add", s.addItemToTeam)
 	r.POST("/sonar/admin/pointOfInterest/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockPointOfInterestForTeam))
@@ -221,6 +224,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/users/:id/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserActivities))
 	r.DELETE("/sonar/users/:id/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllUserActivities))
 	r.GET("/sonar/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTags))
+	r.GET("/sonar/proficiencies", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getProficiencies))
 	r.GET("/sonar/tagGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTagGroups))
 	r.POST("/sonar/tags/add", middleware.WithAuthentication(s.authClient, s.livenessClient, s.addTagToPointOfInterest))
 	r.DELETE("/sonar/tags/:tagID/pointOfInterest/:pointOfInterestID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.removeTagFromPointOfInterest))
@@ -289,6 +293,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
 	r.GET("/sonar/level", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLevel))
 	r.GET("/sonar/character-stats", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterStats))
+	r.GET("/sonar/users/:id/character", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserCharacterProfile))
 	r.PUT("/sonar/character-stats/allocate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.allocateCharacterStats))
 	r.GET("/sonar/zones/:id/reputation", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneReputation))
 	r.GET("/sonar/reputations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getReputations))
@@ -578,6 +583,20 @@ func (s *server) getParty(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	for i := range party.Members {
+		isActive, err := s.livenessClient.HasRecentLocation(ctx, party.Members[i].ID)
+		if err == nil {
+			party.Members[i].IsActive = &isActive
+		}
+	}
+
+	if party.Leader.ID != uuid.Nil {
+		isActive, err := s.livenessClient.HasRecentLocation(ctx, party.Leader.ID)
+		if err == nil {
+			party.Leader.IsActive = &isActive
+		}
 	}
 
 	ctx.JSON(http.StatusOK, party)
@@ -3447,6 +3466,23 @@ func (s *server) getTags(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, tags)
 }
 
+func (s *server) getProficiencies(ctx *gin.Context) {
+	query := strings.TrimSpace(ctx.Query("query"))
+	limit, err := strconv.Atoi(ctx.Query("limit"))
+	if err != nil || limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	proficiencies, err := s.dbClient.UserProficiency().FindDistinctProficiencies(ctx, query, limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, proficiencies)
+}
+
 func (s *server) getTagGroups(ctx *gin.Context) {
 	tagGroups, err := s.dbClient.TagGroup().FindAll(ctx)
 	if err != nil {
@@ -4947,18 +4983,37 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 
 func (s *server) createInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
-		Name          string `json:"name" binding:"required"`
-		ImageURL      string `json:"imageUrl"`
-		FlavorText    string `json:"flavorText"`
-		EffectText    string `json:"effectText"`
-		RarityTier    string `json:"rarityTier" binding:"required"`
-		IsCaptureType bool   `json:"isCaptureType"`
-		UnlockTier    *int   `json:"unlockTier"`
+		Name            string  `json:"name" binding:"required"`
+		ImageURL        string  `json:"imageUrl"`
+		FlavorText      string  `json:"flavorText"`
+		EffectText      string  `json:"effectText"`
+		RarityTier      string  `json:"rarityTier" binding:"required"`
+		IsCaptureType   bool    `json:"isCaptureType"`
+		UnlockTier      *int    `json:"unlockTier"`
+		EquipSlot       *string `json:"equipSlot"`
+		StrengthMod     int     `json:"strengthMod"`
+		DexterityMod    int     `json:"dexterityMod"`
+		ConstitutionMod int     `json:"constitutionMod"`
+		IntelligenceMod int     `json:"intelligenceMod"`
+		WisdomMod       int     `json:"wisdomMod"`
+		CharismaMod     int     `json:"charismaMod"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	var equipSlot *string
+	if requestBody.EquipSlot != nil {
+		trimmed := strings.TrimSpace(*requestBody.EquipSlot)
+		if trimmed != "" {
+			if !models.IsValidInventoryEquipSlot(trimmed) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equip slot"})
+				return
+			}
+			equipSlot = &trimmed
+		}
 	}
 
 	item := &models.InventoryItem{
@@ -4969,6 +5024,13 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier:    requestBody.RarityTier,
 		IsCaptureType: requestBody.IsCaptureType,
 		UnlockTier:    requestBody.UnlockTier,
+		EquipSlot:     equipSlot,
+		StrengthMod:   requestBody.StrengthMod,
+		DexterityMod:  requestBody.DexterityMod,
+		ConstitutionMod: requestBody.ConstitutionMod,
+		IntelligenceMod: requestBody.IntelligenceMod,
+		WisdomMod:     requestBody.WisdomMod,
+		CharismaMod:   requestBody.CharismaMod,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -5025,9 +5087,10 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 
 	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
 		errMsg := err.Error()
-		item.ImageGenerationStatus = models.InventoryImageGenerationStatusFailed
-		item.ImageGenerationError = &errMsg
-		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, item)
+		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, map[string]interface{}{
+			"image_generation_status": models.InventoryImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -5053,12 +5116,10 @@ func (s *server) regenerateInventoryItemImage(ctx *gin.Context) {
 		return
 	}
 
-	clearErr := ""
-	update := &models.InventoryItem{
-		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
-		ImageGenerationError:  &clearErr,
-	}
-	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, update); err != nil {
+	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, map[string]interface{}{
+		"image_generation_status": models.InventoryImageGenerationStatusQueued,
+		"image_generation_error":  "",
+	}); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update inventory item: " + err.Error()})
 		return
 	}
@@ -5078,11 +5139,10 @@ func (s *server) regenerateInventoryItemImage(ctx *gin.Context) {
 
 	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
 		errMsg := err.Error()
-		failUpdate := &models.InventoryItem{
-			ImageGenerationStatus: models.InventoryImageGenerationStatusFailed,
-			ImageGenerationError:  &errMsg,
-		}
-		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, failUpdate)
+		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, map[string]interface{}{
+			"image_generation_status": models.InventoryImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -5116,13 +5176,20 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name          string `json:"name"`
-		ImageURL      string `json:"imageUrl"`
-		FlavorText    string `json:"flavorText"`
-		EffectText    string `json:"effectText"`
-		RarityTier    string `json:"rarityTier"`
-		IsCaptureType bool   `json:"isCaptureType"`
-		UnlockTier    *int   `json:"unlockTier"`
+		Name            string  `json:"name"`
+		ImageURL        string  `json:"imageUrl"`
+		FlavorText      string  `json:"flavorText"`
+		EffectText      string  `json:"effectText"`
+		RarityTier      string  `json:"rarityTier"`
+		IsCaptureType   bool    `json:"isCaptureType"`
+		UnlockTier      *int    `json:"unlockTier"`
+		EquipSlot       *string `json:"equipSlot"`
+		StrengthMod     int     `json:"strengthMod"`
+		DexterityMod    int     `json:"dexterityMod"`
+		ConstitutionMod int     `json:"constitutionMod"`
+		IntelligenceMod int     `json:"intelligenceMod"`
+		WisdomMod       int     `json:"wisdomMod"`
+		CharismaMod     int     `json:"charismaMod"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -5130,23 +5197,41 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		return
 	}
 
-	item := &models.InventoryItem{
-		Name:          requestBody.Name,
-		ImageURL:      requestBody.ImageURL,
-		FlavorText:    requestBody.FlavorText,
-		EffectText:    requestBody.EffectText,
-		RarityTier:    requestBody.RarityTier,
-		IsCaptureType: requestBody.IsCaptureType,
-		UnlockTier:    requestBody.UnlockTier,
+	var equipSlot *string
+	if requestBody.EquipSlot != nil {
+		trimmed := strings.TrimSpace(*requestBody.EquipSlot)
+		if trimmed != "" {
+			if !models.IsValidInventoryEquipSlot(trimmed) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equip slot"})
+				return
+			}
+			equipSlot = &trimmed
+		}
+	}
+
+	updates := map[string]interface{}{
+		"name":             requestBody.Name,
+		"image_url":        requestBody.ImageURL,
+		"flavor_text":      requestBody.FlavorText,
+		"effect_text":      requestBody.EffectText,
+		"rarity_tier":      requestBody.RarityTier,
+		"is_capture_type":  requestBody.IsCaptureType,
+		"unlock_tier":      requestBody.UnlockTier,
+		"equip_slot":       equipSlot,
+		"strength_mod":     requestBody.StrengthMod,
+		"dexterity_mod":    requestBody.DexterityMod,
+		"constitution_mod": requestBody.ConstitutionMod,
+		"intelligence_mod": requestBody.IntelligenceMod,
+		"wisdom_mod":       requestBody.WisdomMod,
+		"charisma_mod":     requestBody.CharismaMod,
 	}
 
 	if requestBody.ImageURL != "" {
-		clearedErr := ""
-		item.ImageGenerationStatus = models.InventoryImageGenerationStatusComplete
-		item.ImageGenerationError = &clearedErr
+		updates["image_generation_status"] = models.InventoryImageGenerationStatusComplete
+		updates["image_generation_error"] = ""
 	}
 
-	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, item); err != nil {
+	if err := s.dbClient.InventoryItem().UpdateInventoryItem(ctx, id, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update inventory item: " + err.Error()})
 		return
 	}
@@ -5472,23 +5557,28 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		bonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		statValues = map[string]int{}
 		statValueSum := 0
 		for _, tag := range statTags {
 			value := 0
 			switch tag {
 			case "strength":
-				value = stats.Strength
+				value = stats.Strength + bonuses.Strength
 			case "dexterity":
-				value = stats.Dexterity
+				value = stats.Dexterity + bonuses.Dexterity
 			case "constitution":
-				value = stats.Constitution
+				value = stats.Constitution + bonuses.Constitution
 			case "intelligence":
-				value = stats.Intelligence
+				value = stats.Intelligence + bonuses.Intelligence
 			case "wisdom":
-				value = stats.Wisdom
+				value = stats.Wisdom + bonuses.Wisdom
 			case "charisma":
-				value = stats.Charisma
+				value = stats.Charisma + bonuses.Charisma
 			}
 			statValues[tag] = value
 			statValueSum += value

@@ -34,4 +34,7 @@ class ApiConstants {
   static const String friendInvitesEndpoint = '/sonar/friendInvites';
   static const String friendInvitesCreateEndpoint = '/sonar/friendInvites/create';
   static const String friendInvitesAcceptEndpoint = '/sonar/friendInvites/accept';
+
+  static String userCharacterEndpoint(String userId) =>
+      '/sonar/users/$userId/character';
 }

@@ -33,7 +33,10 @@ class CharacterStatsProvider with ChangeNotifier {
   int get level => _stats?.level ?? 1;
   int get unspentPoints => _stats?.unspentPoints ?? 0;
   bool get hasUnspentPoints => unspentPoints > 0;
-  Map<String, int> get stats => _stats?.toMap() ?? _defaultStats();
+  Map<String, int> get baseStats => _stats?.toMap() ?? _defaultStats();
+  Map<String, int> get equipmentBonuses =>
+      _stats?.bonusMap() ?? _defaultBonuses();
+  Map<String, int> get stats => _stats?.effectiveMap() ?? _defaultStats();
   List<CharacterProficiency> get proficiencies =>
       _stats?.proficiencies ?? const [];
   bool get hasProficiencies => proficiencies.isNotEmpty;
@@ -131,5 +134,9 @@ class CharacterStatsProvider with ChangeNotifier {
 
   static Map<String, int> _defaultStats() => {
         for (final key in statKeys) key: baseStatValue,
+      };
+
+  static Map<String, int> _defaultBonuses() => {
+        for (final key in statKeys) key: 0,
       };
 }

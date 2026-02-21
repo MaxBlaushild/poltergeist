@@ -57,8 +57,9 @@ func (p *GenerateInventoryItemImageProcessor) ProcessTask(ctx context.Context, t
 		return fmt.Errorf("inventory item not found")
 	}
 
-	updateStatus := &models.InventoryItem{ImageGenerationStatus: models.InventoryImageGenerationStatusInProgress}
-	if err := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, payload.InventoryItemID, updateStatus); err != nil {
+	if err := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, payload.InventoryItemID, map[string]interface{}{
+		"image_generation_status": models.InventoryImageGenerationStatusInProgress,
+	}); err != nil {
 		log.Printf("Failed to update inventory item status: %v", err)
 		return fmt.Errorf("failed to update inventory item status: %w", err)
 	}
@@ -90,13 +91,11 @@ func (p *GenerateInventoryItemImageProcessor) ProcessTask(ctx context.Context, t
 		return p.markFailed(ctx, payload.InventoryItemID, err)
 	}
 
-	clearedErr := ""
-	completeUpdate := &models.InventoryItem{
-		ImageURL:              imageURL,
-		ImageGenerationStatus: models.InventoryImageGenerationStatusComplete,
-		ImageGenerationError:  &clearedErr,
-	}
-	if err := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, payload.InventoryItemID, completeUpdate); err != nil {
+	if err := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, payload.InventoryItemID, map[string]interface{}{
+		"image_url":               imageURL,
+		"image_generation_status": models.InventoryImageGenerationStatusComplete,
+		"image_generation_error":  "",
+	}); err != nil {
 		log.Printf("Failed to update inventory item with image URL: %v", err)
 		return fmt.Errorf("failed to update inventory item: %w", err)
 	}
@@ -107,11 +106,10 @@ func (p *GenerateInventoryItemImageProcessor) ProcessTask(ctx context.Context, t
 
 func (p *GenerateInventoryItemImageProcessor) markFailed(ctx context.Context, itemID int, err error) error {
 	errMsg := err.Error()
-	update := &models.InventoryItem{
-		ImageGenerationStatus: models.InventoryImageGenerationStatusFailed,
-		ImageGenerationError:  &errMsg,
-	}
-	if dbErr := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, itemID, update); dbErr != nil {
+	if dbErr := p.dbClient.InventoryItem().UpdateInventoryItem(ctx, itemID, map[string]interface{}{
+		"image_generation_status": models.InventoryImageGenerationStatusFailed,
+		"image_generation_error":  errMsg,
+	}); dbErr != nil {
 		log.Printf("Failed to mark inventory item generation failed: %v", dbErr)
 	}
 	return err
