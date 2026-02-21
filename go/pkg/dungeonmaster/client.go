@@ -228,6 +228,8 @@ func (c *client) processQuestNode(
 			Tier:        i,
 			Question:    randomChallenge,
 			Reward:      allotedChallenge.Reward,
+			Difficulty:  0,
+			StatTags:    models.StringArray{},
 		}
 		err = c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {

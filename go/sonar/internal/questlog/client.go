@@ -25,6 +25,8 @@ type QuestNodeChallenge struct {
 	Question        string    `json:"question"`
 	Reward          int       `json:"reward"`
 	InventoryItemID *int      `json:"inventoryItemId"`
+	Difficulty      int       `json:"difficulty"`
+	StatTags        []string  `json:"statTags,omitempty"`
 }
 
 type QuestNode struct {
@@ -253,6 +255,8 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 			Question:        ch.Question,
 			Reward:          ch.Reward,
 			InventoryItemID: ch.InventoryItemID,
+			Difficulty:      ch.Difficulty,
+			StatTags:        []string(ch.StatTags),
 		})
 	}
 

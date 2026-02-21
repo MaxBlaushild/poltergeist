@@ -24,7 +24,6 @@ const emptyQuestForm = {
   name: '',
   description: '',
   acceptanceDialogue: [] as string[],
-  statTags: [] as string[],
   imageUrl: '',
   zoneId: '',
   questGiverCharacterId: '',
@@ -56,6 +55,8 @@ const emptyChallengeForm = {
   inventoryItemId: '',
   locationArchetypeId: '',
   locationChallenge: '',
+  statTags: [] as string[],
+  difficulty: 25,
 };
 
 const emptyQuestReward = {
@@ -941,7 +942,6 @@ export const Quests = () => {
         name: questForm.name,
         description: questForm.description,
         acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
-        statTags: normalizeStatTags(questForm.statTags),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -971,7 +971,6 @@ export const Quests = () => {
         name: questForm.name,
         description: questForm.description,
         acceptanceDialogue: normalizeAcceptanceDialogue(questForm.acceptanceDialogue),
-        statTags: normalizeStatTags(questForm.statTags),
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
@@ -997,7 +996,6 @@ export const Quests = () => {
       name: quest.name ?? '',
       description: quest.description ?? '',
       acceptanceDialogue: quest.acceptanceDialogue ?? [],
-      statTags: normalizeStatTags(quest.statTags ?? []),
       imageUrl: quest.imageUrl ?? '',
       zoneId: quest.zoneId ?? '',
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
@@ -1080,6 +1078,8 @@ export const Quests = () => {
         question: draft.question,
         reward: Number(draft.reward) || 0,
         inventoryItemId: draft.inventoryItemId ? Number(draft.inventoryItemId) : null,
+        statTags: normalizeStatTags(draft.statTags),
+        difficulty: Number(draft.difficulty) || 0,
       };
       const created = await apiClient.post<QuestNodeChallenge>(`/sonar/questNodes/${node.id}/challenges`, payload);
       updateQuestState(node.questId, (quest) => ({
@@ -1322,29 +1322,6 @@ export const Quests = () => {
               />
               <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
             </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Quest Stat Tags</label>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {questStatOptions.map((stat) => (
-                  <label key={stat.id} className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={questForm.statTags.includes(stat.id)}
-                      onChange={(e) => {
-                        setQuestForm((prev) => {
-                          const next = e.target.checked
-                            ? [...prev.statTags, stat.id]
-                            : prev.statTags.filter((tag) => tag !== stat.id);
-                          return { ...prev, statTags: next };
-                        });
-                      }}
-                    />
-                    {stat.label}
-                  </label>
-                ))}
-              </div>
-              <p className="mt-1 text-xs text-gray-500">Select any stats this quest should emphasize (optional).</p>
-            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Zone</label>
               <input
@@ -1559,29 +1536,6 @@ export const Quests = () => {
                     }
                   />
                   <p className="mt-1 text-xs text-gray-500">Each line becomes a separate dialogue line in the quest acceptance prompt.</p>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700">Quest Stat Tags</label>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {questStatOptions.map((stat) => (
-                      <label key={stat.id} className="flex items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={questForm.statTags.includes(stat.id)}
-                          onChange={(e) => {
-                            setQuestForm((prev) => {
-                              const next = e.target.checked
-                                ? [...prev.statTags, stat.id]
-                                : prev.statTags.filter((tag) => tag !== stat.id);
-                              return { ...prev, statTags: next };
-                            });
-                          }}
-                        />
-                        {stat.label}
-                      </label>
-                    ))}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">Select any stats this quest should emphasize (optional).</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Zone</label>
@@ -2205,8 +2159,15 @@ export const Quests = () => {
                           <div className="space-y-2 mb-3">
                             {(node.challenges ?? []).map((challenge) => (
                               <div key={challenge.id} className="border border-gray-200 rounded-md p-2 text-sm">
-                                <div>Tier {challenge.tier} · Reward {challenge.reward}</div>
+                                <div>
+                                  Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward}
+                                </div>
                                 <div className="text-gray-600">{challenge.question}</div>
+                                {challenge.statTags && challenge.statTags.length > 0 && (
+                                  <div className="text-xs text-gray-500">
+                                    Stats: {challenge.statTags.map((tag) => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
+                                  </div>
+                                )}
                               </div>
                             ))}
                             {(node.challenges ?? []).length === 0 && (
@@ -2283,6 +2244,18 @@ export const Quests = () => {
                                 />
                               </div>
                               <div>
+                                <label className="block text-xs font-medium text-gray-700">Difficulty</label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                  value={(challengeDrafts[node.id] ?? emptyChallengeForm).difficulty}
+                                  onChange={(e) =>
+                                    handleChallengeDraftChange(node.id, { difficulty: Number(e.target.value) })
+                                  }
+                                />
+                              </div>
+                              <div>
                                 <label className="block text-xs font-medium text-gray-700">Reward</label>
                                 <input
                                   type="number"
@@ -2305,6 +2278,27 @@ export const Quests = () => {
                                     </option>
                                   ))}
                                 </select>
+                              </div>
+                              <div className="md:col-span-4">
+                                <label className="block text-xs font-medium text-gray-700">Stat Tags</label>
+                                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  {questStatOptions.map((stat) => (
+                                    <label key={stat.id} className="flex items-center gap-2 text-xs text-gray-700">
+                                      <input
+                                        type="checkbox"
+                                        checked={(challengeDrafts[node.id] ?? emptyChallengeForm).statTags.includes(stat.id)}
+                                        onChange={(e) => {
+                                          const current = (challengeDrafts[node.id] ?? emptyChallengeForm).statTags;
+                                          const next = e.target.checked
+                                            ? [...current, stat.id]
+                                            : current.filter((tag) => tag !== stat.id);
+                                          handleChallengeDraftChange(node.id, { statTags: next });
+                                        }}
+                                      />
+                                      {stat.label}
+                                    </label>
+                                  ))}
+                                </div>
                               </div>
                               <div className="md:col-span-4">
                                 <label className="block text-xs font-medium text-gray-700">Question</label>

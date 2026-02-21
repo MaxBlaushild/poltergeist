@@ -509,6 +509,7 @@ type UserCharacterStatsHandle interface {
 	FindByUserID(ctx context.Context, userID uuid.UUID) (*models.UserCharacterStats, error)
 	EnsureLevelPoints(ctx context.Context, userID uuid.UUID, currentLevel int) (*models.UserCharacterStats, error)
 	ApplyAllocations(ctx context.Context, userID uuid.UUID, currentLevel int, allocations map[string]int) (*models.UserCharacterStats, error)
+	AddStatPoints(ctx context.Context, userID uuid.UUID, additions map[string]int) (*models.UserCharacterStats, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 

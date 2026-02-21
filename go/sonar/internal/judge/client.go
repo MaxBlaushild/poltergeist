@@ -32,6 +32,25 @@ const (
 			"reason": "string"
 		}
 	`
+	ScoreJudgementMessageTemplate = `
+	You are a judge on a gameshow. You are tasked with scoring how well
+	a team has completed a challenge. Be a bit lenient, but still make sure
+	the basic premise of the challenge is fulfilled. A challenge should score
+	0 if the picture is not real or the submission is unrelated.
+
+	Here is the challenge: %s
+
+	%s
+
+	%s
+
+	Please answer in the form of a JSON object with the following fields:
+
+		{
+			"score": 0-50,
+			"reason": "string"
+		}
+	`
 )
 
 type Client interface {
@@ -58,6 +77,11 @@ type SubmissionJudgement struct {
 	Reason    string `json:"reason"`
 }
 
+type ScoreJudgement struct {
+	Score  float64 `json:"score"`
+	Reason string  `json:"reason"`
+}
+
 type JudgeSubmissionResponse struct {
 	Challenge *models.PointOfInterestChallengeSubmission `json:"challenge"`
 	Judgement SubmissionJudgement                        `json:"judgement"`
@@ -74,11 +98,7 @@ type FreeformJudgeSubmissionRequest struct {
 }
 
 type FreeformJudgeSubmissionResponse struct {
-	Judgement SubmissionJudgement `json:"judgement"`
-}
-
-func (r *FreeformJudgeSubmissionResponse) IsSuccessful() bool {
-	return r.Judgement.Judgement
+	Judgement ScoreJudgement `json:"judgement"`
 }
 
 func NewClient(aws aws.AWSClient, db db.DbClient, deepPriest deep_priest.DeepPriest) Client {
@@ -169,7 +189,7 @@ func (c *client) JudgeSubmission(ctx context.Context, request JudgeSubmissionReq
 }
 
 func (c *client) JudgeFreeform(ctx context.Context, request FreeformJudgeSubmissionRequest) (*FreeformJudgeSubmissionResponse, error) {
-	prompt := c.makeJudgementMessageForQuestion(request.Question, request.TextSubmission, request.ImageSubmissionUrl)
+	prompt := c.makeScoreJudgementMessageForQuestion(request.Question, request.TextSubmission, request.ImageSubmissionUrl)
 
 	var answer *deep_priest.Answer
 	var err error
@@ -187,7 +207,7 @@ func (c *client) JudgeFreeform(ctx context.Context, request FreeformJudgeSubmiss
 		return nil, err
 	}
 
-	judgementResult := SubmissionJudgement{}
+	judgementResult := ScoreJudgement{}
 	if err := json.Unmarshal([]byte(answer.Answer), &judgementResult); err != nil {
 		return nil, fmt.Errorf("error decoding judgement response (%s): %w", answer.Answer, err)
 	}
@@ -223,4 +243,17 @@ func (c *client) makeJudgementMessageForQuestion(question string, textSubmission
 		imageMessage = "You should also look at the image included as part of the submission."
 	}
 	return fmt.Sprintf(JudgementMessageTemplate, question, textMessage, imageMessage)
+}
+
+func (c *client) makeScoreJudgementMessageForQuestion(question string, textSubmission string, imageSubmissionUrl string) string {
+	textMessage := ""
+	imageMessage := ""
+
+	if textSubmission != "" {
+		textMessage = fmt.Sprintf("Here is the text part of the submission: '%s'", textSubmission)
+	}
+	if imageSubmissionUrl != "" {
+		imageMessage = "You should also look at the image included as part of the submission."
+	}
+	return fmt.Sprintf(ScoreJudgementMessageTemplate, question, textMessage, imageMessage)
 }

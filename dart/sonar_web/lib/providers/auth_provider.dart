@@ -54,6 +54,14 @@ class AuthProvider with ChangeNotifier {
       _user = user;
       _isWaitingForVerificationCode = false;
       notifyListeners();
+      if (result == LogisterResult.done) {
+        try {
+          _user = await _auth.whoami();
+          notifyListeners();
+        } catch (_) {
+          // If the refresh fails, keep the login response data.
+        }
+      }
       return result == LogisterResult.needsProfileSetup;
     } catch (e) {
       _error = e.toString();

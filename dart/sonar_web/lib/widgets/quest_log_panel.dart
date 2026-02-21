@@ -377,7 +377,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   (c) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
-                      '• ${c.question}',
+                      '• ${c.question} (Difficulty ${c.difficulty})',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),

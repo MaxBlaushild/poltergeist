@@ -7,6 +7,7 @@ import (
 	stdErrors "errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -2329,7 +2330,6 @@ func (s *server) createQuest(ctx *gin.Context) {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
 		AcceptanceDialogue    []string   `json:"acceptanceDialogue"`
-		StatTags              []string   `json:"statTags"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -2355,10 +2355,6 @@ func (s *server) createQuest(ctx *gin.Context) {
 	if acceptanceDialogue == nil {
 		acceptanceDialogue = models.StringArray{}
 	}
-	statTags := models.StringArray(requestBody.StatTags)
-	if statTags == nil {
-		statTags = models.StringArray{}
-	}
 
 	quest := &models.Quest{
 		ID:                    uuid.New(),
@@ -2367,7 +2363,6 @@ func (s *server) createQuest(ctx *gin.Context) {
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
 		AcceptanceDialogue:    acceptanceDialogue,
-		StatTags:              statTags,
 		ImageURL:              requestBody.ImageURL,
 		ZoneID:                requestBody.ZoneID,
 		QuestArchetypeID:      requestBody.QuestArchetypeID,
@@ -2425,7 +2420,6 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		Name                  string     `json:"name"`
 		Description           string     `json:"description"`
 		AcceptanceDialogue    *[]string  `json:"acceptanceDialogue"`
-		StatTags              *[]string  `json:"statTags"`
 		ImageURL              string     `json:"imageUrl"`
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
@@ -2457,9 +2451,6 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.Description = requestBody.Description
 	if requestBody.AcceptanceDialogue != nil {
 		quest.AcceptanceDialogue = models.StringArray(*requestBody.AcceptanceDialogue)
-	}
-	if requestBody.StatTags != nil {
-		quest.StatTags = models.StringArray(*requestBody.StatTags)
 	}
 	quest.ImageURL = requestBody.ImageURL
 	quest.ZoneID = requestBody.ZoneID
@@ -2616,6 +2607,8 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		Question        string `json:"question"`
 		Reward          int    `json:"reward"`
 		InventoryItemID *int   `json:"inventoryItemId"`
+		StatTags        []string `json:"statTags"`
+		Difficulty      int    `json:"difficulty"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2627,6 +2620,15 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
 		return
 	}
+	if requestBody.Difficulty < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
+		return
+	}
+
+	statTags := models.StringArray(requestBody.StatTags)
+	if statTags == nil {
+		statTags = models.StringArray{}
+	}
 
 	challenge := &models.QuestNodeChallenge{
 		ID:              uuid.New(),
@@ -2637,6 +2639,8 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		Question:        requestBody.Question,
 		Reward:          requestBody.Reward,
 		InventoryItemID: requestBody.InventoryItemID,
+		Difficulty:      requestBody.Difficulty,
+		StatTags:        statTags,
 	}
 
 	if err := s.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
@@ -5339,11 +5343,71 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	if !judgement.IsSuccessful() {
+	score := int(math.Round(judgement.Judgement.Score))
+	if score < 0 {
+		score = 0
+	} else if score > 50 {
+		score = 50
+	}
+
+	validStats := map[string]struct{}{
+		"strength":     {},
+		"dexterity":    {},
+		"constitution": {},
+		"intelligence": {},
+		"wisdom":       {},
+		"charisma":     {},
+	}
+	statTags := []string{}
+	seenTags := map[string]struct{}{}
+	for _, tag := range []string(challenge.StatTags) {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := validStats[normalized]; !ok {
+			continue
+		}
+		if _, ok := seenTags[normalized]; ok {
+			continue
+		}
+		seenTags[normalized] = struct{}{}
+		statTags = append(statTags, normalized)
+	}
+
+	combinedScore := score
+	if len(statTags) > 0 {
+		combinedScore = score * len(statTags)
+	}
+
+	if score > 0 && len(statTags) > 0 {
+		additions := map[string]int{}
+		for _, tag := range statTags {
+			additions[tag] += score
+		}
+		if _, err := s.dbClient.UserCharacterStats().AddStatPoints(ctx, user.ID, additions); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	difficulty := challenge.Difficulty
+	if combinedScore < difficulty {
+		reason := strings.TrimSpace(judgement.Judgement.Reason)
+		if reason == "" {
+			reason = "Submission did not meet the difficulty threshold."
+		}
+		scoreValue := score
+		difficultyValue := difficulty
+		combinedValue := combinedScore
 		ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
 			Successful:     false,
-			Reason:         judgement.Judgement.Reason,
+			Reason:         reason,
 			QuestCompleted: false,
+			Score:          &scoreValue,
+			Difficulty:     &difficultyValue,
+			CombinedScore:  &combinedValue,
+			StatTags:       statTags,
 		})
 		return
 	}
@@ -5389,10 +5453,21 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		}
 	}
 
+	scoreValue := score
+	difficultyValue := difficulty
+	combinedValue := combinedScore
+	successReason := strings.TrimSpace(judgement.Judgement.Reason)
+	if successReason == "" {
+		successReason = "Challenge completed successfully!"
+	}
 	ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
 		Successful:     true,
-		Reason:         "Challenge completed successfully!",
+		Reason:         successReason,
 		QuestCompleted: completed,
+		Score:          &scoreValue,
+		Difficulty:     &difficultyValue,
+		CombinedScore:  &combinedValue,
+		StatTags:       statTags,
 	})
 }
 

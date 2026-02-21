@@ -49,7 +49,7 @@ class QuestLogService {
   }
 
   /// POST /sonar/questNodes/:id/submit
-  /// Returns { successful: bool, reason: string, questCompleted: bool }
+  /// Returns { successful: bool, reason: string, questCompleted: bool, score?: int, difficulty?: int, combinedScore?: int }
   Future<Map<String, dynamic>> submitQuestNodeChallenge(
     String questNodeId, {
     String? questNodeChallengeId,

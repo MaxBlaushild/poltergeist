@@ -30,24 +30,17 @@ class LogisterModal extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
+            constraints: const BoxConstraints(maxWidth: 560),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.surface.withOpacity(0.96),
-                    colorScheme.surfaceVariant.withOpacity(0.94),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(28),
+                color: colorScheme.surface.withOpacity(0.97),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: colorScheme.outlineVariant),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.08),
-                    blurRadius: 24,
-                    offset: const Offset(0, 16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 12),
                   ),
                 ],
               ),
@@ -55,47 +48,11 @@ class LogisterModal extends StatelessWidget {
                 padding: const EdgeInsets.all(24),
                 child: Consumer<AuthProvider>(
                   builder: (context, auth, _) {
-                    return LayoutBuilder(
-                      builder: (context, constraints) {
-                        final isWide = constraints.maxWidth > 720;
-                        final intro = _LogisterIntroPanel(
-                          onSkip: onSkip,
-                        );
-                        final form = Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(color: colorScheme.outlineVariant),
-                          ),
-                          child: _LogisterForm(
-                            auth: auth,
-                            mediaService: mediaService,
-                            onSuccess: onSuccess,
-                            onSkip: onSkip,
-                          ),
-                        );
-
-                        if (isWide) {
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: intro),
-                              const SizedBox(width: 24),
-                              Expanded(child: form),
-                            ],
-                          );
-                        }
-
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            intro,
-                            const SizedBox(height: 24),
-                            form,
-                          ],
-                        );
-                      },
+                    return _LogisterForm(
+                      auth: auth,
+                      mediaService: mediaService,
+                      onSuccess: onSuccess,
+                      onSkip: onSkip,
                     );
                   },
                 ),
@@ -308,7 +265,7 @@ class _LogisterFormState extends State<_LogisterForm> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Enter your phone number to receive a verification code.',
+          'Enter your phone number to receive a code.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
               ),
@@ -418,63 +375,6 @@ class _LogisterFormState extends State<_LogisterForm> {
               child: const Text('Back'),
             ),
           ],
-        ),
-      ],
-    );
-  }
-}
-
-class _LogisterIntroPanel extends StatelessWidget {
-  const _LogisterIntroPanel({required this.onSkip});
-
-  final VoidCallback onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Unclaimed Streets',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Sign in to continue and access your map, quests, and crew.',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurface.withOpacity(0.75),
-                height: 1.4,
-              ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colorScheme.primary.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.wifi_tethering, color: colorScheme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Use your phone number to receive a one-time code.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.8),
-                      ),
-                ),
-              ),
-              TextButton(
-                onPressed: onSkip,
-                child: const Text('Back'),
-              ),
-            ],
-          ),
         ),
       ],
     );

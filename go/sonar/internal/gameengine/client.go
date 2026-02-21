@@ -35,9 +35,13 @@ type Submission struct {
 }
 
 type SubmissionResult struct {
-	Successful     bool   `json:"successful"`
-	Reason         string `json:"reason"`
-	QuestCompleted bool   `json:"questCompleted"`
+	Successful     bool     `json:"successful"`
+	Reason         string   `json:"reason"`
+	QuestCompleted bool     `json:"questCompleted"`
+	Score          *int     `json:"score,omitempty"`
+	Difficulty     *int     `json:"difficulty,omitempty"`
+	CombinedScore  *int     `json:"combinedScore,omitempty"`
+	StatTags       []string `json:"statTags,omitempty"`
 }
 
 type GameEngineClient interface {

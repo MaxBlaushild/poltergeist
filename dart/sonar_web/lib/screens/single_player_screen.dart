@@ -1701,6 +1701,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               final canUseCamera = kIsWeb ||
                   defaultTargetPlatform == TargetPlatform.iOS ||
                   defaultTargetPlatform == TargetPlatform.android;
+              final selectedChallenge = node.challenges.isEmpty
+                  ? null
+                  : (selectedChallengeId == null
+                      ? node.challenges.first
+                      : node.challenges.firstWhere(
+                          (c) => c.id == selectedChallengeId,
+                          orElse: () => node.challenges.first,
+                        ));
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1736,6 +1744,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       node.challenges.first.question,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                  if (selectedChallenge != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Difficulty: ${selectedChallenge.difficulty}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextField(
                     controller: textController,
@@ -1866,15 +1881,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             }
                             final success = resp['successful'] == true;
                             final reason = resp['reason']?.toString() ?? '';
+                            final score = (resp['score'] as num?)?.toInt();
+                            final difficulty = (resp['difficulty'] as num?)?.toInt();
+                            final combined = (resp['combinedScore'] as num?)?.toInt();
+                            String? scoreLine;
+                            if (score != null || difficulty != null || combined != null) {
+                              final scoreValue = score ?? 0;
+                              final difficultyValue = difficulty ?? 0;
+                              if (combined != null && combined != scoreValue) {
+                                scoreLine =
+                                    'Score: $scoreValue (Total $combined) vs Difficulty: $difficultyValue';
+                              } else {
+                                scoreLine = 'Score: $scoreValue / Difficulty: $difficultyValue';
+                              }
+                            }
+                            final baseMessage = success
+                                ? (reason.isNotEmpty ? reason : 'Challenge completed!')
+                                : (reason.isNotEmpty ? reason : 'Submission failed');
+                            final message = scoreLine == null
+                                ? baseMessage
+                                : '$baseMessage\n$scoreLine';
                             _setQuestSubmissionOverlay(
                               success
                                   ? QuestSubmissionOverlayPhase.success
                                   : QuestSubmissionOverlayPhase.failure,
-                              message: success
-                                  ? (reason.isNotEmpty
-                                      ? reason
-                                      : 'Challenge completed!')
-                                  : (reason.isNotEmpty ? reason : 'Submission failed'),
+                              message: message,
                             );
                           },
                     child: Text('Quest: ${quest.name}'),

@@ -5,4 +5,6 @@ export interface QuestNodeChallenge {
   question: string;
   reward: number;
   inventoryItemId?: number | null;
+  difficulty?: number;
+  statTags?: string[];
 }

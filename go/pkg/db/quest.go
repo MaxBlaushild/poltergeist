@@ -24,7 +24,6 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"name":                     updates.Name,
 		"description":              updates.Description,
 		"acceptance_dialogue":      updates.AcceptanceDialogue,
-		"stat_tags":                updates.StatTags,
 		"image_url":                updates.ImageURL,
 		"zone_id":                  updates.ZoneID,
 		"quest_archetype_id":       updates.QuestArchetypeID,

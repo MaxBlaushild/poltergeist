@@ -57,6 +57,32 @@ func (h *userCharacterStatsHandler) ApplyAllocations(ctx context.Context, userID
 	return h.applyUpdate(ctx, userID, currentLevel, allocations)
 }
 
+func (h *userCharacterStatsHandler) AddStatPoints(ctx context.Context, userID uuid.UUID, additions map[string]int) (*models.UserCharacterStats, error) {
+	if len(additions) == 0 {
+		return h.FindOrCreateForUser(ctx, userID)
+	}
+	var result *models.UserCharacterStats
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stats, err := h.findOrCreateForUserTx(tx, userID)
+		if err != nil {
+			return err
+		}
+		if err := applyStatAdditions(stats, additions); err != nil {
+			return err
+		}
+		stats.UpdatedAt = time.Now()
+		if err := tx.Save(stats).Error; err != nil {
+			return err
+		}
+		result = stats
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (h *userCharacterStatsHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserCharacterStats{}).Error
 }
@@ -175,4 +201,32 @@ func applyAllocations(stats *models.UserCharacterStats, allocations map[string]i
 		return 0, ErrNoStatAllocations
 	}
 	return total, nil
+}
+
+func applyStatAdditions(stats *models.UserCharacterStats, additions map[string]int) error {
+	for key, value := range additions {
+		if value < 0 {
+			return ErrInvalidStatAllocation
+		}
+		if value == 0 {
+			continue
+		}
+		switch key {
+		case "strength":
+			stats.Strength += value
+		case "dexterity":
+			stats.Dexterity += value
+		case "constitution":
+			stats.Constitution += value
+		case "intelligence":
+			stats.Intelligence += value
+		case "wisdom":
+			stats.Wisdom += value
+		case "charisma":
+			stats.Charisma += value
+		default:
+			return ErrInvalidStatAllocation
+		}
+	}
+	return nil
 }

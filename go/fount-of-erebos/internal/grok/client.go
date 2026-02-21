@@ -49,7 +49,7 @@ type grokImageResponse struct {
 }
 
 func (c *client) GenerateImage(ctx context.Context, request deep_priest.GenerateImageRequest) (string, error) {
-	log.Printf("Generating image with Grok. Prompt: %s", request.Prompt)
+	log.Printf("Generating image. Prompt: %s", request.Prompt)
 
 	// Build the Grok API request
 	grokReq := grokImageRequest{
