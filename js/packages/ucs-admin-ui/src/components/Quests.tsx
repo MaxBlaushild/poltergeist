@@ -28,6 +28,7 @@ const emptyQuestForm = {
   zoneId: '',
   questGiverCharacterId: '',
   questArchetypeId: '',
+  recurrenceFrequency: '',
   gold: 0,
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
 };
@@ -59,6 +60,13 @@ const emptyChallengeForm = {
   difficulty: 25,
   proficiency: '',
 };
+
+const questRecurrenceOptions = [
+  { value: '', label: 'No Recurrence' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 const buildChallengeFormFromChallenge = (challenge: QuestNodeChallenge) => ({
   ...emptyChallengeForm,
@@ -983,6 +991,7 @@ export const Quests = () => {
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
+        recurrenceFrequency: questForm.recurrenceFrequency || '',
         gold: Number(questForm.gold) || 0,
         itemRewards: questForm.itemRewards
           .map((reward) => ({
@@ -1012,6 +1021,7 @@ export const Quests = () => {
         zoneId: questForm.zoneId || null,
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
+        recurrenceFrequency: questForm.recurrenceFrequency || '',
         gold: Number(questForm.gold) || 0,
         itemRewards: questForm.itemRewards
           .map((reward) => ({
@@ -1038,6 +1048,7 @@ export const Quests = () => {
       zoneId: quest.zoneId ?? '',
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
       questArchetypeId: quest.questArchetypeId ?? '',
+      recurrenceFrequency: quest.recurrenceFrequency ?? '',
       gold: quest.gold ?? 0,
       itemRewards: (quest.itemRewards ?? []).map((reward) => ({
         inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
@@ -1488,6 +1499,20 @@ export const Quests = () => {
               />
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700">Recurrence</label>
+              <select
+                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                value={questForm.recurrenceFrequency}
+                onChange={(e) => setQuestForm((prev) => ({ ...prev, recurrenceFrequency: e.target.value }))}
+              >
+                {questRecurrenceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700">Gold Reward</label>
               <input
                 type="number"
@@ -1689,6 +1714,20 @@ export const Quests = () => {
                     value={questForm.questArchetypeId}
                     onChange={(e) => setQuestForm((prev) => ({ ...prev, questArchetypeId: e.target.value }))}
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Recurrence</label>
+                  <select
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                    value={questForm.recurrenceFrequency}
+                    onChange={(e) => setQuestForm((prev) => ({ ...prev, recurrenceFrequency: e.target.value }))}
+                  >
+                    {questRecurrenceOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Gold Reward</label>

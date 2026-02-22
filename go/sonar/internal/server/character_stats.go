@@ -11,16 +11,16 @@ import (
 )
 
 type characterStatsResponse struct {
-	Strength      int                            `json:"strength"`
-	Dexterity     int                            `json:"dexterity"`
-	Constitution  int                            `json:"constitution"`
-	Intelligence  int                            `json:"intelligence"`
-	Wisdom        int                            `json:"wisdom"`
-	Charisma      int                            `json:"charisma"`
-	EquipmentBonuses map[string]int              `json:"equipmentBonuses"`
-	UnspentPoints int                            `json:"unspentPoints"`
-	Level         int                            `json:"level"`
-	Proficiencies []characterProficiencyResponse `json:"proficiencies"`
+	Strength         int                            `json:"strength"`
+	Dexterity        int                            `json:"dexterity"`
+	Constitution     int                            `json:"constitution"`
+	Intelligence     int                            `json:"intelligence"`
+	Wisdom           int                            `json:"wisdom"`
+	Charisma         int                            `json:"charisma"`
+	EquipmentBonuses map[string]int                 `json:"equipmentBonuses"`
+	UnspentPoints    int                            `json:"unspentPoints"`
+	Level            int                            `json:"level"`
+	Proficiencies    []characterProficiencyResponse `json:"proficiencies"`
 }
 
 type characterProficiencyResponse struct {
@@ -33,8 +33,9 @@ type characterStatsAllocationRequest struct {
 }
 
 type userCharacterProfileResponse struct {
-	User  models.User            `json:"user"`
-	Stats characterStatsResponse `json:"stats"`
+	User      models.User            `json:"user"`
+	Stats     characterStatsResponse `json:"stats"`
+	UserLevel *models.UserLevel      `json:"userLevel"`
 }
 
 func (s *server) getCharacterStats(ctx *gin.Context) {
@@ -71,8 +72,7 @@ func (s *server) getCharacterStats(ctx *gin.Context) {
 }
 
 func (s *server) getUserCharacterProfile(ctx *gin.Context) {
-	requestor, err := s.getAuthenticatedUser(ctx)
-	if err != nil {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
 		return
 	}
@@ -90,13 +90,12 @@ func (s *server) getUserCharacterProfile(ctx *gin.Context) {
 		return
 	}
 
-	_ = requestor // reserved for future permission checks
-
 	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, userID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	userLevel.ExperienceToNextLevel = userLevel.XPToNextLevel()
 
 	stats, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, userLevel.Level)
 	if err != nil {
@@ -116,8 +115,9 @@ func (s *server) getUserCharacterProfile(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, userCharacterProfileResponse{
-		User:  *target,
-		Stats: characterStatsResponseFrom(stats, userLevel.Level, proficiencies, bonuses),
+		User:      *target,
+		Stats:     characterStatsResponseFrom(stats, userLevel.Level, proficiencies, bonuses),
+		UserLevel: userLevel,
 	})
 }
 
@@ -176,15 +176,15 @@ func characterStatsResponseFrom(stats *models.UserCharacterStats, level int, pro
 		})
 	}
 	return characterStatsResponse{
-		Strength:      stats.Strength,
-		Dexterity:     stats.Dexterity,
-		Constitution:  stats.Constitution,
-		Intelligence:  stats.Intelligence,
-		Wisdom:        stats.Wisdom,
-		Charisma:      stats.Charisma,
+		Strength:         stats.Strength,
+		Dexterity:        stats.Dexterity,
+		Constitution:     stats.Constitution,
+		Intelligence:     stats.Intelligence,
+		Wisdom:           stats.Wisdom,
+		Charisma:         stats.Charisma,
 		EquipmentBonuses: bonuses.ToMap(),
-		UnspentPoints: stats.UnspentPoints,
-		Level:         level,
-		Proficiencies: proficiencyResponse,
+		UnspentPoints:    stats.UnspentPoints,
+		Level:            level,
+		Proficiencies:    proficiencyResponse,
 	}
 }

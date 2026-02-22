@@ -756,6 +756,7 @@ type QuestHandle interface {
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Quest, error)
 	FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error)
 	FindAll(ctx context.Context) ([]models.Quest, error)
+	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Quest, error)
 }
 
 type QuestItemRewardHandle interface {

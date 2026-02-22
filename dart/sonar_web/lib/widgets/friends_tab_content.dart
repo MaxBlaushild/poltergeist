@@ -63,7 +63,7 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
   void _openCharacterProfile(BuildContext context, User target) {
     final currentUserId = context.read<AuthProvider>().user?.id;
     if (currentUserId == null || target.id == currentUserId) return;
-    Navigator.of(context).pop();
+    Scaffold.maybeOf(context)?.closeEndDrawer();
     context.go('/character/${target.id}');
   }
 
@@ -364,9 +364,10 @@ class _Empty extends StatelessWidget {
 }
 
 class _FriendTile extends StatelessWidget {
-  const _FriendTile({required this.friend});
+  const _FriendTile({required this.friend, required this.onViewProfile});
 
   final User friend;
+  final VoidCallback onViewProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -382,17 +383,20 @@ class _FriendTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _Avatar(user: friend),
+          _Avatar(user: friend, onTap: onViewProfile),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  friend.username.isNotEmpty ? friend.username : friend.name,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+                GestureDetector(
+                  onTap: onViewProfile,
+                  child: Text(
+                    friend.username.isNotEmpty ? friend.username : friend.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
                 if (friend.name.isNotEmpty && friend.name != friend.username)
@@ -417,6 +421,7 @@ class _SearchResultTile extends StatelessWidget {
     required this.currentUserId,
     required this.friends,
     required this.sending,
+    required this.onViewProfile,
     required this.onInvite,
   });
 
@@ -424,6 +429,7 @@ class _SearchResultTile extends StatelessWidget {
   final String currentUserId;
   final List<User> friends;
   final bool sending;
+  final VoidCallback onViewProfile;
   final VoidCallback onInvite;
 
   @override
@@ -443,17 +449,20 @@ class _SearchResultTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _Avatar(user: user),
+          _Avatar(user: user, onTap: onViewProfile),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.username.isNotEmpty ? user.username : user.name,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+                GestureDetector(
+                  onTap: onViewProfile,
+                  child: Text(
+                    user.username.isNotEmpty ? user.username : user.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
                 if (user.name.isNotEmpty && user.name != user.username)
@@ -498,6 +507,7 @@ class _FriendInviteTile extends StatelessWidget {
     required this.received,
     required this.accepting,
     required this.rejecting,
+    required this.onViewProfile,
     required this.onAccept,
     required this.onReject,
   });
@@ -506,6 +516,7 @@ class _FriendInviteTile extends StatelessWidget {
   final bool received;
   final bool accepting;
   final bool rejecting;
+  final VoidCallback onViewProfile;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -530,17 +541,20 @@ class _FriendInviteTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _Avatar(user: user),
+          _Avatar(user: user, onTap: onViewProfile),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  user.username.isNotEmpty ? user.username : user.name,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
+                GestureDetector(
+                  onTap: onViewProfile,
+                  child: Text(
+                    user.username.isNotEmpty ? user.username : user.name,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
                   ),
                 ),
                 Text(
@@ -578,48 +592,53 @@ class _FriendInviteTile extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.user});
+  const _Avatar({required this.user, this.onTap});
 
   final User user;
+  final VoidCallback? onTap;
   static const double _size = 40;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: _size,
-      height: _size,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          CircleAvatar(
-            backgroundColor: scheme.surfaceVariant,
-            backgroundImage: user.profilePictureUrl.isNotEmpty
-                ? NetworkImage(user.profilePictureUrl)
-                : null,
-            child: user.profilePictureUrl.isEmpty
-                ? Icon(
-                    Icons.person,
-                    size: _size * 0.5,
-                    color: scheme.onSurfaceVariant,
-                  )
-                : null,
-          ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color:
-                    (user.isActive == true) ? scheme.secondary : scheme.outlineVariant,
-                shape: BoxShape.circle,
-                border: Border.all(color: scheme.surface, width: 2),
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: _size,
+        height: _size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CircleAvatar(
+              backgroundColor: scheme.surfaceVariant,
+              backgroundImage: user.profilePictureUrl.isNotEmpty
+                  ? NetworkImage(user.profilePictureUrl)
+                  : null,
+              child: user.profilePictureUrl.isEmpty
+                  ? Icon(
+                      Icons.person,
+                      size: _size * 0.5,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  : null,
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: (user.isActive == true)
+                      ? scheme.secondary
+                      : scheme.outlineVariant,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.surface, width: 2),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

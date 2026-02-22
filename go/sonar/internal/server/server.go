@@ -2355,6 +2355,7 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
+		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
 		Gold                  *int       `json:"gold"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -2377,10 +2378,11 @@ func (s *server) createQuest(ctx *gin.Context) {
 		acceptanceDialogue = models.StringArray{}
 	}
 
+	now := time.Now()
 	quest := &models.Quest{
 		ID:                    uuid.New(),
-		CreatedAt:             time.Now(),
-		UpdatedAt:             time.Now(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
 		AcceptanceDialogue:    acceptanceDialogue,
@@ -2392,6 +2394,24 @@ func (s *server) createQuest(ctx *gin.Context) {
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
+	}
+	if requestBody.RecurrenceFrequency != nil {
+		recurrence := models.NormalizeQuestRecurrenceFrequency(*requestBody.RecurrenceFrequency)
+		if recurrence != "" {
+			if !models.IsValidQuestRecurrenceFrequency(recurrence) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid recurrence frequency"})
+				return
+			}
+			nextAt, ok := models.NextQuestRecurrenceAt(now, recurrence)
+			if !ok {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid recurrence frequency"})
+				return
+			}
+			recurringID := uuid.New()
+			quest.RecurringQuestID = &recurringID
+			quest.RecurrenceFrequency = &recurrence
+			quest.NextRecurrenceAt = &nextAt
+		}
 	}
 
 	if err := s.dbClient.Quest().Create(ctx, quest); err != nil {
@@ -2445,6 +2465,7 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		ZoneID                *uuid.UUID `json:"zoneId"`
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
+		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
 		Gold                  *int       `json:"gold"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -2479,6 +2500,29 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
+	}
+	if requestBody.RecurrenceFrequency != nil {
+		recurrence := models.NormalizeQuestRecurrenceFrequency(*requestBody.RecurrenceFrequency)
+		if recurrence == "" {
+			quest.RecurrenceFrequency = nil
+			quest.NextRecurrenceAt = nil
+		} else {
+			if !models.IsValidQuestRecurrenceFrequency(recurrence) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid recurrence frequency"})
+				return
+			}
+			if quest.RecurringQuestID == nil {
+				recurringID := uuid.New()
+				quest.RecurringQuestID = &recurringID
+			}
+			nextAt, ok := models.NextQuestRecurrenceAt(time.Now(), recurrence)
+			if !ok {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid recurrence frequency"})
+				return
+			}
+			quest.RecurrenceFrequency = &recurrence
+			quest.NextRecurrenceAt = &nextAt
+		}
 	}
 	quest.UpdatedAt = time.Now()
 
@@ -5017,20 +5061,20 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	}
 
 	item := &models.InventoryItem{
-		Name:          requestBody.Name,
-		ImageURL:      requestBody.ImageURL,
-		FlavorText:    requestBody.FlavorText,
-		EffectText:    requestBody.EffectText,
-		RarityTier:    requestBody.RarityTier,
-		IsCaptureType: requestBody.IsCaptureType,
-		UnlockTier:    requestBody.UnlockTier,
-		EquipSlot:     equipSlot,
-		StrengthMod:   requestBody.StrengthMod,
-		DexterityMod:  requestBody.DexterityMod,
+		Name:            requestBody.Name,
+		ImageURL:        requestBody.ImageURL,
+		FlavorText:      requestBody.FlavorText,
+		EffectText:      requestBody.EffectText,
+		RarityTier:      requestBody.RarityTier,
+		IsCaptureType:   requestBody.IsCaptureType,
+		UnlockTier:      requestBody.UnlockTier,
+		EquipSlot:       equipSlot,
+		StrengthMod:     requestBody.StrengthMod,
+		DexterityMod:    requestBody.DexterityMod,
 		ConstitutionMod: requestBody.ConstitutionMod,
 		IntelligenceMod: requestBody.IntelligenceMod,
-		WisdomMod:     requestBody.WisdomMod,
-		CharismaMod:   requestBody.CharismaMod,
+		WisdomMod:       requestBody.WisdomMod,
+		CharismaMod:     requestBody.CharismaMod,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete

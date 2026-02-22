@@ -238,7 +238,7 @@ class _PartyTabContentState extends State<PartyTabContent> {
     String currentUserId,
   ) {
     if (target.id.isEmpty || target.id == currentUserId) return;
-    Navigator.of(context).pop();
+    Scaffold.maybeOf(context)?.closeEndDrawer();
     context.go('/character/${target.id}');
   }
 

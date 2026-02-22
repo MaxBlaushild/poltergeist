@@ -71,6 +71,7 @@ func main() {
 
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
+	processRecurringQuestsProcessor := processors.NewProcessRecurringQuestsProcessor(dbClient)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	generateOutfitProfilePictureProcessor := processors.NewGenerateOutfitProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	generateInventoryItemImageProcessor := processors.NewGenerateInventoryItemImageProcessor(dbClient, deepPriestClient, awsClient)
@@ -130,6 +131,7 @@ func main() {
 
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
+	mux.Handle(jobs.ProcessRecurringQuestsTaskType, &processRecurringQuestsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
 	mux.Handle(jobs.GenerateOutfitProfilePictureTaskType, &generateOutfitProfilePictureProcessor)
 	mux.Handle(jobs.GenerateInventoryItemImageTaskType, &generateInventoryItemImageProcessor)
@@ -148,6 +150,10 @@ func main() {
 
 	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueQuestGenerationsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@every 15m", asynq.NewTask(jobs.ProcessRecurringQuestsTaskType, nil)); err != nil {
+		log.Fatalf("could not register the recurring quest schedule: %v", err)
 	}
 
 	if _, err = scheduler.Register("@weekly", asynq.NewTask(jobs.SeedTreasureChestsTaskType, nil)); err != nil {

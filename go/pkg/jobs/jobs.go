@@ -14,6 +14,7 @@ const (
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
+	ProcessRecurringQuestsTaskType        = "process_recurring_quests"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
 	ImportPointOfInterestTaskType         = "import_point_of_interest"
 	ImportZonesForMetroTaskType           = "import_zones_for_metro"

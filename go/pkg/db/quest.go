@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -28,6 +29,9 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"zone_id":                  updates.ZoneID,
 		"quest_archetype_id":       updates.QuestArchetypeID,
 		"quest_giver_character_id": updates.QuestGiverCharacterID,
+		"recurring_quest_id":       updates.RecurringQuestID,
+		"recurrence_frequency":     updates.RecurrenceFrequency,
+		"next_recurrence_at":        updates.NextRecurrenceAt,
 		"gold":                     updates.Gold,
 		"updated_at":               updates.UpdatedAt,
 	}
@@ -115,6 +119,21 @@ func (h *questHandle) FindAll(ctx context.Context) ([]models.Quest, error) {
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Find(&quests).Error; err != nil {
+		return nil, err
+	}
+	return quests, nil
+}
+
+func (h *questHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Quest, error) {
+	var quests []models.Quest
+	query := h.db.WithContext(ctx).
+		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
+		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
+		Order("next_recurrence_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&quests).Error; err != nil {
 		return nil, err
 	}
 	return quests, nil

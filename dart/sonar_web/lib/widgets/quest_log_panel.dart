@@ -333,6 +333,16 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     ),
                 ],
               ),
+              if (quest.completionCount > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Completed ${quest.completionCount} times',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                  ),
+                ),
               const SizedBox(height: 16),
               Text(
                 quest.description,
@@ -651,6 +661,27 @@ class _QuestAccordion extends StatelessWidget {
                                     style: Theme.of(context).textTheme.bodyLarge,
                                   ),
                                 ),
+                                if (q.completionCount > 1)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade50,
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: Colors.orange.shade200,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'x${q.completionCount}',
+                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                            color: Colors.orange.shade800,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),

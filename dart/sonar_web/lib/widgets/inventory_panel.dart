@@ -646,23 +646,23 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final theme = Theme.of(context);
     final filled = _owned.length.clamp(0, slots);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _buildEquipmentSection(context),
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            '$filled / $slots slots',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildEquipmentSection(context),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              '$filled / $slots slots',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        Expanded(
-          child: LayoutGrid(
+          const SizedBox(height: 12),
+          LayoutGrid(
             crossAxisCount: crossAxisCount,
             childAspectRatio: 1,
             children: List.generate(slots, (i) {
@@ -677,8 +677,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
               return _buildFilledSlot(context, inv, o);
             }),
           ),
-        ),
-      ],
+          const SizedBox(height: 12),
+        ],
+      ),
     );
   }
 

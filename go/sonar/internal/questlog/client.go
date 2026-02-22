@@ -53,8 +53,10 @@ type Quest struct {
 	Gold                  int               `json:"gold"`
 	ItemRewards           []QuestItemReward `json:"itemRewards"`
 	QuestGiverCharacterID *uuid.UUID        `json:"questGiverCharacterId,omitempty"`
+	RecurringQuestID      *uuid.UUID        `json:"recurringQuestId,omitempty"`
 	IsAccepted            bool              `json:"isAccepted"`
 	TurnedInAt            *time.Time        `json:"turnedInAt,omitempty"`
+	CompletionCount       int               `json:"completionCount,omitempty"`
 	ReadyToTurnIn         bool              `json:"readyToTurnIn"`
 	CurrentNode           *QuestNode        `json:"currentNode,omitempty"`
 }
@@ -105,7 +107,8 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 	}
 
 	filtered := make([]Quest, 0, len(quests))
-	completed := make([]Quest, 0, len(quests))
+	completedBySeries := map[uuid.UUID]Quest{}
+	completedCounts := map[uuid.UUID]int{}
 	for _, quest := range quests {
 		if quest.ZoneID != nil && *quest.ZoneID != zoneID {
 			continue
@@ -147,6 +150,11 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			})
 		}
 
+		seriesID := quest.ID
+		if quest.RecurringQuestID != nil {
+			seriesID = *quest.RecurringQuestID
+		}
+		seriesIDCopy := seriesID
 		entry := Quest{
 			ID:                    quest.ID,
 			Name:                  quest.Name,
@@ -156,17 +164,42 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			Gold:                  quest.Gold,
 			ItemRewards:           itemRewards,
 			QuestGiverCharacterID: quest.QuestGiverCharacterID,
+			RecurringQuestID:      &seriesIDCopy,
 			IsAccepted:            accepted,
 			TurnedInAt:            acceptance.TurnedInAt,
 			ReadyToTurnIn:         accepted && acceptance.TurnedInAt == nil && allCompleted,
 			CurrentNode:           currentNode,
 		}
 		if acceptance.TurnedInAt != nil {
-			completed = append(completed, entry)
+			completedCounts[seriesID]++
+			existing, ok := completedBySeries[seriesID]
+			if !ok || (existing.TurnedInAt != nil && entry.TurnedInAt != nil && entry.TurnedInAt.After(*existing.TurnedInAt)) {
+				completedBySeries[seriesID] = entry
+			}
 		} else {
 			filtered = append(filtered, entry)
 		}
 	}
+
+	completed := make([]Quest, 0, len(completedBySeries))
+	for seriesID, entry := range completedBySeries {
+		entry.CompletionCount = completedCounts[seriesID]
+		completed = append(completed, entry)
+	}
+	sort.Slice(completed, func(i, j int) bool {
+		left := completed[i].TurnedInAt
+		right := completed[j].TurnedInAt
+		if left == nil && right == nil {
+			return completed[i].Name < completed[j].Name
+		}
+		if left == nil {
+			return false
+		}
+		if right == nil {
+			return true
+		}
+		return left.After(*right)
+	})
 
 	trackedAccepted := []uuid.UUID{}
 	for _, questID := range trackedQuestIDs {

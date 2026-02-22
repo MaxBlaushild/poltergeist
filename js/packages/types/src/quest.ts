@@ -20,6 +20,10 @@ export interface Quest {
   zoneId?: string | null;
   questArchetypeId?: string | null;
   questGiverCharacterId?: string | null;
+  recurringQuestId?: string | null;
+  recurrenceFrequency?: string | null;
+  nextRecurrenceAt?: string | null;
+  completionCount?: number;
   gold?: number;
   itemRewards?: QuestItemReward[];
   nodes?: QuestNode[];

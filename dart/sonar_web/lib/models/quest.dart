@@ -32,11 +32,15 @@ class Quest {
   final String? zoneId;
   final String? questArchetypeId;
   final String? questGiverCharacterId;
+  final String? recurringQuestId;
+  final String? recurrenceFrequency;
+  final DateTime? nextRecurrenceAt;
   final int gold;
   final List<QuestItemReward> itemRewards;
   final List<QuestNode> nodes;
   final bool isAccepted;
   final DateTime? turnedInAt;
+  final int completionCount;
   final bool readyToTurnIn;
   final QuestNode? currentNode;
 
@@ -49,11 +53,15 @@ class Quest {
     this.zoneId,
     this.questArchetypeId,
     this.questGiverCharacterId,
+    this.recurringQuestId,
+    this.recurrenceFrequency,
+    this.nextRecurrenceAt,
     this.gold = 0,
     this.itemRewards = const [],
     this.nodes = const [],
     this.isAccepted = false,
     this.turnedInAt,
+    this.completionCount = 0,
     this.readyToTurnIn = false,
     this.currentNode,
   });
@@ -71,6 +79,11 @@ class Quest {
       zoneId: json['zoneId'] as String?,
       questArchetypeId: json['questArchetypeId'] as String?,
       questGiverCharacterId: json['questGiverCharacterId'] as String?,
+      recurringQuestId: json['recurringQuestId'] as String?,
+      recurrenceFrequency: json['recurrenceFrequency'] as String?,
+      nextRecurrenceAt: json['nextRecurrenceAt'] != null
+          ? DateTime.tryParse(json['nextRecurrenceAt'] as String)
+          : null,
       gold: (json['gold'] as num?)?.toInt() ?? 0,
       itemRewards: (json['itemRewards'] as List<dynamic>?)
               ?.map((e) => QuestItemReward.fromJson(e as Map<String, dynamic>))
@@ -84,6 +97,7 @@ class Quest {
       turnedInAt: json['turnedInAt'] != null
           ? DateTime.tryParse(json['turnedInAt'] as String)
           : null,
+      completionCount: (json['completionCount'] as num?)?.toInt() ?? 0,
       readyToTurnIn: json['readyToTurnIn'] as bool? ?? false,
       currentNode: json['currentNode'] is Map<String, dynamic>
           ? QuestNode.fromJson(json['currentNode'] as Map<String, dynamic>)
