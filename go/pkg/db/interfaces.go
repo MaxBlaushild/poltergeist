@@ -46,6 +46,7 @@ type DbClient interface {
 	QuestArchetypeNode() QuestArchetypeNodeHandle
 	QuestArchetypeChallenge() QuestArchetypeChallengeHandle
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
+	QuestArchetypeItemReward() QuestArchetypeItemRewardHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
 	TrackedQuest() TrackedQuestHandle
@@ -465,6 +466,11 @@ type QuestArchetypeChallengeHandle interface {
 	FindAllByNodeID(ctx context.Context, nodeID uuid.UUID) ([]*models.QuestArchetypeChallenge, error)
 }
 
+type QuestArchetypeItemRewardHandle interface {
+	ReplaceForQuestArchetype(ctx context.Context, questArchetypeID uuid.UUID, rewards []models.QuestArchetypeItemReward) error
+	FindByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) ([]models.QuestArchetypeItemReward, error)
+}
+
 type QuestArchetypeNodeChallengeHandle interface {
 	Create(ctx context.Context, questArchetypeNodeChallenge *models.QuestArchetypeNodeChallenge) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetypeNodeChallenge, error)
@@ -757,6 +763,7 @@ type QuestHandle interface {
 	FindByQuestGiverCharacterID(ctx context.Context, characterID uuid.UUID) ([]models.Quest, error)
 	FindAll(ctx context.Context) ([]models.Quest, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Quest, error)
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type QuestItemRewardHandle interface {

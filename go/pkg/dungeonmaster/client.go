@@ -69,9 +69,11 @@ func (c *client) GenerateQuest(
 		UpdatedAt:             time.Now(),
 		Name:                  "Quest",
 		Description:           "A quest to complete",
+		AcceptanceDialogue:    models.StringArray{},
 		ZoneID:                &zone.ID,
 		QuestArchetypeID:      &questArchetypeID,
 		QuestGiverCharacterID: questGiverCharacterID,
+		Gold:                  questArchType.DefaultGold,
 	}
 	if err := c.dbClient.Quest().Create(ctx, quest); err != nil {
 		log.Printf("Error creating quest: %v", err)
@@ -92,34 +94,67 @@ func (c *client) GenerateQuest(
 		return nil, err
 	}
 
+	if err := c.applyQuestArchetypeRewards(ctx, quest.ID, questArchType); err != nil {
+		log.Printf("Error applying quest archetype rewards: %v", err)
+		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest after reward application failure: %v", deleteErr)
+		}
+		return nil, err
+	}
+
 	log.Println("Generating quest copy")
 	questCopy, err := c.generateQuestCopy(ctx, locations, descriptions, challenges)
 	if err != nil {
 		log.Printf("Error generating quest copy: %v", err)
-		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
-			log.Printf("Error deleting quest group after copy generation failure: %v", deleteErr)
+		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest after copy generation failure: %v", deleteErr)
 		}
 		return nil, err
+	}
+
+	acceptanceDialogue, err := c.generateQuestAcceptanceDialogue(ctx, questCopy, questGiverCharacterID, questArchType, locations, descriptions, challenges)
+	if err != nil {
+		log.Printf("Error generating quest acceptance dialogue: %v", err)
+		acceptanceDialogue = nil
+	}
+	acceptanceDialogueValue := models.StringArray(acceptanceDialogue)
+	if acceptanceDialogueValue == nil {
+		acceptanceDialogueValue = models.StringArray{}
 	}
 
 	log.Println("Generating quest image")
 	questImage, err := c.generateQuestImage(ctx, *questCopy)
 	if err != nil {
 		log.Printf("Error generating quest image: %v", err)
-		if deleteErr := c.dbClient.PointOfInterestGroup().Delete(ctx, quest.ID); deleteErr != nil {
-			log.Printf("Error deleting quest group after image generation failure: %v", deleteErr)
+		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
+			log.Printf("Error deleting quest after image generation failure: %v", deleteErr)
 		}
 		return nil, err
 	}
 
 	log.Println("Updating quest with generated content")
 	if err := c.dbClient.Quest().Update(ctx, quest.ID, &models.Quest{
-		Name:        questCopy.Name,
-		Description: questCopy.Description,
-		ImageURL:    questImage,
+		Name:                  questCopy.Name,
+		Description:           questCopy.Description,
+		AcceptanceDialogue:    acceptanceDialogueValue,
+		ImageURL:              questImage,
+		ZoneID:                quest.ZoneID,
+		QuestArchetypeID:      quest.QuestArchetypeID,
+		QuestGiverCharacterID: quest.QuestGiverCharacterID,
+		RecurringQuestID:      quest.RecurringQuestID,
+		RecurrenceFrequency:   quest.RecurrenceFrequency,
+		NextRecurrenceAt:      quest.NextRecurrenceAt,
+		Gold:                  quest.Gold,
+		UpdatedAt:             time.Now(),
 	}); err != nil {
 		log.Printf("Error updating quest: %v", err)
 		return nil, err
+	}
+
+	if questGiverCharacterID != nil {
+		if err := c.ensureQuestActionForCharacter(ctx, quest.ID, *questGiverCharacterID); err != nil {
+			log.Printf("Error ensuring quest action for character: %v", err)
+		}
 	}
 
 	log.Printf("Successfully generated quest %s", quest.ID)
@@ -229,8 +264,10 @@ func (c *client) processQuestNode(
 			Tier:        i,
 			Question:    randomChallenge,
 			Reward:      allotedChallenge.Reward,
+			InventoryItemID: allotedChallenge.InventoryItemID,
 			Difficulty:  0,
 			StatTags:    models.StringArray{},
+			Proficiency: allotedChallenge.Proficiency,
 		}
 		err = c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {
@@ -267,4 +304,69 @@ func (c *client) processQuestNode(
 
 	log.Printf("Successfully processed node for point of interest %s", pointOfInterest.ID)
 	return nil
+}
+
+func (c *client) applyQuestArchetypeRewards(ctx context.Context, questID uuid.UUID, questArchetype *models.QuestArchetype) error {
+	if questArchetype == nil {
+		return nil
+	}
+	rewards := questArchetype.ItemRewards
+	if len(rewards) == 0 {
+		loaded, err := c.dbClient.QuestArchetypeItemReward().FindByQuestArchetypeID(ctx, questArchetype.ID)
+		if err == nil {
+			rewards = loaded
+		}
+	}
+	if len(rewards) == 0 {
+		return nil
+	}
+	now := time.Now()
+	questRewards := make([]models.QuestItemReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		questRewards = append(questRewards, models.QuestItemReward{
+			ID:              uuid.New(),
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			QuestID:         questID,
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	if len(questRewards) == 0 {
+		return nil
+	}
+	return c.dbClient.QuestItemReward().ReplaceForQuest(ctx, questID, questRewards)
+}
+
+func (c *client) ensureQuestActionForCharacter(ctx context.Context, questID uuid.UUID, characterID uuid.UUID) error {
+	actions, err := c.dbClient.CharacterAction().FindByCharacterID(ctx, characterID)
+	if err != nil {
+		return err
+	}
+	questIDStr := questID.String()
+	for _, action := range actions {
+		if action.ActionType != models.ActionTypeGiveQuest {
+			continue
+		}
+		if action.Metadata == nil {
+			continue
+		}
+		if value, ok := action.Metadata["questId"]; ok && fmt.Sprint(value) == questIDStr {
+			return nil
+		}
+	}
+
+	action := &models.CharacterAction{
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CharacterID: characterID,
+		ActionType:  models.ActionTypeGiveQuest,
+		Dialogue:    []models.DialogueMessage{},
+		Metadata:    map[string]interface{}{"questId": questIDStr},
+	}
+	return c.dbClient.CharacterAction().Create(ctx, action)
 }

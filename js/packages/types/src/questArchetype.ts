@@ -1,3 +1,4 @@
+import { InventoryItem } from "./inventoryItem";
 import { LocationArchetype } from "./locationArchetype";
 
 export interface QuestArchetypeChallenge {
@@ -6,8 +7,18 @@ export interface QuestArchetypeChallenge {
   updatedAt: Date;
   deletedAt?: Date;
   reward: number;
+  inventoryItemId?: number | null;
+  proficiency?: string | null;
   unlockedNodeId?: string;
   unlockedNode?: QuestArchetypeNode;
+}
+
+export interface QuestArchetypeItemReward {
+  id?: string;
+  questArchetypeId?: string;
+  inventoryItemId: number;
+  inventoryItem?: InventoryItem;
+  quantity: number;
 }
 
 export interface QuestArchetypeNode {
@@ -29,4 +40,5 @@ export interface QuestArchetype {
   deletedAt?: Date;
   root: QuestArchetypeNode;
   rootId: string;
+  itemRewards?: QuestArchetypeItemReward[];
 }

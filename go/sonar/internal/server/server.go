@@ -2071,6 +2071,8 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 
 	var requestBody struct {
 		Reward              int        `json:"reward"`
+		InventoryItemID     *int       `json:"inventoryItemId"`
+		Proficiency         *string    `json:"proficiency"`
 		LocationArchetypeID *uuid.UUID `json:"locationArchetypeID"`
 	}
 
@@ -2101,6 +2103,8 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 		Reward:         requestBody.Reward,
+		InventoryItemID: requestBody.InventoryItemID,
+		Proficiency:     requestBody.Proficiency,
 		UnlockedNodeID: newNodeID,
 	}
 
@@ -2174,6 +2178,10 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	var requestBody struct {
 		Name        string `json:"name"`
 		DefaultGold *int   `json:"defaultGold"`
+		ItemRewards *[]struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"itemRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2196,6 +2204,26 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if requestBody.ItemRewards != nil {
+		rewards := []models.QuestArchetypeItemReward{}
+		for _, reward := range *requestBody.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				continue
+			}
+			rewards = append(rewards, models.QuestArchetypeItemReward{
+				ID:               uuid.New(),
+				CreatedAt:        time.Now(),
+				UpdatedAt:        time.Now(),
+				QuestArchetypeID: questArchetype.ID,
+				InventoryItemID:  reward.InventoryItemID,
+				Quantity:         reward.Quantity,
+			})
+		}
+		if err := s.dbClient.QuestArchetypeItemReward().ReplaceForQuestArchetype(ctx, questArchetype.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	ctx.JSON(http.StatusOK, questArchetype)
 }
@@ -2864,6 +2892,10 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 		Name        string    `json:"name"`
 		RootID      uuid.UUID `json:"rootID"`
 		DefaultGold *int      `json:"defaultGold"`
+		ItemRewards *[]struct {
+			InventoryItemID int `json:"inventoryItemId"`
+			Quantity        int `json:"quantity"`
+		} `json:"itemRewards"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2886,6 +2918,27 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if requestBody.ItemRewards != nil {
+		rewards := []models.QuestArchetypeItemReward{}
+		for _, reward := range *requestBody.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				continue
+			}
+			rewards = append(rewards, models.QuestArchetypeItemReward{
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestArchetypeID: questArchType.ID,
+				InventoryItemID: reward.InventoryItemID,
+				Quantity:        reward.Quantity,
+			})
+		}
+		if err := s.dbClient.QuestArchetypeItemReward().ReplaceForQuestArchetype(ctx, questArchType.ID, rewards); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		questArchType.ItemRewards = rewards
 	}
 	ctx.JSON(http.StatusOK, questArchType)
 }

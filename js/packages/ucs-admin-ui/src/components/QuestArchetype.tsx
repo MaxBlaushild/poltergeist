@@ -30,6 +30,11 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
 
   const borderColor = borderColors[depth % borderColors.length];
   const bgColor = bgColors[depth % bgColors.length];
+  const legacyItemId = !challenge.inventoryItemId
+    ? inventoryItems?.find(item => item.id === challenge.reward)?.id
+    : undefined;
+  const rewardItemId = challenge.inventoryItemId ?? legacyItemId;
+  const rewardItem = rewardItemId ? inventoryItems?.find(item => item.id === rewardItemId) : undefined;
 
   return (
     <div className={`border-l-2 ${borderColor} pl-4 mt-2`}>
@@ -38,7 +43,15 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
           <span className="font-medium">
             {depth === 0 ? 'Challenge' : 'Sub-Challenge'} {index + 1}
           </span>
-          <div className="text-gray-600">Reward Item: {inventoryItems?.find(item => item.id === challenge.reward)?.name}</div>
+          {challenge.reward > 0 && (
+            <div className="text-gray-600">Reward Points: {challenge.reward}</div>
+          )}
+          {rewardItem && (
+            <div className="text-gray-600">Reward Item: {rewardItem.name}</div>
+          )}
+          {challenge.proficiency && (
+            <div className="text-gray-600">Proficiency: {challenge.proficiency}</div>
+          )}
           {challenge.unlockedNode && (
             <div className="mt-2">
               <div className="text-gray-600 font-medium">Unlocks Node:</div>
@@ -71,7 +84,7 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
 
 export const QuestArchetypeComponent = () => {
   const { apiClient } = useAPI();
-  const { questArchetypes, locationArchetypes, createQuestArchetype, deleteQuestArchetype, addChallengeToQuestArchetype } = useQuestArchetypes();
+  const { questArchetypes, locationArchetypes, createQuestArchetype, updateQuestArchetype, deleteQuestArchetype, addChallengeToQuestArchetype } = useQuestArchetypes();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryItemsLoading, setInventoryItemsLoading] = useState<boolean>(false);
   const [shouldShowModal, setShouldShowModal] = useState(false);
@@ -80,8 +93,14 @@ export const QuestArchetypeComponent = () => {
   const [locationArchetypeId, setLocationArchetypeId] = useState("");
   const [defaultGold, setDefaultGold] = useState<number>(0);
   const [ selectedNode, setSelectedNode ] = useState<QuestArchetypeNode | null>(null);
-  const [ reward, setReward ] = useState<number>(0);
+  const [ rewardPoints, setRewardPoints ] = useState<number>(0);
+  const [ rewardItemId, setRewardItemId ] = useState<number>(0);
+  const [ challengeProficiency, setChallengeProficiency ] = useState<string>("");
   const [ unlockedLocationArchetypeId, setUnlockedLocationArchetypeId ] = useState<string>("");
+  const [ archetypeRewards, setArchetypeRewards ] = useState<{ inventoryItemId: string; quantity: number }[]>([]);
+  const [ editingArchetype, setEditingArchetype ] = useState<QuestArchetype | null>(null);
+  const [ editGold, setEditGold ] = useState<number>(0);
+  const [ editRewards, setEditRewards ] = useState<{ inventoryItemId: string; quantity: number }[]>([]);
 
   useEffect(() => {
     const fetchInventoryItems = async () => {
@@ -166,11 +185,47 @@ export const QuestArchetypeComponent = () => {
             )}
           </div>
 
+          <div className="mt-4 bg-gray-50 p-4 rounded-md">
+            <h4 className="font-medium text-gray-700 mb-2">Rewards</h4>
+            <div className="text-sm text-gray-600">Default Gold: {questArchetype.defaultGold ?? 0}</div>
+            {questArchetype.itemRewards && questArchetype.itemRewards.length > 0 ? (
+              <div className="mt-2 text-sm text-gray-600">
+                {questArchetype.itemRewards.map((reward) => {
+                  const item = inventoryItems.find((entry) => entry.id === reward.inventoryItemId);
+                  return (
+                    <div key={reward.id ?? `${reward.inventoryItemId}-${reward.quantity}`}>
+                      {reward.quantity}x {item?.name ?? `Item ${reward.inventoryItemId}`}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-gray-500">No item rewards.</div>
+            )}
+          </div>
+
           <div className="mt-2 text-sm text-gray-500">
             Created: {new Date(questArchetype.createdAt).toLocaleDateString()}
           </div>
-          <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => 
-            setSelectedNode(questArchetype.root)}>Edit Root Node</button>
+          <div className="mt-3 flex gap-2">
+            <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => 
+              setSelectedNode(questArchetype.root)}>Edit Root Node</button>
+            <button
+              className="bg-gray-600 text-white px-4 py-2 rounded-md"
+              onClick={() => {
+                setEditingArchetype(questArchetype);
+                setEditGold(questArchetype.defaultGold ?? 0);
+                setEditRewards(
+                  (questArchetype.itemRewards ?? []).map((reward) => ({
+                    inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
+                    quantity: reward.quantity ?? 1,
+                  }))
+                );
+              }}
+            >
+              Edit Rewards
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -187,12 +242,25 @@ export const QuestArchetypeComponent = () => {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">
+                    Reward Points
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    value={rewardPoints}
+                    onChange={(e) => setRewardPoints(parseInt(e.target.value) || 0)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">
                     Reward Item
                   </label>
                   <select
                     className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={reward}
-                    onChange={(e) => setReward(parseInt(e.target.value))}
+                    value={rewardItemId}
+                    onChange={(e) => setRewardItemId(parseInt(e.target.value))}
                   >
                     <option value="">Select an item</option>
                     {inventoryItems.map((item) => (
@@ -201,6 +269,19 @@ export const QuestArchetypeComponent = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Proficiency
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                    value={challengeProficiency}
+                    onChange={(e) => setChallengeProficiency(e.target.value)}
+                    placeholder="Optional proficiency (e.g. Persuasion)"
+                  />
                 </div>
 
                 <div>
@@ -226,8 +307,16 @@ export const QuestArchetypeComponent = () => {
                   className="bg-green-500 text-white px-4 py-2 rounded-md"
                   onClick={async () => {
                     if (!selectedNode) return;
-                    await addChallengeToQuestArchetype(selectedNode.id, reward, unlockedLocationArchetypeId);
-                    setReward(0);
+                    await addChallengeToQuestArchetype(
+                      selectedNode.id,
+                      rewardPoints,
+                      rewardItemId || null,
+                      challengeProficiency,
+                      unlockedLocationArchetypeId
+                    );
+                    setRewardPoints(0);
+                    setRewardItemId(0);
+                    setChallengeProficiency("");
                     setUnlockedLocationArchetypeId("");
                   }}
                 >
@@ -249,7 +338,14 @@ export const QuestArchetypeComponent = () => {
           <h2 className="text-xl font-bold mb-4">Create Quest Archetype</h2>
           <form onSubmit={(e) => {
             e.preventDefault();
-            createQuestArchetype(name, locationArchetypeId, defaultGold);
+            const normalizedRewards = archetypeRewards
+              .map((reward) => ({
+                inventoryItemId: Number(reward.inventoryItemId) || 0,
+                quantity: Number(reward.quantity) || 0,
+              }))
+              .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
+            createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards);
+            setArchetypeRewards([]);
             setShouldShowModal(false);
           }}>
             <div className="mb-4">
@@ -295,11 +391,79 @@ export const QuestArchetypeComponent = () => {
               />
             </div>
 
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Item Rewards
+              </label>
+              {archetypeRewards.length === 0 ? (
+                <div className="text-xs text-gray-500">No item rewards yet.</div>
+              ) : (
+                <div className="space-y-2">
+                  {archetypeRewards.map((reward, index) => (
+                    <div key={`reward-${index}`} className="flex gap-2">
+                      <select
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                        value={reward.inventoryItemId}
+                        onChange={(e) =>
+                          setArchetypeRewards((prev) =>
+                            prev.map((entry, rewardIndex) =>
+                              rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
+                            )
+                          )
+                        }
+                      >
+                        <option value="">Select an item</option>
+                        {inventoryItems.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-20 px-2 py-2 border border-gray-300 rounded-md"
+                        value={reward.quantity}
+                        onChange={(e) =>
+                          setArchetypeRewards((prev) =>
+                            prev.map((entry, rewardIndex) =>
+                              rewardIndex === index
+                                ? { ...entry, quantity: parseInt(e.target.value) || 1 }
+                                : entry
+                            )
+                          )
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="px-2 py-2 text-sm text-red-600"
+                        onClick={() =>
+                          setArchetypeRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                className="mt-2 px-3 py-1 text-sm text-blue-600"
+                onClick={() => setArchetypeRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
+              >
+                Add Item Reward
+              </button>
+            </div>
+
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                onClick={() => setShouldShowModal(false)}
+                onClick={() => {
+                  setShouldShowModal(false);
+                  setArchetypeRewards([]);
+                }}
               >
                 Cancel
               </button>
@@ -311,6 +475,120 @@ export const QuestArchetypeComponent = () => {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    )}
+    {editingArchetype && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="bg-white p-6 rounded-lg w-96">
+          <h2 className="text-xl font-bold mb-4">Edit Quest Rewards</h2>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Default Gold
+            </label>
+            <input
+              type="number"
+              min={0}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              value={editGold}
+              onChange={(e) => setEditGold(parseInt(e.target.value) || 0)}
+            />
+          </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Item Rewards
+            </label>
+            {editRewards.length === 0 ? (
+              <div className="text-xs text-gray-500">No item rewards yet.</div>
+            ) : (
+              <div className="space-y-2">
+                {editRewards.map((reward, index) => (
+                  <div key={`edit-reward-${index}`} className="flex gap-2">
+                    <select
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                      value={reward.inventoryItemId}
+                      onChange={(e) =>
+                        setEditRewards((prev) =>
+                          prev.map((entry, rewardIndex) =>
+                            rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
+                          )
+                        )
+                      }
+                    >
+                      <option value="">Select an item</option>
+                      {inventoryItems.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-20 px-2 py-2 border border-gray-300 rounded-md"
+                      value={reward.quantity}
+                      onChange={(e) =>
+                        setEditRewards((prev) =>
+                          prev.map((entry, rewardIndex) =>
+                            rewardIndex === index
+                              ? { ...entry, quantity: parseInt(e.target.value) || 1 }
+                              : entry
+                          )
+                        )
+                      }
+                    />
+                    <button
+                      type="button"
+                      className="px-2 py-2 text-sm text-red-600"
+                      onClick={() =>
+                        setEditRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className="mt-2 px-3 py-1 text-sm text-blue-600"
+              onClick={() => setEditRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
+            >
+              Add Item Reward
+            </button>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              onClick={() => {
+                setEditingArchetype(null);
+                setEditRewards([]);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              onClick={async () => {
+                const normalizedRewards = editRewards
+                  .map((reward) => ({
+                    inventoryItemId: Number(reward.inventoryItemId) || 0,
+                    quantity: Number(reward.quantity) || 0,
+                  }))
+                  .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
+                await updateQuestArchetype({
+                  ...editingArchetype,
+                  defaultGold: editGold,
+                  itemRewards: normalizedRewards,
+                });
+                setEditingArchetype(null);
+                setEditRewards([]);
+              }}
+            >
+              Save
+            </button>
+          </div>
         </div>
       </div>
     )}

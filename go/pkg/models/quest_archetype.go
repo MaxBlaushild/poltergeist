@@ -16,4 +16,5 @@ type QuestArchetype struct {
 	DeletedAt   gorm.DeletedAt     `json:"deletedAt"`
 	Root        QuestArchetypeNode `json:"root"`
 	RootID      uuid.UUID          `json:"rootId"`
+	ItemRewards []QuestArchetypeItemReward `json:"itemRewards" gorm:"foreignKey:QuestArchetypeID"`
 }

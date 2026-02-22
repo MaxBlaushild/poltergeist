@@ -7,8 +7,19 @@ type QuestArchetypesContextType = {
   locationArchetypes: LocationArchetype[];
   questArchetypes: QuestArchetype[];
   zoneQuestArchetypes: ZoneQuestArchetype[];
-  createQuestArchetype: (name: string, locationArchetypeId: string, defaultGold?: number) => void;
-  addChallengeToQuestArchetype: (questArchetypeId: string, rewardPoints: number, unlockedLocationArchetypeId?: string | null) => void;
+  createQuestArchetype: (
+    name: string,
+    locationArchetypeId: string,
+    defaultGold?: number,
+    itemRewards?: { inventoryItemId: number; quantity: number }[]
+  ) => void;
+  addChallengeToQuestArchetype: (
+    questArchetypeId: string,
+    rewardPoints: number,
+    inventoryItemId?: number | null,
+    proficiency?: string | null,
+    unlockedLocationArchetypeId?: string | null
+  ) => void;
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
@@ -104,7 +115,12 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     setLocationArchetypes([...locationArchetypes, newLocationArchetype]);
   };
 
-  const createQuestArchetype = async (name: string, locationArchetypeID: string, defaultGold?: number) => {
+  const createQuestArchetype = async (
+    name: string,
+    locationArchetypeID: string,
+    defaultGold?: number,
+    itemRewards?: { inventoryItemId: number; quantity: number }[]
+  ) => {
     const node = await apiClient.post<QuestArchetypeNode>("/sonar/questArchetypeNodes", {
       locationArchetypeID,
     });
@@ -112,6 +128,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       name,
       rootId: node.id,
       defaultGold,
+      itemRewards,
     });
     setQuestArchetypes([...questArchetypes, questArchetype]);
   };
@@ -126,13 +143,25 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     setQuestArchetypes(questArchetypes.map(questArchetype => questArchetype.id === updatedQuestArchetype.id ? updatedQuestArchetype : questArchetype));
   };
 
-  const addChallengeToQuestArchetype = async (questArchetypeId: string, reward: number, locationArchetypeID?: string | null) => {
-    const payload: { reward: number; locationArchetypeID?: string } = {
+  const addChallengeToQuestArchetype = async (
+    questArchetypeId: string,
+    reward: number,
+    inventoryItemId?: number | null,
+    proficiency?: string | null,
+    locationArchetypeID?: string | null
+  ) => {
+    const payload: { reward: number; inventoryItemId?: number; proficiency?: string; locationArchetypeID?: string } = {
       reward,
     };
 
     if (locationArchetypeID) {
       payload.locationArchetypeID = locationArchetypeID;
+    }
+    if (inventoryItemId) {
+      payload.inventoryItemId = inventoryItemId;
+    }
+    if (proficiency && proficiency.trim().length > 0) {
+      payload.proficiency = proficiency.trim();
     }
 
     const newChallenge = await apiClient.post<QuestArchetypeChallenge>(

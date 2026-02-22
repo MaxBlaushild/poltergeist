@@ -138,3 +138,7 @@ func (h *questHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limi
 	}
 	return quests, nil
 }
+
+func (h *questHandle) Delete(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.Quest{}, "id = ?", id).Error
+}

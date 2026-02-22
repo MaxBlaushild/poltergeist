@@ -13,6 +13,8 @@ type QuestArchetypeChallenge struct {
 	UpdatedAt      time.Time           `json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt      `json:"deletedAt"`
 	Reward         int                 `json:"reward"`
+	InventoryItemID *int               `json:"inventoryItemId,omitempty"`
+	Proficiency     *string            `json:"proficiency,omitempty"`
 	UnlockedNodeID *uuid.UUID          `json:"unlockedNodeId"`
 	UnlockedNode   *QuestArchetypeNode `json:"unlockedNode"`
 }

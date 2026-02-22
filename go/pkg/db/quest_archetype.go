@@ -33,6 +33,8 @@ func (h *questArchetypeHandle) Create(ctx context.Context, questArchetype *model
 func (h *questArchetypeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.QuestArchetype, error) {
 	var questArchetype models.QuestArchetype
 	if err := h.db.WithContext(ctx).
+		Preload("ItemRewards").
+		Preload("ItemRewards.InventoryItem").
 		Preload("Root.Challenges").
 		Preload("Root.LocationArchetype").
 		First(&questArchetype, "id = ?", id).Error; err != nil {
@@ -52,6 +54,8 @@ func (h *questArchetypeHandle) Delete(ctx context.Context, id uuid.UUID) error {
 func (h *questArchetypeHandle) FindAll(ctx context.Context) ([]*models.QuestArchetype, error) {
 	var questArchetypes []*models.QuestArchetype
 	if err := h.db.WithContext(ctx).
+		Preload("ItemRewards").
+		Preload("ItemRewards.InventoryItem").
 		Preload("Root.Challenges").
 		Preload("Root.LocationArchetype").
 		Find(&questArchetypes).Error; err != nil {
