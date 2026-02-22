@@ -205,6 +205,11 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 		newNodeID := uuid.New()
 		nodeIDMap[node.ID] = newNodeID
 
+		submissionType := node.SubmissionType
+		if submissionType == "" {
+			submissionType = models.DefaultQuestNodeSubmissionType()
+		}
+
 		newNode := &models.QuestNode{
 			ID:                newNodeID,
 			CreatedAt:         now,
@@ -212,6 +217,7 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 			QuestID:           questID,
 			OrderIndex:        node.OrderIndex,
 			PointOfInterestID: node.PointOfInterestID,
+			SubmissionType:    submissionType,
 		}
 		if len(node.PolygonPoints) > 0 {
 			newNode.SetPolygonFromPoints(node.PolygonPoints)

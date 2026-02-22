@@ -197,6 +197,7 @@ func (c *client) processQuestNode(
 			QuestID:           quest.ID,
 			OrderIndex:        *orderIndex,
 			PointOfInterestID: &pointOfInterest.ID,
+			SubmissionType:    models.DefaultQuestNodeSubmissionType(),
 		}
 		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 			log.Printf("Error creating quest node: %v", err)

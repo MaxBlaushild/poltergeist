@@ -31,11 +31,12 @@ type QuestNodeChallenge struct {
 }
 
 type QuestNode struct {
-	ID              uuid.UUID               `json:"id"`
-	OrderIndex      int                     `json:"orderIndex"`
-	PointOfInterest *models.PointOfInterest `json:"pointOfInterest,omitempty"`
-	Polygon         []LatLng                `json:"polygon,omitempty"`
-	Challenges      []QuestNodeChallenge    `json:"challenges"`
+	ID              uuid.UUID                     `json:"id"`
+	OrderIndex      int                           `json:"orderIndex"`
+	PointOfInterest *models.PointOfInterest       `json:"pointOfInterest,omitempty"`
+	Polygon         []LatLng                      `json:"polygon,omitempty"`
+	Challenges      []QuestNodeChallenge          `json:"challenges"`
+	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
 }
 
 type QuestItemReward struct {
@@ -295,12 +296,18 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 		})
 	}
 
+	submissionType := node.SubmissionType
+	if strings.TrimSpace(string(submissionType)) == "" {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+
 	return &QuestNode{
 		ID:              node.ID,
 		OrderIndex:      node.OrderIndex,
 		PointOfInterest: poi,
 		Polygon:         parsePolygon(node.Polygon),
 		Challenges:      challenges,
+		SubmissionType:  submissionType,
 	}
 }
 

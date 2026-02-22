@@ -2621,6 +2621,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		PointOfInterestID *uuid.UUID   `json:"pointOfInterestId"`
 		Polygon           string       `json:"polygon"`
 		PolygonPoints     [][2]float64 `json:"polygonPoints"`
+		SubmissionType    string       `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2645,6 +2646,15 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		QuestID:           requestBody.QuestID,
 		OrderIndex:        requestBody.OrderIndex,
 		PointOfInterestID: requestBody.PointOfInterestID,
+	}
+	if strings.TrimSpace(requestBody.SubmissionType) == "" {
+		node.SubmissionType = models.DefaultQuestNodeSubmissionType()
+	} else {
+		node.SubmissionType = models.QuestNodeSubmissionType(strings.TrimSpace(requestBody.SubmissionType))
+		if !node.SubmissionType.IsValid() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submissionType"})
+			return
+		}
 	}
 	if len(requestBody.PolygonPoints) > 0 {
 		node.SetPolygonFromPoints(requestBody.PolygonPoints)
@@ -5452,6 +5462,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		QuestNodeChallengeID *uuid.UUID `json:"questNodeChallengeId"`
 		TextSubmission       string     `json:"textSubmission"`
 		ImageSubmissionUrl   string     `json:"imageSubmissionUrl"`
+		VideoSubmissionUrl   string     `json:"videoSubmissionUrl"`
 		TeamID               *uuid.UUID `json:"teamID"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -5503,6 +5514,28 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
+	submissionType := node.SubmissionType
+	if strings.TrimSpace(string(submissionType)) == "" {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	switch submissionType {
+	case models.QuestNodeSubmissionTypeText:
+		if strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "text submission is required"})
+			return
+		}
+	case models.QuestNodeSubmissionTypePhoto:
+		if strings.TrimSpace(requestBody.ImageSubmissionUrl) == "" && strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "photo submission is required"})
+			return
+		}
+	case models.QuestNodeSubmissionTypeVideo:
+		if strings.TrimSpace(requestBody.VideoSubmissionUrl) == "" && strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "video submission is required"})
+			return
+		}
+	}
+
 	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -5551,10 +5584,15 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
+	textSubmission := requestBody.TextSubmission
+	if strings.TrimSpace(textSubmission) == "" && strings.TrimSpace(requestBody.VideoSubmissionUrl) != "" {
+		textSubmission = fmt.Sprintf("Video submission URL: %s", requestBody.VideoSubmissionUrl)
+	}
+
 	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
 		Question:           challenge.Question,
 		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
-		TextSubmission:     requestBody.TextSubmission,
+		TextSubmission:     textSubmission,
 	})
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -55,6 +55,7 @@ class QuestLogService {
     String? questNodeChallengeId,
     String? textSubmission,
     String? imageSubmissionUrl,
+    String? videoSubmissionUrl,
   }) async {
     final raw = await _api.post<dynamic>(
       '/sonar/questNodes/$questNodeId/submit',
@@ -63,6 +64,7 @@ class QuestLogService {
           'questNodeChallengeId': questNodeChallengeId,
         if (textSubmission != null) 'textSubmission': textSubmission,
         if (imageSubmissionUrl != null) 'imageSubmissionUrl': imageSubmissionUrl,
+        if (videoSubmissionUrl != null) 'videoSubmissionUrl': videoSubmissionUrl,
       },
     );
     final map = raw is Map

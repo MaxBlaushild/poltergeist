@@ -22,8 +22,30 @@ type QuestNode struct {
 	PointOfInterestID *uuid.UUID           `json:"pointOfInterestId" gorm:"type:uuid"`
 	Polygon           string               `json:"polygon" gorm:"type:geometry(Polygon,4326)"`
 	PolygonPoints     [][2]float64         `json:"polygonPoints" gorm:"-"`
+	SubmissionType    QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Challenges        []QuestNodeChallenge `json:"challenges" gorm:"foreignKey:QuestNodeID"`
 	Children          []QuestNodeChild     `json:"children" gorm:"foreignKey:QuestNodeID"`
+}
+
+type QuestNodeSubmissionType string
+
+const (
+	QuestNodeSubmissionTypeText  QuestNodeSubmissionType = "text"
+	QuestNodeSubmissionTypePhoto QuestNodeSubmissionType = "photo"
+	QuestNodeSubmissionTypeVideo QuestNodeSubmissionType = "video"
+)
+
+func (t QuestNodeSubmissionType) IsValid() bool {
+	switch t {
+	case QuestNodeSubmissionTypeText, QuestNodeSubmissionTypePhoto, QuestNodeSubmissionTypeVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+func DefaultQuestNodeSubmissionType() QuestNodeSubmissionType {
+	return QuestNodeSubmissionTypePhoto
 }
 
 func (q *QuestNode) TableName() string {
@@ -32,6 +54,13 @@ func (q *QuestNode) TableName() string {
 
 func (q *QuestNode) AfterFind(tx *gorm.DB) (err error) {
 	q.PolygonPoints = q.decodePolygonPoints()
+	return nil
+}
+
+func (q *QuestNode) BeforeCreate(tx *gorm.DB) (err error) {
+	if q.SubmissionType == "" {
+		q.SubmissionType = DefaultQuestNodeSubmissionType()
+	}
 	return nil
 }
 

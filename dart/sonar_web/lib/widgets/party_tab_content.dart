@@ -9,7 +9,9 @@ import '../providers/friend_provider.dart';
 import '../providers/party_provider.dart';
 
 class PartyTabContent extends StatefulWidget {
-  const PartyTabContent({super.key});
+  const PartyTabContent({super.key, this.onViewProfile});
+
+  final ValueChanged<User>? onViewProfile;
 
   @override
   State<PartyTabContent> createState() => _PartyTabContentState();
@@ -238,6 +240,11 @@ class _PartyTabContentState extends State<PartyTabContent> {
     String currentUserId,
   ) {
     if (target.id.isEmpty || target.id == currentUserId) return;
+    final callback = widget.onViewProfile;
+    if (callback != null) {
+      callback(target);
+      return;
+    }
     Scaffold.maybeOf(context)?.closeEndDrawer();
     context.go('/character/${target.id}');
   }

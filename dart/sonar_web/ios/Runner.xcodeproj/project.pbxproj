@@ -199,6 +199,7 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				361BCB9BB4986BACA30D6937 /* [CP] Embed Pods Frameworks */,
+				B1C2D3E4F5A6B7C8D9E0F1A2 /* Generate MapLibre dSYM */,
 			);
 			buildRules = (
 			);
@@ -339,6 +340,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build";
+		};
+		B1C2D3E4F5A6B7C8D9E0F1A2 /* Generate MapLibre dSYM */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate MapLibre dSYM";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/generate_maplibre_dsym.sh\"";
+			showEnvVarsInLog = 0;
 		};
 		E823F4BB3DABA84ECB950CA3 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;

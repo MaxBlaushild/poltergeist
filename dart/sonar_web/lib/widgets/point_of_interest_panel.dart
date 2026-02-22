@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -427,7 +428,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
 
     final textController = TextEditingController();
     CapturedImage? capturedImage;
-    bool uploadingImage = false;
+    PlatformFile? capturedVideo;
+    bool uploadingSubmission = false;
     String? selectedChallengeId = node.challenges.isNotEmpty
         ? node.challenges.first.id
         : null;
@@ -452,6 +454,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
               final canUseCamera = kIsWeb ||
                   defaultTargetPlatform == TargetPlatform.iOS ||
                   defaultTargetPlatform == TargetPlatform.android;
+              final submissionType = node.submissionType;
+              final isTextSubmission = submissionType == QuestNode.submissionTypeText;
+              final isPhotoSubmission = submissionType == QuestNode.submissionTypePhoto;
+              final isVideoSubmission = submissionType == QuestNode.submissionTypeVideo;
               final selectedChallenge = node.challenges.isEmpty
                   ? null
                   : (selectedChallengeId == null
@@ -556,82 +562,163 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: textController,
-                    decoration: const InputDecoration(
-                      labelText: 'Answer',
-                      border: OutlineInputBorder(),
+                  if (isTextSubmission) ...[
+                    TextField(
+                      controller: textController,
+                      decoration: const InputDecoration(
+                        labelText: 'Answer',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
                     ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 12),
-                  if (canUseCamera)
+                    const SizedBox(height: 12),
+                  ],
+                  if (isPhotoSubmission) ...[
+                    if (canUseCamera)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: uploadingSubmission
+                                  ? null
+                                  : () async {
+                                      final result = await captureImageFromCamera();
+                                      if (!mounted) return;
+                                      if (result == null || result.bytes.isEmpty) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('No photo captured.'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      setModalState(() => capturedImage = result);
+                                    },
+                              icon: const Icon(Icons.photo_camera),
+                              label: const Text('Take photo'),
+                            ),
+                          ),
+                          if (capturedImage != null) ...[
+                            const SizedBox(width: 12),
+                            TextButton(
+                              onPressed: () => setModalState(() => capturedImage = null),
+                              child: const Text('Clear'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    if (capturedImage != null) ...[
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          capturedImage!.bytes,
+                          height: 160,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Captured photo will be uploaded on submit.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                  ],
+                  if (isVideoSubmission) ...[
                     Row(
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: uploadingImage
+                            onPressed: uploadingSubmission
                                 ? null
                                 : () async {
-                                    final result = await captureImageFromCamera();
+                                    final result = await FilePicker.platform.pickFiles(
+                                      type: FileType.video,
+                                      withData: true,
+                                    );
                                     if (!mounted) return;
-                                    if (result == null || result.bytes.isEmpty) {
+                                    if (result == null || result.files.isEmpty) {
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(
-                                          content: Text('No photo captured.'),
+                                          content: Text('No video selected.'),
                                         ),
                                       );
                                       return;
                                     }
-                                    setModalState(() => capturedImage = result);
+                                    setModalState(() => capturedVideo = result.files.first);
                                   },
-                            icon: const Icon(Icons.photo_camera),
-                            label: const Text('Take photo'),
+                            icon: const Icon(Icons.videocam),
+                            label: Text(capturedVideo == null ? 'Select video' : 'Replace video'),
                           ),
                         ),
-                        if (capturedImage != null) ...[
+                        if (capturedVideo != null) ...[
                           const SizedBox(width: 12),
                           TextButton(
-                            onPressed: () => setModalState(() => capturedImage = null),
+                            onPressed: () => setModalState(() => capturedVideo = null),
                             child: const Text('Clear'),
                           ),
                         ],
                       ],
                     ),
-                  if (capturedImage != null) ...[
-                    const SizedBox(height: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.memory(
-                        capturedImage!.bytes,
-                        height: 160,
-                        fit: BoxFit.cover,
+                    if (capturedVideo != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Selected video: ${capturedVideo!.name}',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Captured photo will be uploaded on submit.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Video will be uploaded on submit.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
                   ],
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: uploadingImage
+                    onPressed: uploadingSubmission
                         ? null
                         : () async {
                             final mediaService = context.read<MediaService>();
                             final questLogProvider = context.read<QuestLogProvider>();
                             final userId =
                                 context.read<AuthProvider>().user?.id ?? 'anonymous';
+                            final trimmedText = textController.text.trim();
+                            if (isTextSubmission && trimmedText.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please enter an answer.'),
+                                ),
+                              );
+                              return;
+                            }
+                            if (isPhotoSubmission && capturedImage == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please capture a photo.'),
+                                ),
+                              );
+                              return;
+                            }
+                            if (isVideoSubmission && capturedVideo == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please select a video.'),
+                                ),
+                              );
+                              return;
+                            }
                             final startedAt = DateTime.now();
-                            setModalState(() => uploadingImage = true);
+                            setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
                             widget.onClose();
                             widget.onQuestSubmissionState?.call(
                               QuestSubmissionOverlayPhase.loading,
                             );
                             String? imageSubmissionUrl;
-                            if (capturedImage != null) {
+                            String? videoSubmissionUrl;
+                            if (isPhotoSubmission && capturedImage != null) {
                               final ext = _extensionFromMime(
                                     capturedImage!.mimeType,
                                     capturedImage!.name,
@@ -676,11 +763,71 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               }
                               imageSubmissionUrl = url.split('?').first;
                             }
+                            if (isVideoSubmission && capturedVideo != null) {
+                              final ext = _extensionFromMime(
+                                    capturedVideo!.mimeType,
+                                    capturedVideo!.name,
+                                  ) ??
+                                  'mp4';
+                              final key =
+                                  'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+                              final url = await mediaService.getPresignedUploadUrl(
+                                ApiConstants.crewPointsOfInterestBucket,
+                                key,
+                              );
+                              if (url == null) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                widget.onQuestSubmissionState?.call(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to prepare video upload.',
+                                );
+                                return;
+                              }
+                              final bytes = capturedVideo!.bytes;
+                              if (bytes == null || bytes.isEmpty) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                widget.onQuestSubmissionState?.call(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to read video data.',
+                                );
+                                return;
+                              }
+                              final ok = await mediaService.uploadToPresigned(
+                                url,
+                                Uint8List.fromList(bytes),
+                                capturedVideo!.mimeType ?? 'video/mp4',
+                              );
+                              if (!ok) {
+                                final elapsed = DateTime.now().difference(startedAt);
+                                if (elapsed < const Duration(milliseconds: 700)) {
+                                  await Future<void>.delayed(
+                                    const Duration(milliseconds: 700),
+                                  );
+                                }
+                                widget.onQuestSubmissionState?.call(
+                                  QuestSubmissionOverlayPhase.failure,
+                                  message: 'Failed to upload video.',
+                                );
+                                return;
+                              }
+                              videoSubmissionUrl = url.split('?').first;
+                            }
                             final resp = await questLogProvider.submitQuestNodeChallenge(
                               node.id,
                               questNodeChallengeId: selectedChallengeId,
-                              textSubmission: textController.text.trim(),
+                              textSubmission: isTextSubmission ? trimmedText : null,
                               imageSubmissionUrl: imageSubmissionUrl,
+                              videoSubmissionUrl: videoSubmissionUrl,
                             );
                             final elapsed = DateTime.now().difference(startedAt);
                             if (elapsed < const Duration(milliseconds: 700)) {

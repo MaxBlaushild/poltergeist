@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
-import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestNode, QuestNodeChallenge, Tag } from '@poltergeist/types';
+import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestNode, QuestNodeChallenge, QuestNodeSubmissionType, Tag } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
@@ -45,9 +45,16 @@ const questStatOptions = [
 const emptyNodeForm = {
   orderIndex: 1,
   nodeType: 'poi' as 'poi' | 'polygon',
+  submissionType: 'photo' as QuestNodeSubmissionType,
   pointOfInterestId: '',
   polygonPoints: '',
 };
+
+const questNodeSubmissionOptions: { value: QuestNodeSubmissionType; label: string }[] = [
+  { value: 'text', label: 'Text' },
+  { value: 'photo', label: 'Photo' },
+  { value: 'video', label: 'Video' },
+];
 
 const emptyChallengeForm = {
   tier: 1,
@@ -1092,6 +1099,7 @@ export const Quests = () => {
         orderIndex: Number(nodeForm.orderIndex) || 1,
         pointOfInterestId: nodeForm.nodeType === 'poi' ? nodeForm.pointOfInterestId || null : null,
         polygonPoints: nodeForm.nodeType === 'polygon' ? polygonPoints : undefined,
+        submissionType: nodeForm.submissionType,
       };
       const created = await apiClient.post<QuestNode>('/sonar/questNodes', {
         ...payload,
@@ -1814,6 +1822,25 @@ export const Quests = () => {
                       >
                         <option value="poi">Point of Interest</option>
                         <option value="polygon">Polygon</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Submission Type</label>
+                      <select
+                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                        value={nodeForm.submissionType}
+                        onChange={(e) =>
+                          setNodeForm((prev) => ({
+                            ...prev,
+                            submissionType: e.target.value as QuestNodeSubmissionType,
+                          }))
+                        }
+                      >
+                        {questNodeSubmissionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     {nodeForm.nodeType === 'poi' ? (

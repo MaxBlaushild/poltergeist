@@ -68,6 +68,7 @@ class InventoryPanel extends StatefulWidget {
 class _InventoryPanelState extends State<InventoryPanel> {
   static const String _dismissedOutfitStatusPrefsKey =
       'dismissed_outfit_statuses';
+  static const int _pageSize = 12;
   List<InventoryItem> _items = [];
   List<OwnedInventoryItem> _owned = [];
   List<EquippedItem> _equipment = [];
@@ -82,6 +83,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
   String? _outfitError;
   Timer? _outfitPoller;
   final Set<String> _dismissedOutfitStatuses = {};
+  int _pageIndex = 0;
 
   @override
   void initState() {
@@ -122,9 +124,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
       final owned = await ownedFuture;
       final equipment = await equipmentFuture;
       if (!mounted) return;
+      final filteredOwned = owned.where((o) => o.quantity > 0).toList();
+      final maxPageIndex = filteredOwned.isEmpty
+          ? 0
+          : ((filteredOwned.length - 1) ~/ _pageSize);
+      final nextPageIndex = _pageIndex > maxPageIndex ? maxPageIndex : _pageIndex;
       setState(() {
         _items = items;
-        _owned = owned.where((o) => o.quantity > 0).toList();
+        _owned = filteredOwned;
         _equipment = equipment;
         _equipmentBySlot = {
           for (final entry in equipment) entry.slot: entry,
@@ -132,6 +139,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         _equipmentByOwnedId = {
           for (final entry in equipment) entry.ownedInventoryItemId: entry,
         };
+        _pageIndex = nextPageIndex;
         if (_selected != null) {
           final stillOwned = _owned.any((o) => o.id == _selected!.id);
           if (!stillOwned) {
@@ -641,10 +649,18 @@ class _InventoryPanelState extends State<InventoryPanel> {
   }
 
   Widget _buildGrid(BuildContext context) {
-    const slots = 12;
     const crossAxisCount = 3;
     final theme = Theme.of(context);
-    final filled = _owned.length.clamp(0, slots);
+    final totalItems = _owned.length;
+    final totalPages = totalItems == 0
+        ? 1
+        : ((totalItems + _pageSize - 1) ~/ _pageSize);
+    final pageStart = _pageIndex * _pageSize;
+    final pageItems = totalItems == 0
+        ? <OwnedInventoryItem>[]
+        : _owned.skip(pageStart).take(_pageSize).toList();
+    final isFirstPage = _pageIndex <= 0;
+    final isLastPage = _pageIndex >= totalPages - 1;
 
     return SingleChildScrollView(
       child: Column(
@@ -652,31 +668,80 @@ class _InventoryPanelState extends State<InventoryPanel> {
         children: [
           _buildEquipmentSection(context),
           const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              '$filled / $slots slots',
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+          Row(
+            children: [
+              Text(
+                '· $totalItems item${totalItems == 1 ? '' : 's'}',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
+              const Spacer(),
+              if (totalItems > 0)
+                Text(
+                  'Page ${_pageIndex + 1} of $totalPages',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              if (totalPages > 1) ...[
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Previous page',
+                  onPressed: isFirstPage
+                      ? null
+                      : () => setState(() => _pageIndex -= 1),
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                IconButton(
+                  tooltip: 'Next page',
+                  onPressed:
+                      isLastPage ? null : () => setState(() => _pageIndex += 1),
+                  icon: const Icon(Icons.chevron_right),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 12),
-          LayoutGrid(
-            crossAxisCount: crossAxisCount,
-            childAspectRatio: 1,
-            children: List.generate(slots, (i) {
-              if (i >= _owned.length) {
-                return _buildEmptySlot(context);
-              }
-              final o = _owned[i];
-              final inv = _itemFor(o);
-              if (inv == null) {
-                return _buildEmptySlot(context);
-              }
-              return _buildFilledSlot(context, inv, o);
-            }),
-          ),
+          if (pageItems.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest
+                    .withOpacity(0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.dividerColor),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 32,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No items yet.',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            LayoutGrid(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: 1,
+              children: pageItems.map((o) {
+                final inv = _itemFor(o);
+                if (inv == null) {
+                  return _buildMissingItemCard(context);
+                }
+                return _buildFilledSlot(context, inv, o);
+              }).toList(),
+            ),
           const SizedBox(height: 12),
         ],
       ),
@@ -803,7 +868,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
-  Widget _buildEmptySlot(BuildContext context) {
+  Widget _buildMissingItemCard(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
@@ -822,7 +887,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Empty',
+              'Unknown item',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

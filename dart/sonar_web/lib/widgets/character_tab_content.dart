@@ -467,22 +467,26 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                                   ],
                                 ),
                               ),
+                              SizedBox(
+                                width: 48,
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    bonusValue > 0 ? '+$bonusValue' : '',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
                               Text(
                                 '$displayValue',
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              if (bonusValue > 0) ...[
-                                const SizedBox(width: 6),
-                                Text(
-                                  '+$bonusValue',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: theme.colorScheme.primary,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
                               const SizedBox(width: 8),
                               IconButton(
                                 visualDensity: VisualDensity.compact,

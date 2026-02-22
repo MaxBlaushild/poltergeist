@@ -10,6 +10,137 @@ import { ShopActionEditor } from './ShopActionEditor.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
+type ComboOption = {
+  value: string;
+  label: string;
+  searchText?: string;
+};
+
+type SearchableComboBoxProps = {
+  label: string;
+  value: string;
+  options: ComboOption[];
+  placeholder?: string;
+  allowClear?: boolean;
+  clearLabel?: string;
+  onChange: (value: string) => void;
+};
+
+const SearchableComboBox: React.FC<SearchableComboBoxProps> = ({
+  label,
+  value,
+  options,
+  placeholder,
+  allowClear = false,
+  clearLabel = 'None',
+  onChange,
+}) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? '';
+
+  useEffect(() => {
+    if (!open) {
+      setQuery(selectedLabel);
+    }
+  }, [selectedLabel, open]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOptions = options.filter((option) => {
+    if (!normalizedQuery) return true;
+    const haystack = `${option.label} ${option.searchText ?? ''}`.toLowerCase();
+    return haystack.includes(normalizedQuery);
+  });
+
+  const handleSelect = (nextValue: string, nextLabel: string) => {
+    onChange(nextValue);
+    setQuery(nextLabel);
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <label style={{ display: 'block', marginBottom: '5px' }}>{label}</label>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 120);
+        }}
+        style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+      />
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            marginTop: '4px',
+            background: '#fff',
+            border: '1px solid #e5e7eb',
+            borderRadius: '6px',
+            boxShadow: '0 8px 18px rgba(0,0,0,0.08)',
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }}
+        >
+          {allowClear && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleSelect('', '')}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '8px 10px',
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: '#6b7280',
+              }}
+            >
+              {clearLabel}
+            </button>
+          )}
+          {filteredOptions.length === 0 ? (
+            <div style={{ padding: '8px 10px', fontSize: '13px', color: '#6b7280' }}>No matches</div>
+          ) : (
+            filteredOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelect(option.value, option.label)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '8px 10px',
+                  border: 'none',
+                  background: option.value === value ? '#eff6ff' : 'transparent',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                }}
+              >
+                {option.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface CharacterLocationsMapProps {
   locations: [number, number][];
   onAddLocation: (lng: number, lat: number) => void;
@@ -209,6 +340,26 @@ export const Characters = () => {
     name: '',
     description: ''
   });
+
+  const zoneOptions = React.useMemo<ComboOption[]>(() => {
+    return [...availableZones]
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map((zone) => ({
+        value: zone.id,
+        label: zone.name || zone.id,
+        searchText: [zone.name, zone.id].filter(Boolean).join(' ')
+      }));
+  }, [availableZones]);
+
+  const pointOfInterestOptions = React.useMemo<ComboOption[]>(() => {
+    return [...availablePointsOfInterest]
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      .map((poi) => ({
+        value: poi.id,
+        label: poi.name || poi.description || poi.id,
+        searchText: [poi.name, poi.description, poi.id].filter(Boolean).join(' ')
+      }));
+  }, [availablePointsOfInterest]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -907,19 +1058,15 @@ export const Characters = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Point of Interest (optional):</label>
-              <select
+              <SearchableComboBox
+                label="Point of Interest (optional):"
                 value={formData.pointOfInterestId}
-                onChange={(e) => setFormData({ ...formData, pointOfInterestId: e.target.value })}
-                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-              >
-                <option value="">None</option>
-                {availablePointsOfInterest.map((poi) => (
-                  <option key={poi.id} value={poi.id}>
-                    {poi.name || poi.description || poi.id}
-                  </option>
-                ))}
-              </select>
+                options={pointOfInterestOptions}
+                placeholder="Search points of interest..."
+                allowClear
+                clearLabel="None"
+                onChange={(value) => setFormData({ ...formData, pointOfInterestId: value })}
+              />
             </div>
 
             {/* Quest Associations */}
@@ -1059,23 +1206,21 @@ export const Characters = () => {
               </div>
 
               <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>Zone:</label>
-                <select
+                <SearchableComboBox
+                  label="Zone:"
                   value={formData.movementPattern.zoneId}
-                  onChange={(e) => setFormData({
+                  options={zoneOptions}
+                  placeholder="Search zones..."
+                  allowClear
+                  clearLabel="No zone"
+                  onChange={(value) => setFormData({
                     ...formData,
                     movementPattern: {
                       ...formData.movementPattern,
-                      zoneId: e.target.value
+                      zoneId: value
                     }
                   })}
-                  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                >
-                  <option value="">Select a zone (optional)</option>
-                  {availableZones.map(zone => (
-                    <option key={zone.id} value={zone.id}>{zone.name}</option>
-                  ))}
-                </select>
+                />
               </div>
 
               {/* Path Waypoints (only for path type) */}

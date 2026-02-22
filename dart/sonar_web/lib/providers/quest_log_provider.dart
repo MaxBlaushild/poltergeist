@@ -171,12 +171,14 @@ class QuestLogProvider with ChangeNotifier {
     String? questNodeChallengeId,
     String? textSubmission,
     String? imageSubmissionUrl,
+    String? videoSubmissionUrl,
   }) async {
     final resp = await _service.submitQuestNodeChallenge(
       questNodeId,
       questNodeChallengeId: questNodeChallengeId,
       textSubmission: textSubmission,
       imageSubmissionUrl: imageSubmissionUrl,
+      videoSubmissionUrl: videoSubmissionUrl,
     );
     await refresh();
     return resp;

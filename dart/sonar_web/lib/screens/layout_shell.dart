@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/activity_feed_provider.dart';
 import '../providers/friend_provider.dart';
@@ -16,6 +17,7 @@ import '../widgets/inventory_panel.dart';
 import '../widgets/party_tab_content.dart';
 import '../widgets/quest_log_panel.dart';
 import '../widgets/reputation_tab_content.dart';
+import 'user_character_screen.dart';
 
 class LayoutShell extends StatefulWidget {
   const LayoutShell({super.key, required this.child});
@@ -213,6 +215,7 @@ class _SideDrawer extends StatefulWidget {
 
 class _SideDrawerState extends State<_SideDrawer> {
   int _tabIndex = 0;
+  User? _profileUser;
 
   void _selectTab(int index) {
     final shouldRefreshQuestLog = index == 2;
@@ -239,7 +242,10 @@ class _SideDrawerState extends State<_SideDrawer> {
       }
       return;
     }
-    setState(() => _tabIndex = index);
+    setState(() {
+      _tabIndex = index;
+      _profileUser = null;
+    });
     if (shouldRefreshQuestLog) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -260,11 +266,20 @@ class _SideDrawerState extends State<_SideDrawer> {
     }
   }
 
+  void _openProfile(User user) {
+    setState(() => _profileUser = user);
+  }
+
+  void _closeProfile() {
+    setState(() => _profileUser = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final drawerWidth = (screenWidth * 0.9).clamp(320.0, 520.0);
     final theme = Theme.of(context);
+    final profileUser = _profileUser;
     return Drawer(
       width: drawerWidth,
       child: SafeArea(
@@ -335,41 +350,53 @@ class _SideDrawerState extends State<_SideDrawer> {
                       child: SizedBox.expand(
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 200),
-                          child: _tabIndex == 0
-                              ? const CharacterTabContent(
-                                  key: ValueKey('character'),
+                          child: profileUser != null
+                              ? _DrawerCharacterProfile(
+                                  key: ValueKey('profile-${profileUser.id}'),
+                                  user: profileUser,
+                                  onBack: _closeProfile,
                                 )
-                              : _tabIndex == 1
-                                  ? InventoryPanel(
-                                      key: const ValueKey('inventory'),
-                                      onClose: () => Navigator.of(context).pop(),
+                              : _tabIndex == 0
+                                  ? const CharacterTabContent(
+                                      key: ValueKey('character'),
                                     )
-                                  : _tabIndex == 2
-                                  ? QuestLogPanel(
-                                      key: const ValueKey('quest-log'),
-                                      onClose: () => Navigator.of(context).pop(),
-                                      onFocusPoI: (poi) {
-                                        context.read<MapFocusProvider>().focusPoi(poi);
-                                        context.go('/single-player');
-                                      },
-                                      onFocusTurnInQuest: (quest) {
-                                        context
-                                            .read<MapFocusProvider>()
-                                            .focusTurnInQuest(quest);
-                                        context.go('/single-player');
-                                      },
-                                    )
-                                  : _tabIndex == 3
-                                      ? const PartyTabContent(
-                                          key: ValueKey('party'),
+                                  : _tabIndex == 1
+                                      ? InventoryPanel(
+                                          key: const ValueKey('inventory'),
+                                          onClose: () =>
+                                              Navigator.of(context).pop(),
                                         )
-                                      : _tabIndex == 4
-                                          ? const FriendsTabContent(
-                                              key: ValueKey('friends'),
+                                      : _tabIndex == 2
+                                      ? QuestLogPanel(
+                                          key: const ValueKey('quest-log'),
+                                          onClose: () =>
+                                              Navigator.of(context).pop(),
+                                          onFocusPoI: (poi) {
+                                            context
+                                                .read<MapFocusProvider>()
+                                                .focusPoi(poi);
+                                            context.go('/single-player');
+                                          },
+                                          onFocusTurnInQuest: (quest) {
+                                            context
+                                                .read<MapFocusProvider>()
+                                                .focusTurnInQuest(quest);
+                                            context.go('/single-player');
+                                          },
+                                        )
+                                      : _tabIndex == 3
+                                          ? PartyTabContent(
+                                              key: const ValueKey('party'),
+                                              onViewProfile: _openProfile,
                                             )
-                                          : const ReputationTabContent(
-                                              key: ValueKey('reputation'),
-                                            ),
+                                          : _tabIndex == 4
+                                              ? FriendsTabContent(
+                                                  key: const ValueKey('friends'),
+                                                  onViewProfile: _openProfile,
+                                                )
+                                              : const ReputationTabContent(
+                                                  key: ValueKey('reputation'),
+                                                ),
                         ),
                       ),
                     ),
@@ -380,6 +407,94 @@ class _SideDrawerState extends State<_SideDrawer> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DrawerCharacterProfile extends StatelessWidget {
+  const _DrawerCharacterProfile({
+    super.key,
+    required this.user,
+    required this.onBack,
+  });
+
+  final User user;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final displayName = user.username.isNotEmpty ? user.username : user.name;
+    final secondaryName =
+        user.username.isNotEmpty && user.name != user.username ? user.name : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: scheme.surface,
+          elevation: 1,
+          shadowColor: const Color(0x332D2416),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: scheme.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: onBack,
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back',
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Character',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (displayName.isNotEmpty)
+                          Text(
+                            displayName,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        if (secondaryName != null)
+                          Text(
+                            secondaryName,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: UserCharacterScreen(
+            key: ValueKey('drawer-character-${user.id}'),
+            userId: user.id,
+          ),
+        ),
+      ],
     );
   }
 }

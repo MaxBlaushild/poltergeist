@@ -8,7 +8,9 @@ import '../providers/auth_provider.dart';
 import '../providers/friend_provider.dart';
 
 class FriendsTabContent extends StatefulWidget {
-  const FriendsTabContent({super.key});
+  const FriendsTabContent({super.key, this.onViewProfile});
+
+  final ValueChanged<User>? onViewProfile;
 
   @override
   State<FriendsTabContent> createState() => _FriendsTabContentState();
@@ -63,6 +65,11 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
   void _openCharacterProfile(BuildContext context, User target) {
     final currentUserId = context.read<AuthProvider>().user?.id;
     if (currentUserId == null || target.id == currentUserId) return;
+    final callback = widget.onViewProfile;
+    if (callback != null) {
+      callback(target);
+      return;
+    }
     Scaffold.maybeOf(context)?.closeEndDrawer();
     context.go('/character/${target.id}');
   }
