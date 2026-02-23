@@ -39,7 +39,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/lib/pq"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/paulmach/orb/planar"
@@ -2389,7 +2388,7 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 	}
 	locationArchetype.Challenges = normalizedChallenges
 
-	err := s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
+	err = s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"shit ass error": err.Error()})
 		return
