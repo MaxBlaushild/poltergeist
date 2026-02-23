@@ -89,9 +89,12 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 	}
 
 	if strings.TrimSpace(job.Draft.ZoneDescription) != "" {
-		zone.Description = job.Draft.ZoneDescription
-		zone.UpdatedAt = time.Now()
-		if err := p.dbClient.Zone().Update(ctx, zone); err != nil {
+		if err := p.dbClient.Zone().UpdateNameAndDescription(
+			ctx,
+			zone.ID,
+			zone.Name,
+			job.Draft.ZoneDescription,
+		); err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to update zone description: %w", err))
 		}
 	}
