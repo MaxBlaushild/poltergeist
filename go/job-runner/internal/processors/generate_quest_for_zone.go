@@ -36,10 +36,10 @@ func (p *GenerateQuestForZoneProcessor) ProcessTask(ctx context.Context, task *a
 	}
 
 	log.Printf("Generating quest for zone ID: %v with quest archetype ID: %v", payload.ZoneID, payload.QuestArchetypeID)
-	return p.generateQuestForZone(ctx, payload.ZoneID, payload.QuestArchetypeID, payload.QuestGiverCharacterID)
+	return p.generateQuestForZone(ctx, payload.ZoneID, payload.QuestArchetypeID, payload.QuestGiverCharacterID, payload.QuestGenerationJobID)
 }
 
-func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) error {
+func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context, zoneID uuid.UUID, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID, questGenerationJobID *uuid.UUID) error {
 	log.Printf("Finding zone with ID: %v", zoneID)
 	zone, err := p.dbClient.Zone().FindByID(ctx, zoneID)
 	if err != nil {
@@ -48,12 +48,40 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 	}
 
 	log.Printf("Found zone: %v, generating quest...", zone.Name)
-	_, err = p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID, questGiverCharacterID)
+	if questGenerationJobID != nil {
+		if err := p.dbClient.QuestGenerationJob().MarkInProgress(ctx, *questGenerationJobID); err != nil {
+			log.Printf("Failed to mark quest generation job in progress: %v", err)
+		}
+	}
+
+	quest, err := p.dungeonmaster.GenerateQuest(ctx, zone, questArchetypeID, questGiverCharacterID)
 	if err != nil {
 		log.Printf("Failed to generate quest: %v", err)
+		if questGenerationJobID != nil {
+			if shouldRecordFailure(ctx) {
+				if recordErr := p.dbClient.QuestGenerationJob().RecordFailure(ctx, *questGenerationJobID, err.Error()); recordErr != nil {
+					log.Printf("Failed to record quest generation failure: %v", recordErr)
+				}
+			}
+		}
 		return fmt.Errorf("failed to generate quest: %w", err)
 	}
 	log.Printf("Successfully generated quest for zone %v", zone.Name)
 
+	if questGenerationJobID != nil && quest != nil {
+		if err := p.dbClient.QuestGenerationJob().RecordSuccess(ctx, *questGenerationJobID, quest.ID); err != nil {
+			log.Printf("Failed to record quest generation success: %v", err)
+		}
+	}
+
 	return nil
+}
+
+func shouldRecordFailure(ctx context.Context) bool {
+	maxRetry, hasMax := asynq.GetMaxRetry(ctx)
+	retryCount, hasRetry := asynq.GetRetryCount(ctx)
+	if !hasMax || !hasRetry {
+		return true
+	}
+	return retryCount >= maxRetry
 }

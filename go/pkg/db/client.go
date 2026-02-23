@@ -51,6 +51,7 @@ type client struct {
 	questArchetypeNodeChallengeHandle *questArchetypeNodeChallengeHandle
 	questArchetypeItemRewardHandle    *questArchetypeItemRewardHandle
 	zoneQuestArchetypeHandle          *zoneQuestArchetypeHandle
+	questGenerationJobHandle          *questGenerationJobHandle
 	trackedPointOfInterestGroupHandle *trackedPointOfInterestGroupHandle
 	trackedQuestHandle                *trackedQuestHandle
 	pointHandle                       *pointHandler
@@ -177,6 +178,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questArchetypeNodeChallengeHandle: &questArchetypeNodeChallengeHandle{db: db},
 		questArchetypeItemRewardHandle:    &questArchetypeItemRewardHandle{db: db},
 		zoneQuestArchetypeHandle:          &zoneQuestArchetypeHandle{db: db},
+		questGenerationJobHandle:          &questGenerationJobHandle{db: db},
 		trackedPointOfInterestGroupHandle: &trackedPointOfInterestGroupHandle{db: db},
 		trackedQuestHandle:                &trackedQuestHandle{db: db},
 		pointHandle:                       &pointHandler{db: db},
@@ -348,6 +350,10 @@ func (c *client) TrackedQuest() TrackedQuestHandle {
 
 func (c *client) ZoneQuestArchetype() ZoneQuestArchetypeHandle {
 	return c.zoneQuestArchetypeHandle
+}
+
+func (c *client) QuestGenerationJob() QuestGenerationJobHandle {
+	return c.questGenerationJobHandle
 }
 
 func (c *client) LocationArchetype() LocationArchetypeHandle {

@@ -1,0 +1,130 @@
+.qa-quests {
+  min-height: 100vh;
+}
+
+.qa-quests .bg-white {
+  background: var(--qa-panel);
+  border: 1px solid var(--qa-stroke);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.qa-quests .shadow {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.qa-quests .rounded-lg {
+  border-radius: 20px;
+}
+
+.qa-quests .rounded-md {
+  border-radius: 14px;
+}
+
+.qa-quests .border-gray-200,
+.qa-quests .border-gray-300 {
+  border-color: var(--qa-stroke);
+}
+
+.qa-quests .border-blue-500 {
+  border-color: rgba(255, 107, 74, 0.6);
+}
+
+.qa-quests .border-amber-200 {
+  border-color: rgba(244, 225, 193, 0.4);
+}
+
+.qa-quests .border-red-200 {
+  border-color: rgba(255, 113, 91, 0.4);
+}
+
+.qa-quests .text-gray-700,
+.qa-quests .text-gray-900 {
+  color: var(--qa-ink);
+}
+
+.qa-quests .text-gray-600,
+.qa-quests .text-gray-500 {
+  color: var(--qa-muted);
+}
+
+.qa-quests label {
+  font-size: 11px;
+  color: var(--qa-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.qa-quests input:not([type="checkbox"]):not([type="radio"]),
+.qa-quests select,
+.qa-quests textarea {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--qa-ink);
+  font-family: inherit;
+}
+
+.qa-quests input::placeholder,
+.qa-quests textarea::placeholder {
+  color: rgba(236, 243, 245, 0.5);
+}
+
+.qa-quests .bg-gray-50 {
+  background: var(--qa-panel-strong);
+}
+
+.qa-quests .bg-blue-50 {
+  background: rgba(255, 107, 74, 0.12);
+}
+
+.qa-quests .bg-amber-50 {
+  background: rgba(244, 225, 193, 0.16);
+}
+
+.qa-quests .bg-red-50 {
+  background: rgba(255, 113, 91, 0.16);
+}
+
+.qa-quests button.bg-blue-600,
+.qa-quests button.bg-blue-500 {
+  background: var(--qa-accent);
+  color: #1a0f0b;
+  border: 1px solid rgba(255, 107, 74, 0.45);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(255, 107, 74, 0.35);
+}
+
+.qa-quests button.bg-green-600 {
+  background: var(--qa-success);
+  color: #0b1318;
+  border: 1px solid rgba(95, 211, 181, 0.45);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(95, 211, 181, 0.3);
+}
+
+.qa-quests button.border-gray-300 {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: var(--qa-ink);
+}
+
+.qa-quests button.border-red-200 {
+  background: rgba(255, 113, 91, 0.2);
+  color: var(--qa-danger);
+  border: 1px solid rgba(255, 113, 91, 0.4);
+  border-radius: 999px;
+}
+
+.qa-quests .bg-emerald-600 {
+  background: rgba(95, 211, 181, 0.9);
+  color: #0b1318;
+}
+
+.qa-quests .text-amber-800 {
+  color: var(--qa-accent-2);
+}
+
+.qa-quests .text-amber-900 {
+  color: var(--qa-accent-2);
+}

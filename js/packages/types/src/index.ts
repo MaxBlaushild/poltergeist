@@ -24,6 +24,7 @@ export * from './ownedInventoryItem';
 export * from './questLog';
 export * from './quest';
 export * from './questAcceptanceV2';
+export * from './questGenerationJob';
 export * from './questNode';
 export * from './questNodeChallenge';
 export * from './questNodeProgress';

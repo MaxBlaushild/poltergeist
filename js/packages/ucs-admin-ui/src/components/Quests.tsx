@@ -6,6 +6,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useCandidates } from '@poltergeist/hooks';
+import './questArchetypeTheme.css';
+import './questsTheme.css';
 
 type PointOfInterestImport = {
   id: string;
@@ -63,6 +65,7 @@ const emptyChallengeForm = {
   inventoryItemId: '',
   locationArchetypeId: '',
   locationChallenge: '',
+  submissionType: 'photo' as QuestNodeSubmissionType,
   statTags: [] as string[],
   difficulty: 25,
   proficiency: '',
@@ -75,7 +78,10 @@ const questRecurrenceOptions = [
   { value: 'monthly', label: 'Monthly' },
 ];
 
-const buildChallengeFormFromChallenge = (challenge: QuestNodeChallenge) => ({
+const buildChallengeFormFromChallenge = (
+  challenge: QuestNodeChallenge,
+  fallbackSubmissionType?: QuestNodeSubmissionType
+) => ({
   ...emptyChallengeForm,
   tier: challenge.tier ?? 1,
   question: challenge.question ?? '',
@@ -84,6 +90,7 @@ const buildChallengeFormFromChallenge = (challenge: QuestNodeChallenge) => ({
   statTags: challenge.statTags ?? [],
   difficulty: challenge.difficulty ?? 0,
   proficiency: challenge.proficiency ?? '',
+  submissionType: (challenge.submissionType ?? fallbackSubmissionType ?? 'photo') as QuestNodeSubmissionType,
 });
 
 const emptyQuestReward = {
@@ -134,6 +141,9 @@ const normalizeAcceptanceDialogue = (lines: string[]) =>
 
 const normalizeStatTags = (tags: string[]) =>
   Array.from(new Set(tags.map((tag) => tag.trim().toLowerCase()).filter((tag) => tag.length > 0)));
+
+const resolveChallengeSubmissionType = (challenge: QuestNodeChallenge, node?: QuestNode) =>
+  (challenge.submissionType || node?.submissionType || 'photo') as QuestNodeSubmissionType;
 
 const closePolygonRing = (ring: [number, number][]) => {
   if (ring.length === 0) return ring;
@@ -1134,10 +1144,10 @@ export const Quests = () => {
     setProficiencySearch(value);
   };
 
-  const handleStartEditChallenge = (challenge: QuestNodeChallenge) => {
+  const handleStartEditChallenge = (node: QuestNode, challenge: QuestNodeChallenge) => {
     setChallengeEdits((prev) => ({
       ...prev,
-      [challenge.id]: buildChallengeFormFromChallenge(challenge),
+      [challenge.id]: buildChallengeFormFromChallenge(challenge, node.submissionType),
     }));
   };
 
@@ -1161,6 +1171,7 @@ export const Quests = () => {
         question: draft.question,
         reward: Number(draft.reward) || 0,
         inventoryItemId: draft.inventoryItemId ? Number(draft.inventoryItemId) : null,
+        submissionType: draft.submissionType || node.submissionType || 'photo',
         statTags: normalizeStatTags(draft.statTags),
         difficulty: Number(draft.difficulty) || 0,
         proficiency: draft.proficiency.trim(),
@@ -1192,6 +1203,7 @@ export const Quests = () => {
         question: draft.question,
         reward: Number(draft.reward) || 0,
         inventoryItemId: draft.inventoryItemId ? Number(draft.inventoryItemId) : null,
+        submissionType: draft.submissionType || node.submissionType || 'photo',
         statTags: normalizeStatTags(draft.statTags),
         difficulty: Number(draft.difficulty) || 0,
         proficiency: draft.proficiency.trim(),
@@ -1373,11 +1385,18 @@ export const Quests = () => {
   };
 
   if (loading) {
-    return <div className="m-10">Loading quests...</div>;
+    return (
+      <div className="qa-theme qa-quests">
+        <div className="qa-shell">
+          <div className="qa-panel">Loading quests...</div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="m-10">
+    <div className="qa-theme qa-quests">
+      <div className="qa-shell">
       <datalist id="proficiency-options">
         {proficiencyOptions.map((option) => (
           <option key={option} value={option} />
@@ -1400,19 +1419,27 @@ export const Quests = () => {
           {loadError}
         </div>
       )}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Quests</h1>
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          onClick={() => setShowCreateQuest((prev) => !prev)}
-        >
-          {showCreateQuest ? 'Close' : 'Create Quest'}
-        </button>
-      </div>
+      <header className="qa-hero">
+        <div>
+          <div className="qa-kicker">Quest Operations</div>
+          <h1 className="qa-title">Quests</h1>
+          <p className="qa-subtitle">
+            Build quests, manage nodes, and tune challenge inputs with the same archetype-focused UI language.
+          </p>
+        </div>
+        <div className="qa-hero-actions">
+          <button
+            className="qa-btn qa-btn-primary"
+            onClick={() => setShowCreateQuest((prev) => !prev)}
+          >
+            {showCreateQuest ? 'Close' : 'Create Quest'}
+          </button>
+        </div>
+      </header>
 
       {showCreateQuest && (
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <h2 className="text-lg font-semibold mb-3">Create Quest</h2>
+        <div className="qa-card">
+          <h2 className="qa-card-title">Create Quest</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Name</label>
@@ -1583,7 +1610,7 @@ export const Quests = () => {
           </div>
           <div className="mt-4">
             <button
-              className="bg-green-600 text-white px-4 py-2 rounded-md"
+              className="qa-btn qa-btn-primary"
               onClick={handleCreateQuest}
               disabled={!questForm.name.trim()}
             >
@@ -1594,8 +1621,8 @@ export const Quests = () => {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-lg font-semibold mb-3">Quest List</h2>
+        <div className="qa-card">
+          <h2 className="qa-card-title">Quest List</h2>
           <input
             className="mb-3 block w-full border border-gray-300 rounded-md p-2"
             placeholder="Search quests..."
@@ -1616,16 +1643,16 @@ export const Quests = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="qa-card">
           {!selectedQuest ? (
             <div className="text-gray-500">Select a quest to edit details and add nodes.</div>
           ) : (
             <>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Quest Details</h2>
+                <h2 className="qa-card-title">Quest Details</h2>
                 <div className="flex items-center gap-2">
                   <button
-                    className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    className="qa-btn qa-btn-outline"
                     onClick={() => {
                       resetImportForm();
                       setShowImportModal(true);
@@ -1634,7 +1661,7 @@ export const Quests = () => {
                     Import POI
                   </button>
                   <button
-                    className="bg-blue-600 text-white px-4 py-2 rounded-md"
+                    className="qa-btn qa-btn-primary"
                     onClick={handleUpdateQuest}
                   >
                     Save Changes
@@ -2337,7 +2364,8 @@ export const Quests = () => {
                                   <div className="flex items-start justify-between gap-3">
                                     <div>
                                       <div>
-                                        Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward}
+                                        Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward} · Input{' '}
+                                        {resolveChallengeSubmissionType(challenge, node).toUpperCase()}
                                       </div>
                                       {!isEditing && (
                                         <>
@@ -2360,7 +2388,7 @@ export const Quests = () => {
                                       type="button"
                                       className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
                                       onClick={() =>
-                                        isEditing ? handleCancelEditChallenge(challenge.id) : handleStartEditChallenge(challenge)
+                                        isEditing ? handleCancelEditChallenge(challenge.id) : handleStartEditChallenge(node, challenge)
                                       }
                                     >
                                       {isEditing ? 'Cancel' : 'Edit'}
@@ -2393,6 +2421,24 @@ export const Quests = () => {
                                               })
                                             }
                                           />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700">Input Type</label>
+                                          <select
+                                            className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                            value={editDraft.submissionType}
+                                            onChange={(e) =>
+                                              handleEditChallengeDraftChange(challenge.id, {
+                                                submissionType: e.target.value as QuestNodeSubmissionType,
+                                              })
+                                            }
+                                          >
+                                            {questNodeSubmissionOptions.map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
                                         </div>
                                         <div>
                                           <label className="block text-xs font-medium text-gray-700">Reward</label>
@@ -2501,6 +2547,8 @@ export const Quests = () => {
                                           handleChallengeDraftChange(node.id, {
                                             locationArchetypeId: e.target.value,
                                             locationChallenge: '',
+                                            question: '',
+                                            submissionType: 'photo',
                                           })
                                         }
                                       >
@@ -2514,33 +2562,43 @@ export const Quests = () => {
                                     </div>
                                     <div>
                                       <label className="block text-xs font-medium text-gray-700">Challenge</label>
+                                      {(() => {
+                                        const selectedArchetype = locationArchetypes.find(
+                                          (archetype) =>
+                                            archetype.id ===
+                                            (challengeDrafts[node.id] ?? emptyChallengeForm).locationArchetypeId
+                                        );
+                                        const challenges = selectedArchetype?.challenges ?? [];
+                                        return (
                                       <select
                                         className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                                         value={(challengeDrafts[node.id] ?? emptyChallengeForm).locationChallenge}
                                         onChange={(e) =>
-                                          handleChallengeDraftChange(node.id, {
-                                            locationChallenge: e.target.value,
-                                            question: e.target.value,
-                                          })
+                                          (() => {
+                                            const value = e.target.value;
+                                            const index = value === '' ? NaN : Number(value);
+                                            const selected = Number.isFinite(index) ? challenges[index] : undefined;
+                                            handleChallengeDraftChange(node.id, {
+                                              locationChallenge: value,
+                                              question: selected?.question ?? '',
+                                              submissionType: (selected?.submissionType ?? 'photo') as QuestNodeSubmissionType,
+                                            });
+                                          })()
                                         }
                                       >
                                         <option value="">Select challenge</option>
-                                        {locationArchetypes
-                                          .find(
-                                            (archetype) =>
-                                              archetype.id ===
-                                              (challengeDrafts[node.id] ?? emptyChallengeForm).locationArchetypeId
-                                          )
-                                          ?.challenges?.map((challenge) => (
-                                            <option key={challenge} value={challenge}>
-                                              {challenge}
-                                            </option>
-                                          ))}
+                                        {challenges.map((challenge, index) => (
+                                          <option key={`${challenge.question}-${index}`} value={index}>
+                                            {challenge.question} · {challenge.submissionType.toUpperCase()}
+                                          </option>
+                                        ))}
                                       </select>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                   <p className="mt-2 text-xs text-amber-800">
-                                    Selecting a challenge will auto-fill the question field.
+                                    Selecting a challenge will auto-fill the question field and input type.
                                   </p>
                                 </div>
                               )}
@@ -2564,6 +2622,24 @@ export const Quests = () => {
                                     handleChallengeDraftChange(node.id, { difficulty: Number(e.target.value) })
                                   }
                                 />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700">Input Type</label>
+                                <select
+                                  className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                                  value={(challengeDrafts[node.id] ?? emptyChallengeForm).submissionType}
+                                  onChange={(e) =>
+                                    handleChallengeDraftChange(node.id, {
+                                      submissionType: e.target.value as QuestNodeSubmissionType,
+                                    })
+                                  }
+                                >
+                                  {questNodeSubmissionOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-700">Reward</label>
@@ -2648,6 +2724,7 @@ export const Quests = () => {
             </>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

@@ -48,6 +48,7 @@ type DbClient interface {
 	QuestArchetypeNodeChallenge() QuestArchetypeNodeChallengeHandle
 	QuestArchetypeItemReward() QuestArchetypeItemRewardHandle
 	ZoneQuestArchetype() ZoneQuestArchetypeHandle
+	QuestGenerationJob() QuestGenerationJobHandle
 	TrackedPointOfInterestGroup() TrackedPointOfInterestGroupHandle
 	TrackedQuest() TrackedQuestHandle
 	Point() PointHandle
@@ -491,6 +492,16 @@ type ZoneQuestArchetypeHandle interface {
 	DeleteByQuestArchetypeID(ctx context.Context, questArchetypeID uuid.UUID) error
 	DeleteAll(ctx context.Context) error
 	FindAll(ctx context.Context) ([]*models.ZoneQuestArchetype, error)
+}
+
+type QuestGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.QuestGenerationJob) error
+	Update(ctx context.Context, job *models.QuestGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestGenerationJob, error)
+	FindByZoneQuestArchetypeID(ctx context.Context, zoneQuestArchetypeID uuid.UUID, limit int) ([]*models.QuestGenerationJob, error)
+	MarkInProgress(ctx context.Context, id uuid.UUID) error
+	RecordSuccess(ctx context.Context, id uuid.UUID, questID uuid.UUID) error
+	RecordFailure(ctx context.Context, id uuid.UUID, errMsg string) error
 }
 
 type TrackedPointOfInterestGroupHandle interface {

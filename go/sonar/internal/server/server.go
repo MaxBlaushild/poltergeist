@@ -283,6 +283,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneQuestArchetype))
 	r.PATCH("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateZoneQuestArchetype))
 	r.DELETE("/sonar/zoneQuestArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneQuestArchetype))
+	r.POST("/sonar/zoneQuestArchetypes/:id/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateZoneQuestArchetypeQuests))
+	r.GET("/sonar/zoneQuestArchetypes/:id/questGenerations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestGenerationJobsForZoneQuestArchetype))
 	r.GET("/sonar/search/tags", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getRelevantTags))
 	r.POST("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTrackedPointOfInterestGroup))
 	r.GET("/sonar/trackedPointOfInterestGroups", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTrackedPointOfInterestGroups))
@@ -2017,6 +2019,142 @@ func (s *server) deleteZoneQuestArchetype(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "zone quest archetype deleted successfully"})
 }
 
+func (s *server) generateZoneQuestArchetypeQuests(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneQuestArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone quest archetype ID"})
+		return
+	}
+
+	zoneQuestArchetype, err := s.dbClient.ZoneQuestArchetype().FindByID(ctx, zoneQuestArchetypeIDUUID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if zoneQuestArchetype == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone quest archetype not found"})
+		return
+	}
+
+	if zoneQuestArchetype.NumberOfQuests <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "number of quests must be greater than zero"})
+		return
+	}
+
+	job := &models.QuestGenerationJob{
+		ID:                    uuid.New(),
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
+		ZoneQuestArchetypeID:  zoneQuestArchetype.ID,
+		ZoneID:                zoneQuestArchetype.ZoneID,
+		QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
+		QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
+		Status:                models.QuestGenerationStatusQueued,
+		TotalCount:            zoneQuestArchetype.NumberOfQuests,
+		CompletedCount:        0,
+		FailedCount:           0,
+		QuestIDs:              models.StringArray{},
+	}
+
+	if err := s.dbClient.QuestGenerationJob().Create(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	for i := 0; i < zoneQuestArchetype.NumberOfQuests; i++ {
+		payload, err := json.Marshal(jobs.GenerateQuestForZoneTaskPayload{
+			ZoneID:                zoneQuestArchetype.ZoneID,
+			QuestArchetypeID:      zoneQuestArchetype.QuestArchetypeID,
+			QuestGiverCharacterID: zoneQuestArchetype.CharacterID,
+			QuestGenerationJobID:  &job.ID,
+		})
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateQuestForZoneTaskType, payload)); err != nil {
+			msg := err.Error()
+			job.Status = models.QuestGenerationStatusFailed
+			job.ErrorMessage = &msg
+			job.UpdatedAt = time.Now()
+			_ = s.dbClient.QuestGenerationJob().Update(ctx, job)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) getQuestGenerationJobsForZoneQuestArchetype(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneQuestArchetypeIDUUID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone quest archetype ID"})
+		return
+	}
+
+	limit := 6
+	if limitParam := ctx.Query("limit"); limitParam != "" {
+		if parsedLimit, err := strconv.Atoi(limitParam); err == nil && parsedLimit > 0 {
+			limit = parsedLimit
+		}
+	}
+
+	jobsList, err := s.dbClient.QuestGenerationJob().FindByZoneQuestArchetypeID(ctx, zoneQuestArchetypeIDUUID, limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	questIDs := make([]uuid.UUID, 0)
+	seen := map[uuid.UUID]struct{}{}
+	for _, job := range jobsList {
+		for _, idStr := range job.QuestIDs {
+			questID, err := uuid.Parse(idStr)
+			if err != nil {
+				continue
+			}
+			if _, ok := seen[questID]; ok {
+				continue
+			}
+			seen[questID] = struct{}{}
+			questIDs = append(questIDs, questID)
+		}
+	}
+
+	questsByID := map[uuid.UUID]models.Quest{}
+	if len(questIDs) > 0 {
+		quests, err := s.dbClient.Quest().FindByIDs(ctx, questIDs)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		for _, quest := range quests {
+			questsByID[quest.ID] = quest
+		}
+	}
+
+	for _, job := range jobsList {
+		if len(job.QuestIDs) == 0 {
+			continue
+		}
+		job.Quests = make([]models.Quest, 0, len(job.QuestIDs))
+		for _, idStr := range job.QuestIDs {
+			questID, err := uuid.Parse(idStr)
+			if err != nil {
+				continue
+			}
+			if quest, ok := questsByID[questID]; ok {
+				job.Quests = append(job.Quests, quest)
+			}
+		}
+	}
+
+	ctx.JSON(http.StatusOK, jobsList)
+}
+
 func (s *server) generateQuestArchetypesForZone(ctx *gin.Context) {
 	id := ctx.Param("id")
 	zoneIDUUID, err := uuid.Parse(id)
@@ -2104,13 +2242,13 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	}
 
 	questArchetypeChallenge := &models.QuestArchetypeChallenge{
-		ID:             uuid.New(),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		Reward:         requestBody.Reward,
+		ID:              uuid.New(),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		Reward:          requestBody.Reward,
 		InventoryItemID: requestBody.InventoryItemID,
 		Proficiency:     requestBody.Proficiency,
-		UnlockedNodeID: newNodeID,
+		UnlockedNodeID:  newNodeID,
 	}
 
 	err = s.dbClient.QuestArchetypeChallenge().Create(ctx, questArchetypeChallenge)
@@ -2325,9 +2463,9 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name          string   `json:"name"`
-		IncludedTypes []string `json:"includedTypes"`
-		ExcludedTypes []string `json:"excludedTypes"`
+		Name          string                              `json:"name"`
+		IncludedTypes []string                            `json:"includedTypes"`
+		ExcludedTypes []string                            `json:"excludedTypes"`
 		Challenges    []locationArchetypeChallengePayload `json:"challenges"`
 	}
 
@@ -2362,9 +2500,9 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 
 func (s *server) createLocationArchetype(ctx *gin.Context) {
 	var requestBody struct {
-		Name          string   `json:"name"`
-		IncludedTypes []string `json:"includedTypes"`
-		ExcludedTypes []string `json:"excludedTypes"`
+		Name          string                              `json:"name"`
+		IncludedTypes []string                            `json:"includedTypes"`
+		ExcludedTypes []string                            `json:"excludedTypes"`
 		Challenges    []locationArchetypeChallengePayload `json:"challenges"`
 	}
 
@@ -3215,12 +3353,12 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 				continue
 			}
 			rewards = append(rewards, models.QuestArchetypeItemReward{
-				ID:              uuid.New(),
-				CreatedAt:       time.Now(),
-				UpdatedAt:       time.Now(),
+				ID:               uuid.New(),
+				CreatedAt:        time.Now(),
+				UpdatedAt:        time.Now(),
 				QuestArchetypeID: questArchType.ID,
-				InventoryItemID: reward.InventoryItemID,
-				Quantity:        reward.Quantity,
+				InventoryItemID:  reward.InventoryItemID,
+				Quantity:         reward.Quantity,
 			})
 		}
 		if err := s.dbClient.QuestArchetypeItemReward().ReplaceForQuestArchetype(ctx, questArchType.ID, rewards); err != nil {
