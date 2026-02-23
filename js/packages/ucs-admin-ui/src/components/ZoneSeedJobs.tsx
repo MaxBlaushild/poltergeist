@@ -85,7 +85,8 @@ const formatDate = (value?: string) => {
 export const ZoneSeedJobs = () => {
   const { apiClient } = useAPI();
   const { zones, refreshZones } = useZoneContext();
-  const [selectedZoneId, setSelectedZoneId] = useState<string>('');
+  const [draftZoneId, setDraftZoneId] = useState<string>('');
+  const [jobFilterZoneId, setJobFilterZoneId] = useState<string>('');
   const [jobs, setJobs] = useState<ZoneSeedJob[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
@@ -95,33 +96,42 @@ export const ZoneSeedJobs = () => {
   const [placeCount, setPlaceCount] = useState('8');
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
+  const [draftZoneQuery, setDraftZoneQuery] = useState('');
+  const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
+  const [filterZoneQuery, setFilterZoneQuery] = useState('');
+  const [showFilterZoneSuggestions, setShowFilterZoneSuggestions] = useState(false);
 
   const selectedZone = useMemo<Zone | undefined>(() => {
-    return zones.find((zone) => zone.id === selectedZoneId);
-  }, [zones, selectedZoneId]);
+    return zones.find((zone) => zone.id === draftZoneId);
+  }, [zones, draftZoneId]);
 
   useEffect(() => {
     if (zones.length === 0) {
       refreshZones();
       return;
     }
-    if (!selectedZoneId && zones.length > 0) {
-      setSelectedZoneId(zones[0].id);
+    if (!draftZoneId && zones.length > 0) {
+      setDraftZoneId(zones[0].id);
     }
-  }, [zones, selectedZoneId, refreshZones]);
+  }, [zones, draftZoneId, refreshZones]);
 
   useEffect(() => {
-    if (!selectedZoneId) return;
-    fetchJobs(selectedZoneId);
-  }, [selectedZoneId]);
+    fetchJobs(jobFilterZoneId || undefined);
+  }, [jobFilterZoneId]);
 
-  const fetchJobs = async (zoneId: string) => {
+  useEffect(() => {
+    if (selectedZone?.name) {
+      setDraftZoneQuery(selectedZone.name);
+    }
+  }, [selectedZone]);
+
+  const fetchJobs = async (zoneId?: string) => {
     setLoadingJobs(true);
     setError(null);
     try {
       const response = await apiClient.get<ZoneSeedJob[]>(
         '/sonar/admin/zone-seed-jobs',
-        { zoneId, limit: 25 }
+        zoneId ? { zoneId, limit: 25 } : { limit: 25 }
       );
       setJobs(response);
     } catch (err) {
@@ -133,7 +143,7 @@ export const ZoneSeedJobs = () => {
   };
 
   const handleCreateDraft = async () => {
-    if (!selectedZoneId) {
+    if (!draftZoneId) {
       setError('Please select a zone.');
       return;
     }
@@ -149,7 +159,7 @@ export const ZoneSeedJobs = () => {
     setSuccess(null);
     try {
       const created = await apiClient.post<ZoneSeedJob>(
-        `/sonar/admin/zones/${selectedZoneId}/seed-draft`,
+        `/sonar/admin/zones/${draftZoneId}/seed-draft`,
         {
           placeCount: places,
           characterCount: characters,
@@ -194,8 +204,8 @@ export const ZoneSeedJobs = () => {
         </div>
         <button
           className="px-4 py-2 rounded bg-gray-800 text-white hover:bg-gray-700"
-          onClick={() => selectedZoneId && fetchJobs(selectedZoneId)}
-          disabled={loadingJobs || !selectedZoneId}
+          onClick={() => fetchJobs(jobFilterZoneId || undefined)}
+          disabled={loadingJobs}
         >
           {loadingJobs ? 'Refreshing...' : 'Refresh drafts'}
         </button>
@@ -218,18 +228,47 @@ export const ZoneSeedJobs = () => {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Zone
           </label>
-          <select
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            value={selectedZoneId}
-            onChange={(e) => setSelectedZoneId(e.target.value)}
-          >
-            <option value="">Select a zone</option>
-            {zones.map((zone) => (
-              <option key={zone.id} value={zone.id}>
-                {zone.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <input
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              value={draftZoneQuery}
+              onChange={(e) => {
+                const value = e.target.value;
+                setDraftZoneQuery(value);
+                setShowDraftZoneSuggestions(true);
+                if (value.trim() === '') {
+                  setDraftZoneId('');
+                }
+              }}
+              onFocus={() => setShowDraftZoneSuggestions(true)}
+              onBlur={() => {
+                setTimeout(() => setShowDraftZoneSuggestions(false), 120);
+              }}
+              placeholder="Type to filter zones..."
+            />
+            {showDraftZoneSuggestions && zones.length > 0 && (
+              <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                {zones
+                  .filter((zone) =>
+                    zone.name.toLowerCase().includes(draftZoneQuery.toLowerCase())
+                  )
+                  .map((zone) => (
+                    <button
+                      type="button"
+                      key={zone.id}
+                      onClick={() => {
+                        setDraftZoneId(zone.id);
+                        setDraftZoneQuery(zone.name);
+                        setShowDraftZoneSuggestions(false);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      {zone.name}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
           {selectedZone && (
             <p className="mt-2 text-xs text-gray-500">
               Selected: {selectedZone.name}
@@ -270,14 +309,66 @@ export const ZoneSeedJobs = () => {
           <button
             className="mt-5 w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500 disabled:opacity-60"
             onClick={handleCreateDraft}
-            disabled={creatingDraft || !selectedZoneId}
+            disabled={creatingDraft || !draftZoneId}
           >
             {creatingDraft ? 'Queuing...' : 'Create draft'}
           </button>
         </div>
 
         <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Draft jobs</h2>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Draft jobs</h2>
+            <div className="relative w-full md:w-72">
+              <input
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                value={filterZoneQuery}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setFilterZoneQuery(value);
+                  setShowFilterZoneSuggestions(true);
+                  if (value.trim() === '') {
+                    setJobFilterZoneId('');
+                  }
+                }}
+                onFocus={() => setShowFilterZoneSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowFilterZoneSuggestions(false), 120)}
+                placeholder="Filter by zone (optional)..."
+              />
+              {showFilterZoneSuggestions && zones.length > 0 && (
+                <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJobFilterZoneId('');
+                      setFilterZoneQuery('');
+                      setShowFilterZoneSuggestions(false);
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    All zones
+                  </button>
+                  {zones
+                    .filter((zone) =>
+                      zone.name.toLowerCase().includes(filterZoneQuery.toLowerCase())
+                    )
+                    .map((zone) => (
+                      <button
+                        type="button"
+                        key={zone.id}
+                        onClick={() => {
+                          setJobFilterZoneId(zone.id);
+                          setFilterZoneQuery(zone.name);
+                          setShowFilterZoneSuggestions(false);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        {zone.name}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
           {loadingJobs ? (
             <p className="text-sm text-gray-500">Loading drafts...</p>
           ) : jobs.length === 0 ? (
@@ -321,47 +412,125 @@ export const ZoneSeedJobs = () => {
                       <summary className="cursor-pointer text-sm font-medium text-gray-700">
                         Draft details
                       </summary>
-                      <div className="mt-3 space-y-3 text-sm text-gray-700">
+                      <div className="mt-3 space-y-6 text-sm text-gray-700">
                         <div>
                           <div className="font-semibold">Fantasy branding</div>
                           <div className="text-sm text-gray-600">
                             {job.draft.fantasyName || 'Untitled district'}
                           </div>
                           {job.draft.zoneDescription && (
-                            <p className="mt-1 text-xs text-gray-500">
+                            <p className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">
                               {job.draft.zoneDescription}
                             </p>
                           )}
                         </div>
                         <div>
                           <div className="font-semibold">Points of interest</div>
-                          <ul className="mt-1 list-disc list-inside text-xs text-gray-500">
-                            {(job.draft.pointsOfInterest || []).slice(0, 6).map((poi) => (
-                              <li key={poi.draftId}>
-                                {poi.name} ({poi.placeId})
-                              </li>
+                          <div className="mt-2 space-y-3 text-xs text-gray-600">
+                            {(job.draft.pointsOfInterest || []).map((poi) => (
+                              <div
+                                key={poi.draftId}
+                                className="rounded border border-gray-100 bg-gray-50 p-3"
+                              >
+                                <div className="text-sm font-semibold text-gray-800">
+                                  {poi.name || 'Unnamed place'}
+                                </div>
+                                <div>Place ID: {poi.placeId || 'n/a'}</div>
+                                {poi.address && <div>Address: {poi.address}</div>}
+                                {typeof poi.latitude === 'number' &&
+                                  typeof poi.longitude === 'number' && (
+                                    <div>
+                                      Coordinates: {poi.latitude}, {poi.longitude}
+                                    </div>
+                                  )}
+                                {typeof poi.rating === 'number' && (
+                                  <div>
+                                    Rating: {poi.rating}
+                                    {typeof poi.userRatingCount === 'number'
+                                      ? ` (${poi.userRatingCount} reviews)`
+                                      : ''}
+                                  </div>
+                                )}
+                                {poi.types && poi.types.length > 0 && (
+                                  <div>Types: {poi.types.join(', ')}</div>
+                                )}
+                                {poi.editorialSummary && (
+                                  <div className="mt-1 text-gray-500">
+                                    Summary: {poi.editorialSummary}
+                                  </div>
+                                )}
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         </div>
                         <div>
                           <div className="font-semibold">Characters</div>
-                          <ul className="mt-1 list-disc list-inside text-xs text-gray-500">
-                            {(job.draft.characters || []).slice(0, 6).map((character) => (
-                              <li key={character.draftId}>
-                                {character.name} ({character.placeId})
-                              </li>
+                          <div className="mt-2 space-y-3 text-xs text-gray-600">
+                            {(job.draft.characters || []).map((character) => (
+                              <div
+                                key={character.draftId}
+                                className="rounded border border-gray-100 bg-gray-50 p-3"
+                              >
+                                <div className="text-sm font-semibold text-gray-800">
+                                  {character.name || 'Unnamed character'}
+                                </div>
+                                <div>Place ID: {character.placeId || 'n/a'}</div>
+                                {character.description && (
+                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
+                                    {character.description}
+                                  </div>
+                                )}
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         </div>
                         <div>
                           <div className="font-semibold">Quests</div>
-                          <ul className="mt-1 list-disc list-inside text-xs text-gray-500">
-                            {(job.draft.quests || []).slice(0, 6).map((quest) => (
-                              <li key={quest.draftId}>
-                                {quest.name} (giver {quest.questGiverDraftId.slice(0, 6)})
-                              </li>
+                          <div className="mt-2 space-y-3 text-xs text-gray-600">
+                            {(job.draft.quests || []).map((quest) => (
+                              <div
+                                key={quest.draftId}
+                                className="rounded border border-gray-100 bg-gray-50 p-3"
+                              >
+                                <div className="text-sm font-semibold text-gray-800">
+                                  {quest.name || 'Untitled quest'}
+                                </div>
+                                <div>Place ID: {quest.placeId || 'n/a'}</div>
+                                <div>
+                                  Quest giver draft ID:{' '}
+                                  {quest.questGiverDraftId || 'n/a'}
+                                </div>
+                                {typeof quest.gold === 'number' && (
+                                  <div>Gold: {quest.gold}</div>
+                                )}
+                                {quest.description && (
+                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
+                                    {quest.description}
+                                  </div>
+                                )}
+                                {quest.challengeQuestion && (
+                                  <div className="mt-2 text-gray-500">
+                                    Challenge: {quest.challengeQuestion}
+                                  </div>
+                                )}
+                                {quest.acceptanceDialogue &&
+                                  quest.acceptanceDialogue.length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="font-semibold text-gray-600">
+                                        Acceptance dialogue
+                                      </div>
+                                      <div className="mt-1 space-y-1 text-gray-500">
+                                        {quest.acceptanceDialogue.map((line, idx) => (
+                                          <div key={`${quest.draftId}-line-${idx}`}>
+                                            {line}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                              </div>
                             ))}
-                          </ul>
+                          </div>
                         </div>
                       </div>
                     </details>

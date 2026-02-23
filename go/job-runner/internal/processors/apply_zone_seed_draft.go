@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -301,6 +302,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		return err
 	}
 
+	statTags := p.classifyQuestStatTags(ctx, draft)
 	challenge := &models.QuestNodeChallenge{
 		ID:             uuid.New(),
 		CreatedAt:      time.Now(),
@@ -311,6 +313,10 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		Reward:         0,
 		SubmissionType: models.DefaultQuestNodeSubmissionType(),
 		Difficulty:     0,
+		StatTags:       statTags,
+	}
+	if challenge.StatTags == nil {
+		challenge.StatTags = models.StringArray{}
 	}
 	if err := p.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
 		return err
@@ -451,4 +457,167 @@ func parsePointOfInterestCoords(poi *models.PointOfInterest) (float64, float64, 
 		return 0, 0, err
 	}
 	return lat, lng, nil
+}
+
+type questStatTagResponse struct {
+	StatTags []string `json:"statTags"`
+}
+
+const questStatTagPromptTemplate = `
+You are a game designer classifying which character stats are most relevant for a quest.
+
+Allowed stat tags (use only these, lowercase):
+- strength
+- dexterity
+- constitution
+- intelligence
+- wisdom
+- charisma
+
+Quest details:
+Name: %s
+Description: %s
+Challenge: %s
+Acceptance dialogue:
+%s
+
+Pick up to 2 stat tags that best fit the quest. If none apply, return an empty array.
+
+Respond ONLY as JSON:
+{
+  "statTags": ["strength"]
+}
+`
+
+func (p *ApplyZoneSeedDraftProcessor) classifyQuestStatTags(
+	ctx context.Context,
+	draft models.ZoneSeedQuestDraft,
+) models.StringArray {
+	dialogue := strings.TrimSpace(strings.Join(draft.AcceptanceDialogue, "\n"))
+	prompt := fmt.Sprintf(
+		questStatTagPromptTemplate,
+		strings.TrimSpace(draft.Name),
+		strings.TrimSpace(draft.Description),
+		strings.TrimSpace(draft.ChallengeQuestion),
+		dialogue,
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return inferQuestStatTagsHeuristic(draft)
+	}
+
+	var response questStatTagResponse
+	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+		return inferQuestStatTagsHeuristic(draft)
+	}
+
+	valid := map[string]struct{}{
+		"strength":     {},
+		"dexterity":    {},
+		"constitution": {},
+		"intelligence": {},
+		"wisdom":       {},
+		"charisma":     {},
+	}
+	seen := map[string]struct{}{}
+	tags := make([]string, 0, len(response.StatTags))
+	for _, tag := range response.StatTags {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := valid[normalized]; !ok {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		tags = append(tags, normalized)
+		if len(tags) >= 2 {
+			break
+		}
+	}
+
+	if len(tags) == 0 {
+		return inferQuestStatTagsHeuristic(draft)
+	}
+
+	return models.StringArray(tags)
+}
+
+func inferQuestStatTagsHeuristic(draft models.ZoneSeedQuestDraft) models.StringArray {
+	textParts := []string{draft.Name, draft.Description, draft.ChallengeQuestion}
+	textParts = append(textParts, draft.AcceptanceDialogue...)
+	text := strings.ToLower(strings.TrimSpace(strings.Join(textParts, " ")))
+	if text == "" {
+		return models.StringArray{}
+	}
+
+	keywordMap := map[string][]string{
+		"strength": {
+			"lift", "carry", "haul", "forge", "smith", "battle", "fight", "brawl",
+			"guard", "muscle", "heavy", "strike", "hammer", "anvil",
+		},
+		"dexterity": {
+			"sneak", "stealth", "pick", "lock", "climb", "dodge", "agile", "balance",
+			"aim", "archery", "bow", "dagger", "quick", "swift",
+		},
+		"constitution": {
+			"endure", "survive", "stamina", "resist", "poison", "tough", "weather",
+			"long haul", "marathon", "patrol", "fortitude",
+		},
+		"intelligence": {
+			"research", "investigate", "decode", "puzzle", "riddle", "analyze", "study",
+			"alchemist", "invention", "map", "library", "ledger",
+		},
+		"wisdom": {
+			"herb", "heal", "ritual", "spirit", "listen", "observe", "insight",
+			"track", "wild", "nature", "garden", "grove",
+		},
+		"charisma": {
+			"convince", "negotiate", "charm", "perform", "sing", "dance", "crowd",
+			"influence", "trade", "barter", "festival", "story",
+		},
+	}
+
+	type scoredTag struct {
+		tag   string
+		score int
+	}
+	scores := make([]scoredTag, 0, len(keywordMap))
+	for tag, keywords := range keywordMap {
+		score := 0
+		for _, keyword := range keywords {
+			if strings.Contains(text, keyword) {
+				score++
+			}
+		}
+		if score > 0 {
+			scores = append(scores, scoredTag{tag: tag, score: score})
+		}
+	}
+
+	if len(scores) == 0 {
+		return models.StringArray{}
+	}
+
+	sort.Slice(scores, func(i, j int) bool {
+		if scores[i].score == scores[j].score {
+			return scores[i].tag < scores[j].tag
+		}
+		return scores[i].score > scores[j].score
+	})
+
+	limit := 2
+	if len(scores) < limit {
+		limit = len(scores)
+	}
+	tags := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		tags = append(tags, scores[i].tag)
+	}
+
+	return models.StringArray(tags)
 }
