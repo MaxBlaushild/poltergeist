@@ -15,6 +15,7 @@ type QuestNodeChallenge struct {
 	Question        string      `json:"question"`
 	Reward          int         `json:"reward"`
 	InventoryItemID *int        `json:"inventoryItemId"`
+	SubmissionType  QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
 	Difficulty      int         `json:"difficulty" gorm:"default:0"`
 	StatTags        StringArray `json:"statTags,omitempty" gorm:"type:jsonb"`
 	Proficiency     *string     `json:"proficiency,omitempty"`

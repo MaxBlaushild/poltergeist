@@ -1,7 +1,10 @@
 package models
 
 import (
+	"database/sql/driver"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"golang.org/x/exp/rand"
@@ -9,8 +12,40 @@ import (
 
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
+
+type LocationArchetypeChallenge struct {
+	Question       string                 `json:"question"`
+	SubmissionType QuestNodeSubmissionType `json:"submissionType"`
+}
+
+type LocationArchetypeChallenges []LocationArchetypeChallenge
+
+func (c LocationArchetypeChallenges) Value() (driver.Value, error) {
+	if c == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal(c)
+}
+
+func (c *LocationArchetypeChallenges) Scan(value interface{}) error {
+	if value == nil {
+		*c = LocationArchetypeChallenges{}
+		return nil
+	}
+
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return json.Unmarshal([]byte("[]"), c)
+	}
+
+	return json.Unmarshal(bytes, c)
+}
 
 type LocationArchetype struct {
 	ID             uuid.UUID                 `json:"id"`
@@ -20,14 +55,13 @@ type LocationArchetype struct {
 	DeletedAt      gorm.DeletedAt            `json:"deletedAt"`
 	IncludedTypes  googlemaps.PlaceTypeSlice `json:"includedTypes" gorm:"type:text[]"`
 	ExcludedTypes  googlemaps.PlaceTypeSlice `json:"excludedTypes" gorm:"type:text[]"`
-	Challenges     pq.StringArray            `json:"challenges" gorm:"type:text[]"`
-	SubmissionType QuestNodeSubmissionType   `json:"submissionType" gorm:"type:text;default:photo"`
+	Challenges     LocationArchetypeChallenges `json:"challenges" gorm:"type:jsonb"`
 	UsedChallenges []string                  `gorm:"-" json:"usedChallenges"`
 }
 
-func (l *LocationArchetype) GetRandomChallenge() (string, error) {
+func (l *LocationArchetype) GetRandomChallenge() (LocationArchetypeChallenge, error) {
 	if len(l.Challenges) == 0 {
-		return "", errors.New("no challenges found")
+		return LocationArchetypeChallenge{}, errors.New("no challenges found")
 	}
 
 	// Create map of used challenges for O(1) lookup
@@ -37,19 +71,26 @@ func (l *LocationArchetype) GetRandomChallenge() (string, error) {
 	}
 
 	// Get available challenges by filtering out used ones
-	availableChallenges := make([]string, 0)
+	availableChallenges := make([]LocationArchetypeChallenge, 0)
 	for _, challenge := range l.Challenges {
-		if !usedMap[challenge] {
+		question := challenge.Question
+		if question == "" {
+			continue
+		}
+		if !usedMap[question] {
 			availableChallenges = append(availableChallenges, challenge)
 		}
 	}
 
 	if len(availableChallenges) == 0 {
-		return "", errors.New("all challenges have been used")
+		return LocationArchetypeChallenge{}, errors.New("all challenges have been used")
 	}
 
 	// Pick random challenge from available ones
 	challenge := availableChallenges[rand.Intn(len(availableChallenges))]
-	l.UsedChallenges = append(l.UsedChallenges, challenge)
+	if strings.TrimSpace(string(challenge.SubmissionType)) == "" {
+		challenge.SubmissionType = DefaultQuestNodeSubmissionType()
+	}
+	l.UsedChallenges = append(l.UsedChallenges, challenge.Question)
 	return challenge, nil
 }

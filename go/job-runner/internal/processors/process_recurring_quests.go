@@ -241,6 +241,7 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 				Question:        challenge.Question,
 				Reward:          challenge.Reward,
 				InventoryItemID: challenge.InventoryItemID,
+				SubmissionType:  challenge.SubmissionType,
 				Difficulty:      challenge.Difficulty,
 				StatTags:        challenge.StatTags,
 				Proficiency:     challenge.Proficiency,

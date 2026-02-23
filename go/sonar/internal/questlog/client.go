@@ -25,6 +25,7 @@ type QuestNodeChallenge struct {
 	Question        string    `json:"question"`
 	Reward          int       `json:"reward"`
 	InventoryItemID *int      `json:"inventoryItemId"`
+	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
 	Difficulty      int       `json:"difficulty"`
 	StatTags        []string  `json:"statTags,omitempty"`
 	Proficiency     *string   `json:"proficiency,omitempty"`
@@ -284,12 +285,20 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 
 	challenges := make([]QuestNodeChallenge, 0, len(node.Challenges))
 	for _, ch := range node.Challenges {
+		submissionType := ch.SubmissionType
+		if strings.TrimSpace(string(submissionType)) == "" {
+			submissionType = node.SubmissionType
+		}
+		if strings.TrimSpace(string(submissionType)) == "" {
+			submissionType = models.DefaultQuestNodeSubmissionType()
+		}
 		challenges = append(challenges, QuestNodeChallenge{
 			ID:              ch.ID,
 			Tier:            ch.Tier,
 			Question:        ch.Question,
 			Reward:          ch.Reward,
 			InventoryItemID: ch.InventoryItemID,
+			SubmissionType:  submissionType,
 			Difficulty:      ch.Difficulty,
 			StatTags:        []string(ch.StatTags),
 			Proficiency:     ch.Proficiency,
@@ -297,6 +306,11 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 	}
 
 	submissionType := node.SubmissionType
+	if strings.TrimSpace(string(submissionType)) == "" {
+		if len(challenges) > 0 {
+			submissionType = challenges[0].SubmissionType
+		}
+	}
 	if strings.TrimSpace(string(submissionType)) == "" {
 		submissionType = models.DefaultQuestNodeSubmissionType()
 	}

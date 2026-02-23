@@ -1,5 +1,10 @@
 import { QuestNodeSubmissionType } from "./questNode";
 
+export interface LocationArchetypeChallenge {
+  question: string;
+  submissionType: QuestNodeSubmissionType;
+}
+
 export interface LocationArchetype {
   id: string;
   name: string;
@@ -8,6 +13,5 @@ export interface LocationArchetype {
   deletedAt?: Date;
   includedTypes: string[];
   excludedTypes: string[];
-  challenges: string[];
-  submissionType?: QuestNodeSubmissionType;
+  challenges: LocationArchetypeChallenge[];
 }

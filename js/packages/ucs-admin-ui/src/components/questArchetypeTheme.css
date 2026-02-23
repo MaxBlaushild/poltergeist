@@ -293,11 +293,13 @@
 
 .qa-modal-card {
   width: min(560px, 100%);
+  max-height: min(90vh, 820px);
   background: #0d171c;
   border: 1px solid var(--qa-stroke);
   border-radius: 22px;
   padding: 24px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
 }
 
 .qa-modal-title {

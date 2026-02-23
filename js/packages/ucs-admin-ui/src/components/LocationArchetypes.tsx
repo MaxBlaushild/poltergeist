@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useCandidates } from "@poltergeist/hooks";
-import { Candidate, LocationArchetype } from "@poltergeist/types";
+import { Candidate, LocationArchetype, LocationArchetypeChallenge, QuestNodeSubmissionType } from "@poltergeist/types";
 import { useAPI } from "@poltergeist/contexts";
 import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
 import "./questArchetypeTheme.css";
@@ -11,7 +11,6 @@ const buildEmptyArchetype = (): LocationArchetype => ({
   includedTypes: [],
   excludedTypes: [],
   challenges: [],
-  submissionType: "photo",
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -139,7 +138,7 @@ const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTyp
 type GeneratedLocationChallenge = {
   id: string;
   question: string;
-  submissionType: string;
+  submissionType: QuestNodeSubmissionType;
 };
 
 const LocationArchetypes: React.FC = () => {
@@ -159,6 +158,7 @@ const LocationArchetypes: React.FC = () => {
   const [createIncludedQuery, setCreateIncludedQuery] = useState("");
   const [createExcludedQuery, setCreateExcludedQuery] = useState("");
   const [createChallengeQuery, setCreateChallengeQuery] = useState("");
+  const [createChallengeInputType, setCreateChallengeInputType] = useState<QuestNodeSubmissionType>("photo");
   const [createGeneratedChallenges, setCreateGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
   const [createGenerating, setCreateGenerating] = useState(false);
   const [createGenerateError, setCreateGenerateError] = useState<string | null>(null);
@@ -167,6 +167,7 @@ const LocationArchetypes: React.FC = () => {
   const [editIncludedQuery, setEditIncludedQuery] = useState("");
   const [editExcludedQuery, setEditExcludedQuery] = useState("");
   const [editChallengeQuery, setEditChallengeQuery] = useState("");
+  const [editChallengeInputType, setEditChallengeInputType] = useState<QuestNodeSubmissionType>("photo");
   const [editGeneratedChallenges, setEditGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
   const [editGenerating, setEditGenerating] = useState(false);
   const [editGenerateError, setEditGenerateError] = useState<string | null>(null);
@@ -182,6 +183,7 @@ const LocationArchetypes: React.FC = () => {
     setCreateIncludedQuery("");
     setCreateExcludedQuery("");
     setCreateChallengeQuery("");
+    setCreateChallengeInputType("photo");
     setCreateGeneratedChallenges([]);
     setCreateGenerating(false);
     setCreateGenerateError(null);
@@ -190,14 +192,17 @@ const LocationArchetypes: React.FC = () => {
   const openEdit = (archetype: LocationArchetype) => {
     setEditDraft({
       ...archetype,
-      submissionType: archetype.submissionType ?? "photo",
       includedTypes: [...archetype.includedTypes],
       excludedTypes: [...archetype.excludedTypes],
-      challenges: [...archetype.challenges],
+      challenges: archetype.challenges.map((challenge) => ({
+        ...challenge,
+        submissionType: (challenge.submissionType ?? "photo") as QuestNodeSubmissionType,
+      })),
     });
     setEditIncludedQuery("");
     setEditExcludedQuery("");
     setEditChallengeQuery("");
+    setEditChallengeInputType("photo");
     setEditGeneratedChallenges([]);
     setEditGenerating(false);
     setEditGenerateError(null);
@@ -206,6 +211,36 @@ const LocationArchetypes: React.FC = () => {
   const addUnique = (list: string[], value: string) => {
     if (list.includes(value)) return list;
     return [...list, value];
+  };
+
+  const addChallengeUnique = (list: LocationArchetypeChallenge[], challenge: LocationArchetypeChallenge) => {
+    const key = `${challenge.question.toLowerCase()}|${challenge.submissionType}`;
+    if (list.some((item) => `${item.question.toLowerCase()}|${item.submissionType}` === key)) {
+      return list;
+    }
+    return [...list, challenge];
+  };
+
+  const formatSubmissionType = (value?: QuestNodeSubmissionType) => {
+    return (value ?? "photo").toUpperCase();
+  };
+
+  const mergeUniqueChallenges = (
+    list: LocationArchetypeChallenge[],
+    additions: LocationArchetypeChallenge[]
+  ) => {
+    let next = [...list];
+    additions.forEach((challenge) => {
+      next = addChallengeUnique(next, challenge);
+    });
+    return next;
+  };
+
+  const clampChallengePreview = (items: LocationArchetypeChallenge[], limit: number) => {
+    if (items.length <= limit) {
+      return { preview: items, remaining: 0 };
+    }
+    return { preview: items.slice(0, limit), remaining: items.length - limit };
   };
 
   const createIncludedOptions = placeTypes
@@ -239,7 +274,7 @@ const LocationArchetypes: React.FC = () => {
     return challenges.map((challenge, index) => ({
       id: `${seed}-${index}-${Math.random().toString(16).slice(2, 6)}`,
       question: challenge.question,
-      submissionType: challenge.submissionType,
+      submissionType: (challenge.submissionType || "photo") as QuestNodeSubmissionType,
     }));
   };
 
@@ -259,7 +294,7 @@ const LocationArchetypes: React.FC = () => {
           name: draft.name,
           includedTypes: draft.includedTypes,
           excludedTypes: draft.excludedTypes,
-          submissionType: draft.submissionType ?? "photo",
+          allowedSubmissionTypes: submissionTypeOptions.map((option) => option.value),
           count: 10,
         }
       );
@@ -310,7 +345,7 @@ const LocationArchetypes: React.FC = () => {
             filteredArchetypes.map((archetype, index) => {
               const includedPreview = clampPreview(archetype.includedTypes, 6);
               const excludedPreview = clampPreview(archetype.excludedTypes, 6);
-              const challengePreview = clampPreview(archetype.challenges, 6);
+              const challengePreview = clampChallengePreview(archetype.challenges, 6);
               return (
                 <article
                   key={archetype.id}
@@ -354,12 +389,6 @@ const LocationArchetypes: React.FC = () => {
                     <div className="qa-stat">
                       <div className="qa-stat-label">Challenge Prompts</div>
                       <div className="qa-stat-value">{archetype.challenges.length}</div>
-                    </div>
-                    <div className="qa-stat">
-                      <div className="qa-stat-label">Input Type</div>
-                      <div className="qa-stat-value">
-                        {(archetype.submissionType ?? "photo").toUpperCase()}
-                      </div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Updated</div>
@@ -412,8 +441,11 @@ const LocationArchetypes: React.FC = () => {
                         <span className="qa-empty">No challenges yet.</span>
                       ) : (
                         challengePreview.preview.map((challenge) => (
-                          <span key={challenge} className="qa-chip success">
-                            {challenge}
+                          <span
+                            key={`${challenge.question}-${challenge.submissionType}`}
+                            className="qa-chip success"
+                          >
+                            {challenge.question} · {formatSubmissionType(challenge.submissionType)}
                           </span>
                         ))
                       )}
@@ -451,26 +483,6 @@ const LocationArchetypes: React.FC = () => {
                   onChange={(e) => setCreateDraft({ ...createDraft, name: e.target.value })}
                   required
                 />
-              </div>
-
-              <div className="qa-field">
-                <div className="qa-label">Challenge Input Type</div>
-                <select
-                  className="qa-select"
-                  value={createDraft.submissionType ?? "photo"}
-                  onChange={(event) =>
-                    setCreateDraft({
-                      ...createDraft,
-                      submissionType: event.target.value,
-                    })
-                  }
-                >
-                  {submissionTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div className="qa-field">
@@ -621,6 +633,17 @@ const LocationArchetypes: React.FC = () => {
                     onChange={(e) => setCreateChallengeQuery(e.target.value)}
                     placeholder="Add challenge prompt"
                   />
+                  <select
+                    className="qa-select"
+                    value={createChallengeInputType}
+                    onChange={(event) => setCreateChallengeInputType(event.target.value as QuestNodeSubmissionType)}
+                  >
+                    {submissionTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     className="qa-btn qa-btn-ghost"
@@ -629,7 +652,10 @@ const LocationArchetypes: React.FC = () => {
                       if (!value) return;
                       setCreateDraft({
                         ...createDraft,
-                        challenges: addUnique(createDraft.challenges, value),
+                        challenges: addChallengeUnique(createDraft.challenges, {
+                          question: value,
+                          submissionType: createChallengeInputType,
+                        }),
                       });
                       setCreateChallengeQuery("");
                     }}
@@ -683,7 +709,7 @@ const LocationArchetypes: React.FC = () => {
                           <div className="qa-generated-info">
                             <div className="qa-option-title">{challenge.question}</div>
                             <div className="qa-option-sub">
-                              Input: {challenge.submissionType.toUpperCase()}
+                              Input: {formatSubmissionType(challenge.submissionType)}
                             </div>
                           </div>
                           <button
@@ -692,8 +718,10 @@ const LocationArchetypes: React.FC = () => {
                             onClick={() => {
                               setCreateDraft((prev) => ({
                                 ...prev,
-                                submissionType: challenge.submissionType,
-                                challenges: addUnique(prev.challenges, challenge.question),
+                                challenges: addChallengeUnique(prev.challenges, {
+                                  question: challenge.question,
+                                  submissionType: challenge.submissionType as QuestNodeSubmissionType,
+                                }),
                               }));
                             }}
                           >
@@ -709,10 +737,12 @@ const LocationArchetypes: React.FC = () => {
                         onClick={() => {
                           setCreateDraft((prev) => ({
                             ...prev,
-                            submissionType: createGeneratedChallenges[0]?.submissionType ?? prev.submissionType,
-                            challenges: mergeUnique(
+                            challenges: mergeUniqueChallenges(
                               prev.challenges,
-                              createGeneratedChallenges.map((challenge) => challenge.question)
+                              createGeneratedChallenges.map((challenge) => ({
+                                question: challenge.question,
+                                submissionType: challenge.submissionType as QuestNodeSubmissionType,
+                              }))
                             ),
                           }));
                         }}
@@ -726,16 +756,22 @@ const LocationArchetypes: React.FC = () => {
                   {createDraft.challenges.length === 0 ? (
                     <div className="qa-empty">No challenges yet.</div>
                   ) : (
-                    createDraft.challenges.map((challenge) => (
-                      <div key={challenge} className="qa-inline" style={{ marginBottom: 8 }}>
-                        <span className="qa-chip success">{challenge}</span>
+                    createDraft.challenges.map((challenge, index) => (
+                      <div
+                        key={`${challenge.question}-${challenge.submissionType}-${index}`}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
+                        <span className="qa-chip success">
+                          {challenge.question} · {formatSubmissionType(challenge.submissionType)}
+                        </span>
                         <button
                           type="button"
                           className="qa-btn qa-btn-text"
                           onClick={() =>
                             setCreateDraft({
                               ...createDraft,
-                              challenges: createDraft.challenges.filter((value) => value !== challenge),
+                              challenges: createDraft.challenges.filter((_, i) => i !== index),
                             })
                           }
                         >
@@ -780,26 +816,6 @@ const LocationArchetypes: React.FC = () => {
                   value={editDraft.name}
                   onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
                 />
-              </div>
-
-              <div className="qa-field">
-                <div className="qa-label">Challenge Input Type</div>
-                <select
-                  className="qa-select"
-                  value={editDraft.submissionType ?? "photo"}
-                  onChange={(event) =>
-                    setEditDraft({
-                      ...editDraft,
-                      submissionType: event.target.value,
-                    })
-                  }
-                >
-                  {submissionTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div className="qa-field">
@@ -960,6 +976,17 @@ const LocationArchetypes: React.FC = () => {
                     onChange={(e) => setEditChallengeQuery(e.target.value)}
                     placeholder="Add challenge prompt"
                   />
+                  <select
+                    className="qa-select"
+                    value={editChallengeInputType}
+                    onChange={(event) => setEditChallengeInputType(event.target.value as QuestNodeSubmissionType)}
+                  >
+                    {submissionTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     className="qa-btn qa-btn-ghost"
@@ -969,7 +996,10 @@ const LocationArchetypes: React.FC = () => {
                       if (!value) return;
                       setEditDraft({
                         ...editDraft,
-                        challenges: addUnique(editDraft.challenges, value),
+                        challenges: addChallengeUnique(editDraft.challenges, {
+                          question: value,
+                          submissionType: editChallengeInputType,
+                        }),
                       });
                       setEditChallengeQuery("");
                     }}
@@ -1023,7 +1053,7 @@ const LocationArchetypes: React.FC = () => {
                           <div className="qa-generated-info">
                             <div className="qa-option-title">{challenge.question}</div>
                             <div className="qa-option-sub">
-                              Input: {challenge.submissionType.toUpperCase()}
+                              Input: {formatSubmissionType(challenge.submissionType)}
                             </div>
                           </div>
                           <button
@@ -1034,8 +1064,10 @@ const LocationArchetypes: React.FC = () => {
                                 prev
                                   ? {
                                       ...prev,
-                                      submissionType: challenge.submissionType,
-                                      challenges: addUnique(prev.challenges, challenge.question),
+                                      challenges: addChallengeUnique(prev.challenges, {
+                                        question: challenge.question,
+                                        submissionType: challenge.submissionType as QuestNodeSubmissionType,
+                                      }),
                                     }
                                   : prev
                               );
@@ -1055,10 +1087,12 @@ const LocationArchetypes: React.FC = () => {
                             prev
                               ? {
                                   ...prev,
-                                  submissionType: editGeneratedChallenges[0]?.submissionType ?? prev.submissionType,
-                                  challenges: mergeUnique(
+                                  challenges: mergeUniqueChallenges(
                                     prev.challenges,
-                                    editGeneratedChallenges.map((challenge) => challenge.question)
+                                    editGeneratedChallenges.map((challenge) => ({
+                                      question: challenge.question,
+                                      submissionType: challenge.submissionType as QuestNodeSubmissionType,
+                                    }))
                                   ),
                                 }
                               : prev
@@ -1074,16 +1108,22 @@ const LocationArchetypes: React.FC = () => {
                   {editDraft.challenges.length === 0 ? (
                     <div className="qa-empty">No challenges yet.</div>
                   ) : (
-                    editDraft.challenges.map((challenge) => (
-                      <div key={challenge} className="qa-inline" style={{ marginBottom: 8 }}>
-                        <span className="qa-chip success">{challenge}</span>
+                    editDraft.challenges.map((challenge, index) => (
+                      <div
+                        key={`${challenge.question}-${challenge.submissionType}-${index}`}
+                        className="qa-inline"
+                        style={{ marginBottom: 8 }}
+                      >
+                        <span className="qa-chip success">
+                          {challenge.question} · {formatSubmissionType(challenge.submissionType)}
+                        </span>
                         <button
                           type="button"
                           className="qa-btn qa-btn-text"
                           onClick={() =>
                             setEditDraft({
                               ...editDraft,
-                              challenges: editDraft.challenges.filter((value) => value !== challenge),
+                              challenges: editDraft.challenges.filter((_, i) => i !== index),
                             })
                           }
                         >

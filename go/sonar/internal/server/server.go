@@ -2329,8 +2329,7 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 		Name          string   `json:"name"`
 		IncludedTypes []string `json:"includedTypes"`
 		ExcludedTypes []string `json:"excludedTypes"`
-		Challenges    []string `json:"challenges"`
-		SubmissionType string  `json:"submissionType"`
+		Challenges    []locationArchetypeChallengePayload `json:"challenges"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2347,18 +2346,12 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 	locationArchetype.Name = requestBody.Name
 	locationArchetype.IncludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.IncludedTypes)
 	locationArchetype.ExcludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes)
-	locationArchetype.Challenges = pq.StringArray(requestBody.Challenges)
-	submissionType := strings.TrimSpace(requestBody.SubmissionType)
-	if submissionType == "" {
-		locationArchetype.SubmissionType = models.DefaultQuestNodeSubmissionType()
-	} else {
-		parsed := models.QuestNodeSubmissionType(submissionType)
-		if !parsed.IsValid() {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
-			return
-		}
-		locationArchetype.SubmissionType = parsed
+	normalizedChallenges, err := normalizeLocationArchetypeChallenges(requestBody.Challenges)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+	locationArchetype.Challenges = normalizedChallenges
 
 	err = s.dbClient.LocationArchetype().Update(ctx, locationArchetype)
 	if err != nil {
@@ -2373,8 +2366,7 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		Name          string   `json:"name"`
 		IncludedTypes []string `json:"includedTypes"`
 		ExcludedTypes []string `json:"excludedTypes"`
-		Challenges    []string `json:"challenges"`
-		SubmissionType string  `json:"submissionType"`
+		Challenges    []locationArchetypeChallengePayload `json:"challenges"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2389,19 +2381,13 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		UpdatedAt:     time.Now(),
 		IncludedTypes: googlemaps.NewPlaceTypeSlice(requestBody.IncludedTypes),
 		ExcludedTypes: googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes),
-		Challenges:    pq.StringArray(requestBody.Challenges),
 	}
-	submissionType := strings.TrimSpace(requestBody.SubmissionType)
-	if submissionType == "" {
-		locationArchetype.SubmissionType = models.DefaultQuestNodeSubmissionType()
-	} else {
-		parsed := models.QuestNodeSubmissionType(submissionType)
-		if !parsed.IsValid() {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
-			return
-		}
-		locationArchetype.SubmissionType = parsed
+	normalizedChallenges, err := normalizeLocationArchetypeChallenges(requestBody.Challenges)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+	locationArchetype.Challenges = normalizedChallenges
 
 	err := s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
 	if err != nil {
@@ -2419,14 +2405,15 @@ Generate %d distinct challenge prompts for players to complete at a location arc
 Location archetype name: %s
 Included place types: %v
 Excluded place types: %v
-Required submission type: %s
+Allowed submission types: %v
 
 Rules:
 - Each challenge must be safe, respectful, and appropriate for public locations.
 - Challenges should be doable at many locations in the included types.
 - Keep each question under 140 characters.
 - Do not reference specific brands or businesses by name.
-- Use the required submission type for every challenge.
+- Choose a submission type from the allowed list for each challenge.
+- Try to include a mix of submission types when appropriate.
 
 Return JSON ONLY in the following format:
 {
@@ -2436,13 +2423,47 @@ Return JSON ONLY in the following format:
 }
 `
 
+type locationArchetypeChallengePayload struct {
+	Question       string `json:"question"`
+	SubmissionType string `json:"submissionType"`
+}
+
+func normalizeLocationArchetypeChallenges(challenges []locationArchetypeChallengePayload) (models.LocationArchetypeChallenges, error) {
+	normalized := models.LocationArchetypeChallenges{}
+	seen := map[string]struct{}{}
+	for _, challenge := range challenges {
+		question := strings.TrimSpace(challenge.Question)
+		if question == "" {
+			continue
+		}
+		submissionType := strings.TrimSpace(challenge.SubmissionType)
+		if submissionType == "" {
+			submissionType = string(models.DefaultQuestNodeSubmissionType())
+		}
+		parsed := models.QuestNodeSubmissionType(submissionType)
+		if !parsed.IsValid() {
+			return nil, fmt.Errorf("invalid submission type")
+		}
+		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, models.LocationArchetypeChallenge{
+			Question:       question,
+			SubmissionType: parsed,
+		})
+	}
+	return normalized, nil
+}
+
 func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 	var requestBody struct {
-		Name           string   `json:"name"`
-		IncludedTypes  []string `json:"includedTypes"`
-		ExcludedTypes  []string `json:"excludedTypes"`
-		SubmissionType string   `json:"submissionType"`
-		Count          int      `json:"count"`
+		Name                   string   `json:"name"`
+		IncludedTypes          []string `json:"includedTypes"`
+		ExcludedTypes          []string `json:"excludedTypes"`
+		AllowedSubmissionTypes []string `json:"allowedSubmissionTypes"`
+		Count                  int      `json:"count"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2455,16 +2476,24 @@ func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 		count = 10
 	}
 
-	submissionType := strings.TrimSpace(requestBody.SubmissionType)
-	if submissionType == "" {
-		submissionType = string(models.DefaultQuestNodeSubmissionType())
-	} else {
-		parsed := models.QuestNodeSubmissionType(submissionType)
-		if !parsed.IsValid() {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
-			return
+	allowedTypes := []string{}
+	for _, candidate := range requestBody.AllowedSubmissionTypes {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
 		}
-		submissionType = string(parsed)
+		parsed := models.QuestNodeSubmissionType(trimmed)
+		if !parsed.IsValid() {
+			continue
+		}
+		allowedTypes = append(allowedTypes, string(parsed))
+	}
+	if len(allowedTypes) == 0 {
+		allowedTypes = []string{
+			string(models.QuestNodeSubmissionTypeText),
+			string(models.QuestNodeSubmissionTypePhoto),
+			string(models.QuestNodeSubmissionTypeVideo),
+		}
 	}
 
 	prompt := fmt.Sprintf(
@@ -2473,7 +2502,7 @@ func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 		requestBody.Name,
 		requestBody.IncludedTypes,
 		requestBody.ExcludedTypes,
-		submissionType,
+		allowedTypes,
 	)
 
 	answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
@@ -2482,13 +2511,8 @@ func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 		return
 	}
 
-	type locationChallengeSuggestion struct {
-		Question       string `json:"question"`
-		SubmissionType string `json:"submissionType"`
-	}
-
 	var response struct {
-		Challenges []locationChallengeSuggestion `json:"challenges"`
+		Challenges []locationArchetypeChallengePayload `json:"challenges"`
 	}
 
 	if err := json.Unmarshal([]byte(answer.Answer), &response); err != nil {
@@ -2497,21 +2521,45 @@ func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 	}
 
 	seen := make(map[string]bool)
-	cleaned := make([]locationChallengeSuggestion, 0, count)
+	cleaned := make([]locationArchetypeChallengePayload, 0, count)
 	for _, challenge := range response.Challenges {
 		question := strings.TrimSpace(challenge.Question)
 		if question == "" {
 			continue
 		}
-		key := strings.ToLower(question)
+		submissionType := strings.TrimSpace(challenge.SubmissionType)
+		parsed := models.QuestNodeSubmissionType(submissionType)
+		if !parsed.IsValid() {
+			if len(allowedTypes) > 0 {
+				submissionType = allowedTypes[0]
+				parsed = models.QuestNodeSubmissionType(submissionType)
+			} else {
+				submissionType = string(models.DefaultQuestNodeSubmissionType())
+				parsed = models.QuestNodeSubmissionType(submissionType)
+			}
+		}
+		if len(allowedTypes) > 0 {
+			allowed := false
+			for _, allowedType := range allowedTypes {
+				if allowedType == string(parsed) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				submissionType = allowedTypes[0]
+				parsed = models.QuestNodeSubmissionType(submissionType)
+			}
+		}
+		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed))
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 
-		cleaned = append(cleaned, locationChallengeSuggestion{
+		cleaned = append(cleaned, locationArchetypeChallengePayload{
 			Question:       question,
-			SubmissionType: submissionType,
+			SubmissionType: string(parsed),
 		})
 
 		if len(cleaned) >= count {
@@ -2922,6 +2970,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		StatTags        []string `json:"statTags"`
 		Difficulty      int      `json:"difficulty"`
 		Proficiency     string   `json:"proficiency"`
+		SubmissionType  string   `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2948,6 +2997,22 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		proficiencyPtr = &proficiency
 	}
 
+	submissionType := strings.TrimSpace(requestBody.SubmissionType)
+	if submissionType == "" {
+		node, err := s.dbClient.QuestNode().FindByID(ctx, nodeID)
+		if err == nil && node != nil {
+			submissionType = strings.TrimSpace(string(node.SubmissionType))
+		}
+	}
+	if submissionType == "" {
+		submissionType = string(models.DefaultQuestNodeSubmissionType())
+	}
+	parsedSubmissionType := models.QuestNodeSubmissionType(submissionType)
+	if !parsedSubmissionType.IsValid() {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submissionType"})
+		return
+	}
+
 	challenge := &models.QuestNodeChallenge{
 		ID:              uuid.New(),
 		CreatedAt:       time.Now(),
@@ -2957,6 +3022,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 		Question:        requestBody.Question,
 		Reward:          requestBody.Reward,
 		InventoryItemID: requestBody.InventoryItemID,
+		SubmissionType:  parsedSubmissionType,
 		Difficulty:      requestBody.Difficulty,
 		StatTags:        statTags,
 		Proficiency:     proficiencyPtr,
@@ -3003,6 +3069,7 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 		StatTags        []string `json:"statTags"`
 		Difficulty      int      `json:"difficulty"`
 		Proficiency     string   `json:"proficiency"`
+		SubmissionType  *string  `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3037,7 +3104,21 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 		Difficulty:      requestBody.Difficulty,
 		StatTags:        statTags,
 		Proficiency:     proficiencyPtr,
+		SubmissionType:  existing.SubmissionType,
 		UpdatedAt:       time.Now(),
+	}
+
+	if requestBody.SubmissionType != nil {
+		trimmed := strings.TrimSpace(*requestBody.SubmissionType)
+		if trimmed == "" {
+			trimmed = string(models.DefaultQuestNodeSubmissionType())
+		}
+		parsed := models.QuestNodeSubmissionType(trimmed)
+		if !parsed.IsValid() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submissionType"})
+			return
+		}
+		updates.SubmissionType = parsed
 	}
 
 	updated, err := s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, updates)
@@ -5780,7 +5861,16 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	submissionType := node.SubmissionType
+	challenge, err := selectQuestNodeChallenge(node, requestBody.QuestNodeChallengeID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	submissionType := challenge.SubmissionType
+	if strings.TrimSpace(string(submissionType)) == "" {
+		submissionType = node.SubmissionType
+	}
 	if strings.TrimSpace(string(submissionType)) == "" {
 		submissionType = models.DefaultQuestNodeSubmissionType()
 	}
@@ -5841,12 +5931,6 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		}
 	} else {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
-		return
-	}
-
-	challenge, err := selectQuestNodeChallenge(node, requestBody.QuestNodeChallengeID)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

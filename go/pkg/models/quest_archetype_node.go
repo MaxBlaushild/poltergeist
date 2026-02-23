@@ -17,6 +17,6 @@ type QuestArchetypeNode struct {
 	Challenges          []QuestArchetypeChallenge `json:"challenges" gorm:"many2many:quest_archetype_node_challenges;"`
 }
 
-func (q *QuestArchetypeNode) GetRandomChallenge() (string, error) {
+func (q *QuestArchetypeNode) GetRandomChallenge() (LocationArchetypeChallenge, error) {
 	return q.LocationArchetype.GetRandomChallenge()
 }

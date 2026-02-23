@@ -225,10 +225,7 @@ func (c *client) processQuestNode(
 		questNodeID = existingNodeID
 	} else {
 		questNodeID = uuid.New()
-		submissionType := locationArchetype.SubmissionType
-		if submissionType == "" {
-			submissionType = models.DefaultQuestNodeSubmissionType()
-		}
+		submissionType := models.DefaultQuestNodeSubmissionType()
 		node := &models.QuestNode{
 			ID:                questNodeID,
 			CreatedAt:         time.Now(),
@@ -257,21 +254,22 @@ func (c *client) processQuestNode(
 			log.Printf("Error getting random challenge: %v", err)
 			return err
 		}
-		*challenges = append(*challenges, randomChallenge)
+		*challenges = append(*challenges, randomChallenge.Question)
 
-		log.Printf("Creating challenge: %s", randomChallenge)
+		log.Printf("Creating challenge: %s", randomChallenge.Question)
 		challenge := &models.QuestNodeChallenge{
 			ID:          uuid.New(),
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			QuestNodeID: questNodeID,
 			Tier:        i,
-			Question:    randomChallenge,
+			Question:    randomChallenge.Question,
 			Reward:      allotedChallenge.Reward,
 			InventoryItemID: allotedChallenge.InventoryItemID,
 			Difficulty:  0,
 			StatTags:    models.StringArray{},
 			Proficiency: allotedChallenge.Proficiency,
+			SubmissionType: randomChallenge.SubmissionType,
 		}
 		err = c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {
