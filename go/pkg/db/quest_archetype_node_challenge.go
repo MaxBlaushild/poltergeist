@@ -39,3 +39,7 @@ func (h *questArchetypeNodeChallengeHandle) Update(ctx context.Context, questArc
 func (h *questArchetypeNodeChallengeHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.QuestArchetypeNodeChallenge{}, "id = ?", id).Error
 }
+
+func (h *questArchetypeNodeChallengeHandle) DeleteByChallengeID(ctx context.Context, challengeID uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.QuestArchetypeNodeChallenge{}, "quest_archetype_challenge_id = ?", challengeID).Error
+}

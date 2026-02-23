@@ -9,6 +9,7 @@ export interface QuestArchetypeChallenge {
   reward: number;
   inventoryItemId?: number | null;
   proficiency?: string | null;
+  difficulty?: number | null;
   unlockedNodeId?: string;
   unlockedNode?: QuestArchetypeNode;
 }

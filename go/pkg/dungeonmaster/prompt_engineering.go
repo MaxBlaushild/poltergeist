@@ -76,8 +76,6 @@ const generateQuestAcceptanceDialogueTemplate = `
 	}
 `
 
-const style = "natural"
-
 func buildQuestTasks(locations []string, descriptions []string, challenges []string) string {
 	count := len(locations)
 	if len(descriptions) < count {
@@ -224,7 +222,6 @@ func (c *client) generateQuestImage(ctx context.Context, questCopy QuestCopy) (s
 
 	request := deep_priest.GenerateImageRequest{
 		Prompt: prompt,
-		Style:  style,
 	}
 	deep_priest.ApplyGenerateImageDefaults(&request)
 	base64Image, err := c.deepPriest.GenerateImage(request)

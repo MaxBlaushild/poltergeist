@@ -257,6 +257,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuest))
 	r.POST("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuest))
 	r.PATCH("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuest))
+	r.DELETE("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuest))
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
 	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
 	r.PATCH("/sonar/questNodes/:nodeId/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
@@ -278,6 +279,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeChallenge))
 	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeChallenges))
 	r.PATCH("/sonar/questArchetypeChallenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetypeChallenge))
+	r.DELETE("/sonar/questArchetypeChallenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetypeChallenge))
 	r.POST("/sonar/zones/:id/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypesForZone))
 	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneQuestArchetypes))
 	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneQuestArchetype))
@@ -2216,11 +2218,26 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		Reward              int        `json:"reward"`
 		InventoryItemID     *int       `json:"inventoryItemId"`
 		Proficiency         *string    `json:"proficiency"`
+		Difficulty          *int       `json:"difficulty"`
 		LocationArchetypeID *uuid.UUID `json:"locationArchetypeID"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Proficiency != nil {
+		trimmed := strings.TrimSpace(*requestBody.Proficiency)
+		if trimmed == "" {
+			requestBody.Proficiency = nil
+		} else {
+			requestBody.Proficiency = &trimmed
+		}
+	}
+
+	if requestBody.Difficulty != nil && *requestBody.Difficulty < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
 		return
 	}
 
@@ -2248,7 +2265,11 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 		Reward:          requestBody.Reward,
 		InventoryItemID: requestBody.InventoryItemID,
 		Proficiency:     requestBody.Proficiency,
+		Difficulty:      0,
 		UnlockedNodeID:  newNodeID,
+	}
+	if requestBody.Difficulty != nil {
+		questArchetypeChallenge.Difficulty = *requestBody.Difficulty
 	}
 
 	err = s.dbClient.QuestArchetypeChallenge().Create(ctx, questArchetypeChallenge)
@@ -2283,6 +2304,7 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		Reward          *int    `json:"reward"`
 		InventoryItemID *int    `json:"inventoryItemId"`
 		Proficiency     *string `json:"proficiency"`
+		Difficulty      *int    `json:"difficulty"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2319,6 +2341,13 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 			existing.Proficiency = &trimmed
 		}
 	}
+	if requestBody.Difficulty != nil {
+		if *requestBody.Difficulty < 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
+			return
+		}
+		existing.Difficulty = *requestBody.Difficulty
+	}
 	existing.UpdatedAt = time.Now()
 
 	if err := s.dbClient.QuestArchetypeChallenge().Update(ctx, existing); err != nil {
@@ -2332,6 +2361,40 @@ func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, updated)
+}
+
+func (s *server) deleteQuestArchetypeChallenge(ctx *gin.Context) {
+	id := ctx.Param("id")
+	challengeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype challenge ID"})
+		return
+	}
+
+	existing, err := s.dbClient.QuestArchetypeChallenge().FindByID(ctx, challengeID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype challenge not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype challenge not found"})
+		return
+	}
+
+	if err := s.dbClient.QuestArchetypeNodeChallenge().DeleteByChallengeID(ctx, challengeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.QuestArchetypeChallenge().Delete(ctx, challengeID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest archetype challenge deleted successfully"})
 }
 
 func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
@@ -2984,6 +3047,22 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, updatedQuest)
+}
+
+func (s *server) deleteQuest(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest ID"})
+		return
+	}
+
+	if err := s.dbClient.Quest().Delete(ctx, questID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest deleted successfully"})
 }
 
 func (s *server) ensureQuestActionForCharacter(ctx *gin.Context, questID uuid.UUID, characterID uuid.UUID) error {

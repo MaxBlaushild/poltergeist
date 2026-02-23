@@ -1,92 +1,315 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useAPI } from "@poltergeist/contexts";
 import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
 import { LocationArchetype, QuestArchetype, QuestArchetypeNode, QuestArchetypeChallenge, InventoryItem } from "@poltergeist/types";
 import "./questArchetypeTheme.css";
 
-interface ChallengeNodeProps {
-  challenge: QuestArchetypeChallenge;
-  index: number;
+interface FlowNodeProps {
+  node: QuestArchetypeNode;
   locationArchetypes: LocationArchetype[];
-  depth: number;
   inventoryItems: InventoryItem[];
-  onEditNode: (node: QuestArchetypeNode) => void;
+  depth: number;
+  proficiencyOptions: string[];
+  onProficiencySearchChange: (value: string) => void;
+  addChallengeToQuestArchetype: (
+    questArchetypeId: string,
+    rewardPoints: number,
+    inventoryItemId?: number | null,
+    proficiency?: string | null,
+    difficulty?: number | null,
+    unlockedLocationArchetypeId?: string | null
+  ) => void;
   onEditChallenge: (challenge: QuestArchetypeChallenge) => void;
 }
 
-const ChallengeNode: React.FC<ChallengeNodeProps> = ({
-  challenge,
-  index,
+const FlowNode: React.FC<FlowNodeProps> = ({
+  node,
   locationArchetypes,
-  depth,
   inventoryItems,
-  onEditNode,
+  depth,
+  proficiencyOptions,
+  onProficiencySearchChange,
+  addChallengeToQuestArchetype,
   onEditChallenge,
 }) => {
   const borderColor = depth % 2 === 0 ? 'rgba(255, 107, 74, 0.4)' : 'rgba(95, 211, 181, 0.35)';
-  const legacyItemId = !challenge.inventoryItemId
-    ? inventoryItems?.find(item => item.id === challenge.reward)?.id
-    : undefined;
-  const rewardItemId = challenge.inventoryItemId ?? legacyItemId;
-  const rewardItem = rewardItemId ? inventoryItems?.find(item => item.id === rewardItemId) : undefined;
+  const locationName = locationArchetypes.find((la) => la.id === node.locationArchetypeId)?.name ?? 'Unknown location';
+  const [isAdding, setIsAdding] = useState(false);
+  const [rewardPoints, setRewardPoints] = useState<number>(0);
+  const [rewardItemId, setRewardItemId] = useState<number>(0);
+  const [challengeDifficulty, setChallengeDifficulty] = useState<number>(0);
+  const [challengeProficiency, setChallengeProficiency] = useState<string>("");
+  const [unlockedLocationArchetypeId, setUnlockedLocationArchetypeId] = useState<string>("");
 
   return (
-    <div className="qa-node" style={{ borderColor }}>
-      <div className="qa-node-card">
-        <div className="qa-node-title">
-          {depth === 0 ? 'Challenge' : 'Sub-Challenge'} {index + 1}
-        </div>
-        <div className="qa-inline">
-          {challenge.reward > 0 && (
-            <span className="qa-chip accent">+{challenge.reward} pts</span>
-          )}
-          {rewardItem && (
-            <span className="qa-chip success">{rewardItem.name}</span>
-          )}
-          {challenge.proficiency && (
-            <span className="qa-chip muted">Proficiency: {challenge.proficiency}</span>
-          )}
-        </div>
-        <div className="qa-inline" style={{ marginTop: 8 }}>
-          <button
-            className="qa-btn qa-btn-ghost"
-            onClick={() => onEditChallenge(challenge)}
-          >
-            Edit Challenge
+    <div className="qa-flow-node" style={{ borderColor }}>
+      <div className="qa-flow-node-card">
+        <div className="qa-flow-node-header">
+          <div>
+            <div className="qa-flow-node-title">{depth === 0 ? 'Root Node' : `Node ${depth + 1}`}</div>
+            <div className="qa-meta">{locationName}</div>
+          </div>
+          <button className="qa-btn qa-btn-primary" onClick={() => setIsAdding((prev) => !prev)}>
+            {isAdding ? 'Close' : 'Add Challenge'}
           </button>
         </div>
-        {challenge.unlockedNode && (
-          <div className="qa-panel" style={{ marginTop: 12 }}>
-            <div className="qa-meta">Unlocks Node</div>
-            <div className="qa-inline" style={{ marginTop: 8 }}>
-              <span className="qa-chip">
-                {locationArchetypes.find(la =>
-                  la.id === challenge.unlockedNode?.locationArchetypeId
-                )?.name ?? 'Unknown location'}
-              </span>
-              <button className="qa-btn qa-btn-outline" onClick={() => onEditNode(challenge.unlockedNode!)}>
-                Edit Node
+
+        {isAdding && (
+          <div className="qa-flow-form">
+            <div className="qa-field">
+              <div className="qa-label">Reward Points</div>
+              <input
+                type="number"
+                min={0}
+                className="qa-input"
+                value={rewardPoints}
+                onChange={(e) => setRewardPoints(parseInt(e.target.value) || 0)}
+              />
+            </div>
+            <div className="qa-field">
+              <div className="qa-label">Difficulty</div>
+              <input
+                type="number"
+                min={0}
+                className="qa-input"
+                value={challengeDifficulty}
+                onChange={(e) => setChallengeDifficulty(parseInt(e.target.value) || 0)}
+              />
+            </div>
+            <div className="qa-field">
+              <div className="qa-label">Reward Item</div>
+              <select
+                className="qa-select"
+                value={rewardItemId || ''}
+                onChange={(e) => setRewardItemId(parseInt(e.target.value) || 0)}
+              >
+                <option value="">Select an item</option>
+                {inventoryItems.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="qa-field">
+              <div className="qa-label">Proficiency</div>
+              <input
+                type="text"
+                className="qa-input"
+                value={challengeProficiency}
+                onChange={(e) => {
+                  setChallengeProficiency(e.target.value);
+                  onProficiencySearchChange(e.target.value);
+                }}
+                list="qa-proficiency-options"
+                placeholder="Optional proficiency (e.g. Persuasion)"
+              />
+              {proficiencyOptions.length === 0 && (
+                <div className="qa-helper">No matching proficiencies yet.</div>
+              )}
+            </div>
+            <div className="qa-field">
+              <div className="qa-label">Unlocked Location Type</div>
+              <select
+                className="qa-select"
+                value={unlockedLocationArchetypeId}
+                onChange={(e) => setUnlockedLocationArchetypeId(e.target.value)}
+              >
+                <option value="">None</option>
+                {locationArchetypes.map((archetype) => (
+                  <option key={archetype.id} value={archetype.id}>
+                    {archetype.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="qa-flow-form-actions">
+              <button
+                className="qa-btn qa-btn-outline"
+                onClick={() => {
+                  setIsAdding(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="qa-btn qa-btn-primary"
+                onClick={async () => {
+                  const trimmed = challengeProficiency.trim();
+                  await addChallengeToQuestArchetype(
+                    node.id,
+                    rewardPoints,
+                    rewardItemId || null,
+                    trimmed.length > 0 ? trimmed : null,
+                    challengeDifficulty,
+                    unlockedLocationArchetypeId || null
+                  );
+                  setRewardPoints(0);
+                  setRewardItemId(0);
+                  setChallengeDifficulty(0);
+                  setChallengeProficiency("");
+                  setUnlockedLocationArchetypeId("");
+                  setIsAdding(false);
+                }}
+              >
+                Add Challenge
               </button>
             </div>
-            <div className="qa-tree" style={{ marginTop: 12 }}>
-              {challenge.unlockedNode.challenges?.map((subChallenge, i) => (
-                <ChallengeNode
-                  key={subChallenge.id}
-                  challenge={subChallenge}
-                  index={i}
-                  locationArchetypes={locationArchetypes}
-                  depth={depth + 1}
-                  inventoryItems={inventoryItems}
-                  onEditNode={onEditNode}
-                  onEditChallenge={onEditChallenge}
-                />
-              ))}
-            </div>
+          </div>
+        )}
+
+        {node.challenges && node.challenges.length > 0 ? (
+          <div className="qa-flow-challenges">
+            {node.challenges.map((challenge, index) => {
+              const legacyItemId = !challenge.inventoryItemId
+                ? inventoryItems?.find(item => item.id === challenge.reward)?.id
+                : undefined;
+              const rewardItemId = challenge.inventoryItemId ?? legacyItemId;
+              const rewardItem = rewardItemId ? inventoryItems?.find(item => item.id === rewardItemId) : undefined;
+              return (
+                <div key={challenge.id} className="qa-flow-challenge-card">
+                  <div className="qa-flow-challenge-header">
+                    <div>
+                      <div className="qa-flow-challenge-title">Challenge {index + 1}</div>
+                      <div className="qa-inline" style={{ marginTop: 6 }}>
+                        {challenge.reward > 0 && (
+                          <span className="qa-chip accent">+{challenge.reward} pts</span>
+                        )}
+                        {challenge.difficulty !== undefined && challenge.difficulty !== null && (
+                          <span className="qa-chip muted">Difficulty: {challenge.difficulty}</span>
+                        )}
+                        {rewardItem && (
+                          <span className="qa-chip success">{rewardItem.name}</span>
+                        )}
+                        {challenge.proficiency && (
+                          <span className="qa-chip muted">Proficiency: {challenge.proficiency}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button className="qa-btn qa-btn-ghost" onClick={() => onEditChallenge(challenge)}>
+                      Edit
+                    </button>
+                  </div>
+
+                  {challenge.unlockedNode ? (
+                    <div className="qa-flow-branch">
+                      <div className="qa-flow-branch-label">Unlocks</div>
+                      <FlowNode
+                        node={challenge.unlockedNode}
+                        locationArchetypes={locationArchetypes}
+                        inventoryItems={inventoryItems}
+                        depth={depth + 1}
+                        proficiencyOptions={proficiencyOptions}
+                        onProficiencySearchChange={onProficiencySearchChange}
+                        addChallengeToQuestArchetype={addChallengeToQuestArchetype}
+                        onEditChallenge={onEditChallenge}
+                      />
+                    </div>
+                  ) : (
+                    <div className="qa-flow-branch qa-flow-branch-terminal">
+                      <div className="qa-meta">No further node unlocked.</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="qa-empty" style={{ marginTop: 12 }}>
+            No challenges yet. Add the first challenge to define the flow.
           </div>
         )}
       </div>
     </div>
   );
+};
+
+type FlowMapNode = {
+  id: string;
+  depth: number;
+  order: number;
+  label: string;
+};
+
+type FlowMapEdge = {
+  from: string;
+  to: string;
+};
+
+type FlowMapLayout = {
+  nodes: Array<FlowMapNode & { x: number; y: number }>;
+  edges: Array<{ fromX: number; fromY: number; toX: number; toY: number }>;
+  width: number;
+  height: number;
+};
+
+const buildFlowMapLayout = (
+  root: QuestArchetypeNode | undefined | null,
+  locationArchetypes: LocationArchetype[]
+): FlowMapLayout | null => {
+  if (!root) return null;
+  const nodes: FlowMapNode[] = [];
+  const edges: FlowMapEdge[] = [];
+  const visited = new Set<string>();
+  let orderIndex = 0;
+  let maxDepth = 0;
+
+  const locationName = (node: QuestArchetypeNode) =>
+    locationArchetypes.find((la) => la.id === node.locationArchetypeId)?.name ?? 'Unknown';
+
+  const walk = (node: QuestArchetypeNode, depth: number) => {
+    maxDepth = Math.max(maxDepth, depth);
+    if (!visited.has(node.id)) {
+      visited.add(node.id);
+      nodes.push({
+        id: node.id,
+        depth,
+        order: orderIndex,
+        label: locationName(node),
+      });
+      orderIndex += 1;
+    }
+    node.challenges?.forEach((challenge) => {
+      if (!challenge.unlockedNode) return;
+      edges.push({ from: node.id, to: challenge.unlockedNode.id });
+      walk(challenge.unlockedNode, depth + 1);
+    });
+  };
+
+  walk(root, 0);
+
+  const xSpacing = 140;
+  const ySpacing = 90;
+  const padding = 32;
+  const positionedNodes = nodes.map((node) => ({
+    ...node,
+    x: padding + node.depth * xSpacing,
+    y: padding + node.order * ySpacing,
+  }));
+  const positions = new Map(positionedNodes.map((node) => [node.id, node]));
+  const positionedEdges = edges
+    .map((edge) => {
+      const from = positions.get(edge.from);
+      const to = positions.get(edge.to);
+      if (!from || !to) return null;
+      return {
+        fromX: from.x,
+        fromY: from.y,
+        toX: to.x,
+        toY: to.y,
+      };
+    })
+    .filter(Boolean) as Array<{ fromX: number; fromY: number; toX: number; toY: number }>;
+
+  const width = padding * 2 + Math.max(1, maxDepth + 1) * xSpacing;
+  const height = padding * 2 + Math.max(1, nodes.length) * ySpacing;
+
+  return {
+    nodes: positionedNodes,
+    edges: positionedEdges,
+    width,
+    height,
+  };
 };
 
 export const QuestArchetypeComponent = () => {
@@ -99,6 +322,7 @@ export const QuestArchetypeComponent = () => {
     deleteQuestArchetype,
     addChallengeToQuestArchetype,
     updateQuestArchetypeChallenge,
+    deleteQuestArchetypeChallenge,
   } = useQuestArchetypes();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryItemsLoading, setInventoryItemsLoading] = useState<boolean>(false);
@@ -107,11 +331,6 @@ export const QuestArchetypeComponent = () => {
   const [locationArchetypeId, setLocationArchetypeId] = useState("");
   const [locationArchetypeQuery, setLocationArchetypeQuery] = useState("");
   const [defaultGold, setDefaultGold] = useState<number>(0);
-  const [ selectedNode, setSelectedNode ] = useState<QuestArchetypeNode | null>(null);
-  const [ rewardPoints, setRewardPoints ] = useState<number>(0);
-  const [ rewardItemId, setRewardItemId ] = useState<number>(0);
-  const [ challengeProficiency, setChallengeProficiency ] = useState<string>("");
-  const [ unlockedLocationArchetypeId, setUnlockedLocationArchetypeId ] = useState<string>("");
   const [ archetypeRewards, setArchetypeRewards ] = useState<{ inventoryItemId: string; quantity: number }[]>([]);
   const [ editingArchetype, setEditingArchetype ] = useState<QuestArchetype | null>(null);
   const [ editGold, setEditGold ] = useState<number>(0);
@@ -120,14 +339,46 @@ export const QuestArchetypeComponent = () => {
   const [ editChallengeRewardPoints, setEditChallengeRewardPoints ] = useState<number>(0);
   const [ editChallengeRewardItemId, setEditChallengeRewardItemId ] = useState<number>(0);
   const [ editChallengeProficiency, setEditChallengeProficiency ] = useState<string>("");
+  const [ editChallengeDifficulty, setEditChallengeDifficulty ] = useState<number>(0);
   const [ proficiencySearch, setProficiencySearch ] = useState<string>("");
   const [ proficiencyOptions, setProficiencyOptions ] = useState<string[]>([]);
+  const [ archetypeSearch, setArchetypeSearch ] = useState<string>("");
+  const [ selectedArchetypeId, setSelectedArchetypeId ] = useState<string>("");
 
   const filteredLocationArchetypes = locationArchetypes
     .filter((archetype) =>
       archetype.name.toLowerCase().includes(locationArchetypeQuery.trim().toLowerCase())
     )
     .slice(0, 8);
+
+  const filteredArchetypes = useMemo(
+    () =>
+      questArchetypes.filter((archetype) =>
+        archetype.name.toLowerCase().includes(archetypeSearch.trim().toLowerCase())
+      ),
+    [questArchetypes, archetypeSearch]
+  );
+
+  const selectedArchetype = useMemo(
+    () => questArchetypes.find((archetype) => archetype.id === selectedArchetypeId) ?? null,
+    [questArchetypes, selectedArchetypeId]
+  );
+
+  const flowMapLayout = useMemo(
+    () => buildFlowMapLayout(selectedArchetype?.root ?? null, locationArchetypes),
+    [selectedArchetype, locationArchetypes]
+  );
+
+  useEffect(() => {
+    if (questArchetypes.length === 0) {
+      setSelectedArchetypeId('');
+      return;
+    }
+    const stillExists = questArchetypes.some((archetype) => archetype.id === selectedArchetypeId);
+    if (!stillExists) {
+      setSelectedArchetypeId(questArchetypes[0].id);
+    }
+  }, [questArchetypes, selectedArchetypeId]);
 
   useEffect(() => {
     const fetchInventoryItems = async () => {
@@ -168,6 +419,16 @@ export const QuestArchetypeComponent = () => {
     };
   }, [apiClient, proficiencySearch]);
 
+  const openChallengeEditor = (selected: QuestArchetypeChallenge) => {
+    setEditingChallenge(selected);
+    setEditChallengeRewardPoints(selected.reward ?? 0);
+    const itemId = selected.inventoryItemId ?? 0;
+    setEditChallengeRewardItemId(itemId);
+    setEditChallengeProficiency(selected.proficiency ?? '');
+    setEditChallengeDifficulty(selected.difficulty ?? 0);
+    setProficiencySearch(selected.proficiency ?? '');
+  };
+
   return (
     <div className="qa-theme">
       <datalist id="qa-proficiency-options">
@@ -193,124 +454,126 @@ export const QuestArchetypeComponent = () => {
           </div>
         </header>
 
-        <section className="qa-grid">
-          {questArchetypes.length === 0 ? (
-            <div className="qa-panel">
-              <div className="qa-card-title">No archetypes yet</div>
-              <p className="qa-muted" style={{ marginTop: 8 }}>
-                Create the first quest archetype to start generating quest chains for a zone.
+        <section className="qa-layout">
+          <aside className="qa-sidebar">
+            <div className="qa-card qa-sidebar-card">
+              <div className="qa-card-title">Archetype Library</div>
+              <p className="qa-muted" style={{ marginTop: 6 }}>
+                Pick a quest archetype to shape its challenge flow.
               </p>
+              <input
+                className="qa-input qa-sidebar-search"
+                placeholder="Search archetypes..."
+                value={archetypeSearch}
+                onChange={(e) => setArchetypeSearch(e.target.value)}
+              />
+              <div className="qa-sidebar-list">
+                {filteredArchetypes.length === 0 ? (
+                  <div className="qa-empty">No archetypes match that search.</div>
+                ) : (
+                  filteredArchetypes.map((questArchetype) => {
+                    const rootLocation = locationArchetypes.find((la) =>
+                      la.id === questArchetype.root?.locationArchetypeId
+                    )?.name ?? 'Unknown';
+                    return (
+                      <button
+                        key={questArchetype.id}
+                        className={`qa-sidebar-item ${selectedArchetypeId === questArchetype.id ? 'is-active' : ''}`}
+                        onClick={() => setSelectedArchetypeId(questArchetype.id)}
+                      >
+                        <div className="qa-sidebar-item-title">{questArchetype.name}</div>
+                        <div className="qa-meta">
+                          Root: {rootLocation} · {questArchetype.root?.challenges?.length ?? 0} challenges
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          ) : (
-            questArchetypes.map((questArchetype, index) => {
-              const rootLocation = locationArchetypes.find((la) =>
-                la.id === questArchetype.root?.locationArchetypeId
-              )?.name ?? 'Unknown';
-              const nodeId = questArchetype.root?.id ?? '';
-              const nodeIdShort = nodeId ? `${nodeId.slice(0, 8)}…` : '—';
-              const rewards = questArchetype.itemRewards ?? [];
-              return (
-                <article
-                  key={questArchetype.id}
-                  className="qa-card"
-                  style={{ animationDelay: `${index * 0.06}s` }}
-                >
-                  <div className="qa-card-header">
-                    <div>
-                      <h3 className="qa-card-title">{questArchetype.name}</h3>
-                      <div className="qa-meta">
-                        Root: {rootLocation} · {questArchetype.root?.challenges?.length || 0} challenges
-                      </div>
-                    </div>
-                    <div className="qa-actions">
-                      <button
-                        className="qa-btn qa-btn-ghost"
-                        onClick={() => {
-                          setEditingArchetype(questArchetype);
-                          setEditGold(questArchetype.defaultGold ?? 0);
-                          setEditRewards(
-                            (questArchetype.itemRewards ?? []).map((reward) => ({
-                              inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
-                              quantity: reward.quantity ?? 1,
-                            }))
-                          );
-                        }}
-                      >
-                        Edit Rewards
-                      </button>
-                      <button className="qa-btn qa-btn-outline" onClick={() => setSelectedNode(questArchetype.root)}>
-                        Edit Root
-                      </button>
-                      <button
-                        className="qa-btn qa-btn-danger"
-                        onClick={() => {
-                          if (window.confirm('Are you sure you want to delete this quest archetype?')) {
-                            deleteQuestArchetype(questArchetype.id);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+          </aside>
 
+          <div className="qa-builder">
+            {!selectedArchetype ? (
+              <div className="qa-panel">
+                <div className="qa-card-title">Select a quest archetype</div>
+                <p className="qa-muted" style={{ marginTop: 8 }}>
+                  Choose an archetype on the left to build its challenge flow.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="qa-card qa-builder-header">
+                  <div>
+                    <div className="qa-kicker">Quest Flow Builder</div>
+                    <h2 className="qa-title" style={{ fontSize: 'clamp(26px, 3vw, 34px)' }}>
+                      {selectedArchetype.name}
+                    </h2>
+                    <p className="qa-subtitle">
+                      Craft the journey by stacking challenges and branching nodes. Each challenge can unlock a new
+                      node to extend the quest.
+                    </p>
+                  </div>
+                  <div className="qa-actions">
+                    <button
+                      className="qa-btn qa-btn-ghost"
+                      onClick={() => {
+                        setEditingArchetype(selectedArchetype);
+                        setEditGold(selectedArchetype.defaultGold ?? 0);
+                        setEditRewards(
+                          (selectedArchetype.itemRewards ?? []).map((reward) => ({
+                            inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
+                            quantity: reward.quantity ?? 1,
+                          }))
+                        );
+                      }}
+                    >
+                      Edit Rewards
+                    </button>
+                    <button
+                      className="qa-btn qa-btn-danger"
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this quest archetype?')) {
+                          deleteQuestArchetype(selectedArchetype.id);
+                        }
+                      }}
+                    >
+                      Delete Archetype
+                    </button>
+                  </div>
+                </div>
+
+                <div className="qa-card qa-builder-summary">
                   <div className="qa-stat-grid">
                     <div className="qa-stat">
                       <div className="qa-stat-label">Default Gold</div>
-                      <div className="qa-stat-value">{questArchetype.defaultGold ?? 0}</div>
+                      <div className="qa-stat-value">{selectedArchetype.defaultGold ?? 0}</div>
                     </div>
                     <div className="qa-stat">
-                      <div className="qa-stat-label">Root Node</div>
-                      <div className="qa-stat-value">{rootLocation}</div>
+                      <div className="qa-stat-label">Root Location</div>
+                      <div className="qa-stat-value">
+                        {locationArchetypes.find((la) => la.id === selectedArchetype.root?.locationArchetypeId)?.name ?? 'Unknown'}
+                      </div>
                     </div>
-                    <div className="qa-stat" title={nodeId}>
-                      <div className="qa-stat-label">Node ID</div>
-                      <div className="qa-stat-value">{nodeIdShort}</div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Challenges</div>
+                      <div className="qa-stat-value">{selectedArchetype.root?.challenges?.length ?? 0}</div>
                     </div>
                     <div className="qa-stat">
                       <div className="qa-stat-label">Created</div>
                       <div className="qa-stat-value">
-                        {new Date(questArchetype.createdAt).toLocaleDateString()}
+                        {new Date(selectedArchetype.createdAt).toLocaleDateString()}
                       </div>
                     </div>
-                  </div>
-
-                  <div className="qa-divider" />
-
-                  <div className="qa-tree">
-                    <div className="qa-meta">Challenge Tree</div>
-                    {questArchetype.root?.challenges?.length ? (
-                      questArchetype.root.challenges.map((challenge, i) => (
-                        <ChallengeNode
-                          key={challenge.id}
-                          challenge={challenge}
-                          index={i}
-                          locationArchetypes={locationArchetypes}
-                          depth={0}
-                          inventoryItems={inventoryItems}
-                          onEditNode={() => setSelectedNode(challenge.unlockedNode!)}
-                          onEditChallenge={(selected) => {
-                            setEditingChallenge(selected);
-                            setEditChallengeRewardPoints(selected.reward ?? 0);
-                            const itemId = selected.inventoryItemId ?? 0;
-                            setEditChallengeRewardItemId(itemId);
-                            setEditChallengeProficiency(selected.proficiency ?? '');
-                            setProficiencySearch(selected.proficiency ?? '');
-                          }}
-                        />
-                      ))
-                    ) : (
-                      <div className="qa-empty">No challenges yet. Add one from the node editor.</div>
-                    )}
                   </div>
 
                   <div className="qa-divider" />
 
                   <div className="qa-panel">
                     <div className="qa-meta">Quest Rewards</div>
-                    {rewards.length > 0 ? (
+                    {(selectedArchetype.itemRewards ?? []).length > 0 ? (
                       <div className="qa-inline" style={{ marginTop: 10 }}>
-                        {rewards.map((reward) => {
+                        {(selectedArchetype.itemRewards ?? []).map((reward) => {
                           const item = inventoryItems.find((entry) => entry.id === reward.inventoryItemId);
                           return (
                             <span
@@ -328,105 +591,100 @@ export const QuestArchetypeComponent = () => {
                       </div>
                     )}
                   </div>
-                </article>
-              );
-            })
-          )}
+                </div>
+
+                {flowMapLayout && (
+                  <div className="qa-card qa-flow-map">
+                    <div className="qa-card-title">Flow Map</div>
+                    <p className="qa-muted" style={{ marginTop: 6 }}>
+                      A mini-map of the quest flow. Each node represents a location archetype, connected by challenges.
+                    </p>
+                    <div className="qa-flow-map-canvas">
+                      <svg
+                        viewBox={`0 0 ${flowMapLayout.width} ${flowMapLayout.height}`}
+                        role="img"
+                        aria-label="Quest archetype flow map"
+                      >
+                        <defs>
+                          <marker
+                            id="qa-flow-arrow"
+                            markerWidth="8"
+                            markerHeight="8"
+                            refX="6"
+                            refY="3"
+                            orient="auto"
+                            markerUnits="strokeWidth"
+                          >
+                            <path d="M0,0 L0,6 L6,3 z" fill="rgba(255,255,255,0.65)" />
+                          </marker>
+                        </defs>
+                        {flowMapLayout.edges.map((edge, index) => (
+                          <line
+                            key={`${edge.fromX}-${edge.fromY}-${edge.toX}-${edge.toY}-${index}`}
+                            x1={edge.fromX}
+                            y1={edge.fromY}
+                            x2={edge.toX}
+                            y2={edge.toY}
+                            stroke="rgba(255,255,255,0.3)"
+                            strokeWidth="2"
+                            markerEnd="url(#qa-flow-arrow)"
+                          />
+                        ))}
+                        {flowMapLayout.nodes.map((node) => (
+                          <g key={node.id}>
+                            <circle
+                              cx={node.x}
+                              cy={node.y}
+                              r="12"
+                              fill="rgba(255,107,74,0.7)"
+                              stroke="rgba(255,255,255,0.8)"
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={node.x + 18}
+                              y={node.y + 4}
+                              fill="rgba(236,243,245,0.9)"
+                              fontSize="11"
+                              fontFamily="Space Grotesk, sans-serif"
+                            >
+                              {node.label}
+                            </text>
+                          </g>
+                        ))}
+                      </svg>
+                    </div>
+                  </div>
+                )}
+
+                <div className="qa-card qa-builder-flow">
+                  <div className="qa-card-title">Quest Flow</div>
+                  <p className="qa-muted" style={{ marginTop: 6 }}>
+                    Start from the root and add challenges. Add a location to a challenge to branch into a new node.
+                  </p>
+                  {selectedArchetype.root ? (
+                    <div className="qa-flow-canvas">
+                      <FlowNode
+                        node={selectedArchetype.root}
+                        locationArchetypes={locationArchetypes}
+                        inventoryItems={inventoryItems}
+                        depth={0}
+                        proficiencyOptions={proficiencyOptions}
+                        onProficiencySearchChange={setProficiencySearch}
+                        addChallengeToQuestArchetype={addChallengeToQuestArchetype}
+                        onEditChallenge={openChallengeEditor}
+                      />
+                    </div>
+                  ) : (
+                    <div className="qa-empty" style={{ marginTop: 12 }}>
+                      No root node available.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </section>
       </div>
-
-      {selectedNode && (
-        <div className="qa-modal">
-          <div className="qa-modal-card">
-            <h2 className="qa-modal-title">Edit Quest Node</h2>
-            <div className="qa-form-grid">
-              <div className="qa-field">
-                <div className="qa-label">Reward Points</div>
-                <input
-                  type="number"
-                  min={0}
-                  className="qa-input"
-                  value={rewardPoints}
-                  onChange={(e) => setRewardPoints(parseInt(e.target.value) || 0)}
-                />
-              </div>
-
-              <div className="qa-field">
-                <div className="qa-label">Reward Item</div>
-                <select
-                  className="qa-select"
-                  value={rewardItemId || ''}
-                  onChange={(e) => setRewardItemId(parseInt(e.target.value) || 0)}
-                >
-                  <option value="">Select an item</option>
-                  {inventoryItems.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="qa-field">
-                <div className="qa-label">Proficiency</div>
-                <input
-                  type="text"
-                  className="qa-input"
-                  value={challengeProficiency}
-                  onChange={(e) => {
-                    setChallengeProficiency(e.target.value);
-                    setProficiencySearch(e.target.value);
-                  }}
-                  list="qa-proficiency-options"
-                  placeholder="Optional proficiency (e.g. Persuasion)"
-                />
-              </div>
-
-              <div className="qa-field">
-                <div className="qa-label">Unlocked Location Type</div>
-                <select
-                  className="qa-select"
-                  value={unlockedLocationArchetypeId}
-                  onChange={(e) => setUnlockedLocationArchetypeId(e.target.value)}
-                >
-                  <option value="">None</option>
-                  {locationArchetypes.map((archetype) => (
-                    <option key={archetype.id} value={archetype.id}>
-                      {archetype.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="button"
-                className="qa-btn qa-btn-primary"
-                onClick={async () => {
-                  if (!selectedNode) return;
-                  await addChallengeToQuestArchetype(
-                    selectedNode.id,
-                    rewardPoints,
-                    rewardItemId || null,
-                    challengeProficiency,
-                    unlockedLocationArchetypeId
-                  );
-                  setRewardPoints(0);
-                  setRewardItemId(0);
-                  setChallengeProficiency("");
-                  setUnlockedLocationArchetypeId("");
-                }}
-              >
-                Add Challenge
-              </button>
-            </div>
-            <div className="qa-footer">
-              <button className="qa-btn qa-btn-outline" onClick={() => setSelectedNode(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {shouldShowModal && (
         <div className="qa-modal">
@@ -442,7 +700,11 @@ export const QuestArchetypeComponent = () => {
                     quantity: Number(reward.quantity) || 0,
                   }))
                   .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
-                createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards);
+                createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards).then((created) => {
+                  if (created?.id) {
+                    setSelectedArchetypeId(created.id);
+                  }
+                });
                 setArchetypeRewards([]);
                 setLocationArchetypeId('');
                 setLocationArchetypeQuery('');
@@ -725,6 +987,16 @@ export const QuestArchetypeComponent = () => {
                 />
               </div>
               <div className="qa-field">
+                <div className="qa-label">Difficulty</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={editChallengeDifficulty}
+                  onChange={(e) => setEditChallengeDifficulty(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="qa-field">
                 <div className="qa-label">Reward Item</div>
                 <select
                   className="qa-select"
@@ -759,6 +1031,18 @@ export const QuestArchetypeComponent = () => {
                 Cancel
               </button>
               <button
+                className="qa-btn qa-btn-danger"
+                onClick={async () => {
+                  if (!editingChallenge) return;
+                  const confirmDelete = window.confirm('Delete this challenge? This cannot be undone.');
+                  if (!confirmDelete) return;
+                  await deleteQuestArchetypeChallenge(editingChallenge.id);
+                  setEditingChallenge(null);
+                }}
+              >
+                Delete
+              </button>
+              <button
                 className="qa-btn qa-btn-primary"
                 onClick={async () => {
                   const trimmed = editChallengeProficiency.trim();
@@ -766,6 +1050,7 @@ export const QuestArchetypeComponent = () => {
                     reward: editChallengeRewardPoints,
                     inventoryItemId: editChallengeRewardItemId > 0 ? editChallengeRewardItemId : null,
                     proficiency: trimmed.length > 0 ? trimmed : null,
+                    difficulty: editChallengeDifficulty,
                   });
                   setEditingChallenge(null);
                 }}

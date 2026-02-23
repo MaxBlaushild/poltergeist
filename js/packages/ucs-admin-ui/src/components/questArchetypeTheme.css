@@ -279,6 +279,216 @@
   padding: 18px;
 }
 
+.qa-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.qa-sidebar {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+}
+
+.qa-sidebar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.qa-sidebar-search {
+  margin-top: 8px;
+}
+
+.qa-sidebar-list {
+  display: grid;
+  gap: 10px;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.qa-sidebar-item {
+  border-radius: 16px;
+  border: 1px solid transparent;
+  padding: 12px 14px;
+  background: rgba(9, 14, 18, 0.65);
+  text-align: left;
+  color: var(--qa-ink);
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.qa-sidebar-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.qa-sidebar-item.is-active {
+  border-color: rgba(255, 107, 74, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 107, 74, 0.2);
+}
+
+.qa-sidebar-item-title {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.qa-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.qa-builder-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.qa-builder-header .qa-actions {
+  align-self: flex-start;
+}
+
+.qa-builder-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.qa-builder-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.qa-flow-canvas {
+  display: grid;
+  gap: 18px;
+}
+
+.qa-flow-node {
+  border-left: 3px solid rgba(255, 255, 255, 0.12);
+  padding-left: 16px;
+}
+
+.qa-flow-node-card {
+  background: rgba(9, 14, 18, 0.75);
+  border: 1px solid var(--qa-stroke);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.qa-flow-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.qa-flow-node-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.qa-flow-challenges {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.qa-flow-challenge-card {
+  background: rgba(20, 30, 36, 0.85);
+  border: 1px solid var(--qa-stroke);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.qa-flow-challenge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.qa-flow-challenge-title {
+  font-weight: 600;
+}
+
+.qa-flow-form {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(7, 12, 16, 0.6);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.qa-flow-form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.qa-helper {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--qa-muted);
+}
+
+.qa-flow-branch {
+  margin-top: 12px;
+  padding-left: 16px;
+  border-left: 2px dashed rgba(255, 255, 255, 0.16);
+}
+
+.qa-flow-branch-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--qa-muted);
+  margin-bottom: 8px;
+}
+
+.qa-flow-branch-terminal {
+  border-left-style: solid;
+}
+
+.qa-flow-map {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qa-flow-map-canvas {
+  width: 100%;
+  overflow-x: auto;
+  background: rgba(9, 14, 18, 0.65);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+}
+
+.qa-flow-map-canvas svg {
+  width: 100%;
+  height: auto;
+  min-height: 140px;
+}
+
+@media (max-width: 1024px) {
+  .qa-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .qa-sidebar {
+    position: static;
+  }
+}
+
 .qa-modal {
   position: fixed;
   inset: 0;

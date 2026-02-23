@@ -478,6 +478,7 @@ type QuestArchetypeNodeChallengeHandle interface {
 	FindAll(ctx context.Context) ([]*models.QuestArchetypeNodeChallenge, error)
 	Update(ctx context.Context, questArchetypeNodeChallenge *models.QuestArchetypeNodeChallenge) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByChallengeID(ctx context.Context, challengeID uuid.UUID) error
 }
 
 type ZoneQuestArchetypeHandle interface {

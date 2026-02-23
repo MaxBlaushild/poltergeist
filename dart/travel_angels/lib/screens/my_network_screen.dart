@@ -37,9 +37,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
   bool _isSentInvitesExpanded = true;
 
   // Loading states for actions
-  Set<String> _acceptingInvites = {};
-  Set<String> _rejectingInvites = {};
-  Set<String> _sendingInvites = {};
+  final Set<String> _acceptingInvites = {};
+  final Set<String> _rejectingInvites = {};
+  final Set<String> _sendingInvites = {};
 
   final TextEditingController _searchController = TextEditingController();
 

@@ -1,5 +1,4 @@
 import 'package:travel_angels/constants/api_constants.dart';
-import 'package:travel_angels/models/friend.dart';
 import 'package:travel_angels/models/friend_invite.dart';
 import 'package:travel_angels/models/user.dart';
 import 'package:travel_angels/services/api_client.dart';

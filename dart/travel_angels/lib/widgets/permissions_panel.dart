@@ -102,13 +102,13 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
         String errorMessage = 'Failed to load permissions status';
         if (e is DioException) {
           if (e.response != null) {
-            errorMessage = '${errorMessage}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMessage = '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMessage = errorData['error']?.toString() ?? errorMessage;
             }
           } else {
-            errorMessage = '${errorMessage}: ${e.message ?? e.toString()}';
+            errorMessage = '$errorMessage: ${e.message ?? e.toString()}';
           }
         } else {
           errorMessage = '$errorMessage: $e';
@@ -183,13 +183,13 @@ class _PermissionsPanelState extends State<PermissionsPanel> {
       String errorMessage = 'Failed to ${value ? 'connect' : 'disconnect'} Google Drive';
       if (e is DioException) {
         if (e.response != null) {
-          errorMessage = '${errorMessage}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+          errorMessage = '$errorMessage: ${e.response?.statusCode} - ${e.response?.statusMessage}';
           if (e.response?.data != null && e.response?.data is Map) {
             final errorData = e.response?.data as Map<String, dynamic>;
             errorMessage = errorData['error']?.toString() ?? errorMessage;
           }
         } else {
-          errorMessage = '${errorMessage}: ${e.message ?? e.toString()}';
+          errorMessage = '$errorMessage: ${e.message ?? e.toString()}';
         }
       } else {
         errorMessage = '$errorMessage: $e';

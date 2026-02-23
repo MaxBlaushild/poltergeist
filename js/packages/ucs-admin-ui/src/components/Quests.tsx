@@ -231,6 +231,7 @@ export const Quests = () => {
   const [importToasts, setImportToasts] = useState<string[]>([]);
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const [polygonRefreshNonce, setPolygonRefreshNonce] = useState(0);
+  const [deletingQuestId, setDeletingQuestId] = useState<string | null>(null);
   const questMapContainer = useRef<HTMLDivElement>(null);
   const questMap = useRef<mapboxgl.Map | null>(null);
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
@@ -1055,6 +1056,25 @@ export const Quests = () => {
     }
   };
 
+  const handleDeleteQuest = async () => {
+    if (!selectedQuest) return;
+    const confirmDelete = window.confirm(`Delete quest "${selectedQuest.name}"? This cannot be undone.`);
+    if (!confirmDelete) return;
+
+    setDeletingQuestId(selectedQuest.id);
+    try {
+      await apiClient.delete(`/sonar/quests/${selectedQuest.id}`);
+      setQuests((prev) => prev.filter((quest) => quest.id !== selectedQuest.id));
+      setSelectedQuestId('');
+      setQuestForm({ ...emptyQuestForm });
+    } catch (error) {
+      console.error('Failed to delete quest', error);
+      alert('Failed to delete quest.');
+    } finally {
+      setDeletingQuestId(null);
+    }
+  };
+
   const handleSelectQuest = (quest: Quest) => {
     setSelectedQuestId(quest.id);
     setQuestForm({
@@ -1665,6 +1685,13 @@ export const Quests = () => {
                     onClick={handleUpdateQuest}
                   >
                     Save Changes
+                  </button>
+                  <button
+                    className="qa-btn qa-btn-danger"
+                    onClick={handleDeleteQuest}
+                    disabled={deletingQuestId === selectedQuest.id}
+                  >
+                    {deletingQuestId === selectedQuest.id ? 'Deleting...' : 'Delete Quest'}
                   </button>
                 </div>
               </div>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
@@ -26,6 +27,17 @@ type client struct {
 
 type Client interface {
 	GenerateQuest(ctx context.Context, zone *models.Zone, questArchetypeID uuid.UUID, questGiverCharacterID *uuid.UUID) (*models.Quest, error)
+}
+
+func normalizeQuestProficiency(proficiency *string) *string {
+	if proficiency == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*proficiency)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func NewClient(
@@ -257,19 +269,20 @@ func (c *client) processQuestNode(
 		*challenges = append(*challenges, randomChallenge.Question)
 
 		log.Printf("Creating challenge: %s", randomChallenge.Question)
+		proficiency := normalizeQuestProficiency(allotedChallenge.Proficiency)
 		challenge := &models.QuestNodeChallenge{
-			ID:          uuid.New(),
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
-			QuestNodeID: questNodeID,
-			Tier:        i,
-			Question:    randomChallenge.Question,
-			Reward:      allotedChallenge.Reward,
+			ID:              uuid.New(),
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
+			QuestNodeID:     questNodeID,
+			Tier:            i,
+			Question:        randomChallenge.Question,
+			Reward:          allotedChallenge.Reward,
 			InventoryItemID: allotedChallenge.InventoryItemID,
-			Difficulty:  0,
-			StatTags:    models.StringArray{},
-			Proficiency: allotedChallenge.Proficiency,
-			SubmissionType: randomChallenge.SubmissionType,
+			Difficulty:      allotedChallenge.Difficulty,
+			StatTags:        models.StringArray{},
+			Proficiency:     proficiency,
+			SubmissionType:  randomChallenge.SubmissionType,
 		}
 		err = c.dbClient.QuestNodeChallenge().Create(ctx, challenge)
 		if err != nil {

@@ -12,18 +12,20 @@ type QuestArchetypesContextType = {
     locationArchetypeId: string,
     defaultGold?: number,
     itemRewards?: { inventoryItemId: number; quantity: number }[]
-  ) => void;
+  ) => Promise<QuestArchetype | null>;
   addChallengeToQuestArchetype: (
     questArchetypeId: string,
     rewardPoints: number,
     inventoryItemId?: number | null,
     proficiency?: string | null,
+    difficulty?: number | null,
     unlockedLocationArchetypeId?: string | null
   ) => void;
   updateQuestArchetypeChallenge: (
     challengeId: string,
-    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null }
+    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null; difficulty?: number | null }
   ) => void;
+  deleteQuestArchetypeChallenge: (challengeId: string) => void;
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
@@ -37,9 +39,10 @@ type QuestArchetypesContextType = {
 export const QuestArchetypesContext = React.createContext<QuestArchetypesContextType>({
   questArchetypes: [],
   zoneQuestArchetypes: [],
-  createQuestArchetype: () => {},
+  createQuestArchetype: async () => null,
   addChallengeToQuestArchetype: () => {},
   updateQuestArchetypeChallenge: () => {},
+  deleteQuestArchetypeChallenge: () => {},
   locationArchetypes: [],
   createLocationArchetype: () => {},
   updateLocationArchetype: () => {},
@@ -125,7 +128,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     locationArchetypeID: string,
     defaultGold?: number,
     itemRewards?: { inventoryItemId: number; quantity: number }[]
-  ) => {
+  ): Promise<QuestArchetype | null> => {
     const node = await apiClient.post<QuestArchetypeNode>("/sonar/questArchetypeNodes", {
       locationArchetypeID,
     });
@@ -136,6 +139,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       itemRewards,
     });
     setQuestArchetypes([...questArchetypes, questArchetype]);
+    return questArchetype;
   };
 
   const updateLocationArchetype = async (locationArchetype: LocationArchetype) => {
@@ -153,9 +157,16 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     reward: number,
     inventoryItemId?: number | null,
     proficiency?: string | null,
+    difficulty?: number | null,
     locationArchetypeID?: string | null
   ) => {
-    const payload: { reward: number; inventoryItemId?: number; proficiency?: string; locationArchetypeID?: string } = {
+    const payload: {
+      reward: number;
+      inventoryItemId?: number;
+      proficiency?: string;
+      difficulty?: number;
+      locationArchetypeID?: string;
+    } = {
       reward,
     };
 
@@ -168,6 +179,9 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     if (proficiency && proficiency.trim().length > 0) {
       payload.proficiency = proficiency.trim();
     }
+    if (difficulty !== undefined && difficulty !== null) {
+      payload.difficulty = difficulty;
+    }
 
     const newChallenge = await apiClient.post<QuestArchetypeChallenge>(
       `/sonar/questArchetypes/${questArchetypeId}/challenges`,
@@ -179,9 +193,14 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
 
   const updateQuestArchetypeChallenge = async (
     challengeId: string,
-    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null }
+    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null; difficulty?: number | null }
   ) => {
     await apiClient.patch(`/sonar/questArchetypeChallenges/${challengeId}`, updates);
+    fetchQuestArchetypes();
+  };
+
+  const deleteQuestArchetypeChallenge = async (challengeId: string) => {
+    await apiClient.delete(`/sonar/questArchetypeChallenges/${challengeId}`);
     fetchQuestArchetypes();
   };
 
@@ -237,6 +256,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       updateZoneQuestArchetype,
       deleteZoneQuestArchetype,
       updateQuestArchetypeChallenge,
+      deleteQuestArchetypeChallenge,
     }}>
       {children}
     </QuestArchetypesContext.Provider>

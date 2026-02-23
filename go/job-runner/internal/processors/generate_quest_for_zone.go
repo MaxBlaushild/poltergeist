@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
@@ -58,11 +59,18 @@ func (p *GenerateQuestForZoneProcessor) generateQuestForZone(ctx context.Context
 	if err != nil {
 		log.Printf("Failed to generate quest: %v", err)
 		if questGenerationJobID != nil {
-			if shouldRecordFailure(ctx) {
+			shouldRecord := shouldRecordFailure(ctx)
+			if isBadRequestError(err) {
+				shouldRecord = true
+			}
+			if shouldRecord {
 				if recordErr := p.dbClient.QuestGenerationJob().RecordFailure(ctx, *questGenerationJobID, err.Error()); recordErr != nil {
 					log.Printf("Failed to record quest generation failure: %v", recordErr)
 				}
 			}
+		}
+		if isBadRequestError(err) {
+			return fmt.Errorf("non-retriable error: %v: %w", err, asynq.SkipRetry)
 		}
 		return fmt.Errorf("failed to generate quest: %w", err)
 	}
@@ -84,4 +92,12 @@ func shouldRecordFailure(ctx context.Context) bool {
 		return true
 	}
 	return retryCount >= maxRetry
+}
+
+func isBadRequestError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "status 400") || strings.Contains(message, "400 bad request")
 }

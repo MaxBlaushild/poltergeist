@@ -98,7 +98,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         print('  - Error message: ${e.message}');
         
           if (e.response != null) {
-            errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
           
           // Try to extract detailed error message from response
           if (e.response?.data != null) {
@@ -114,7 +114,7 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
             }
           }
           } else {
-            errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+            errorMsg = '$errorMsg: ${e.message ?? e.toString()}';
           }
         } else {
           errorMsg = '$errorMsg: $e';
@@ -227,13 +227,13 @@ class _GoogleDriveFilePickerState extends State<GoogleDriveFilePicker> {
         String errorMsg = 'Failed to import document';
         if (e is DioException) {
           if (e.response != null) {
-            errorMsg = '${errorMsg}: ${e.response?.statusCode} - ${e.response?.statusMessage}';
+            errorMsg = '$errorMsg: ${e.response?.statusCode} - ${e.response?.statusMessage}';
             if (e.response?.data != null && e.response?.data is Map) {
               final errorData = e.response?.data as Map<String, dynamic>;
               errorMsg = errorData['error']?.toString() ?? errorMsg;
             }
           } else {
-            errorMsg = '${errorMsg}: ${e.message ?? e.toString()}';
+            errorMsg = '$errorMsg: ${e.message ?? e.toString()}';
           }
         } else {
           errorMsg = '$errorMsg: $e';
