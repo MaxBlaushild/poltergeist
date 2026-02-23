@@ -1,0 +1,5 @@
+BEGIN;
+
+DROP TABLE IF EXISTS zone_seed_jobs;
+
+COMMIT;

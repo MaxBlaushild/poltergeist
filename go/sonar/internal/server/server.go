@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	stdErrors "errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -238,6 +239,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/imports", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImports))
 	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
 	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
+	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
+	r.GET("/sonar/admin/zone-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJobs))
+	r.GET("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJob))
+	r.POST("/sonar/admin/zone-seed-jobs/:id/approve", middleware.WithAuthentication(s.authClient, s.livenessClient, s.approveZoneSeedJob))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -4066,6 +4071,181 @@ func (s *server) deleteZoneImport(ctx *gin.Context) {
 	_ = s.dbClient.ZoneImport().Update(ctx, item)
 
 	ctx.JSON(http.StatusOK, gin.H{"deletedCount": deletedCount})
+}
+
+func (s *server) seedZoneDraft(ctx *gin.Context) {
+	id := ctx.Param("id")
+	zoneID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if zone == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found"})
+		return
+	}
+
+	var requestBody struct {
+		PlaceCount     *int `json:"placeCount"`
+		CharacterCount *int `json:"characterCount"`
+		QuestCount     *int `json:"questCount"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	placeCount := 8
+	if requestBody.PlaceCount != nil {
+		placeCount = *requestBody.PlaceCount
+	}
+	characterCount := 4
+	if requestBody.CharacterCount != nil {
+		characterCount = *requestBody.CharacterCount
+	}
+	questCount := 4
+	if requestBody.QuestCount != nil {
+		questCount = *requestBody.QuestCount
+	}
+
+	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, and questCount must be greater than zero"})
+		return
+	}
+
+	job := &models.ZoneSeedJob{
+		ID:             uuid.New(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		ZoneID:         zoneID,
+		Status:         models.ZoneSeedStatusQueued,
+		PlaceCount:     placeCount,
+		CharacterCount: characterCount,
+		QuestCount:     questCount,
+	}
+	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.SeedZoneDraftTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.SeedZoneDraftTaskType, payload)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) getZoneSeedJobs(ctx *gin.Context) {
+	zoneIDParam := strings.TrimSpace(ctx.Query("zoneId"))
+	limit := 20
+	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
+		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	var (
+		jobsList []models.ZoneSeedJob
+		err      error
+	)
+	if zoneIDParam != "" {
+		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+			return
+		}
+		jobsList, err = s.dbClient.ZoneSeedJob().FindByZoneID(ctx, zoneID, limit)
+	} else {
+		jobsList, err = s.dbClient.ZoneSeedJob().FindRecent(ctx, limit)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, jobsList)
+}
+
+func (s *server) getZoneSeedJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone seed job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) approveZoneSeedJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone seed job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+	if job.Status != models.ZoneSeedStatusAwaitingApproval {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zone seed job is not awaiting approval"})
+		return
+	}
+
+	job.Status = models.ZoneSeedStatusApproved
+	job.UpdatedAt = time.Now()
+	if err := s.dbClient.ZoneSeedJob().Update(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.ApplyZoneSeedDraftTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ApplyZoneSeedDraftTaskType, payload)); err != nil {
+		job.Status = models.ZoneSeedStatusAwaitingApproval
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ZoneSeedJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, job)
 }
 
 func (s *server) getZones(ctx *gin.Context) {

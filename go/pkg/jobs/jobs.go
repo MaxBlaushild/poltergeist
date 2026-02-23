@@ -19,6 +19,8 @@ const (
 	ImportPointOfInterestTaskType         = "import_point_of_interest"
 	ImportZonesForMetroTaskType           = "import_zones_for_metro"
 	MonitorPolymarketTradesTaskType       = "monitor_polymarket_trades"
+	SeedZoneDraftTaskType                 = "seed_zone_draft"
+	ApplyZoneSeedDraftTaskType            = "apply_zone_seed_draft"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
@@ -64,4 +66,12 @@ type ImportPointOfInterestTaskPayload struct {
 
 type ImportZonesForMetroTaskPayload struct {
 	ImportID uuid.UUID `json:"importId"`
+}
+
+type SeedZoneDraftTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
+}
+
+type ApplyZoneSeedDraftTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
 }

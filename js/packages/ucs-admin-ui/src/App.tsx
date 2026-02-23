@@ -39,6 +39,7 @@ import { PointOfInterest } from './components/PointOfInterest.tsx';
 import { PointOfInterestEditor } from './components/PointOfInterestEditor.tsx';
 import { Quests } from './components/Quests.tsx';
 import { InsiderTrades } from './components/InsiderTrades.tsx';
+import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -90,6 +91,7 @@ const Navigation = () => {
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
         <Link to="/quests" className="text-white hover:text-gray-300">Quests</Link>
         <Link to="/insider-trades" className="text-white hover:text-gray-300">Insider Trades</Link>
+        <Link to="/zone-seeding" className="text-white hover:text-gray-300">Zone Seeding</Link>
       </div>
     </nav>
   );
@@ -253,6 +255,11 @@ const router = createBrowserRouter([
       {
         path: "/insider-trades",
         element: <InsiderTrades />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/zone-seeding",
+        element: <ZoneSeedJobs />,
         loader: onlyAuthenticated,
       },
     ]

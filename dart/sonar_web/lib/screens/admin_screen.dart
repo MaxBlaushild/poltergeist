@@ -5,6 +5,9 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/party_provider.dart';
 import '../services/admin_service.dart';
+import '../services/poi_service.dart';
+import '../models/zone.dart';
+import '../models/zone_seed_job.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -18,13 +21,25 @@ class _AdminScreenState extends State<AdminScreen> {
   final _pointOfInterestIdController = TextEditingController();
   final _quantityController = TextEditingController();
   final _partyInviteeIdController = TextEditingController();
+  final _seedPlaceCountController = TextEditingController(text: '8');
+  final _seedCharacterCountController = TextEditingController(text: '4');
+  final _seedQuestCountController = TextEditingController(text: '4');
   bool _unlockLoading = false;
   bool _captureLoading = false;
+  bool _zonesLoading = false;
+  bool _seedJobsLoading = false;
+  bool _seedCreating = false;
   String? _error;
   String? _success;
   String? _partyError;
   String? _partySuccess;
+  String? _seedError;
+  String? _seedSuccess;
+  List<Zone> _zones = [];
+  Zone? _selectedZone;
+  List<ZoneSeedJob> _seedJobs = [];
   final Set<String> _partyBusy = {};
+  final Set<String> _seedBusy = {};
 
   @override
   void dispose() {
@@ -32,6 +47,9 @@ class _AdminScreenState extends State<AdminScreen> {
     _pointOfInterestIdController.dispose();
     _quantityController.dispose();
     _partyInviteeIdController.dispose();
+    _seedPlaceCountController.dispose();
+    _seedCharacterCountController.dispose();
+    _seedQuestCountController.dispose();
     super.dispose();
   }
 
@@ -41,6 +59,7 @@ class _AdminScreenState extends State<AdminScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<PartyProvider>().refresh();
+      _loadZones();
     });
   }
 
@@ -78,6 +97,106 @@ class _AdminScreenState extends State<AdminScreen> {
       if (mounted) {
         setState(() => _partyBusy.remove(key));
       }
+    }
+  }
+
+  Future<void> _loadZones() async {
+    if (_zonesLoading) return;
+    setState(() {
+      _zonesLoading = true;
+      _seedError = null;
+    });
+    try {
+      final zones = await context.read<PoiService>().getZones();
+      zones.sort((a, b) => a.name.compareTo(b.name));
+      if (!mounted) return;
+      setState(() {
+        _zones = zones;
+        _selectedZone ??= zones.isNotEmpty ? zones.first : null;
+      });
+      await _loadSeedJobs();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _seedError = e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _zonesLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadSeedJobs() async {
+    if (_seedJobsLoading) return;
+    if (_selectedZone == null) {
+      setState(() => _seedJobs = []);
+      return;
+    }
+    setState(() {
+      _seedJobsLoading = true;
+      _seedError = null;
+    });
+    try {
+      final jobs = await context
+          .read<AdminService>()
+          .getZoneSeedJobs(zoneId: _selectedZone!.id, limit: 25);
+      if (!mounted) return;
+      setState(() => _seedJobs = jobs);
+    } catch (e) {
+      if (mounted) setState(() => _seedError = e.toString());
+    } finally {
+      if (mounted) setState(() => _seedJobsLoading = false);
+    }
+  }
+
+  Future<void> _createSeedDraft() async {
+    final zone = _selectedZone;
+    if (zone == null || _seedCreating) return;
+    final placeCount = int.tryParse(_seedPlaceCountController.text.trim());
+    final characterCount =
+        int.tryParse(_seedCharacterCountController.text.trim());
+    final questCount = int.tryParse(_seedQuestCountController.text.trim());
+    if (placeCount == null || characterCount == null || questCount == null) {
+      setState(() => _seedError = 'Counts must be integers.');
+      return;
+    }
+    setState(() {
+      _seedCreating = true;
+      _seedError = null;
+      _seedSuccess = null;
+    });
+    try {
+      await context.read<AdminService>().seedZoneDraft(
+            zoneId: zone.id,
+            placeCount: placeCount,
+            characterCount: characterCount,
+            questCount: questCount,
+          );
+      if (!mounted) return;
+      setState(() => _seedSuccess = 'Draft queued.');
+      await _loadSeedJobs();
+    } catch (e) {
+      if (mounted) setState(() => _seedError = e.toString());
+    } finally {
+      if (mounted) setState(() => _seedCreating = false);
+    }
+  }
+
+  Future<void> _approveSeedJob(ZoneSeedJob job) async {
+    if (_seedBusy.contains(job.id)) return;
+    setState(() {
+      _seedBusy.add(job.id);
+      _seedError = null;
+      _seedSuccess = null;
+    });
+    try {
+      await context.read<AdminService>().approveZoneSeedJob(job.id);
+      if (!mounted) return;
+      setState(() => _seedSuccess = 'Job approved and applying.');
+      await _loadSeedJobs();
+    } catch (e) {
+      if (mounted) setState(() => _seedError = e.toString());
+    } finally {
+      if (mounted) setState(() => _seedBusy.remove(job.id));
     }
   }
 
@@ -156,7 +275,7 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Admin'),
@@ -164,6 +283,7 @@ class _AdminScreenState extends State<AdminScreen> {
             tabs: [
               Tab(text: 'Team & POI'),
               Tab(text: 'Parties'),
+              Tab(text: 'Zone Seeding'),
             ],
           ),
         ),
@@ -171,6 +291,7 @@ class _AdminScreenState extends State<AdminScreen> {
           children: [
             _buildTeamPoiTab(context),
             _buildPartyTab(context),
+            _buildZoneSeedTab(context),
           ],
         ),
       ),
@@ -571,5 +692,336 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildZoneSeedTab(BuildContext context) {
+    final theme = Theme.of(context);
+    final selectedZone = _selectedZone;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Zone Seeding',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _zonesLoading ? null : _loadZones,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(_zonesLoading ? 'Refreshing...' : 'Refresh zones'),
+              ),
+            ],
+          ),
+          const Divider(),
+          if (_seedError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                _seedError!,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          if (_seedSuccess != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                _seedSuccess!,
+                style: TextStyle(color: Colors.green.shade700),
+              ),
+            ),
+          DropdownButtonFormField<Zone>(
+            value: selectedZone,
+            items: _zones
+                .map(
+                  (zone) => DropdownMenuItem(
+                    value: zone,
+                    child: Text(zone.name),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _selectedZone = value);
+              _loadSeedJobs();
+            },
+            decoration: const InputDecoration(
+              labelText: 'Zone',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Draft settings',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Divider(),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _seedPlaceCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Places',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _seedCharacterCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Characters',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _seedQuestCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quests',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              FilledButton(
+                onPressed: _seedCreating || selectedZone == null
+                    ? null
+                    : _createSeedDraft,
+                child: Text(_seedCreating ? 'Queuing...' : 'Create draft'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _seedJobsLoading ? null : _loadSeedJobs,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(_seedJobsLoading ? 'Loading...' : 'Refresh drafts'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Draft jobs',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Divider(),
+          if (_seedJobsLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_seedJobs.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('No draft jobs yet.'),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemBuilder: (context, index) {
+                final job = _seedJobs[index];
+                return _buildSeedJobCard(context, job);
+              },
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemCount: _seedJobs.length,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSeedJobCard(BuildContext context, ZoneSeedJob job) {
+    final theme = Theme.of(context);
+    final draft = job.draft;
+    final statusColor = _statusColor(theme, job.status);
+    final created = job.createdAt?.toLocal().toString();
+    final updated = job.updatedAt?.toLocal().toString();
+    final isAwaitingApproval = job.status == 'awaiting_approval';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Job ${_shortId(job.id)}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  job.status.replaceAll('_', ' '),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Counts: ${job.placeCount} places · ${job.characterCount} characters · ${job.questCount} quests'),
+          if (created != null) Text('Created: $created'),
+          if (updated != null) Text('Updated: $updated'),
+          if (job.errorMessage != null && job.errorMessage!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                job.errorMessage!,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          if (draft != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              draft.fantasyName ?? 'Draft',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            if (draft.zoneDescription != null && draft.zoneDescription!.isNotEmpty)
+              Text(
+                draft.zoneDescription!,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Draft details'),
+              children: [
+                _buildDraftSection(
+                  context,
+                  title: 'Points of interest',
+                  items: draft.pointsOfInterest
+                      .map((poi) => '${poi.name} · ${poi.placeId}')
+                      .toList(),
+                ),
+                _buildDraftSection(
+                  context,
+                  title: 'Characters',
+                  items: draft.characters
+                      .map((c) => '${c.name} · ${c.placeId}')
+                      .toList(),
+                ),
+                _buildDraftSection(
+                  context,
+                  title: 'Quests',
+                  items: draft.quests
+                      .map((q) => '${q.name} · giver ${_shortId(q.questGiverDraftId)}')
+                      .toList(),
+                ),
+              ],
+            ),
+          ],
+          if (isAwaitingApproval)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: FilledButton(
+                onPressed:
+                    _seedBusy.contains(job.id) ? null : () => _approveSeedJob(job),
+                child:
+                    Text(_seedBusy.contains(job.id) ? 'Approving...' : 'Approve & apply'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftSection(
+    BuildContext context, {
+    required String title,
+    required List<String> items,
+  }) {
+    final theme = Theme.of(context);
+    if (items.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Text('$title: none'),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ...items.take(6).map((item) => Text('- $item')),
+          if (items.length > 6)
+            Text('... and ${items.length - 6} more',
+                style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+
+  String _shortId(String id) {
+    if (id.length <= 8) return id;
+    return id.substring(0, 8);
+  }
+
+  Color _statusColor(ThemeData theme, String status) {
+    switch (status) {
+      case 'queued':
+        return theme.colorScheme.secondary;
+      case 'in_progress':
+        return theme.colorScheme.tertiary;
+      case 'awaiting_approval':
+        return theme.colorScheme.primary;
+      case 'approved':
+        return theme.colorScheme.primary;
+      case 'applying':
+        return theme.colorScheme.tertiary;
+      case 'applied':
+        return Colors.green.shade700;
+      case 'failed':
+        return theme.colorScheme.error;
+      default:
+        return theme.colorScheme.outline;
+    }
   }
 }

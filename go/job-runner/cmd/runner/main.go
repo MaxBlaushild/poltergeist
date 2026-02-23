@@ -81,6 +81,8 @@ func main() {
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
 	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient)
 	importZonesForMetroProcessor := processors.NewImportZonesForMetroProcessor(dbClient)
+	seedZoneDraftProcessor := processors.NewSeedZoneDraftProcessor(dbClient, googlemapsClient, deepPriestClient)
+	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, awsClient, client)
 
 	var polymarketClient polymarket.Client
 	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
@@ -141,6 +143,8 @@ func main() {
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
 	mux.Handle(jobs.ImportPointOfInterestTaskType, importPointOfInterestProcessor)
 	mux.Handle(jobs.ImportZonesForMetroTaskType, importZonesForMetroProcessor)
+	mux.Handle(jobs.SeedZoneDraftTaskType, &seedZoneDraftProcessor)
+	mux.Handle(jobs.ApplyZoneSeedDraftTaskType, &applyZoneSeedDraftProcessor)
 	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
-import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestNode, QuestNodeChallenge, QuestNodeSubmissionType, Tag } from '@poltergeist/types';
+import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestArchetype, QuestArchetypeChallenge, QuestArchetypeNode, QuestNode, QuestNodeChallenge, QuestNodeSubmissionType, Tag } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
@@ -232,6 +232,7 @@ export const Quests = () => {
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const [polygonRefreshNonce, setPolygonRefreshNonce] = useState(0);
   const [deletingQuestId, setDeletingQuestId] = useState<string | null>(null);
+  const [creatingArchetype, setCreatingArchetype] = useState(false);
   const questMapContainer = useRef<HTMLDivElement>(null);
   const questMap = useRef<mapboxgl.Map | null>(null);
   const [questMapLoaded, setQuestMapLoaded] = useState(false);
@@ -1056,6 +1057,137 @@ export const Quests = () => {
     }
   };
 
+  const handleCreateQuestArchetypeFromQuest = async () => {
+    if (!selectedQuest || creatingArchetype) return;
+
+    const nodes = (selectedQuest.nodes ?? []).slice().sort((a, b) => a.orderIndex - b.orderIndex);
+    if (nodes.length === 0) {
+      alert('Quest has no nodes to convert into an archetype.');
+      return;
+    }
+
+    if (!locationArchetypes.length) {
+      alert('Location archetypes are still loading. Please try again in a moment.');
+      return;
+    }
+
+    const missing: string[] = [];
+    const locationArchetypeIds: string[] = [];
+    nodes.forEach((node) => {
+      if (!node.pointOfInterestId) {
+        missing.push(`Node ${node.orderIndex}: polygon node`);
+        return;
+      }
+      const match = archetypeByPoiId[node.pointOfInterestId];
+      if (!match) {
+        const poiName = pointsOfInterest.find((poi) => poi.id === node.pointOfInterestId)?.name;
+        missing.push(`Node ${node.orderIndex}: ${poiName ?? node.pointOfInterestId}`);
+        return;
+      }
+      locationArchetypeIds.push(match.id);
+    });
+
+    if (missing.length > 0) {
+      alert(`Cannot create quest archetype. Missing location archetypes for:\n${missing.join('\n')}`);
+      return;
+    }
+
+    const name = `${selectedQuest.name} (Archetype)`;
+    const itemRewards = (selectedQuest.itemRewards ?? [])
+      .map((reward) => ({
+        inventoryItemId: reward.inventoryItemId,
+        quantity: reward.quantity ?? 0,
+      }))
+      .filter((reward) => reward.inventoryItemId && reward.quantity > 0);
+
+    setCreatingArchetype(true);
+    try {
+      const rootNode = await apiClient.post<QuestArchetypeNode>('/sonar/questArchetypeNodes', {
+        locationArchetypeID: locationArchetypeIds[0],
+      });
+
+      const archetype = await apiClient.post<QuestArchetype>('/sonar/questArchetypes', {
+        name,
+        rootId: rootNode.id,
+        defaultGold: selectedQuest.gold ?? 0,
+        itemRewards: itemRewards.length > 0 ? itemRewards : undefined,
+      });
+
+      let currentNodeId = rootNode.id;
+
+      for (let index = 0; index < nodes.length; index += 1) {
+        const node = nodes[index];
+        const hasNext = index < nodes.length - 1;
+        const nextLocationArchetypeId = hasNext ? locationArchetypeIds[index + 1] : null;
+        const challenges = (node.challenges ?? []).slice().sort((a, b) => (a.tier ?? 0) - (b.tier ?? 0));
+
+        if (hasNext && challenges.length === 0) {
+          const created = await apiClient.post<QuestArchetypeChallenge>(
+            `/sonar/questArchetypes/${currentNodeId}/challenges`,
+            {
+              reward: 0,
+              difficulty: 0,
+              locationArchetypeID: nextLocationArchetypeId ?? undefined,
+            }
+          );
+          if (!created.unlockedNodeId) {
+            throw new Error('Failed to create next archetype node.');
+          }
+          currentNodeId = created.unlockedNodeId;
+          continue;
+        }
+
+        for (let challengeIndex = 0; challengeIndex < challenges.length; challengeIndex += 1) {
+          const challenge = challenges[challengeIndex];
+          const shouldUnlock = hasNext && challengeIndex === challenges.length - 1;
+          const payload: {
+            reward: number;
+            inventoryItemId?: number;
+            proficiency?: string;
+            difficulty?: number;
+            locationArchetypeID?: string;
+          } = {
+            reward: challenge.reward ?? 0,
+          };
+
+          if (challenge.inventoryItemId) {
+            payload.inventoryItemId = challenge.inventoryItemId;
+          }
+          if (challenge.proficiency && challenge.proficiency.trim()) {
+            payload.proficiency = challenge.proficiency.trim();
+          }
+          if (challenge.difficulty !== undefined && challenge.difficulty !== null) {
+            payload.difficulty = challenge.difficulty;
+          }
+          if (shouldUnlock && nextLocationArchetypeId) {
+            payload.locationArchetypeID = nextLocationArchetypeId;
+          }
+
+          const created = await apiClient.post<QuestArchetypeChallenge>(
+            `/sonar/questArchetypes/${currentNodeId}/challenges`,
+            payload
+          );
+
+          if (shouldUnlock) {
+            if (!created.unlockedNodeId) {
+              throw new Error('Failed to create next archetype node.');
+            }
+            currentNodeId = created.unlockedNodeId;
+          }
+        }
+      }
+
+      setQuestForm((prev) => ({ ...prev, questArchetypeId: archetype.id }));
+      updateQuestState(selectedQuest.id, (quest) => ({ ...quest, questArchetypeId: archetype.id }));
+      alert('Quest archetype created. Click Save Changes to link it to this quest.');
+    } catch (error) {
+      console.error('Failed to create quest archetype from quest', error);
+      alert('Failed to create quest archetype from quest.');
+    } finally {
+      setCreatingArchetype(false);
+    }
+  };
+
   const handleDeleteQuest = async () => {
     if (!selectedQuest) return;
     const confirmDelete = window.confirm(`Delete quest "${selectedQuest.name}"? This cannot be undone.`);
@@ -1710,6 +1842,13 @@ export const Quests = () => {
                     }}
                   >
                     Import POI
+                  </button>
+                  <button
+                    className="qa-btn qa-btn-outline"
+                    onClick={handleCreateQuestArchetypeFromQuest}
+                    disabled={creatingArchetype}
+                  >
+                    {creatingArchetype ? 'Creating Archetype...' : 'Create Archetype'}
                   </button>
                   <button
                     className="qa-btn qa-btn-primary"
