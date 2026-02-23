@@ -85,6 +85,7 @@ func main() {
 		asyncClient,
 		redisClient,
 		searchClient,
+		deepPriest,
 		gameEngineClient,
 		livenessClient,
 	)

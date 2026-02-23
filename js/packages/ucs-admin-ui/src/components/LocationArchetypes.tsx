@@ -1,342 +1,1126 @@
-import React, { useState, useEffect } from "react";
-import { LocationArchetype } from "@poltergeist/types";
+import React, { useEffect, useMemo, useState } from "react";
+import { useCandidates } from "@poltergeist/hooks";
+import { Candidate, LocationArchetype } from "@poltergeist/types";
 import { useAPI } from "@poltergeist/contexts";
 import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
+import "./questArchetypeTheme.css";
+
+const buildEmptyArchetype = (): LocationArchetype => ({
+  id: "",
+  name: "",
+  includedTypes: [],
+  excludedTypes: [],
+  challenges: [],
+  submissionType: "photo",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+
+const clampPreview = (items: string[], limit: number) => {
+  if (items.length <= limit) {
+    return { preview: items, remaining: 0 };
+  }
+  return { preview: items.slice(0, limit), remaining: items.length - limit };
+};
+
+const mergeUnique = (list: string[], values: string[]) => {
+  const next = [...list];
+  values.forEach((value) => {
+    if (!next.includes(value)) {
+      next.push(value);
+    }
+  });
+  return next;
+};
+
+type PlaceTypeImporterProps = {
+  label: string;
+  onApplyTypes: (types: string[]) => void;
+};
+
+const PlaceTypeImporter: React.FC<PlaceTypeImporterProps> = ({ label, onApplyTypes }) => {
+  const [query, setQuery] = useState("");
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const trimmedQuery = query.trim();
+  const { candidates, loading } = useCandidates(trimmedQuery);
+
+  useEffect(() => {
+    if (!trimmedQuery) {
+      setSelectedCandidate(null);
+    }
+  }, [trimmedQuery]);
+
+  const selectedTypes = selectedCandidate?.types ?? [];
+  const preview = clampPreview(selectedTypes, 6);
+
+  return (
+    <div className="qa-panel" style={{ marginTop: 12 }}>
+      <div className="qa-meta">{label}</div>
+      <div className="qa-combobox" style={{ marginTop: 8 }}>
+        <input
+          type="text"
+          className="qa-input"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search Google Maps..."
+        />
+        {trimmedQuery.length > 0 && (
+          <div className="qa-combobox-list">
+            {loading && <div className="qa-combobox-empty">Searching...</div>}
+            {!loading && candidates.length === 0 && (
+              <div className="qa-combobox-empty">No matches.</div>
+            )}
+            {!loading &&
+              candidates.map((candidate) => (
+                <button
+                  key={candidate.place_id}
+                  type="button"
+                  className={`qa-combobox-option ${
+                    selectedCandidate?.place_id === candidate.place_id ? "is-active" : ""
+                  }`}
+                  onClick={() => setSelectedCandidate(candidate)}
+                >
+                  <div className="qa-option-title">{candidate.name}</div>
+                  <div className="qa-option-sub">{candidate.formatted_address}</div>
+                </button>
+              ))}
+          </div>
+        )}
+      </div>
+
+      {selectedCandidate && (
+        <div className="qa-panel" style={{ marginTop: 12 }}>
+          <div className="qa-meta">Selected place</div>
+          <div className="qa-option-title" style={{ marginTop: 6 }}>
+            {selectedCandidate.name}
+          </div>
+          <div className="qa-option-sub">{selectedCandidate.formatted_address}</div>
+          <div className="qa-inline" style={{ marginTop: 10 }}>
+            {selectedTypes.length === 0 ? (
+              <span className="qa-empty">No place types found on this result.</span>
+            ) : (
+              preview.preview.map((type) => (
+                <span key={type} className="qa-chip accent">
+                  {type}
+                </span>
+              ))
+            )}
+            {preview.remaining > 0 && (
+              <span className="qa-chip muted">+{preview.remaining} more</span>
+            )}
+          </div>
+          <div className="qa-inline" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="qa-btn qa-btn-ghost"
+              disabled={selectedTypes.length === 0}
+              onClick={() => {
+                onApplyTypes(selectedTypes);
+                setQuery("");
+                setSelectedCandidate(null);
+              }}
+            >
+              Add {selectedTypes.length} type{selectedTypes.length === 1 ? "" : "s"}
+            </button>
+            <button
+              type="button"
+              className="qa-btn qa-btn-outline"
+              onClick={() => setSelectedCandidate(null)}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+type GeneratedLocationChallenge = {
+  id: string;
+  question: string;
+  submissionType: string;
+};
 
 const LocationArchetypes: React.FC = () => {
-  const [selectedLocationArchetype, setSelectedLocationArchetype] = useState<LocationArchetype | null>(null);
-  const { locationArchetypes, createLocationArchetype, updateLocationArchetype, deleteLocationArchetype, placeTypes } = useQuestArchetypes();
-  const [newLocationArchetype, setNewLocationArchetype] = useState<LocationArchetype>({
-    id: "",
-    name: "",
-    includedTypes: [],
-    excludedTypes: [],
-    challenges: [],
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-  const [showModal, setShowModal] = useState(false);
-  const [newIncludedType, setNewIncludedType] = useState("");
-  const [newExcludedType, setNewExcludedType] = useState("");
-  const [newChallenge, setNewChallenge] = useState("");
+  const { locationArchetypes, createLocationArchetype, updateLocationArchetype, deleteLocationArchetype, placeTypes } =
+    useQuestArchetypes();
+  const { apiClient } = useAPI();
 
-  const handleNewLocationArchetypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setNewLocationArchetype({ ...newLocationArchetype, [event.target.name]: event.target.value });
+  const submissionTypeOptions = [
+    { value: "photo", label: "Photo" },
+    { value: "text", label: "Text" },
+    { value: "video", label: "Video" },
+  ];
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createDraft, setCreateDraft] = useState<LocationArchetype>(buildEmptyArchetype());
+  const [createIncludedQuery, setCreateIncludedQuery] = useState("");
+  const [createExcludedQuery, setCreateExcludedQuery] = useState("");
+  const [createChallengeQuery, setCreateChallengeQuery] = useState("");
+  const [createGeneratedChallenges, setCreateGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
+  const [createGenerating, setCreateGenerating] = useState(false);
+  const [createGenerateError, setCreateGenerateError] = useState<string | null>(null);
+
+  const [editDraft, setEditDraft] = useState<LocationArchetype | null>(null);
+  const [editIncludedQuery, setEditIncludedQuery] = useState("");
+  const [editExcludedQuery, setEditExcludedQuery] = useState("");
+  const [editChallengeQuery, setEditChallengeQuery] = useState("");
+  const [editGeneratedChallenges, setEditGeneratedChallenges] = useState<GeneratedLocationChallenge[]>([]);
+  const [editGenerating, setEditGenerating] = useState(false);
+  const [editGenerateError, setEditGenerateError] = useState<string | null>(null);
+
+  const filteredArchetypes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return locationArchetypes;
+    return locationArchetypes.filter((archetype) => archetype.name.toLowerCase().includes(query));
+  }, [locationArchetypes, searchQuery]);
+
+  const resetCreate = () => {
+    setCreateDraft(buildEmptyArchetype());
+    setCreateIncludedQuery("");
+    setCreateExcludedQuery("");
+    setCreateChallengeQuery("");
+    setCreateGeneratedChallenges([]);
+    setCreateGenerating(false);
+    setCreateGenerateError(null);
   };
 
-  const handleNewLocationArchetypeSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await createLocationArchetype(newLocationArchetype);
-    setNewLocationArchetype({ id: "", name: "", includedTypes: [], excludedTypes: [], challenges: [], createdAt: new Date(), updatedAt: new Date() });
+  const openEdit = (archetype: LocationArchetype) => {
+    setEditDraft({
+      ...archetype,
+      submissionType: archetype.submissionType ?? "photo",
+      includedTypes: [...archetype.includedTypes],
+      excludedTypes: [...archetype.excludedTypes],
+      challenges: [...archetype.challenges],
+    });
+    setEditIncludedQuery("");
+    setEditExcludedQuery("");
+    setEditChallengeQuery("");
+    setEditGeneratedChallenges([]);
+    setEditGenerating(false);
+    setEditGenerateError(null);
   };
 
-  const handleLocationArchetypeUpdate = async (locationArchetype: LocationArchetype) => {
-    await updateLocationArchetype(locationArchetype);
+  const addUnique = (list: string[], value: string) => {
+    if (list.includes(value)) return list;
+    return [...list, value];
   };
 
-  const handleLocationArchetypeDelete = async (locationArchetypeId: string) => {
-    await deleteLocationArchetype(locationArchetypeId);
+  const createIncludedOptions = placeTypes
+    .filter((type) => type.toLowerCase().includes(createIncludedQuery.trim().toLowerCase()))
+    .filter((type) => !createDraft.includedTypes.includes(type))
+    .slice(0, 8);
+
+  const createExcludedOptions = placeTypes
+    .filter((type) => type.toLowerCase().includes(createExcludedQuery.trim().toLowerCase()))
+    .filter((type) => !createDraft.excludedTypes.includes(type))
+    .slice(0, 8);
+
+  const editIncludedOptions = editDraft
+    ? placeTypes
+        .filter((type) => type.toLowerCase().includes(editIncludedQuery.trim().toLowerCase()))
+        .filter((type) => !editDraft.includedTypes.includes(type))
+        .slice(0, 8)
+    : [];
+
+  const editExcludedOptions = editDraft
+    ? placeTypes
+        .filter((type) => type.toLowerCase().includes(editExcludedQuery.trim().toLowerCase()))
+        .filter((type) => !editDraft.excludedTypes.includes(type))
+        .slice(0, 8)
+    : [];
+
+  const hydrateGeneratedChallenges = (
+    challenges: { question: string; submissionType: string }[]
+  ): GeneratedLocationChallenge[] => {
+    const seed = Date.now();
+    return challenges.map((challenge, index) => ({
+      id: `${seed}-${index}-${Math.random().toString(16).slice(2, 6)}`,
+      question: challenge.question,
+      submissionType: challenge.submissionType,
+    }));
+  };
+
+  const requestGeneratedChallenges = async (
+    draft: LocationArchetype | null,
+    setGenerated: React.Dispatch<React.SetStateAction<GeneratedLocationChallenge[]>>,
+    setGenerating: React.Dispatch<React.SetStateAction<boolean>>,
+    setError: React.Dispatch<React.SetStateAction<string | null>>
+  ) => {
+    if (!draft) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<{ challenges: { question: string; submissionType: string }[] }>(
+        "/sonar/locationArchetypes/challenges/generate",
+        {
+          name: draft.name,
+          includedTypes: draft.includedTypes,
+          excludedTypes: draft.excludedTypes,
+          submissionType: draft.submissionType ?? "photo",
+          count: 10,
+        }
+      );
+      setGenerated(hydrateGeneratedChallenges(response.challenges ?? []));
+    } catch (error) {
+      console.error("Failed to generate location challenges", error);
+      setError("Failed to generate challenges.");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
-    <div>
-      <h2>Location Archetypes</h2>
-      <div className="grid grid-cols-1 gap-4 mb-4">
-        {locationArchetypes.map((archetype) => (
-          <div key={archetype.id} className="border rounded-lg p-4 bg-white shadow">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-semibold">{archetype.name}</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSelectedLocationArchetype(archetype)}
-                  className="p-2 text-blue-500 hover:text-blue-700"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleLocationArchetypeDelete(archetype.id)}
-                  className="p-2 text-red-500 hover:text-red-700"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            
-            <div className="space-y-3">
-              <div>
-                <h4 className="font-medium text-gray-700 mb-1">Included Types:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {archetype.includedTypes.map((type, index) => (
-                    <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                      {type}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="font-medium text-gray-700 mb-1">Excluded Types:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {archetype.excludedTypes.map((type, index) => (
-                    <span key={index} className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-sm">
-                      {type}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="font-medium text-gray-700 mb-1">Challenges:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {archetype.challenges.map((challenge, index) => (
-                    <span key={index} className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-                      {challenge}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
+    <div className="qa-theme">
+      <div className="qa-shell">
+        <header className="qa-hero">
+          <div>
+            <div className="qa-kicker">Location Blueprints</div>
+            <h1 className="qa-title">Location Archetypes</h1>
+            <p className="qa-subtitle">
+              Decide where quests can spawn by shaping included and excluded place types, then attach reusable
+              challenge prompts.
+            </p>
           </div>
-        ))}
-      </div>
-      <button 
-        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-        onClick={() => setShowModal(true)}
-      >
-        Create New Location Archetype
-      </button>
+          <div className="qa-hero-actions">
+            <input
+              type="text"
+              className="qa-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search archetypes..."
+            />
+            <button className="qa-btn qa-btn-primary" onClick={() => setShowCreateModal(true)}>
+              New Location Archetype
+            </button>
+          </div>
+        </header>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold">Create New Location Archetype</h3>
-              <button 
-                onClick={() => setShowModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl">&times;</span>
-              </button>
+        <section className="qa-grid">
+          {filteredArchetypes.length === 0 ? (
+            <div className="qa-panel">
+              <div className="qa-card-title">No archetypes found</div>
+              <p className="qa-muted" style={{ marginTop: 8 }}>
+                Try a different search or create a new location archetype.
+              </p>
             </div>
+          ) : (
+            filteredArchetypes.map((archetype, index) => {
+              const includedPreview = clampPreview(archetype.includedTypes, 6);
+              const excludedPreview = clampPreview(archetype.excludedTypes, 6);
+              const challengePreview = clampPreview(archetype.challenges, 6);
+              return (
+                <article
+                  key={archetype.id}
+                  className="qa-card"
+                  style={{ animationDelay: `${index * 0.06}s` }}
+                >
+                  <div className="qa-card-header">
+                    <div>
+                      <h3 className="qa-card-title">{archetype.name}</h3>
+                      <div className="qa-meta">
+                        {archetype.includedTypes.length} included · {archetype.excludedTypes.length} excluded ·{" "}
+                        {archetype.challenges.length} challenges
+                      </div>
+                    </div>
+                    <div className="qa-actions">
+                      <button className="qa-btn qa-btn-outline" onClick={() => openEdit(archetype)}>
+                        Edit
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-danger"
+                        onClick={() => {
+                          if (window.confirm("Delete this location archetype?")) {
+                            deleteLocationArchetype(archetype.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
 
-            <form onSubmit={handleNewLocationArchetypeSubmit}>
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Name
-                </label>
+                  <div className="qa-stat-grid">
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Included Types</div>
+                      <div className="qa-stat-value">{archetype.includedTypes.length}</div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Excluded Types</div>
+                      <div className="qa-stat-value">{archetype.excludedTypes.length}</div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Challenge Prompts</div>
+                      <div className="qa-stat-value">{archetype.challenges.length}</div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Input Type</div>
+                      <div className="qa-stat-value">
+                        {(archetype.submissionType ?? "photo").toUpperCase()}
+                      </div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Updated</div>
+                      <div className="qa-stat-value">{new Date(archetype.updatedAt).toLocaleDateString()}</div>
+                    </div>
+                  </div>
+
+                  <div className="qa-divider" />
+
+                  <div className="qa-panel">
+                    <div className="qa-meta">Included Types</div>
+                    <div className="qa-inline" style={{ marginTop: 10 }}>
+                      {includedPreview.preview.length === 0 ? (
+                        <span className="qa-empty">None selected.</span>
+                      ) : (
+                        includedPreview.preview.map((type) => (
+                          <span key={type} className="qa-chip accent">
+                            {type}
+                          </span>
+                        ))
+                      )}
+                      {includedPreview.remaining > 0 && (
+                        <span className="qa-chip muted">+{includedPreview.remaining} more</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="qa-panel" style={{ marginTop: 16 }}>
+                    <div className="qa-meta">Excluded Types</div>
+                    <div className="qa-inline" style={{ marginTop: 10 }}>
+                      {excludedPreview.preview.length === 0 ? (
+                        <span className="qa-empty">None selected.</span>
+                      ) : (
+                        excludedPreview.preview.map((type) => (
+                          <span key={type} className="qa-chip danger">
+                            {type}
+                          </span>
+                        ))
+                      )}
+                      {excludedPreview.remaining > 0 && (
+                        <span className="qa-chip muted">+{excludedPreview.remaining} more</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="qa-panel" style={{ marginTop: 16 }}>
+                    <div className="qa-meta">Challenge Prompts</div>
+                    <div className="qa-inline" style={{ marginTop: 10 }}>
+                      {challengePreview.preview.length === 0 ? (
+                        <span className="qa-empty">No challenges yet.</span>
+                      ) : (
+                        challengePreview.preview.map((challenge) => (
+                          <span key={challenge} className="qa-chip success">
+                            {challenge}
+                          </span>
+                        ))
+                      )}
+                      {challengePreview.remaining > 0 && (
+                        <span className="qa-chip muted">+{challengePreview.remaining} more</span>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
+
+      {showCreateModal && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Create Location Archetype</h2>
+            <form
+              className="qa-form-grid"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                await createLocationArchetype(createDraft);
+                resetCreate();
+                setShowCreateModal(false);
+              }}
+            >
+              <div className="qa-field">
+                <div className="qa-label">Name</div>
                 <input
                   type="text"
-                  name="name"
-                  value={newLocationArchetype.name}
-                  onChange={handleNewLocationArchetypeChange}
+                  className="qa-input"
+                  value={createDraft.name}
+                  onChange={(e) => setCreateDraft({ ...createDraft, name: e.target.value })}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Included Types
-                </label>
-                <div className="flex gap-2 mb-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={newIncludedType}
-                      onChange={(e) => setNewIncludedType(e.target.value)}
-                      placeholder="Search place types..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                    />
-                    {newIncludedType && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-                        {placeTypes
-                          .filter(type => 
-                            type.toLowerCase().includes(newIncludedType.toLowerCase()) &&
-                            !newLocationArchetype.includedTypes.includes(type)
-                          )
-                          .map((type, index) => (
-                            <div
-                              key={index}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                              onClick={() => {
-                                setNewLocationArchetype({
-                                  ...newLocationArchetype,
-                                  includedTypes: [...newLocationArchetype.includedTypes, type]
-                                });
-                                setNewIncludedType('');
-                              }}
-                            >
-                              {type}
-                            </div>
-                          ))
-                        }
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {newLocationArchetype.includedTypes.map((type, index) => (
-                    <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                      <span>{type}</span>
-                      <button
-                        type="button"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => {
-                          const updatedTypes = [...newLocationArchetype.includedTypes];
-                          updatedTypes.splice(index, 1);
-                          setNewLocationArchetype({
-                            ...newLocationArchetype,
-                            includedTypes: updatedTypes
-                          });
-                        }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
+              <div className="qa-field">
+                <div className="qa-label">Challenge Input Type</div>
+                <select
+                  className="qa-select"
+                  value={createDraft.submissionType ?? "photo"}
+                  onChange={(event) =>
+                    setCreateDraft({
+                      ...createDraft,
+                      submissionType: event.target.value,
+                    })
+                  }
+                >
+                  {submissionTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
 
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Excluded Types
-                </label>
-                <div className="flex gap-2 mb-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="text"
-                      value={newExcludedType}
-                      onChange={(e) => setNewExcludedType(e.target.value)}
-                      placeholder="Search place types..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                    />
-                    {newExcludedType && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
-                        {placeTypes
-                          .filter(type => 
-                            type.toLowerCase().includes(newExcludedType.toLowerCase()) &&
-                            !newLocationArchetype.excludedTypes.includes(type)
-                          )
-                          .map((type, index) => (
-                            <div
-                              key={index}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                              onClick={() => {
-                                setNewLocationArchetype({
-                                  ...newLocationArchetype,
-                                  excludedTypes: [...newLocationArchetype.excludedTypes, type]
-                                });
-                                setNewExcludedType('');
-                              }}
-                            >
-                              {type}
-                            </div>
-                          ))
-                        }
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {newLocationArchetype.excludedTypes.map((type, index) => (
-                    <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                      <span>{type}</span>
-                      <button
-                        type="button"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => {
-                          const updatedTypes = [...newLocationArchetype.excludedTypes];
-                          updatedTypes.splice(index, 1);
-                          setNewLocationArchetype({
-                            ...newLocationArchetype,
-                            excludedTypes: updatedTypes
-                          });
-                        }}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-gray-700 text-sm font-bold mb-2">
-                  Challenges
-                </label>
-                <div className="flex gap-2 mb-2">
+              <div className="qa-field">
+                <div className="qa-label">Included Types</div>
+                <div className="qa-combobox">
                   <input
                     type="text"
-                    value={newChallenge}
-                    onChange={(e) => setNewChallenge(e.target.value)}
-                    placeholder="Add challenge"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                    className="qa-input"
+                    value={createIncludedQuery}
+                    onChange={(e) => setCreateIncludedQuery(e.target.value)}
+                    placeholder="Search place types..."
+                  />
+                  {createIncludedQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {createIncludedOptions.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        createIncludedOptions.map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() => {
+                              setCreateDraft({
+                                ...createDraft,
+                                includedTypes: addUnique(createDraft.includedTypes, type),
+                              });
+                              setCreateIncludedQuery("");
+                            }}
+                          >
+                            {type}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <PlaceTypeImporter
+                  label="Import included types from a place"
+                  onApplyTypes={(types) =>
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      includedTypes: mergeUnique(prev.includedTypes, types),
+                    }))
+                  }
+                />
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {createDraft.includedTypes.length === 0 ? (
+                    <div className="qa-empty">No included types yet.</div>
+                  ) : (
+                    createDraft.includedTypes.map((type) => (
+                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip accent">{type}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setCreateDraft({
+                              ...createDraft,
+                              includedTypes: createDraft.includedTypes.filter((value) => value !== type),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Excluded Types</div>
+                <div className="qa-combobox">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={createExcludedQuery}
+                    onChange={(e) => setCreateExcludedQuery(e.target.value)}
+                    placeholder="Search place types..."
+                  />
+                  {createExcludedQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {createExcludedOptions.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        createExcludedOptions.map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() => {
+                              setCreateDraft({
+                                ...createDraft,
+                                excludedTypes: addUnique(createDraft.excludedTypes, type),
+                              });
+                              setCreateExcludedQuery("");
+                            }}
+                          >
+                            {type}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <PlaceTypeImporter
+                  label="Import excluded types from a place"
+                  onApplyTypes={(types) =>
+                    setCreateDraft((prev) => ({
+                      ...prev,
+                      excludedTypes: mergeUnique(prev.excludedTypes, types),
+                    }))
+                  }
+                />
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {createDraft.excludedTypes.length === 0 ? (
+                    <div className="qa-empty">No excluded types yet.</div>
+                  ) : (
+                    createDraft.excludedTypes.map((type) => (
+                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip danger">{type}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setCreateDraft({
+                              ...createDraft,
+                              excludedTypes: createDraft.excludedTypes.filter((value) => value !== type),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Challenges</div>
+                <div className="qa-inline">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={createChallengeQuery}
+                    onChange={(e) => setCreateChallengeQuery(e.target.value)}
+                    placeholder="Add challenge prompt"
                   />
                   <button
                     type="button"
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                    className="qa-btn qa-btn-ghost"
                     onClick={() => {
-                      if (newChallenge.trim()) {
-                        setNewLocationArchetype({
-                          ...newLocationArchetype,
-                          challenges: [...newLocationArchetype.challenges, newChallenge.trim()]
-                        });
-                        setNewChallenge('');
-                      }
+                      const value = createChallengeQuery.trim();
+                      if (!value) return;
+                      setCreateDraft({
+                        ...createDraft,
+                        challenges: addUnique(createDraft.challenges, value),
+                      });
+                      setCreateChallengeQuery("");
                     }}
                   >
                     Add
                   </button>
                 </div>
-                <div className="space-y-2">
-                  {newLocationArchetype.challenges.map((challenge, index) => (
-                    <div key={index} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                      <span>{challenge}</span>
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  <div className="qa-meta">Challenge generator</div>
+                  <p className="qa-muted" style={{ marginTop: 6 }}>
+                    Generate 10 themed challenges based on the archetype details.
+                  </p>
+                  <div className="qa-inline" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="qa-btn qa-btn-ghost"
+                      onClick={() =>
+                        requestGeneratedChallenges(
+                          createDraft,
+                          setCreateGeneratedChallenges,
+                          setCreateGenerating,
+                          setCreateGenerateError
+                        )
+                      }
+                      disabled={createGenerating}
+                    >
+                      {createGenerating ? "Generating..." : "Generate 10 Challenges"}
+                    </button>
+                    {createGeneratedChallenges.length > 0 && (
                       <button
                         type="button"
-                        className="text-red-500 hover:text-red-700"
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => setCreateGeneratedChallenges([])}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {createGenerateError && (
+                    <div className="qa-error" style={{ marginTop: 8 }}>
+                      {createGenerateError}
+                    </div>
+                  )}
+                </div>
+                {createGeneratedChallenges.length > 0 && (
+                  <div className="qa-panel" style={{ marginTop: 12 }}>
+                    <div className="qa-meta">Generated options</div>
+                    <div className="qa-generated-list" style={{ marginTop: 10 }}>
+                      {createGeneratedChallenges.map((challenge) => (
+                        <div key={challenge.id} className="qa-generated-row">
+                          <div className="qa-generated-info">
+                            <div className="qa-option-title">{challenge.question}</div>
+                            <div className="qa-option-sub">
+                              Input: {challenge.submissionType.toUpperCase()}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="qa-btn qa-btn-ghost"
+                            onClick={() => {
+                              setCreateDraft((prev) => ({
+                                ...prev,
+                                submissionType: challenge.submissionType,
+                                challenges: addUnique(prev.challenges, challenge.question),
+                              }));
+                            }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="qa-inline" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-outline"
                         onClick={() => {
-                          const updatedChallenges = [...newLocationArchetype.challenges];
-                          updatedChallenges.splice(index, 1);
-                          setNewLocationArchetype({
-                            ...newLocationArchetype,
-                            challenges: updatedChallenges
-                          });
+                          setCreateDraft((prev) => ({
+                            ...prev,
+                            submissionType: createGeneratedChallenges[0]?.submissionType ?? prev.submissionType,
+                            challenges: mergeUnique(
+                              prev.challenges,
+                              createGeneratedChallenges.map((challenge) => challenge.question)
+                            ),
+                          }));
                         }}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
+                        Add All
                       </button>
                     </div>
-                  ))}
+                  </div>
+                )}
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {createDraft.challenges.length === 0 ? (
+                    <div className="qa-empty">No challenges yet.</div>
+                  ) : (
+                    createDraft.challenges.map((challenge) => (
+                      <div key={challenge} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip success">{challenge}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setCreateDraft({
+                              ...createDraft,
+                              challenges: createDraft.challenges.filter((value) => value !== challenge),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                >
-                  Create Location Archetype
-                </button>
+              <div className="qa-footer">
                 <button
                   type="button"
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
-                  onClick={() => setShowModal(false)}
+                  className="qa-btn qa-btn-outline"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    resetCreate();
+                  }}
                 >
                   Cancel
                 </button>
+                <button type="submit" className="qa-btn qa-btn-primary">
+                  Create
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {editDraft && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Edit Location Archetype</h2>
+            <div className="qa-form-grid">
+              <div className="qa-field">
+                <div className="qa-label">Name</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editDraft.name}
+                  onChange={(e) => setEditDraft({ ...editDraft, name: e.target.value })}
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Challenge Input Type</div>
+                <select
+                  className="qa-select"
+                  value={editDraft.submissionType ?? "photo"}
+                  onChange={(event) =>
+                    setEditDraft({
+                      ...editDraft,
+                      submissionType: event.target.value,
+                    })
+                  }
+                >
+                  {submissionTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Included Types</div>
+                <div className="qa-combobox">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={editIncludedQuery}
+                    onChange={(e) => setEditIncludedQuery(e.target.value)}
+                    placeholder="Search place types..."
+                  />
+                  {editIncludedQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {editIncludedOptions.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        editIncludedOptions.map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() => {
+                              if (!editDraft) return;
+                              setEditDraft({
+                                ...editDraft,
+                                includedTypes: addUnique(editDraft.includedTypes, type),
+                              });
+                              setEditIncludedQuery("");
+                            }}
+                          >
+                            {type}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <PlaceTypeImporter
+                  label="Import included types from a place"
+                  onApplyTypes={(types) =>
+                    setEditDraft((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            includedTypes: mergeUnique(prev.includedTypes, types),
+                          }
+                        : prev
+                    )
+                  }
+                />
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {editDraft.includedTypes.length === 0 ? (
+                    <div className="qa-empty">No included types yet.</div>
+                  ) : (
+                    editDraft.includedTypes.map((type) => (
+                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip accent">{type}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setEditDraft({
+                              ...editDraft,
+                              includedTypes: editDraft.includedTypes.filter((value) => value !== type),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Excluded Types</div>
+                <div className="qa-combobox">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={editExcludedQuery}
+                    onChange={(e) => setEditExcludedQuery(e.target.value)}
+                    placeholder="Search place types..."
+                  />
+                  {editExcludedQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {editExcludedOptions.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        editExcludedOptions.map((type) => (
+                          <button
+                            key={type}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() => {
+                              if (!editDraft) return;
+                              setEditDraft({
+                                ...editDraft,
+                                excludedTypes: addUnique(editDraft.excludedTypes, type),
+                              });
+                              setEditExcludedQuery("");
+                            }}
+                          >
+                            {type}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <PlaceTypeImporter
+                  label="Import excluded types from a place"
+                  onApplyTypes={(types) =>
+                    setEditDraft((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            excludedTypes: mergeUnique(prev.excludedTypes, types),
+                          }
+                        : prev
+                    )
+                  }
+                />
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {editDraft.excludedTypes.length === 0 ? (
+                    <div className="qa-empty">No excluded types yet.</div>
+                  ) : (
+                    editDraft.excludedTypes.map((type) => (
+                      <div key={type} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip danger">{type}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setEditDraft({
+                              ...editDraft,
+                              excludedTypes: editDraft.excludedTypes.filter((value) => value !== type),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Challenges</div>
+                <div className="qa-inline">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={editChallengeQuery}
+                    onChange={(e) => setEditChallengeQuery(e.target.value)}
+                    placeholder="Add challenge prompt"
+                  />
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-ghost"
+                    onClick={() => {
+                      if (!editDraft) return;
+                      const value = editChallengeQuery.trim();
+                      if (!value) return;
+                      setEditDraft({
+                        ...editDraft,
+                        challenges: addUnique(editDraft.challenges, value),
+                      });
+                      setEditChallengeQuery("");
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  <div className="qa-meta">Challenge generator</div>
+                  <p className="qa-muted" style={{ marginTop: 6 }}>
+                    Generate 10 themed challenges based on the archetype details.
+                  </p>
+                  <div className="qa-inline" style={{ marginTop: 10 }}>
+                    <button
+                      type="button"
+                      className="qa-btn qa-btn-ghost"
+                      onClick={() =>
+                        requestGeneratedChallenges(
+                          editDraft,
+                          setEditGeneratedChallenges,
+                          setEditGenerating,
+                          setEditGenerateError
+                        )
+                      }
+                      disabled={editGenerating}
+                    >
+                      {editGenerating ? "Generating..." : "Generate 10 Challenges"}
+                    </button>
+                    {editGeneratedChallenges.length > 0 && (
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => setEditGeneratedChallenges([])}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {editGenerateError && (
+                    <div className="qa-error" style={{ marginTop: 8 }}>
+                      {editGenerateError}
+                    </div>
+                  )}
+                </div>
+                {editGeneratedChallenges.length > 0 && (
+                  <div className="qa-panel" style={{ marginTop: 12 }}>
+                    <div className="qa-meta">Generated options</div>
+                    <div className="qa-generated-list" style={{ marginTop: 10 }}>
+                      {editGeneratedChallenges.map((challenge) => (
+                        <div key={challenge.id} className="qa-generated-row">
+                          <div className="qa-generated-info">
+                            <div className="qa-option-title">{challenge.question}</div>
+                            <div className="qa-option-sub">
+                              Input: {challenge.submissionType.toUpperCase()}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="qa-btn qa-btn-ghost"
+                            onClick={() => {
+                              setEditDraft((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      submissionType: challenge.submissionType,
+                                      challenges: addUnique(prev.challenges, challenge.question),
+                                    }
+                                  : prev
+                              );
+                            }}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="qa-inline" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="qa-btn qa-btn-outline"
+                        onClick={() => {
+                          setEditDraft((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  submissionType: editGeneratedChallenges[0]?.submissionType ?? prev.submissionType,
+                                  challenges: mergeUnique(
+                                    prev.challenges,
+                                    editGeneratedChallenges.map((challenge) => challenge.question)
+                                  ),
+                                }
+                              : prev
+                          );
+                        }}
+                      >
+                        Add All
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="qa-panel" style={{ marginTop: 12 }}>
+                  {editDraft.challenges.length === 0 ? (
+                    <div className="qa-empty">No challenges yet.</div>
+                  ) : (
+                    editDraft.challenges.map((challenge) => (
+                      <div key={challenge} className="qa-inline" style={{ marginBottom: 8 }}>
+                        <span className="qa-chip success">{challenge}</span>
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setEditDraft({
+                              ...editDraft,
+                              challenges: editDraft.challenges.filter((value) => value !== challenge),
+                            })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="qa-footer">
+              <button
+                className="qa-btn qa-btn-outline"
+                onClick={() => {
+                  setEditDraft(null);
+                  setEditGeneratedChallenges([]);
+                  setEditGenerateError(null);
+                  setEditGenerating(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="qa-btn qa-btn-primary"
+                onClick={async () => {
+                  if (!editDraft) return;
+                  await updateLocationArchetype(editDraft);
+                  setEditDraft(null);
+                  setEditGeneratedChallenges([]);
+                  setEditGenerateError(null);
+                  setEditGenerating(false);
+                }}
+              >
+                Save Changes
+              </button>
+            </div>
           </div>
         </div>
       )}

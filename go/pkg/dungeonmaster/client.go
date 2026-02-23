@@ -225,6 +225,10 @@ func (c *client) processQuestNode(
 		questNodeID = existingNodeID
 	} else {
 		questNodeID = uuid.New()
+		submissionType := locationArchetype.SubmissionType
+		if submissionType == "" {
+			submissionType = models.DefaultQuestNodeSubmissionType()
+		}
 		node := &models.QuestNode{
 			ID:                questNodeID,
 			CreatedAt:         time.Now(),
@@ -232,7 +236,7 @@ func (c *client) processQuestNode(
 			QuestID:           quest.ID,
 			OrderIndex:        *orderIndex,
 			PointOfInterestID: &pointOfInterest.ID,
-			SubmissionType:    models.DefaultQuestNodeSubmissionType(),
+			SubmissionType:    submissionType,
 		}
 		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 			log.Printf("Error creating quest node: %v", err)

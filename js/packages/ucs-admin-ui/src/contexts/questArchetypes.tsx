@@ -20,6 +20,10 @@ type QuestArchetypesContextType = {
     proficiency?: string | null,
     unlockedLocationArchetypeId?: string | null
   ) => void;
+  updateQuestArchetypeChallenge: (
+    challengeId: string,
+    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null }
+  ) => void;
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
@@ -35,6 +39,7 @@ export const QuestArchetypesContext = React.createContext<QuestArchetypesContext
   zoneQuestArchetypes: [],
   createQuestArchetype: () => {},
   addChallengeToQuestArchetype: () => {},
+  updateQuestArchetypeChallenge: () => {},
   locationArchetypes: [],
   createLocationArchetype: () => {},
   updateLocationArchetype: () => {},
@@ -172,6 +177,14 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     fetchQuestArchetypes();
   };
 
+  const updateQuestArchetypeChallenge = async (
+    challengeId: string,
+    updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null }
+  ) => {
+    await apiClient.patch(`/sonar/questArchetypeChallenges/${challengeId}`, updates);
+    fetchQuestArchetypes();
+  };
+
   const deleteQuestArchetype = async (questArchetypeId: string) => {
     await apiClient.delete<QuestArchetype>(`/sonar/questArchetypes/${questArchetypeId}`);
     setQuestArchetypes(questArchetypes.filter(questArchetype => questArchetype.id !== questArchetypeId));
@@ -223,6 +236,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       createZoneQuestArchetype,
       updateZoneQuestArchetype,
       deleteZoneQuestArchetype,
+      updateQuestArchetypeChallenge,
     }}>
       {children}
     </QuestArchetypesContext.Provider>

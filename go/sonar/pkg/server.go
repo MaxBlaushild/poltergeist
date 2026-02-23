@@ -195,6 +195,7 @@ func NewServerFromDependencies(
 		asyncClient,
 		redisClient,
 		searchClient,
+		deepPriest,
 		gameEngineClient,
 		livenessClient,
 	)
@@ -219,6 +220,7 @@ func NewServer(
 	asyncClient *asynq.Client,
 	redisClient *redis.Client,
 	searchClient search.SearchClient,
+	deepPriest deep_priest.DeepPriest,
 	gameEngineClient gameengine.GameEngineClient,
 	livenessClient liveness.LivenessClient,
 ) Server {
@@ -240,6 +242,7 @@ func NewServer(
 		asyncClient,
 		redisClient,
 		searchClient,
+		deepPriest,
 		gameEngineClient,
 		livenessClient,
 	)

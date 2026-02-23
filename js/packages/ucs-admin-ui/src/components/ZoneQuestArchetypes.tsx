@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Character } from '@poltergeist/types';
+import "./questArchetypeTheme.css";
 
 export const ZoneQuestArchetypes = () => {
   const { zones } = useZoneContext();
@@ -29,63 +30,102 @@ export const ZoneQuestArchetypes = () => {
     fetchCharacters();
   }, [apiClient]);
 
-  return <div className="m-10">
-    <h1 className="text-2xl font-bold">Zone Quest Archetypes</h1>
-    <div className="flex flex-col gap-4">
-      {zoneQuestArchetypes?.map((zoneQuestArchetype) => (
-        <div key={zoneQuestArchetype.id} className="flex items-center justify-between p-4 bg-white rounded-lg shadow">
-          <div className="flex flex-col">
-            <h2 className="text-xl font-semibold">{zoneQuestArchetype.questArchetype.name}</h2>
-            <div className="text-gray-600">
-              <p>Zone: {zoneQuestArchetype.zone.name}</p>
-              <p>Number of Quests: {zoneQuestArchetype.numberOfQuests}</p>
-              <p>Character: {zoneQuestArchetype.character?.name ?? 'None'}</p>
-            </div>
+  return (
+    <div className="qa-theme">
+      <div className="qa-shell">
+        <header className="qa-hero">
+          <div>
+            <div className="qa-kicker">Zone Operations</div>
+            <h1 className="qa-title">Zone Quest Archetypes</h1>
+            <p className="qa-subtitle">
+              Bind archetypes to specific zones, set quest volume targets, and assign quest givers so each area
+              feels distinct.
+            </p>
           </div>
-          <button
-            onClick={() => deleteZoneQuestArchetype(zoneQuestArchetype.id)}
-            className="px-4 py-2 text-white bg-red-500 rounded hover:bg-red-600 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
-      ))}
-      <button
-        onClick={() => setShouldShowModal(true)}
-        className="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600 transition-colors"
-      >
-        Create Zone Quest Archetype
-      </button>
+          <div className="qa-hero-actions">
+            <button className="qa-btn qa-btn-primary" onClick={() => setShouldShowModal(true)}>
+              New Zone Assignment
+            </button>
+          </div>
+        </header>
+
+        <section className="qa-grid">
+          {zoneQuestArchetypes?.length === 0 ? (
+            <div className="qa-panel">
+              <div className="qa-card-title">No zone assignments yet</div>
+              <p className="qa-muted" style={{ marginTop: 8 }}>
+                Assign an archetype to a zone to start generating quests.
+              </p>
+            </div>
+          ) : (
+            zoneQuestArchetypes.map((zoneQuestArchetype, index) => (
+              <article
+                key={zoneQuestArchetype.id}
+                className="qa-card"
+                style={{ animationDelay: `${index * 0.06}s` }}
+              >
+                <div className="qa-card-header">
+                  <div>
+                    <h2 className="qa-card-title">{zoneQuestArchetype.questArchetype.name}</h2>
+                    <div className="qa-meta">Zone: {zoneQuestArchetype.zone.name}</div>
+                  </div>
+                  <div className="qa-actions">
+                    <button
+                      onClick={() => deleteZoneQuestArchetype(zoneQuestArchetype.id)}
+                      className="qa-btn qa-btn-danger"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                <div className="qa-stat-grid">
+                  <div className="qa-stat">
+                    <div className="qa-stat-label">Quests to Generate</div>
+                    <div className="qa-stat-value">{zoneQuestArchetype.numberOfQuests}</div>
+                  </div>
+                  <div className="qa-stat">
+                    <div className="qa-stat-label">Quest Giver</div>
+                    <div className="qa-stat-value">{zoneQuestArchetype.character?.name ?? 'None'}</div>
+                  </div>
+                  <div className="qa-stat">
+                    <div className="qa-stat-label">Archetype ID</div>
+                    <div className="qa-stat-value">{zoneQuestArchetype.questArchetypeId.slice(0, 8)}…</div>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </section>
+      </div>
 
       {shouldShowModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg w-[500px]">
-            <h2 className="text-xl font-bold mb-4">Create Zone Quest Archetype</h2>
-            
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="block mb-2">Zone Search</label>
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Create Zone Quest Archetype</h2>
+
+            <div className="qa-form-grid">
+              <div className="qa-field">
+                <div className="qa-label">Zone Search</div>
                 <input
                   type="text"
-                  className="w-full p-2 border rounded"
+                  className="qa-input"
                   value={zoneSearch}
                   onChange={(e) => setZoneSearch(e.target.value)}
                   placeholder="Search zones..."
                 />
               </div>
 
-              <div>
-                <label className="block mb-2">Zone</label>
-                <select 
-                  className="w-full p-2 border rounded"
+              <div className="qa-field">
+                <div className="qa-label">Zone</div>
+                <select
+                  className="qa-select"
                   value={selectedZoneId}
                   onChange={(e) => setSelectedZoneId(e.target.value)}
                 >
                   <option value="">Select a zone</option>
                   {zones
-                    .filter((z) => 
-                      z.name.toLowerCase().includes(zoneSearch.toLowerCase())
-                    )
+                    .filter((z) => z.name.toLowerCase().includes(zoneSearch.toLowerCase()))
                     .map((z) => (
                       <option key={z.id} value={z.id}>
                         {z.name}
@@ -94,29 +134,27 @@ export const ZoneQuestArchetypes = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block mb-2">Quest Archetype Search</label>
+              <div className="qa-field">
+                <div className="qa-label">Quest Archetype Search</div>
                 <input
                   type="text"
-                  className="w-full p-2 border rounded"
+                  className="qa-input"
                   value={questArchetypeSearch}
                   onChange={(e) => setQuestArchetypeSearch(e.target.value)}
                   placeholder="Search quest archetypes..."
                 />
               </div>
 
-              <div>
-                <label className="block mb-2">Quest Archetype</label>
+              <div className="qa-field">
+                <div className="qa-label">Quest Archetype</div>
                 <select
-                  className="w-full p-2 border rounded"
+                  className="qa-select"
                   value={selectedQuestArchetypeId}
                   onChange={(e) => setSelectedQuestArchetypeId(e.target.value)}
                 >
                   <option value="">Select a quest archetype</option>
                   {questArchetypes
-                    .filter((qa) =>
-                      qa.name.toLowerCase().includes(questArchetypeSearch.toLowerCase())
-                    )
+                    .filter((qa) => qa.name.toLowerCase().includes(questArchetypeSearch.toLowerCase()))
                     .map((qa) => (
                       <option key={qa.id} value={qa.id}>
                         {qa.name}
@@ -125,32 +163,32 @@ export const ZoneQuestArchetypes = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block mb-2">Number of Quests</label>
+              <div className="qa-field">
+                <div className="qa-label">Number of Quests</div>
                 <input
                   type="number"
-                  className="w-full p-2 border rounded"
+                  className="qa-input"
                   value={numberOfQuests}
-                  onChange={(e) => setNumberOfQuests(parseInt(e.target.value))}
+                  onChange={(e) => setNumberOfQuests(parseInt(e.target.value) || 1)}
                   min="1"
                 />
               </div>
 
-              <div>
-                <label className="block mb-2">Character Search</label>
+              <div className="qa-field">
+                <div className="qa-label">Character Search</div>
                 <input
                   type="text"
-                  className="w-full p-2 border rounded"
+                  className="qa-input"
                   value={characterSearch}
                   onChange={(e) => setCharacterSearch(e.target.value)}
                   placeholder="Search characters..."
                 />
               </div>
 
-              <div>
-                <label className="block mb-2">Quest Giver Character</label>
+              <div className="qa-field">
+                <div className="qa-label">Quest Giver Character</div>
                 <select
-                  className="w-full p-2 border rounded"
+                  className="qa-select"
                   value={selectedCharacterId}
                   onChange={(e) => setSelectedCharacterId(e.target.value)}
                 >
@@ -167,14 +205,12 @@ export const ZoneQuestArchetypes = () => {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => setShouldShowModal(false)}
-                  className="px-4 py-2 text-gray-600 bg-gray-200 rounded hover:bg-gray-300 transition-colors"
-                >
+              <div className="qa-footer">
+                <button className="qa-btn qa-btn-outline" onClick={() => setShouldShowModal(false)}>
                   Cancel
                 </button>
                 <button
+                  className="qa-btn qa-btn-primary"
                   onClick={async () => {
                     if (selectedZoneId && selectedQuestArchetypeId && numberOfQuests) {
                       await createZoneQuestArchetype(
@@ -187,7 +223,6 @@ export const ZoneQuestArchetypes = () => {
                     }
                   }}
                   disabled={!selectedZoneId || !selectedQuestArchetypeId || !numberOfQuests}
-                  className="px-4 py-2 text-white bg-blue-500 rounded hover:bg-blue-600 transition-colors disabled:bg-gray-400"
                 >
                   Create
                 </button>
@@ -197,5 +232,5 @@ export const ZoneQuestArchetypes = () => {
         </div>
       )}
     </div>
-  </div>;
+  );
 };

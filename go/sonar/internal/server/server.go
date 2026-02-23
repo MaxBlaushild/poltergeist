@@ -17,6 +17,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/auth"
 	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -69,6 +70,7 @@ type server struct {
 	asyncClient      *asynq.Client
 	redisClient      *redis.Client
 	searchClient     search.SearchClient
+	deepPriest       deep_priest.DeepPriest
 	gameEngineClient gameengine.GameEngineClient
 	livenessClient   liveness.LivenessClient
 }
@@ -96,6 +98,7 @@ func NewServer(
 	asyncClient *asynq.Client,
 	redisClient *redis.Client,
 	searchClient search.SearchClient,
+	deepPriest deep_priest.DeepPriest,
 	gameEngineClient gameengine.GameEngineClient,
 	livenessClient liveness.LivenessClient,
 ) Server {
@@ -117,6 +120,7 @@ func NewServer(
 		asyncClient:      asyncClient,
 		redisClient:      redisClient,
 		searchClient:     searchClient,
+		deepPriest:       deepPriest,
 		gameEngineClient: gameEngineClient,
 		livenessClient:   livenessClient,
 	}
@@ -263,6 +267,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetypes))
 	r.GET("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getLocationArchetype))
 	r.POST("/sonar/locationArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createLocationArchetype))
+	r.POST("/sonar/locationArchetypes/challenges/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateLocationArchetypeChallenges))
 	r.DELETE("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteLocationArchetype))
 	r.PATCH("/sonar/locationArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateLocationArchetype))
 	r.GET("/sonar/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypes))
@@ -273,6 +278,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeNode))
 	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeChallenge))
 	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeChallenges))
+	r.PATCH("/sonar/questArchetypeChallenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetypeChallenge))
 	r.POST("/sonar/zones/:id/questArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypesForZone))
 	r.GET("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneQuestArchetypes))
 	r.POST("/sonar/zoneQuestArchetypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createZoneQuestArchetype))
@@ -2128,6 +2134,69 @@ func (s *server) generateQuestArchetypeChallenge(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, questArchetypeChallenge)
 }
 
+func (s *server) updateQuestArchetypeChallenge(ctx *gin.Context) {
+	id := ctx.Param("id")
+	challengeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype challenge ID"})
+		return
+	}
+
+	var requestBody struct {
+		Reward          *int    `json:"reward"`
+		InventoryItemID *int    `json:"inventoryItemId"`
+		Proficiency     *string `json:"proficiency"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	existing, err := s.dbClient.QuestArchetypeChallenge().FindByID(ctx, challengeID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype challenge not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Reward != nil {
+		existing.Reward = *requestBody.Reward
+	}
+	if requestBody.InventoryItemID != nil {
+		if *requestBody.InventoryItemID <= 0 {
+			existing.InventoryItemID = nil
+		} else {
+			value := *requestBody.InventoryItemID
+			existing.InventoryItemID = &value
+		}
+	}
+	if requestBody.Proficiency != nil {
+		trimmed := strings.TrimSpace(*requestBody.Proficiency)
+		if trimmed == "" {
+			existing.Proficiency = nil
+		} else {
+			existing.Proficiency = &trimmed
+		}
+	}
+	existing.UpdatedAt = time.Now()
+
+	if err := s.dbClient.QuestArchetypeChallenge().Update(ctx, existing); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.QuestArchetypeChallenge().FindByID(ctx, existing.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, updated)
+}
+
 func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
 	var requestBody struct {
 		LocationArchetypeID uuid.UUID `json:"locationArchetypeID"`
@@ -2225,7 +2294,12 @@ func (s *server) updateQuestArchetype(ctx *gin.Context) {
 			return
 		}
 	}
-	ctx.JSON(http.StatusOK, questArchetype)
+	updated, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchetype.ID)
+	if err != nil || updated == nil {
+		ctx.JSON(http.StatusOK, questArchetype)
+		return
+	}
+	ctx.JSON(http.StatusOK, updated)
 }
 
 func (s *server) deleteLocationArchetype(ctx *gin.Context) {
@@ -2256,6 +2330,7 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 		IncludedTypes []string `json:"includedTypes"`
 		ExcludedTypes []string `json:"excludedTypes"`
 		Challenges    []string `json:"challenges"`
+		SubmissionType string  `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2273,6 +2348,17 @@ func (s *server) updateLocationArchetype(ctx *gin.Context) {
 	locationArchetype.IncludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.IncludedTypes)
 	locationArchetype.ExcludedTypes = googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes)
 	locationArchetype.Challenges = pq.StringArray(requestBody.Challenges)
+	submissionType := strings.TrimSpace(requestBody.SubmissionType)
+	if submissionType == "" {
+		locationArchetype.SubmissionType = models.DefaultQuestNodeSubmissionType()
+	} else {
+		parsed := models.QuestNodeSubmissionType(submissionType)
+		if !parsed.IsValid() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
+			return
+		}
+		locationArchetype.SubmissionType = parsed
+	}
 
 	err = s.dbClient.LocationArchetype().Update(ctx, locationArchetype)
 	if err != nil {
@@ -2288,6 +2374,7 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		IncludedTypes []string `json:"includedTypes"`
 		ExcludedTypes []string `json:"excludedTypes"`
 		Challenges    []string `json:"challenges"`
+		SubmissionType string  `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -2304,6 +2391,17 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		ExcludedTypes: googlemaps.NewPlaceTypeSlice(requestBody.ExcludedTypes),
 		Challenges:    pq.StringArray(requestBody.Challenges),
 	}
+	submissionType := strings.TrimSpace(requestBody.SubmissionType)
+	if submissionType == "" {
+		locationArchetype.SubmissionType = models.DefaultQuestNodeSubmissionType()
+	} else {
+		parsed := models.QuestNodeSubmissionType(submissionType)
+		if !parsed.IsValid() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
+			return
+		}
+		locationArchetype.SubmissionType = parsed
+	}
 
 	err := s.dbClient.LocationArchetype().Create(ctx, locationArchetype)
 	if err != nil {
@@ -2311,6 +2409,117 @@ func (s *server) createLocationArchetype(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, locationArchetype)
+}
+
+const generateLocationArchetypeChallengesPromptTemplate = `
+You are a game designer creating quest challenges for real-world locations in a fantasy RPG.
+
+Generate %d distinct challenge prompts for players to complete at a location archetype.
+
+Location archetype name: %s
+Included place types: %v
+Excluded place types: %v
+Required submission type: %s
+
+Rules:
+- Each challenge must be safe, respectful, and appropriate for public locations.
+- Challenges should be doable at many locations in the included types.
+- Keep each question under 140 characters.
+- Do not reference specific brands or businesses by name.
+- Use the required submission type for every challenge.
+
+Return JSON ONLY in the following format:
+{
+  "challenges": [
+    { "question": "string", "submissionType": "text|photo|video" }
+  ]
+}
+`
+
+func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
+	var requestBody struct {
+		Name           string   `json:"name"`
+		IncludedTypes  []string `json:"includedTypes"`
+		ExcludedTypes  []string `json:"excludedTypes"`
+		SubmissionType string   `json:"submissionType"`
+		Count          int      `json:"count"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	count := requestBody.Count
+	if count <= 0 || count > 20 {
+		count = 10
+	}
+
+	submissionType := strings.TrimSpace(requestBody.SubmissionType)
+	if submissionType == "" {
+		submissionType = string(models.DefaultQuestNodeSubmissionType())
+	} else {
+		parsed := models.QuestNodeSubmissionType(submissionType)
+		if !parsed.IsValid() {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid submission type"})
+			return
+		}
+		submissionType = string(parsed)
+	}
+
+	prompt := fmt.Sprintf(
+		generateLocationArchetypeChallengesPromptTemplate,
+		count,
+		requestBody.Name,
+		requestBody.IncludedTypes,
+		requestBody.ExcludedTypes,
+		submissionType,
+	)
+
+	answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	type locationChallengeSuggestion struct {
+		Question       string `json:"question"`
+		SubmissionType string `json:"submissionType"`
+	}
+
+	var response struct {
+		Challenges []locationChallengeSuggestion `json:"challenges"`
+	}
+
+	if err := json.Unmarshal([]byte(answer.Answer), &response); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	seen := make(map[string]bool)
+	cleaned := make([]locationChallengeSuggestion, 0, count)
+	for _, challenge := range response.Challenges {
+		question := strings.TrimSpace(challenge.Question)
+		if question == "" {
+			continue
+		}
+		key := strings.ToLower(question)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		cleaned = append(cleaned, locationChallengeSuggestion{
+			Question:       question,
+			SubmissionType: submissionType,
+		})
+
+		if len(cleaned) >= count {
+			break
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"challenges": cleaned})
 }
 
 func (s *server) getLocationArchetypes(ctx *gin.Context) {
@@ -2938,9 +3147,13 @@ func (s *server) createQuestArchetype(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		questArchType.ItemRewards = rewards
 	}
-	ctx.JSON(http.StatusOK, questArchType)
+	created, err := s.dbClient.QuestArchetype().FindByID(ctx, questArchType.ID)
+	if err != nil || created == nil {
+		ctx.JSON(http.StatusOK, questArchType)
+		return
+	}
+	ctx.JSON(http.StatusOK, created)
 }
 
 func (s *server) moveTagToTagGroup(ctx *gin.Context) {

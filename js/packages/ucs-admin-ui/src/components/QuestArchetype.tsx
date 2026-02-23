@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAPI } from "@poltergeist/contexts";
 import { useQuestArchetypes } from "../contexts/questArchetypes.tsx";
 import { LocationArchetype, QuestArchetype, QuestArchetypeNode, QuestArchetypeChallenge, InventoryItem } from "@poltergeist/types";
+import "./questArchetypeTheme.css";
 
 interface ChallengeNodeProps {
   challenge: QuestArchetypeChallenge;
@@ -9,27 +10,20 @@ interface ChallengeNodeProps {
   locationArchetypes: LocationArchetype[];
   depth: number;
   inventoryItems: InventoryItem[];
-  onEdit: (challenge: QuestArchetypeNode) => void;
+  onEditNode: (node: QuestArchetypeNode) => void;
+  onEditChallenge: (challenge: QuestArchetypeChallenge) => void;
 }
 
-const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locationArchetypes, depth, inventoryItems, onEdit }) => {
-  const borderColors = [
-    'border-gray-200',
-    'border-blue-200',
-    'border-green-200',
-    'border-purple-200',
-    'border-yellow-200',
-  ];
-  const bgColors = [
-    'bg-gray-50',
-    'bg-blue-50',
-    'bg-green-50',
-    'bg-purple-50',
-    'bg-yellow-50',
-  ];
-
-  const borderColor = borderColors[depth % borderColors.length];
-  const bgColor = bgColors[depth % bgColors.length];
+const ChallengeNode: React.FC<ChallengeNodeProps> = ({
+  challenge,
+  index,
+  locationArchetypes,
+  depth,
+  inventoryItems,
+  onEditNode,
+  onEditChallenge,
+}) => {
+  const borderColor = depth % 2 === 0 ? 'rgba(255, 107, 74, 0.4)' : 'rgba(95, 211, 181, 0.35)';
   const legacyItemId = !challenge.inventoryItemId
     ? inventoryItems?.find(item => item.id === challenge.reward)?.id
     : undefined;
@@ -37,46 +31,59 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
   const rewardItem = rewardItemId ? inventoryItems?.find(item => item.id === rewardItemId) : undefined;
 
   return (
-    <div className={`border-l-2 ${borderColor} pl-4 mt-2`}>
-      <div className={`${bgColor} p-3 rounded-md`}>
-        <div className="text-sm">
-          <span className="font-medium">
-            {depth === 0 ? 'Challenge' : 'Sub-Challenge'} {index + 1}
-          </span>
+    <div className="qa-node" style={{ borderColor }}>
+      <div className="qa-node-card">
+        <div className="qa-node-title">
+          {depth === 0 ? 'Challenge' : 'Sub-Challenge'} {index + 1}
+        </div>
+        <div className="qa-inline">
           {challenge.reward > 0 && (
-            <div className="text-gray-600">Reward Points: {challenge.reward}</div>
+            <span className="qa-chip accent">+{challenge.reward} pts</span>
           )}
           {rewardItem && (
-            <div className="text-gray-600">Reward Item: {rewardItem.name}</div>
+            <span className="qa-chip success">{rewardItem.name}</span>
           )}
           {challenge.proficiency && (
-            <div className="text-gray-600">Proficiency: {challenge.proficiency}</div>
-          )}
-          {challenge.unlockedNode && (
-            <div className="mt-2">
-              <div className="text-gray-600 font-medium">Unlocks Node:</div>
-              <div className="bg-white p-3 rounded-md mt-1 shadow-sm">
-                <div className="text-gray-700">
-                  Location Type: {locationArchetypes.find(la => 
-                    la.id === challenge.unlockedNode?.locationArchetypeId
-                  )?.name}
-                </div>
-                <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => onEdit(challenge.unlockedNode!)}>Edit</button>
-                {challenge.unlockedNode.challenges?.map((subChallenge, i) => (
-                  <ChallengeNode
-                    key={subChallenge.id}
-                    challenge={subChallenge}
-                    index={i}
-                    locationArchetypes={locationArchetypes}
-                    depth={depth + 1}
-                    inventoryItems={inventoryItems}
-                    onEdit={onEdit}
-                  />
-                ))}
-              </div>
-            </div>
+            <span className="qa-chip muted">Proficiency: {challenge.proficiency}</span>
           )}
         </div>
+        <div className="qa-inline" style={{ marginTop: 8 }}>
+          <button
+            className="qa-btn qa-btn-ghost"
+            onClick={() => onEditChallenge(challenge)}
+          >
+            Edit Challenge
+          </button>
+        </div>
+        {challenge.unlockedNode && (
+          <div className="qa-panel" style={{ marginTop: 12 }}>
+            <div className="qa-meta">Unlocks Node</div>
+            <div className="qa-inline" style={{ marginTop: 8 }}>
+              <span className="qa-chip">
+                {locationArchetypes.find(la =>
+                  la.id === challenge.unlockedNode?.locationArchetypeId
+                )?.name ?? 'Unknown location'}
+              </span>
+              <button className="qa-btn qa-btn-outline" onClick={() => onEditNode(challenge.unlockedNode!)}>
+                Edit Node
+              </button>
+            </div>
+            <div className="qa-tree" style={{ marginTop: 12 }}>
+              {challenge.unlockedNode.challenges?.map((subChallenge, i) => (
+                <ChallengeNode
+                  key={subChallenge.id}
+                  challenge={subChallenge}
+                  index={i}
+                  locationArchetypes={locationArchetypes}
+                  depth={depth + 1}
+                  inventoryItems={inventoryItems}
+                  onEditNode={onEditNode}
+                  onEditChallenge={onEditChallenge}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -84,13 +91,21 @@ const ChallengeNode: React.FC<ChallengeNodeProps> = ({ challenge, index, locatio
 
 export const QuestArchetypeComponent = () => {
   const { apiClient } = useAPI();
-  const { questArchetypes, locationArchetypes, createQuestArchetype, updateQuestArchetype, deleteQuestArchetype, addChallengeToQuestArchetype } = useQuestArchetypes();
+  const {
+    questArchetypes,
+    locationArchetypes,
+    createQuestArchetype,
+    updateQuestArchetype,
+    deleteQuestArchetype,
+    addChallengeToQuestArchetype,
+    updateQuestArchetypeChallenge,
+  } = useQuestArchetypes();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryItemsLoading, setInventoryItemsLoading] = useState<boolean>(false);
   const [shouldShowModal, setShouldShowModal] = useState(false);
-  const [selectedQuestArchetype, setSelectedQuestArchetype] = useState<QuestArchetype | null>(null);
   const [name, setName] = useState("");
   const [locationArchetypeId, setLocationArchetypeId] = useState("");
+  const [locationArchetypeQuery, setLocationArchetypeQuery] = useState("");
   const [defaultGold, setDefaultGold] = useState<number>(0);
   const [ selectedNode, setSelectedNode ] = useState<QuestArchetypeNode | null>(null);
   const [ rewardPoints, setRewardPoints ] = useState<number>(0);
@@ -101,6 +116,18 @@ export const QuestArchetypeComponent = () => {
   const [ editingArchetype, setEditingArchetype ] = useState<QuestArchetype | null>(null);
   const [ editGold, setEditGold ] = useState<number>(0);
   const [ editRewards, setEditRewards ] = useState<{ inventoryItemId: string; quantity: number }[]>([]);
+  const [ editingChallenge, setEditingChallenge ] = useState<QuestArchetypeChallenge | null>(null);
+  const [ editChallengeRewardPoints, setEditChallengeRewardPoints ] = useState<number>(0);
+  const [ editChallengeRewardItemId, setEditChallengeRewardItemId ] = useState<number>(0);
+  const [ editChallengeProficiency, setEditChallengeProficiency ] = useState<string>("");
+  const [ proficiencySearch, setProficiencySearch ] = useState<string>("");
+  const [ proficiencyOptions, setProficiencyOptions ] = useState<string[]>([]);
+
+  const filteredLocationArchetypes = locationArchetypes
+    .filter((archetype) =>
+      archetype.name.toLowerCase().includes(locationArchetypeQuery.trim().toLowerCase())
+    )
+    .slice(0, 8);
 
   useEffect(() => {
     const fetchInventoryItems = async () => {
@@ -118,479 +145,637 @@ export const QuestArchetypeComponent = () => {
     fetchInventoryItems();
   }, [apiClient]);
 
-  return <div>
-    <h1 className="text-2xl font-bold">Quest Archetype</h1>
-    <div className="grid grid-cols-1 gap-4 mt-4 mb-8">
-      {questArchetypes.map((questArchetype) => (
-        <div 
-          key={questArchetype.id}
-          className="bg-white shadow rounded-lg p-6 border border-gray-200"
-        >
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-semibold text-gray-900">{questArchetype.name}</h3>
-            <button
-              onClick={() => {
-                if (window.confirm('Are you sure you want to delete this quest archetype?')) {
-                  deleteQuestArchetype(questArchetype.id);
-                }
-              }}
-              className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm"
-            >
-              Delete
+  useEffect(() => {
+    const query = proficiencySearch.trim();
+    let active = true;
+    const handle = window.setTimeout(async () => {
+      try {
+        const results = await apiClient.get<string[]>(
+          `/sonar/proficiencies?query=${encodeURIComponent(query)}&limit=25`
+        );
+        if (!active) return;
+        setProficiencyOptions(Array.isArray(results) ? results : []);
+      } catch (error) {
+        if (active) {
+          console.error('Failed to load proficiencies', error);
+          setProficiencyOptions([]);
+        }
+      }
+    }, 200);
+    return () => {
+      active = false;
+      window.clearTimeout(handle);
+    };
+  }, [apiClient, proficiencySearch]);
+
+  return (
+    <div className="qa-theme">
+      <datalist id="qa-proficiency-options">
+        {proficiencyOptions.map((option) => (
+          <option key={option} value={option} />
+        ))}
+      </datalist>
+      <div className="qa-shell">
+        <header className="qa-hero">
+          <div>
+            <div className="qa-kicker">Quest Design Lab</div>
+            <h1 className="qa-title">Quest Archetypes</h1>
+            <p className="qa-subtitle">
+              Build the backbone of every adventure. Define branching challenges, rewards, and proficiencies so
+              generated quests feel crafted rather than random.
+            </p>
+          </div>
+          <div className="qa-hero-actions">
+            {inventoryItemsLoading && <span className="qa-chip muted">Loading items…</span>}
+            <button className="qa-btn qa-btn-primary" onClick={() => setShouldShowModal(true)}>
+              New Archetype
             </button>
           </div>
-          
-          <div className="mt-4 bg-gray-50 p-4 rounded-md">
-            <h4 className="font-medium text-gray-700 mb-2">Root Node</h4>
-            <div className="space-y-2">
-              <div>
-                <span className="text-sm text-gray-500">Location Type: </span>
-                <span className="text-sm font-medium text-gray-900">
-                  {locationArchetypes.find(la => la.id === questArchetype.root?.locationArchetypeId)?.name || 'Unknown'}
-                </span>
-              </div>
-              
-              <div>
-                <span className="text-sm text-gray-500">Challenges: </span>
-                <span className="text-sm font-medium text-gray-900">
-                  {questArchetype.root?.challenges?.length || 0}
-                </span>
-              </div>
+        </header>
 
-              <div>
-                <span className="text-sm text-gray-500">Node ID: </span>
-                <span className="text-sm font-medium text-gray-900">
-                  {questArchetype.root?.id}
-                </span>
-              </div>
+        <section className="qa-grid">
+          {questArchetypes.length === 0 ? (
+            <div className="qa-panel">
+              <div className="qa-card-title">No archetypes yet</div>
+              <p className="qa-muted" style={{ marginTop: 8 }}>
+                Create the first quest archetype to start generating quest chains for a zone.
+              </p>
             </div>
-          </div>
-
-          <div className="mt-4">
-            <h4 className="font-medium text-gray-700 mb-2">Challenge Tree</h4>
-            {questArchetype.root && (
-              <div className="pl-4">
-                {questArchetype.root.challenges?.map((challenge, i) => (
-                  <ChallengeNode
-                    key={challenge.id}
-                    challenge={challenge}
-                    index={i}
-                    locationArchetypes={locationArchetypes}
-                    depth={0}
-                    inventoryItems={inventoryItems}
-                    onEdit={() => setSelectedNode(challenge.unlockedNode!)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 bg-gray-50 p-4 rounded-md">
-            <h4 className="font-medium text-gray-700 mb-2">Rewards</h4>
-            <div className="text-sm text-gray-600">Default Gold: {questArchetype.defaultGold ?? 0}</div>
-            {questArchetype.itemRewards && questArchetype.itemRewards.length > 0 ? (
-              <div className="mt-2 text-sm text-gray-600">
-                {questArchetype.itemRewards.map((reward) => {
-                  const item = inventoryItems.find((entry) => entry.id === reward.inventoryItemId);
-                  return (
-                    <div key={reward.id ?? `${reward.inventoryItemId}-${reward.quantity}`}>
-                      {reward.quantity}x {item?.name ?? `Item ${reward.inventoryItemId}`}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="mt-2 text-sm text-gray-500">No item rewards.</div>
-            )}
-          </div>
-
-          <div className="mt-2 text-sm text-gray-500">
-            Created: {new Date(questArchetype.createdAt).toLocaleDateString()}
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => 
-              setSelectedNode(questArchetype.root)}>Edit Root Node</button>
-            <button
-              className="bg-gray-600 text-white px-4 py-2 rounded-md"
-              onClick={() => {
-                setEditingArchetype(questArchetype);
-                setEditGold(questArchetype.defaultGold ?? 0);
-                setEditRewards(
-                  (questArchetype.itemRewards ?? []).map((reward) => ({
-                    inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
-                    quantity: reward.quantity ?? 1,
-                  }))
-                );
-              }}
-            >
-              Edit Rewards
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-    <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => setShouldShowModal(true)}>Create Quest Archetype</button>
-    {selectedNode && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div className="bg-white p-6 rounded-lg w-96">
-          <h2 className="text-xl font-bold mb-4">Edit Root Node</h2>
-          <div className="space-y-2">
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Add Challenge
-              </label>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    Reward Points
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={rewardPoints}
-                    onChange={(e) => setRewardPoints(parseInt(e.target.value) || 0)}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    Reward Item
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={rewardItemId}
-                    onChange={(e) => setRewardItemId(parseInt(e.target.value))}
-                  >
-                    <option value="">Select an item</option>
-                    {inventoryItems.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    Proficiency
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={challengeProficiency}
-                    onChange={(e) => setChallengeProficiency(e.target.value)}
-                    placeholder="Optional proficiency (e.g. Persuasion)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">
-                    Unlocked Location Type (Optional)
-                  </label>
-                  <select
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    value={unlockedLocationArchetypeId}
-                    onChange={(e) => setUnlockedLocationArchetypeId(e.target.value)}
-                  >
-                    <option value="">None</option>
-                    {locationArchetypes.map((archetype) => (
-                      <option key={archetype.id} value={archetype.id}>
-                        {archetype.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="button"
-                  className="bg-green-500 text-white px-4 py-2 rounded-md"
-                  onClick={async () => {
-                    if (!selectedNode) return;
-                    await addChallengeToQuestArchetype(
-                      selectedNode.id,
-                      rewardPoints,
-                      rewardItemId || null,
-                      challengeProficiency,
-                      unlockedLocationArchetypeId
-                    );
-                    setRewardPoints(0);
-                    setRewardItemId(0);
-                    setChallengeProficiency("");
-                    setUnlockedLocationArchetypeId("");
-                  }}
+          ) : (
+            questArchetypes.map((questArchetype, index) => {
+              const rootLocation = locationArchetypes.find((la) =>
+                la.id === questArchetype.root?.locationArchetypeId
+              )?.name ?? 'Unknown';
+              const nodeId = questArchetype.root?.id ?? '';
+              const nodeIdShort = nodeId ? `${nodeId.slice(0, 8)}…` : '—';
+              const rewards = questArchetype.itemRewards ?? [];
+              return (
+                <article
+                  key={questArchetype.id}
+                  className="qa-card"
+                  style={{ animationDelay: `${index * 0.06}s` }}
                 >
-                  Add Challenge
-                </button>
-              </div>
-            </div>
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => 
-              setSelectedNode(null)}>Cancel</button>
-            <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={() => 
-              setSelectedNode(null)}>Save</button>
-          </div>
-        </div>
-      </div>
-    )}
-    {shouldShowModal && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div className="bg-white p-6 rounded-lg w-96">
-          <h2 className="text-xl font-bold mb-4">Create Quest Archetype</h2>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const normalizedRewards = archetypeRewards
-              .map((reward) => ({
-                inventoryItemId: Number(reward.inventoryItemId) || 0,
-                quantity: Number(reward.quantity) || 0,
-              }))
-              .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
-            createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards);
-            setArchetypeRewards([]);
-            setShouldShowModal(false);
-          }}>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Name
-              </label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Location Archetype
-              </label>
-              <select
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={locationArchetypeId}
-                onChange={(e) => setLocationArchetypeId(e.target.value)}
-              >
-                <option value="">Select a location archetype</option>
-                {locationArchetypes.map((archetype) => (
-                  <option key={archetype.id} value={archetype.id}>
-                    {archetype.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Default Gold
-              </label>
-              <input
-                type="number"
-                min={0}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                value={defaultGold}
-                onChange={(e) => setDefaultGold(parseInt(e.target.value) || 0)}
-              />
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Item Rewards
-              </label>
-              {archetypeRewards.length === 0 ? (
-                <div className="text-xs text-gray-500">No item rewards yet.</div>
-              ) : (
-                <div className="space-y-2">
-                  {archetypeRewards.map((reward, index) => (
-                    <div key={`reward-${index}`} className="flex gap-2">
-                      <select
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                        value={reward.inventoryItemId}
-                        onChange={(e) =>
-                          setArchetypeRewards((prev) =>
-                            prev.map((entry, rewardIndex) =>
-                              rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
-                            )
-                          )
-                        }
-                      >
-                        <option value="">Select an item</option>
-                        {inventoryItems.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-20 px-2 py-2 border border-gray-300 rounded-md"
-                        value={reward.quantity}
-                        onChange={(e) =>
-                          setArchetypeRewards((prev) =>
-                            prev.map((entry, rewardIndex) =>
-                              rewardIndex === index
-                                ? { ...entry, quantity: parseInt(e.target.value) || 1 }
-                                : entry
-                            )
-                          )
-                        }
-                      />
+                  <div className="qa-card-header">
+                    <div>
+                      <h3 className="qa-card-title">{questArchetype.name}</h3>
+                      <div className="qa-meta">
+                        Root: {rootLocation} · {questArchetype.root?.challenges?.length || 0} challenges
+                      </div>
+                    </div>
+                    <div className="qa-actions">
                       <button
-                        type="button"
-                        className="px-2 py-2 text-sm text-red-600"
-                        onClick={() =>
-                          setArchetypeRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
-                        }
+                        className="qa-btn qa-btn-ghost"
+                        onClick={() => {
+                          setEditingArchetype(questArchetype);
+                          setEditGold(questArchetype.defaultGold ?? 0);
+                          setEditRewards(
+                            (questArchetype.itemRewards ?? []).map((reward) => ({
+                              inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
+                              quantity: reward.quantity ?? 1,
+                            }))
+                          );
+                        }}
                       >
-                        Remove
+                        Edit Rewards
+                      </button>
+                      <button className="qa-btn qa-btn-outline" onClick={() => setSelectedNode(questArchetype.root)}>
+                        Edit Root
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-danger"
+                        onClick={() => {
+                          if (window.confirm('Are you sure you want to delete this quest archetype?')) {
+                            deleteQuestArchetype(questArchetype.id);
+                          }
+                        }}
+                      >
+                        Delete
                       </button>
                     </div>
-                  ))}
-                </div>
-              )}
-              <button
-                type="button"
-                className="mt-2 px-3 py-1 text-sm text-blue-600"
-                onClick={() => setArchetypeRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
-              >
-                Add Item Reward
-              </button>
-            </div>
+                  </div>
 
-            <div className="flex justify-end gap-2">
+                  <div className="qa-stat-grid">
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Default Gold</div>
+                      <div className="qa-stat-value">{questArchetype.defaultGold ?? 0}</div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Root Node</div>
+                      <div className="qa-stat-value">{rootLocation}</div>
+                    </div>
+                    <div className="qa-stat" title={nodeId}>
+                      <div className="qa-stat-label">Node ID</div>
+                      <div className="qa-stat-value">{nodeIdShort}</div>
+                    </div>
+                    <div className="qa-stat">
+                      <div className="qa-stat-label">Created</div>
+                      <div className="qa-stat-value">
+                        {new Date(questArchetype.createdAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="qa-divider" />
+
+                  <div className="qa-tree">
+                    <div className="qa-meta">Challenge Tree</div>
+                    {questArchetype.root?.challenges?.length ? (
+                      questArchetype.root.challenges.map((challenge, i) => (
+                        <ChallengeNode
+                          key={challenge.id}
+                          challenge={challenge}
+                          index={i}
+                          locationArchetypes={locationArchetypes}
+                          depth={0}
+                          inventoryItems={inventoryItems}
+                          onEditNode={() => setSelectedNode(challenge.unlockedNode!)}
+                          onEditChallenge={(selected) => {
+                            setEditingChallenge(selected);
+                            setEditChallengeRewardPoints(selected.reward ?? 0);
+                            const itemId = selected.inventoryItemId ?? 0;
+                            setEditChallengeRewardItemId(itemId);
+                            setEditChallengeProficiency(selected.proficiency ?? '');
+                            setProficiencySearch(selected.proficiency ?? '');
+                          }}
+                        />
+                      ))
+                    ) : (
+                      <div className="qa-empty">No challenges yet. Add one from the node editor.</div>
+                    )}
+                  </div>
+
+                  <div className="qa-divider" />
+
+                  <div className="qa-panel">
+                    <div className="qa-meta">Quest Rewards</div>
+                    {rewards.length > 0 ? (
+                      <div className="qa-inline" style={{ marginTop: 10 }}>
+                        {rewards.map((reward) => {
+                          const item = inventoryItems.find((entry) => entry.id === reward.inventoryItemId);
+                          return (
+                            <span
+                              key={reward.id ?? `${reward.inventoryItemId}-${reward.quantity}`}
+                              className="qa-chip"
+                            >
+                              {reward.quantity}x {item?.name ?? `Item ${reward.inventoryItemId}`}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="qa-empty" style={{ marginTop: 10 }}>
+                        No item rewards configured.
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
+
+      {selectedNode && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Edit Quest Node</h2>
+            <div className="qa-form-grid">
+              <div className="qa-field">
+                <div className="qa-label">Reward Points</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={rewardPoints}
+                  onChange={(e) => setRewardPoints(parseInt(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Reward Item</div>
+                <select
+                  className="qa-select"
+                  value={rewardItemId || ''}
+                  onChange={(e) => setRewardItemId(parseInt(e.target.value) || 0)}
+                >
+                  <option value="">Select an item</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Proficiency</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={challengeProficiency}
+                  onChange={(e) => {
+                    setChallengeProficiency(e.target.value);
+                    setProficiencySearch(e.target.value);
+                  }}
+                  list="qa-proficiency-options"
+                  placeholder="Optional proficiency (e.g. Persuasion)"
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Unlocked Location Type</div>
+                <select
+                  className="qa-select"
+                  value={unlockedLocationArchetypeId}
+                  onChange={(e) => setUnlockedLocationArchetypeId(e.target.value)}
+                >
+                  <option value="">None</option>
+                  {locationArchetypes.map((archetype) => (
+                    <option key={archetype.id} value={archetype.id}>
+                      {archetype.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <button
                 type="button"
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                onClick={() => {
-                  setShouldShowModal(false);
-                  setArchetypeRewards([]);
+                className="qa-btn qa-btn-primary"
+                onClick={async () => {
+                  if (!selectedNode) return;
+                  await addChallengeToQuestArchetype(
+                    selectedNode.id,
+                    rewardPoints,
+                    rewardItemId || null,
+                    challengeProficiency,
+                    unlockedLocationArchetypeId
+                  );
+                  setRewardPoints(0);
+                  setRewardItemId(0);
+                  setChallengeProficiency("");
+                  setUnlockedLocationArchetypeId("");
                 }}
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-              >
-                Create
+                Add Challenge
               </button>
             </div>
-          </form>
+            <div className="qa-footer">
+              <button className="qa-btn qa-btn-outline" onClick={() => setSelectedNode(null)}>
+                Close
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    )}
-    {editingArchetype && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div className="bg-white p-6 rounded-lg w-96">
-          <h2 className="text-xl font-bold mb-4">Edit Quest Rewards</h2>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Default Gold
-            </label>
-            <input
-              type="number"
-              min={0}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              value={editGold}
-              onChange={(e) => setEditGold(parseInt(e.target.value) || 0)}
-            />
-          </div>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Item Rewards
-            </label>
-            {editRewards.length === 0 ? (
-              <div className="text-xs text-gray-500">No item rewards yet.</div>
-            ) : (
-              <div className="space-y-2">
-                {editRewards.map((reward, index) => (
-                  <div key={`edit-reward-${index}`} className="flex gap-2">
-                    <select
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                      value={reward.inventoryItemId}
-                      onChange={(e) =>
-                        setEditRewards((prev) =>
-                          prev.map((entry, rewardIndex) =>
-                            rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
-                          )
-                        )
-                      }
-                    >
-                      <option value="">Select an item</option>
-                      {inventoryItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-20 px-2 py-2 border border-gray-300 rounded-md"
-                      value={reward.quantity}
-                      onChange={(e) =>
-                        setEditRewards((prev) =>
-                          prev.map((entry, rewardIndex) =>
-                            rewardIndex === index
-                              ? { ...entry, quantity: parseInt(e.target.value) || 1 }
-                              : entry
-                          )
-                        )
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="px-2 py-2 text-sm text-red-600"
-                      onClick={() =>
-                        setEditRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <button
-              type="button"
-              className="mt-2 px-3 py-1 text-sm text-blue-600"
-              onClick={() => setEditRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
-            >
-              Add Item Reward
-            </button>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
-              onClick={() => {
-                setEditingArchetype(null);
-                setEditRewards([]);
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-              onClick={async () => {
-                const normalizedRewards = editRewards
+      )}
+
+      {shouldShowModal && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Create Quest Archetype</h2>
+            <form
+              className="qa-form-grid"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const normalizedRewards = archetypeRewards
                   .map((reward) => ({
                     inventoryItemId: Number(reward.inventoryItemId) || 0,
                     quantity: Number(reward.quantity) || 0,
                   }))
                   .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
-                await updateQuestArchetype({
-                  ...editingArchetype,
-                  defaultGold: editGold,
-                  itemRewards: normalizedRewards,
-                });
-                setEditingArchetype(null);
-                setEditRewards([]);
+                createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards);
+                setArchetypeRewards([]);
+                setLocationArchetypeId('');
+                setLocationArchetypeQuery('');
+                setShouldShowModal(false);
               }}
             >
-              Save
-            </button>
+              <div className="qa-field">
+                <div className="qa-label">Name</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Location Archetype</div>
+                <div className="qa-combobox">
+                  <input
+                    type="text"
+                    className="qa-input"
+                    value={locationArchetypeQuery}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setLocationArchetypeQuery(value);
+                      const matched = locationArchetypes.find(
+                        (archetype) => archetype.name.toLowerCase() === value.trim().toLowerCase()
+                      );
+                      setLocationArchetypeId(matched ? matched.id : '');
+                    }}
+                    placeholder="Search location archetypes..."
+                  />
+                  {locationArchetypeQuery.trim().length > 0 && (
+                    <div className="qa-combobox-list">
+                      {filteredLocationArchetypes.length === 0 ? (
+                        <div className="qa-combobox-empty">No matches.</div>
+                      ) : (
+                        filteredLocationArchetypes.map((archetype) => (
+                          <button
+                            key={archetype.id}
+                            type="button"
+                            className="qa-combobox-option"
+                            onClick={() => {
+                              setLocationArchetypeId(archetype.id);
+                              setLocationArchetypeQuery(archetype.name);
+                            }}
+                          >
+                            {archetype.name}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Default Gold</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={defaultGold}
+                  onChange={(e) => setDefaultGold(parseInt(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Item Rewards</div>
+                {archetypeRewards.length === 0 ? (
+                  <div className="qa-empty">No item rewards yet.</div>
+                ) : (
+                  <div className="qa-form-grid">
+                    {archetypeRewards.map((reward, index) => (
+                      <div key={`reward-${index}`} className="qa-reward-row">
+                        <select
+                          className="qa-select"
+                          value={reward.inventoryItemId}
+                          onChange={(e) =>
+                            setArchetypeRewards((prev) =>
+                              prev.map((entry, rewardIndex) =>
+                                rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
+                              )
+                            )
+                          }
+                        >
+                          <option value="">Select an item</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          className="qa-input"
+                          value={reward.quantity}
+                          onChange={(e) =>
+                            setArchetypeRewards((prev) =>
+                              prev.map((entry, rewardIndex) =>
+                                rewardIndex === index
+                                  ? { ...entry, quantity: parseInt(e.target.value) || 1 }
+                                  : entry
+                              )
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setArchetypeRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() => setArchetypeRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
+                >
+                  Add Item Reward
+                </button>
+              </div>
+
+              <div className="qa-footer">
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-outline"
+                  onClick={() => {
+                    setShouldShowModal(false);
+                    setArchetypeRewards([]);
+                    setLocationArchetypeId('');
+                    setLocationArchetypeQuery('');
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="qa-btn qa-btn-primary">
+                  Create
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
-    )}
-  </div>;
+      )}
+
+      {editingArchetype && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Edit Quest Rewards</h2>
+            <div className="qa-form-grid">
+              <div className="qa-field">
+                <div className="qa-label">Default Gold</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={editGold}
+                  onChange={(e) => setEditGold(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Item Rewards</div>
+                {editRewards.length === 0 ? (
+                  <div className="qa-empty">No item rewards yet.</div>
+                ) : (
+                  <div className="qa-form-grid">
+                    {editRewards.map((reward, index) => (
+                      <div key={`edit-reward-${index}`} className="qa-reward-row">
+                        <select
+                          className="qa-select"
+                          value={reward.inventoryItemId}
+                          onChange={(e) =>
+                            setEditRewards((prev) =>
+                              prev.map((entry, rewardIndex) =>
+                                rewardIndex === index ? { ...entry, inventoryItemId: e.target.value } : entry
+                              )
+                            )
+                          }
+                        >
+                          <option value="">Select an item</option>
+                          {inventoryItems.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          className="qa-input"
+                          value={reward.quantity}
+                          onChange={(e) =>
+                            setEditRewards((prev) =>
+                              prev.map((entry, rewardIndex) =>
+                                rewardIndex === index
+                                  ? { ...entry, quantity: parseInt(e.target.value) || 1 }
+                                  : entry
+                              )
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="qa-btn qa-btn-text"
+                          onClick={() =>
+                            setEditRewards((prev) => prev.filter((_, rewardIndex) => rewardIndex !== index))
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-ghost"
+                  onClick={() => setEditRewards((prev) => [...prev, { inventoryItemId: '', quantity: 1 }])}
+                >
+                  Add Item Reward
+                </button>
+              </div>
+            </div>
+            <div className="qa-footer">
+              <button
+                className="qa-btn qa-btn-outline"
+                onClick={() => {
+                  setEditingArchetype(null);
+                  setEditRewards([]);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="qa-btn qa-btn-primary"
+                onClick={async () => {
+                  const normalizedRewards = editRewards
+                    .map((reward) => ({
+                      inventoryItemId: Number(reward.inventoryItemId) || 0,
+                      quantity: Number(reward.quantity) || 0,
+                    }))
+                    .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
+                  await updateQuestArchetype({
+                    ...editingArchetype,
+                    defaultGold: editGold,
+                    itemRewards: normalizedRewards,
+                  });
+                  setEditingArchetype(null);
+                  setEditRewards([]);
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingChallenge && (
+        <div className="qa-modal">
+          <div className="qa-modal-card">
+            <h2 className="qa-modal-title">Edit Challenge</h2>
+            <div className="qa-form-grid">
+              <div className="qa-field">
+                <div className="qa-label">Reward Points</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={editChallengeRewardPoints}
+                  onChange={(e) => setEditChallengeRewardPoints(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Reward Item</div>
+                <select
+                  className="qa-select"
+                  value={editChallengeRewardItemId || ''}
+                  onChange={(e) => setEditChallengeRewardItemId(parseInt(e.target.value) || 0)}
+                >
+                  <option value="">Select an item</option>
+                  {inventoryItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="qa-field">
+                <div className="qa-label">Proficiency</div>
+                <input
+                  type="text"
+                  className="qa-input"
+                  value={editChallengeProficiency}
+                  onChange={(e) => {
+                    setEditChallengeProficiency(e.target.value);
+                    setProficiencySearch(e.target.value);
+                  }}
+                  list="qa-proficiency-options"
+                  placeholder="Optional proficiency (e.g. Persuasion)"
+                />
+              </div>
+            </div>
+            <div className="qa-footer">
+              <button className="qa-btn qa-btn-outline" onClick={() => setEditingChallenge(null)}>
+                Cancel
+              </button>
+              <button
+                className="qa-btn qa-btn-primary"
+                onClick={async () => {
+                  const trimmed = editChallengeProficiency.trim();
+                  await updateQuestArchetypeChallenge(editingChallenge.id, {
+                    reward: editChallengeRewardPoints,
+                    inventoryItemId: editChallengeRewardItemId > 0 ? editChallengeRewardItemId : null,
+                    proficiency: trimmed.length > 0 ? trimmed : null,
+                  });
+                  setEditingChallenge(null);
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };

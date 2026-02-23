@@ -21,6 +21,7 @@ type LocationArchetype struct {
 	IncludedTypes  googlemaps.PlaceTypeSlice `json:"includedTypes" gorm:"type:text[]"`
 	ExcludedTypes  googlemaps.PlaceTypeSlice `json:"excludedTypes" gorm:"type:text[]"`
 	Challenges     pq.StringArray            `json:"challenges" gorm:"type:text[]"`
+	SubmissionType QuestNodeSubmissionType   `json:"submissionType" gorm:"type:text;default:photo"`
 	UsedChallenges []string                  `gorm:"-" json:"usedChallenges"`
 }
 

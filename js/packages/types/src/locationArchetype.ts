@@ -1,3 +1,5 @@
+import { QuestNodeSubmissionType } from "./questNode";
+
 export interface LocationArchetype {
   id: string;
   name: string;
@@ -7,4 +9,5 @@ export interface LocationArchetype {
   includedTypes: string[];
   excludedTypes: string[];
   challenges: string[];
+  submissionType?: QuestNodeSubmissionType;
 }
