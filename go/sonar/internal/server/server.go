@@ -276,6 +276,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestArchetype))
 	r.PATCH("/sonar/questArchetypes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetype))
 	r.POST("/sonar/questArchetypeNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestArchetypeNode))
+	r.PATCH("/sonar/questArchetypeNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetypeNode))
 	r.POST("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuestArchetypeChallenge))
 	r.GET("/sonar/questArchetypes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuestArchetypeChallenges))
 	r.PATCH("/sonar/questArchetypeChallenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestArchetypeChallenge))
@@ -2400,10 +2401,15 @@ func (s *server) deleteQuestArchetypeChallenge(ctx *gin.Context) {
 func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
 	var requestBody struct {
 		LocationArchetypeID uuid.UUID `json:"locationArchetypeID"`
+		Difficulty          *int      `json:"difficulty"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Difficulty != nil && *requestBody.Difficulty < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
 		return
 	}
 	questArchetypeNode := &models.QuestArchetypeNode{
@@ -2411,6 +2417,10 @@ func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 		LocationArchetypeID: requestBody.LocationArchetypeID,
+		Difficulty:          0,
+	}
+	if requestBody.Difficulty != nil {
+		questArchetypeNode.Difficulty = *requestBody.Difficulty
 	}
 
 	err := s.dbClient.QuestArchetypeNode().Create(ctx, questArchetypeNode)
@@ -2420,6 +2430,55 @@ func (s *server) createQuestArchetypeNode(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, questArchetypeNode)
+}
+
+func (s *server) updateQuestArchetypeNode(ctx *gin.Context) {
+	id := ctx.Param("id")
+	questArchetypeNodeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest archetype node ID"})
+		return
+	}
+
+	var requestBody struct {
+		Difficulty *int `json:"difficulty"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	questArchetypeNode, err := s.dbClient.QuestArchetypeNode().FindByID(ctx, questArchetypeNodeID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "quest archetype node not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.Difficulty != nil {
+		if *requestBody.Difficulty < 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "difficulty must be zero or greater"})
+			return
+		}
+		questArchetypeNode.Difficulty = *requestBody.Difficulty
+	}
+	questArchetypeNode.UpdatedAt = time.Now()
+
+	if err := s.dbClient.QuestArchetypeNode().Update(ctx, questArchetypeNode); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.QuestArchetypeNode().FindByID(ctx, questArchetypeNodeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, updated)
 }
 
 func (s *server) deleteQuestArchetype(ctx *gin.Context) {
@@ -2613,19 +2672,23 @@ Rules:
 - Keep each question under 140 characters.
 - Do not reference specific brands or businesses by name.
 - Choose a submission type from the allowed list for each challenge.
+- Provide a short proficiency (1-3 words) that represents the skill being tested or trained.
+- Provide a difficulty rating from 0 to 100 (integer) for each challenge.
 - Try to include a mix of submission types when appropriate.
 
 Return JSON ONLY in the following format:
 {
   "challenges": [
-    { "question": "string", "submissionType": "text|photo|video" }
+    { "question": "string", "submissionType": "text|photo|video", "proficiency": "string", "difficulty": 0 }
   ]
 }
 `
 
 type locationArchetypeChallengePayload struct {
-	Question       string `json:"question"`
-	SubmissionType string `json:"submissionType"`
+	Question       string  `json:"question"`
+	SubmissionType string  `json:"submissionType"`
+	Proficiency    *string `json:"proficiency"`
+	Difficulty     *int    `json:"difficulty"`
 }
 
 func normalizeLocationArchetypeChallenges(challenges []locationArchetypeChallengePayload) (models.LocationArchetypeChallenges, error) {
@@ -2644,7 +2707,25 @@ func normalizeLocationArchetypeChallenges(challenges []locationArchetypeChalleng
 		if !parsed.IsValid() {
 			return nil, fmt.Errorf("invalid submission type")
 		}
-		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed))
+		var proficiency *string
+		if challenge.Proficiency != nil {
+			trimmed := strings.TrimSpace(*challenge.Proficiency)
+			if trimmed != "" {
+				proficiency = &trimmed
+			}
+		}
+		difficulty := 0
+		if challenge.Difficulty != nil {
+			if *challenge.Difficulty < 0 {
+				return nil, fmt.Errorf("difficulty must be zero or greater")
+			}
+			difficulty = *challenge.Difficulty
+		}
+		proficiencyKey := ""
+		if proficiency != nil {
+			proficiencyKey = *proficiency
+		}
+		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed)) + "|" + strings.ToLower(proficiencyKey) + "|" + fmt.Sprintf("%d", difficulty)
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -2652,6 +2733,8 @@ func normalizeLocationArchetypeChallenges(challenges []locationArchetypeChalleng
 		normalized = append(normalized, models.LocationArchetypeChallenge{
 			Question:       question,
 			SubmissionType: parsed,
+			Proficiency:    proficiency,
+			Difficulty:     difficulty,
 		})
 	}
 	return normalized, nil
@@ -2751,15 +2834,33 @@ func (s *server) generateLocationArchetypeChallenges(ctx *gin.Context) {
 				parsed = models.QuestNodeSubmissionType(submissionType)
 			}
 		}
-		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed))
+		proficiency := ""
+		if challenge.Proficiency != nil {
+			proficiency = strings.TrimSpace(*challenge.Proficiency)
+		}
+		difficulty := 0
+		if challenge.Difficulty != nil {
+			difficulty = *challenge.Difficulty
+		}
+		if difficulty < 0 {
+			difficulty = 0
+		}
+		key := strings.ToLower(question) + "|" + strings.ToLower(string(parsed)) + "|" + strings.ToLower(proficiency) + "|" + fmt.Sprintf("%d", difficulty)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
 
+		var cleanedProficiency *string
+		if proficiency != "" {
+			cleanedProficiency = &proficiency
+		}
+		difficultyValue := difficulty
 		cleaned = append(cleaned, locationArchetypeChallengePayload{
 			Question:       question,
 			SubmissionType: string(parsed),
+			Proficiency:    cleanedProficiency,
+			Difficulty:     &difficultyValue,
 		})
 
 		if len(cleaned) >= count {

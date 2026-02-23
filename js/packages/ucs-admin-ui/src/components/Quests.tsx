@@ -1075,6 +1075,26 @@ export const Quests = () => {
     }
   };
 
+  const handleDeleteQuestById = async (quest: Quest) => {
+    const confirmDelete = window.confirm(`Delete quest "${quest.name}"? This cannot be undone.`);
+    if (!confirmDelete) return;
+
+    setDeletingQuestId(quest.id);
+    try {
+      await apiClient.delete(`/sonar/quests/${quest.id}`);
+      setQuests((prev) => prev.filter((item) => item.id !== quest.id));
+      if (selectedQuestId === quest.id) {
+        setSelectedQuestId('');
+        setQuestForm({ ...emptyQuestForm });
+      }
+    } catch (error) {
+      console.error('Failed to delete quest', error);
+      alert('Failed to delete quest.');
+    } finally {
+      setDeletingQuestId(null);
+    }
+  };
+
   const handleSelectQuest = (quest: Quest) => {
     setSelectedQuestId(quest.id);
     setQuestForm({
@@ -1651,14 +1671,25 @@ export const Quests = () => {
           />
           <div className="space-y-2 max-h-[520px] overflow-y-auto">
             {filteredQuests.map((quest) => (
-              <button
+              <div
                 key={quest.id}
-                className={`w-full text-left p-3 rounded-md border ${selectedQuestId === quest.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                onClick={() => handleSelectQuest(quest)}
+                className={`flex items-center justify-between gap-2 p-3 rounded-md border ${selectedQuestId === quest.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
               >
-                <div className="font-semibold">{quest.name}</div>
-                <div className="text-xs text-gray-500">Nodes: {quest.nodes?.length ?? 0}</div>
-              </button>
+                <button
+                  className="flex-1 text-left"
+                  onClick={() => handleSelectQuest(quest)}
+                >
+                  <div className="font-semibold">{quest.name}</div>
+                  <div className="text-xs text-gray-500">Nodes: {quest.nodes?.length ?? 0}</div>
+                </button>
+                <button
+                  className="qa-btn qa-btn-danger"
+                  onClick={() => handleDeleteQuestById(quest)}
+                  disabled={deletingQuestId === quest.id}
+                >
+                  {deletingQuestId === quest.id ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -2576,6 +2607,7 @@ export const Quests = () => {
                                             locationChallenge: '',
                                             question: '',
                                             submissionType: 'photo',
+                                            proficiency: '',
                                           })
                                         }
                                       >
@@ -2609,6 +2641,10 @@ export const Quests = () => {
                                               locationChallenge: value,
                                               question: selected?.question ?? '',
                                               submissionType: (selected?.submissionType ?? 'photo') as QuestNodeSubmissionType,
+                                              proficiency: selected?.proficiency ?? '',
+                                              difficulty:
+                                                selected?.difficulty ??
+                                                (challengeDrafts[node.id] ?? emptyChallengeForm).difficulty,
                                             });
                                           })()
                                         }
@@ -2617,6 +2653,7 @@ export const Quests = () => {
                                         {challenges.map((challenge, index) => (
                                           <option key={`${challenge.question}-${index}`} value={index}>
                                             {challenge.question} · {challenge.submissionType.toUpperCase()}
+                                            {challenge.proficiency ? ` · ${challenge.proficiency}` : ''}
                                           </option>
                                         ))}
                                       </select>

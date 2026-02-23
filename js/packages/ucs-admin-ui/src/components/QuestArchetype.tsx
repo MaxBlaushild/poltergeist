@@ -19,6 +19,7 @@ interface FlowNodeProps {
     difficulty?: number | null,
     unlockedLocationArchetypeId?: string | null
   ) => void;
+  onUpdateNodeDifficulty: (nodeId: string, difficulty: number) => void;
   onEditChallenge: (challenge: QuestArchetypeChallenge) => void;
 }
 
@@ -30,6 +31,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   proficiencyOptions,
   onProficiencySearchChange,
   addChallengeToQuestArchetype,
+  onUpdateNodeDifficulty,
   onEditChallenge,
 }) => {
   const borderColor = depth % 2 === 0 ? 'rgba(255, 107, 74, 0.4)' : 'rgba(95, 211, 181, 0.35)';
@@ -40,6 +42,11 @@ const FlowNode: React.FC<FlowNodeProps> = ({
   const [challengeDifficulty, setChallengeDifficulty] = useState<number>(0);
   const [challengeProficiency, setChallengeProficiency] = useState<string>("");
   const [unlockedLocationArchetypeId, setUnlockedLocationArchetypeId] = useState<string>("");
+  const [nodeDifficulty, setNodeDifficulty] = useState<number>(node.difficulty ?? 0);
+
+  useEffect(() => {
+    setNodeDifficulty(node.difficulty ?? 0);
+  }, [node.difficulty, node.id]);
 
   return (
     <div className="qa-flow-node" style={{ borderColor }}>
@@ -52,6 +59,27 @@ const FlowNode: React.FC<FlowNodeProps> = ({
           <button className="qa-btn qa-btn-primary" onClick={() => setIsAdding((prev) => !prev)}>
             {isAdding ? 'Close' : 'Add Challenge'}
           </button>
+        </div>
+        <div className="qa-flow-form" style={{ marginTop: 12 }}>
+          <div className="qa-field">
+            <div className="qa-label">Node Difficulty</div>
+            <div className="qa-inline">
+              <input
+                type="number"
+                min={0}
+                className="qa-input"
+                value={nodeDifficulty}
+                onChange={(e) => setNodeDifficulty(parseInt(e.target.value) || 0)}
+              />
+              <button
+                className="qa-btn qa-btn-outline"
+                disabled={nodeDifficulty === (node.difficulty ?? 0)}
+                onClick={() => onUpdateNodeDifficulty(node.id, nodeDifficulty)}
+              >
+                Save Difficulty
+              </button>
+            </div>
+          </div>
         </div>
 
         {isAdding && (
@@ -202,6 +230,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({
                         proficiencyOptions={proficiencyOptions}
                         onProficiencySearchChange={onProficiencySearchChange}
                         addChallengeToQuestArchetype={addChallengeToQuestArchetype}
+                        onUpdateNodeDifficulty={onUpdateNodeDifficulty}
                         onEditChallenge={onEditChallenge}
                       />
                     </div>
@@ -323,6 +352,7 @@ export const QuestArchetypeComponent = () => {
     addChallengeToQuestArchetype,
     updateQuestArchetypeChallenge,
     deleteQuestArchetypeChallenge,
+    updateQuestArchetypeNode,
   } = useQuestArchetypes();
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [inventoryItemsLoading, setInventoryItemsLoading] = useState<boolean>(false);
@@ -331,6 +361,7 @@ export const QuestArchetypeComponent = () => {
   const [locationArchetypeId, setLocationArchetypeId] = useState("");
   const [locationArchetypeQuery, setLocationArchetypeQuery] = useState("");
   const [defaultGold, setDefaultGold] = useState<number>(0);
+  const [rootDifficulty, setRootDifficulty] = useState<number>(0);
   const [ archetypeRewards, setArchetypeRewards ] = useState<{ inventoryItemId: string; quantity: number }[]>([]);
   const [ editingArchetype, setEditingArchetype ] = useState<QuestArchetype | null>(null);
   const [ editGold, setEditGold ] = useState<number>(0);
@@ -671,6 +702,9 @@ export const QuestArchetypeComponent = () => {
                         proficiencyOptions={proficiencyOptions}
                         onProficiencySearchChange={setProficiencySearch}
                         addChallengeToQuestArchetype={addChallengeToQuestArchetype}
+                        onUpdateNodeDifficulty={(nodeId, difficulty) =>
+                          updateQuestArchetypeNode(nodeId, { difficulty })
+                        }
                         onEditChallenge={openChallengeEditor}
                       />
                     </div>
@@ -700,7 +734,13 @@ export const QuestArchetypeComponent = () => {
                     quantity: Number(reward.quantity) || 0,
                   }))
                   .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0);
-                createQuestArchetype(name, locationArchetypeId, defaultGold, normalizedRewards).then((created) => {
+                createQuestArchetype(
+                  name,
+                  locationArchetypeId,
+                  rootDifficulty,
+                  defaultGold,
+                  normalizedRewards
+                ).then((created) => {
                   if (created?.id) {
                     setSelectedArchetypeId(created.id);
                   }
@@ -708,6 +748,7 @@ export const QuestArchetypeComponent = () => {
                 setArchetypeRewards([]);
                 setLocationArchetypeId('');
                 setLocationArchetypeQuery('');
+                setRootDifficulty(0);
                 setShouldShowModal(false);
               }}
             >
@@ -770,6 +811,17 @@ export const QuestArchetypeComponent = () => {
                   className="qa-input"
                   value={defaultGold}
                   onChange={(e) => setDefaultGold(parseInt(e.target.value) || 0)}
+                />
+              </div>
+
+              <div className="qa-field">
+                <div className="qa-label">Root Difficulty</div>
+                <input
+                  type="number"
+                  min={0}
+                  className="qa-input"
+                  value={rootDifficulty}
+                  onChange={(e) => setRootDifficulty(parseInt(e.target.value) || 0)}
                 />
               </div>
 

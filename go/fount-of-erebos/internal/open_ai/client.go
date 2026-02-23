@@ -13,6 +13,7 @@ import (
 	"image/png"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
@@ -46,6 +47,14 @@ type neverOpaque struct{ image.Image }
 
 func (neverOpaque) Opaque() bool { return false }
 
+const (
+	maxEditImageBytes = 4 * 1024 * 1024
+	maxEditImageDim   = 1024
+	minEditImageDim   = 256
+)
+
+const jsonResponseInstruction = "Respond with a valid json object."
+
 // convertToPNG converts image data to PNG format with RGBA color space
 func convertToPNG(imageData []byte) ([]byte, error) {
 	// Decode the image
@@ -54,28 +63,68 @@ func convertToPNG(imageData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decode image: %w", err)
 	}
 
-	// Check if it's already RGBA
-	if rgbaImg, ok := img.(*image.RGBA); ok {
-		// Encode directly
-		var pngBuffer bytes.Buffer
-		err = png.Encode(&pngBuffer, neverOpaque{rgbaImg})
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode RGBA image as PNG: %w", err)
-		}
-		return pngBuffer.Bytes(), nil
+	nrgbaImg := toNRGBA(img)
+
+	pngBytes, err := encodePNG(nrgbaImg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode image as PNG: %w", err)
+	}
+	if len(pngBytes) <= maxEditImageBytes {
+		log.Printf("Successfully converted image to PNG with alpha channel")
+		return pngBytes, nil
 	}
 
-	// Try using NRGBA format (non-alpha-premultiplied RGBA)
-	bounds := img.Bounds()
-	nrgbaImg := image.NewNRGBA(bounds)
+	// First, bound the longest edge to maxEditImageDim.
+	width, height := nrgbaImg.Bounds().Dx(), nrgbaImg.Bounds().Dy()
+	targetW, targetH := scaleToFit(width, height, maxEditImageDim)
+	if targetW != width || targetH != height {
+		nrgbaImg = resizeNRGBA(nrgbaImg, targetW, targetH)
+		pngBytes, err = encodePNG(nrgbaImg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode resized image as PNG: %w", err)
+		}
+		if len(pngBytes) <= maxEditImageBytes {
+			log.Printf("Successfully converted image to PNG with alpha channel (resized to %dx%d)", targetW, targetH)
+			return pngBytes, nil
+		}
+	}
 
-	// Copy image data to NRGBA format pixel by pixel
+	// If still too large, keep shrinking until we fit or hit the minimum size.
+	for attempts := 0; attempts < 6; attempts++ {
+		width, height = nrgbaImg.Bounds().Dx(), nrgbaImg.Bounds().Dy()
+		if width <= minEditImageDim && height <= minEditImageDim {
+			break
+		}
+		nextMax := int(math.Round(float64(maxInt(width, height)) * 0.85))
+		if nextMax < minEditImageDim {
+			nextMax = minEditImageDim
+		}
+		targetW, targetH = scaleToFit(width, height, nextMax)
+		if targetW == width && targetH == height {
+			break
+		}
+		nrgbaImg = resizeNRGBA(nrgbaImg, targetW, targetH)
+		pngBytes, err = encodePNG(nrgbaImg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode resized image as PNG: %w", err)
+		}
+		if len(pngBytes) <= maxEditImageBytes {
+			log.Printf("Successfully converted image to PNG with alpha channel (resized to %dx%d)", targetW, targetH)
+			return pngBytes, nil
+		}
+	}
+
+	return nil, fmt.Errorf("converted image is %d bytes; must be less than %d bytes", len(pngBytes), maxEditImageBytes)
+}
+
+func toNRGBA(img image.Image) *image.NRGBA {
+	bounds := img.Bounds()
+	nrgbaImg := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			originalColor := img.At(x, y)
-			// Convert to NRGBA
-			r, g, b, a := originalColor.RGBA()
-			nrgbaImg.Set(x, y, color.NRGBA{
+			r, g, b, a := img.At(x, y).RGBA()
+			nrgbaImg.SetNRGBA(x-bounds.Min.X, y-bounds.Min.Y, color.NRGBA{
 				R: uint8(r >> 8),
 				G: uint8(g >> 8),
 				B: uint8(b >> 8),
@@ -84,15 +133,76 @@ func convertToPNG(imageData []byte) ([]byte, error) {
 		}
 	}
 
-	// Encode as PNG
+	return nrgbaImg
+}
+
+func encodePNG(img image.Image) ([]byte, error) {
 	var pngBuffer bytes.Buffer
-	err = png.Encode(&pngBuffer, neverOpaque{nrgbaImg})
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode image as PNG: %w", err)
+	encoder := png.Encoder{CompressionLevel: png.BestCompression}
+	if err := encoder.Encode(&pngBuffer, neverOpaque{img}); err != nil {
+		return nil, err
+	}
+	return pngBuffer.Bytes(), nil
+}
+
+func resizeNRGBA(src *image.NRGBA, newW, newH int) *image.NRGBA {
+	if newW <= 0 || newH <= 0 {
+		return src
+	}
+	srcW, srcH := src.Bounds().Dx(), src.Bounds().Dy()
+	if newW == srcW && newH == srcH {
+		return src
 	}
 
-	log.Printf("Successfully converted image to PNG with alpha channel")
-	return pngBuffer.Bytes(), nil
+	dst := image.NewNRGBA(image.Rect(0, 0, newW, newH))
+	for y := 0; y < newH; y++ {
+		sy := int(float64(y) * float64(srcH) / float64(newH))
+		if sy >= srcH {
+			sy = srcH - 1
+		}
+		for x := 0; x < newW; x++ {
+			sx := int(float64(x) * float64(srcW) / float64(newW))
+			if sx >= srcW {
+				sx = srcW - 1
+			}
+			srcOff := src.PixOffset(sx, sy)
+			dstOff := dst.PixOffset(x, y)
+			copy(dst.Pix[dstOff:dstOff+4], src.Pix[srcOff:srcOff+4])
+		}
+	}
+	return dst
+}
+
+func scaleToFit(width, height, maxDim int) (int, int) {
+	if width <= 0 || height <= 0 || maxDim <= 0 {
+		return width, height
+	}
+	if width <= maxDim && height <= maxDim {
+		return width, height
+	}
+
+	if width >= height {
+		newW := maxDim
+		newH := int(math.Round(float64(height) * float64(maxDim) / float64(width)))
+		if newH < 1 {
+			newH = 1
+		}
+		return newW, newH
+	}
+
+	newH := maxDim
+	newW := int(math.Round(float64(width) * float64(maxDim) / float64(height)))
+	if newW < 1 {
+		newW = 1
+	}
+	return newW, newH
+}
+
+func maxInt(a, b int) int {
+	if a >= b {
+		return a
+	}
+	return b
 }
 
 func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
@@ -106,6 +216,10 @@ func (c *client) GetAnswer(ctx context.Context, q string) (string, error) {
 			},
 			Temperature: 0.1,
 			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: jsonResponseInstruction,
+				},
 				{
 					Role:    openai.ChatMessageRoleUser,
 					Content: q,
@@ -340,6 +454,10 @@ func (c *client) GetAnswerWithImage(ctx context.Context, q string, imageUrl stri
 			},
 			Temperature: 0.1,
 			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: jsonResponseInstruction,
+				},
 				{
 					Role: openai.ChatMessageRoleUser,
 					MultiContent: []openai.ChatMessagePart{

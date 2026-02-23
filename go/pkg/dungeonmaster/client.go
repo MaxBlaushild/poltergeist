@@ -270,6 +270,9 @@ func (c *client) processQuestNode(
 
 		log.Printf("Creating challenge: %s", randomChallenge.Question)
 		proficiency := normalizeQuestProficiency(allotedChallenge.Proficiency)
+		if randomChallenge.Proficiency != nil {
+			proficiency = normalizeQuestProficiency(randomChallenge.Proficiency)
+		}
 		challenge := &models.QuestNodeChallenge{
 			ID:              uuid.New(),
 			CreatedAt:       time.Now(),

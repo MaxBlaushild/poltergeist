@@ -16,6 +16,7 @@ export interface QuestArchetypeNode {
     locationArchetype: LocationArchetype;
     locationArchetypeId: string;
     challenges: QuestArchetypeChallenge[];
+    difficulty?: number | null;
 }
 export interface QuestArchetype {
     id: string;

@@ -10,6 +10,7 @@ type QuestArchetypesContextType = {
   createQuestArchetype: (
     name: string,
     locationArchetypeId: string,
+    rootDifficulty?: number,
     defaultGold?: number,
     itemRewards?: { inventoryItemId: number; quantity: number }[]
   ) => Promise<QuestArchetype | null>;
@@ -26,6 +27,7 @@ type QuestArchetypesContextType = {
     updates: { reward?: number; inventoryItemId?: number | null; proficiency?: string | null; difficulty?: number | null }
   ) => void;
   deleteQuestArchetypeChallenge: (challengeId: string) => void;
+  updateQuestArchetypeNode: (nodeId: string, updates: { difficulty?: number | null }) => void;
   createLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateLocationArchetype: (locationArchetype: LocationArchetype) => void;
   updateQuestArchetype: (questArchetype: QuestArchetype) => void;
@@ -43,6 +45,7 @@ export const QuestArchetypesContext = React.createContext<QuestArchetypesContext
   addChallengeToQuestArchetype: () => {},
   updateQuestArchetypeChallenge: () => {},
   deleteQuestArchetypeChallenge: () => {},
+  updateQuestArchetypeNode: () => {},
   locationArchetypes: [],
   createLocationArchetype: () => {},
   updateLocationArchetype: () => {},
@@ -126,11 +129,13 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
   const createQuestArchetype = async (
     name: string,
     locationArchetypeID: string,
+    rootDifficulty?: number,
     defaultGold?: number,
     itemRewards?: { inventoryItemId: number; quantity: number }[]
   ): Promise<QuestArchetype | null> => {
     const node = await apiClient.post<QuestArchetypeNode>("/sonar/questArchetypeNodes", {
       locationArchetypeID,
+      difficulty: rootDifficulty,
     });
     const questArchetype = await apiClient.post<QuestArchetype>("/sonar/questArchetypes", {
       name,
@@ -204,6 +209,11 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
     fetchQuestArchetypes();
   };
 
+  const updateQuestArchetypeNode = async (nodeId: string, updates: { difficulty?: number | null }) => {
+    await apiClient.patch(`/sonar/questArchetypeNodes/${nodeId}`, updates);
+    fetchQuestArchetypes();
+  };
+
   const deleteQuestArchetype = async (questArchetypeId: string) => {
     await apiClient.delete<QuestArchetype>(`/sonar/questArchetypes/${questArchetypeId}`);
     setQuestArchetypes(questArchetypes.filter(questArchetype => questArchetype.id !== questArchetypeId));
@@ -257,6 +267,7 @@ export const QuestArchetypesProvider = ({ children }: { children: React.ReactNod
       deleteZoneQuestArchetype,
       updateQuestArchetypeChallenge,
       deleteQuestArchetypeChallenge,
+      updateQuestArchetypeNode,
     }}>
       {children}
     </QuestArchetypesContext.Provider>

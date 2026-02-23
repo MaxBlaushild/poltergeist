@@ -1,0 +1,2 @@
+ALTER TABLE quest_archetype_nodes
+  ADD COLUMN IF NOT EXISTS difficulty INTEGER NOT NULL DEFAULT 0;

@@ -3,6 +3,8 @@ import { QuestNodeSubmissionType } from "./questNode";
 export interface LocationArchetypeChallenge {
   question: string;
   submissionType: QuestNodeSubmissionType;
+  proficiency?: string | null;
+  difficulty?: number | null;
 }
 
 export interface LocationArchetype {
