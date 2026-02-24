@@ -100,7 +100,8 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		placeCount = 6
 	}
 
-	places, err := p.findTopPlacesInZone(ctx, *zone, placeCount)
+	requiredTags := normalizeRequiredPlaceTags(job.RequiredPlaceTags)
+	places, err := p.findTopPlacesInZone(ctx, *zone, placeCount, requiredTags)
 	if err != nil {
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to find top places: %w", err))
 	}
@@ -732,7 +733,7 @@ func (p *SeedZoneDraftProcessor) generateMainQuests(
 	return mainQuests, nil
 }
 
-func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone models.Zone, count int) ([]googlemaps.Place, error) {
+func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone models.Zone, count int, requiredTags []string) ([]googlemaps.Place, error) {
 	if count <= 0 {
 		return []googlemaps.Place{}, nil
 	}
@@ -861,6 +862,23 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 		return scorePlace(results[i]) > scorePlace(results[j])
 	})
 	results = preferTopSpots(results)
+	results = diversifyPlaces(results, count)
+
+	candidatePool := make([]googlemaps.Place, 0, len(seenFallback))
+	for _, place := range seenFallback {
+		candidatePool = append(candidatePool, place)
+	}
+	if len(candidatePool) == 0 {
+		candidatePool = results
+	}
+
+	if len(requiredTags) > 0 {
+		requiredResults, err := applyRequiredPlaceTags(requiredTags, candidatePool, results, count)
+		if err != nil {
+			return nil, err
+		}
+		results = requiredResults
+	}
 
 	if len(results) > count {
 		results = results[:count]
@@ -1095,6 +1113,274 @@ func preferTopSpots(places []googlemaps.Place) []googlemaps.Place {
 	}
 
 	return places
+}
+
+func normalizeRequiredPlaceTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	normalized := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		trimmed := strings.ToLower(strings.TrimSpace(tag))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func applyRequiredPlaceTags(
+	requiredTags []string,
+	candidatePool []googlemaps.Place,
+	base []googlemaps.Place,
+	desired int,
+) ([]googlemaps.Place, error) {
+	normalized := normalizeRequiredPlaceTags(requiredTags)
+	if len(normalized) == 0 {
+		return base, nil
+	}
+
+	used := make(map[string]struct{})
+	required := make([]googlemaps.Place, 0, len(normalized))
+	missing := make([]string, 0)
+
+	for _, tag := range normalized {
+		best, ok := bestPlaceForTag(tag, candidatePool, used)
+		if !ok {
+			missing = append(missing, tag)
+			continue
+		}
+		required = append(required, best)
+		used[best.ID] = struct{}{}
+	}
+
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing required place tags: %s", strings.Join(missing, ", "))
+	}
+
+	result := make([]googlemaps.Place, 0, minInt(desired, len(candidatePool)))
+	result = append(result, required...)
+
+	for _, place := range base {
+		if len(result) >= desired {
+			break
+		}
+		if place.ID == "" {
+			continue
+		}
+		if _, ok := used[place.ID]; ok {
+			continue
+		}
+		used[place.ID] = struct{}{}
+		result = append(result, place)
+	}
+
+	if len(result) < desired {
+		sort.Slice(candidatePool, func(i, j int) bool {
+			return scorePlace(candidatePool[i]) > scorePlace(candidatePool[j])
+		})
+		for _, place := range candidatePool {
+			if len(result) >= desired {
+				break
+			}
+			if place.ID == "" {
+				continue
+			}
+			if _, ok := used[place.ID]; ok {
+				continue
+			}
+			used[place.ID] = struct{}{}
+			result = append(result, place)
+		}
+	}
+
+	log.Printf("TopSpots: enforcing required tags=%v", normalized)
+	return result, nil
+}
+
+func bestPlaceForTag(tag string, places []googlemaps.Place, used map[string]struct{}) (googlemaps.Place, bool) {
+	var best googlemaps.Place
+	found := false
+	bestScore := -1.0
+	for _, place := range places {
+		if place.ID == "" {
+			continue
+		}
+		if _, ok := used[place.ID]; ok {
+			continue
+		}
+		if !placeMatchesTag(place, tag) {
+			continue
+		}
+		score := scorePlace(place)
+		if !found || score > bestScore {
+			best = place
+			bestScore = score
+			found = true
+		}
+	}
+	return best, found
+}
+
+func placeMatchesTag(place googlemaps.Place, tag string) bool {
+	needle := strings.ToLower(strings.TrimSpace(tag))
+	if needle == "" {
+		return false
+	}
+
+	types := normalizePlaceTypes(place)
+	for _, t := range types {
+		if t == needle || strings.Contains(t, needle) {
+			return true
+		}
+	}
+
+	display := strings.ToLower(strings.TrimSpace(place.PrimaryTypeDisplayName.Text))
+	if display != "" && strings.Contains(display, needle) {
+		return true
+	}
+
+	name := strings.ToLower(strings.TrimSpace(place.DisplayName.Text))
+	if name != "" && strings.Contains(name, needle) {
+		return true
+	}
+
+	return false
+}
+
+func diversifyPlaces(places []googlemaps.Place, desired int) []googlemaps.Place {
+	if len(places) == 0 || desired <= 0 {
+		return places
+	}
+
+	maxPerCategory := int(math.Ceil(float64(desired) * 0.4))
+	if maxPerCategory < 1 {
+		maxPerCategory = 1
+	}
+
+	buckets := map[string][]googlemaps.Place{}
+	order := make([]string, 0)
+	seenCategory := map[string]bool{}
+	for _, place := range places {
+		category := placeCategory(place)
+		if !seenCategory[category] {
+			seenCategory[category] = true
+			order = append(order, category)
+		}
+		buckets[category] = append(buckets[category], place)
+	}
+
+	result := make([]googlemaps.Place, 0, minInt(desired, len(places)))
+	categoryCounts := map[string]int{}
+	relaxed := false
+
+	for len(result) < desired && len(result) < len(places) {
+		added := false
+		for _, category := range order {
+			if len(result) >= desired {
+				break
+			}
+			if len(buckets[category]) == 0 {
+				continue
+			}
+			if !relaxed && categoryCounts[category] >= maxPerCategory {
+				continue
+			}
+			next := buckets[category][0]
+			buckets[category] = buckets[category][1:]
+			result = append(result, next)
+			categoryCounts[category]++
+			added = true
+		}
+		if !added {
+			if relaxed {
+				break
+			}
+			relaxed = true
+		}
+	}
+
+	if len(result) == 0 {
+		return places
+	}
+
+	log.Printf("TopSpots: diversified mix with maxPerCategory=%d; categories=%v", maxPerCategory, categoryCounts)
+	return result
+}
+
+func placeCategory(place googlemaps.Place) string {
+	types := normalizePlaceTypes(place)
+	if len(types) == 0 {
+		return "other"
+	}
+
+	if hasAnyType(types, []string{
+		"restaurant", "cafe", "coffee_shop", "bakery", "bar", "meal_takeaway", "meal_delivery",
+		"ice_cream_shop", "dessert",
+	}) {
+		return "food"
+	}
+	if hasAnyType(types, []string{
+		"park", "garden", "playground", "trail", "hiking_area", "campground", "natural_feature",
+	}) {
+		return "park"
+	}
+	if hasAnyType(types, []string{
+		"museum", "art_gallery", "gallery", "tourist_attraction", "landmark", "library",
+	}) {
+		return "culture"
+	}
+	if hasAnyType(types, []string{
+		"movie_theater", "theater", "night_club", "music_venue", "stadium", "sports_complex",
+		"gym", "bowling_alley", "amusement_park", "zoo", "aquarium",
+	}) {
+		return "entertainment"
+	}
+	if hasAnyType(types, []string{
+		"store", "shopping_mall", "market", "supermarket", "convenience_store", "book_store",
+		"clothing_store", "department_store", "electronics_store", "furniture_store", "home_goods_store",
+		"pet_store", "florist",
+	}) {
+		return "shopping"
+	}
+	if hasAnyType(types, []string{
+		"plaza", "square", "bridge", "beach", "marina", "harbor", "water",
+	}) {
+		return "scenic"
+	}
+
+	display := strings.ToLower(strings.TrimSpace(place.PrimaryTypeDisplayName.Text))
+	if display != "" {
+		switch {
+		case strings.Contains(display, "cafe") || strings.Contains(display, "coffee") || strings.Contains(display, "restaurant") || strings.Contains(display, "bar"):
+			return "food"
+		case strings.Contains(display, "park") || strings.Contains(display, "garden") || strings.Contains(display, "trail"):
+			return "park"
+		case strings.Contains(display, "museum") || strings.Contains(display, "gallery") || strings.Contains(display, "library"):
+			return "culture"
+		case strings.Contains(display, "theater") || strings.Contains(display, "cinema") || strings.Contains(display, "music") || strings.Contains(display, "stadium"):
+			return "entertainment"
+		case strings.Contains(display, "market") || strings.Contains(display, "shop") || strings.Contains(display, "store"):
+			return "shopping"
+		case strings.Contains(display, "plaza") || strings.Contains(display, "square") || strings.Contains(display, "bridge") || strings.Contains(display, "beach"):
+			return "scenic"
+		}
+	}
+
+	return "other"
+}
+
+func minInt(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func computeReviewThresholds(places []googlemaps.Place) (int32, int32, int32) {

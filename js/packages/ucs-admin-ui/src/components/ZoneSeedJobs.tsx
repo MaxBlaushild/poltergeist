@@ -82,6 +82,7 @@ type ZoneSeedJob = {
   characterCount: number;
   questCount: number;
   mainQuestCount: number;
+  requiredPlaceTags?: string[];
   createdAt?: string;
   updatedAt?: string;
   draft?: ZoneSeedDraft;
@@ -130,6 +131,7 @@ export const ZoneSeedJobs = () => {
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
   const [mainQuestCount, setMainQuestCount] = useState('1');
+  const [requiredPlaceTags, setRequiredPlaceTags] = useState('');
   const [draftZoneQuery, setDraftZoneQuery] = useState('');
   const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
   const [filterZoneQuery, setFilterZoneQuery] = useState('');
@@ -198,6 +200,10 @@ export const ZoneSeedJobs = () => {
     setError(null);
     setSuccess(null);
     try {
+      const requiredTags = requiredPlaceTags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean);
       const created = await apiClient.post<ZoneSeedJob>(
         `/sonar/admin/zones/${draftZoneId}/seed-draft`,
         {
@@ -205,6 +211,7 @@ export const ZoneSeedJobs = () => {
           characterCount: characters,
           questCount: quests,
           mainQuestCount: mainQuests,
+          requiredPlaceTags: requiredTags,
         }
       );
       setJobs((prev) => [created, ...prev]);
@@ -357,6 +364,20 @@ export const ZoneSeedJobs = () => {
               />
             </div>
           </div>
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Required POI tags (comma separated)
+            </label>
+            <input
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              placeholder="park, museum, coffee_shop"
+              value={requiredPlaceTags}
+              onChange={(e) => setRequiredPlaceTags(e.target.value)}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              We will ensure at least one POI matches each tag.
+            </p>
+          </div>
           <button
             className="mt-5 w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500 disabled:opacity-60"
             onClick={handleCreateDraft}
@@ -443,6 +464,11 @@ export const ZoneSeedJobs = () => {
                         Counts: {job.placeCount} places, {job.characterCount} characters, {job.questCount} quests,{' '}
                         {job.mainQuestCount ?? 0} main quests
                       </p>
+                      {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (
+                        <p className="text-xs text-gray-500">
+                          Required tags: {job.requiredPlaceTags.join(', ')}
+                        </p>
+                      )}
                     </div>
                     <span
                       className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
