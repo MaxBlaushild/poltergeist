@@ -29,6 +29,7 @@ type ZoneSeedJob struct {
 	PlaceCount     int           `json:"placeCount"`
 	CharacterCount int           `json:"characterCount"`
 	QuestCount     int           `json:"questCount"`
+	MainQuestCount int           `json:"mainQuestCount"`
 	Draft          ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
 }
 
@@ -42,6 +43,7 @@ type ZoneSeedDraft struct {
 	PointsOfInterest []ZoneSeedPointOfInterestDraft `json:"pointsOfInterest,omitempty"`
 	Characters       []ZoneSeedCharacterDraft       `json:"characters,omitempty"`
 	Quests           []ZoneSeedQuestDraft           `json:"quests,omitempty"`
+	MainQuests       []ZoneSeedMainQuestDraft       `json:"mainQuests,omitempty"`
 }
 
 type ZoneSeedPointOfInterestDraft struct {
@@ -83,12 +85,34 @@ type ZoneSeedQuestRewardItemDraft struct {
 	RarityTier  string `json:"rarityTier,omitempty"`
 }
 
+type ZoneSeedMainQuestDraft struct {
+	DraftID            uuid.UUID                     `json:"draftId"`
+	Name               string                        `json:"name"`
+	Description        string                        `json:"description"`
+	AcceptanceDialogue []string                      `json:"acceptanceDialogue,omitempty"`
+	QuestGiverDraftID  uuid.UUID                     `json:"questGiverDraftId"`
+	Nodes              []ZoneSeedMainQuestNodeDraft  `json:"nodes,omitempty"`
+	Gold               int                           `json:"gold"`
+	RewardItem         *ZoneSeedQuestRewardItemDraft `json:"rewardItem,omitempty"`
+}
+
+type ZoneSeedMainQuestNodeDraft struct {
+	DraftID             uuid.UUID `json:"draftId"`
+	OrderIndex          int       `json:"orderIndex"`
+	Title               string    `json:"title,omitempty"`
+	Story               string    `json:"story,omitempty"`
+	PlaceID             string    `json:"placeId"`
+	ChallengeQuestion   string    `json:"challengeQuestion,omitempty"`
+	ChallengeDifficulty int       `json:"challengeDifficulty,omitempty"`
+}
+
 func (d ZoneSeedDraft) Value() (driver.Value, error) {
 	if d.FantasyName == "" &&
 		d.ZoneDescription == "" &&
 		len(d.PointsOfInterest) == 0 &&
 		len(d.Characters) == 0 &&
-		len(d.Quests) == 0 {
+		len(d.Quests) == 0 &&
+		len(d.MainQuests) == 0 {
 		return nil, nil
 	}
 	return json.Marshal(d)

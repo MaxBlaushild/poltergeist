@@ -4093,6 +4093,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		PlaceCount     *int `json:"placeCount"`
 		CharacterCount *int `json:"characterCount"`
 		QuestCount     *int `json:"questCount"`
+		MainQuestCount *int `json:"mainQuestCount"`
 	}
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -4111,9 +4112,13 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 	if requestBody.QuestCount != nil {
 		questCount = *requestBody.QuestCount
 	}
+	mainQuestCount := 1
+	if requestBody.MainQuestCount != nil {
+		mainQuestCount = *requestBody.MainQuestCount
+	}
 
-	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, and questCount must be greater than zero"})
+	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 || mainQuestCount < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, and questCount must be greater than zero; mainQuestCount must be zero or greater"})
 		return
 	}
 
@@ -4126,6 +4131,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		PlaceCount:     placeCount,
 		CharacterCount: characterCount,
 		QuestCount:     questCount,
+		MainQuestCount: mainQuestCount,
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -39,12 +39,38 @@ type ZoneSeedQuestDraft = {
   };
 };
 
+type ZoneSeedMainQuestNodeDraft = {
+  draftId: string;
+  orderIndex: number;
+  title?: string;
+  story?: string;
+  placeId: string;
+  challengeQuestion?: string;
+  challengeDifficulty?: number;
+};
+
+type ZoneSeedMainQuestDraft = {
+  draftId: string;
+  name: string;
+  description: string;
+  acceptanceDialogue?: string[];
+  questGiverDraftId: string;
+  nodes?: ZoneSeedMainQuestNodeDraft[];
+  gold?: number;
+  rewardItem?: {
+    name?: string;
+    description?: string;
+    rarityTier?: string;
+  };
+};
+
 type ZoneSeedDraft = {
   fantasyName?: string;
   zoneDescription?: string;
   pointsOfInterest?: ZoneSeedPointOfInterestDraft[];
   characters?: ZoneSeedCharacterDraft[];
   quests?: ZoneSeedQuestDraft[];
+  mainQuests?: ZoneSeedMainQuestDraft[];
 };
 
 type ZoneSeedJob = {
@@ -55,6 +81,7 @@ type ZoneSeedJob = {
   placeCount: number;
   characterCount: number;
   questCount: number;
+  mainQuestCount: number;
   createdAt?: string;
   updatedAt?: string;
   draft?: ZoneSeedDraft;
@@ -102,6 +129,7 @@ export const ZoneSeedJobs = () => {
   const [placeCount, setPlaceCount] = useState('8');
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
+  const [mainQuestCount, setMainQuestCount] = useState('1');
   const [draftZoneQuery, setDraftZoneQuery] = useState('');
   const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
   const [filterZoneQuery, setFilterZoneQuery] = useState('');
@@ -156,7 +184,13 @@ export const ZoneSeedJobs = () => {
     const places = Number.parseInt(placeCount, 10);
     const characters = Number.parseInt(characterCount, 10);
     const quests = Number.parseInt(questCount, 10);
-    if (Number.isNaN(places) || Number.isNaN(characters) || Number.isNaN(quests)) {
+    const mainQuests = Number.parseInt(mainQuestCount, 10);
+    if (
+      Number.isNaN(places) ||
+      Number.isNaN(characters) ||
+      Number.isNaN(quests) ||
+      Number.isNaN(mainQuests)
+    ) {
       setError('Counts must be integers.');
       return;
     }
@@ -170,6 +204,7 @@ export const ZoneSeedJobs = () => {
           placeCount: places,
           characterCount: characters,
           questCount: quests,
+          mainQuestCount: mainQuests,
         }
       );
       setJobs((prev) => [created, ...prev]);
@@ -280,7 +315,7 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Places
@@ -309,6 +344,16 @@ export const ZoneSeedJobs = () => {
                 className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
                 value={questCount}
                 onChange={(e) => setQuestCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Main quests
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={mainQuestCount}
+                onChange={(e) => setMainQuestCount(e.target.value)}
               />
             </div>
           </div>
@@ -395,7 +440,8 @@ export const ZoneSeedJobs = () => {
                         Created: {formatDate(job.createdAt)} | Updated: {formatDate(job.updatedAt)}
                       </p>
                       <p className="text-xs text-gray-500">
-                        Counts: {job.placeCount} places, {job.characterCount} characters, {job.questCount} quests
+                        Counts: {job.placeCount} places, {job.characterCount} characters, {job.questCount} quests,{' '}
+                        {job.mainQuestCount ?? 0} main quests
                       </p>
                     </div>
                     <span
@@ -557,6 +603,101 @@ export const ZoneSeedJobs = () => {
                                       </div>
                                     </div>
                                   )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-semibold">Main quests</div>
+                          <div className="mt-2 space-y-3 text-xs text-gray-600">
+                            {(job.draft.mainQuests || []).map((quest) => (
+                              <div
+                                key={quest.draftId}
+                                className="rounded border border-gray-100 bg-gray-50 p-3"
+                              >
+                                <div className="text-sm font-semibold text-gray-800">
+                                  {quest.name || 'Untitled main quest'}
+                                </div>
+                                <div>
+                                  Quest giver draft ID:{' '}
+                                  {quest.questGiverDraftId || 'n/a'}
+                                </div>
+                                {typeof quest.gold === 'number' && (
+                                  <div>Gold: {quest.gold}</div>
+                                )}
+                                {quest.description && (
+                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
+                                    {quest.description}
+                                  </div>
+                                )}
+                                {quest.rewardItem && (
+                                  <div className="mt-2 text-gray-500">
+                                    <div className="font-semibold text-gray-600">
+                                      Reward item
+                                    </div>
+                                    <div>
+                                      {quest.rewardItem.name || 'Unnamed item'}
+                                      {quest.rewardItem.rarityTier
+                                        ? ` (${quest.rewardItem.rarityTier})`
+                                        : ''}
+                                    </div>
+                                    {quest.rewardItem.description && (
+                                      <div className="mt-1 whitespace-pre-wrap">
+                                        {quest.rewardItem.description}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {quest.acceptanceDialogue &&
+                                  quest.acceptanceDialogue.length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="font-semibold text-gray-600">
+                                        Acceptance dialogue
+                                      </div>
+                                      <div className="mt-1 space-y-1 text-gray-500">
+                                        {quest.acceptanceDialogue.map((line, idx) => (
+                                          <div key={`${quest.draftId}-main-line-${idx}`}>
+                                            {line}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                {quest.nodes && quest.nodes.length > 0 && (
+                                  <div className="mt-3">
+                                    <div className="font-semibold text-gray-600">
+                                      Nodes
+                                    </div>
+                                    <div className="mt-2 space-y-2">
+                                      {quest.nodes.map((node, idx) => (
+                                        <div
+                                          key={`${quest.draftId}-node-${node.draftId || idx}`}
+                                          className="rounded border border-gray-200 bg-white p-2 text-gray-600"
+                                        >
+                                          <div className="font-semibold text-gray-700">
+                                            {node.title || `Node ${node.orderIndex + 1}`}
+                                          </div>
+                                          <div>Place ID: {node.placeId || 'n/a'}</div>
+                                          {node.story && (
+                                            <div className="mt-1 text-gray-500 whitespace-pre-wrap">
+                                              Story: {node.story}
+                                            </div>
+                                          )}
+                                          {node.challengeQuestion && (
+                                            <div className="mt-1 text-gray-500">
+                                              Challenge: {node.challengeQuestion}
+                                            </div>
+                                          )}
+                                          {typeof node.challengeDifficulty === 'number' && (
+                                            <div className="mt-1 text-gray-500">
+                                              Difficulty: {node.challengeDifficulty}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

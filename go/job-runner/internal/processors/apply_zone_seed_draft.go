@@ -150,6 +150,22 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		}
 	}
 
+	for _, draftMainQuest := range job.Draft.MainQuests {
+		character := characterByDraftID[draftMainQuest.QuestGiverDraftID]
+		if character == nil {
+			for _, fallback := range characterByDraftID {
+				character = fallback
+				break
+			}
+		}
+		if character == nil {
+			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("no quest giver available for main quest"))
+		}
+		if err := p.createMainQuestFromDraft(ctx, zone, character, draftMainQuest); err != nil {
+			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create main quest: %w", err))
+		}
+	}
+
 	job.Status = models.ZoneSeedStatusApplied
 	job.ErrorMessage = nil
 	job.UpdatedAt = time.Now()
@@ -285,7 +301,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 
 	gold := draft.Gold
 	if gold <= 0 {
-		gold = 50 + rand.Intn(451)
+		gold = 200 + rand.Intn(601)
 	}
 	now := time.Now()
 	quest := &models.Quest{
@@ -370,6 +386,162 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	if poi != nil {
 		if err := p.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, poi.ID); err != nil {
 			log.Printf("Failed to update POI last_used_in_quest_at: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
+	ctx context.Context,
+	zone *models.Zone,
+	character *models.Character,
+	draft models.ZoneSeedMainQuestDraft,
+) error {
+	acceptanceDialogue := models.StringArray(draft.AcceptanceDialogue)
+	if acceptanceDialogue == nil {
+		acceptanceDialogue = models.StringArray{}
+	}
+
+	gold := draft.Gold
+	if gold <= 0 {
+		gold = 50 + rand.Intn(451)
+	}
+	now := time.Now()
+	quest := &models.Quest{
+		ID:                    uuid.New(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		Name:                  draft.Name,
+		Description:           draft.Description,
+		AcceptanceDialogue:    acceptanceDialogue,
+		ZoneID:                &zone.ID,
+		QuestGiverCharacterID: &character.ID,
+		Gold:                  gold,
+	}
+
+	if imageURL, err := p.generateQuestImage(ctx, draft.Name, draft.Description); err == nil {
+		quest.ImageURL = imageURL
+	}
+
+	if err := p.dbClient.Quest().Create(ctx, quest); err != nil {
+		return err
+	}
+
+	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character.ID); err != nil {
+		log.Printf("Failed to create quest action for character: %v", err)
+	}
+
+	if len(draft.Nodes) == 0 {
+		return fmt.Errorf("main quest has no nodes")
+	}
+
+	nodes := append([]models.ZoneSeedMainQuestNodeDraft(nil), draft.Nodes...)
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].OrderIndex < nodes[j].OrderIndex
+	})
+
+	var rewardPOI *models.PointOfInterest
+	if len(nodes) > 0 {
+		lastNode := nodes[len(nodes)-1]
+		poi, err := p.ensurePointOfInterest(ctx, zone, lastNode.PlaceID)
+		if err != nil {
+			return err
+		}
+		rewardPOI = poi
+	}
+
+	rewardDraft := models.ZoneSeedQuestDraft{
+		Name:               draft.Name,
+		Description:        draft.Description,
+		AcceptanceDialogue: draft.AcceptanceDialogue,
+	}
+	rewardQuestion := ""
+	if len(nodes) > 0 {
+		rewardQuestion = nodes[len(nodes)-1].ChallengeQuestion
+	}
+	rewardItem, err := p.generateQuestRewardItem(ctx, zone, rewardPOI, nil, character, rewardDraft, rewardQuestion, draft.RewardItem)
+	if err != nil {
+		return err
+	}
+	if rewardItem != nil {
+		rewards := []models.QuestItemReward{
+			{
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestID:         quest.ID,
+				InventoryItemID: rewardItem.ID,
+				Quantity:        1,
+			},
+		}
+		if err := p.dbClient.QuestItemReward().ReplaceForQuest(ctx, quest.ID, rewards); err != nil {
+			return err
+		}
+	}
+
+	for idx, nodeDraft := range nodes {
+		poi, err := p.ensurePointOfInterest(ctx, zone, nodeDraft.PlaceID)
+		if err != nil {
+			return err
+		}
+		node := &models.QuestNode{
+			ID:                uuid.New(),
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+			QuestID:           quest.ID,
+			OrderIndex:        idx,
+			PointOfInterestID: nil,
+			SubmissionType:    models.DefaultQuestNodeSubmissionType(),
+		}
+		if poi != nil {
+			node.PointOfInterestID = &poi.ID
+		}
+		if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
+			return err
+		}
+
+		challengeQuestion := strings.TrimSpace(nodeDraft.ChallengeQuestion)
+		if challengeQuestion == "" {
+			challengeQuestion = fallbackQuestChallengeQuestion(poi, nil)
+		}
+		difficulty := nodeDraft.ChallengeDifficulty
+		if difficulty <= 0 {
+			difficulty = randomQuestDifficulty()
+		}
+		difficulty = clampQuestDifficulty(difficulty)
+
+		statDraft := models.ZoneSeedQuestDraft{
+			Name:               draft.Name,
+			Description:        draft.Description,
+			AcceptanceDialogue: draft.AcceptanceDialogue,
+			ChallengeQuestion:  challengeQuestion,
+		}
+		statTags := p.classifyQuestStatTags(ctx, statDraft)
+
+		challenge := &models.QuestNodeChallenge{
+			ID:             uuid.New(),
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			QuestNodeID:    node.ID,
+			Tier:           0,
+			Question:       challengeQuestion,
+			Reward:         0,
+			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+			Difficulty:     difficulty,
+			StatTags:       statTags,
+		}
+		if challenge.StatTags == nil {
+			challenge.StatTags = models.StringArray{}
+		}
+		if err := p.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
+			return err
+		}
+
+		if poi != nil {
+			if err := p.dbClient.PointOfInterest().UpdateLastUsedInQuest(ctx, poi.ID); err != nil {
+				log.Printf("Failed to update POI last_used_in_quest_at: %v", err)
+			}
 		}
 	}
 

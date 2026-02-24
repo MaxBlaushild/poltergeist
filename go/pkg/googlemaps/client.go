@@ -161,7 +161,11 @@ func (c *client) FindPlaces(query PlaceQuery) ([]Place, error) {
 	reqBody.IncludedTypes = query.IncludedTypes
 	reqBody.ExcludedTypes = query.ExcludedTypes
 	reqBody.MaxResultCount = query.MaxResultCount
-	reqBody.RankPreference = RankPreferenceDistance
+	if query.RankPreference != "" {
+		reqBody.RankPreference = query.RankPreference
+	} else {
+		reqBody.RankPreference = RankPreferenceDistance
+	}
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {

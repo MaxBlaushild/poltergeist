@@ -73,6 +73,27 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	if zone == nil {
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("zone not found"))
 	}
+	if zone.Boundary != "" {
+		log.Printf("SeedZoneDraft: zone %s (%s) boundary length=%d", zone.ID, zone.Name, len(zone.Boundary))
+	} else {
+		log.Printf("SeedZoneDraft: zone %s (%s) boundary is empty", zone.ID, zone.Name)
+	}
+	log.Printf("SeedZoneDraft: zone %s (%s) boundary points=%d", zone.ID, zone.Name, len(zone.Points))
+	polygon := zone.GetPolygon()
+	if polygon == nil {
+		log.Printf("SeedZoneDraft: zone %s (%s) polygon is nil", zone.ID, zone.Name)
+	} else {
+		bounds := polygon.Bound()
+		log.Printf(
+			"SeedZoneDraft: zone %s (%s) polygon bounds min=(%f,%f) max=(%f,%f)",
+			zone.ID,
+			zone.Name,
+			bounds.Min.Y(),
+			bounds.Min.X(),
+			bounds.Max.Y(),
+			bounds.Max.X(),
+		)
+	}
 
 	placeCount := job.PlaceCount
 	if placeCount <= 0 {
@@ -112,6 +133,18 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate quests: %w", err))
 	}
 
+	mainQuestCount := job.MainQuestCount
+	if mainQuestCount < 0 {
+		mainQuestCount = 0
+	}
+	mainQuests := []models.ZoneSeedMainQuestDraft{}
+	if mainQuestCount > 0 {
+		mainQuests, err = p.generateMainQuests(ctx, *zone, branding, places, characters, mainQuestCount)
+		if err != nil {
+			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate main quests: %w", err))
+		}
+	}
+
 	poiDrafts := make([]models.ZoneSeedPointOfInterestDraft, 0, len(places))
 	for _, place := range places {
 		poiDrafts = append(poiDrafts, models.ZoneSeedPointOfInterestDraft{
@@ -134,6 +167,7 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 		PointsOfInterest: poiDrafts,
 		Characters:       characters,
 		Quests:           quests,
+		MainQuests:       mainQuests,
 	}
 	job.Status = models.ZoneSeedStatusAwaitingApproval
 	job.ErrorMessage = nil
@@ -188,6 +222,33 @@ type questGenerationResponse struct {
 	} `json:"quests"`
 }
 
+type mainQuestNodeDraftResponse struct {
+	Title               string `json:"title"`
+	Story               string `json:"story"`
+	PlaceID             string `json:"placeId"`
+	ChallengeQuestion   string `json:"challengeQuestion"`
+	ChallengeDifficulty *int   `json:"challengeDifficulty,omitempty"`
+}
+
+type mainQuestGenerationResponse struct {
+	MainQuests []struct {
+		Name               string   `json:"name"`
+		Description        string   `json:"description"`
+		AcceptanceDialogue []string `json:"acceptanceDialogue"`
+		QuestGiverDraftID  string   `json:"questGiverDraftId"`
+		RewardItem         *struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			RarityTier  string `json:"rarityTier"`
+		} `json:"rewardItem,omitempty"`
+		Nodes []mainQuestNodeDraftResponse `json:"nodes"`
+	} `json:"mainQuests"`
+}
+
+type enjoyablePlaceFilterResponse struct {
+	EnjoyablePlaceIDs []string `json:"enjoyablePlaceIds"`
+}
+
 const zoneBrandingPromptTemplate = `
 You are a fantasy RPG worldbuilder tasked with rebranding a real-world neighborhood.
 
@@ -204,6 +265,58 @@ Respond ONLY as JSON:
 {
   "fantasyName": "string",
   "zoneDescription": "string"
+}
+`
+
+const mainQuestGenerationPromptTemplate = `
+You are a narrative RPG quest designer creating multi-step "main quests."
+
+Fantasy district: %s
+District description: %s
+
+Characters (use questGiverDraftId and prefer the quest giver's placeId for quest locations):
+%s
+
+Points of interest (use only these placeIds):
+%s
+
+Create %d main quests. Each main quest must:
+- Be a longer story arc with a 2-3 paragraph description
+- Use a quest giver from the character list (by questGiverDraftId)
+- Include 4-8 short acceptance dialogue lines
+- Include exactly 3 nodes (acts), in order, ideally at distinct POIs
+- Each node must include a short title, 1-2 sentence story beat, a placeId, and a challengeQuestion
+- Challenge questions must be real-world, single-player activities at the POI
+  - Ignore fantasy flavor; base the challenge only on the real-world POI type
+  - Safe, legal, respectful, and no purchase required; no restricted areas or staff interaction
+  - Enjoyable on-site activity; answerable without external research
+- Include a challengeDifficulty integer between 25 and 50 (inclusive) for each node
+- Include a rewardItem with a short name, 1-2 sentence description, and rarityTier (Common, Uncommon, Epic, Mythic)
+
+Respond ONLY as JSON:
+{
+  "mainQuests": [
+    {
+      "name": "string",
+      "description": "string",
+      "acceptanceDialogue": ["string"],
+      "questGiverDraftId": "string",
+      "rewardItem": {
+        "name": "string",
+        "description": "string",
+        "rarityTier": "Common"
+      },
+      "nodes": [
+        {
+          "title": "string",
+          "story": "string",
+          "placeId": "string",
+          "challengeQuestion": "string",
+          "challengeDifficulty": 35
+        }
+      ]
+    }
+  ]
 }
 `
 
@@ -227,6 +340,21 @@ Respond ONLY as JSON:
     }
   ]
 }
+`
+
+const enjoyablePlaceFilterPromptTemplate = `
+You are curating places that are enjoyable to stumble upon in a neighborhood.
+
+Select places that people would enjoy visiting casually (cafes, parks, boutiques, bookstores, markets, museums, galleries, scenic spots, etc).
+Exclude utilitarian/errand services (dentist, doctor, locksmith, hardware store, auto repair, banks, offices, government, storage, schools, gas, parking, etc).
+
+Return ONLY JSON:
+{
+  "enjoyablePlaceIds": ["string"]
+}
+
+Places:
+%s
 `
 
 const questGenerationPromptTemplate = `
@@ -485,6 +613,125 @@ func (p *SeedZoneDraftProcessor) generateQuests(
 	return quests, nil
 }
 
+func (p *SeedZoneDraftProcessor) generateMainQuests(
+	ctx context.Context,
+	zone models.Zone,
+	branding *zoneBrandingResponse,
+	places []googlemaps.Place,
+	characters []models.ZoneSeedCharacterDraft,
+	count int,
+) ([]models.ZoneSeedMainQuestDraft, error) {
+	if count <= 0 {
+		return []models.ZoneSeedMainQuestDraft{}, nil
+	}
+	if countUniquePlaceIDs(places) < 3 {
+		return nil, fmt.Errorf("not enough distinct places to build main quest nodes")
+	}
+
+	characterLines := make([]string, 0, len(characters))
+	for _, character := range characters {
+		characterLines = append(characterLines, fmt.Sprintf(
+			"- %s | questGiverDraftId=%s | placeId=%s",
+			character.Name,
+			character.DraftID.String(),
+			character.PlaceID,
+		))
+	}
+
+	prompt := fmt.Sprintf(
+		mainQuestGenerationPromptTemplate,
+		branding.FantasyName,
+		branding.ZoneDescription,
+		strings.Join(characterLines, "\n"),
+		formatPlacesForPrompt(places, 12),
+		count,
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return nil, err
+	}
+
+	var response mainQuestGenerationResponse
+	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+		return nil, err
+	}
+
+	placeByID := make(map[string]googlemaps.Place)
+	for _, place := range places {
+		placeByID[place.ID] = place
+	}
+	characterByID := make(map[uuid.UUID]models.ZoneSeedCharacterDraft)
+	for _, character := range characters {
+		characterByID[character.DraftID] = character
+	}
+
+	mainQuests := make([]models.ZoneSeedMainQuestDraft, 0, len(response.MainQuests))
+	for _, draft := range response.MainQuests {
+		name := strings.TrimSpace(draft.Name)
+		if name == "" {
+			continue
+		}
+
+		description := strings.TrimSpace(draft.Description)
+		if description == "" {
+			description = fmt.Sprintf("A three-part journey unfolds across %s.", branding.FantasyName)
+		}
+
+		questGiverID, err := uuid.Parse(strings.TrimSpace(draft.QuestGiverDraftID))
+		if err != nil {
+			questGiverID = pickFallbackCharacterID(characters)
+		}
+		if _, ok := characterByID[questGiverID]; !ok {
+			questGiverID = pickFallbackCharacterID(characters)
+		}
+
+		nodes := normalizeMainQuestNodes(draft.Nodes, places, placeByID)
+		if len(nodes) == 0 {
+			nodes = buildFallbackMainQuestNodes(places, placeByID, 3)
+		}
+		if len(nodes) == 0 {
+			continue
+		}
+
+		description = buildMainQuestDescription(description, nodes)
+
+		dialogue := make([]string, 0, len(draft.AcceptanceDialogue))
+		for _, line := range draft.AcceptanceDialogue {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			dialogue = append(dialogue, trimmed)
+		}
+		if len(dialogue) > 8 {
+			dialogue = dialogue[:8]
+		}
+
+		gold := 200 + rand.Intn(601)
+
+		rewardPlace := placeByID[nodes[len(nodes)-1].PlaceID]
+		rewardItem := buildQuestRewardItemDraft(draft.RewardItem, rewardPlace, name)
+
+		mainQuests = append(mainQuests, models.ZoneSeedMainQuestDraft{
+			DraftID:            uuid.New(),
+			Name:               name,
+			Description:        description,
+			AcceptanceDialogue: dialogue,
+			QuestGiverDraftID:  questGiverID,
+			Nodes:              nodes,
+			Gold:               gold,
+			RewardItem:         rewardItem,
+		})
+	}
+
+	if len(mainQuests) == 0 {
+		return nil, fmt.Errorf("no valid main quests generated")
+	}
+
+	return mainQuests, nil
+}
+
 func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone models.Zone, count int) ([]googlemaps.Place, error) {
 	if count <= 0 {
 		return []googlemaps.Place{}, nil
@@ -521,6 +768,7 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 
 		inBoundaryCount := 0
 		enjoyableCount := 0
+		inBoundaryPlaces := make([]googlemaps.Place, 0, len(places))
 		for _, place := range places {
 			if place.ID == "" {
 				continue
@@ -529,14 +777,45 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 				continue
 			}
 			inBoundaryCount++
+			inBoundaryPlaces = append(inBoundaryPlaces, place)
+		}
+
+		llmEnjoyable := map[string]struct{}{}
+		llmUsed := false
+		if len(inBoundaryPlaces) > 0 && len(seen) < desired {
+			ids, err := p.filterEnjoyablePlacesLLM(inBoundaryPlaces)
+			if err != nil {
+				log.Printf("FindTopPlaces: zone %s (%s) LLM filter failed: %v", zone.ID, zone.Name, err)
+			} else if len(ids) > 0 {
+				llmEnjoyable = ids
+				llmUsed = true
+				log.Printf(
+					"FindTopPlaces: zone %s (%s) LLM filter selected %d of %d in-boundary places",
+					zone.ID,
+					zone.Name,
+					len(llmEnjoyable),
+					len(inBoundaryPlaces),
+				)
+			} else {
+				log.Printf("FindTopPlaces: zone %s (%s) LLM filter returned 0 places; falling back to heuristic", zone.ID, zone.Name)
+			}
+		}
+
+		for _, place := range inBoundaryPlaces {
 			if _, ok := seen[place.ID]; ok {
 				continue
 			}
 			if _, ok := seenFallback[place.ID]; !ok {
 				seenFallback[place.ID] = place
 			}
-			if !isEnjoyablePlace(place) {
-				continue
+			if llmUsed {
+				if _, ok := llmEnjoyable[place.ID]; !ok {
+					continue
+				}
+			} else {
+				if !isEnjoyablePlace(place) {
+					continue
+				}
 			}
 			enjoyableCount++
 			seen[place.ID] = place
@@ -581,12 +860,352 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 	sort.Slice(results, func(i, j int) bool {
 		return scorePlace(results[i]) > scorePlace(results[j])
 	})
+	results = preferTopSpots(results)
 
 	if len(results) > count {
 		results = results[:count]
 	}
 
 	return results, nil
+}
+
+func normalizeMainQuestNodes(
+	nodes []mainQuestNodeDraftResponse,
+	places []googlemaps.Place,
+	placeByID map[string]googlemaps.Place,
+) []models.ZoneSeedMainQuestNodeDraft {
+	if len(nodes) == 0 || len(places) == 0 {
+		return nil
+	}
+
+	used := make(map[string]struct{})
+	results := make([]models.ZoneSeedMainQuestNodeDraft, 0, 3)
+
+	for _, node := range nodes {
+		if len(results) >= 3 {
+			break
+		}
+		placeID := strings.TrimSpace(node.PlaceID)
+		if placeID == "" || placeByID[placeID].ID == "" {
+			placeID = ""
+		}
+		if placeID != "" {
+			if _, ok := used[placeID]; ok {
+				placeID = ""
+			}
+		}
+		if placeID == "" {
+			placeID = pickUnusedPlaceID(places, used)
+		}
+		if placeID == "" {
+			placeID = pickFallbackPlaceID(places)
+		}
+		if placeID == "" {
+			continue
+		}
+		if _, ok := used[placeID]; ok {
+			continue
+		}
+		used[placeID] = struct{}{}
+
+		challenge := strings.TrimSpace(node.ChallengeQuestion)
+		if challenge == "" {
+			challenge = fallbackSeedQuestChallengeQuestion(placeByID[placeID])
+		}
+		difficulty := 0
+		if node.ChallengeDifficulty != nil {
+			difficulty = *node.ChallengeDifficulty
+		}
+		if difficulty <= 0 {
+			difficulty = randomQuestDifficulty()
+		}
+		difficulty = clampQuestDifficulty(difficulty)
+
+		results = append(results, models.ZoneSeedMainQuestNodeDraft{
+			DraftID:             uuid.New(),
+			OrderIndex:          len(results),
+			Title:               strings.TrimSpace(node.Title),
+			Story:               withFallbackStory(strings.TrimSpace(node.Story), len(results)),
+			PlaceID:             placeID,
+			ChallengeQuestion:   challenge,
+			ChallengeDifficulty: difficulty,
+		})
+	}
+
+	for len(results) < 3 {
+		placeID := pickUnusedPlaceID(places, used)
+		if placeID == "" {
+			placeID = pickFallbackPlaceID(places)
+		}
+		if placeID == "" {
+			break
+		}
+		used[placeID] = struct{}{}
+		title := fmt.Sprintf("Chapter %d", len(results)+1)
+		results = append(results, models.ZoneSeedMainQuestNodeDraft{
+			DraftID:             uuid.New(),
+			OrderIndex:          len(results),
+			Title:               title,
+			Story:               withFallbackStory("", len(results)),
+			PlaceID:             placeID,
+			ChallengeQuestion:   fallbackSeedQuestChallengeQuestion(placeByID[placeID]),
+			ChallengeDifficulty: randomQuestDifficulty(),
+		})
+	}
+
+	if len(results) < 3 {
+		return nil
+	}
+
+	return results
+}
+
+func buildFallbackMainQuestNodes(
+	places []googlemaps.Place,
+	placeByID map[string]googlemaps.Place,
+	count int,
+) []models.ZoneSeedMainQuestNodeDraft {
+	if len(places) == 0 || count <= 0 {
+		return nil
+	}
+	used := make(map[string]struct{})
+	nodes := make([]models.ZoneSeedMainQuestNodeDraft, 0, count)
+	for i := 0; i < count; i++ {
+		placeID := pickUnusedPlaceID(places, used)
+		if placeID == "" {
+			placeID = pickFallbackPlaceID(places)
+		}
+		if placeID == "" {
+			break
+		}
+		used[placeID] = struct{}{}
+		nodes = append(nodes, models.ZoneSeedMainQuestNodeDraft{
+			DraftID:             uuid.New(),
+			OrderIndex:          i,
+			Title:               fmt.Sprintf("Chapter %d", i+1),
+			Story:               withFallbackStory("", i),
+			PlaceID:             placeID,
+			ChallengeQuestion:   fallbackSeedQuestChallengeQuestion(placeByID[placeID]),
+			ChallengeDifficulty: randomQuestDifficulty(),
+		})
+	}
+	if len(nodes) < count {
+		return nil
+	}
+	return nodes
+}
+
+func pickUnusedPlaceID(places []googlemaps.Place, used map[string]struct{}) string {
+	for _, place := range places {
+		if place.ID == "" {
+			continue
+		}
+		if _, ok := used[place.ID]; ok {
+			continue
+		}
+		return place.ID
+	}
+	return ""
+}
+
+func countUniquePlaceIDs(places []googlemaps.Place) int {
+	seen := make(map[string]struct{}, len(places))
+	for _, place := range places {
+		if place.ID == "" {
+			continue
+		}
+		seen[place.ID] = struct{}{}
+	}
+	return len(seen)
+}
+
+func buildMainQuestDescription(base string, nodes []models.ZoneSeedMainQuestNodeDraft) string {
+	trimmed := strings.TrimSpace(base)
+	beats := make([]string, 0, len(nodes))
+	for idx, node := range nodes {
+		story := strings.TrimSpace(node.Story)
+		if story == "" {
+			continue
+		}
+		title := strings.TrimSpace(node.Title)
+		if title == "" {
+			title = fmt.Sprintf("Act %d", idx+1)
+		}
+		beats = append(beats, fmt.Sprintf("%s: %s", title, story))
+	}
+	if len(beats) == 0 {
+		return trimmed
+	}
+	if trimmed == "" {
+		return strings.Join(beats, "\n")
+	}
+	return trimmed + "\n\n" + strings.Join(beats, "\n")
+}
+
+func withFallbackStory(story string, index int) string {
+	trimmed := strings.TrimSpace(story)
+	if trimmed != "" {
+		return trimmed
+	}
+	return fallbackMainQuestStory(index)
+}
+
+func fallbackMainQuestStory(index int) string {
+	switch index {
+	case 0:
+		return "The first clue is uncovered, hinting at a larger mystery."
+	case 1:
+		return "A second lead deepens the trail and raises the stakes."
+	default:
+		return "The final piece clicks into place, bringing the tale to its close."
+	}
+}
+
+func preferTopSpots(places []googlemaps.Place) []googlemaps.Place {
+	if len(places) == 0 {
+		return places
+	}
+
+	highReviews, midReviews, lowReviews := computeReviewThresholds(places)
+	log.Printf("TopSpots: review thresholds high=%d mid=%d low=%d", highReviews, midReviews, lowReviews)
+	filters := []struct {
+		minRating  float64
+		minReviews int32
+		label      string
+	}{
+		{minRating: 4.5, minReviews: highReviews, label: fmt.Sprintf("4.5+ and %d+", highReviews)},
+		{minRating: 4.3, minReviews: midReviews, label: fmt.Sprintf("4.3+ and %d+", midReviews)},
+		{minRating: 4.0, minReviews: lowReviews, label: fmt.Sprintf("4.0+ and %d+", lowReviews)},
+	}
+
+	for _, filter := range filters {
+		preferred := make([]googlemaps.Place, 0, len(places))
+		fallback := make([]googlemaps.Place, 0, len(places))
+		for _, place := range places {
+			if place.Rating >= filter.minRating && valueOrZero(place.UserRatingCount) >= filter.minReviews {
+				preferred = append(preferred, place)
+			} else {
+				fallback = append(fallback, place)
+			}
+		}
+		if len(preferred) > 0 {
+			log.Printf("TopSpots: using rating filter %s; preferred=%d fallback=%d", filter.label, len(preferred), len(fallback))
+			return append(preferred, fallback...)
+		}
+	}
+
+	return places
+}
+
+func computeReviewThresholds(places []googlemaps.Place) (int32, int32, int32) {
+	counts := make([]int, 0, len(places))
+	for _, place := range places {
+		if place.UserRatingCount == nil {
+			continue
+		}
+		if *place.UserRatingCount <= 0 {
+			continue
+		}
+		counts = append(counts, int(*place.UserRatingCount))
+	}
+
+	if len(counts) == 0 {
+		return 0, 0, 0
+	}
+
+	sort.Ints(counts)
+	maxCount := int32(counts[len(counts)-1])
+	percentile := func(p float64) int32 {
+		if len(counts) == 1 {
+			return int32(counts[0])
+		}
+		idx := int(math.Round(p * float64(len(counts)-1)))
+		if idx < 0 {
+			idx = 0
+		} else if idx >= len(counts) {
+			idx = len(counts) - 1
+		}
+		return int32(counts[idx])
+	}
+
+	high := percentile(0.75)
+	mid := percentile(0.50)
+	low := percentile(0.30)
+
+	baseFloor := int32(10)
+	if len(counts) < 10 {
+		baseFloor = 5
+	}
+	if maxCount < baseFloor {
+		baseFloor = maxCount
+	}
+
+	if high < baseFloor {
+		high = baseFloor
+	}
+	if mid < baseFloor/2 {
+		mid = baseFloor / 2
+	}
+	if low < 3 {
+		low = 3
+	}
+
+	if high < mid {
+		high = mid
+	}
+	if mid < low {
+		mid = low
+	}
+	if high > maxCount {
+		high = maxCount
+	}
+	if mid > maxCount {
+		mid = maxCount
+	}
+	if low > maxCount {
+		low = maxCount
+	}
+
+	return high, mid, low
+}
+
+func (p *SeedZoneDraftProcessor) filterEnjoyablePlacesLLM(
+	places []googlemaps.Place,
+) (map[string]struct{}, error) {
+	if len(places) == 0 {
+		return map[string]struct{}{}, nil
+	}
+
+	prompt := fmt.Sprintf(enjoyablePlaceFilterPromptTemplate, formatPlacesForEnjoyableFilter(places, 20))
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return nil, err
+	}
+
+	var response enjoyablePlaceFilterResponse
+	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+		return nil, err
+	}
+
+	allowed := make(map[string]struct{}, len(places))
+	for _, place := range places {
+		if place.ID != "" {
+			allowed[place.ID] = struct{}{}
+		}
+	}
+
+	selected := make(map[string]struct{}, len(response.EnjoyablePlaceIDs))
+	for _, id := range response.EnjoyablePlaceIDs {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := allowed[trimmed]; ok {
+			selected[trimmed] = struct{}{}
+		}
+	}
+
+	return selected, nil
 }
 
 func scorePlace(place googlemaps.Place) float64 {
@@ -618,6 +1237,41 @@ func formatPlacesForPrompt(places []googlemaps.Place, limit int) string {
 			summary = "local landmark"
 		}
 		line := fmt.Sprintf("- %s | placeId=%s | %s", place.DisplayName.Text, place.ID, truncate(summary, 120))
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatPlacesForEnjoyableFilter(places []googlemaps.Place, limit int) string {
+	lines := make([]string, 0, len(places))
+	for i, place := range places {
+		if limit > 0 && i >= limit {
+			break
+		}
+		name := strings.TrimSpace(place.DisplayName.Text)
+		if name == "" {
+			name = "Unknown place"
+		}
+		summary := strings.TrimSpace(place.EditorialSummary.Text)
+		if summary == "" {
+			summary = place.PrimaryTypeDisplayName.Text
+		}
+		if summary == "" {
+			summary = strings.Join(place.Types, ", ")
+		}
+		address := strings.TrimSpace(place.FormattedAddress)
+		if address != "" {
+			address = " | " + truncate(address, 80)
+		}
+		line := fmt.Sprintf(
+			"- %s | placeId=%s | primaryType=%s | types=%s | %s%s",
+			name,
+			place.ID,
+			place.PrimaryType,
+			strings.Join(place.Types, ","),
+			truncate(summary, 120),
+			address,
+		)
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
@@ -673,6 +1327,7 @@ func isEnjoyablePlace(place googlemaps.Place) bool {
 		"city_hall", "local_government_office",
 		"doctor", "dentist", "hospital", "health", "pharmacy", "drugstore", "veterinary_care",
 		"school", "primary_school", "secondary_school", "university",
+		"locksmith", "hardware_store", "home_improvement_store",
 		"gas_station", "car_repair", "car_wash", "parking", "storage",
 		"train_station", "subway_station", "bus_station", "transit_station", "airport",
 		"lodging",
