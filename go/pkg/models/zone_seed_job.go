@@ -65,14 +65,22 @@ type ZoneSeedCharacterDraft struct {
 }
 
 type ZoneSeedQuestDraft struct {
-	DraftID            uuid.UUID `json:"draftId"`
-	Name               string    `json:"name"`
-	Description        string    `json:"description"`
-	AcceptanceDialogue []string  `json:"acceptanceDialogue,omitempty"`
-	PlaceID            string    `json:"placeId"`
-	QuestGiverDraftID  uuid.UUID `json:"questGiverDraftId"`
-	ChallengeQuestion  string    `json:"challengeQuestion,omitempty"`
-	Gold               int       `json:"gold"`
+	DraftID             uuid.UUID                     `json:"draftId"`
+	Name                string                        `json:"name"`
+	Description         string                        `json:"description"`
+	AcceptanceDialogue  []string                      `json:"acceptanceDialogue,omitempty"`
+	PlaceID             string                        `json:"placeId"`
+	QuestGiverDraftID   uuid.UUID                     `json:"questGiverDraftId"`
+	ChallengeQuestion   string                        `json:"challengeQuestion,omitempty"`
+	ChallengeDifficulty int                           `json:"challengeDifficulty,omitempty"`
+	Gold                int                           `json:"gold"`
+	RewardItem          *ZoneSeedQuestRewardItemDraft `json:"rewardItem,omitempty"`
+}
+
+type ZoneSeedQuestRewardItemDraft struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	RarityTier  string `json:"rarityTier,omitempty"`
 }
 
 func (d ZoneSeedDraft) Value() (driver.Value, error) {

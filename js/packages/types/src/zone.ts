@@ -5,7 +5,6 @@ export type Zone = {
   name: string;
   latitude: number;
   longitude: number;
-  radius: number;
   createdAt: string;
   updatedAt: string;
   description: string;

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -124,6 +125,15 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		if err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to ensure quest POI: %w", err))
 		}
+		var poiDraft *models.ZoneSeedPointOfInterestDraft
+		if strings.TrimSpace(draftQuest.PlaceID) != "" {
+			for i := range job.Draft.PointsOfInterest {
+				if job.Draft.PointsOfInterest[i].PlaceID == draftQuest.PlaceID {
+					poiDraft = &job.Draft.PointsOfInterest[i]
+					break
+				}
+			}
+		}
 		character := characterByDraftID[draftQuest.QuestGiverDraftID]
 		if character == nil {
 			for _, fallback := range characterByDraftID {
@@ -135,7 +145,7 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("no quest giver available"))
 		}
 
-		if err := p.createQuestFromDraft(ctx, zone, poi, character, draftQuest); err != nil {
+		if err := p.createQuestFromDraft(ctx, zone, poi, poiDraft, character, draftQuest); err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create quest: %w", err))
 		}
 	}
@@ -253,6 +263,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	ctx context.Context,
 	zone *models.Zone,
 	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
 	character *models.Character,
 	draft models.ZoneSeedQuestDraft,
 ) error {
@@ -261,6 +272,21 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		acceptanceDialogue = models.StringArray{}
 	}
 
+	challengeQuestion := strings.TrimSpace(draft.ChallengeQuestion)
+	challengeDifficulty := draft.ChallengeDifficulty
+	if challengeQuestion == "" || challengeDifficulty <= 0 {
+		challengeQuestion, challengeDifficulty = p.generateQuestChallenge(ctx, zone, poi, poiDraft, character, draft)
+	} else {
+		challengeDifficulty = clampQuestDifficulty(challengeDifficulty)
+	}
+	draftForTags := draft
+	draftForTags.ChallengeQuestion = challengeQuestion
+	statTags := p.classifyQuestStatTags(ctx, draftForTags)
+
+	gold := draft.Gold
+	if gold <= 0 {
+		gold = 50 + rand.Intn(451)
+	}
 	now := time.Now()
 	quest := &models.Quest{
 		ID:                    uuid.New(),
@@ -271,7 +297,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		AcceptanceDialogue:    acceptanceDialogue,
 		ZoneID:                &zone.ID,
 		QuestGiverCharacterID: &character.ID,
-		Gold:                  draft.Gold,
+		Gold:                  gold,
 	}
 
 	if imageURL, err := p.generateQuestImage(ctx, draft.Name, draft.Description); err == nil {
@@ -280,6 +306,26 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 
 	if err := p.dbClient.Quest().Create(ctx, quest); err != nil {
 		return err
+	}
+
+	rewardItem, err := p.generateQuestRewardItem(ctx, zone, poi, poiDraft, character, draft, challengeQuestion, draft.RewardItem)
+	if err != nil {
+		return err
+	}
+	if rewardItem != nil {
+		rewards := []models.QuestItemReward{
+			{
+				ID:              uuid.New(),
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+				QuestID:         quest.ID,
+				InventoryItemID: rewardItem.ID,
+				Quantity:        1,
+			},
+		}
+		if err := p.dbClient.QuestItemReward().ReplaceForQuest(ctx, quest.ID, rewards); err != nil {
+			return err
+		}
 	}
 
 	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character.ID); err != nil {
@@ -302,17 +348,16 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		return err
 	}
 
-	statTags := p.classifyQuestStatTags(ctx, draft)
 	challenge := &models.QuestNodeChallenge{
 		ID:             uuid.New(),
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 		QuestNodeID:    node.ID,
 		Tier:           0,
-		Question:       draft.ChallengeQuestion,
+		Question:       challengeQuestion,
 		Reward:         0,
 		SubmissionType: models.DefaultQuestNodeSubmissionType(),
-		Difficulty:     0,
+		Difficulty:     challengeDifficulty,
 		StatTags:       statTags,
 	}
 	if challenge.StatTags == nil {
@@ -457,6 +502,487 @@ func parsePointOfInterestCoords(poi *models.PointOfInterest) (float64, float64, 
 		return 0, 0, err
 	}
 	return lat, lng, nil
+}
+
+type questChallengeResponse struct {
+	Question   string `json:"question"`
+	Difficulty int    `json:"difficulty"`
+}
+
+const questChallengePromptTemplate = `
+You are a quest designer creating a single-player, real-world challenge.
+
+Ignore any fantasy flavor in the quest/zone. Base the challenge only on the real-world POI category.
+
+Zone: %s
+Quest name: %s
+Quest description: %s
+Quest giver: %s
+Quest giver description: %s
+
+Point of Interest:
+%s
+
+Create one challenge that can be completed by a single person while physically at the POI.
+Constraints:
+- Safe, legal, and respectful. Do not require entering restricted areas or interacting with staff.
+- No purchase required.
+- Make it an enjoyable on-site activity that fits the POI type.
+  - Examples: coffee shop: write a 4-line poem or sketch the mug; park: sketch a tree or count benches; museum: note a color motif; bookstore: find a title with a specific word.
+- Answerable on-site without external research.
+- 1-2 short sentences.
+- Provide a difficulty score from 25 to 50 (inclusive).
+
+Respond ONLY as JSON:
+{
+  "question": "string",
+  "difficulty": 32
+}
+`
+
+func (p *ApplyZoneSeedDraftProcessor) generateQuestChallenge(
+	ctx context.Context,
+	zone *models.Zone,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	character *models.Character,
+	draft models.ZoneSeedQuestDraft,
+) (string, int) {
+	poiDetails := formatZoneSeedPOIForPrompt(poi, poiDraft)
+	zoneName := ""
+	if zone != nil {
+		zoneName = zone.Name
+	}
+	prompt := fmt.Sprintf(
+		questChallengePromptTemplate,
+		truncate(zoneName, 120),
+		truncate(draft.Name, 120),
+		truncate(draft.Description, 400),
+		truncate(character.Name, 80),
+		truncate(character.Description, 200),
+		poiDetails,
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return fallbackQuestChallengeQuestion(poi, poiDraft), randomQuestDifficulty()
+	}
+
+	var response questChallengeResponse
+	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+		return fallbackQuestChallengeQuestion(poi, poiDraft), randomQuestDifficulty()
+	}
+
+	question := strings.TrimSpace(response.Question)
+	if question == "" {
+		question = fallbackQuestChallengeQuestion(poi, poiDraft)
+	}
+
+	difficulty := response.Difficulty
+	if difficulty <= 0 {
+		difficulty = randomQuestDifficulty()
+	}
+	difficulty = clampQuestDifficulty(difficulty)
+
+	return question, difficulty
+}
+
+type questRewardItemResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	RarityTier  string `json:"rarityTier"`
+}
+
+const questRewardItemPromptTemplate = `
+You are a fantasy RPG item designer creating a quest reward.
+
+Zone: %s
+Quest name: %s
+Quest description: %s
+Challenge: %s
+Quest giver: %s
+
+Point of Interest:
+%s
+
+Create a reward item that fits the quest and location flavor.
+Constraints:
+- Tangible item a player could carry.
+- Avoid real-world brand names.
+- Name should be short (<= 6 words).
+- Description 1-2 sentences.
+- Rarity tier must be one of: Common, Uncommon, Epic, Mythic.
+
+Respond ONLY as JSON:
+{
+  "name": "string",
+  "description": "string",
+  "rarityTier": "Common"
+}
+`
+
+func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
+	ctx context.Context,
+	zone *models.Zone,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	character *models.Character,
+	draft models.ZoneSeedQuestDraft,
+	challengeQuestion string,
+	draftReward *models.ZoneSeedQuestRewardItemDraft,
+) (*models.InventoryItem, error) {
+	poiDetails := formatZoneSeedPOIForPrompt(poi, poiDraft)
+	zoneName := ""
+	if zone != nil {
+		zoneName = zone.Name
+	}
+	fallback := fallbackQuestRewardItem(poi, poiDraft, draft)
+	if draftReward != nil && strings.TrimSpace(draftReward.Name) != "" {
+		name := strings.TrimSpace(draftReward.Name)
+		description := strings.TrimSpace(draftReward.Description)
+		if description == "" {
+			description = fallback.Description
+		}
+		rarity := normalizeRarityTier(draftReward.RarityTier)
+		if rarity == "" {
+			rarity = fallback.RarityTier
+		}
+		return p.createInventoryItemReward(ctx, name, description, rarity)
+	}
+
+	prompt := fmt.Sprintf(
+		questRewardItemPromptTemplate,
+		truncate(zoneName, 120),
+		truncate(draft.Name, 120),
+		truncate(draft.Description, 400),
+		truncate(challengeQuestion, 200),
+		truncate(character.Name, 80),
+		poiDetails,
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	var response questRewardItemResponse
+	if err == nil {
+		if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+			response = questRewardItemResponse{}
+		}
+	}
+
+	name := strings.TrimSpace(response.Name)
+	if name == "" {
+		name = fallback.Name
+	}
+	description := strings.TrimSpace(response.Description)
+	if description == "" {
+		description = fallback.Description
+	}
+	rarity := normalizeRarityTier(response.RarityTier)
+	if rarity == "" {
+		rarity = fallback.RarityTier
+	}
+
+	return p.createInventoryItemReward(ctx, name, description, rarity)
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
+	ctx context.Context,
+	name string,
+	description string,
+	rarity string,
+) (*models.InventoryItem, error) {
+	item := &models.InventoryItem{
+		Name:                  name,
+		FlavorText:            description,
+		RarityTier:            rarity,
+		IsCaptureType:         false,
+		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
+	}
+
+	if err := p.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+		return nil, err
+	}
+
+	payload := jobs.GenerateInventoryItemImageTaskPayload{
+		InventoryItemID: item.ID,
+		Name:            item.Name,
+		Description:     item.FlavorText,
+		RarityTier:      item.RarityTier,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		errMsg := err.Error()
+		_ = p.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, map[string]interface{}{
+			"image_generation_status": models.InventoryImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
+		return item, nil
+	}
+
+	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		_ = p.dbClient.InventoryItem().UpdateInventoryItem(ctx, item.ID, map[string]interface{}{
+			"image_generation_status": models.InventoryImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
+	}
+
+	return item, nil
+}
+
+func formatZoneSeedPOIForPrompt(poi *models.PointOfInterest, draft *models.ZoneSeedPointOfInterestDraft) string {
+	lines := []string{}
+
+	name := poiNameForPrompt(poi, draft)
+	if name != "" {
+		lines = append(lines, fmt.Sprintf("Name: %s", name))
+	}
+	if draft != nil {
+		if address := strings.TrimSpace(draft.Address); address != "" {
+			lines = append(lines, fmt.Sprintf("Address: %s", address))
+		}
+		if len(draft.Types) > 0 {
+			lines = append(lines, fmt.Sprintf("Types: %s", strings.Join(draft.Types, ", ")))
+		}
+		if summary := strings.TrimSpace(draft.EditorialSummary); summary != "" {
+			lines = append(lines, fmt.Sprintf("Summary: %s", truncate(summary, 200)))
+		}
+		if draft.Rating > 0 {
+			lines = append(lines, fmt.Sprintf("Rating: %.1f (%d reviews)", draft.Rating, draft.UserRatingCount))
+		}
+	}
+	if poi != nil {
+		if alt := strings.TrimSpace(poi.OriginalName); alt != "" && alt != name {
+			lines = append(lines, fmt.Sprintf("Original name: %s", alt))
+		}
+		if desc := strings.TrimSpace(poi.Description); desc != "" {
+			lines = append(lines, fmt.Sprintf("Description: %s", truncate(desc, 200)))
+		}
+	}
+
+	if len(lines) == 0 {
+		return "No POI details available."
+	}
+	return strings.Join(lines, "\n")
+}
+
+func poiNameForPrompt(poi *models.PointOfInterest, draft *models.ZoneSeedPointOfInterestDraft) string {
+	if draft != nil {
+		if name := strings.TrimSpace(draft.Name); name != "" {
+			return name
+		}
+	}
+	if poi != nil {
+		return strings.TrimSpace(poi.Name)
+	}
+	return ""
+}
+
+func fallbackQuestChallengeQuestion(poi *models.PointOfInterest, draft *models.ZoneSeedPointOfInterestDraft) string {
+	name := poiNameForPrompt(poi, draft)
+	types := []string{}
+	if draft != nil && len(draft.Types) > 0 {
+		types = draft.Types
+	}
+	if name == "" {
+		return buildHeuristicChallengeQuestion("this location", types)
+	}
+	return buildHeuristicChallengeQuestion(name, types)
+}
+
+func randomQuestDifficulty() int {
+	return 25 + rand.Intn(26)
+}
+
+func clampQuestDifficulty(value int) int {
+	if value < 25 {
+		return 25
+	}
+	if value > 50 {
+		return 50
+	}
+	return value
+}
+
+func normalizeRarityTier(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "common":
+		return "Common"
+	case "uncommon":
+		return "Uncommon"
+	case "epic":
+		return "Epic"
+	case "mythic":
+		return "Mythic"
+	case "legendary":
+		return "Mythic"
+	case "rare":
+		return "Uncommon"
+	case "very rare":
+		return "Epic"
+	default:
+		return ""
+	}
+}
+
+func randomRarityTier() string {
+	roll := rand.Intn(100)
+	switch {
+	case roll < 50:
+		return "Common"
+	case roll < 80:
+		return "Uncommon"
+	case roll < 95:
+		return "Epic"
+	default:
+		return "Mythic"
+	}
+}
+
+func fallbackQuestRewardItem(poi *models.PointOfInterest, draft *models.ZoneSeedPointOfInterestDraft, quest models.ZoneSeedQuestDraft) questRewardItemResponse {
+	name := strings.TrimSpace(quest.Name)
+	if name == "" {
+		name = "Traveler's Token"
+	} else {
+		name = fmt.Sprintf("%s Token", name)
+	}
+
+	poiName := poiNameForPrompt(poi, draft)
+	description := "A keepsake earned by completing a local favor."
+	if poiName != "" {
+		description = fmt.Sprintf("A keepsake earned near %s, warm with the memory of the place.", poiName)
+	}
+
+	return questRewardItemResponse{
+		Name:        name,
+		Description: description,
+		RarityTier:  randomRarityTier(),
+	}
+}
+
+func buildHeuristicChallengeQuestion(name string, types []string) string {
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+	lowerTypes := make([]string, 0, len(types))
+	for _, t := range types {
+		trimmed := strings.ToLower(strings.TrimSpace(t))
+		if trimmed != "" {
+			lowerTypes = append(lowerTypes, trimmed)
+		}
+	}
+
+	hasType := func(targets ...string) bool {
+		for _, t := range lowerTypes {
+			for _, target := range targets {
+				if t == target || strings.Contains(t, target) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	switch {
+	case hasType("cafe", "coffee", "coffee_shop", "bakery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
+		return fmt.Sprintf("Write a 4-line poem inspired by the smells or sounds near %s, then photograph the page with the storefront in view.", name)
+	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
+		return fmt.Sprintf("Sketch one plant or tree you can see at %s and take a photo of the sketch with the area in view.", name)
+	case hasType("playground") || strings.Contains(lowerName, "playground"):
+		return fmt.Sprintf("Count the number of swings or slides you can see at %s and photograph them.", name)
+	case hasType("trail", "hiking_trail", "walking_trail") || strings.Contains(lowerName, "trail"):
+		return fmt.Sprintf("Find a trail marker or distance sign at %s and photograph it.", name)
+	case hasType("library") || strings.Contains(lowerName, "library"):
+		return fmt.Sprintf("Find a book title on a display or shelf at %s that includes a color word, and photograph the title.", name)
+	case hasType("book_store", "bookstore") || strings.Contains(lowerName, "book"):
+		return fmt.Sprintf("Find a book cover at %s with a creature on it and photograph the cover (no purchase needed).", name)
+	case hasType("museum", "art_gallery", "gallery") || strings.Contains(lowerName, "museum") || strings.Contains(lowerName, "gallery"):
+		return fmt.Sprintf("From outside %s, note two materials used in the building facade and photograph the entrance.", name)
+	case hasType("amusement_park") || strings.Contains(lowerName, "amusement"):
+		return fmt.Sprintf("Find a ride name or attraction map near %s and photograph it.", name)
+	case hasType("aquarium", "zoo") || strings.Contains(lowerName, "aquarium") || strings.Contains(lowerName, "zoo"):
+		return fmt.Sprintf("From outside %s, find a sign or poster featuring an animal and photograph it.", name)
+	case hasType("bowling_alley") || strings.Contains(lowerName, "bowling"):
+		return fmt.Sprintf("Photograph the lane count or main sign at %s from the lobby or entrance.", name)
+	case hasType("casino") || strings.Contains(lowerName, "casino"):
+		return fmt.Sprintf("Find the main entrance sign at %s and photograph it from outside.", name)
+	case hasType("tourist_attraction", "point_of_interest", "landmark", "monument", "historic_site") || strings.Contains(lowerName, "monument"):
+		return fmt.Sprintf("Find a plaque, marker, or date on or near %s and photograph it.", name)
+	case hasType("cemetery") || strings.Contains(lowerName, "cemetery"):
+		return fmt.Sprintf("From a respectful distance at %s, photograph a sign or gate that shows the cemetery name.", name)
+	case hasType("plaza", "square") || strings.Contains(lowerName, "plaza") || strings.Contains(lowerName, "square"):
+		return fmt.Sprintf("Count the number of visible benches or seating areas at %s and photograph the space.", name)
+	case hasType("bridge") || strings.Contains(lowerName, "bridge"):
+		return fmt.Sprintf("Count the number of arches or spans you can see on %s and photograph the structure.", name)
+	case hasType("church", "place_of_worship", "synagogue", "mosque") || strings.Contains(lowerName, "church"):
+		return fmt.Sprintf("Count the visible arches or windows on the exterior of %s and photograph the building.", name)
+	case hasType("school", "primary_school", "secondary_school", "university", "college") || strings.Contains(lowerName, "school") || strings.Contains(lowerName, "university"):
+		return fmt.Sprintf("Find the school name or crest on a sign near %s and photograph it from outside.", name)
+	case hasType("movie_theater", "cinema", "theater", "performing_arts_theater") || strings.Contains(lowerName, "theater") || strings.Contains(lowerName, "cinema"):
+		return fmt.Sprintf("Find a poster or marquee at %s and photograph the title of a show or film.", name)
+	case hasType("music_venue", "night_club") || strings.Contains(lowerName, "venue"):
+		return fmt.Sprintf("From outside %s, photograph the main sign and describe the vibe in one sentence.", name)
+	case hasType("barber", "hair_care", "beauty_salon", "spa") || strings.Contains(lowerName, "salon") || strings.Contains(lowerName, "spa"):
+		return fmt.Sprintf("Photograph the main sign at %s and describe the storefront style in one sentence.", name)
+	case hasType("gym", "fitness") || strings.Contains(lowerName, "gym") || strings.Contains(lowerName, "fitness"):
+		return fmt.Sprintf("Count the number of different exercise stations or windows you can see at %s from outside and photograph the front.", name)
+	case hasType("restaurant", "bar", "brewery", "meal_takeaway", "meal_delivery") || strings.Contains(lowerName, "restaurant") || strings.Contains(lowerName, "bar"):
+		return fmt.Sprintf("Take a photo of the main sign at %s and write a two-sentence review of the vibe from outside.", name)
+	case hasType("ice_cream_shop", "dessert") || strings.Contains(lowerName, "ice cream") || strings.Contains(lowerName, "gelato"):
+		return fmt.Sprintf("Find a flavor board or dessert sign at %s and photograph it.", name)
+	case hasType("store", "shopping_mall", "supermarket", "market") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):
+		return fmt.Sprintf("Find a window display at %s and describe the dominant color theme in one sentence, then photograph it.", name)
+	case hasType("clothing_store", "shoe_store", "department_store") || strings.Contains(lowerName, "boutique"):
+		return fmt.Sprintf("Find a window display at %s featuring an outfit and photograph it.", name)
+	case hasType("electronics_store") || strings.Contains(lowerName, "electronics"):
+		return fmt.Sprintf("Photograph the main sign at %s and note one product category highlighted in the window.", name)
+	case hasType("furniture_store", "home_goods_store") || strings.Contains(lowerName, "furniture"):
+		return fmt.Sprintf("Photograph a window display at %s and describe the texture of the featured item.", name)
+	case hasType("hardware_store") || strings.Contains(lowerName, "hardware"):
+		return fmt.Sprintf("Find the tool or materials signage at %s and photograph it.", name)
+	case hasType("pet_store", "veterinary_care") || strings.Contains(lowerName, "pet"):
+		return fmt.Sprintf("Photograph the pet-related sign at %s and note one animal featured.", name)
+	case hasType("florist") || strings.Contains(lowerName, "florist"):
+		return fmt.Sprintf("Find a flower display at %s and photograph the most vibrant color you see.", name)
+	case hasType("hotel", "lodging") || strings.Contains(lowerName, "hotel"):
+		return fmt.Sprintf("Find the hotel name on the exterior of %s and photograph it from the sidewalk.", name)
+	case hasType("pharmacy", "drugstore") || strings.Contains(lowerName, "pharmacy"):
+		return fmt.Sprintf("Photograph the main pharmacy sign at %s and note one color used in the branding.", name)
+	case hasType("bank", "atm") || strings.Contains(lowerName, "bank"):
+		return fmt.Sprintf("Find the posted hours or services signage at %s and photograph it.", name)
+	case hasType("courthouse", "city_hall", "town_hall") || strings.Contains(lowerName, "city hall"):
+		return fmt.Sprintf("Photograph the main civic building sign at %s and note the year if displayed.", name)
+	case hasType("police", "fire_station") || strings.Contains(lowerName, "police") || strings.Contains(lowerName, "fire"):
+		return fmt.Sprintf("From outside %s, photograph the station sign or emblem.", name)
+	case hasType("hospital", "doctor", "dentist", "health", "clinic") || strings.Contains(lowerName, "hospital") || strings.Contains(lowerName, "clinic"):
+		return fmt.Sprintf("Find the clinic or hospital name at %s and photograph it from outside.", name)
+	case hasType("post_office") || strings.Contains(lowerName, "post office"):
+		return fmt.Sprintf("Photograph the postal logo or hours sign outside %s.", name)
+	case hasType("gas_station") || strings.Contains(lowerName, "gas"):
+		return fmt.Sprintf("From outside %s, count the number of fuel pumps you can see and photograph the station.", name)
+	case hasType("car_wash") || strings.Contains(lowerName, "car wash"):
+		return fmt.Sprintf("Find the car wash entrance sign at %s and photograph it.", name)
+	case hasType("car_repair") || strings.Contains(lowerName, "auto") || strings.Contains(lowerName, "mechanic"):
+		return fmt.Sprintf("Photograph the service sign at %s and note one service offered.", name)
+	case hasType("laundry", "dry_cleaner") || strings.Contains(lowerName, "laundry") || strings.Contains(lowerName, "cleaner"):
+		return fmt.Sprintf("Find the posted hours at %s and photograph them.", name)
+	case hasType("parking") || strings.Contains(lowerName, "garage"):
+		return fmt.Sprintf("Find the maximum height or rate sign at %s and photograph it.", name)
+	case hasType("stadium", "sports_complex", "gym") || strings.Contains(lowerName, "stadium") || strings.Contains(lowerName, "gym"):
+		return fmt.Sprintf("Count the visible entrances to %s and photograph the main gate.", name)
+	case hasType("train_station", "subway_station", "bus_station", "transit_station") || strings.Contains(lowerName, "station"):
+		return fmt.Sprintf("Find the line color or route number on signage at %s and photograph it.", name)
+	case hasType("bus_stop") || strings.Contains(lowerName, "bus stop"):
+		return fmt.Sprintf("Find the route number on the stop sign at %s and photograph it.", name)
+	case hasType("airport") || strings.Contains(lowerName, "airport"):
+		return fmt.Sprintf("Photograph the terminal or airport name sign at %s from outside.", name)
+	case hasType("beach", "lake", "river", "water", "harbor", "marina") || strings.Contains(lowerName, "beach") || strings.Contains(lowerName, "lake"):
+		return fmt.Sprintf("Collect three different textures you can see at %s (sand, stone, water, etc.) and photograph them together.", name)
+	case hasType("viewpoint", "scenic_lookout", "observation_deck") || strings.Contains(lowerName, "lookout") || strings.Contains(lowerName, "overlook"):
+		return fmt.Sprintf("Find the best viewpoint at %s and take a photo that shows the horizon.", name)
+	case hasType("hiking_area", "national_park") || strings.Contains(lowerName, "national park"):
+		return fmt.Sprintf("Photograph a trail map or rules sign at %s.", name)
+	default:
+		return fmt.Sprintf("Take a clear photo of the main sign or entrance at %s.", name)
+	}
 }
 
 type questStatTagResponse struct {

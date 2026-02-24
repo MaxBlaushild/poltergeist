@@ -30,7 +30,13 @@ type ZoneSeedQuestDraft = {
   placeId: string;
   questGiverDraftId: string;
   challengeQuestion?: string;
+  challengeDifficulty?: number;
   gold?: number;
+  rewardItem?: {
+    name?: string;
+    description?: string;
+    rarityTier?: string;
+  };
 };
 
 type ZoneSeedDraft = {
@@ -511,6 +517,29 @@ export const ZoneSeedJobs = () => {
                                 {quest.challengeQuestion && (
                                   <div className="mt-2 text-gray-500">
                                     Challenge: {quest.challengeQuestion}
+                                  </div>
+                                )}
+                                {typeof quest.challengeDifficulty === 'number' && (
+                                  <div className="mt-1 text-gray-500">
+                                    Difficulty: {quest.challengeDifficulty}
+                                  </div>
+                                )}
+                                {quest.rewardItem && (
+                                  <div className="mt-2 text-gray-500">
+                                    <div className="font-semibold text-gray-600">
+                                      Reward item
+                                    </div>
+                                    <div>
+                                      {quest.rewardItem.name || 'Unnamed item'}
+                                      {quest.rewardItem.rarityTier
+                                        ? ` (${quest.rewardItem.rarityTier})`
+                                        : ''}
+                                    </div>
+                                    {quest.rewardItem.description && (
+                                      <div className="mt-1 whitespace-pre-wrap">
+                                        {quest.rewardItem.description}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                                 {quest.acceptanceDialogue &&

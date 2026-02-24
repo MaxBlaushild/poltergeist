@@ -3937,7 +3937,6 @@ func (s *server) createZone(ctx *gin.Context) {
 		Name        string  `json:"name"`
 		Latitude    float64 `json:"latitude"`
 		Longitude   float64 `json:"longitude"`
-		Radius      float64 `json:"radius"`
 		Description string  `json:"description"`
 	}
 
@@ -3950,7 +3949,6 @@ func (s *server) createZone(ctx *gin.Context) {
 		Name:        requestBody.Name,
 		Latitude:    requestBody.Latitude,
 		Longitude:   requestBody.Longitude,
-		Radius:      requestBody.Radius,
 		Description: requestBody.Description,
 	}
 	if err := s.dbClient.Zone().Create(ctx, zone); err != nil {

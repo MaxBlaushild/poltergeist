@@ -161,7 +161,8 @@ func (h *zoneHandler) UpdateBoundary(ctx context.Context, zoneID uuid.UUID, boun
 	}
 
 	for _, point := range boundary {
-		point, err := pointHandle.CreatePoint(ctx, point[0], point[1])
+		// boundary is [lng, lat]
+		point, err := pointHandle.CreatePoint(ctx, point[1], point[0])
 		if err != nil {
 			return err
 		}

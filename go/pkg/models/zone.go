@@ -3,12 +3,16 @@ package models
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"log"
 	mathrand "math/rand"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/wkb"
+	"github.com/paulmach/orb/encoding/wkt"
 	"gorm.io/gorm"
 )
 
@@ -32,7 +36,6 @@ type Zone struct {
 	Description    string       `json:"description"`
 	Latitude       float64      `json:"latitude"`
 	Longitude      float64      `json:"longitude"`
-	Radius         float64      `json:"radius"`
 	ZoneImportID   *uuid.UUID   `json:"zoneImportId" gorm:"type:uuid"`
 	Boundary       string       `json:"boundary"`
 	BoundaryCoords []Location   `json:"boundaryCoords" gorm:"-"`
@@ -68,26 +71,44 @@ func (z *Zone) GetPolygon() orb.Polygon {
 		return *z.Polygon
 	}
 
-	if len(z.Points) == 0 {
+	var polygonFromPoints orb.Polygon
+	if len(z.Points) > 0 {
+		// Create a ring from the sorted points
+		ring := make(orb.Ring, len(z.Points))
+		for i, point := range z.Points {
+			ring[i] = orb.Point{point.Longitude, point.Latitude}
+		}
+
+		// Close the ring by adding the first point at the end if needed
+		if len(ring) > 0 && !ring[0].Equal(ring[len(ring)-1]) {
+			ring = append(ring, ring[0])
+		}
+		polygonFromPoints = orb.Polygon{ring}
+	}
+
+	polygonFromBoundary := z.decodeBoundaryPolygon()
+
+	var chosen orb.Polygon
+	if isPolygonUsable(polygonFromPoints, z.Latitude, z.Longitude) {
+		chosen = polygonFromPoints
+	}
+	if !isPolygonUsable(chosen, z.Latitude, z.Longitude) && isPolygonUsable(polygonFromBoundary, z.Latitude, z.Longitude) {
+		log.Printf("Zone %s (%s): polygon from points invalid; using boundary geometry", z.ID, z.Name)
+		chosen = polygonFromBoundary
+	}
+	if !isPolygonUsable(chosen, z.Latitude, z.Longitude) && isPolygonUsable(polygonFromPoints, 0, 0) {
+		chosen = polygonFromPoints
+	}
+	if !isPolygonUsable(chosen, z.Latitude, z.Longitude) && isPolygonUsable(polygonFromBoundary, 0, 0) {
+		chosen = polygonFromBoundary
+	}
+
+	if len(chosen) == 0 {
 		return nil
 	}
 
-	// Create a ring from the sorted points
-	ring := make(orb.Ring, len(z.Points))
-	for i, point := range z.Points {
-		ring[i] = orb.Point{point.Longitude, point.Latitude}
-	}
-
-	// Close the ring by adding the first point at the end if needed
-	if len(ring) > 0 && !ring[0].Equal(ring[len(ring)-1]) {
-		ring = append(ring, ring[0])
-	}
-
-	// Create polygon from ring
-	p := orb.Polygon{ring}
-	z.Polygon = &p
-
-	return p
+	z.Polygon = &chosen
+	return chosen
 }
 
 func (z *Zone) GetRandomPoint() orb.Point {
@@ -230,4 +251,72 @@ func (z *Zone) GetBoundary() []Location {
 	}
 
 	return points
+}
+
+func (z *Zone) decodeBoundaryPolygon() orb.Polygon {
+	raw := strings.TrimSpace(z.Boundary)
+	if raw == "" {
+		return nil
+	}
+
+	var geom orb.Geometry
+	trimmed := raw
+	if strings.HasPrefix(trimmed, "SRID=") || strings.HasPrefix(strings.ToUpper(trimmed), "POLYGON") {
+		if idx := strings.Index(trimmed, ";"); idx >= 0 {
+			trimmed = strings.TrimSpace(trimmed[idx+1:])
+		}
+		if g, err := wkt.Unmarshal(trimmed); err == nil {
+			geom = g
+		}
+	} else {
+		if strings.HasPrefix(trimmed, "\\x") || strings.HasPrefix(trimmed, "0x") || strings.HasPrefix(trimmed, "0X") {
+			trimmed = trimmed[2:]
+		}
+	}
+	if geom == nil {
+		if bytes, err := hex.DecodeString(trimmed); err == nil {
+			if g, err := wkb.Unmarshal(bytes); err == nil {
+				geom = g
+			}
+		}
+	}
+
+	polygon, ok := geom.(orb.Polygon)
+	if !ok || len(polygon) == 0 {
+		return nil
+	}
+	return polygon
+}
+
+func isPolygonUsable(polygon orb.Polygon, lat float64, lng float64) bool {
+	if len(polygon) == 0 {
+		return false
+	}
+	if polygon.Bound().IsEmpty() {
+		return false
+	}
+	if lat == 0 && lng == 0 {
+		return true
+	}
+	return polygonContainsPoint(polygon, lat, lng)
+}
+
+func polygonContainsPoint(polygon orb.Polygon, lat float64, lng float64) bool {
+	if len(polygon) == 0 {
+		return false
+	}
+	ring := polygon[0]
+	if len(ring) < 3 {
+		return false
+	}
+
+	point := orb.Point{lng, lat}
+	inside := false
+	for i, j := 0, len(ring)-1; i < len(ring); j, i = i, i+1 {
+		if ((ring[i].Y() > point.Y()) != (ring[j].Y() > point.Y())) &&
+			(point.X() < (ring[j].X()-ring[i].X())*(point.Y()-ring[i].Y())/(ring[j].Y()-ring[i].Y())+ring[i].X()) {
+			inside = !inside
+		}
+	}
+	return inside
 }

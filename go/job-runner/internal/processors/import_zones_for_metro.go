@@ -141,10 +141,6 @@ func (p *ImportZonesForMetroProcessor) ProcessTask(ctx context.Context, task *as
 		}
 
 		centroidLat, centroidLon := polygonCentroid(boundary)
-		radius := maxDistanceMeters(centroidLat, centroidLon, boundary)
-		if radius < 250 {
-			radius = 250
-		}
 
 		zone := &models.Zone{
 			ID:           uuid.New(),
@@ -152,7 +148,6 @@ func (p *ImportZonesForMetroProcessor) ProcessTask(ctx context.Context, task *as
 			Description:  fmt.Sprintf("Imported from OSM neighborhoods for %s", metroName),
 			Latitude:     centroidLat,
 			Longitude:    centroidLon,
-			Radius:       radius,
 			ZoneImportID: &importItem.ID,
 		}
 
@@ -162,7 +157,8 @@ func (p *ImportZonesForMetroProcessor) ProcessTask(ctx context.Context, task *as
 
 		boundaryCoords := make([][]float64, 0, len(boundary))
 		for _, point := range boundary {
-			boundaryCoords = append(boundaryCoords, []float64{point.Lat, point.Lon})
+			// UpdateBoundary expects [lng, lat]
+			boundaryCoords = append(boundaryCoords, []float64{point.Lon, point.Lat})
 		}
 		if err := p.dbClient.Zone().UpdateBoundary(ctx, zone.ID, boundaryCoords); err != nil {
 			continue

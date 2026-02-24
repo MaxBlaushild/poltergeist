@@ -4,7 +4,6 @@ class Zone {
   final String? description;
   final double latitude;
   final double longitude;
-  final double radius;
   final String? boundary; // WKT string format
   final List<LatLngCoords>? boundaryCoords;
   final List<LatLngCoords>? points;
@@ -15,7 +14,6 @@ class Zone {
     this.description,
     required this.latitude,
     required this.longitude,
-    this.radius = 0,
     this.boundary,
     this.boundaryCoords,
     this.points,
@@ -28,7 +26,6 @@ class Zone {
       description: json['description'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
-      radius: (json['radius'] as num?)?.toDouble() ?? 0,
       boundary: json['boundary'] as String?,
       boundaryCoords: (json['boundaryCoords'] as List<dynamic>?)
           ?.map((e) => LatLngCoords.fromJson(e as Map<String, dynamic>))

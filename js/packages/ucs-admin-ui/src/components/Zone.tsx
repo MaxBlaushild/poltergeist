@@ -488,7 +488,6 @@ export const Zone = () => {
       <h1 className="text-3xl font-bold mb-6 text-gray-800">{zone?.name}</h1>
       <p className="text-lg text-gray-600 mb-3">Latitude: {zone?.latitude}</p>
       <p className="text-lg text-gray-600 mb-3">Longitude: {zone?.longitude}</p>
-      <p className="text-lg text-gray-600 mb-3">Radius: {zone?.radius}m</p>
 
       {/* Zone Selector */}
       <div className="mb-6">

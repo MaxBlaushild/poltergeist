@@ -199,13 +199,24 @@ func haversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 
 // selectPlaceByDistanceWeight selects a place from the list using distance-based weighted random selection.
 // Places closer to the search center have exponentially higher probability of being selected.
-func selectPlaceByDistanceWeight(places []googlemaps.Place, centerLat, centerLng, radius float64) *googlemaps.Place {
+func selectPlaceByDistanceWeight(places []googlemaps.Place, centerLat, centerLng float64) *googlemaps.Place {
 	if len(places) == 0 {
 		return nil
 	}
 
 	if len(places) == 1 {
 		return &places[0]
+	}
+
+	maxDistance := 0.0
+	for _, place := range places {
+		distance := haversineDistance(centerLat, centerLng, place.Location.Latitude, place.Location.Longitude)
+		if distance > maxDistance {
+			maxDistance = distance
+		}
+	}
+	if maxDistance <= 0 {
+		maxDistance = 1000
 	}
 
 	// Calculate weights based on distance (closer = higher weight)
@@ -216,7 +227,7 @@ func selectPlaceByDistanceWeight(places []googlemaps.Place, centerLat, centerLng
 		distance := haversineDistance(centerLat, centerLng, place.Location.Latitude, place.Location.Longitude)
 		// Use exponential decay: weight = e^(-distance/radius)
 		// This gives much higher weight to closer places
-		weight := math.Exp(-distance / radius)
+		weight := math.Exp(-distance / maxDistance)
 		weights[i] = weight
 		totalWeight += weight
 	}
@@ -284,7 +295,7 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 		centerLat := randomPoint.Y()
 		centerLng := randomPoint.X()
 
-		log.Printf("Attempt %d/%d - Searching at lat: %f, lng: %f, radius: %f", attempts+1, maxAttempts, centerLat, centerLng, zone.Radius)
+		log.Printf("Attempt %d/%d - Searching at lat: %f, lng: %f", attempts+1, maxAttempts, centerLat, centerLng)
 
 		places, err := c.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
 			Lat:            centerLat,
@@ -333,7 +344,7 @@ func (c *client) GetPlacesInZone(ctx context.Context, zone models.Zone, included
 
 		// Use weighted random selection to pick from valid places
 		for int32(len(placesInZone)) < numberOfPlaces && len(validPlaces) > 0 {
-			selectedPlace := selectPlaceByDistanceWeight(validPlaces, centerLat, centerLng, zone.Radius)
+			selectedPlace := selectPlaceByDistanceWeight(validPlaces, centerLat, centerLng)
 			if selectedPlace == nil {
 				break
 			}
@@ -398,7 +409,7 @@ func (c *client) SeedPointsOfInterest(ctx context.Context, zone models.Zone, inc
 	log.Printf("Starting to seed points of interest for zone %s with included types %v and excluded types %v", zone.Name, includedTypes, excludedTypes)
 
 	randomPoint := zone.GetRandomPoint()
-	log.Printf("Fuzzed latitude: %f, longitude: %f, radius: %f", randomPoint.X(), randomPoint.Y(), zone.Radius)
+	log.Printf("Fuzzed latitude: %f, longitude: %f", randomPoint.X(), randomPoint.Y())
 
 	places, err := c.GetPlacesInZone(ctx, zone, includedTypes, excludedTypes, numberOfPlaces)
 	if err != nil {

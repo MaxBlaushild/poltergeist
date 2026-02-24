@@ -9,7 +9,6 @@ export const Zones = () => {
   const [name, setName] = useState('');
   const [latitude, setLatitude] = useState(0);
   const [longitude, setLongitude] = useState(0);
-  const [radius, setRadius] = useState(0);
   const [description, setDescription] = useState('');
   const [showCreateZone, setShowCreateZone] = useState(false);
   const [selectedMetro, setSelectedMetro] = useState('Chicago, Illinois');
@@ -239,7 +238,7 @@ export const Zones = () => {
           <p style={{
             margin: '5px 0',
             color: '#666'
-          }}>Radius: {zone.radius}m</p>
+          }}>Boundary points: {zone.points?.length ?? 0}</p>
           <button
             onClick={() => deleteZone(zone)}
             className="bg-red-500 text-white px-4 py-2 rounded-md mr-2"
@@ -341,20 +340,6 @@ export const Zones = () => {
               }}
             />
           </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>Radius (meters):</label>
-            <input
-              type="number"
-              value={radius}
-              onChange={(e) => setRadius(Number(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
-            />
-          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <button
               onClick={() => setShowCreateZone(false)}
@@ -374,7 +359,6 @@ export const Zones = () => {
                   name,
                   latitude,
                   longitude,
-                  radius,
                   description,
                   createdAt: new Date(),
                   updatedAt: new Date()
