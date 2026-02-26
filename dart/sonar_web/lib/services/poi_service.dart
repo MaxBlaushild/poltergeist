@@ -3,6 +3,7 @@ import '../models/character_action.dart';
 import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
 import '../models/quest.dart';
+import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/user_zone_reputation.dart';
 import '../models/zone.dart';
@@ -15,12 +16,16 @@ class PoiService {
 
   Future<List<Character>> getCharacters() async {
     final list = await _api.get<List<dynamic>>('/sonar/characters');
-    return list.map((e) => Character.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => Character.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Quest?> getQuestById(String questId) async {
     try {
-      final data = await _api.get<Map<String, dynamic>>('/sonar/quests/$questId');
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/quests/$questId',
+      );
       return Quest.fromJson(data);
     } catch (_) {
       return null;
@@ -28,8 +33,21 @@ class PoiService {
   }
 
   Future<List<TreasureChest>> getTreasureChestsForZone(String zoneId) async {
-    final list = await _api.get<List<dynamic>>('/sonar/zones/$zoneId/treasure-chests');
-    return list.map((e) => TreasureChest.fromJson(e as Map<String, dynamic>)).toList();
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/treasure-chests',
+    );
+    return list
+        .map((e) => TreasureChest.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<Scenario>> getScenariosForZone(String zoneId) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/scenarios',
+    );
+    return list
+        .map((e) => Scenario.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<Zone>> getZones() async {
@@ -53,9 +71,13 @@ class PoiService {
   /// GET /sonar/pointsOfInterest/discoveries — user's POI discoveries.
   Future<List<PointOfInterestDiscovery>> getDiscoveries() async {
     try {
-      final list = await _api.get<List<dynamic>>('/sonar/pointsOfInterest/discoveries');
+      final list = await _api.get<List<dynamic>>(
+        '/sonar/pointsOfInterest/discoveries',
+      );
       return list
-          .map((e) => PointOfInterestDiscovery.fromJson(e as Map<String, dynamic>))
+          .map(
+            (e) => PointOfInterestDiscovery.fromJson(e as Map<String, dynamic>),
+          )
           .toList();
     } catch (_) {
       return [];
@@ -88,7 +110,9 @@ class PoiService {
   }
 
   Future<List<CharacterAction>> getCharacterActions(String characterId) async {
-    final list = await _api.get<List<dynamic>>('/sonar/characters/$characterId/actions');
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/characters/$characterId/actions',
+    );
     return list
         .map((e) => CharacterAction.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -100,14 +124,14 @@ class PoiService {
   }) async {
     await _api.post<dynamic>(
       '/sonar/quests/accept',
-      data: {
-        'characterId': characterId,
-        'questId': questId,
-      },
+      data: {'characterId': characterId, 'questId': questId},
     );
   }
 
-  Future<Map<String, dynamic>> purchaseFromShop(String actionId, int itemId) async {
+  Future<Map<String, dynamic>> purchaseFromShop(
+    String actionId,
+    int itemId,
+  ) async {
     return await _api.post<Map<String, dynamic>>(
       '/sonar/character-actions/$actionId/purchase',
       data: {'itemId': itemId, 'quantity': 1},
@@ -129,6 +153,23 @@ class PoiService {
     return await _api.post<Map<String, dynamic>>(
       '/sonar/treasure-chests/$chestId/open',
     );
+  }
+
+  Future<ScenarioPerformResult> performScenario(
+    String scenarioId, {
+    String? scenarioOptionId,
+    String? responseText,
+  }) async {
+    final data = await _api.post<Map<String, dynamic>>(
+      '/sonar/scenarios/$scenarioId/perform',
+      data: {
+        if (scenarioOptionId != null && scenarioOptionId.isNotEmpty)
+          'scenarioOptionId': scenarioOptionId,
+        if (responseText != null && responseText.trim().isNotEmpty)
+          'responseText': responseText.trim(),
+      },
+    );
+    return ScenarioPerformResult.fromJson(data);
   }
 
   /// POST /sonar/pointOfInterest/unlock — unlock a POI when user is within 200m.

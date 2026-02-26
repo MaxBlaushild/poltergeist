@@ -90,6 +90,7 @@ type DbClient interface {
 	QuestNodeChild() QuestNodeChildHandle
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
+	Scenario() ScenarioHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
 	DocumentLocation() DocumentLocationHandle
@@ -851,6 +852,21 @@ type TreasureChestHandle interface {
 	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error)
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
+}
+
+type ScenarioHandle interface {
+	Create(ctx context.Context, scenario *models.Scenario) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Scenario, error)
+	FindAll(ctx context.Context) ([]models.Scenario, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error
+	ReplaceItemRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemReward) error
+	FindAttemptByUserAndScenario(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) (*models.UserScenarioAttempt, error)
+	CreateAttempt(ctx context.Context, attempt *models.UserScenarioAttempt) error
+	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
+	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 }
 
 type DocumentHandle interface {

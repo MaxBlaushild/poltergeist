@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' show Point;
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -9,13 +10,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:provider/provider.dart';
-import '../config/router.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
+import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/zone.dart';
 import '../providers/activity_feed_provider.dart';
@@ -35,6 +36,7 @@ import '../services/poi_service.dart';
 import '../utils/poi_image_util.dart';
 import '../utils/camera_capture.dart';
 import '../constants/api_constants.dart';
+import '../constants/gameplay_constants.dart';
 import '../widgets/activity_feed_panel.dart';
 import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
@@ -44,6 +46,7 @@ import '../widgets/new_item_modal.dart';
 import '../widgets/point_of_interest_panel.dart';
 import '../widgets/quest_log_panel.dart';
 import '../widgets/rpg_dialogue_modal.dart';
+import '../widgets/scenario_panel.dart';
 import '../widgets/tracked_quests_overlay.dart';
 import '../widgets/shop_modal.dart';
 import '../widgets/quest_filter_panel.dart';
@@ -54,6 +57,8 @@ import '../widgets/paper_texture.dart';
 
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
+const _scenarioMysteryImageUrl =
+    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _mapThumbnailVersion = 'v4';
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
@@ -80,6 +85,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<PointOfInterest> _pois = [];
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
+  List<Scenario> _scenarios = [];
   List<Line> _zoneLines = [];
   List<Fill> _zoneFills = [];
   List<Line> _questLines = [];
@@ -95,10 +101,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _chestSymbolById = {};
   final Map<String, Circle> _chestCircleById = {};
   final Map<String, bool> _chestCircleOpened = {};
+  List<Symbol> _scenarioSymbols = [];
+  List<Circle> _scenarioCircles = [];
+  final Map<String, Symbol> _scenarioSymbolById = {};
+  final Map<String, Circle> _scenarioCircleById = {};
+  final Map<String, bool> _scenarioCircleMystery = {};
   final Set<String> _openedTreasureChestIds = <String>{};
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
+  Uint8List? _scenarioMysteryThumbnailBytes;
+  bool _scenarioMysteryThumbnailAdded = false;
   bool _styleLoaded = false;
   bool _markersAdded = false;
   bool _addedMarkersWithEmptyDiscoveries = false;
@@ -204,6 +217,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     _updateSelectedZoneFromLocation();
     _requestQuestLogIfReady();
+    if (_styleLoaded && _mapController != null && _markersAdded) {
+      unawaited(_refreshScenarioSymbols());
+    }
   }
 
   void _onAuthChanged() {
@@ -420,6 +436,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _chestCircleOpened.clear();
       _chestThumbnailBytes = null;
       _chestThumbnailAdded = false;
+      _scenarioSymbols = [];
+      _scenarioCircles = [];
+      _scenarioSymbolById.clear();
+      _scenarioCircleById.clear();
+      _scenarioCircleMystery.clear();
+      _scenarioMysteryThumbnailBytes = null;
+      _scenarioMysteryThumbnailAdded = false;
       _questLines = [];
       _characterSymbolsById.clear();
     });
@@ -730,29 +753,233 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         context.read<ZoneProvider>().selectedZone?.id ??
         (_zones.isNotEmpty ? _zones.first.id : null);
     if (zoneId == null) {
-      if (mounted) setState(() => _treasureChests = []);
+      if (mounted) {
+        setState(() {
+          _treasureChests = [];
+          _scenarios = [];
+        });
+      }
       return;
     }
     try {
-      final chests = await context.read<PoiService>().getTreasureChestsForZone(
-        zoneId,
-      );
+      final svc = context.read<PoiService>();
+      final chestsFuture = svc.getTreasureChestsForZone(zoneId);
+      final scenariosFuture = svc.getScenariosForZone(zoneId);
+      final chests = await chestsFuture;
+      final scenarios = await scenariosFuture;
       if (!mounted) return;
       setState(() {
         _treasureChests = chests
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList();
+        _scenarios = scenarios;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
+        await _refreshScenarioSymbols();
       }
     } catch (e) {
-      debugPrint('SinglePlayer: _loadTreasureChests error: $e');
+      debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
       if (mounted) {
-        setState(() => _treasureChests = []);
+        setState(() {
+          _treasureChests = [];
+          _scenarios = [];
+        });
         if (_styleLoaded && _mapController != null && _markersAdded) {
           await _refreshTreasureChestSymbols();
+          await _refreshScenarioSymbols();
         }
+      }
+    }
+  }
+
+  bool _isScenarioMystery(Scenario scenario) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return true;
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      scenario.latitude,
+      scenario.longitude,
+    );
+    return distance > kProximityUnlockRadiusMeters;
+  }
+
+  Scenario? _scenarioById(String id) {
+    for (final scenario in _scenarios) {
+      if (scenario.id == id) return scenario;
+    }
+    return null;
+  }
+
+  double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadiusMeters = 6371e3;
+    final phi1 = lat1 * math.pi / 180;
+    final phi2 = lat2 * math.pi / 180;
+    final dPhi = (lat2 - lat1) * math.pi / 180;
+    final dLambda = (lon2 - lon1) * math.pi / 180;
+    final a =
+        math.sin(dPhi / 2) * math.sin(dPhi / 2) +
+        math.cos(phi1) *
+            math.cos(phi2) *
+            math.sin(dLambda / 2) *
+            math.sin(dLambda / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusMeters * c;
+  }
+
+  Future<void> _loadScenarioMysteryThumbnail(MapLibreMapController c) async {
+    if (_scenarioMysteryThumbnailBytes == null) {
+      try {
+        _scenarioMysteryThumbnailBytes = await loadPoiThumbnail(
+          _scenarioMysteryImageUrl,
+        );
+      } catch (_) {}
+    }
+    if (_scenarioMysteryThumbnailBytes != null &&
+        !_scenarioMysteryThumbnailAdded) {
+      try {
+        await c.addImage(
+          'scenario_mystery_thumbnail_$_mapThumbnailVersion',
+          _scenarioMysteryThumbnailBytes!,
+        );
+        _scenarioMysteryThumbnailAdded = true;
+      } catch (_) {}
+    }
+  }
+
+  Future<String?> _ensureScenarioVisibleThumbnail(
+    MapLibreMapController c,
+    Scenario scenario,
+  ) async {
+    final source = scenario.thumbnailUrl.isNotEmpty
+        ? scenario.thumbnailUrl
+        : scenario.imageUrl;
+    if (source.isEmpty) return null;
+
+    final imageBytes = await loadPoiThumbnail(source);
+    if (imageBytes == null) return null;
+
+    final imageId = 'scenario_${scenario.id}_$_mapThumbnailVersion';
+    try {
+      await c.addImage(imageId, imageBytes);
+    } catch (_) {}
+    return imageId;
+  }
+
+  Future<void> _refreshScenarioSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    await _loadScenarioMysteryThumbnail(c);
+
+    final desiredIds = _scenarios.map((scenario) => scenario.id).toSet();
+    for (final entry in _scenarioSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _scenarioSymbols.remove(entry.value);
+        _scenarioSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _scenarioCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _scenarioCircles.remove(entry.value);
+        _scenarioCircleById.remove(entry.key);
+        _scenarioCircleMystery.remove(entry.key);
+      }
+    }
+
+    final canUseImages =
+        _scenarioMysteryThumbnailBytes != null &&
+        _scenarioMysteryThumbnailAdded;
+
+    for (final scenario in _scenarios) {
+      final mystery = _isScenarioMystery(scenario);
+      final existingSymbol = _scenarioSymbolById[scenario.id];
+      final existingCircle = _scenarioCircleById[scenario.id];
+      final needsRefresh =
+          _scenarioCircleMystery[scenario.id] != mystery ||
+          existingSymbol == null;
+
+      if (canUseImages) {
+        if (needsRefresh) {
+          if (existingSymbol != null) {
+            try {
+              await c.removeSymbols([existingSymbol]);
+            } catch (_) {}
+            _scenarioSymbols.remove(existingSymbol);
+            _scenarioSymbolById.remove(scenario.id);
+          }
+          if (existingCircle != null) {
+            try {
+              await c.removeCircle(existingCircle);
+            } catch (_) {}
+            _scenarioCircles.remove(existingCircle);
+            _scenarioCircleById.remove(scenario.id);
+          }
+          var imageId = 'scenario_mystery_thumbnail_$_mapThumbnailVersion';
+          if (!mystery) {
+            final visibleImageId = await _ensureScenarioVisibleThumbnail(
+              c,
+              scenario,
+            );
+            if (visibleImageId != null) {
+              imageId = visibleImageId;
+            }
+          }
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(scenario.latitude, scenario.longitude),
+              iconImage: imageId,
+              iconSize: 0.74,
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.75,
+              iconAnchor: 'center',
+            ),
+            {'type': 'scenario', 'id': scenario.id},
+          );
+          if (!mounted) return;
+          _scenarioSymbols.add(symbol);
+          _scenarioSymbolById[scenario.id] = symbol;
+          _scenarioCircleMystery[scenario.id] = mystery;
+        }
+        continue;
+      }
+
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _scenarioSymbols.remove(existingSymbol);
+        _scenarioSymbolById.remove(scenario.id);
+      }
+      if (existingCircle == null ||
+          _scenarioCircleMystery[scenario.id] != mystery) {
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _scenarioCircles.remove(existingCircle);
+          _scenarioCircleById.remove(scenario.id);
+        }
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(scenario.latitude, scenario.longitude),
+            circleRadius: 23,
+            circleColor: mystery ? '#5a5560' : '#4f8cff',
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#ffffff',
+          ),
+          {'type': 'scenario', 'id': scenario.id},
+        );
+        if (!mounted) return;
+        _scenarioCircles.add(circle);
+        _scenarioCircleById[scenario.id] = circle;
+        _scenarioCircleMystery[scenario.id] = mystery;
       }
     }
   }
@@ -903,6 +1130,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
         return;
       }
+      if (type == 'scenario') {
+        final scenario = _scenarioById(idStr);
+        if (scenario != null) {
+          _showScenarioPanel(scenario);
+        }
+        return;
+      }
       if (type == 'poi') {
         final pois = _pois.where((p) => p.id == idStr).toList();
         if (pois.isNotEmpty && mounted) {
@@ -929,6 +1163,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final tc = _treasureChests.where((t) => t.id == idStr).toList();
           if (tc.isNotEmpty && mounted) {
             _showTreasureChestPanel(tc.first);
+          }
+          return;
+        }
+        if (type == 'scenario') {
+          final scenario = _scenarioById(idStr);
+          if (scenario != null && mounted) {
+            _showScenarioPanel(scenario);
           }
           return;
         }
@@ -1170,7 +1411,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
     debugPrint(
-      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})',
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length})',
     );
 
     try {
@@ -1235,6 +1476,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       _chestCircleById.clear();
       _chestCircleOpened.clear();
+      if (_scenarioSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_scenarioSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _scenarioSymbols.clear();
+      }
+      _scenarioSymbolById.clear();
+      if (_scenarioCircles.isNotEmpty) {
+        for (final circle in _scenarioCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _scenarioCircles.clear();
+      }
+      _scenarioCircleById.clear();
+      _scenarioCircleMystery.clear();
       try {
         await c.clearCircles();
       } catch (_) {}
@@ -1378,6 +1638,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _chestCircleOpened[tc.id] = tc.openedByUser == true;
         }
       }
+      await _refreshScenarioSymbols();
 
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
@@ -3728,6 +3989,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               data: rewardData,
             );
           });
+        },
+      ),
+    );
+  }
+
+  void _showScenarioPanel(Scenario scenario) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => ScenarioPanel(
+        scenario: scenario,
+        onClose: () => Navigator.of(context).pop(),
+        onPerformed: (_) async {
+          if (!mounted) return;
+          await _loadTreasureChestsForSelectedZone();
         },
       ),
     );

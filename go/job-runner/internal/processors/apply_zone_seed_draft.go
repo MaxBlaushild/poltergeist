@@ -359,7 +359,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		}
 	}
 
-	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character.ID); err != nil {
+	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character); err != nil {
 		log.Printf("Failed to create quest action for character: %v", err)
 	}
 
@@ -439,7 +439,7 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		return err
 	}
 
-	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character.ID); err != nil {
+	if err := p.ensureQuestActionForCharacter(ctx, quest.ID, character); err != nil {
 		log.Printf("Failed to create quest action for character: %v", err)
 	}
 
@@ -560,8 +560,12 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 	return nil
 }
 
-func (p *ApplyZoneSeedDraftProcessor) ensureQuestActionForCharacter(ctx context.Context, questID uuid.UUID, characterID uuid.UUID) error {
-	actions, err := p.dbClient.CharacterAction().FindByCharacterID(ctx, characterID)
+func (p *ApplyZoneSeedDraftProcessor) ensureQuestActionForCharacter(ctx context.Context, questID uuid.UUID, character *models.Character) error {
+	if character == nil {
+		return fmt.Errorf("character is nil")
+	}
+
+	actions, err := p.dbClient.CharacterAction().FindByCharacterID(ctx, character.ID)
 	if err != nil {
 		return err
 	}
@@ -582,12 +586,154 @@ func (p *ApplyZoneSeedDraftProcessor) ensureQuestActionForCharacter(ctx context.
 		ID:          uuid.New(),
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		CharacterID: characterID,
+		CharacterID: character.ID,
 		ActionType:  models.ActionTypeGiveQuest,
-		Dialogue:    []models.DialogueMessage{},
+		Dialogue:    p.generateQuestGiverAmbientDialogue(ctx, character),
 		Metadata:    map[string]interface{}{"questId": questIDStr},
 	}
 	return p.dbClient.CharacterAction().Create(ctx, action)
+}
+
+type questGiverAmbientDialogueResponse struct {
+	Lines []string `json:"lines"`
+}
+
+const questGiverAmbientDialoguePromptTemplate = `
+You are writing incidental in-character dialogue for an RPG quest giver.
+
+Character name: %s
+Character description: %s
+
+Write 1-2 short lines this character might casually say in conversation.
+Constraints:
+- Keep lines in character.
+- Do NOT mention quests, missions, tasks, objectives, rewards, or adventuring.
+- Do NOT reference the specific quest content.
+- Keep each line to one short sentence.
+
+Respond ONLY as JSON:
+{
+  "lines": ["string"]
+}
+`
+
+func (p *ApplyZoneSeedDraftProcessor) generateQuestGiverAmbientDialogue(
+	ctx context.Context,
+	character *models.Character,
+) []models.DialogueMessage {
+	lines := []string{}
+	if character != nil {
+		prompt := fmt.Sprintf(
+			questGiverAmbientDialoguePromptTemplate,
+			truncate(strings.TrimSpace(character.Name), 80),
+			truncate(strings.TrimSpace(character.Description), 280),
+		)
+
+		answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+		if err == nil {
+			var response questGiverAmbientDialogueResponse
+			if parseErr := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); parseErr == nil {
+				lines = sanitizeQuestGiverAmbientDialogueLines(response.Lines)
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		lines = fallbackQuestGiverAmbientDialogueLines(character)
+	}
+	if len(lines) == 0 {
+		lines = []string{"I like this corner of the city when it gets quiet."}
+	}
+
+	dialogue := make([]models.DialogueMessage, 0, len(lines))
+	for i, line := range lines {
+		dialogue = append(dialogue, models.DialogueMessage{
+			Speaker: "character",
+			Text:    line,
+			Order:   i,
+		})
+	}
+	return dialogue
+}
+
+func sanitizeQuestGiverAmbientDialogueLines(lines []string) []string {
+	blocked := []string{
+		"quest", "mission", "task", "objective", "reward", "contract", "job", "adventure", "adventurer",
+	}
+	seen := map[string]struct{}{}
+	sanitized := make([]string, 0, 2)
+	for _, raw := range lines {
+		line := strings.TrimSpace(strings.ReplaceAll(raw, "\n", " "))
+		if line == "" {
+			continue
+		}
+		if len(line) > 180 {
+			line = strings.TrimSpace(line[:180])
+		}
+		lower := strings.ToLower(line)
+		skip := false
+		for _, token := range blocked {
+			if strings.Contains(lower, token) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		if _, ok := seen[lower]; ok {
+			continue
+		}
+		seen[lower] = struct{}{}
+		sanitized = append(sanitized, line)
+		if len(sanitized) >= 2 {
+			break
+		}
+	}
+	return sanitized
+}
+
+func fallbackQuestGiverAmbientDialogueLines(character *models.Character) []string {
+	pool := []string{
+		"I keep a little notebook of things most people walk right past.",
+		"Some corners of the city sound better if you stand still for a minute.",
+		"I trust good timing more than good luck.",
+		"I notice shoes first. They tell you where someone has really been.",
+		"Morning light is honest. Evening light is forgiving.",
+	}
+
+	if character != nil {
+		desc := strings.ToLower(character.Description)
+		switch {
+		case strings.Contains(desc, "smith"), strings.Contains(desc, "forge"), strings.Contains(desc, "blacksmith"), strings.Contains(desc, "hammer"):
+			pool = append(pool, "A clean strike and a steady breath solve most problems.")
+		case strings.Contains(desc, "bard"), strings.Contains(desc, "music"), strings.Contains(desc, "singer"), strings.Contains(desc, "violin"), strings.Contains(desc, "jazz"):
+			pool = append(pool, "I collect melodies the way other people collect favors.")
+		case strings.Contains(desc, "alchemist"), strings.Contains(desc, "apothecary"), strings.Contains(desc, "herb"), strings.Contains(desc, "botanist"):
+			pool = append(pool, "The air always changes a moment before the weather does.")
+		case strings.Contains(desc, "guard"), strings.Contains(desc, "knight"), strings.Contains(desc, "watch"), strings.Contains(desc, "sentinel"):
+			pool = append(pool, "I still wake before dawn, even on days with nowhere urgent to be.")
+		case strings.Contains(desc, "merchant"), strings.Contains(desc, "shop"), strings.Contains(desc, "trader"), strings.Contains(desc, "vendor"):
+			pool = append(pool, "I remember people by what they linger over, not what they buy.")
+		case strings.Contains(desc, "scholar"), strings.Contains(desc, "scribe"), strings.Contains(desc, "librarian"), strings.Contains(desc, "professor"):
+			pool = append(pool, "Half my best ideas start as arguments with my own notes.")
+		case strings.Contains(desc, "cook"), strings.Contains(desc, "chef"), strings.Contains(desc, "baker"), strings.Contains(desc, "barista"), strings.Contains(desc, "cafe"):
+			pool = append(pool, "Strong coffee and warm bread can rescue a rough morning.")
+		case strings.Contains(desc, "artist"), strings.Contains(desc, "painter"), strings.Contains(desc, "poet"), strings.Contains(desc, "actor"):
+			pool = append(pool, "I'm still chasing one perfect detail I once saw for three seconds.")
+		}
+	}
+
+	count := 1 + rand.Intn(2)
+	perm := rand.Perm(len(pool))
+	lines := make([]string, 0, count)
+	for _, idx := range perm {
+		lines = append(lines, pool[idx])
+		if len(lines) >= count {
+			break
+		}
+	}
+	return sanitizeQuestGiverAmbientDialogueLines(lines)
 }
 
 func parsePointOfInterestCoords(poi *models.PointOfInterest) (float64, float64, error) {

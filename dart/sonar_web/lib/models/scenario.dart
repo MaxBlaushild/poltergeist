@@ -1,0 +1,205 @@
+class ScenarioItemReward {
+  final int inventoryItemId;
+  final int quantity;
+
+  const ScenarioItemReward({
+    required this.inventoryItemId,
+    required this.quantity,
+  });
+
+  factory ScenarioItemReward.fromJson(Map<String, dynamic> json) {
+    return ScenarioItemReward(
+      inventoryItemId: (json['inventoryItemId'] as num?)?.toInt() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class ScenarioOption {
+  final String id;
+  final String optionText;
+  final String statTag;
+  final List<String> proficiencies;
+  final int? difficulty;
+  final int rewardExperience;
+  final int rewardGold;
+  final List<ScenarioItemReward> itemRewards;
+
+  const ScenarioOption({
+    required this.id,
+    required this.optionText,
+    required this.statTag,
+    this.proficiencies = const [],
+    this.difficulty,
+    this.rewardExperience = 0,
+    this.rewardGold = 0,
+    this.itemRewards = const [],
+  });
+
+  factory ScenarioOption.fromJson(Map<String, dynamic> json) {
+    final proficiencies = <String>[];
+    final rawProficiencies = json['proficiencies'];
+    if (rawProficiencies is List) {
+      for (final p in rawProficiencies) {
+        final value = p?.toString().trim() ?? '';
+        if (value.isNotEmpty) proficiencies.add(value);
+      }
+    }
+
+    final rewards = <ScenarioItemReward>[];
+    final rawRewards = json['itemRewards'];
+    if (rawRewards is List) {
+      for (final reward in rawRewards) {
+        if (reward is Map<String, dynamic>) {
+          rewards.add(ScenarioItemReward.fromJson(reward));
+        }
+      }
+    }
+
+    return ScenarioOption(
+      id: json['id']?.toString() ?? '',
+      optionText: json['optionText']?.toString() ?? '',
+      statTag: json['statTag']?.toString() ?? '',
+      proficiencies: proficiencies,
+      difficulty: (json['difficulty'] as num?)?.toInt(),
+      rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
+      rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      itemRewards: rewards,
+    );
+  }
+}
+
+class Scenario {
+  final String id;
+  final String zoneId;
+  final double latitude;
+  final double longitude;
+  final String prompt;
+  final String imageUrl;
+  final String thumbnailUrl;
+  final int difficulty;
+  final int rewardExperience;
+  final int rewardGold;
+  final bool openEnded;
+  final List<ScenarioOption> options;
+  final List<ScenarioItemReward> itemRewards;
+  final bool attemptedByUser;
+
+  const Scenario({
+    required this.id,
+    required this.zoneId,
+    required this.latitude,
+    required this.longitude,
+    required this.prompt,
+    required this.imageUrl,
+    required this.thumbnailUrl,
+    required this.difficulty,
+    required this.rewardExperience,
+    required this.rewardGold,
+    required this.openEnded,
+    this.options = const [],
+    this.itemRewards = const [],
+    this.attemptedByUser = false,
+  });
+
+  factory Scenario.fromJson(Map<String, dynamic> json) {
+    final options = <ScenarioOption>[];
+    final rawOptions = json['options'];
+    if (rawOptions is List) {
+      for (final option in rawOptions) {
+        if (option is Map<String, dynamic>) {
+          options.add(ScenarioOption.fromJson(option));
+        }
+      }
+    }
+
+    final itemRewards = <ScenarioItemReward>[];
+    final rawRewards = json['itemRewards'];
+    if (rawRewards is List) {
+      for (final reward in rawRewards) {
+        if (reward is Map<String, dynamic>) {
+          itemRewards.add(ScenarioItemReward.fromJson(reward));
+        }
+      }
+    }
+
+    return Scenario(
+      id: json['id']?.toString() ?? '',
+      zoneId: json['zoneId']?.toString() ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
+      prompt: json['prompt']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      difficulty: (json['difficulty'] as num?)?.toInt() ?? 24,
+      rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
+      rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      openEnded: json['openEnded'] as bool? ?? false,
+      options: options,
+      itemRewards: itemRewards,
+      attemptedByUser: json['attemptedByUser'] as bool? ?? false,
+    );
+  }
+}
+
+class ScenarioPerformResult {
+  final bool successful;
+  final String reason;
+  final String scenarioId;
+  final String? scenarioOptionId;
+  final int roll;
+  final String statTag;
+  final int statValue;
+  final List<String> proficiencies;
+  final int proficiencyBonus;
+  final int creativityBonus;
+  final int threshold;
+  final int totalScore;
+  final int rewardExperience;
+  final int rewardGold;
+
+  const ScenarioPerformResult({
+    required this.successful,
+    required this.reason,
+    required this.scenarioId,
+    this.scenarioOptionId,
+    required this.roll,
+    required this.statTag,
+    required this.statValue,
+    this.proficiencies = const [],
+    required this.proficiencyBonus,
+    required this.creativityBonus,
+    required this.threshold,
+    required this.totalScore,
+    required this.rewardExperience,
+    required this.rewardGold,
+  });
+
+  factory ScenarioPerformResult.fromJson(Map<String, dynamic> json) {
+    final proficiencies = <String>[];
+    final rawProficiencies = json['proficiencies'];
+    if (rawProficiencies is List) {
+      for (final p in rawProficiencies) {
+        final value = p?.toString().trim() ?? '';
+        if (value.isNotEmpty) proficiencies.add(value);
+      }
+    }
+
+    return ScenarioPerformResult(
+      successful: json['successful'] as bool? ?? false,
+      reason: json['reason']?.toString() ?? '',
+      scenarioId: json['scenarioId']?.toString() ?? '',
+      scenarioOptionId: json['scenarioOptionId']?.toString(),
+      roll: (json['roll'] as num?)?.toInt() ?? 0,
+      statTag: json['statTag']?.toString() ?? '',
+      statValue: (json['statValue'] as num?)?.toInt() ?? 0,
+      proficiencies: proficiencies,
+      proficiencyBonus: (json['proficiencyBonus'] as num?)?.toInt() ?? 0,
+      creativityBonus: (json['creativityBonus'] as num?)?.toInt() ?? 0,
+      threshold: (json['threshold'] as num?)?.toInt() ?? 0,
+      totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,
+      rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
+      rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	crand "crypto/rand"
 	"database/sql"
 	"encoding/json"
 	stdErrors "errors"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/big"
 	"net/http"
 	"sort"
 	"strconv"
@@ -49,9 +51,12 @@ import (
 )
 
 const (
-	poiPlaceholderImageURL     = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
-	poiPlaceholderThumbnailKey = "thumbnails/placeholders/poi-undiscovered.png"
-	questAcceptRadiusMeters    = 50.0
+	poiPlaceholderImageURL       = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderThumbnailKey   = "thumbnails/placeholders/poi-undiscovered.png"
+	questAcceptRadiusMeters      = 50.0
+	scenarioInteractRadiusMeters = 50.0
+	scenarioDefaultDifficulty    = 24
+	scenarioRollSides            = 20
 )
 
 var (
@@ -364,6 +369,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
 	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
+	r.GET("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarios))
+	r.GET("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenario))
+	r.GET("/sonar/zones/:id/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenariosForZone))
+	r.POST("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenario))
+	r.PUT("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenario))
+	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
+	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 }
 
@@ -10067,5 +10079,850 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "treasure chest opened successfully",
 		"user":    updatedUser,
+	})
+}
+
+var scenarioValidStatTags = map[string]struct{}{
+	"strength":     {},
+	"dexterity":    {},
+	"constitution": {},
+	"intelligence": {},
+	"wisdom":       {},
+	"charisma":     {},
+}
+
+type scenarioRewardItemPayload struct {
+	InventoryItemID int `json:"inventoryItemId"`
+	Quantity        int `json:"quantity"`
+}
+
+type scenarioOptionPayload struct {
+	OptionText       string                      `json:"optionText"`
+	StatTag          string                      `json:"statTag"`
+	Proficiencies    []string                    `json:"proficiencies"`
+	Difficulty       *int                        `json:"difficulty"`
+	RewardExperience int                         `json:"rewardExperience"`
+	RewardGold       int                         `json:"rewardGold"`
+	ItemRewards      []scenarioRewardItemPayload `json:"itemRewards"`
+}
+
+type scenarioUpsertRequest struct {
+	ZoneID           string                      `json:"zoneId"`
+	Latitude         float64                     `json:"latitude"`
+	Longitude        float64                     `json:"longitude"`
+	Prompt           string                      `json:"prompt"`
+	ImageURL         string                      `json:"imageUrl"`
+	ThumbnailURL     string                      `json:"thumbnailUrl"`
+	Difficulty       *int                        `json:"difficulty"`
+	RewardExperience int                         `json:"rewardExperience"`
+	RewardGold       int                         `json:"rewardGold"`
+	OpenEnded        bool                        `json:"openEnded"`
+	Options          []scenarioOptionPayload     `json:"options"`
+	ItemRewards      []scenarioRewardItemPayload `json:"itemRewards"`
+}
+
+type scenarioWithUserStatus struct {
+	models.Scenario
+	AttemptedByUser bool `json:"attemptedByUser"`
+}
+
+type scenarioPerformRequest struct {
+	ScenarioOptionID *uuid.UUID `json:"scenarioOptionId"`
+	ResponseText     string     `json:"responseText"`
+}
+
+type scenarioPerformResponse struct {
+	Successful       bool                 `json:"successful"`
+	Reason           string               `json:"reason"`
+	ScenarioID       uuid.UUID            `json:"scenarioId"`
+	ScenarioOptionID *uuid.UUID           `json:"scenarioOptionId,omitempty"`
+	Roll             int                  `json:"roll"`
+	StatTag          string               `json:"statTag"`
+	StatValue        int                  `json:"statValue"`
+	Proficiencies    []string             `json:"proficiencies"`
+	ProficiencyBonus int                  `json:"proficiencyBonus"`
+	CreativityBonus  int                  `json:"creativityBonus"`
+	Threshold        int                  `json:"threshold"`
+	TotalScore       int                  `json:"totalScore"`
+	RewardExperience int                  `json:"rewardExperience"`
+	RewardGold       int                  `json:"rewardGold"`
+	ItemsAwarded     []models.ItemAwarded `json:"itemsAwarded"`
+}
+
+type scenarioFreeformAssessment struct {
+	StatTag         string   `json:"statTag"`
+	Proficiencies   []string `json:"proficiencies"`
+	CreativityBonus int      `json:"creativityBonus"`
+	Reasoning       string   `json:"reasoning"`
+}
+
+const scenarioFreeformAssessmentPromptTemplate = `
+You are a tabletop RPG game master evaluating how a player responds to a fantasy scenario.
+
+Scenario:
+%s
+
+Player response:
+%s
+
+Pick the best primary DnD stat this response uses:
+- strength
+- dexterity
+- constitution
+- intelligence
+- wisdom
+- charisma
+
+Pick 0 to 3 short proficiencies (1-3 words each) this response demonstrates.
+Assign a creativityBonus integer from 0 to 10:
+- 0 means generic or weak
+- 10 means unusually creative and compelling
+
+Return JSON only:
+{
+  "statTag": "strength|dexterity|constitution|intelligence|wisdom|charisma",
+  "proficiencies": ["string"],
+  "creativityBonus": 0,
+  "reasoning": "short string"
+}
+`
+
+type scenarioRewardItem struct {
+	InventoryItemID int
+	Quantity        int
+}
+
+func normalizeScenarioStatTag(raw string) (string, bool) {
+	tag := strings.ToLower(strings.TrimSpace(raw))
+	_, ok := scenarioValidStatTags[tag]
+	return tag, ok
+}
+
+func normalizeScenarioProficiencies(input []string) []string {
+	normalized := []string{}
+	seen := map[string]struct{}{}
+	for _, candidate := range input {
+		trimmed := strings.TrimSpace(candidate)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func normalizeScenarioThumbnailURL(input string) (string, error) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return "", fmt.Errorf("thumbnailUrl is required")
+	}
+	return trimmed, nil
+}
+
+func scenarioDifficultyValue(input *int) (int, error) {
+	if input == nil {
+		return scenarioDefaultDifficulty, nil
+	}
+	if *input < 0 {
+		return 0, fmt.Errorf("difficulty must be zero or greater")
+	}
+	return *input, nil
+}
+
+func rollScenarioDie() (int, error) {
+	value, err := crand.Int(crand.Reader, big.NewInt(scenarioRollSides))
+	if err != nil {
+		return 0, err
+	}
+	return int(value.Int64()) + 1, nil
+}
+
+func extractLLMJSONObject(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "```") {
+		trimmed = strings.TrimPrefix(trimmed, "```json")
+		trimmed = strings.TrimPrefix(trimmed, "```JSON")
+		trimmed = strings.TrimPrefix(trimmed, "```")
+		trimmed = strings.TrimSuffix(trimmed, "```")
+		trimmed = strings.TrimSpace(trimmed)
+	}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		return trimmed[start : end+1]
+	}
+	return trimmed
+}
+
+func (s *server) assessScenarioFreeform(ctx context.Context, scenarioPrompt, responseText string) (*scenarioFreeformAssessment, error) {
+	prompt := fmt.Sprintf(scenarioFreeformAssessmentPromptTemplate, scenarioPrompt, responseText)
+	answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return nil, err
+	}
+
+	assessment := &scenarioFreeformAssessment{}
+	if err := json.Unmarshal([]byte(extractLLMJSONObject(answer.Answer)), assessment); err != nil {
+		return nil, fmt.Errorf("failed to parse scenario assessment: %w", err)
+	}
+	if statTag, ok := normalizeScenarioStatTag(assessment.StatTag); ok {
+		assessment.StatTag = statTag
+	} else {
+		assessment.StatTag = "charisma"
+	}
+	assessment.Proficiencies = normalizeScenarioProficiencies(assessment.Proficiencies)
+	if len(assessment.Proficiencies) > 3 {
+		assessment.Proficiencies = assessment.Proficiencies[:3]
+	}
+	if assessment.CreativityBonus < 0 {
+		assessment.CreativityBonus = 0
+	} else if assessment.CreativityBonus > 10 {
+		assessment.CreativityBonus = 10
+	}
+	assessment.Reasoning = strings.TrimSpace(assessment.Reasoning)
+	return assessment, nil
+}
+
+func (s *server) getScenarioStatAndProficiencyBonuses(ctx context.Context, userID uuid.UUID, statTag string, proficiencies []string) (int, int, error) {
+	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	bonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	statValue := 0
+	switch statTag {
+	case "strength":
+		statValue = stats.Strength + bonuses.Strength
+	case "dexterity":
+		statValue = stats.Dexterity + bonuses.Dexterity
+	case "constitution":
+		statValue = stats.Constitution + bonuses.Constitution
+	case "intelligence":
+		statValue = stats.Intelligence + bonuses.Intelligence
+	case "wisdom":
+		statValue = stats.Wisdom + bonuses.Wisdom
+	case "charisma":
+		statValue = stats.Charisma + bonuses.Charisma
+	default:
+		return 0, 0, fmt.Errorf("invalid stat tag")
+	}
+
+	rows, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	levelByProficiency := map[string]int{}
+	for _, row := range rows {
+		key := strings.ToLower(strings.TrimSpace(row.Proficiency))
+		if key == "" {
+			continue
+		}
+		levelByProficiency[key] = row.Level
+	}
+
+	proficiencyBonus := 0
+	for _, proficiency := range normalizeScenarioProficiencies(proficiencies) {
+		level := levelByProficiency[strings.ToLower(proficiency)]
+		if level <= 0 {
+			continue
+		}
+		bonus := 1 + (level-1)/5
+		if bonus > 6 {
+			bonus = 6
+		}
+		proficiencyBonus += bonus
+	}
+
+	return statValue, proficiencyBonus, nil
+}
+
+func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, error) {
+	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid zone ID")
+	}
+	if strings.TrimSpace(body.Prompt) == "" {
+		return nil, nil, nil, fmt.Errorf("prompt is required")
+	}
+	if strings.TrimSpace(body.ImageURL) == "" {
+		return nil, nil, nil, fmt.Errorf("imageUrl is required")
+	}
+	thumbnailURL, err := normalizeScenarioThumbnailURL(body.ThumbnailURL)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if body.RewardExperience < 0 || body.RewardGold < 0 {
+		return nil, nil, nil, fmt.Errorf("reward values must be zero or greater")
+	}
+	difficulty, err := scenarioDifficultyValue(body.Difficulty)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if body.OpenEnded && len(body.Options) > 0 {
+		return nil, nil, nil, fmt.Errorf("open-ended scenarios cannot include options")
+	}
+	if !body.OpenEnded && len(body.Options) == 0 {
+		return nil, nil, nil, fmt.Errorf("non-open-ended scenarios require at least one option")
+	}
+	if !body.OpenEnded && (body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0) {
+		return nil, nil, nil, fmt.Errorf("scenario-level rewards are only for open-ended scenarios")
+	}
+
+	scenario := &models.Scenario{
+		ZoneID:           zoneID,
+		Latitude:         body.Latitude,
+		Longitude:        body.Longitude,
+		Prompt:           strings.TrimSpace(body.Prompt),
+		ImageURL:         strings.TrimSpace(body.ImageURL),
+		ThumbnailURL:     thumbnailURL,
+		Difficulty:       difficulty,
+		RewardExperience: body.RewardExperience,
+		RewardGold:       body.RewardGold,
+		OpenEnded:        body.OpenEnded,
+	}
+
+	options := []models.ScenarioOption{}
+	for _, optionPayload := range body.Options {
+		optionText := strings.TrimSpace(optionPayload.OptionText)
+		if optionText == "" {
+			return nil, nil, nil, fmt.Errorf("optionText is required")
+		}
+		statTag, ok := normalizeScenarioStatTag(optionPayload.StatTag)
+		if !ok {
+			return nil, nil, nil, fmt.Errorf("invalid option statTag")
+		}
+		if optionPayload.RewardExperience < 0 || optionPayload.RewardGold < 0 {
+			return nil, nil, nil, fmt.Errorf("option reward values must be zero or greater")
+		}
+		var optionDifficulty *int
+		if optionPayload.Difficulty != nil {
+			if *optionPayload.Difficulty < 0 {
+				return nil, nil, nil, fmt.Errorf("option difficulty must be zero or greater")
+			}
+			value := *optionPayload.Difficulty
+			optionDifficulty = &value
+		}
+
+		itemRewards := []models.ScenarioOptionItemReward{}
+		for _, reward := range optionPayload.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				return nil, nil, nil, fmt.Errorf("option item rewards require inventoryItemId and positive quantity")
+			}
+			itemRewards = append(itemRewards, models.ScenarioOptionItemReward{
+				InventoryItemID: reward.InventoryItemID,
+				Quantity:        reward.Quantity,
+			})
+		}
+
+		options = append(options, models.ScenarioOption{
+			OptionText:       optionText,
+			StatTag:          statTag,
+			Proficiencies:    models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
+			Difficulty:       optionDifficulty,
+			RewardExperience: optionPayload.RewardExperience,
+			RewardGold:       optionPayload.RewardGold,
+			ItemRewards:      itemRewards,
+		})
+	}
+
+	scenarioRewards := []models.ScenarioItemReward{}
+	for _, reward := range body.ItemRewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			return nil, nil, nil, fmt.Errorf("scenario item rewards require inventoryItemId and positive quantity")
+		}
+		scenarioRewards = append(scenarioRewards, models.ScenarioItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return scenario, options, scenarioRewards, nil
+}
+
+func findScenarioOption(scenario *models.Scenario, optionID uuid.UUID) *models.ScenarioOption {
+	if scenario == nil {
+		return nil
+	}
+	for i := range scenario.Options {
+		if scenario.Options[i].ID == optionID {
+			return &scenario.Options[i]
+		}
+	}
+	return nil
+}
+
+func scenarioRewardItemsFromOption(rewards []models.ScenarioOptionItemReward) []scenarioRewardItem {
+	out := make([]scenarioRewardItem, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, scenarioRewardItem{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func scenarioRewardItemsFromScenario(rewards []models.ScenarioItemReward) []scenarioRewardItem {
+	out := make([]scenarioRewardItem, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, scenarioRewardItem{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func (s *server) awardScenarioRewards(ctx context.Context, userID uuid.UUID, rewardExperience int, rewardGold int, rewardItems []scenarioRewardItem, proficiencies []string) ([]models.ItemAwarded, error) {
+	if rewardGold > 0 {
+		if err := s.dbClient.User().AddGold(ctx, userID, rewardGold); err != nil {
+			return nil, err
+		}
+	}
+	if rewardExperience > 0 {
+		userLevel, err := s.dbClient.UserLevel().ProcessExperiencePointAdditions(ctx, userID, rewardExperience)
+		if err != nil {
+			return nil, err
+		}
+		if userLevel.LevelsGained > 0 {
+			if _, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, userLevel.Level); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	itemsAwarded := []models.ItemAwarded{}
+	for _, reward := range rewardItems {
+		if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &userID, reward.InventoryItemID, reward.Quantity); err != nil {
+			return nil, err
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil || item == nil {
+			continue
+		}
+		itemsAwarded = append(itemsAwarded, models.ItemAwarded{
+			ID:       item.ID,
+			Name:     item.Name,
+			ImageURL: item.ImageURL,
+			Quantity: reward.Quantity,
+		})
+	}
+
+	for _, proficiency := range normalizeScenarioProficiencies(proficiencies) {
+		if err := s.dbClient.UserProficiency().Increment(ctx, userID, proficiency, 1); err != nil {
+			return nil, err
+		}
+	}
+
+	return itemsAwarded, nil
+}
+
+func (s *server) getScenarios(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	scenarios, attemptedMap, err := s.dbClient.Scenario().FindAllWithUserStatus(ctx, &user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := make([]scenarioWithUserStatus, len(scenarios))
+	for i, scenario := range scenarios {
+		response[i] = scenarioWithUserStatus{
+			Scenario:        scenario,
+			AttemptedByUser: attemptedMap[scenario.ID],
+		}
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getScenario(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	id := ctx.Param("id")
+	scenarioID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	scenario, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	attempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, scenarioWithUserStatus{
+		Scenario:        *scenario,
+		AttemptedByUser: attempt != nil,
+	})
+}
+
+func (s *server) getScenariosForZone(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	scenarios, attemptedMap, err := s.dbClient.Scenario().FindByZoneIDWithUserStatus(ctx, zoneID, &user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := make([]scenarioWithUserStatus, len(scenarios))
+	for i, scenario := range scenarios {
+		response[i] = scenarioWithUserStatus{
+			Scenario:        scenario,
+			AttemptedByUser: attemptedMap[scenario.ID],
+		}
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) createScenario(ctx *gin.Context) {
+	var requestBody scenarioUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scenario, options, scenarioRewards, err := s.parseScenarioUpsertRequest(requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Scenario().Create(ctx, scenario); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.Scenario().ReplaceOptions(ctx, scenario.ID, options); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.Scenario().ReplaceItemRewards(ctx, scenario.ID, scenarioRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	created, err := s.dbClient.Scenario().FindByID(ctx, scenario.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusCreated, scenarioWithUserStatus{
+		Scenario:        *created,
+		AttemptedByUser: false,
+	})
+}
+
+func (s *server) updateScenario(ctx *gin.Context) {
+	id := ctx.Param("id")
+	scenarioID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	existing, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+
+	var requestBody scenarioUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scenario, options, scenarioRewards, err := s.parseScenarioUpsertRequest(requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Scenario().Update(ctx, scenarioID, scenario); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.Scenario().ReplaceOptions(ctx, scenarioID, options); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.Scenario().ReplaceItemRewards(ctx, scenarioID, scenarioRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, scenarioWithUserStatus{
+		Scenario:        *updated,
+		AttemptedByUser: false,
+	})
+}
+
+func (s *server) deleteScenario(ctx *gin.Context) {
+	id := ctx.Param("id")
+	scenarioID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	if _, err := s.dbClient.Scenario().FindByID(ctx, scenarioID); err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Scenario().Delete(ctx, scenarioID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "scenario deleted successfully"})
+}
+
+func (s *server) performScenario(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	scenarioID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	scenario, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if scenario == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+
+	existingAttempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingAttempt != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario already resolved"})
+		return
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
+	if distance > scenarioInteractRadiusMeters {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("you must be within %.0f meters of the scenario. Currently %.0f meters away", scenarioInteractRadiusMeters, distance),
+		})
+		return
+	}
+
+	var requestBody scenarioPerformRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	roll, err := rollScenarioDie()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to roll scenario die"})
+		return
+	}
+
+	statTag := "charisma"
+	proficiencies := []string{}
+	creativityBonus := 0
+	rewardExperience := 0
+	rewardGold := 0
+	rewardItems := []scenarioRewardItem{}
+	threshold := scenario.Difficulty
+	reason := "The outcome was uncertain."
+	var scenarioOptionID *uuid.UUID
+	var freeformResponse *string
+
+	if scenario.OpenEnded {
+		responseText := strings.TrimSpace(requestBody.ResponseText)
+		if responseText == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "responseText is required for open-ended scenarios"})
+			return
+		}
+		assessment, err := s.assessScenarioFreeform(ctx, scenario.Prompt, responseText)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		statTag = assessment.StatTag
+		proficiencies = assessment.Proficiencies
+		creativityBonus = assessment.CreativityBonus
+		if assessment.Reasoning != "" {
+			reason = assessment.Reasoning
+		}
+		rewardExperience = scenario.RewardExperience
+		rewardGold = scenario.RewardGold
+		rewardItems = scenarioRewardItemsFromScenario(scenario.ItemRewards)
+		freeformResponse = &responseText
+	} else {
+		if requestBody.ScenarioOptionID == nil || *requestBody.ScenarioOptionID == uuid.Nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenarioOptionId is required for choice scenarios"})
+			return
+		}
+		option := findScenarioOption(scenario, *requestBody.ScenarioOptionID)
+		if option == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario option not found"})
+			return
+		}
+		normalizedStatTag, ok := normalizeScenarioStatTag(option.StatTag)
+		if !ok {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "scenario option has invalid stat tag"})
+			return
+		}
+		statTag = normalizedStatTag
+		proficiencies = normalizeScenarioProficiencies([]string(option.Proficiencies))
+		if option.Difficulty != nil {
+			threshold = *option.Difficulty
+		}
+		rewardExperience = option.RewardExperience
+		rewardGold = option.RewardGold
+		rewardItems = scenarioRewardItemsFromOption(option.ItemRewards)
+		reason = "The chosen approach shaped the outcome."
+		scenarioOptionID = requestBody.ScenarioOptionID
+	}
+
+	if threshold < 0 {
+		threshold = 0
+	}
+
+	statValue, proficiencyBonus, err := s.getScenarioStatAndProficiencyBonuses(ctx, user.ID, statTag, proficiencies)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	totalScore := roll + statValue + proficiencyBonus + creativityBonus
+	success := totalScore >= threshold
+
+	itemsAwarded := []models.ItemAwarded{}
+	if success {
+		itemsAwarded, err = s.awardScenarioRewards(ctx, user.ID, rewardExperience, rewardGold, rewardItems, proficiencies)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	} else {
+		rewardExperience = 0
+		rewardGold = 0
+		reason = "The roll did not beat the required threshold."
+	}
+
+	attempt := &models.UserScenarioAttempt{
+		UserID:            user.ID,
+		ScenarioID:        scenario.ID,
+		ScenarioOptionID:  scenarioOptionID,
+		FreeformResponse:  freeformResponse,
+		Roll:              roll,
+		StatTag:           statTag,
+		StatValue:         statValue,
+		ProficienciesUsed: models.StringArray(proficiencies),
+		ProficiencyBonus:  proficiencyBonus,
+		CreativityBonus:   creativityBonus,
+		Threshold:         threshold,
+		TotalScore:        totalScore,
+		Successful:        success,
+		Reasoning:         &reason,
+		RewardExperience:  rewardExperience,
+		RewardGold:        rewardGold,
+	}
+	if err := s.dbClient.Scenario().CreateAttempt(ctx, attempt); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, scenarioPerformResponse{
+		Successful:       success,
+		Reason:           reason,
+		ScenarioID:       scenario.ID,
+		ScenarioOptionID: scenarioOptionID,
+		Roll:             roll,
+		StatTag:          statTag,
+		StatValue:        statValue,
+		Proficiencies:    proficiencies,
+		ProficiencyBonus: proficiencyBonus,
+		CreativityBonus:  creativityBonus,
+		Threshold:        threshold,
+		TotalScore:       totalScore,
+		RewardExperience: rewardExperience,
+		RewardGold:       rewardGold,
+		ItemsAwarded:     itemsAwarded,
 	})
 }
