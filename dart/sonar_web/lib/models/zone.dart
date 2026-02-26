@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 class Zone {
   final String id;
   final String name;
@@ -28,20 +30,23 @@ class Zone {
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       boundary: json['boundary'] as String?,
       boundaryCoords: (json['boundaryCoords'] as List<dynamic>?)
-          ?.map((e) => LatLngCoords.fromJson(e as Map<String, dynamic>))
+          ?.map((e) => LatLngCoords.fromJsonSafe(e as Map<String, dynamic>))
+          .whereType<LatLngCoords>()
           .toList(),
       points: (json['points'] as List<dynamic>?)
-          ?.map((e) => LatLngCoords.fromJson(e as Map<String, dynamic>))
+          ?.map((e) => LatLngCoords.fromJsonSafe(e as Map<String, dynamic>))
+          .whereType<LatLngCoords>()
           .toList(),
     );
   }
 
   /// Ordered ring (lat/lng) for polygon outline. Uses points, boundaryCoords, or parsed boundary WKT. Null if none.
   List<LatLngCoords>? get ring {
-    if (points != null && points!.isNotEmpty) return points;
+    if (points != null && points!.isNotEmpty) return _orderPointsByAngle(points!);
     if (boundaryCoords != null && boundaryCoords!.isNotEmpty) return boundaryCoords;
     final coords = _parseBoundaryWkt(boundary);
-    return coords != null && coords.isNotEmpty ? coords : null;
+    if (coords != null && coords.isNotEmpty) return coords;
+    return null;
   }
 
   /// Parse POLYGON((lng lat, lng lat, ...)) WKT into [LatLngCoords] (lat, lng).
@@ -61,6 +66,25 @@ class Zone {
     }
     return coords.isEmpty ? null : coords;
   }
+
+  static List<LatLngCoords> _orderPointsByAngle(List<LatLngCoords> points) {
+    if (points.length <= 2) return points;
+    double sumLat = 0;
+    double sumLng = 0;
+    for (final p in points) {
+      sumLat += p.latitude;
+      sumLng += p.longitude;
+    }
+    final centerLat = sumLat / points.length;
+    final centerLng = sumLng / points.length;
+    final ordered = List<LatLngCoords>.from(points);
+    ordered.sort((a, b) {
+      final angleA = math.atan2(a.latitude - centerLat, a.longitude - centerLng);
+      final angleB = math.atan2(b.latitude - centerLat, b.longitude - centerLng);
+      return angleA.compareTo(angleB);
+    });
+    return ordered;
+  }
 }
 
 class LatLngCoords {
@@ -70,9 +94,25 @@ class LatLngCoords {
   const LatLngCoords({required this.latitude, required this.longitude});
 
   factory LatLngCoords.fromJson(Map<String, dynamic> json) {
-    return LatLngCoords(
-      latitude: (json['latitude'] as num).toDouble(),
-      longitude: (json['longitude'] as num).toDouble(),
-    );
+    final coords = fromJsonSafe(json);
+    if (coords == null) {
+      throw FormatException('Invalid LatLngCoords: $json');
+    }
+    return coords;
+  }
+
+  static LatLngCoords? fromJsonSafe(Map<String, dynamic> json) {
+    final latitude = _parseDouble(json['latitude'] ?? json['lat']);
+    final longitude = _parseDouble(json['longitude'] ?? json['lng']);
+    if (latitude == null || longitude == null) {
+      return null;
+    }
+    return LatLngCoords(latitude: latitude, longitude: longitude);
+  }
+
+  static double? _parseDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 }

@@ -22,21 +22,23 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-const characterPromptTemplate = "A retro 16-bit RPG pixel art character portrait of %s. %s. Centered, shoulders-up, crisp outlines, limited colors, no text, no logos, clean background."
+const characterPromptTemplate = "A retro 16-bit RPG pixel art character portrait of %s. %s. Emphasize fantasy attire, archetype cues, and magical or mythic motifs; avoid modern streetwear and real-world brands. Centered, shoulders-up, crisp outlines, limited colors, no text, no logos, clean background."
 
 // GenerateCharacterImageProcessor generates a character dialogue/thumbnail image in the background.
 type GenerateCharacterImageProcessor struct {
 	dbClient         db.DbClient
 	deepPriestClient deep_priest.DeepPriest
 	awsClient        aws.AWSClient
+	asyncClient      *asynq.Client
 }
 
-func NewGenerateCharacterImageProcessor(dbClient db.DbClient, deepPriestClient deep_priest.DeepPriest, awsClient aws.AWSClient) GenerateCharacterImageProcessor {
+func NewGenerateCharacterImageProcessor(dbClient db.DbClient, deepPriestClient deep_priest.DeepPriest, awsClient aws.AWSClient, asyncClient *asynq.Client) GenerateCharacterImageProcessor {
 	log.Println("Initializing GenerateCharacterImageProcessor")
 	return GenerateCharacterImageProcessor{
 		dbClient:         dbClient,
 		deepPriestClient: deepPriestClient,
 		awsClient:        awsClient,
+		asyncClient:      asyncClient,
 	}
 }
 
@@ -103,8 +105,29 @@ func (p *GenerateCharacterImageProcessor) ProcessTask(ctx context.Context, task 
 		return fmt.Errorf("failed to update character: %w", err)
 	}
 
+	p.enqueueThumbnailTask(payload.CharacterID, imageURL)
+
 	log.Printf("Character image generated successfully for ID: %s", payload.CharacterID)
 	return nil
+}
+
+func (p *GenerateCharacterImageProcessor) enqueueThumbnailTask(characterID uuid.UUID, imageURL string) {
+	if p.asyncClient == nil || strings.TrimSpace(imageURL) == "" {
+		return
+	}
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType: jobs.ThumbnailEntityCharacter,
+		EntityID:   characterID,
+		SourceUrl:  imageURL,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal thumbnail task payload: %v", err)
+		return
+	}
+	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+		log.Printf("Failed to enqueue thumbnail task: %v", err)
+	}
 }
 
 func (p *GenerateCharacterImageProcessor) markFailed(ctx context.Context, characterID uuid.UUID, err error) error {

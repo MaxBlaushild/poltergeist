@@ -10,6 +10,7 @@ export interface PointOfInterest {
     lat: string;
     lng: string;
     imageURL: string;
+    thumbnailUrl?: string;
     description: string;
     pointOfInterestChallenges: PointOfInterestChallenge[];
     tags: Tag[];

@@ -46,6 +46,7 @@ class QuestLogProvider with ChangeNotifier {
 
   QuestLogProvider(this._service, this._zone, this._tags, this._filters) {
     _zone.addListener(_onZoneOrTagsChanged);
+    _tags.addListener(_onZoneOrTagsChanged);
     _filters.addListener(_onZoneOrTagsChanged);
   }
 
@@ -78,7 +79,17 @@ class QuestLogProvider with ChangeNotifier {
   }
 
   List<String> _tagNamesFromSelection() {
-    return [];
+    if (!_filters.enableTagFilter) return [];
+    final selectedIds = _tags.selectedTagIds;
+    if (selectedIds.isEmpty) return [];
+    final names = <String>[];
+    for (final tag in _tags.tags) {
+      if (selectedIds.contains(tag.id) && tag.name.isNotEmpty) {
+        names.add(tag.name);
+      }
+    }
+    names.sort();
+    return names;
   }
 
   bool _listEquals<T>(List<T> a, List<T> b) {
@@ -92,6 +103,7 @@ class QuestLogProvider with ChangeNotifier {
   @override
   void dispose() {
     _zone.removeListener(_onZoneOrTagsChanged);
+    _tags.removeListener(_onZoneOrTagsChanged);
     _filters.removeListener(_onZoneOrTagsChanged);
     super.dispose();
   }

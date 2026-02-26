@@ -54,6 +54,7 @@ import '../widgets/paper_texture.dart';
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 const _mapThumbnailVersion = 'v4';
+const _poiImageLoadBatchSize = 8;
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
 const _stamenWatercolorApiKey =
@@ -81,8 +82,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Fill> _questFills = [];
   List<Symbol> _poiSymbols = [];
   final Map<String, Symbol> _poiSymbolById = {};
+  int _poiMarkerGeneration = 0;
   List<Symbol> _questPoiHighlightSymbols = [];
   List<Symbol> _characterSymbols = [];
+  final Map<String, List<Symbol>> _characterSymbolsById = {};
   List<Symbol> _chestSymbols = [];
   List<Circle> _chestCircles = [];
   final Map<String, Symbol> _chestSymbolById = {};
@@ -107,6 +110,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Timer? _zoneAutoSelectTimer;
   String? _questLogRequestedZoneId;
   bool _questLogRefreshInFlight = false;
+  bool _questAvailabilityRefreshInFlight = false;
   DateTime? _lastQuestLogRefreshAt;
   bool _questLogNeedsOverlayApply = false;
   Set<String> _lastQuestPoiIds = <String>{};
@@ -248,6 +252,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     if (questLog.loading) return;
     _applyQuestLogOverlaysIfChanged();
+    unawaited(_refreshQuestAvailabilityMarkers());
   }
 
   void _onMapFocusRequest() {
@@ -348,10 +353,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   String _buildMapFilterKey() {
     final filters = context.read<QuestFilterProvider>();
+    final tags = context.read<TagsProvider>();
+    final selectedIds = tags.selectedTagIds.toList()..sort();
     return [
-      filters.showCurrentQuestPoints,
-      filters.showQuestAvailablePoints,
-      filters.showTreasureChests,
+      filters.enableTagFilter,
+      selectedIds.join(','),
     ].join('|');
   }
 
@@ -366,6 +372,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     return ids;
+  }
+
+  String? _poiThumbnailSourceUrl(PointOfInterest poi) {
+    final thumb = poi.thumbnailUrl;
+    if (thumb != null && thumb.isNotEmpty) return thumb;
+    final image = poi.imageURL;
+    if (image != null && image.isNotEmpty) return image;
+    return null;
   }
 
   Set<String> _currentQuestTurnInCharacterIds(QuestLogProvider questLog) {
@@ -406,6 +420,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _chestThumbnailBytes = null;
       _chestThumbnailAdded = false;
       _questLines = [];
+      _characterSymbolsById.clear();
     });
     _startMapLoadTimeout();
   }
@@ -464,6 +479,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         );
       } catch (_) {}
     });
+  }
+
+  void _centerOnUserLocation() {
+    if (!_styleLoaded || _mapLoadFailed) return;
+    final c = _mapController;
+    final loc = context.read<LocationProvider>().location;
+    if (c == null || loc == null) return;
+    final lat = loc.latitude;
+    final lng = loc.longitude;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) return;
+    try {
+      c.animateCamera(
+        CameraUpdate.newCameraPosition(CameraPosition(
+          target: LatLng(lat, lng),
+          zoom: 15,
+        )),
+        duration: const Duration(milliseconds: 500),
+      );
+    } catch (_) {}
   }
 
   void _flyToLocation(double lat, double lng) {
@@ -555,6 +589,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         ),
       );
       await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        await c.removeCircle(circle);
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  Future<void> _pulseDiscoveredPoi(double lat, double lng) async {
+    final c = _mapController;
+    if (c == null) return;
+    try {
+      final circle = await c.addCircle(
+        CircleOptions(
+          geometry: LatLng(lat, lng),
+          circleRadius: 24,
+          circleColor: '#f5c542',
+          circleOpacity: 0.25,
+          circleStrokeWidth: 2,
+          circleStrokeColor: '#f5c542',
+        ),
+      );
+      await Future.delayed(const Duration(milliseconds: 350));
       try {
         await c.removeCircle(circle);
       } catch (_) {}
@@ -699,6 +754,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       case 'image/jpeg':
       case 'image/jpg':
         return 'jpg';
+      default:
+        return null;
+    }
+  }
+
+  String? _mimeTypeFromFile(PlatformFile file) {
+    final ext = (file.extension ?? _extensionFromMime(null, file.name))?.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'm4v':
+        return 'video/x-m4v';
+      case 'webm':
+        return 'video/webm';
       default:
         return null;
     }
@@ -966,11 +1046,86 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onUnlocked: () async {
           await context.read<DiscoveriesProvider>().refresh();
           if (!mounted) return;
-          setState(() => _markersAdded = false);
-          await _addPoiMarkers();
+          final questLog = context.read<QuestLogProvider>();
+          final isQuestCurrent =
+              _currentQuestPoiIdsForFilter(questLog).contains(poi.id);
+          unawaited(
+            _updatePoiSymbolForQuestState(
+              poi.id,
+              isQuestCurrent: isQuestCurrent,
+            ),
+          );
+          final lat = double.tryParse(poi.lat) ?? 0.0;
+          final lng = double.tryParse(poi.lng) ?? 0.0;
+          if (lat != 0.0 || lng != 0.0) {
+            unawaited(_pulseDiscoveredPoi(lat, lng));
+          }
         },
       ),
     );
+  }
+
+  Future<void> _refreshDiscoveredPoiMarkers() async {
+    if (!mounted) return;
+    if (!_styleLoaded || _mapController == null || !_markersAdded) return;
+    final discoveries = context.read<DiscoveriesProvider>();
+    if (discoveries.discoveries.isEmpty) return;
+    final questLog = context.read<QuestLogProvider>();
+    final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+    final discoveredPoiIds = <String>{
+      for (final d in discoveries.discoveries) d.pointOfInterestId,
+    };
+    for (final poiId in discoveredPoiIds) {
+      await _updatePoiSymbolForQuestState(
+        poiId,
+        isQuestCurrent: questPoiIds.contains(poiId),
+      );
+    }
+  }
+
+  Future<void> _refreshQuestAvailabilityMarkers() async {
+    if (_questAvailabilityRefreshInFlight) return;
+    if (!_styleLoaded || _mapController == null || !_markersAdded) return;
+    _questAvailabilityRefreshInFlight = true;
+    try {
+      final svc = context.read<PoiService>();
+      final pois = await svc.getPointsOfInterest();
+      final characters = await svc.getCharacters();
+      if (!mounted) return;
+      final oldPoiById = {for (final p in _pois) p.id: p};
+      final oldCharById = {for (final c in _characters) c.id: c};
+      setState(() {
+        _pois = pois;
+        _characters = characters;
+      });
+      final questLog = context.read<QuestLogProvider>();
+      final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
+      for (final poi in pois) {
+        final oldPoi = oldPoiById[poi.id];
+        if (oldPoi == null) continue;
+        if (oldPoi.hasAvailableQuest == poi.hasAvailableQuest) continue;
+        unawaited(
+          _updatePoiSymbolForQuestState(
+            poi.id,
+            isQuestCurrent: questPoiIds.contains(poi.id),
+          ),
+        );
+      }
+      final changedCharacters = <Character>[];
+      for (final ch in characters) {
+        final oldCh = oldCharById[ch.id];
+        if (oldCh == null) continue;
+        if (oldCh.hasAvailableQuest == ch.hasAvailableQuest) continue;
+        changedCharacters.add(ch);
+      }
+      if (changedCharacters.isNotEmpty) {
+        await _updateCharacterSymbolsForQuestAvailability(changedCharacters);
+      }
+    } catch (_) {
+      // Best-effort refresh; ignore failures.
+    } finally {
+      _questAvailabilityRefreshInFlight = false;
+    }
   }
 
   Future<void> _addPoiMarkers() async {
@@ -984,16 +1139,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     _markersAdded = true;
+    final markerGeneration = ++_poiMarkerGeneration;
     debugPrint('SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})');
 
     try {
       final questLog = context.read<QuestLogProvider>();
       final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
-      final turnInCharacterIds = _currentQuestTurnInCharacterIds(questLog);
       final filters = context.read<QuestFilterProvider>();
-      final categoryFilterActive =
-          filters.showCurrentQuestPoints || filters.showQuestAvailablePoints;
-      final anyFilterActive = categoryFilterActive;
+      final tags = context.read<TagsProvider>();
+      final tagFilterActive =
+          filters.enableTagFilter && tags.selectedTagIds.isNotEmpty;
+      final selectedTagIds = tags.selectedTagIds;
+      final selectedTagNames = tagFilterActive
+          ? tags.tags
+              .where((t) => selectedTagIds.contains(t.id))
+              .map((t) => t.name.toLowerCase())
+              .toSet()
+          : <String>{};
       debugPrint('SinglePlayer: _addPoiMarkers questPoiIds=${questPoiIds.length}');
       _lastMapFilterKey = _buildMapFilterKey();
       if (_poiSymbols.isNotEmpty) {
@@ -1020,6 +1182,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         _characterSymbols.clear();
       }
+      _characterSymbolsById.clear();
       if (_chestSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_chestSymbols);
@@ -1079,19 +1242,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       } catch (_) {}
 
       for (final ch in _characters) {
-        final matchesAvailable = filters.showQuestAvailablePoints && ch.hasAvailableQuest;
-        final matchesTurnIn = filters.showCurrentQuestPoints && turnInCharacterIds.contains(ch.id);
-        if (anyFilterActive && !(matchesAvailable || matchesTurnIn)) {
-          continue;
-        }
-        final points = ch.locations.isNotEmpty
-            ? ch.locations
-                .map((loc) => LatLng(loc.latitude, loc.longitude))
-                .where((p) => p.latitude != 0 || p.longitude != 0)
-                .toList()
-            : (ch.lat == 0 && ch.lng == 0)
-                ? <LatLng>[]
-                : [LatLng(ch.lat, ch.lng)];
+        final points = ch.locations
+            .map((loc) => LatLng(loc.latitude, loc.longitude))
+            .where((p) => p.latitude != 0 || p.longitude != 0)
+            .toList();
 
         if (points.isEmpty) continue;
 
@@ -1110,11 +1264,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 await c.addImage(versionedId, imageBytes);
               } catch (_) {}
               for (final point in points) {
-                final sym = await c.addSymbol(
-                  SymbolOptions(
-                    geometry: point,
-                    iconImage: versionedId,
-                    iconSize: 0.6,
+              final sym = await c.addSymbol(
+                SymbolOptions(
+                  geometry: point,
+                  iconImage: versionedId,
+                  iconSize: 0.6,
                     iconHaloColor: '#000000',
                     iconHaloWidth: 0.75,
                     iconAnchor: 'center',
@@ -1123,6 +1277,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 );
                 if (!mounted) return;
                 _characterSymbols.add(sym);
+                (_characterSymbolsById[ch.id] ??= []).add(sym);
               }
               continue;
             }
@@ -1142,50 +1297,50 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           );
         }
       }
-      if (filters.showTreasureChests) {
-        for (final tc in _treasureChests) {
-          if (tc.openedByUser == true) continue;
-          if (chestBytes != null) {
-            final sym = await c.addSymbol(
-              SymbolOptions(
-                geometry: LatLng(tc.latitude, tc.longitude),
-                iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
-                iconSize: 0.75,
-                iconHaloColor: '#000000',
-                iconHaloWidth: 0.75,
-                iconAnchor: 'center',
-              ),
-              {'type': 'chest', 'id': tc.id},
-            );
-            if (!mounted) return;
-            _chestSymbols.add(sym);
-            _chestSymbolById[tc.id] = sym;
-          } else {
-            final circle = await c.addCircle(
-              CircleOptions(
-                geometry: LatLng(tc.latitude, tc.longitude),
-                circleRadius: 24,
-                circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
-                circleStrokeWidth: 2,
-                circleStrokeColor: '#ffffff',
-              ),
-              {'type': 'chest', 'id': tc.id},
-            );
-            if (!mounted) return;
-            _chestCircles.add(circle);
-            _chestCircleById[tc.id] = circle;
-            _chestCircleOpened[tc.id] = tc.openedByUser == true;
-          }
+      for (final tc in _treasureChests) {
+        if (tc.openedByUser == true) continue;
+        if (chestBytes != null) {
+          final sym = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(tc.latitude, tc.longitude),
+              iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
+              iconSize: 0.75,
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.75,
+              iconAnchor: 'center',
+            ),
+            {'type': 'chest', 'id': tc.id},
+          );
+          if (!mounted) return;
+          _chestSymbols.add(sym);
+          _chestSymbolById[tc.id] = sym;
+        } else {
+          final circle = await c.addCircle(
+            CircleOptions(
+              geometry: LatLng(tc.latitude, tc.longitude),
+              circleRadius: 24,
+              circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
+              circleStrokeWidth: 2,
+              circleStrokeColor: '#ffffff',
+            ),
+            {'type': 'chest', 'id': tc.id},
+          );
+          if (!mounted) return;
+          _chestCircles.add(circle);
+          _chestCircleById[tc.id] = circle;
+          _chestCircleOpened[tc.id] = tc.openedByUser == true;
         }
       }
 
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
+      final poiImageUpdates = <_PoiImageUpdate>[];
       for (final poi in _pois) {
         final lat = double.tryParse(poi.lat) ?? 0.0;
         final lng = double.tryParse(poi.lng) ?? 0.0;
         final useRealImage = discoveries.hasDiscovered(poi.id);
         final undiscovered = !useRealImage;
+        final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
         final isQuestCurrent = questPoiIds.contains(poi.id);
         final hasQuestAvailable = poi.hasAvailableQuest;
         final hasCharacter = poi.characters.isNotEmpty;
@@ -1193,45 +1348,35 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!baseEligible) {
           continue;
         }
-        final categoryMatch = !categoryFilterActive ||
-            (filters.showCurrentQuestPoints && isQuestCurrent) ||
-            (filters.showQuestAvailablePoints && hasQuestAvailable);
-        if (!categoryMatch) {
-          continue;
+        if (tagFilterActive) {
+          final matchesTag = poi.tags.any(
+            (tag) =>
+                selectedTagIds.contains(tag.id) ||
+                (tag.name.isNotEmpty &&
+                    selectedTagNames.contains(tag.name.toLowerCase())),
+          );
+          if (!matchesTag) continue;
         }
-        var added = false;
-        try {
-          String? imageId;
-          Uint8List? imageBytes;
-          if (isQuestCurrent) {
-            imageBytes = await loadPoiThumbnailWithBorder(useRealImage ? poi.imageURL : null);
-            if (imageBytes != null) {
-              imageId = 'poi_${poi.id}_quest';
-            } else {
-              imageId = questPlaceholderBytes != null ? 'poi_placeholder_quest' : null;
-            }
-          } else if (hasQuestAvailable) {
-            imageBytes = await loadPoiThumbnailWithQuestMarker(useRealImage ? poi.imageURL : null);
-            if (imageBytes != null) {
-              imageId = 'poi_${poi.id}_available';
-            } else {
-              imageId = availablePlaceholderBytes != null ? 'poi_placeholder_available' : null;
-            }
-          } else if (useRealImage) {
-            imageBytes = await loadPoiThumbnail(poi.imageURL);
-            imageId = imageBytes != null ? 'poi_${poi.id}' : (placeholderBytes != null ? 'poi_placeholder' : null);
-          } else {
-            imageId = placeholderBytes != null ? 'poi_placeholder' : null;
-          }
-          if (imageId != null) {
-            final versionedId = '${imageId}_$_mapThumbnailVersion';
-            if (imageBytes != null) await c.addImage(versionedId, imageBytes);
+
+        String? placeholderId;
+        if (isQuestCurrent) {
+          placeholderId = questPlaceholderBytes != null ? 'poi_placeholder_quest' : null;
+        } else if (hasQuestAvailable) {
+          placeholderId = availablePlaceholderBytes != null ? 'poi_placeholder_available' : null;
+        } else {
+          placeholderId = placeholderBytes != null ? 'poi_placeholder' : null;
+        }
+
+        var addedSymbol = false;
+        if (placeholderId != null) {
+          try {
+            final versionedId = '${placeholderId}_$_mapThumbnailVersion';
             final sym = await c.addSymbol(
               SymbolOptions(
                 geometry: LatLng(lat, lng),
                 iconImage: versionedId,
                 iconSize: isQuestCurrent ? 0.82 : 0.75,
-                iconHaloColor: isQuestCurrent ? '#000000' : '#000000',
+                iconHaloColor: '#000000',
                 iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
                 iconHaloBlur: 0.0,
                 iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
@@ -1246,10 +1391,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             if (isQuestCurrent) {
               _setQuestPoiHighlight(sym, true);
             }
-            added = true;
-          }
-        } catch (_) {}
-        if (!added) {
+            addedSymbol = true;
+          } catch (_) {}
+        }
+
+        if (!addedSymbol && !useRealImage) {
           c.addCircle(
             CircleOptions(
               geometry: LatLng(lat, lng),
@@ -1262,6 +1408,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             {'type': 'poi', 'id': poi.id, 'name': poi.name},
           );
         }
+
+        if (useRealImage && imageUrl != null) {
+          poiImageUpdates.add(_PoiImageUpdate(
+            poi: poi,
+            imageUrl: imageUrl,
+            isQuestCurrent: isQuestCurrent,
+            hasQuestAvailable: hasQuestAvailable,
+            undiscovered: undiscovered,
+          ));
+        }
+      }
+      if (poiImageUpdates.isNotEmpty) {
+        unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
       }
       _ensureQuestPoiPulseTimer();
       if (mounted && hadEmptyDiscoveries) {
@@ -1275,29 +1434,126 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<void> _loadPoiImagesAndUpdate(
+    int markerGeneration,
+    List<_PoiImageUpdate> updates,
+  ) async {
+    if (updates.isEmpty) return;
+    for (var i = 0; i < updates.length; i += _poiImageLoadBatchSize) {
+      if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+      final end = i + _poiImageLoadBatchSize;
+      final batch =
+          updates.sublist(i, end > updates.length ? updates.length : end);
+      final results = await Future.wait(
+        batch.map((update) => _loadPoiImageUpdate(update)),
+      );
+      if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+      final c = _mapController;
+      if (c == null || !_styleLoaded) return;
+      final questLog = context.read<QuestLogProvider>();
+      final currentQuestPoiIds = _currentQuestPoiIdsForFilter(questLog);
+
+      for (final result in results) {
+        final bytes = result.bytes;
+        final imageId = result.imageId;
+        if (bytes == null || imageId == null) continue;
+        if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+
+        final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
+        final hasQuestAvailableNow = result.update.poi.hasAvailableQuest;
+        if (isQuestCurrentNow != result.update.isQuestCurrent ||
+            hasQuestAvailableNow != result.update.hasQuestAvailable) {
+          continue;
+        }
+
+        final versionedId = '${imageId}_$_mapThumbnailVersion';
+        try {
+          await c.addImage(versionedId, bytes);
+        } catch (_) {}
+        if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+
+        final sym = _poiSymbolById[result.update.poi.id];
+        if (sym == null) {
+          final lat = double.tryParse(result.update.poi.lat) ?? 0.0;
+          final lng = double.tryParse(result.update.poi.lng) ?? 0.0;
+          try {
+            final newSym = await c.addSymbol(
+              SymbolOptions(
+                geometry: LatLng(lat, lng),
+                iconImage: versionedId,
+                iconSize: result.update.isQuestCurrent ? 0.82 : 0.75,
+                iconHaloColor: '#000000',
+                iconHaloWidth: result.update.isQuestCurrent ? 0.0 : 0.75,
+                iconHaloBlur: 0.0,
+                iconOpacity: result.update.isQuestCurrent
+                    ? 1.0
+                    : (result.update.undiscovered ? 0.5 : 1.0),
+                iconAnchor: 'center',
+                zIndex: 2,
+              ),
+              {
+                'type': 'poi',
+                'id': result.update.poi.id,
+                'name': result.update.poi.name,
+              },
+            );
+            if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+            _poiSymbols.add(newSym);
+            _poiSymbolById[result.update.poi.id] = newSym;
+            _setQuestPoiHighlight(newSym, result.update.isQuestCurrent);
+          } catch (_) {}
+          continue;
+        }
+
+        try {
+          await c.updateSymbol(
+            sym,
+            SymbolOptions(
+              iconImage: versionedId,
+              iconSize: result.update.isQuestCurrent ? 0.82 : 0.75,
+              iconHaloColor: '#000000',
+              iconHaloWidth: result.update.isQuestCurrent ? 0.0 : 0.75,
+              iconHaloBlur: 0.0,
+              iconOpacity: result.update.isQuestCurrent
+                  ? 1.0
+                  : (result.update.undiscovered ? 0.5 : 1.0),
+              iconAnchor: 'center',
+              zIndex: 2,
+            ),
+          );
+          _setQuestPoiHighlight(sym, result.update.isQuestCurrent);
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<_PoiImageUpdateResult> _loadPoiImageUpdate(
+    _PoiImageUpdate update,
+  ) async {
+    Uint8List? imageBytes;
+    String? imageId;
+    if (update.isQuestCurrent) {
+      imageBytes = await loadPoiThumbnailWithBorder(update.imageUrl);
+      if (imageBytes != null) {
+        imageId = 'poi_${update.poi.id}_quest';
+      }
+    } else if (update.hasQuestAvailable) {
+      imageBytes = await loadPoiThumbnailWithQuestMarker(update.imageUrl);
+      if (imageBytes != null) {
+        imageId = 'poi_${update.poi.id}_available';
+      }
+    } else {
+      imageBytes = await loadPoiThumbnail(update.imageUrl);
+      if (imageBytes != null) {
+        imageId = 'poi_${update.poi.id}';
+      }
+    }
+    return _PoiImageUpdateResult(update, imageId, imageBytes);
+  }
+
   Future<void> _refreshTreasureChestSymbols() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    final filters = context.read<QuestFilterProvider>();
-    if (!filters.showTreasureChests) {
-      for (final sym in _chestSymbols) {
-        try {
-          await c.removeSymbols([sym]);
-        } catch (_) {}
-      }
-      for (final circle in _chestCircles) {
-        try {
-          await c.removeCircle(circle);
-        } catch (_) {}
-      }
-      if (!mounted) return;
-      _chestSymbols.clear();
-      _chestCircles.clear();
-      _chestSymbolById.clear();
-      _chestCircleById.clear();
-      _chestCircleOpened.clear();
-      return;
-    }
 
     if (_chestThumbnailBytes == null) {
       try {
@@ -1615,18 +1871,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (poi == null) return;
 
     final filters = context.read<QuestFilterProvider>();
-    final categoryFilterActive =
-        filters.showCurrentQuestPoints || filters.showQuestAvailablePoints;
+    final tags = context.read<TagsProvider>();
+    final tagFilterActive =
+        filters.enableTagFilter && tags.selectedTagIds.isNotEmpty;
+    final selectedTagIds = tags.selectedTagIds;
+    final selectedTagNames = tagFilterActive
+        ? tags.tags
+            .where((t) => selectedTagIds.contains(t.id))
+            .map((t) => t.name.toLowerCase())
+            .toSet()
+        : <String>{};
     final discoveries = context.read<DiscoveriesProvider>();
     final useRealImage = discoveries.hasDiscovered(poi.id);
     final undiscovered = !useRealImage;
+    final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
     final hasQuestAvailable = poi.hasAvailableQuest;
     final hasCharacter = poi.characters.isNotEmpty;
     final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
-    final categoryMatch = !categoryFilterActive ||
-        (filters.showCurrentQuestPoints && isQuestCurrent) ||
-        (filters.showQuestAvailablePoints && hasQuestAvailable);
-    if (!(baseEligible && categoryMatch)) {
+    final tagMatch = !tagFilterActive ||
+        poi.tags.any(
+          (tag) =>
+              selectedTagIds.contains(tag.id) ||
+              (tag.name.isNotEmpty &&
+                  selectedTagNames.contains(tag.name.toLowerCase())),
+        );
+    if (!(baseEligible && tagMatch)) {
       final existing = _poiSymbolById.remove(poiId);
       if (existing != null) {
         _poiSymbols.remove(existing);
@@ -1643,14 +1912,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     String? imageId;
     Uint8List? imageBytes;
     if (isQuestCurrent) {
-      imageBytes = await loadPoiThumbnailWithBorder(useRealImage ? poi.imageURL : null);
+      imageBytes = await loadPoiThumbnailWithBorder(imageUrl);
       imageId = imageBytes != null ? 'poi_${poi.id}_quest' : 'poi_placeholder_quest';
     } else if (hasQuestAvailable) {
-      imageBytes = await loadPoiThumbnailWithQuestMarker(useRealImage ? poi.imageURL : null);
+      imageBytes = await loadPoiThumbnailWithQuestMarker(imageUrl);
       imageId =
           imageBytes != null ? 'poi_${poi.id}_available' : 'poi_placeholder_available';
     } else if (useRealImage) {
-      imageBytes = await loadPoiThumbnail(poi.imageURL);
+      imageBytes = await loadPoiThumbnail(imageUrl);
       imageId = imageBytes != null ? 'poi_${poi.id}' : 'poi_placeholder';
     } else {
       imageId = 'poi_placeholder';
@@ -1715,6 +1984,49 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       );
       _setQuestPoiHighlight(sym, isQuestCurrent);
     } catch (_) {}
+  }
+
+  Future<void> _updateCharacterSymbolsForQuestAvailability(
+    List<Character> characters,
+  ) async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+    for (final ch in characters) {
+      final symbols = _characterSymbolsById[ch.id];
+      if (symbols == null || symbols.isEmpty) continue;
+      final thumbnailUrl = ch.thumbnailUrl;
+      if (thumbnailUrl == null || thumbnailUrl.isEmpty) continue;
+      Uint8List? imageBytes;
+      String? imageId;
+      try {
+        imageBytes = ch.hasAvailableQuest
+            ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
+            : await loadPoiThumbnail(thumbnailUrl);
+        if (imageBytes != null) {
+          imageId =
+              ch.hasAvailableQuest ? 'character_${ch.id}_quest' : 'character_${ch.id}';
+        }
+      } catch (_) {}
+      if (imageBytes == null || imageId == null) continue;
+      final versionedId = '${imageId}_$_mapThumbnailVersion';
+      try {
+        await c.addImage(versionedId, imageBytes);
+      } catch (_) {}
+      for (final sym in symbols) {
+        try {
+          await c.updateSymbol(
+            sym,
+            SymbolOptions(
+              iconImage: versionedId,
+              iconSize: 0.6,
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.75,
+              iconAnchor: 'center',
+            ),
+          );
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _pulseQuestPoiBorders() async {
@@ -2093,7 +2405,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             }
                             if (isVideoSubmission && capturedVideo != null) {
                               final ext = _extensionFromMime(
-                                    capturedVideo!.mimeType,
+                                    _mimeTypeFromFile(capturedVideo!),
                                     capturedVideo!.name,
                                   ) ??
                                   'mp4';
@@ -2133,7 +2445,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(bytes),
-                                capturedVideo!.mimeType ?? 'video/mp4',
+                                _mimeTypeFromFile(capturedVideo!) ?? 'video/mp4',
                               );
                               if (!ok) {
                                 final elapsed = DateTime.now().difference(startedAt);
@@ -2279,6 +2591,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       target: LatLng(lat, lng),
       zoom: 15,
     );
+    const overlayButtonSize = 48.0;
+    const overlayButtonSpacing = 12.0;
+    const overlayButtonCount = 3;
+    const trackedChevronBottomOffset = 36.0;
+    final overlayButtonStackHeight = overlayButtonSize * overlayButtonCount +
+        overlayButtonSpacing * (overlayButtonCount - 1);
+    final trackedQuestTop = MediaQuery.of(context).padding.top +
+        overlayButtonSize -
+        trackedChevronBottomOffset;
 
     Quest? polygonQuest;
     QuestNode? polygonNode;
@@ -2324,12 +2645,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _markersAdded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        setState(() {
-          _markersAdded = false;
-          _addedMarkersWithEmptyDiscoveries = false;
-        });
-        unawaited(_addPoiMarkers());
-        unawaited(_addQuestPolygons());
+        setState(() => _addedMarkersWithEmptyDiscoveries = false);
+        unawaited(_refreshDiscoveredPoiMarkers());
       });
     }
 
@@ -2437,116 +2754,115 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                       child: SizedBox(
                         width: double.infinity,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          alignment: Alignment.topCenter,
-                          children: [
-                            ZoneWidget(controller: _zoneWidgetController),
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              child: Consumer<ActivityFeedProvider>(
-                                builder: (context, feed, _) {
-                                  final hasUnseen =
-                                      feed.unseenActivities.isNotEmpty;
-                                  return Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      _OverlayButton(
-                                        icon: Icons.campaign,
-                                        onTap: () {
-                                          if (kDebugMode) {
-                                            debugPrint(
-                                                'SinglePlayer: notifications tapped');
-                                          }
-                                          _showActivityFeed(context);
-                                        },
-                                      ),
-                                      if (hasUnseen)
-                                        Positioned(
-                                          top: -2,
-                                          right: -2,
-                                          child: Container(
-                                            width: 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFB87333),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .surface,
-                                                width: 1,
-                                              ),
-                                              boxShadow: const [
-                                                BoxShadow(
-                                                  color: Colors.black26,
-                                                  blurRadius: 4,
-                                                  offset: Offset(0, 2),
+                        child: SizedBox(
+                          height: overlayButtonStackHeight,
+                          child: Align(
+                            alignment: Alignment.topLeft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Consumer<ActivityFeedProvider>(
+                                  builder: (context, feed, _) {
+                                    final hasUnseen =
+                                        feed.unseenActivities.isNotEmpty;
+                                    return Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        _OverlayButton(
+                                          icon: Icons.campaign,
+                                          onTap: () {
+                                            if (kDebugMode) {
+                                              debugPrint(
+                                                  'SinglePlayer: notifications tapped');
+                                            }
+                                            _showActivityFeed(context);
+                                          },
+                                        ),
+                                        if (hasUnseen)
+                                          Positioned(
+                                            top: -2,
+                                            right: -2,
+                                            child: Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFB87333),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .surface,
+                                                  width: 1,
                                                 ),
-                                              ],
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                    color: Colors.black26,
+                                                    blurRadius: 4,
+                                                    offset: Offset(0, 2),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                Consumer2<QuestFilterProvider, TagsProvider>(
+                                  builder: (context, filters, tags, _) {
+                                    final hasActiveFilters =
+                                        filters.enableTagFilter &&
+                                            tags.selectedTagIds.isNotEmpty;
+                                    return Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        _OverlayButton(
+                                          icon: Icons.tune,
+                                          onTap: () {
+                                            if (kDebugMode) {
+                                              debugPrint(
+                                                  'SinglePlayer: filters tapped');
+                                            }
+                                            _showTagFilter(context);
+                                          },
                                         ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Consumer2<QuestFilterProvider, TagsProvider>(
-                                builder: (context, filters, tags, _) {
-                                  final hasActiveFilters =
-                                      filters.showCurrentQuestPoints ||
-                                          filters.showQuestAvailablePoints ||
-                                          !filters.showTreasureChests ||
-                                          (filters.enableTagFilter &&
-                                              tags.selectedTagIds.isNotEmpty);
-                                  return Stack(
-                                    clipBehavior: Clip.none,
-                                    children: [
-                                      _OverlayButton(
-                                        icon: Icons.tune,
-                                        onTap: () {
-                                          if (kDebugMode) {
-                                            debugPrint(
-                                                'SinglePlayer: filters tapped');
-                                          }
-                                          _showTagFilter(context);
-                                        },
-                                      ),
-                                      if (hasActiveFilters)
-                                        Positioned(
-                                          top: -2,
-                                          right: -2,
-                                          child: Container(
-                                            width: 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFF5C542),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(
-                                                color: Colors.white,
-                                                width: 1,
-                                              ),
-                                              boxShadow: const [
-                                                BoxShadow(
-                                                  color: Colors.black26,
-                                                  blurRadius: 4,
-                                                  offset: Offset(0, 2),
+                                        if (hasActiveFilters)
+                                          Positioned(
+                                            top: -2,
+                                            right: -2,
+                                            child: Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF5C542),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 1,
                                                 ),
-                                              ],
+                                                boxShadow: const [
+                                                  BoxShadow(
+                                                    color: Colors.black26,
+                                                    blurRadius: 4,
+                                                    offset: Offset(0, 2),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                _OverlayButton(
+                                  icon: Icons.my_location,
+                                  onTap: _centerOnUserLocation,
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -2554,9 +2870,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ),
               ),
             ),
-            // Tracked quests: below zone to avoid overlap
+            // Tracked quests: below top controls to avoid overlap
             Positioned(
-              top: 142,
+              top: trackedQuestTop,
               right: 16,
               child: PointerInterceptor(
                 child: TrackedQuestsOverlay(
@@ -2579,6 +2895,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   child: Text('Quest: ${polygonQuest!.name}'),
                 ),
               ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: PointerInterceptor(
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ZoneWidget(
+                        controller: _zoneWidgetController,
+                        expandUpwards: true,
+                        expandedHeight: 260,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
           if (_questSubmissionPhase != QuestSubmissionOverlayPhase.hidden)
             Positioned.fill(
@@ -3421,4 +3758,28 @@ class _OverlayButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PoiImageUpdate {
+  const _PoiImageUpdate({
+    required this.poi,
+    required this.imageUrl,
+    required this.isQuestCurrent,
+    required this.hasQuestAvailable,
+    required this.undiscovered,
+  });
+
+  final PointOfInterest poi;
+  final String? imageUrl;
+  final bool isQuestCurrent;
+  final bool hasQuestAvailable;
+  final bool undiscovered;
+}
+
+class _PoiImageUpdateResult {
+  const _PoiImageUpdateResult(this.update, this.imageId, this.bytes);
+
+  final _PoiImageUpdate update;
+  final String? imageId;
+  final Uint8List? bytes;
 }

@@ -11,29 +11,59 @@ const _cornerRadius = 12;
 const _questMarkerSize = 44;
 const _questMarkerPadding = 6;
 
+final Map<String, Uint8List> _thumbnailCache = {};
+final Map<String, Future<Uint8List?>> _thumbnailInFlight = {};
+
+Future<Uint8List?> _loadThumbnailCached(
+  String cacheKey,
+  Future<Uint8List?> Function() loader,
+) {
+  final cached = _thumbnailCache[cacheKey];
+  if (cached != null) return Future.value(cached);
+  final inFlight = _thumbnailInFlight[cacheKey];
+  if (inFlight != null) return inFlight;
+  final future = loader()
+      .then((bytes) {
+        if (bytes != null) {
+          _thumbnailCache[cacheKey] = bytes;
+        }
+        _thumbnailInFlight.remove(cacheKey);
+        return bytes;
+      })
+      .catchError((_) {
+        _thumbnailInFlight.remove(cacheKey);
+        return null;
+      });
+  _thumbnailInFlight[cacheKey] = future;
+  return future;
+}
+
 /// Fetches the POI image (or placeholder), resizes to a square, applies
 /// rounded corners, and returns PNG bytes suitable for MapLibre addImage.
-Future<Uint8List?> loadPoiThumbnail(String? imageUrl) async {
+Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  try {
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode != 200) return null;
-    final bytes = response.bodyBytes;
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
-    return Uint8List.fromList(img.encodePng(square));
-  } catch (_) {
-    return null;
-  }
+  final cacheKey = 'plain|$url';
+  return _loadThumbnailCached(cacheKey, () async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return null;
+      final bytes = response.bodyBytes;
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+      final square = img.copyResizeCropSquare(
+        decoded,
+        size: _thumbnailSize,
+        radius: _cornerRadius,
+        antialias: true,
+      );
+      _applyParchmentFrame(square);
+      return Uint8List.fromList(img.encodePng(square));
+    } catch (_) {
+      return null;
+    }
+  });
 }
 
 /// Same as [loadPoiThumbnail], but adds a gold border around the image.
@@ -42,68 +72,74 @@ Future<Uint8List?> loadPoiThumbnail(String? imageUrl) async {
 Future<Uint8List?> loadPoiThumbnailWithBorder(
   String? imageUrl, {
   int borderWidth = 10,
-}) async {
+}) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  try {
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode != 200) return null;
-    final bytes = response.bodyBytes;
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
-    final borderedSize = _thumbnailSize + borderWidth * 2;
-    final bordered = img.Image(width: borderedSize, height: borderedSize);
-    img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
-    final gold = img.ColorRgba8(245, 197, 66, 255);
-    final max = borderedSize - 1;
-    for (var i = 0; i < borderWidth; i++) {
-      img.drawRect(
-        bordered,
-        x1: i,
-        y1: i,
-        x2: max - i,
-        y2: max - i,
-        color: gold,
+  final cacheKey = 'border:$borderWidth|$url';
+  return _loadThumbnailCached(cacheKey, () async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return null;
+      final bytes = response.bodyBytes;
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+      final square = img.copyResizeCropSquare(
+        decoded,
+        size: _thumbnailSize,
+        radius: _cornerRadius,
+        antialias: true,
       );
+      _applyParchmentFrame(square);
+      final borderedSize = _thumbnailSize + borderWidth * 2;
+      final bordered = img.Image(width: borderedSize, height: borderedSize);
+      img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
+      final gold = img.ColorRgba8(245, 197, 66, 255);
+      final max = borderedSize - 1;
+      for (var i = 0; i < borderWidth; i++) {
+        img.drawRect(
+          bordered,
+          x1: i,
+          y1: i,
+          x2: max - i,
+          y2: max - i,
+          color: gold,
+        );
+      }
+      img.compositeImage(bordered, square, dstX: borderWidth, dstY: borderWidth);
+      return Uint8List.fromList(img.encodePng(bordered));
+    } catch (_) {
+      return null;
     }
-    img.compositeImage(bordered, square, dstX: borderWidth, dstY: borderWidth);
-    return Uint8List.fromList(img.encodePng(bordered));
-  } catch (_) {
-    return null;
-  }
+  });
 }
 
 /// Same as [loadPoiThumbnail], but adds a golden quest marker in the corner.
-Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) async {
+Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
   final url = imageUrl != null && imageUrl.isNotEmpty
       ? imageUrl
       : _placeholderUrl;
-  try {
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode != 200) return null;
-    final bytes = response.bodyBytes;
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) return null;
-    final square = img.copyResizeCropSquare(
-      decoded,
-      size: _thumbnailSize,
-      radius: _cornerRadius,
-      antialias: true,
-    );
-    _applyParchmentFrame(square);
-    _drawQuestMarker(square);
-    return Uint8List.fromList(img.encodePng(square));
-  } catch (_) {
-    return null;
-  }
+  final cacheKey = 'quest|$url';
+  return _loadThumbnailCached(cacheKey, () async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return null;
+      final bytes = response.bodyBytes;
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
+      final square = img.copyResizeCropSquare(
+        decoded,
+        size: _thumbnailSize,
+        radius: _cornerRadius,
+        antialias: true,
+      );
+      _applyParchmentFrame(square);
+      _drawQuestMarker(square);
+      return Uint8List.fromList(img.encodePng(square));
+    } catch (_) {
+      return null;
+    }
+  });
 }
 
 void _applyParchmentFrame(img.Image image) {

@@ -12,15 +12,25 @@ const (
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
+	GenerateImageThumbnailTaskType        = "generate_image_thumbnail"
+	QueueThumbnailBackfillTaskType        = "queue_thumbnail_backfill"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType = "calculate_trending_destinations"
 	ProcessRecurringQuestsTaskType        = "process_recurring_quests"
+	CleanupOrphanedQuestActionsTaskType   = "cleanup_orphaned_quest_actions"
 	CheckBlockchainTransactionsTaskType   = "check_blockchain_transactions"
 	ImportPointOfInterestTaskType         = "import_point_of_interest"
 	ImportZonesForMetroTaskType           = "import_zones_for_metro"
 	MonitorPolymarketTradesTaskType       = "monitor_polymarket_trades"
 	SeedZoneDraftTaskType                 = "seed_zone_draft"
 	ApplyZoneSeedDraftTaskType            = "apply_zone_seed_draft"
+)
+
+const (
+	ThumbnailEntityCharacter       = "character"
+	ThumbnailEntityPointOfInterest = "point_of_interest"
+	ThumbnailEntityStatic          = "static"
+	ThumbnailBucket                = "crew-profile-icons"
 )
 
 type GenerateQuestForZoneTaskPayload struct {
@@ -58,6 +68,13 @@ type GenerateCharacterImageTaskPayload struct {
 
 type GeneratePointOfInterestImageTaskPayload struct {
 	PointOfInterestID uuid.UUID `json:"pointOfInterestId"`
+}
+
+type GenerateImageThumbnailTaskPayload struct {
+	EntityType     string    `json:"entityType"`
+	EntityID       uuid.UUID `json:"entityId,omitempty"`
+	SourceUrl      string    `json:"sourceUrl"`
+	DestinationKey string    `json:"destinationKey,omitempty"`
 }
 
 type ImportPointOfInterestTaskPayload struct {

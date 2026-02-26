@@ -31,6 +31,10 @@ module "ecs" {
         aws_secretsmanager_secret.travel_angels_stripe_secret_key.arn,
         aws_secretsmanager_secret.ethereum_private_key.arn,
         aws_secretsmanager_secret.ca_private_key.arn,
+        aws_secretsmanager_secret.polymarket_api_key.arn,
+        aws_secretsmanager_secret.polymarket_api_secret.arn,
+        aws_secretsmanager_secret.polymarket_api_passphrase.arn,
+        aws_secretsmanager_secret.polymarket_address.arn,
       ]
 
       container_definitions = {
@@ -239,6 +243,18 @@ module "ecs" {
           }, {
             name      = "GOOGLE_MAPS_API_KEY",
             valueFrom = "${aws_secretsmanager_secret.google_maps_api_key.arn}"
+          }, {
+            name      = "POLYMARKET_API_KEY",
+            valueFrom = "${aws_secretsmanager_secret.polymarket_api_key.arn}"
+          }, {
+            name      = "POLYMARKET_API_SECRET",
+            valueFrom = "${aws_secretsmanager_secret.polymarket_api_secret.arn}"
+          }, {
+            name      = "POLYMARKET_API_PASSPHRASE",
+            valueFrom = "${aws_secretsmanager_secret.polymarket_api_passphrase.arn}"
+          }, {
+            name      = "POLYMARKET_ADDRESS",
+            valueFrom = "${aws_secretsmanager_secret.polymarket_address.arn}"
           }]
           image = "${aws_ecr_repository.job_runner.repository_url}:latest"
           environment = [
@@ -249,6 +265,30 @@ module "ecs" {
             {
               name  = "RPC_URL"
               value = "https://sepolia.base.org"
+            },
+            {
+              name  = "POLYMARKET_TRADES_URL"
+              value = "https://clob.polymarket.com/data/trades"
+            },
+            {
+              name  = "POLYMARKET_ALERT_TO_NUMBER"
+              value = "+14407858475"
+            },
+            {
+              name  = "POLYMARKET_ALERT_FROM_NUMBER"
+              value = var.twilio_phone_number
+            },
+            {
+              name  = "POLYMARKET_SUSPICIOUS_NOTIONAL_THRESHOLD"
+              value = "1000"
+            },
+            {
+              name  = "POLYMARKET_SUSPICIOUS_SIZE_THRESHOLD"
+              value = "0"
+            },
+            {
+              name  = "POLYMARKET_TRADES_LIMIT"
+              value = "100"
             }
           ]
           portMappings = [
@@ -367,4 +407,3 @@ module "ecs" {
     }
   }
 }
-

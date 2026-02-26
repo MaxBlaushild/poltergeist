@@ -35,6 +35,16 @@ func (h *characterActionHandler) FindAll(ctx context.Context) ([]*models.Charact
 	return characterActions, nil
 }
 
+func (h *characterActionHandler) FindGiveQuestActions(ctx context.Context) ([]*models.CharacterAction, error) {
+	var characterActions []*models.CharacterAction
+	if err := h.db.WithContext(ctx).
+		Where("action_type = ?", models.ActionTypeGiveQuest).
+		Find(&characterActions).Error; err != nil {
+		return nil, err
+	}
+	return characterActions, nil
+}
+
 func (h *characterActionHandler) FindByCharacterID(ctx context.Context, characterID uuid.UUID) ([]*models.CharacterAction, error) {
 	var characterActions []*models.CharacterAction
 	if err := h.db.WithContext(ctx).Preload("Character").Where("character_id = ?", characterID).Find(&characterActions).Error; err != nil {

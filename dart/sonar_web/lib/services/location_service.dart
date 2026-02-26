@@ -3,6 +3,11 @@ import 'package:geolocator/geolocator.dart';
 import '../models/location.dart';
 
 class LocationService {
+  static const LocationSettings _defaultStreamSettings = LocationSettings(
+    accuracy: LocationAccuracy.high,
+    distanceFilter: 5,
+  );
+
   Future<bool> checkPermission() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return false;
@@ -14,9 +19,11 @@ class LocationService {
         p == LocationPermission.always;
   }
 
-  Future<AppLocation?> getCurrentLocation() async {
-    final ok = await checkPermission();
-    if (!ok) return null;
+  Future<AppLocation?> getCurrentLocation({bool requestPermission = true}) async {
+    if (requestPermission) {
+      final ok = await checkPermission();
+      if (!ok) return null;
+    }
     try {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -31,5 +38,21 @@ class LocationService {
     } catch (_) {
       return null;
     }
+  }
+
+  Stream<AppLocation> getLocationStream({bool requestPermission = true}) async* {
+    if (requestPermission) {
+      final ok = await checkPermission();
+      if (!ok) return;
+    }
+    yield* Geolocator.getPositionStream(
+      locationSettings: _defaultStreamSettings,
+    ).map(
+      (pos) => AppLocation(
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        accuracy: pos.accuracy,
+      ),
+    );
   }
 }

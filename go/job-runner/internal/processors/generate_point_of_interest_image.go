@@ -5,6 +5,7 @@ import (
   "encoding/json"
   "fmt"
   "log"
+  "strings"
 
   "github.com/MaxBlaushild/poltergeist/pkg/db"
   "github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -17,13 +18,18 @@ import (
 
 // GeneratePointOfInterestImageProcessor refreshes a point of interest image in the background.
 type GeneratePointOfInterestImageProcessor struct {
-  dbClient      db.DbClient
+  dbClient       db.DbClient
   locationSeeder locationseeder.Client
+  asyncClient    *asynq.Client
 }
 
-func NewGeneratePointOfInterestImageProcessor(dbClient db.DbClient, locationSeeder locationseeder.Client) GeneratePointOfInterestImageProcessor {
+func NewGeneratePointOfInterestImageProcessor(dbClient db.DbClient, locationSeeder locationseeder.Client, asyncClient *asynq.Client) GeneratePointOfInterestImageProcessor {
   log.Println("Initializing GeneratePointOfInterestImageProcessor")
-  return GeneratePointOfInterestImageProcessor{dbClient: dbClient, locationSeeder: locationSeeder}
+  return GeneratePointOfInterestImageProcessor{
+    dbClient: dbClient,
+    locationSeeder: locationSeeder,
+    asyncClient: asyncClient,
+  }
 }
 
 func (p *GeneratePointOfInterestImageProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
@@ -70,8 +76,32 @@ func (p *GeneratePointOfInterestImageProcessor) ProcessTask(ctx context.Context,
     return fmt.Errorf("failed to update point of interest status: %w", err)
   }
 
+  updatedPoi, err := p.dbClient.PointOfInterest().FindByID(ctx, payload.PointOfInterestID)
+  if err == nil && updatedPoi != nil {
+    p.enqueueThumbnailTask(updatedPoi.ID, updatedPoi.ImageUrl)
+  }
+
   log.Printf("Point of interest image generated successfully for ID: %s", payload.PointOfInterestID)
   return nil
+}
+
+func (p *GeneratePointOfInterestImageProcessor) enqueueThumbnailTask(poiID uuid.UUID, imageURL string) {
+  if p.asyncClient == nil || strings.TrimSpace(imageURL) == "" {
+    return
+  }
+  payload := jobs.GenerateImageThumbnailTaskPayload{
+    EntityType: jobs.ThumbnailEntityPointOfInterest,
+    EntityID:   poiID,
+    SourceUrl:  imageURL,
+  }
+  payloadBytes, err := json.Marshal(payload)
+  if err != nil {
+    log.Printf("Failed to marshal thumbnail task payload: %v", err)
+    return
+  }
+  if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+    log.Printf("Failed to enqueue thumbnail task: %v", err)
+  }
 }
 
 func (p *GeneratePointOfInterestImageProcessor) markFailed(ctx context.Context, poiID uuid.UUID, err error) error {

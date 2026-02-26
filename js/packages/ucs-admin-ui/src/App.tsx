@@ -75,7 +75,6 @@ const Navigation = () => {
   return (
     <nav className="bg-gray-800 p-4">
       <div className="container mx-auto flex gap-4">
-        <Link to="/" className="text-white hover:text-gray-300">Arenas</Link>
         <Link to="/armory" className="text-white hover:text-gray-300">Armory</Link>
         <Link to="/zones" className="text-white hover:text-gray-300">Zones</Link>
         <Link to="/tags" className="text-white hover:text-gray-300">Tags</Link>

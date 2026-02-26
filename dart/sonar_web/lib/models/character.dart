@@ -8,6 +8,7 @@ class Character {
   final String? mapIconUrl;
   final String? dialogueImageUrl;
   final String? thumbnailUrl;
+  final String? pointOfInterestId;
   final MovementPattern? movementPattern;
   final List<CharacterLocation> locations;
   final bool hasAvailableQuest;
@@ -19,6 +20,7 @@ class Character {
     this.mapIconUrl,
     this.dialogueImageUrl,
     this.thumbnailUrl,
+    this.pointOfInterestId,
     this.movementPattern,
     this.locations = const [],
     this.hasAvailableQuest = false,
@@ -32,6 +34,7 @@ class Character {
       mapIconUrl: json['mapIconUrl'] as String?,
       dialogueImageUrl: json['dialogueImageUrl'] as String?,
       thumbnailUrl: json['thumbnailUrl'] as String?,
+      pointOfInterestId: json['pointOfInterestId'] as String?,
       locations: (json['locations'] as List<dynamic>?)
               ?.map((e) => CharacterLocation.fromJson(e as Map<String, dynamic>))
               .toList() ??

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../constants/api_constants.dart';
+import '../constants/gameplay_constants.dart';
 import '../models/character.dart';
 import '../models/inventory_item.dart';
 import '../models/point_of_interest.dart';
@@ -41,7 +42,7 @@ typedef QuestSubmissionOverlayCallback = void Function(
 });
 
 /// Unlock radius in meters. Must match backend (POST /sonar/pointOfInterest/unlock).
-const _unlockRadiusMeters = 200.0;
+const _unlockRadiusMeters = kProximityUnlockRadiusMeters;
 
 /// Bottom-sheet content for a tapped point of interest.
 /// When [hasDiscovered] is false: tags, how to unlock, distance, and Unlock button (disabled when too far).
@@ -765,7 +766,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             }
                             if (isVideoSubmission && capturedVideo != null) {
                               final ext = _extensionFromMime(
-                                    capturedVideo!.mimeType,
+                                    _mimeTypeFromFile(capturedVideo!),
                                     capturedVideo!.name,
                                   ) ??
                                   'mp4';
@@ -805,7 +806,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(bytes),
-                                capturedVideo!.mimeType ?? 'video/mp4',
+                                _mimeTypeFromFile(capturedVideo!) ?? 'video/mp4',
                               );
                               if (!ok) {
                                 final elapsed = DateTime.now().difference(startedAt);
@@ -888,6 +889,31 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       case 'image/jpeg':
       case 'image/jpg':
         return 'jpg';
+      default:
+        return null;
+    }
+  }
+
+  String? _mimeTypeFromFile(PlatformFile file) {
+    final ext = (file.extension ?? _extensionFromMime(null, file.name))?.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'mp4':
+        return 'video/mp4';
+      case 'mov':
+        return 'video/quicktime';
+      case 'm4v':
+        return 'video/x-m4v';
+      case 'webm':
+        return 'video/webm';
       default:
         return null;
     }
@@ -1138,7 +1164,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   Widget _buildFullPanel(BuildContext context, PointOfInterest poi) {
     final imageUrl = (poi.imageURL != null && poi.imageURL!.isNotEmpty)
         ? poi.imageURL!
-        : _placeholderImageUrl;
+        : ((poi.thumbnailUrl != null && poi.thumbnailUrl!.isNotEmpty)
+            ? poi.thumbnailUrl!
+            : _placeholderImageUrl);
     final tags = poi.tags;
     final characters = poi.characters;
 

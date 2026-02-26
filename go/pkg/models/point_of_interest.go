@@ -19,6 +19,7 @@ type PointOfInterest struct {
 	Lat                       string                     `json:"lat"`
 	Lng                       string                     `json:"lng"`
 	ImageUrl                  string                     `json:"imageURL"`
+	ThumbnailURL              string                     `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
 	ImageGenerationStatus     string                     `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError      *string                    `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 	Description               string                     `json:"description"`

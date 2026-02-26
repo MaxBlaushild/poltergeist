@@ -9,11 +9,14 @@ import (
 )
 
 type SecretConfig struct {
-	DbPassword       string
-	ImagineApiKey    string
-	UseApiKey        string
-	GoogleMapsApiKey string
-	PolymarketAPIKey string
+	DbPassword              string
+	ImagineApiKey           string
+	UseApiKey               string
+	GoogleMapsApiKey        string
+	PolymarketAPIKey        string
+	PolymarketAPISecret     string
+	PolymarketAPIPassphrase string
+	PolymarketAddress       string
 }
 
 type PublicConfig struct {
@@ -25,14 +28,14 @@ type PublicConfig struct {
 	ChainID  int64  `mapstructure:"CHAIN_ID"`
 	RPCURL   string `mapstructure:"RPC_URL"`
 
-	PolymarketTradesURL                    string  `mapstructure:"POLYMARKET_TRADES_URL"`
-	PolymarketBaseURL                      string  `mapstructure:"POLYMARKET_BASE_URL"`
-	PolymarketTradesPath                   string  `mapstructure:"POLYMARKET_TRADES_PATH"`
-	PolymarketAlertToNumber                string  `mapstructure:"POLYMARKET_ALERT_TO_NUMBER"`
-	PolymarketAlertFromNumber              string  `mapstructure:"POLYMARKET_ALERT_FROM_NUMBER"`
-	PolymarketSuspiciousNotionalThreshold  float64 `mapstructure:"POLYMARKET_SUSPICIOUS_NOTIONAL_THRESHOLD"`
-	PolymarketSuspiciousSizeThreshold      float64 `mapstructure:"POLYMARKET_SUSPICIOUS_SIZE_THRESHOLD"`
-	PolymarketTradesLimit                  int     `mapstructure:"POLYMARKET_TRADES_LIMIT"`
+	PolymarketTradesURL                   string  `mapstructure:"POLYMARKET_TRADES_URL"`
+	PolymarketBaseURL                     string  `mapstructure:"POLYMARKET_BASE_URL"`
+	PolymarketTradesPath                  string  `mapstructure:"POLYMARKET_TRADES_PATH"`
+	PolymarketAlertToNumber               string  `mapstructure:"POLYMARKET_ALERT_TO_NUMBER"`
+	PolymarketAlertFromNumber             string  `mapstructure:"POLYMARKET_ALERT_FROM_NUMBER"`
+	PolymarketSuspiciousNotionalThreshold float64 `mapstructure:"POLYMARKET_SUSPICIOUS_NOTIONAL_THRESHOLD"`
+	PolymarketSuspiciousSizeThreshold     float64 `mapstructure:"POLYMARKET_SUSPICIOUS_SIZE_THRESHOLD"`
+	PolymarketTradesLimit                 int     `mapstructure:"POLYMARKET_TRADES_LIMIT"`
 }
 
 type Config struct {
@@ -96,11 +99,14 @@ func ParseFlagsAndGetConfig() (*Config, error) {
 
 	return &Config{
 		Secret: SecretConfig{
-			DbPassword:       os.Getenv("DB_PASSWORD"),
-			ImagineApiKey:    os.Getenv("IMAGINE_API_KEY"),
-			UseApiKey:        os.Getenv("USE_API_KEY"),
-			GoogleMapsApiKey: os.Getenv("GOOGLE_MAPS_API_KEY"),
-			PolymarketAPIKey: os.Getenv("POLYMARKET_API_KEY"),
+			DbPassword:              os.Getenv("DB_PASSWORD"),
+			ImagineApiKey:           os.Getenv("IMAGINE_API_KEY"),
+			UseApiKey:               os.Getenv("USE_API_KEY"),
+			GoogleMapsApiKey:        os.Getenv("GOOGLE_MAPS_API_KEY"),
+			PolymarketAPIKey:        os.Getenv("POLYMARKET_API_KEY"),
+			PolymarketAPISecret:     os.Getenv("POLYMARKET_API_SECRET"),
+			PolymarketAPIPassphrase: os.Getenv("POLYMARKET_API_PASSPHRASE"),
+			PolymarketAddress:       os.Getenv("POLYMARKET_ADDRESS"),
 		},
 		Public: publicCfg,
 	}, nil

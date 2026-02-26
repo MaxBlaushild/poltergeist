@@ -126,7 +126,6 @@ export const InventoryItems = () => {
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
   const [items, setItems] = useState<InventoryItem[]>([]);
-  const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateItem, setShowCreateItem] = useState(false);
@@ -143,6 +142,34 @@ export const InventoryItems = () => {
   const [useOutfitStatus, setUseOutfitStatus] = useState<string | null>(null);
   const [useOutfitStatusKind, setUseOutfitStatusKind] = useState<'success' | 'error' | null>(null);
   const [useOutfitSubmitting, setUseOutfitSubmitting] = useState(false);
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    rarity: '',
+    equipSlot: '',
+    imageStatus: '',
+    captureType: '',
+    equippable: '',
+    minId: '',
+    maxId: '',
+    minSellValue: '',
+    maxSellValue: '',
+    minUnlockTier: '',
+    maxUnlockTier: '',
+    minStrength: '',
+    maxStrength: '',
+    minDexterity: '',
+    maxDexterity: '',
+    minConstitution: '',
+    maxConstitution: '',
+    minIntelligence: '',
+    maxIntelligence: '',
+    minWisdom: '',
+    maxWisdom: '',
+    minCharisma: '',
+    maxCharisma: '',
+  });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -198,22 +225,10 @@ export const InventoryItems = () => {
     return () => clearInterval(interval);
   }, [items]);
 
-  useEffect(() => {
-    if (searchQuery === '') {
-      setFilteredItems(items);
-    } else {
-      const filtered = items.filter(item =>
-        item.name?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredItems(filtered);
-    }
-  }, [searchQuery, items]);
-
   const fetchItems = async () => {
     try {
       const response = await apiClient.get<InventoryItem[]>('/sonar/inventory-items');
       setItems(response);
-      setFilteredItems(response);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching inventory items:', error);
@@ -461,6 +476,142 @@ export const InventoryItems = () => {
     }
   };
 
+  const numericValue = (value: string) => {
+    if (value.trim() === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const matchRange = (
+    value: number | undefined,
+    minValue: string,
+    maxValue: string,
+    defaultValue?: number
+  ) => {
+    const min = numericValue(minValue);
+    const max = numericValue(maxValue);
+    let actual = value;
+    if (actual === undefined || actual === null) {
+      actual = defaultValue;
+    }
+    if (min === undefined && max === undefined) return true;
+    if (actual === undefined || actual === null) return false;
+    if (min !== undefined && actual < min) return false;
+    if (max !== undefined && actual > max) return false;
+    return true;
+  };
+
+  const sortOptions = [
+    { value: 'name', label: 'Name' },
+    { value: 'id', label: 'ID' },
+    { value: 'flavorText', label: 'Flavor Text' },
+    { value: 'effectText', label: 'Effect Text' },
+    { value: 'imageUrl', label: 'Image URL' },
+    { value: 'rarityTier', label: 'Rarity' },
+    { value: 'equipSlot', label: 'Equip Slot' },
+    { value: 'imageGenerationStatus', label: 'Image Status' },
+    { value: 'isCaptureType', label: 'Capture Type' },
+    { value: 'sellValue', label: 'Sell Value' },
+    { value: 'unlockTier', label: 'Unlock Tier' },
+    { value: 'strengthMod', label: 'STR' },
+    { value: 'dexterityMod', label: 'DEX' },
+    { value: 'constitutionMod', label: 'CON' },
+    { value: 'intelligenceMod', label: 'INT' },
+    { value: 'wisdomMod', label: 'WIS' },
+    { value: 'charismaMod', label: 'CHA' },
+    { value: 'createdAt', label: 'Created At' },
+    { value: 'updatedAt', label: 'Updated At' },
+  ];
+
+  const rarityRank: Record<string, number> = {
+    [Rarity.Common]: 1,
+    [Rarity.Uncommon]: 2,
+    [Rarity.Epic]: 3,
+    [Rarity.Mythic]: 4,
+    [Rarity.NotDroppable]: 5,
+  };
+
+  const activeFilterCount = useMemo(() => {
+    return Object.values(filters).filter((value) => value !== '').length;
+  }, [filters]);
+
+  const visibleItems = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = items.filter((item) => {
+      const haystack = [
+        item.id?.toString(),
+        item.name,
+        item.flavorText,
+        item.effectText,
+        item.imageUrl,
+        item.rarityTier,
+        item.equipSlot,
+        item.imageGenerationStatus,
+        item.sellValue?.toString(),
+        item.unlockTier?.toString(),
+        item.strengthMod?.toString(),
+        item.dexterityMod?.toString(),
+        item.constitutionMod?.toString(),
+        item.intelligenceMod?.toString(),
+        item.wisdomMod?.toString(),
+        item.charismaMod?.toString(),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      if (query && !haystack.includes(query)) return false;
+
+      if (filters.rarity && item.rarityTier !== filters.rarity) return false;
+      if (filters.equipSlot && (item.equipSlot ?? '') !== filters.equipSlot) return false;
+      if (filters.imageStatus && (item.imageGenerationStatus ?? '') !== filters.imageStatus) return false;
+      if (filters.captureType === 'yes' && !item.isCaptureType) return false;
+      if (filters.captureType === 'no' && item.isCaptureType) return false;
+      if (filters.equippable === 'yes' && !item.equipSlot) return false;
+      if (filters.equippable === 'no' && item.equipSlot) return false;
+
+      if (!matchRange(item.id, filters.minId, filters.maxId)) return false;
+      if (!matchRange(item.sellValue, filters.minSellValue, filters.maxSellValue)) return false;
+      if (!matchRange(item.unlockTier, filters.minUnlockTier, filters.maxUnlockTier)) return false;
+
+      if (!matchRange(item.strengthMod ?? 0, filters.minStrength, filters.maxStrength, 0)) return false;
+      if (!matchRange(item.dexterityMod ?? 0, filters.minDexterity, filters.maxDexterity, 0)) return false;
+      if (!matchRange(item.constitutionMod ?? 0, filters.minConstitution, filters.maxConstitution, 0)) return false;
+      if (!matchRange(item.intelligenceMod ?? 0, filters.minIntelligence, filters.maxIntelligence, 0)) return false;
+      if (!matchRange(item.wisdomMod ?? 0, filters.minWisdom, filters.maxWisdom, 0)) return false;
+      if (!matchRange(item.charismaMod ?? 0, filters.minCharisma, filters.maxCharisma, 0)) return false;
+
+      return true;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      const direction = sortDirection === 'asc' ? 1 : -1;
+      const field = sortField as keyof InventoryItem;
+      if (field === 'rarityTier') {
+        const rankA = rarityRank[a.rarityTier] ?? 999;
+        const rankB = rarityRank[b.rarityTier] ?? 999;
+        return (rankA - rankB) * direction;
+      }
+      if (field === 'createdAt' || field === 'updatedAt') {
+        const timeA = a[field] ? new Date(a[field] as string).getTime() : 0;
+        const timeB = b[field] ? new Date(b[field] as string).getTime() : 0;
+        return (timeA - timeB) * direction;
+      }
+      const valueA = a[field];
+      const valueB = b[field];
+      if (typeof valueA === 'number' || typeof valueB === 'number') {
+        const numA = Number(valueA ?? 0);
+        const numB = Number(valueB ?? 0);
+        return (numA - numB) * direction;
+      }
+      const strA = (valueA ?? '').toString().toLowerCase();
+      const strB = (valueB ?? '').toString().toLowerCase();
+      return strA.localeCompare(strB) * direction;
+    });
+
+    return sorted;
+  }, [items, searchQuery, filters, sortField, sortDirection]);
+
   if (loading) {
     return <div className="m-10">Loading inventory items...</div>;
   }
@@ -469,16 +620,292 @@ export const InventoryItems = () => {
     <div className="m-10">
       <h1 className="text-2xl font-bold mb-4">Inventory Items</h1>
       
-      {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search inventory items..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full p-2 border rounded-md"
-        />
+      {/* Search + Sort */}
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="flex-1">
+          <input
+            type="text"
+            placeholder="Search inventory items..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full p-2 border rounded-md"
+          />
+        </div>
+        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+          <select
+            value={sortField}
+            onChange={(e) => setSortField(e.target.value)}
+            className="w-full p-2 border rounded-md md:w-56"
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                Sort: {option.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-44"
+          >
+            Direction: {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFilters(!showFilters)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 md:w-36"
+          >
+            {showFilters ? 'Hide filters' : 'Show filters'}
+            {activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+          </button>
+        </div>
       </div>
+
+      {showFilters && (
+        <div className="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-gray-700">
+              Filters{activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFilters({
+                  rarity: '',
+                  equipSlot: '',
+                  imageStatus: '',
+                  captureType: '',
+                  equippable: '',
+                  minId: '',
+                  maxId: '',
+                  minSellValue: '',
+                  maxSellValue: '',
+                  minUnlockTier: '',
+                  maxUnlockTier: '',
+                  minStrength: '',
+                  maxStrength: '',
+                  minDexterity: '',
+                  maxDexterity: '',
+                  minConstitution: '',
+                  maxConstitution: '',
+                  minIntelligence: '',
+                  maxIntelligence: '',
+                  minWisdom: '',
+                  maxWisdom: '',
+                  minCharisma: '',
+                  maxCharisma: '',
+                })
+              }
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+            >
+              Clear filters
+            </button>
+          </div>
+          <div className="space-y-3">
+            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                Quick filters
+              </summary>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <select
+                  value={filters.rarity}
+                  onChange={(e) => setFilters({ ...filters, rarity: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All rarities</option>
+                  <option value={Rarity.Common}>Common</option>
+                  <option value={Rarity.Uncommon}>Uncommon</option>
+                  <option value={Rarity.Epic}>Epic</option>
+                  <option value={Rarity.Mythic}>Mythic</option>
+                  <option value={Rarity.NotDroppable}>Not Droppable</option>
+                </select>
+                <select
+                  value={filters.equipSlot}
+                  onChange={(e) => setFilters({ ...filters, equipSlot: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All equip slots</option>
+                  {equipSlotOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={filters.equippable}
+                  onChange={(e) => setFilters({ ...filters, equippable: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All items</option>
+                  <option value="yes">Equippable</option>
+                  <option value="no">Not equippable</option>
+                </select>
+                <select
+                  value={filters.captureType}
+                  onChange={(e) => setFilters({ ...filters, captureType: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All capture types</option>
+                  <option value="yes">Capture items</option>
+                  <option value="no">Non-capture</option>
+                </select>
+                <select
+                  value={filters.imageStatus}
+                  onChange={(e) => setFilters({ ...filters, imageStatus: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                >
+                  <option value="">All image statuses</option>
+                  <option value="queued">Queued</option>
+                  <option value="in_progress">Generating</option>
+                  <option value="complete">Complete</option>
+                  <option value="failed">Failed</option>
+                  <option value="none">Not requested</option>
+                </select>
+              </div>
+            </details>
+            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                IDs & values
+              </summary>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+                <input
+                  type="number"
+                  placeholder="Min ID"
+                  value={filters.minId}
+                  onChange={(e) => setFilters({ ...filters, minId: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max ID"
+                  value={filters.maxId}
+                  onChange={(e) => setFilters({ ...filters, maxId: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min sell value"
+                  value={filters.minSellValue}
+                  onChange={(e) => setFilters({ ...filters, minSellValue: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max sell value"
+                  value={filters.maxSellValue}
+                  onChange={(e) => setFilters({ ...filters, maxSellValue: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min unlock tier"
+                  value={filters.minUnlockTier}
+                  onChange={(e) => setFilters({ ...filters, minUnlockTier: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max unlock tier"
+                  value={filters.maxUnlockTier}
+                  onChange={(e) => setFilters({ ...filters, maxUnlockTier: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+              </div>
+            </details>
+            <details className="rounded-md border border-gray-200 bg-white px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                Stat bonuses
+              </summary>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6">
+                <input
+                  type="number"
+                  placeholder="Min STR"
+                  value={filters.minStrength}
+                  onChange={(e) => setFilters({ ...filters, minStrength: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max STR"
+                  value={filters.maxStrength}
+                  onChange={(e) => setFilters({ ...filters, maxStrength: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min DEX"
+                  value={filters.minDexterity}
+                  onChange={(e) => setFilters({ ...filters, minDexterity: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max DEX"
+                  value={filters.maxDexterity}
+                  onChange={(e) => setFilters({ ...filters, maxDexterity: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min CON"
+                  value={filters.minConstitution}
+                  onChange={(e) => setFilters({ ...filters, minConstitution: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max CON"
+                  value={filters.maxConstitution}
+                  onChange={(e) => setFilters({ ...filters, maxConstitution: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min INT"
+                  value={filters.minIntelligence}
+                  onChange={(e) => setFilters({ ...filters, minIntelligence: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max INT"
+                  value={filters.maxIntelligence}
+                  onChange={(e) => setFilters({ ...filters, maxIntelligence: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min WIS"
+                  value={filters.minWisdom}
+                  onChange={(e) => setFilters({ ...filters, minWisdom: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max WIS"
+                  value={filters.maxWisdom}
+                  onChange={(e) => setFilters({ ...filters, maxWisdom: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Min CHA"
+                  value={filters.minCharisma}
+                  onChange={(e) => setFilters({ ...filters, minCharisma: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+                <input
+                  type="number"
+                  placeholder="Max CHA"
+                  value={filters.maxCharisma}
+                  onChange={(e) => setFilters({ ...filters, maxCharisma: e.target.value })}
+                  className="w-full p-2 border rounded-md"
+                />
+              </div>
+            </details>
+          </div>
+        </div>
+      )}
 
       {/* Items Grid */}
       <div style={{
@@ -487,7 +914,7 @@ export const InventoryItems = () => {
         gap: '20px',
         padding: '20px'
       }}>
-        {filteredItems.map((item) => (
+        {visibleItems.map((item) => (
           <div 
             key={item.id}
             style={{

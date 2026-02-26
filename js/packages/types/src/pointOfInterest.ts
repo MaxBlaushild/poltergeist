@@ -11,6 +11,7 @@ export interface PointOfInterest {
     lat: string;
     lng: string;
     imageURL: string;
+    thumbnailUrl?: string;
     imageGenerationStatus?: string;
     imageGenerationError?: string | null;
     description: string;

@@ -26,7 +26,7 @@ const outfitPromptTemplate = `
 	Apply 2–3 shading tones per area, with crisp, blocky edges.
 	Keep the result clean, simple, and non-photorealistic.
 	Avoid gradients, text, and logos.
-	Render the person from the reference selfie as a shoulders-up character portrait wearing %s.
+	Render a shoulders-up character portrait of the person described below wearing %s.
 	Clean, light background.`
 
 type GenerateOutfitProfilePictureProcessor struct {
@@ -73,37 +73,37 @@ func (p *GenerateOutfitProfilePictureProcessor) ProcessTask(ctx context.Context,
 	}
 
 	selfieUrl := p.resolveSelfieURL(payload.SelfieUrl)
-	hairDescriptor := p.inferHairDescriptor(ctx, selfieUrl)
+	appearanceDescriptor := p.inferAppearanceDescriptor(ctx, selfieUrl)
 	prompt := fmt.Sprintf(outfitPromptTemplate, outfitName)
-	if hairDescriptor != "" {
-		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly. Hair: %s.", prompt, hairDescriptor)
+	if appearanceDescriptor != "" {
+		prompt = fmt.Sprintf("%s\nMatch the person's hair and key facial features exactly. Description: %s.", prompt, appearanceDescriptor)
 	} else {
 		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly; if bald or shaved, keep them bald (no hair).", prompt)
 	}
-	editRequest := deep_priest.EditImageRequest{
-		Prompt:   prompt,
-		ImageUrl: selfieUrl,
-		Model:    "dall-e-2",
-		N:        1,
-		Size:     genSize,
+	genRequest := deep_priest.GenerateImageRequest{
+		Prompt: prompt,
+		Model:  "gpt-image-1",
+		N:      1,
+		Size:   genSize,
 	}
-	deep_priest.ApplyEditImageDefaults(&editRequest)
-	// The edit endpoint does not accept these fields; ensure they're unset.
-	editRequest.Quality = ""
-	editRequest.ResponseFormat = ""
-	resp, err := p.deepPriestClient.EditImage(editRequest)
+	deep_priest.ApplyGenerateImageDefaults(&genRequest)
+	resp, err := p.deepPriestClient.GenerateImage(genRequest)
 	if err != nil {
-		log.Printf("Failed to edit outfit image, falling back to generation: %v", err)
-		genRequest := deep_priest.GenerateImageRequest{
-			Prompt: prompt,
-			Model:  "gpt-image-1",
-			N:      1,
-			Size:   genSize,
+		log.Printf("Failed to generate outfit image, falling back to edit: %v", err)
+		editRequest := deep_priest.EditImageRequest{
+			Prompt:   prompt,
+			ImageUrl: selfieUrl,
+			Model:    "dall-e-2",
+			N:        1,
+			Size:     genSize,
 		}
-		deep_priest.ApplyGenerateImageDefaults(&genRequest)
-		resp, err = p.deepPriestClient.GenerateImage(genRequest)
+		deep_priest.ApplyEditImageDefaults(&editRequest)
+		// The edit endpoint does not accept these fields; ensure they're unset.
+		editRequest.Quality = ""
+		editRequest.ResponseFormat = ""
+		resp, err = p.deepPriestClient.EditImage(editRequest)
 		if err != nil {
-			log.Printf("Fallback generation failed: %v", err)
+			log.Printf("Fallback edit failed: %v", err)
 			return p.markOutfitFailed(ctx, gen.ID, err)
 		}
 	}
@@ -166,12 +166,12 @@ func (p *GenerateOutfitProfilePictureProcessor) markOutfitFailed(ctx context.Con
 	return err
 }
 
-func (p *GenerateOutfitProfilePictureProcessor) inferHairDescriptor(ctx context.Context, selfieURL string) string {
+func (p *GenerateOutfitProfilePictureProcessor) inferAppearanceDescriptor(ctx context.Context, selfieURL string) string {
 	if strings.TrimSpace(selfieURL) == "" {
 		return ""
 	}
 	answer, err := p.deepPriestClient.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
-		Question: "Describe the person's hair in a short phrase (e.g., bald, shaved head, short brown hair, long curly hair). If no hair, say bald.",
+		Question: "Describe the person's hair and key facial features in a short sentence (hair length, color, texture; facial hair; face shape; eyes; glasses). If no hair, say bald.",
 		Image:    selfieURL,
 	})
 	if err != nil || answer == nil {

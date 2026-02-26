@@ -289,7 +289,11 @@ Create %d main quests. Each main quest must:
 - Each node must include a short title, 1-2 sentence story beat, a placeId, and a challengeQuestion
 - Challenge questions must be real-world, single-player activities at the POI
   - Ignore fantasy flavor; base the challenge only on the real-world POI type
-  - Safe, legal, respectful, and no purchase required; no restricted areas or staff interaction
+  - Safe, legal, respectful, and no restricted areas or staff interaction
+  - Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both
+  - Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation tied to the main activity at the POI
+    (bookstore: pick a book and photograph it; comedy club: photograph the stage/lineup during a set; cafe: photograph a drink or menu choice)
+  - If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase
   - Enjoyable on-site activity; answerable without external research
 - Include a challengeDifficulty integer between 25 and 50 (inclusive) for each node
 - Include a rewardItem with a short name, 1-2 sentence description, and rarityTier (Common, Uncommon, Epic, Mythic)
@@ -331,6 +335,8 @@ Points of interest (use only these placeIds):
 %s
 
 Create %d characters who belong in this district. Each character must be associated with one POI from the list.
+Ensure each character description includes distinct fantasy styling (attire, archetype, or magical motif) that reflects the district's fantasy branding.
+Avoid modern streetwear, real-world brands, or purely contemporary descriptions.
 Respond ONLY as JSON:
 {
   "characters": [
@@ -376,8 +382,11 @@ Create %d quests that fit the district flavor. Each quest must:
 - Include 3-6 short acceptance dialogue lines
 - Include a short challengeQuestion for the player that can be completed by a single person on-site at the POI
   - Ignore fantasy flavor; base the challenge only on the real-world POI type
-  - Safe, legal, respectful, and no purchase required; no restricted areas or staff interaction
-  - Make it an enjoyable on-site activity (coffee shop: write a 4-line poem or sketch the mug; park: sketch a tree or count benches; museum: note a color motif; bookstore: find a title with a specific word)
+  - Safe, legal, respectful, and no restricted areas or staff interaction
+  - Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both
+  - Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation tied to the main activity at the POI
+    (bookstore: pick a book and photograph it; comedy club: photograph the stage/lineup during a set; cafe: photograph a drink or menu choice)
+  - If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase
   - Answerable on-site without external research
 - Include a challengeDifficulty integer between 25 and 50 (inclusive)
 - Include a rewardItem with a short name, 1-2 sentence description, and rarityTier (Common, Uncommon, Epic, Mythic)
@@ -448,13 +457,8 @@ func (p *SeedZoneDraftProcessor) generateCharacters(
 		count,
 	)
 
-	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	response, err := p.requestCharacterDrafts(ctx, prompt, 2)
 	if err != nil {
-		return nil, err
-	}
-
-	var response characterGenerationResponse
-	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
 		return nil, err
 	}
 
@@ -487,6 +491,52 @@ func (p *SeedZoneDraftProcessor) generateCharacters(
 	}
 
 	return characters, nil
+}
+
+func (p *SeedZoneDraftProcessor) requestCharacterDrafts(
+	ctx context.Context,
+	prompt string,
+	attempts int,
+) (characterGenerationResponse, error) {
+	var response characterGenerationResponse
+	requestPrompt := prompt
+	for attempt := 1; attempt <= attempts; attempt++ {
+		answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: requestPrompt})
+		if err != nil {
+			return response, err
+		}
+		parsed, parseErr := parseCharacterGenerationResponse(answer.Answer)
+		if parseErr == nil {
+			return parsed, nil
+		}
+		if attempt == attempts {
+			return response, parseErr
+		}
+		requestPrompt = prompt + "\n\nReturn ONLY valid JSON with all braces/quotes closed. No markdown, no commentary."
+	}
+	return response, fmt.Errorf("failed to parse character response")
+}
+
+func parseCharacterGenerationResponse(raw string) (characterGenerationResponse, error) {
+	var response characterGenerationResponse
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return response, fmt.Errorf("empty character response")
+	}
+	candidate := strings.TrimSpace(extractJSON(trimmed))
+	if candidate == "" {
+		candidate = trimmed
+	}
+	if err := json.Unmarshal([]byte(candidate), &response); err == nil {
+		return response, nil
+	} else {
+		snippet := truncate(candidate, 400)
+		if snippet == "" {
+			snippet = truncate(trimmed, 400)
+		}
+		log.Printf("Character generation JSON parse failed: %v. Snippet: %s", err, snippet)
+		return response, fmt.Errorf("character generation JSON parse failed: %w (snippet: %s)", err, snippet)
+	}
 }
 
 func (p *SeedZoneDraftProcessor) generateQuests(
@@ -582,6 +632,7 @@ func (p *SeedZoneDraftProcessor) generateQuests(
 		if challengeQuestion == "" {
 			challengeQuestion = fallbackSeedQuestChallengeQuestion(placeIDs[placeID])
 		}
+		challengeQuestion = normalizeSeedChallengeQuestion(challengeQuestion, placeIDs[placeID])
 		challengeDifficulty := 0
 		if draft.ChallengeDifficulty != nil {
 			challengeDifficulty = *draft.ChallengeDifficulty
@@ -743,6 +794,8 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 		desired = 3
 	}
 
+	requiredTags = normalizeRequiredPlaceTags(requiredTags)
+
 	radius := placeSearchRadius(zone)
 	if radius <= 0 {
 		return []googlemaps.Place{}, nil
@@ -751,7 +804,11 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 	seen := make(map[string]googlemaps.Place)
 	seenFallback := make(map[string]googlemaps.Place)
 	maxAttempts := 6
-	for attempt := 0; attempt < maxAttempts && len(seen) < desired; attempt++ {
+	if len(requiredTags) > 0 {
+		maxAttempts = 12
+	}
+	missingTags := requiredTags
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		point := zone.GetRandomPoint()
 		if point.X() == 0 && point.Y() == 0 {
 			log.Printf("FindTopPlaces: zone %s (%s) returned empty random point on attempt %d", zone.ID, zone.Name, attempt+1)
@@ -809,12 +866,13 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 			if _, ok := seenFallback[place.ID]; !ok {
 				seenFallback[place.ID] = place
 			}
+			matchesRequired := placeMatchesAnyTag(place, requiredTags)
 			if llmUsed {
-				if _, ok := llmEnjoyable[place.ID]; !ok {
+				if _, ok := llmEnjoyable[place.ID]; !ok && !matchesRequired {
 					continue
 				}
 			} else {
-				if !isEnjoyablePlace(place) {
+				if !isEnjoyablePlace(place) && !matchesRequired {
 					continue
 				}
 			}
@@ -832,6 +890,16 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 			len(seen),
 			len(seenFallback),
 		)
+		if len(requiredTags) > 0 {
+			missingTags = missingRequiredPlaceTags(requiredTags, seenFallback)
+			if len(missingTags) > 0 {
+				log.Printf("FindTopPlaces: zone %s (%s) missing required tags=%v after attempt %d", zone.ID, zone.Name, missingTags, attempt+1)
+			}
+		}
+
+		if len(seen) >= desired && len(missingTags) == 0 {
+			break
+		}
 	}
 
 	results := make([]googlemaps.Place, 0, len(seen))
@@ -864,6 +932,15 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 	results = preferTopSpots(results)
 	results = diversifyPlaces(results, count)
 
+	requiredSelections := map[string]googlemaps.Place{}
+	if len(requiredTags) > 0 {
+		var missing []string
+		requiredSelections, missing = p.searchForRequiredTags(ctx, zone, requiredTags, radius, seen, seenFallback)
+		if len(missing) > 0 {
+			log.Printf("TopSpots: missing required tags after targeted search=%v", missing)
+		}
+	}
+
 	candidatePool := make([]googlemaps.Place, 0, len(seenFallback))
 	for _, place := range seenFallback {
 		candidatePool = append(candidatePool, place)
@@ -873,11 +950,7 @@ func (p *SeedZoneDraftProcessor) findTopPlacesInZone(ctx context.Context, zone m
 	}
 
 	if len(requiredTags) > 0 {
-		requiredResults, err := applyRequiredPlaceTags(requiredTags, candidatePool, results, count)
-		if err != nil {
-			return nil, err
-		}
-		results = requiredResults
+		results = ensureRequiredSelections(requiredTags, requiredSelections, results, candidatePool, count)
 	}
 
 	if len(results) > count {
@@ -930,6 +1003,7 @@ func normalizeMainQuestNodes(
 		if challenge == "" {
 			challenge = fallbackSeedQuestChallengeQuestion(placeByID[placeID])
 		}
+		challenge = normalizeSeedChallengeQuestion(challenge, placeByID[placeID])
 		difficulty := 0
 		if node.ChallengeDifficulty != nil {
 			difficulty = *node.ChallengeDifficulty
@@ -1003,7 +1077,7 @@ func buildFallbackMainQuestNodes(
 			Title:               fmt.Sprintf("Chapter %d", i+1),
 			Story:               withFallbackStory("", i),
 			PlaceID:             placeID,
-			ChallengeQuestion:   fallbackSeedQuestChallengeQuestion(placeByID[placeID]),
+			ChallengeQuestion:   normalizeSeedChallengeQuestion(fallbackSeedQuestChallengeQuestion(placeByID[placeID]), placeByID[placeID]),
 			ChallengeDifficulty: randomQuestDifficulty(),
 		})
 	}
@@ -1161,7 +1235,7 @@ func applyRequiredPlaceTags(
 	}
 
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("missing required place tags: %s", strings.Join(missing, ", "))
+		log.Printf("TopSpots: missing required place tags=%v; continuing without them", missing)
 	}
 
 	result := make([]googlemaps.Place, 0, minInt(desired, len(candidatePool)))
@@ -1204,6 +1278,246 @@ func applyRequiredPlaceTags(
 	return result, nil
 }
 
+func ensureRequiredSelections(
+	requiredTags []string,
+	selections map[string]googlemaps.Place,
+	base []googlemaps.Place,
+	candidatePool []googlemaps.Place,
+	desired int,
+) []googlemaps.Place {
+	if desired <= 0 {
+		return base
+	}
+
+	result := make([]googlemaps.Place, 0, minInt(desired, len(candidatePool)))
+	used := make(map[string]struct{})
+
+	for _, tag := range requiredTags {
+		place, ok := selections[tag]
+		if !ok {
+			continue
+		}
+		if place.ID == "" {
+			continue
+		}
+		if _, ok := used[place.ID]; ok {
+			continue
+		}
+		used[place.ID] = struct{}{}
+		result = append(result, place)
+	}
+
+	for _, place := range base {
+		if len(result) >= desired {
+			break
+		}
+		if place.ID == "" {
+			continue
+		}
+		if _, ok := used[place.ID]; ok {
+			continue
+		}
+		used[place.ID] = struct{}{}
+		result = append(result, place)
+	}
+
+	if len(result) < desired {
+		sort.Slice(candidatePool, func(i, j int) bool {
+			return scorePlace(candidatePool[i]) > scorePlace(candidatePool[j])
+		})
+		for _, place := range candidatePool {
+			if len(result) >= desired {
+				break
+			}
+			if place.ID == "" {
+				continue
+			}
+			if _, ok := used[place.ID]; ok {
+				continue
+			}
+			used[place.ID] = struct{}{}
+			result = append(result, place)
+		}
+	}
+
+	return result
+}
+
+func missingRequiredPlaceTags(requiredTags []string, pool map[string]googlemaps.Place) []string {
+	if len(requiredTags) == 0 {
+		return nil
+	}
+	if len(pool) == 0 {
+		return requiredTags
+	}
+
+	places := make([]googlemaps.Place, 0, len(pool))
+	for _, place := range pool {
+		places = append(places, place)
+	}
+
+	missing := make([]string, 0)
+	for _, tag := range requiredTags {
+		found := false
+		for _, place := range places {
+			if placeMatchesTag(place, tag) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, tag)
+		}
+	}
+	return missing
+}
+
+func (p *SeedZoneDraftProcessor) searchForRequiredTags(
+	ctx context.Context,
+	zone models.Zone,
+	tags []string,
+	radius float64,
+	seen map[string]googlemaps.Place,
+	seenFallback map[string]googlemaps.Place,
+) (map[string]googlemaps.Place, []string) {
+	selections := make(map[string]googlemaps.Place)
+	missing := make([]string, 0)
+
+	for _, tag := range tags {
+		types := requiredTagPlaceTypes(tag)
+		if len(types) == 0 {
+			missing = append(missing, tag)
+			continue
+		}
+
+		bestScore := -1.0
+		found := false
+		var best googlemaps.Place
+
+		for attempt := 0; attempt < 3; attempt++ {
+			point := zone.GetRandomPoint()
+			if point.X() == 0 && point.Y() == 0 {
+				continue
+			}
+			places, err := p.googlemapsClient.FindPlaces(googlemaps.PlaceQuery{
+				Lat:            point.Y(),
+				Long:           point.X(),
+				Radius:         radius,
+				MaxResultCount: 20,
+				IncludedTypes:  types,
+				RankPreference: googlemaps.RankPreferencePopularity,
+			})
+			if err != nil {
+				log.Printf("FindTopPlaces: zone %s (%s) required tag %s search failed: %v", zone.ID, zone.Name, tag, err)
+				continue
+			}
+			for _, place := range places {
+				if place.ID == "" {
+					continue
+				}
+				if !zone.IsPointInBoundary(place.Location.Latitude, place.Location.Longitude) {
+					continue
+				}
+				if _, ok := seenFallback[place.ID]; !ok {
+					seenFallback[place.ID] = place
+				}
+				score := scorePlace(place)
+				if !placeMatchesTag(place, tag) {
+					continue
+				}
+				if !found || score > bestScore {
+					best = place
+					bestScore = score
+					found = true
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			missing = append(missing, tag)
+			continue
+		}
+
+		selections[tag] = best
+		if _, ok := seenFallback[best.ID]; !ok {
+			seenFallback[best.ID] = best
+		}
+		if _, ok := seen[best.ID]; !ok {
+			seen[best.ID] = best
+		}
+		log.Printf("FindTopPlaces: zone %s (%s) required tag %s selected %s", zone.ID, zone.Name, tag, best.DisplayName.Text)
+	}
+
+	return selections, missing
+}
+
+func requiredTagPlaceTypes(tag string) []googlemaps.PlaceType {
+	switch strings.ToLower(strings.TrimSpace(tag)) {
+	case "coffee_shop", "cafe", "coffee":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeCoffeeShop,
+			googlemaps.TypeCafe,
+			googlemaps.TypeTeaHouse,
+			googlemaps.TypeBakery,
+		}
+	case "park", "garden", "playground", "trail", "hiking", "natural_feature":
+		return []googlemaps.PlaceType{
+			googlemaps.TypePark,
+			googlemaps.TypeGarden,
+			googlemaps.TypePlayground,
+			googlemaps.TypeDogPark,
+			googlemaps.TypeHikingArea,
+			googlemaps.TypePicnicGround,
+			googlemaps.TypeBotanicalGarden,
+		}
+	case "museum", "gallery", "art_gallery":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeMuseum,
+			googlemaps.TypeArtGallery,
+			googlemaps.TypeTouristAttraction,
+		}
+	case "library", "book_store", "bookstore":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeLibrary,
+			googlemaps.TypeBookStore,
+		}
+	case "market", "shopping", "store", "shopping_mall":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeMarket,
+			googlemaps.TypeShoppingMall,
+			googlemaps.TypeStore,
+			googlemaps.TypeSupermarket,
+			googlemaps.TypeClothingStore,
+		}
+	case "scenic", "plaza", "square", "beach", "marina":
+		return []googlemaps.PlaceType{
+			googlemaps.TypePlaza,
+			googlemaps.TypeBeach,
+			googlemaps.TypeMarina,
+		}
+	case "theater", "cinema", "movie_theater":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeMovieTheater,
+			googlemaps.TypePerformingArtsTheater,
+		}
+	case "entertainment", "music_venue":
+		return []googlemaps.PlaceType{
+			googlemaps.TypeConcertHall,
+			googlemaps.TypeAmphitheatre,
+			googlemaps.TypeNightClub,
+			googlemaps.TypeStadium,
+			googlemaps.TypeAmusementPark,
+			googlemaps.TypeZoo,
+			googlemaps.TypeAquarium,
+		}
+	default:
+		return nil
+	}
+}
+
 func bestPlaceForTag(tag string, places []googlemaps.Place, used map[string]struct{}) (googlemaps.Place, bool) {
 	var best googlemaps.Place
 	found := false
@@ -1234,24 +1548,71 @@ func placeMatchesTag(place googlemaps.Place, tag string) bool {
 		return false
 	}
 
+	expanded := expandRequiredTagAliases(needle)
+
 	types := normalizePlaceTypes(place)
 	for _, t := range types {
-		if t == needle || strings.Contains(t, needle) {
-			return true
+		for _, alias := range expanded {
+			if t == alias || strings.Contains(t, alias) {
+				return true
+			}
 		}
 	}
 
 	display := strings.ToLower(strings.TrimSpace(place.PrimaryTypeDisplayName.Text))
-	if display != "" && strings.Contains(display, needle) {
-		return true
+	if display != "" {
+		for _, alias := range expanded {
+			if strings.Contains(display, alias) {
+				return true
+			}
+		}
 	}
 
 	name := strings.ToLower(strings.TrimSpace(place.DisplayName.Text))
-	if name != "" && strings.Contains(name, needle) {
-		return true
+	if name != "" {
+		for _, alias := range expanded {
+			if strings.Contains(name, alias) {
+				return true
+			}
+		}
 	}
 
 	return false
+}
+
+func placeMatchesAnyTag(place googlemaps.Place, tags []string) bool {
+	if len(tags) == 0 {
+		return false
+	}
+	for _, tag := range tags {
+		if placeMatchesTag(place, tag) {
+			return true
+		}
+	}
+	return false
+}
+
+func expandRequiredTagAliases(tag string) []string {
+	aliases := map[string][]string{
+		"coffee_shop":   {"coffee_shop", "cafe", "coffee", "bakery", "espresso", "tea"},
+		"cafe":          {"cafe", "coffee_shop", "coffee", "bakery", "espresso", "tea"},
+		"park":          {"park", "garden", "playground", "trail", "hiking", "natural_feature"},
+		"museum":        {"museum", "gallery", "art_gallery", "exhibit"},
+		"gallery":       {"gallery", "art_gallery", "museum"},
+		"library":       {"library", "book_store", "bookstore", "book"},
+		"book_store":    {"book_store", "bookstore", "library", "book"},
+		"market":        {"market", "shopping_mall", "store", "shopping", "supermarket"},
+		"shopping":      {"shopping_mall", "store", "market", "shopping", "clothing_store"},
+		"scenic":        {"plaza", "square", "bridge", "beach", "marina", "harbor", "view"},
+		"theater":       {"theater", "movie_theater", "cinema"},
+		"entertainment": {"theater", "movie_theater", "cinema", "music", "stadium", "amusement", "zoo", "aquarium"},
+	}
+
+	if expanded, ok := aliases[tag]; ok {
+		return expanded
+	}
+
+	return []string{tag}
 }
 
 func diversifyPlaces(places []googlemaps.Place, desired int) []googlemaps.Place {
@@ -1786,7 +2147,54 @@ func fallbackRewardItemDescription(place googlemaps.Place, questName string) str
 	return "A keepsake earned by completing a local favor."
 }
 
-func buildSeedHeuristicChallengeQuestion(name string, types []string) string {
+func normalizeSeedChallengeQuestion(question string, place googlemaps.Place) string {
+	trimmed := strings.TrimSpace(question)
+	name := strings.TrimSpace(place.DisplayName.Text)
+	if name == "" {
+		name = "this location"
+	}
+	types := normalizePlaceTypes(place)
+
+	if trimmed == "" {
+		return buildSeedPhotoProofQuestion(name, types)
+	}
+
+	lower := strings.ToLower(trimmed)
+	hasPhoto := hasAnyKeyword(lower, "photo", "picture", "snapshot", "selfie", "photograph")
+	hasText := hasAnyKeyword(lower, "write", "describe", "list", "note", "count", "identify", "observe", "explain", "summarize", "record", "tell")
+
+	if requiresProofOnly(lower) || (hasPhoto && hasText) {
+		return buildSeedPhotoProofQuestion(name, types)
+	}
+
+	if hasPhoto || hasAnyKeyword(lower, "sketch", "draw") {
+		if hasAnyKeyword(lower, "sketch", "draw") && !hasPhoto {
+			return fmt.Sprintf("Sketch something you notice at %s and take a photo of your sketch.", name)
+		}
+		if strings.HasPrefix(lower, "take") || strings.HasPrefix(lower, "photograph") || strings.HasPrefix(lower, "photo") {
+			if needsParticipationOverride(lower) {
+				return buildSeedParticipationPhotoQuestion(name, types)
+			}
+			return trimmed
+		}
+		return buildSeedPhotoProofQuestion(name, types)
+	}
+
+	if hasText {
+		if needsParticipationOverride(lower) {
+			return buildSeedParticipationPhotoQuestion(name, types)
+		}
+		return ensureTextOnlyQuestion(trimmed)
+	}
+
+	return buildSeedPhotoProofQuestion(name, types)
+}
+
+func buildSeedPhotoProofQuestion(name string, types []string) string {
+	return buildSeedParticipationPhotoQuestion(name, types)
+}
+
+func buildSeedParticipationPhotoQuestion(name string, types []string) string {
 	lowerName := strings.ToLower(strings.TrimSpace(name))
 	lowerTypes := make([]string, 0, len(types))
 	for _, t := range types {
@@ -1808,105 +2216,100 @@ func buildSeedHeuristicChallengeQuestion(name string, types []string) string {
 	}
 
 	switch {
-	case hasType("cafe", "coffee", "coffee_shop", "bakery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
-		return fmt.Sprintf("Write a 4-line poem inspired by the smells or sounds near %s, then photograph the page with the storefront in view.", name)
-	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
-		return fmt.Sprintf("Sketch one plant or tree you can see at %s and take a photo of the sketch with the area in view.", name)
-	case hasType("playground") || strings.Contains(lowerName, "playground"):
-		return fmt.Sprintf("Count the number of swings or slides you can see at %s and photograph them.", name)
-	case hasType("trail", "hiking_trail", "walking_trail") || strings.Contains(lowerName, "trail"):
-		return fmt.Sprintf("Find a trail marker or distance sign at %s and photograph it.", name)
-	case hasType("library") || strings.Contains(lowerName, "library"):
-		return fmt.Sprintf("Find a book title on a display or shelf at %s that includes a color word, and photograph the title.", name)
 	case hasType("book_store", "bookstore") || strings.Contains(lowerName, "book"):
-		return fmt.Sprintf("Find a book cover at %s with a creature on it and photograph the cover (no purchase needed).", name)
+		return fmt.Sprintf("Pick a book at %s, open to a page that grabs you, and photograph the open book.", name)
+	case hasType("library") || strings.Contains(lowerName, "library"):
+		return fmt.Sprintf("Find a book or display at %s that interests you and photograph the cover or display.", name)
+	case hasType("comedy_club") || strings.Contains(lowerName, "comedy"):
+		return fmt.Sprintf("Photograph the stage or lineup board for a comedy set at %s.", name)
+	case hasType("movie_theater", "cinema") || strings.Contains(lowerName, "cinema") || strings.Contains(lowerName, "theater"):
+		return fmt.Sprintf("Photograph the showtime board or poster for the film you're seeing at %s.", name)
+	case hasType("performing_arts_theater", "theater") || strings.Contains(lowerName, "theatre"):
+		return fmt.Sprintf("Photograph the program, poster, or stage entrance for the performance at %s.", name)
+	case hasType("live_music_venue", "music_venue", "concert_hall", "night_club") || strings.Contains(lowerName, "music"):
+		return fmt.Sprintf("Photograph the stage or lineup board for the performance at %s.", name)
 	case hasType("museum", "art_gallery", "gallery") || strings.Contains(lowerName, "museum") || strings.Contains(lowerName, "gallery"):
-		return fmt.Sprintf("From outside %s, note two materials used in the building facade and photograph the entrance.", name)
-	case hasType("amusement_park") || strings.Contains(lowerName, "amusement"):
-		return fmt.Sprintf("Find a ride name or attraction map near %s and photograph it.", name)
-	case hasType("aquarium", "zoo") || strings.Contains(lowerName, "aquarium") || strings.Contains(lowerName, "zoo"):
-		return fmt.Sprintf("From outside %s, find a sign or poster featuring an animal and photograph it.", name)
-	case hasType("bowling_alley") || strings.Contains(lowerName, "bowling"):
-		return fmt.Sprintf("Photograph the lane count or main sign at %s from the lobby or entrance.", name)
-	case hasType("casino") || strings.Contains(lowerName, "casino"):
-		return fmt.Sprintf("Find the main entrance sign at %s and photograph it from outside.", name)
-	case hasType("tourist_attraction", "point_of_interest", "landmark", "monument", "historic_site") || strings.Contains(lowerName, "monument"):
-		return fmt.Sprintf("Find a plaque, marker, or date on or near %s and photograph it.", name)
-	case hasType("cemetery") || strings.Contains(lowerName, "cemetery"):
-		return fmt.Sprintf("From a respectful distance at %s, photograph a sign or gate that shows the cemetery name.", name)
-	case hasType("plaza", "square") || strings.Contains(lowerName, "plaza") || strings.Contains(lowerName, "square"):
-		return fmt.Sprintf("Count the number of visible benches or seating areas at %s and photograph the space.", name)
-	case hasType("bridge") || strings.Contains(lowerName, "bridge"):
-		return fmt.Sprintf("Count the number of arches or spans you can see on %s and photograph the structure.", name)
-	case hasType("church", "place_of_worship", "synagogue", "mosque") || strings.Contains(lowerName, "church"):
-		return fmt.Sprintf("Count the visible arches or windows on the exterior of %s and photograph the building.", name)
-	case hasType("school", "primary_school", "secondary_school", "university", "college") || strings.Contains(lowerName, "school") || strings.Contains(lowerName, "university"):
-		return fmt.Sprintf("Find the school name or crest on a sign near %s and photograph it from outside.", name)
-	case hasType("movie_theater", "cinema", "theater", "performing_arts_theater") || strings.Contains(lowerName, "theater") || strings.Contains(lowerName, "cinema"):
-		return fmt.Sprintf("Find a poster or marquee at %s and photograph the title of a show or film.", name)
-	case hasType("music_venue", "night_club") || strings.Contains(lowerName, "venue"):
-		return fmt.Sprintf("From outside %s, photograph the main sign and describe the vibe in one sentence.", name)
-	case hasType("barber", "hair_care", "beauty_salon", "spa") || strings.Contains(lowerName, "salon") || strings.Contains(lowerName, "spa"):
-		return fmt.Sprintf("Photograph the main sign at %s and describe the storefront style in one sentence.", name)
-	case hasType("gym", "fitness") || strings.Contains(lowerName, "gym") || strings.Contains(lowerName, "fitness"):
-		return fmt.Sprintf("Count the number of different exercise stations or windows you can see at %s from outside and photograph the front.", name)
+		return fmt.Sprintf("Find an exhibit label or artwork title at %s and photograph it.", name)
+	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
+		return fmt.Sprintf("Photograph a spot you spent time at %s (bench, trail marker, or play area).", name)
+	case hasType("cafe", "coffee", "coffee_shop", "bakery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
+		return fmt.Sprintf("Photograph the drink or pastry you chose at %s (menu board or item).", name)
 	case hasType("restaurant", "bar", "brewery", "meal_takeaway", "meal_delivery") || strings.Contains(lowerName, "restaurant") || strings.Contains(lowerName, "bar"):
-		return fmt.Sprintf("Take a photo of the main sign at %s and write a two-sentence review of the vibe from outside.", name)
+		return fmt.Sprintf("Photograph the meal or drink you chose at %s (menu board or item).", name)
 	case hasType("ice_cream_shop", "dessert") || strings.Contains(lowerName, "ice cream") || strings.Contains(lowerName, "gelato"):
-		return fmt.Sprintf("Find a flavor board or dessert sign at %s and photograph it.", name)
-	case hasType("store", "shopping_mall", "supermarket", "market") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):
-		return fmt.Sprintf("Find a window display at %s and describe the dominant color theme in one sentence, then photograph it.", name)
-	case hasType("clothing_store", "shoe_store", "department_store") || strings.Contains(lowerName, "boutique"):
-		return fmt.Sprintf("Find a window display at %s featuring an outfit and photograph it.", name)
-	case hasType("electronics_store") || strings.Contains(lowerName, "electronics"):
-		return fmt.Sprintf("Photograph the main sign at %s and note one product category highlighted in the window.", name)
-	case hasType("furniture_store", "home_goods_store") || strings.Contains(lowerName, "furniture"):
-		return fmt.Sprintf("Photograph a window display at %s and describe the texture of the featured item.", name)
-	case hasType("hardware_store") || strings.Contains(lowerName, "hardware"):
-		return fmt.Sprintf("Find the tool or materials signage at %s and photograph it.", name)
-	case hasType("pet_store", "veterinary_care") || strings.Contains(lowerName, "pet"):
-		return fmt.Sprintf("Photograph the pet-related sign at %s and note one animal featured.", name)
-	case hasType("florist") || strings.Contains(lowerName, "florist"):
-		return fmt.Sprintf("Find a flower display at %s and photograph the most vibrant color you see.", name)
-	case hasType("hotel", "lodging") || strings.Contains(lowerName, "hotel"):
-		return fmt.Sprintf("Find the hotel name on the exterior of %s and photograph it from the sidewalk.", name)
-	case hasType("pharmacy", "drugstore") || strings.Contains(lowerName, "pharmacy"):
-		return fmt.Sprintf("Photograph the main pharmacy sign at %s and note one color used in the branding.", name)
-	case hasType("bank", "atm") || strings.Contains(lowerName, "bank"):
-		return fmt.Sprintf("Find the posted hours or services signage at %s and photograph it.", name)
-	case hasType("courthouse", "city_hall", "town_hall") || strings.Contains(lowerName, "city hall"):
-		return fmt.Sprintf("Photograph the main civic building sign at %s and note the year if displayed.", name)
-	case hasType("police", "fire_station") || strings.Contains(lowerName, "police") || strings.Contains(lowerName, "fire"):
-		return fmt.Sprintf("From outside %s, photograph the station sign or emblem.", name)
-	case hasType("hospital", "doctor", "dentist", "health", "clinic") || strings.Contains(lowerName, "hospital") || strings.Contains(lowerName, "clinic"):
-		return fmt.Sprintf("Find the clinic or hospital name at %s and photograph it from outside.", name)
-	case hasType("post_office") || strings.Contains(lowerName, "post office"):
-		return fmt.Sprintf("Photograph the postal logo or hours sign outside %s.", name)
-	case hasType("gas_station") || strings.Contains(lowerName, "gas"):
-		return fmt.Sprintf("From outside %s, count the number of fuel pumps you can see and photograph the station.", name)
-	case hasType("car_wash") || strings.Contains(lowerName, "car wash"):
-		return fmt.Sprintf("Find the car wash entrance sign at %s and photograph it.", name)
-	case hasType("car_repair") || strings.Contains(lowerName, "auto") || strings.Contains(lowerName, "mechanic"):
-		return fmt.Sprintf("Photograph the service sign at %s and note one service offered.", name)
-	case hasType("laundry", "dry_cleaner") || strings.Contains(lowerName, "laundry") || strings.Contains(lowerName, "cleaner"):
-		return fmt.Sprintf("Find the posted hours at %s and photograph them.", name)
-	case hasType("parking") || strings.Contains(lowerName, "garage"):
-		return fmt.Sprintf("Find the maximum height or rate sign at %s and photograph it.", name)
-	case hasType("stadium", "sports_complex", "gym") || strings.Contains(lowerName, "stadium") || strings.Contains(lowerName, "gym"):
-		return fmt.Sprintf("Count the visible entrances to %s and photograph the main gate.", name)
-	case hasType("train_station", "subway_station", "bus_station", "transit_station") || strings.Contains(lowerName, "station"):
-		return fmt.Sprintf("Find the line color or route number on signage at %s and photograph it.", name)
-	case hasType("bus_stop") || strings.Contains(lowerName, "bus stop"):
-		return fmt.Sprintf("Find the route number on the stop sign at %s and photograph it.", name)
-	case hasType("airport") || strings.Contains(lowerName, "airport"):
-		return fmt.Sprintf("Photograph the terminal or airport name sign at %s from outside.", name)
+		return fmt.Sprintf("Photograph the dessert or flavor board you picked at %s.", name)
+	case hasType("market", "store", "shopping_mall", "supermarket", "clothing_store", "shoe_store", "department_store") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):
+		return fmt.Sprintf("Pick an item or display at %s that caught your eye and photograph it.", name)
+	case hasType("amusement_park") || strings.Contains(lowerName, "amusement"):
+		return fmt.Sprintf("Photograph the ride or attraction sign you visited at %s.", name)
+	case hasType("aquarium", "zoo") || strings.Contains(lowerName, "aquarium") || strings.Contains(lowerName, "zoo"):
+		return fmt.Sprintf("Photograph an exhibit sign or viewing area you visited at %s.", name)
+	case hasType("gym", "fitness") || strings.Contains(lowerName, "gym") || strings.Contains(lowerName, "fitness"):
+		return fmt.Sprintf("Photograph the workout station or class board you used at %s.", name)
+	case hasType("tourist_attraction", "landmark", "monument", "historic_site") || strings.Contains(lowerName, "monument"):
+		return fmt.Sprintf("Photograph the main feature or plaque you stopped to read at %s.", name)
 	case hasType("beach", "lake", "river", "water", "harbor", "marina") || strings.Contains(lowerName, "beach") || strings.Contains(lowerName, "lake"):
-		return fmt.Sprintf("Collect three different textures you can see at %s (sand, stone, water, etc.) and photograph them together.", name)
-	case hasType("viewpoint", "scenic_lookout", "observation_deck") || strings.Contains(lowerName, "lookout") || strings.Contains(lowerName, "overlook"):
-		return fmt.Sprintf("Find the best viewpoint at %s and take a photo that shows the horizon.", name)
-	case hasType("hiking_area", "national_park") || strings.Contains(lowerName, "national park"):
-		return fmt.Sprintf("Photograph a trail map or rules sign at %s.", name)
+		return fmt.Sprintf("Photograph the shoreline or view where you spent time at %s.", name)
 	default:
-		return fmt.Sprintf("Take a clear photo of the main sign or entrance at %s.", name)
+		return fmt.Sprintf("Take a photo that shows you participating in the main activity at %s.", name)
 	}
+}
+
+func hasAnyKeyword(text string, keywords ...string) bool {
+	for _, keyword := range keywords {
+		if keyword == "" {
+			continue
+		}
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func requiresProofOnly(text string) bool {
+	return hasAnyKeyword(text,
+		"oldest", "first", "main ingredient", "ingredient", "recipe", "menu", "price", "cost",
+		"listen", "instrument", "song", "piece", "performance", "band", "taste", "flavor",
+		"review", "best", "favorite", "count", "number of",
+	)
+}
+
+func ensureTextOnlyQuestion(question string) string {
+	trimmed := strings.TrimSpace(question)
+	if trimmed == "" {
+		return "Write one sentence about something you notice here."
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "write") || strings.HasPrefix(lower, "describe") || strings.HasPrefix(lower, "list") || strings.HasPrefix(lower, "note") {
+		return trimmed
+	}
+	return fmt.Sprintf("Write 1-2 sentences: %s", trimmed)
+}
+
+func buildSeedHeuristicChallengeQuestion(name string, types []string) string {
+	return buildSeedParticipationPhotoQuestion(name, types)
+}
+
+func needsParticipationOverride(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	if !hasAnyKeyword(lower,
+		"sign", "storefront", "entrance", "exterior", "outside", "front",
+		"marquee", "poster", "window", "logo", "facade", "building",
+	) {
+		return false
+	}
+	if hasAnyKeyword(lower,
+		"menu", "drink", "meal", "food", "book", "read", "page", "shelf",
+		"stage", "show", "performance", "set", "lineup", "ticket", "program",
+		"exhibit", "gallery", "trail", "play", "game", "class", "workout",
+		"ride", "viewing", "display", "bench", "picnic", "market", "shop",
+		"browse", "order", "sip", "eat", "watch", "listen",
+	) {
+		return false
+	}
+	return true
 }

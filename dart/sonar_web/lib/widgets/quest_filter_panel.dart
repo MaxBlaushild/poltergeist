@@ -37,7 +37,7 @@ class _QuestFilterPanelState extends State<QuestFilterPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Show',
+              'Tags',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -48,29 +48,11 @@ class _QuestFilterPanelState extends State<QuestFilterPanel> {
               runSpacing: 8,
               children: [
                 FilterChip(
-                  label: const Text('Current Quest Points'),
-                  selected: filters.showCurrentQuestPoints,
-                  onSelected: (_) => filters.toggleCurrentQuestPoints(),
-                ),
-                FilterChip(
-                  label: const Text('Quest Available'),
-                  selected: filters.showQuestAvailablePoints,
-                  onSelected: (_) => filters.toggleQuestAvailablePoints(),
-                ),
-                FilterChip(
-                  label: const Text('Treasure Chests'),
-                  selected: filters.showTreasureChests,
-                  onSelected: (_) => filters.toggleTreasureChests(),
-                ),
-                FilterChip(
-                  label: const Text('Tags'),
+                  label: const Text('Enable tag filters'),
                   selected: filters.enableTagFilter,
                   onSelected: (_) => filters.toggleTagFilter(),
                 ),
-                if (filters.showCurrentQuestPoints ||
-                    filters.showQuestAvailablePoints ||
-                    filters.enableTagFilter ||
-                    tags.selectedTagIds.isNotEmpty)
+                if (filters.enableTagFilter || tags.selectedTagIds.isNotEmpty)
                   ActionChip(
                     label: const Text('Reset'),
                     onPressed: () {
@@ -81,13 +63,6 @@ class _QuestFilterPanelState extends State<QuestFilterPanel> {
               ],
             ),
             const SizedBox(height: 16),
-            Text(
-              'Tags',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -167,7 +142,7 @@ class _QuestFilterPanelState extends State<QuestFilterPanel> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Enable the Tags filter to apply tag selection.',
+                  'Enable tag filters to apply selections to quest points of interest.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),

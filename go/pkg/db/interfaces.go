@@ -335,6 +335,7 @@ type ZoneSeedJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneSeedJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ZoneSeedJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneSeedJob, error)
+	DeleteByID(ctx context.Context, id uuid.UUID) error
 }
 
 type InventoryItemHandle interface {
@@ -756,6 +757,7 @@ type CharacterActionHandle interface {
 	Create(ctx context.Context, characterAction *models.CharacterAction) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.CharacterAction, error)
 	FindAll(ctx context.Context) ([]*models.CharacterAction, error)
+	FindGiveQuestActions(ctx context.Context) ([]*models.CharacterAction, error)
 	FindByCharacterID(ctx context.Context, characterID uuid.UUID) ([]*models.CharacterAction, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.CharacterAction) error
 	Delete(ctx context.Context, id uuid.UUID) error

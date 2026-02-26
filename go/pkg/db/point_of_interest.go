@@ -70,8 +70,9 @@ func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error 
 
 func (c *pointOfInterestHandle) UpdateImageUrl(ctx context.Context, id uuid.UUID, imageUrl string) error {
 	return c.db.Model(&models.PointOfInterest{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"image_url":  imageUrl,
-		"updated_at": time.Now(),
+		"image_url":     imageUrl,
+		"thumbnail_url": "",
+		"updated_at":    time.Now(),
 	}).Error
 }
 

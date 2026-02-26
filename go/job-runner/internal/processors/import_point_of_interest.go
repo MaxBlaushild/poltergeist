@@ -3,23 +3,27 @@ package processors
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
 
 type ImportPointOfInterestProcessor struct {
 	dbClient       db.DbClient
 	locationSeeder locationseeder.Client
+	asyncClient    *asynq.Client
 }
 
-func NewImportPointOfInterestProcessor(dbClient db.DbClient, locationSeeder locationseeder.Client) *ImportPointOfInterestProcessor {
+func NewImportPointOfInterestProcessor(dbClient db.DbClient, locationSeeder locationseeder.Client, asyncClient *asynq.Client) *ImportPointOfInterestProcessor {
 	return &ImportPointOfInterestProcessor{
 		dbClient:       dbClient,
 		locationSeeder: locationSeeder,
+		asyncClient:    asyncClient,
 	}
 }
 
@@ -71,9 +75,27 @@ func (p *ImportPointOfInterestProcessor) ProcessTask(ctx context.Context, t *asy
 		return err
 	}
 
+	p.enqueueThumbnailTask(poi.ID, poi.ImageUrl)
+
 	importItem.Status = "completed"
 	importItem.PointOfInterestID = &poi.ID
 	importItem.ErrorMessage = nil
 	importItem.UpdatedAt = time.Now()
 	return p.dbClient.PointOfInterestImport().Update(ctx, importItem)
+}
+
+func (p *ImportPointOfInterestProcessor) enqueueThumbnailTask(poiID uuid.UUID, imageURL string) {
+	if p.asyncClient == nil || strings.TrimSpace(imageURL) == "" {
+		return
+	}
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType: jobs.ThumbnailEntityPointOfInterest,
+		EntityID:   poiID,
+		SourceUrl:  imageURL,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	_, _ = p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes))
 }

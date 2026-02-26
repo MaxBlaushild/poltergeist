@@ -1,5 +1,5 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, ShopInventoryItem } from '@poltergeist/types';
+import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, ShopInventoryItem, Quest } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -329,6 +329,8 @@ export const Characters = () => {
   // Dialogue management state
   const [selectedCharacterForDialogue, setSelectedCharacterForDialogue] = useState<Character | null>(null);
   const [characterActions, setCharacterActions] = useState<CharacterAction[]>([]);
+  const [questById, setQuestById] = useState<Record<string, Quest | null>>({});
+  const [questLookupLoading, setQuestLookupLoading] = useState(false);
   const [editingAction, setEditingAction] = useState<CharacterAction | null>(null);
   const [showDialogueEditor, setShowDialogueEditor] = useState(false);
   const [showDialogueManager, setShowDialogueManager] = useState(false);
@@ -452,9 +454,54 @@ export const Characters = () => {
     try {
       const response = await apiClient.get<CharacterAction[]>(`/sonar/characters/${characterId}/actions`);
       setCharacterActions(response);
+      return response;
     } catch (error) {
       console.error('Error fetching character actions:', error);
+      return [];
     }
+  };
+
+  const getActionQuestId = (action: CharacterAction) => {
+    const raw = action.metadata?.questId ?? action.metadata?.pointOfInterestGroupId;
+    if (!raw) return '';
+    return String(raw);
+  };
+
+  const ensureQuestLookups = async (actions: CharacterAction[]) => {
+    const questIds = actions
+      .filter((action) => action.actionType === 'giveQuest')
+      .map(getActionQuestId)
+      .filter((id): id is string => Boolean(id));
+
+    if (questIds.length === 0) {
+      return;
+    }
+
+    const uniqueQuestIds = Array.from(new Set(questIds));
+    const missingQuestIds = uniqueQuestIds.filter((id) => !(id in questById));
+
+    if (missingQuestIds.length === 0) {
+      return;
+    }
+
+    setQuestLookupLoading(true);
+    const results = await Promise.allSettled(
+      missingQuestIds.map((id) => apiClient.get<Quest>(`/sonar/quests/${id}`))
+    );
+
+    setQuestById((prev) => {
+      const next = { ...prev };
+      results.forEach((result, index) => {
+        const questId = missingQuestIds[index];
+        if (result.status === 'fulfilled') {
+          next[questId] = result.value;
+        } else {
+          next[questId] = null;
+        }
+      });
+      return next;
+    });
+    setQuestLookupLoading(false);
   };
 
   const createCharacterAction = async (characterId: string, actionType: 'talk' | 'shop', dialogue?: DialogueMessage[], metadata?: any) => {
@@ -503,7 +550,8 @@ export const Characters = () => {
   const handleManageDialogue = async (character: Character) => {
     setSelectedCharacterForDialogue(character);
     setShowDialogueManager(true);
-    await fetchCharacterActions(character.id);
+    const actions = await fetchCharacterActions(character.id);
+    await ensureQuestLookups(actions);
   };
 
   const handleCreateNewAction = () => {
@@ -531,7 +579,8 @@ export const Characters = () => {
       }
       setShowDialogueEditor(false);
       setEditingAction(null);
-      await fetchCharacterActions(selectedCharacterForDialogue.id);
+      const actions = await fetchCharacterActions(selectedCharacterForDialogue.id);
+      await ensureQuestLookups(actions);
     } catch (error) {
       console.error('Error saving dialogue:', error);
     }
@@ -548,7 +597,8 @@ export const Characters = () => {
       }
       setShowShopEditor(false);
       setEditingAction(null);
-      await fetchCharacterActions(selectedCharacterForDialogue.id);
+      const actions = await fetchCharacterActions(selectedCharacterForDialogue.id);
+      await ensureQuestLookups(actions);
     } catch (error) {
       console.error('Error saving shop:', error);
     }
@@ -1421,72 +1471,103 @@ export const Characters = () => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {characterActions.map((action) => (
-                    <div
-                      key={action.id}
-                      style={{
-                        padding: '15px',
-                        border: '1px solid #ccc',
-                        borderRadius: '8px',
-                        backgroundColor: '#f9f9f9'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                            Type: {action.actionType}
-                          </div>
-                          <div style={{ color: '#666', fontSize: '14px' }}>
-                            {action.actionType === 'talk' ? (
-                              action.dialogue.length > 0 ? (
-                                <>
-                                  Preview: {action.dialogue[0].text.substring(0, 100)}
-                                  {action.dialogue[0].text.length > 100 ? '...' : ''}
-                                </>
+                  {characterActions.map((action) => {
+                    const questId = getActionQuestId(action);
+                    const hasQuestLookup = questId ? Object.prototype.hasOwnProperty.call(questById, questId) : false;
+                    const questRecord = questId && hasQuestLookup ? questById[questId] : undefined;
+                    const editDisabled = action.actionType === 'giveQuest';
+
+                    return (
+                      <div
+                        key={action.id}
+                        style={{
+                          padding: '15px',
+                          border: '1px solid #ccc',
+                          borderRadius: '8px',
+                          backgroundColor: '#f9f9f9'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                              Type: {action.actionType}
+                            </div>
+                            <div style={{ color: '#666', fontSize: '14px' }}>
+                              {action.actionType === 'talk' ? (
+                                action.dialogue.length > 0 ? (
+                                  <>
+                                    Preview: {action.dialogue[0].text.substring(0, 100)}
+                                    {action.dialogue[0].text.length > 100 ? '...' : ''}
+                                  </>
+                                ) : (
+                                  'No dialogue messages'
+                                )
+                              ) : action.actionType === 'shop' ? (
+                                action.metadata?.inventory ? (
+                                  <>
+                                    Shop with {action.metadata.inventory.length} item{action.metadata.inventory.length !== 1 ? 's' : ''}
+                                  </>
+                                ) : (
+                                  'Shop with no items'
+                                )
+                              ) : action.actionType === 'giveQuest' ? (
+                                questId ? (
+                                  hasQuestLookup ? (
+                                    questRecord ? (
+                                      <>Gives quest: {questRecord.name}</>
+                                    ) : (
+                                      <>Gives missing quest ({questId})</>
+                                    )
+                                  ) : questLookupLoading ? (
+                                    <>Loading quest {questId}...</>
+                                  ) : (
+                                    <>Gives quest: {questId}</>
+                                  )
+                                ) : (
+                                  'Give quest action (missing quest id)'
+                                )
                               ) : (
-                                'No dialogue messages'
-                              )
-                            ) : action.actionType === 'shop' ? (
-                              action.metadata?.inventory ? (
+                                'Unknown action type'
+                              )}
+                            </div>
+                            <div style={{ color: '#999', fontSize: '12px', marginTop: '5px' }}>
+                              {action.actionType === 'talk' ? (
                                 <>
-                                  Shop with {action.metadata.inventory.length} item{action.metadata.inventory.length !== 1 ? 's' : ''}
+                                  {action.dialogue.length} message{action.dialogue.length !== 1 ? 's' : ''}
                                 </>
-                              ) : (
-                                'Shop with no items'
-                              )
-                            ) : (
-                              'Unknown action type'
-                            )}
+                              ) : action.actionType === 'shop' ? (
+                                <>
+                                  {action.metadata?.inventory?.length || 0} item{action.metadata?.inventory?.length !== 1 ? 's' : ''}
+                                </>
+                              ) : action.actionType === 'giveQuest' ? (
+                                questId ? <>Quest ID: {questId}</> : <>Missing quest metadata</>
+                              ) : null}
+                            </div>
                           </div>
-                          <div style={{ color: '#999', fontSize: '12px', marginTop: '5px' }}>
-                            {action.actionType === 'talk' ? (
-                              <>
-                                {action.dialogue.length} message{action.dialogue.length !== 1 ? 's' : ''}
-                              </>
-                            ) : action.actionType === 'shop' ? (
-                              <>
-                                {action.metadata?.inventory?.length || 0} item{action.metadata?.inventory?.length !== 1 ? 's' : ''}
-                              </>
-                            ) : null}
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                              onClick={() => handleEditAction(action)}
+                              className={
+                                editDisabled
+                                  ? 'bg-gray-300 text-gray-600 px-3 py-1 rounded-md cursor-not-allowed'
+                                  : 'bg-blue-500 text-white px-3 py-1 rounded-md'
+                              }
+                              disabled={editDisabled}
+                              title={editDisabled ? 'GiveQuest actions are managed by quest assignments.' : 'Edit action'}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteCharacterAction(action.id)}
+                              className="bg-red-500 text-white px-3 py-1 rounded-md"
+                            >
+                              Delete
+                            </button>
                           </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <button
-                            onClick={() => handleEditAction(action)}
-                            className="bg-blue-500 text-white px-3 py-1 rounded-md"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => deleteCharacterAction(action.id)}
-                            className="bg-red-500 text-white px-3 py-1 rounded-md"
-                          >
-                            Delete
-                          </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1498,6 +1579,8 @@ export const Characters = () => {
                   setShowDialogueManager(false);
                   setSelectedCharacterForDialogue(null);
                   setCharacterActions([]);
+                  setQuestById({});
+                  setQuestLookupLoading(false);
                 }}
                 className="bg-gray-500 text-white px-4 py-2 rounded-md"
               >

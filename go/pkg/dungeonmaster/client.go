@@ -134,22 +134,12 @@ func (c *client) GenerateQuest(
 		acceptanceDialogueValue = models.StringArray{}
 	}
 
-	log.Println("Generating quest image")
-	questImage, err := c.generateQuestImage(ctx, *questCopy)
-	if err != nil {
-		log.Printf("Error generating quest image: %v", err)
-		if deleteErr := c.dbClient.Quest().Delete(ctx, quest.ID); deleteErr != nil {
-			log.Printf("Error deleting quest after image generation failure: %v", deleteErr)
-		}
-		return nil, err
-	}
-
 	log.Println("Updating quest with generated content")
 	if err := c.dbClient.Quest().Update(ctx, quest.ID, &models.Quest{
 		Name:                  questCopy.Name,
 		Description:           questCopy.Description,
 		AcceptanceDialogue:    acceptanceDialogueValue,
-		ImageURL:              questImage,
+		ImageURL:              "",
 		ZoneID:                quest.ZoneID,
 		QuestArchetypeID:      quest.QuestArchetypeID,
 		QuestGiverCharacterID: quest.QuestGiverCharacterID,

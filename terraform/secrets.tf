@@ -231,3 +231,39 @@ resource "aws_secretsmanager_secret_version" "ca_private_key" {
   secret_id     = aws_secretsmanager_secret.ca_private_key.id
   secret_string = var.ca_private_key
 }
+
+resource "aws_secretsmanager_secret" "polymarket_api_key" {
+  name = "POLYMARKET_API_KEY"
+}
+
+resource "aws_secretsmanager_secret_version" "polymarket_api_key" {
+  secret_id     = aws_secretsmanager_secret.polymarket_api_key.id
+  secret_string = var.polymarket_api_key
+}
+
+resource "aws_secretsmanager_secret" "polymarket_api_secret" {
+  name = "POLYMARKET_API_SECRET"
+}
+
+resource "aws_secretsmanager_secret_version" "polymarket_api_secret" {
+  secret_id     = aws_secretsmanager_secret.polymarket_api_secret.id
+  secret_string = var.polymarket_api_secret
+}
+
+resource "aws_secretsmanager_secret" "polymarket_api_passphrase" {
+  name = "POLYMARKET_API_PASSPHRASE"
+}
+
+resource "aws_secretsmanager_secret_version" "polymarket_api_passphrase" {
+  secret_id     = aws_secretsmanager_secret.polymarket_api_passphrase.id
+  secret_string = var.polymarket_api_passphrase
+}
+
+resource "aws_secretsmanager_secret" "polymarket_address" {
+  name = "POLYMARKET_ADDRESS"
+}
+
+resource "aws_secretsmanager_secret_version" "polymarket_address" {
+  secret_id     = aws_secretsmanager_secret.polymarket_address.id
+  secret_string = var.polymarket_address
+}

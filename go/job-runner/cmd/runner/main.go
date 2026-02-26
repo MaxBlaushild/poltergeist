@@ -72,25 +72,31 @@ func main() {
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	processRecurringQuestsProcessor := processors.NewProcessRecurringQuestsProcessor(dbClient)
+	cleanupOrphanedQuestActionsProcessor := processors.NewCleanupOrphanedQuestActionsProcessor(dbClient)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	generateOutfitProfilePictureProcessor := processors.NewGenerateOutfitProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	generateInventoryItemImageProcessor := processors.NewGenerateInventoryItemImageProcessor(dbClient, deepPriestClient, awsClient)
-	generateCharacterImageProcessor := processors.NewGenerateCharacterImageProcessor(dbClient, deepPriestClient, awsClient)
-	generatePointOfInterestImageProcessor := processors.NewGeneratePointOfInterestImageProcessor(dbClient, locationSeederClient)
+	generateCharacterImageProcessor := processors.NewGenerateCharacterImageProcessor(dbClient, deepPriestClient, awsClient, client)
+	generatePointOfInterestImageProcessor := processors.NewGeneratePointOfInterestImageProcessor(dbClient, locationSeederClient, client)
+	generateImageThumbnailProcessor := processors.NewGenerateImageThumbnailProcessor(dbClient, awsClient)
+	queueThumbnailBackfillProcessor := processors.NewQueueThumbnailBackfillProcessor(dbClient, client)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
 	calculateTrendingDestinationsProcessor := processors.NewCalculateTrendingDestinationsProcessor(dbClient)
-	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient)
+	importPointOfInterestProcessor := processors.NewImportPointOfInterestProcessor(dbClient, locationSeederClient, client)
 	importZonesForMetroProcessor := processors.NewImportZonesForMetroProcessor(dbClient)
 	seedZoneDraftProcessor := processors.NewSeedZoneDraftProcessor(dbClient, googlemapsClient, deepPriestClient)
-	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, awsClient, client)
+	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, client)
 
 	var polymarketClient polymarket.Client
 	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
 		polymarketClient = polymarket.NewClient(polymarket.ClientConfig{
-			BaseURL:    cfg.Public.PolymarketBaseURL,
-			TradesPath: cfg.Public.PolymarketTradesPath,
-			TradesURL:  cfg.Public.PolymarketTradesURL,
-			APIKey:     cfg.Secret.PolymarketAPIKey,
+			BaseURL:       cfg.Public.PolymarketBaseURL,
+			TradesPath:    cfg.Public.PolymarketTradesPath,
+			TradesURL:     cfg.Public.PolymarketTradesURL,
+			APIKey:        cfg.Secret.PolymarketAPIKey,
+			APISecret:     cfg.Secret.PolymarketAPISecret,
+			APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
+			Address:       cfg.Secret.PolymarketAddress,
 		})
 	}
 
@@ -134,11 +140,14 @@ func main() {
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	mux.Handle(jobs.ProcessRecurringQuestsTaskType, &processRecurringQuestsProcessor)
+	mux.Handle(jobs.CleanupOrphanedQuestActionsTaskType, &cleanupOrphanedQuestActionsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
 	mux.Handle(jobs.GenerateOutfitProfilePictureTaskType, &generateOutfitProfilePictureProcessor)
 	mux.Handle(jobs.GenerateInventoryItemImageTaskType, &generateInventoryItemImageProcessor)
 	mux.Handle(jobs.GenerateCharacterImageTaskType, &generateCharacterImageProcessor)
 	mux.Handle(jobs.GeneratePointOfInterestImageTaskType, &generatePointOfInterestImageProcessor)
+	mux.Handle(jobs.GenerateImageThumbnailTaskType, &generateImageThumbnailProcessor)
+	mux.Handle(jobs.QueueThumbnailBackfillTaskType, &queueThumbnailBackfillProcessor)
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
 	mux.Handle(jobs.CalculateTrendingDestinationsTaskType, &calculateTrendingDestinationsProcessor)
 	mux.Handle(jobs.ImportPointOfInterestTaskType, importPointOfInterestProcessor)
@@ -160,11 +169,19 @@ func main() {
 		log.Fatalf("could not register the recurring quest schedule: %v", err)
 	}
 
+	if _, err = scheduler.Register("@every 1h", asynq.NewTask(jobs.CleanupOrphanedQuestActionsTaskType, nil)); err != nil {
+		log.Fatalf("could not register the orphaned quest action cleanup schedule: %v", err)
+	}
+
 	if _, err = scheduler.Register("@weekly", asynq.NewTask(jobs.SeedTreasureChestsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
 	}
 
 	if _, err = scheduler.Register("@every 6h", asynq.NewTask(jobs.CalculateTrendingDestinationsTaskType, nil)); err != nil {
+		log.Fatalf("could not register the schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@daily", asynq.NewTask(jobs.QueueThumbnailBackfillTaskType, nil)); err != nil {
 		log.Fatalf("could not register the schedule: %v", err)
 	}
 

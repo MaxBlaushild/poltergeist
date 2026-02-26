@@ -37,6 +37,9 @@ export const PointOfInterest = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [placeholderThumbnailUrl, setPlaceholderThumbnailUrl] = useState<string | null>(null);
+  const [placeholderThumbnailStatus, setPlaceholderThumbnailStatus] = useState<'idle' | 'loading' | 'queued' | 'error'>('idle');
+  const [placeholderThumbnailError, setPlaceholderThumbnailError] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -138,6 +141,32 @@ export const PointOfInterest = () => {
     setSelectedCandidate(null);
     setImportZoneId('');
     setImportError(null);
+  };
+
+  const handleGeneratePlaceholderThumbnail = async () => {
+    setPlaceholderThumbnailStatus('loading');
+    setPlaceholderThumbnailError(null);
+    try {
+      const response = await apiClient.post<{ thumbnailUrl: string; status?: string }>(
+        '/sonar/admin/thumbnails/poi-placeholder',
+      );
+      setPlaceholderThumbnailUrl(response.thumbnailUrl);
+      setPlaceholderThumbnailStatus(response.status === 'queued' ? 'queued' : 'idle');
+    } catch (err) {
+      console.error('Error generating placeholder thumbnail:', err);
+      setPlaceholderThumbnailStatus('error');
+      setPlaceholderThumbnailError('Failed to queue thumbnail generation.');
+    }
+  };
+
+  const handleCopyPlaceholderUrl = async () => {
+    if (!placeholderThumbnailUrl) return;
+    try {
+      await navigator.clipboard.writeText(placeholderThumbnailUrl);
+      setImportToasts((prev) => ['Copied placeholder thumbnail URL.', ...prev].slice(0, 3));
+    } catch (err) {
+      console.error('Failed to copy placeholder thumbnail URL:', err);
+    }
   };
 
   const handleCreateImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -339,7 +368,52 @@ export const PointOfInterest = () => {
         >
           Import from Google Maps
         </button>
+        <button
+          type="button"
+          className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:opacity-60"
+          onClick={handleGeneratePlaceholderThumbnail}
+          disabled={placeholderThumbnailStatus === 'loading'}
+        >
+          {placeholderThumbnailStatus === 'loading'
+            ? 'Queueing Placeholder Thumbnail...'
+            : 'Generate Undiscovered Thumbnail'}
+        </button>
       </div>
+
+      {(placeholderThumbnailUrl || placeholderThumbnailError) && (
+        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+          <h2 className="text-lg font-semibold mb-2">Undiscovered Thumbnail</h2>
+          {placeholderThumbnailError ? (
+            <p className="text-sm text-red-600">{placeholderThumbnailError}</p>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600 mb-3">
+                The thumbnail is queued. It should be available at:
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                  {placeholderThumbnailUrl}
+                </code>
+                <button
+                  type="button"
+                  className="text-sm text-blue-600 hover:underline"
+                  onClick={handleCopyPlaceholderUrl}
+                >
+                  Copy URL
+                </button>
+                <a
+                  className="text-sm text-blue-600 hover:underline"
+                  href={placeholderThumbnailUrl ?? '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open
+                </a>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">
         <div className="flex items-center justify-between mb-4">

@@ -2,6 +2,9 @@ package polymarket
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,19 +20,25 @@ type Client interface {
 }
 
 type ClientConfig struct {
-	BaseURL    string
-	TradesPath string
-	TradesURL  string
-	APIKey     string
-	Timeout    time.Duration
+	BaseURL       string
+	TradesPath    string
+	TradesURL     string
+	APIKey        string
+	APISecret     string
+	APIPassphrase string
+	Address       string
+	Timeout       time.Duration
 }
 
 type client struct {
-	baseURL    string
-	tradesPath string
-	tradesURL  string
-	apiKey     string
-	httpClient *http.Client
+	baseURL       string
+	tradesPath    string
+	tradesURL     string
+	apiKey        string
+	apiSecret     string
+	apiPassphrase string
+	address       string
+	httpClient    *http.Client
 }
 
 type Trade struct {
@@ -55,11 +64,14 @@ func NewClient(cfg ClientConfig) Client {
 		tradesPath = "/trades"
 	}
 	return &client{
-		baseURL:    strings.TrimRight(cfg.BaseURL, "/"),
-		tradesPath: tradesPath,
-		tradesURL:  strings.TrimSpace(cfg.TradesURL),
-		apiKey:     strings.TrimSpace(cfg.APIKey),
-		httpClient: &http.Client{Timeout: timeout},
+		baseURL:       strings.TrimRight(cfg.BaseURL, "/"),
+		tradesPath:    tradesPath,
+		tradesURL:     strings.TrimSpace(cfg.TradesURL),
+		apiKey:        strings.TrimSpace(cfg.APIKey),
+		apiSecret:     strings.TrimSpace(cfg.APISecret),
+		apiPassphrase: strings.TrimSpace(cfg.APIPassphrase),
+		address:       strings.TrimSpace(cfg.Address),
+		httpClient:    &http.Client{Timeout: timeout},
 	}
 }
 
@@ -73,8 +85,8 @@ func (c *client) ListTrades(ctx context.Context, since *time.Time, limit int) ([
 	if err != nil {
 		return nil, err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if err := c.addAuthHeaders(req, nil); err != nil {
+		return nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -115,13 +127,69 @@ func (c *client) buildTradesURL(since *time.Time, limit int) (string, error) {
 
 	q := parsed.Query()
 	if since != nil {
-		q.Set("since", since.Format(time.RFC3339))
+		if usesCLOBTradesEndpoint(parsed.Path) {
+			q.Set("after", strconv.FormatInt(since.Unix(), 10))
+		} else {
+			q.Set("since", since.Format(time.RFC3339))
+		}
 	}
 	if limit > 0 {
 		q.Set("limit", strconv.Itoa(limit))
 	}
 	parsed.RawQuery = q.Encode()
 	return parsed.String(), nil
+}
+
+func usesCLOBTradesEndpoint(path string) bool {
+	return strings.HasSuffix(path, "/data/trades") || strings.Contains(path, "/data/trades")
+}
+
+func (c *client) addAuthHeaders(req *http.Request, body []byte) error {
+	if c.hasL2Credentials() {
+		return c.addL2Headers(req, body)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	return nil
+}
+
+func (c *client) hasL2Credentials() bool {
+	return c.apiKey != "" && c.apiSecret != "" && c.apiPassphrase != "" && c.address != ""
+}
+
+func (c *client) addL2Headers(req *http.Request, body []byte) error {
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	message := timestamp + strings.ToUpper(req.Method) + req.URL.Path
+	if len(body) > 0 {
+		message += string(body)
+	}
+
+	secretBytes, err := decodeURLBase64(c.apiSecret)
+	if err != nil {
+		return fmt.Errorf("polymarket api secret decode failed: %w", err)
+	}
+
+	mac := hmac.New(sha256.New, secretBytes)
+	if _, err := mac.Write([]byte(message)); err != nil {
+		return fmt.Errorf("polymarket signature build failed: %w", err)
+	}
+	signature := base64.URLEncoding.EncodeToString(mac.Sum(nil))
+
+	req.Header.Set("POLY_ADDRESS", c.address)
+	req.Header.Set("POLY_SIGNATURE", signature)
+	req.Header.Set("POLY_TIMESTAMP", timestamp)
+	req.Header.Set("POLY_API_KEY", c.apiKey)
+	req.Header.Set("POLY_PASSPHRASE", c.apiPassphrase)
+	return nil
+}
+
+func decodeURLBase64(value string) ([]byte, error) {
+	decoded, err := base64.URLEncoding.DecodeString(value)
+	if err == nil {
+		return decoded, nil
+	}
+	return base64.RawURLEncoding.DecodeString(value)
 }
 
 func parseTrades(payload []byte) ([]Trade, error) {

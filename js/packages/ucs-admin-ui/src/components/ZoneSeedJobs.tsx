@@ -125,13 +125,58 @@ export const ZoneSeedJobs = () => {
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [placeCount, setPlaceCount] = useState('8');
+  const [placeCount, setPlaceCount] = useState('12');
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
   const [mainQuestCount, setMainQuestCount] = useState('1');
-  const [requiredPlaceTags, setRequiredPlaceTags] = useState('');
+  const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
+  const [requiredTagQuery, setRequiredTagQuery] = useState('');
+  const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
+
+  const knownPlaceTags = useMemo(
+    () => [
+      'cafe',
+      'coffee_shop',
+      'bakery',
+      'restaurant',
+      'bar',
+      'ice_cream_shop',
+      'dessert',
+      'park',
+      'garden',
+      'playground',
+      'trail',
+      'hiking_area',
+      'natural_feature',
+      'beach',
+      'plaza',
+      'square',
+      'bridge',
+      'museum',
+      'art_gallery',
+      'gallery',
+      'library',
+      'book_store',
+      'movie_theater',
+      'theater',
+      'music_venue',
+      'stadium',
+      'sports_complex',
+      'amusement_park',
+      'zoo',
+      'aquarium',
+      'market',
+      'shopping_mall',
+      'store',
+      'clothing_store',
+      'florist',
+    ],
+    []
+  );
   const [draftZoneQuery, setDraftZoneQuery] = useState('');
   const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
   const [filterZoneQuery, setFilterZoneQuery] = useState('');
@@ -200,10 +245,6 @@ export const ZoneSeedJobs = () => {
     setError(null);
     setSuccess(null);
     try {
-      const requiredTags = requiredPlaceTags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
       const created = await apiClient.post<ZoneSeedJob>(
         `/sonar/admin/zones/${draftZoneId}/seed-draft`,
         {
@@ -211,7 +252,7 @@ export const ZoneSeedJobs = () => {
           characterCount: characters,
           questCount: quests,
           mainQuestCount: mainQuests,
-          requiredPlaceTags: requiredTags,
+          requiredPlaceTags,
         }
       );
       setJobs((prev) => [created, ...prev]);
@@ -240,6 +281,60 @@ export const ZoneSeedJobs = () => {
       setApprovingId(null);
     }
   };
+
+  const handleDelete = async (job: ZoneSeedJob) => {
+    if (deletingId) return;
+    const confirmed = window.confirm(`Delete draft job ${job.id.slice(0, 8)}? This cannot be undone.`);
+    if (!confirmed) return;
+    setDeletingId(job.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiClient.delete(`/sonar/admin/zone-seed-jobs/${job.id}`);
+      setJobs((prev) => prev.filter((existing) => existing.id !== job.id));
+      setSuccess('Draft job deleted.');
+    } catch (err) {
+      console.error('Failed to delete draft job', err);
+      setError('Failed to delete draft job.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleRetry = async (job: ZoneSeedJob) => {
+    if (retryingId) return;
+    setRetryingId(job.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiClient.post(`/sonar/admin/zone-seed-jobs/${job.id}/retry`);
+      setSuccess('Draft retry queued.');
+      await fetchJobs(job.zoneId);
+    } catch (err) {
+      console.error('Failed to retry draft job', err);
+      setError('Failed to retry draft job.');
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  const addRequiredTag = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return;
+    if (requiredPlaceTags.includes(trimmed)) return;
+    setRequiredPlaceTags((prev) => [...prev, trimmed]);
+  };
+
+  const removeRequiredTag = (value: string) => {
+    setRequiredPlaceTags((prev) => prev.filter((tag) => tag !== value));
+  };
+
+  const filteredTagSuggestions = useMemo(() => {
+    const query = requiredTagQuery.trim().toLowerCase();
+    const available = knownPlaceTags.filter((tag) => !requiredPlaceTags.includes(tag));
+    if (!query) return available;
+    return available.filter((tag) => tag.includes(query));
+  }, [knownPlaceTags, requiredPlaceTags, requiredTagQuery]);
 
   return (
     <div className="container mx-auto px-6 py-8">
@@ -366,14 +461,81 @@ export const ZoneSeedJobs = () => {
           </div>
           <div className="mt-4">
             <label className="block text-xs font-medium text-gray-500 mb-1">
-              Required POI tags (comma separated)
+              Required POI tags
             </label>
-            <input
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-              placeholder="park, museum, coffee_shop"
-              value={requiredPlaceTags}
-              onChange={(e) => setRequiredPlaceTags(e.target.value)}
-            />
+            <div className="rounded border border-gray-300 px-2 py-2 text-sm">
+              <div className="flex flex-wrap gap-2">
+                {requiredPlaceTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-1 text-xs text-indigo-700"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      className="ml-2 text-indigo-500 hover:text-indigo-700"
+                      onClick={() => removeRequiredTag(tag)}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+                <div className="relative flex-1 min-w-[140px]">
+                  <input
+                    className="w-full border-0 px-2 py-1 text-sm focus:outline-none"
+                    placeholder="Add tag..."
+                    value={requiredTagQuery}
+                    onChange={(e) => {
+                      setRequiredTagQuery(e.target.value);
+                      setShowRequiredTagSuggestions(true);
+                    }}
+                    onFocus={() => setShowRequiredTagSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowRequiredTagSuggestions(false), 120)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        addRequiredTag(requiredTagQuery);
+                        setRequiredTagQuery('');
+                      }
+                      if (e.key === 'Backspace' && requiredTagQuery === '' && requiredPlaceTags.length > 0) {
+                        removeRequiredTag(requiredPlaceTags[requiredPlaceTags.length - 1]);
+                      }
+                    }}
+                  />
+                  {showRequiredTagSuggestions && (filteredTagSuggestions.length > 0 || requiredTagQuery.trim()) && (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                      {filteredTagSuggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            addRequiredTag(tag);
+                            setRequiredTagQuery('');
+                            setShowRequiredTagSuggestions(false);
+                          }}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                      {requiredTagQuery.trim() && !requiredPlaceTags.includes(requiredTagQuery.trim().toLowerCase()) && (
+                        <button
+                          type="button"
+                          className="block w-full px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50"
+                          onClick={() => {
+                            addRequiredTag(requiredTagQuery);
+                            setRequiredTagQuery('');
+                            setShowRequiredTagSuggestions(false);
+                          }}
+                        >
+                          Add &quot;{requiredTagQuery.trim()}&quot;
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             <p className="mt-1 text-xs text-gray-400">
               We will ensure at least one POI matches each tag.
             </p>
@@ -470,13 +632,37 @@ export const ZoneSeedJobs = () => {
                         </p>
                       )}
                     </div>
-                    <span
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
-                        job.status
-                      )}`}
-                    >
-                      {job.status.replace(/_/g, ' ')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
+                          job.status
+                        )}`}
+                      >
+                        {job.status.replace(/_/g, ' ')}
+                      </span>
+                      {job.status === 'failed' && (
+                        <button
+                          className="rounded border border-gray-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                          onClick={() => handleRetry(job)}
+                          disabled={retryingId === job.id}
+                          title="Retry draft job"
+                        >
+                          {retryingId === job.id ? 'Retrying...' : 'Retry'}
+                        </button>
+                      )}
+                      <button
+                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        onClick={() => handleDelete(job)}
+                        disabled={deletingId === job.id || job.status === 'in_progress' || job.status === 'applying'}
+                        title={
+                          job.status === 'in_progress' || job.status === 'applying'
+                            ? 'Cannot delete while running'
+                            : 'Delete draft job'
+                        }
+                      >
+                        {deletingId === job.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
                   </div>
 
                   {job.errorMessage && (

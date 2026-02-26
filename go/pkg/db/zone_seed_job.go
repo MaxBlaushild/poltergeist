@@ -54,3 +54,7 @@ func (h *zoneSeedJobHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID, 
 	}
 	return jobs, nil
 }
+
+func (h *zoneSeedJobHandle) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.ZoneSeedJob{}, "id = ?", id).Error
+}

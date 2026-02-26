@@ -48,6 +48,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	poiPlaceholderImageURL    = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderThumbnailKey = "thumbnails/placeholders/poi-undiscovered.png"
+)
+
 var (
 	ErrNotAuthenticated = errors.New("no authenticated user found")
 )
@@ -243,6 +248,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/zone-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/approve", middleware.WithAuthentication(s.authClient, s.livenessClient, s.approveZoneSeedJob))
+	r.POST("/sonar/admin/zone-seed-jobs/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryZoneSeedJob))
+	r.DELETE("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneSeedJob))
+	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -3168,6 +3176,11 @@ func (s *server) deleteQuest(ctx *gin.Context) {
 		return
 	}
 
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.CleanupOrphanedQuestActionsTaskType, nil)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest deleted successfully"})
 }
 
@@ -3898,6 +3911,12 @@ func (s *server) generatePointsOfInterestForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	for _, poi := range pointsOfInterest {
+		if poi == nil || strings.TrimSpace(poi.ImageUrl) == "" {
+			continue
+		}
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityPointOfInterest, poi.ID, poi.ImageUrl)
+	}
 	ctx.JSON(http.StatusOK, pointsOfInterest)
 }
 
@@ -4271,6 +4290,127 @@ func (s *server) approveZoneSeedJob(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, job)
+}
+
+func (s *server) retryZoneSeedJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone seed job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+	if job.Status == models.ZoneSeedStatusInProgress || job.Status == models.ZoneSeedStatusApplying {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot retry a job that is in progress or applying"})
+		return
+	}
+	if job.Status != models.ZoneSeedStatusFailed {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zone seed job is not in a failed state"})
+		return
+	}
+
+	if zoneSeedDraftHasContent(job.Draft) {
+		job.Status = models.ZoneSeedStatusAwaitingApproval
+		job.ErrorMessage = nil
+		job.UpdatedAt = time.Now()
+		if err := s.dbClient.ZoneSeedJob().Update(ctx, job); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, job)
+		return
+	}
+
+	job.Status = models.ZoneSeedStatusQueued
+	job.ErrorMessage = nil
+	job.Draft = models.ZoneSeedDraft{}
+	job.UpdatedAt = time.Now()
+	if err := s.dbClient.ZoneSeedJob().Update(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.SeedZoneDraftTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.SeedZoneDraftTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ZoneSeedStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ZoneSeedJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, job)
+}
+
+func zoneSeedDraftHasContent(d models.ZoneSeedDraft) bool {
+	if strings.TrimSpace(d.FantasyName) != "" {
+		return true
+	}
+	if strings.TrimSpace(d.ZoneDescription) != "" {
+		return true
+	}
+	if len(d.PointsOfInterest) > 0 {
+		return true
+	}
+	if len(d.Characters) > 0 {
+		return true
+	}
+	if len(d.Quests) > 0 {
+		return true
+	}
+	if len(d.MainQuests) > 0 {
+		return true
+	}
+	return false
+}
+
+func (s *server) deleteZoneSeedJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone seed job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+
+	if job.Status == models.ZoneSeedStatusInProgress || job.Status == models.ZoneSeedStatusApplying {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete a job that is in progress or applying"})
+		return
+	}
+
+	if err := s.dbClient.ZoneSeedJob().DeleteByID(ctx, job.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"deleted": true})
 }
 
 func (s *server) getZones(ctx *gin.Context) {
@@ -4887,6 +5027,10 @@ func (s *server) editPointOfInterestImageUrl(ctx *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(requestBody.ImageUrl) != "" {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityPointOfInterest, pointOfInterestID, requestBody.ImageUrl)
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "point of interest image URL edited successfully",
 	})
@@ -4928,6 +5072,14 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 		return
 	}
 
+	existingPoi, err := s.dbClient.PointOfInterest().FindByID(ctx, pointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if err := s.dbClient.PointOfInterest().Edit(
 		ctx,
 		pointOfInterestID,
@@ -4945,6 +5097,21 @@ func (s *server) editPointOfInterest(ctx *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	imageChanged := existingPoi == nil || requestBody.ImageUrl != existingPoi.ImageUrl
+	thumbnailMissing := existingPoi == nil || strings.TrimSpace(existingPoi.ThumbnailURL) == ""
+	if strings.TrimSpace(requestBody.ImageUrl) != "" && imageChanged {
+		if err := s.dbClient.PointOfInterest().UpdateImageUrl(ctx, pointOfInterestID, requestBody.ImageUrl); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
+
+	if strings.TrimSpace(requestBody.ImageUrl) != "" && (imageChanged || thumbnailMissing) {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityPointOfInterest, pointOfInterestID, requestBody.ImageUrl)
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
@@ -5257,7 +5424,7 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.PointOfInterest().CreateForGroup(ctx, &models.PointOfInterest{
+	poi := &models.PointOfInterest{
 		Name:        request.Name,
 		Description: request.Description,
 		Lat:         request.Latitude,
@@ -5265,15 +5432,69 @@ func (s *server) createPointOfInterest(ctx *gin.Context) {
 		ImageUrl:    request.ImageUrl,
 		Clue:        request.Clue,
 		UnlockTier:  request.UnlockTier,
-	}, pointOfInterestGroupID); err != nil {
+	}
+
+	if err := s.dbClient.PointOfInterest().CreateForGroup(ctx, poi, pointOfInterestGroupID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
+	if strings.TrimSpace(poi.ImageUrl) != "" {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityPointOfInterest, poi.ID, poi.ImageUrl)
+	}
+
 	ctx.JSON(http.StatusOK, gin.H{
 		"message": "point of interest created successfully",
+	})
+}
+
+func (s *server) enqueueThumbnailTask(entityType string, entityID uuid.UUID, sourceUrl string) {
+	if s.asyncClient == nil || strings.TrimSpace(sourceUrl) == "" {
+		return
+	}
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType: entityType,
+		EntityID:   entityID,
+		SourceUrl:  sourceUrl,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal thumbnail task payload: %v", err)
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+		log.Printf("Failed to enqueue thumbnail task: %v", err)
+	}
+}
+
+func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType:     jobs.ThumbnailEntityStatic,
+		SourceUrl:      poiPlaceholderImageURL,
+		DestinationKey: poiPlaceholderThumbnailKey,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	thumbnailURL := fmt.Sprintf("https://%s.s3.amazonaws.com/%s", jobs.ThumbnailBucket, poiPlaceholderThumbnailKey)
+	ctx.JSON(http.StatusOK, gin.H{
+		"thumbnailUrl": thumbnailURL,
+		"status":       "queued",
 	})
 }
 
@@ -8237,6 +8458,10 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		return
 	}
 
+	if strings.TrimSpace(character.ThumbnailURL) == "" && strings.TrimSpace(character.DialogueImageURL) != "" {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityCharacter, character.ID, character.DialogueImageURL)
+	}
+
 	ctx.JSON(http.StatusCreated, character)
 }
 
@@ -8462,6 +8687,13 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update character: " + err.Error()})
 		return
+	}
+
+	if strings.TrimSpace(requestBody.DialogueImageUrl) != "" &&
+		(strings.TrimSpace(requestBody.ThumbnailUrl) == "" ||
+			strings.TrimSpace(existingCharacter.ThumbnailURL) == "" ||
+			requestBody.DialogueImageUrl != existingCharacter.DialogueImageURL) {
+		s.enqueueThumbnailTask(jobs.ThumbnailEntityCharacter, id, requestBody.DialogueImageUrl)
 	}
 
 	// Fetch the updated character with movement pattern

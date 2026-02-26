@@ -478,8 +478,13 @@ class _QuestPoiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = discovered && poi.imageURL != null && poi.imageURL!.isNotEmpty
-        ? poi.imageURL!
+    final thumbnailUrl = poi.thumbnailUrl;
+    final imageUrl = discovered
+        ? (thumbnailUrl != null && thumbnailUrl.isNotEmpty
+            ? thumbnailUrl
+            : (poi.imageURL != null && poi.imageURL!.isNotEmpty
+                ? poi.imageURL!
+                : _placeholderImageUrl))
         : _placeholderImageUrl;
     return InkWell(
       onTap: onTap,
@@ -596,8 +601,9 @@ class _QuestAccordion extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Column(
                   children: quests
-                      .map(
-                        (q) => InkWell(
+                      .map((q) {
+                        final poi = q.currentNode?.pointOfInterest;
+                        return InkWell(
                           onTap: () {
                             if (q.readyToTurnIn && onReadyQuestTap != null) {
                               onReadyQuestTap!(q);
@@ -640,9 +646,11 @@ class _QuestAccordion extends StatelessWidget {
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(6),
                                   child: Image.network(
-                                    (q.currentNode?.pointOfInterest?.imageURL ?? '').isNotEmpty
-                                        ? q.currentNode!.pointOfInterest!.imageURL!
-                                        : _placeholderImageUrl,
+                                    (poi?.thumbnailUrl ?? '').isNotEmpty
+                                        ? poi!.thumbnailUrl!
+                                        : ((poi?.imageURL ?? '').isNotEmpty
+                                            ? poi!.imageURL!
+                                            : _placeholderImageUrl),
                                     width: 36,
                                     height: 36,
                                     fit: BoxFit.cover,
@@ -684,9 +692,8 @@ class _QuestAccordion extends StatelessWidget {
                                   ),
                               ],
                             ),
-                          ),
-                        ),
-                      )
+                          );
+                      })
                       .toList(),
                 ),
               ),

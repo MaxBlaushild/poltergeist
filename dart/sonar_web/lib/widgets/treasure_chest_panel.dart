@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../constants/gameplay_constants.dart';
 import '../models/inventory_item.dart';
 import '../models/treasure_chest.dart';
 import '../providers/location_provider.dart';
@@ -15,7 +16,7 @@ import '../widgets/paper_texture.dart';
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 
-const _openRadiusMeters = 10.0;
+const _openRadiusMeters = kProximityUnlockRadiusMeters;
 
 class TreasureChestPanel extends StatefulWidget {
   const TreasureChestPanel({

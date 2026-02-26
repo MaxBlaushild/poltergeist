@@ -2,7 +2,6 @@ package processors
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,13 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MaxBlaushild/poltergeist/pkg/aws"
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
-	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 )
@@ -27,15 +24,26 @@ type ApplyZoneSeedDraftProcessor struct {
 	dbClient       db.DbClient
 	locationSeeder locationseeder.Client
 	deepPriest     deep_priest.DeepPriest
-	awsClient      aws.AWSClient
 	asyncClient    *asynq.Client
+}
+
+type questRewardStatBonuses struct {
+	Strength     int
+	Dexterity    int
+	Constitution int
+	Intelligence int
+	Wisdom       int
+	Charisma     int
+}
+
+func (b questRewardStatBonuses) total() int {
+	return b.Strength + b.Dexterity + b.Constitution + b.Intelligence + b.Wisdom + b.Charisma
 }
 
 func NewApplyZoneSeedDraftProcessor(
 	dbClient db.DbClient,
 	locationSeeder locationseeder.Client,
 	deepPriest deep_priest.DeepPriest,
-	awsClient aws.AWSClient,
 	asyncClient *asynq.Client,
 ) ApplyZoneSeedDraftProcessor {
 	log.Println("Initializing ApplyZoneSeedDraftProcessor")
@@ -43,7 +51,6 @@ func NewApplyZoneSeedDraftProcessor(
 		dbClient:       dbClient,
 		locationSeeder: locationSeeder,
 		deepPriest:     deepPriest,
-		awsClient:      awsClient,
 		asyncClient:    asyncClient,
 	}
 }
@@ -209,7 +216,27 @@ func (p *ApplyZoneSeedDraftProcessor) ensurePointOfInterest(
 	if err != nil {
 		return nil, err
 	}
+	p.enqueueThumbnailTask(poi.ID, poi.ImageUrl)
 	return poi, nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) enqueueThumbnailTask(poiID uuid.UUID, imageURL string) {
+	if p.asyncClient == nil || strings.TrimSpace(imageURL) == "" {
+		return
+	}
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType: jobs.ThumbnailEntityPointOfInterest,
+		EntityID:   poiID,
+		SourceUrl:  imageURL,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal thumbnail task payload: %v", err)
+		return
+	}
+	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+		log.Printf("Failed to enqueue thumbnail task: %v", err)
+	}
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
@@ -218,20 +245,11 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 	poi *models.PointOfInterest,
 	draft models.ZoneSeedCharacterDraft,
 ) (*models.Character, error) {
-	startLat, startLng := zone.Latitude, zone.Longitude
-	if poi != nil {
-		lat, lng, err := parsePointOfInterestCoords(poi)
-		if err == nil {
-			startLat = lat
-			startLng = lng
-		}
-	}
-
 	movementPattern := &models.MovementPattern{
 		MovementPatternType: models.MovementPatternStatic,
 		ZoneID:              &zone.ID,
-		StartingLatitude:    startLat,
-		StartingLongitude:   startLng,
+		StartingLatitude:    0,
+		StartingLongitude:   0,
 		Path:                models.LocationPath{},
 	}
 	if err := p.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
@@ -295,6 +313,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	} else {
 		challengeDifficulty = clampQuestDifficulty(challengeDifficulty)
 	}
+	challengeQuestion, submissionType := normalizeAppliedChallengeQuestion(challengeQuestion, poi, poiDraft)
 	draftForTags := draft
 	draftForTags.ChallengeQuestion = challengeQuestion
 	statTags := p.classifyQuestStatTags(ctx, draftForTags)
@@ -316,15 +335,11 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		Gold:                  gold,
 	}
 
-	if imageURL, err := p.generateQuestImage(ctx, draft.Name, draft.Description); err == nil {
-		quest.ImageURL = imageURL
-	}
-
 	if err := p.dbClient.Quest().Create(ctx, quest); err != nil {
 		return err
 	}
 
-	rewardItem, err := p.generateQuestRewardItem(ctx, zone, poi, poiDraft, character, draft, challengeQuestion, draft.RewardItem)
+	rewardItem, err := p.generateQuestRewardItem(ctx, zone, poi, poiDraft, character, draft, challengeQuestion, draft.RewardItem, false)
 	if err != nil {
 		return err
 	}
@@ -355,7 +370,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		QuestID:           quest.ID,
 		OrderIndex:        0,
 		PointOfInterestID: nil,
-		SubmissionType:    models.DefaultQuestNodeSubmissionType(),
+		SubmissionType:    submissionType,
 	}
 	if poi != nil {
 		node.PointOfInterestID = &poi.ID
@@ -372,7 +387,7 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		Tier:           0,
 		Question:       challengeQuestion,
 		Reward:         0,
-		SubmissionType: models.DefaultQuestNodeSubmissionType(),
+		SubmissionType: submissionType,
 		Difficulty:     challengeDifficulty,
 		StatTags:       statTags,
 	}
@@ -420,10 +435,6 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		Gold:                  gold,
 	}
 
-	if imageURL, err := p.generateQuestImage(ctx, draft.Name, draft.Description); err == nil {
-		quest.ImageURL = imageURL
-	}
-
 	if err := p.dbClient.Quest().Create(ctx, quest); err != nil {
 		return err
 	}
@@ -460,7 +471,7 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 	if len(nodes) > 0 {
 		rewardQuestion = nodes[len(nodes)-1].ChallengeQuestion
 	}
-	rewardItem, err := p.generateQuestRewardItem(ctx, zone, rewardPOI, nil, character, rewardDraft, rewardQuestion, draft.RewardItem)
+	rewardItem, err := p.generateQuestRewardItem(ctx, zone, rewardPOI, nil, character, rewardDraft, rewardQuestion, draft.RewardItem, true)
 	if err != nil {
 		return err
 	}
@@ -485,6 +496,12 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		if err != nil {
 			return err
 		}
+		challengeQuestion := strings.TrimSpace(nodeDraft.ChallengeQuestion)
+		if challengeQuestion == "" {
+			challengeQuestion = fallbackQuestChallengeQuestion(poi, nil)
+		}
+		challengeQuestion, submissionType := normalizeAppliedChallengeQuestion(challengeQuestion, poi, nil)
+
 		node := &models.QuestNode{
 			ID:                uuid.New(),
 			CreatedAt:         time.Now(),
@@ -492,18 +509,13 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 			QuestID:           quest.ID,
 			OrderIndex:        idx,
 			PointOfInterestID: nil,
-			SubmissionType:    models.DefaultQuestNodeSubmissionType(),
+			SubmissionType:    submissionType,
 		}
 		if poi != nil {
 			node.PointOfInterestID = &poi.ID
 		}
 		if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
 			return err
-		}
-
-		challengeQuestion := strings.TrimSpace(nodeDraft.ChallengeQuestion)
-		if challengeQuestion == "" {
-			challengeQuestion = fallbackQuestChallengeQuestion(poi, nil)
 		}
 		difficulty := nodeDraft.ChallengeDifficulty
 		if difficulty <= 0 {
@@ -527,7 +539,7 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 			Tier:           0,
 			Question:       challengeQuestion,
 			Reward:         0,
-			SubmissionType: models.DefaultQuestNodeSubmissionType(),
+			SubmissionType: submissionType,
 			Difficulty:     difficulty,
 			StatTags:       statTags,
 		}
@@ -578,86 +590,6 @@ func (p *ApplyZoneSeedDraftProcessor) ensureQuestActionForCharacter(ctx context.
 	return p.dbClient.CharacterAction().Create(ctx, action)
 }
 
-const questImagePromptTemplate = `
-You are a video game designer tasked with creating visual assets for quests in a fantasy role playing game.
-
-The quest is this:
-
-%s
-
-Please describe what an iconic moment from this quest would look like to an outside observer.
-
-Please format your response as a JSON object with the following fields:
-{
-  "description": "string"
-}
-`
-
-type questImagePrompt struct {
-	Description string `json:"description"`
-}
-
-func (p *ApplyZoneSeedDraftProcessor) generateQuestImage(ctx context.Context, name, description string) (string, error) {
-	if strings.TrimSpace(name) == "" && strings.TrimSpace(description) == "" {
-		return "", fmt.Errorf("quest copy was empty")
-	}
-
-	prompt := fmt.Sprintf(questImagePromptTemplate, fmt.Sprintf("%s\n\n%s", name, description))
-	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
-	if err != nil {
-		return "", err
-	}
-
-	var imagePrompt questImagePrompt
-	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &imagePrompt); err != nil {
-		imagePrompt.Description = strings.TrimSpace(answer.Answer)
-	}
-	imagePrompt.Description = strings.TrimSpace(imagePrompt.Description)
-	if imagePrompt.Description == "" {
-		return "", fmt.Errorf("quest image prompt was empty")
-	}
-
-	request := deep_priest.GenerateImageRequest{
-		Prompt: imagePrompt.Description,
-	}
-	deep_priest.ApplyGenerateImageDefaults(&request)
-	base64Image, err := p.deepPriest.GenerateImage(request)
-	if err != nil {
-		return "", err
-	}
-
-	return p.uploadImage(ctx, base64Image)
-}
-
-func (p *ApplyZoneSeedDraftProcessor) uploadImage(ctx context.Context, base64Image string) (string, error) {
-	imageBytes, err := base64.StdEncoding.DecodeString(base64Image)
-	if err != nil {
-		return "", err
-	}
-	if len(imageBytes) == 0 {
-		return "", fmt.Errorf("no image data provided")
-	}
-
-	imageFormat, err := util.DetectImageFormat(imageBytes)
-	if err != nil {
-		return "", err
-	}
-	imageExtension, err := util.GetImageExtension(imageFormat)
-	if err != nil {
-		return "", err
-	}
-
-	timestamp := strconv.FormatInt(time.Now().UnixNano(), 16)
-	imageName := timestamp + "-" + uuid.New().String() + "." + imageExtension
-
-	imageURL, err := p.awsClient.UploadImageToS3("crew-profile-icons", imageName, imageBytes)
-	if err != nil {
-		return "", err
-	}
-
-	return imageURL, nil
-}
-
 func parsePointOfInterestCoords(poi *models.PointOfInterest) (float64, float64, error) {
 	if poi == nil {
 		return 0, 0, fmt.Errorf("poi is nil")
@@ -698,9 +630,10 @@ Point of Interest:
 Create one challenge that can be completed by a single person while physically at the POI.
 Constraints:
 - Safe, legal, and respectful. Do not require entering restricted areas or interacting with staff.
-- No purchase required.
+- Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both.
+- Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation.
+- If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase.
 - Make it an enjoyable on-site activity that fits the POI type.
-  - Examples: coffee shop: write a 4-line poem or sketch the mug; park: sketch a tree or count benches; museum: note a color motif; bookstore: find a title with a specific word.
 - Answerable on-site without external research.
 - 1-2 short sentences.
 - Provide a difficulty score from 25 to 50 (inclusive).
@@ -784,6 +717,38 @@ Constraints:
 - Name should be short (<= 6 words).
 - Description 1-2 sentences.
 - Rarity tier must be one of: Common, Uncommon, Epic, Mythic.
+- Flavor intensity should match the rarity.
+
+Respond ONLY as JSON:
+{
+  "name": "string",
+  "description": "string",
+  "rarityTier": "Common"
+}
+`
+
+const questRewardEquipmentPromptTemplate = `
+You are a fantasy RPG item designer creating an EQUIPPABLE quest reward.
+
+Zone: %s
+Quest name: %s
+Quest description: %s
+Challenge: %s
+Quest giver: %s
+
+Point of Interest:
+%s
+
+Create a reward item that fits the quest and location flavor.
+Equipment slot: %s
+Constraints:
+- Must be wearable/usable equipment for the given slot.
+- Tangible item a player could carry.
+- Avoid real-world brand names.
+- Name should be short (<= 6 words).
+- Description 1-2 sentences.
+- Rarity tier must be one of: Common, Uncommon, Epic, Mythic.
+- Flavor intensity should match the rarity.
 
 Respond ONLY as JSON:
 {
@@ -802,13 +767,18 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 	draft models.ZoneSeedQuestDraft,
 	challengeQuestion string,
 	draftReward *models.ZoneSeedQuestRewardItemDraft,
+	forceEquipment bool,
 ) (*models.InventoryItem, error) {
 	poiDetails := formatZoneSeedPOIForPrompt(poi, poiDraft)
 	zoneName := ""
 	if zone != nil {
 		zoneName = zone.Name
 	}
+	equipSlot := pickQuestRewardEquipSlot(forceEquipment)
 	fallback := fallbackQuestRewardItem(poi, poiDraft, draft)
+	if equipSlot != nil {
+		fallback = fallbackQuestRewardEquipment(*equipSlot, poi, poiDraft, draft)
+	}
 	if draftReward != nil && strings.TrimSpace(draftReward.Name) != "" {
 		name := strings.TrimSpace(draftReward.Name)
 		description := strings.TrimSpace(draftReward.Description)
@@ -819,18 +789,38 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		if rarity == "" {
 			rarity = fallback.RarityTier
 		}
-		return p.createInventoryItemReward(ctx, name, description, rarity)
+		bonuses := questRewardStatBonuses{}
+		if equipSlot != nil {
+			name = ensureQuestRewardSlotName(name, *equipSlot)
+			bonuses = rollQuestRewardStatBonuses(rarity)
+			name, description = applyQuestRewardIntensity(name, description, rarity, bonuses)
+		}
+		return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses)
 	}
 
-	prompt := fmt.Sprintf(
-		questRewardItemPromptTemplate,
-		truncate(zoneName, 120),
-		truncate(draft.Name, 120),
-		truncate(draft.Description, 400),
-		truncate(challengeQuestion, 200),
-		truncate(character.Name, 80),
-		poiDetails,
-	)
+	prompt := ""
+	if equipSlot != nil {
+		prompt = fmt.Sprintf(
+			questRewardEquipmentPromptTemplate,
+			truncate(zoneName, 120),
+			truncate(draft.Name, 120),
+			truncate(draft.Description, 400),
+			truncate(challengeQuestion, 200),
+			truncate(character.Name, 80),
+			poiDetails,
+			*equipSlot,
+		)
+	} else {
+		prompt = fmt.Sprintf(
+			questRewardItemPromptTemplate,
+			truncate(zoneName, 120),
+			truncate(draft.Name, 120),
+			truncate(draft.Description, 400),
+			truncate(challengeQuestion, 200),
+			truncate(character.Name, 80),
+			poiDetails,
+		)
+	}
 
 	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	var response questRewardItemResponse
@@ -844,6 +834,9 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 	if name == "" {
 		name = fallback.Name
 	}
+	if equipSlot != nil {
+		name = ensureQuestRewardSlotName(name, *equipSlot)
+	}
 	description := strings.TrimSpace(response.Description)
 	if description == "" {
 		description = fallback.Description
@@ -853,7 +846,12 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		rarity = fallback.RarityTier
 	}
 
-	return p.createInventoryItemReward(ctx, name, description, rarity)
+	bonuses := questRewardStatBonuses{}
+	if equipSlot != nil {
+		bonuses = rollQuestRewardStatBonuses(rarity)
+		name, description = applyQuestRewardIntensity(name, description, rarity, bonuses)
+	}
+	return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses)
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
@@ -861,13 +859,34 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 	name string,
 	description string,
 	rarity string,
+	equipSlot *string,
+	bonuses *questRewardStatBonuses,
 ) (*models.InventoryItem, error) {
+	var normalizedSlot *string
+	if equipSlot != nil {
+		slot := strings.TrimSpace(*equipSlot)
+		if slot != "" && models.IsValidInventoryEquipSlot(slot) {
+			normalizedSlot = &slot
+		}
+	}
+	if normalizedSlot == nil {
+		bonuses = nil
+	}
 	item := &models.InventoryItem{
 		Name:                  name,
 		FlavorText:            description,
 		RarityTier:            rarity,
 		IsCaptureType:         false,
+		EquipSlot:             normalizedSlot,
 		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
+	}
+	if bonuses != nil {
+		item.StrengthMod = bonuses.Strength
+		item.DexterityMod = bonuses.Dexterity
+		item.ConstitutionMod = bonuses.Constitution
+		item.IntelligenceMod = bonuses.Intelligence
+		item.WisdomMod = bonuses.Wisdom
+		item.CharismaMod = bonuses.Charisma
 	}
 
 	if err := p.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -961,6 +980,121 @@ func fallbackQuestChallengeQuestion(poi *models.PointOfInterest, draft *models.Z
 	return buildHeuristicChallengeQuestion(name, types)
 }
 
+func normalizeAppliedChallengeQuestion(
+	question string,
+	poi *models.PointOfInterest,
+	draft *models.ZoneSeedPointOfInterestDraft,
+) (string, models.QuestNodeSubmissionType) {
+	trimmed := strings.TrimSpace(question)
+	name := poiNameForPrompt(poi, draft)
+	if name == "" {
+		name = "this location"
+	}
+	types := []string{}
+	if draft != nil && len(draft.Types) > 0 {
+		types = draft.Types
+	}
+
+	if trimmed == "" {
+		return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+	}
+
+	lower := strings.ToLower(trimmed)
+	hasPhoto := hasAnyKeywordApplied(lower, "photo", "picture", "snapshot", "selfie", "photograph")
+	hasText := hasAnyKeywordApplied(lower, "write", "describe", "list", "note", "count", "identify", "observe", "explain", "summarize", "record", "tell")
+
+	if requiresProofOnlyApplied(lower) || (hasPhoto && hasText) {
+		return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+	}
+
+	if hasPhoto || hasAnyKeywordApplied(lower, "sketch", "draw") {
+		if hasAnyKeywordApplied(lower, "sketch", "draw") && !hasPhoto {
+			return fmt.Sprintf("Sketch something you notice at %s and take a photo of your sketch.", name), models.QuestNodeSubmissionTypePhoto
+		}
+		if strings.HasPrefix(lower, "take") || strings.HasPrefix(lower, "photograph") || strings.HasPrefix(lower, "photo") {
+			return trimmed, models.QuestNodeSubmissionTypePhoto
+		}
+		return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+	}
+
+	if hasText {
+		return ensureTextOnlyQuestionApplied(trimmed), models.QuestNodeSubmissionTypeText
+	}
+
+	return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+}
+
+func buildAppliedPhotoProofQuestion(name string, types []string) string {
+	lowerName := strings.ToLower(strings.TrimSpace(name))
+	lowerTypes := make([]string, 0, len(types))
+	for _, t := range types {
+		trimmed := strings.ToLower(strings.TrimSpace(t))
+		if trimmed != "" {
+			lowerTypes = append(lowerTypes, trimmed)
+		}
+	}
+
+	hasType := func(targets ...string) bool {
+		for _, t := range lowerTypes {
+			for _, target := range targets {
+				if t == target || strings.Contains(t, target) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	switch {
+	case hasType("cafe", "coffee", "coffee_shop", "bakery", "restaurant", "bar", "meal_takeaway", "meal_delivery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
+		return fmt.Sprintf("Take a photo of the storefront sign or menu board at %s.", name)
+	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
+		return fmt.Sprintf("Take a photo of a path, bench, or tree at %s.", name)
+	case hasType("museum", "art_gallery", "gallery", "tourist_attraction", "landmark") || strings.Contains(lowerName, "museum") || strings.Contains(lowerName, "gallery"):
+		return fmt.Sprintf("Take a photo of the entrance sign or poster outside %s.", name)
+	case hasType("movie_theater", "cinema", "theater", "performing_arts_theater", "night_club", "concert_hall") || strings.Contains(lowerName, "theater") || strings.Contains(lowerName, "cinema"):
+		return fmt.Sprintf("Take a photo of the marquee or entrance sign at %s.", name)
+	case hasType("store", "shopping_mall", "supermarket", "market", "book_store", "clothing_store") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):
+		return fmt.Sprintf("Take a photo of a window display or storefront sign at %s.", name)
+	case hasType("plaza", "square", "bridge", "beach", "marina", "harbor") || strings.Contains(lowerName, "plaza") || strings.Contains(lowerName, "square"):
+		return fmt.Sprintf("Take a photo of the view or landmark at %s.", name)
+	default:
+		return fmt.Sprintf("Take a photo that shows you visited %s.", name)
+	}
+}
+
+func hasAnyKeywordApplied(text string, keywords ...string) bool {
+	for _, keyword := range keywords {
+		if keyword == "" {
+			continue
+		}
+		if strings.Contains(text, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+func requiresProofOnlyApplied(text string) bool {
+	return hasAnyKeywordApplied(text,
+		"oldest", "first", "main ingredient", "ingredient", "recipe", "menu", "price", "cost",
+		"listen", "instrument", "song", "piece", "performance", "band", "taste", "flavor",
+		"review", "best", "favorite", "count", "number of",
+	)
+}
+
+func ensureTextOnlyQuestionApplied(question string) string {
+	trimmed := strings.TrimSpace(question)
+	if trimmed == "" {
+		return "Write one sentence about something you notice here."
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "write") || strings.HasPrefix(lower, "describe") || strings.HasPrefix(lower, "list") || strings.HasPrefix(lower, "note") {
+		return trimmed
+	}
+	return fmt.Sprintf("Write 1-2 sentences: %s", trimmed)
+}
+
 func randomQuestDifficulty() int {
 	return 25 + rand.Intn(26)
 }
@@ -1011,6 +1145,337 @@ func randomRarityTier() string {
 	}
 }
 
+func pickQuestRewardEquipSlot(force bool) *string {
+	if !force {
+		if rand.Float64() > 0.35 {
+			return nil
+		}
+	}
+	if len(models.InventoryEquipSlots) == 0 {
+		return nil
+	}
+	slot := string(models.InventoryEquipSlots[rand.Intn(len(models.InventoryEquipSlots))])
+	return &slot
+}
+
+func rollQuestRewardStatBonuses(rarity string) questRewardStatBonuses {
+	minBonus, maxBonus := questRewardBonusRange(rarity)
+	if minBonus <= 0 || maxBonus <= 0 {
+		return questRewardStatBonuses{}
+	}
+	if maxBonus < minBonus {
+		maxBonus = minBonus
+	}
+	total := minBonus + rand.Intn(maxBonus-minBonus+1)
+	if total <= 0 {
+		return questRewardStatBonuses{}
+	}
+	stats := []string{"strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"}
+	rand.Shuffle(len(stats), func(i, j int) { stats[i], stats[j] = stats[j], stats[i] })
+	numStats := 1
+	if total >= 3 {
+		numStats = 2
+	}
+	first := total
+	second := 0
+	if numStats == 2 {
+		first = 1 + rand.Intn(total-1)
+		second = total - first
+	}
+	bonuses := questRewardStatBonuses{}
+	assignBonus := func(stat string, bonus int) {
+		switch stat {
+		case "strength":
+			bonuses.Strength = bonus
+		case "dexterity":
+			bonuses.Dexterity = bonus
+		case "constitution":
+			bonuses.Constitution = bonus
+		case "intelligence":
+			bonuses.Intelligence = bonus
+		case "wisdom":
+			bonuses.Wisdom = bonus
+		case "charisma":
+			bonuses.Charisma = bonus
+		}
+	}
+	assignBonus(stats[0], first)
+	if numStats == 2 {
+		assignBonus(stats[1], second)
+	}
+	return bonuses
+}
+
+func questRewardBonusRange(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 1, 1
+	case "uncommon":
+		return 1, 2
+	case "epic":
+		return 2, 4
+	case "mythic":
+		return 3, 5
+	default:
+		return 1, 1
+	}
+}
+
+func applyQuestRewardIntensity(name string, description string, rarity string, bonuses questRewardStatBonuses) (string, string) {
+	trimmedName := strings.TrimSpace(name)
+	trimmedDesc := strings.TrimSpace(description)
+	rarityKey := strings.ToLower(strings.TrimSpace(rarity))
+	totalBonus := bonuses.total()
+
+	prefix := ""
+	switch rarityKey {
+	case "common":
+		if totalBonus >= 2 {
+			prefix = "Sturdy"
+		}
+	case "uncommon":
+		prefix = "Refined"
+	case "epic":
+		prefix = "Heroic"
+	case "mythic":
+		prefix = "Mythic"
+	default:
+		if totalBonus >= 3 {
+			prefix = "Empowered"
+		}
+	}
+	if totalBonus >= 4 && rarityKey != "mythic" {
+		prefix = "Fabled"
+	}
+
+	statDescriptor := questRewardStatDescriptor(bonuses)
+	if trimmedName != "" {
+		candidate := trimmedName
+		if statDescriptor != "" {
+			candidate = fmt.Sprintf("%s %s", statDescriptor, candidate)
+		}
+		if prefix != "" && countWords(candidate) <= 5 && !strings.Contains(strings.ToLower(candidate), strings.ToLower(prefix)) {
+			candidate = fmt.Sprintf("%s %s", prefix, candidate)
+		}
+		if countWords(candidate) <= 6 {
+			trimmedName = candidate
+		}
+	}
+
+	if trimmedDesc == "" {
+		return trimmedName, trimmedDesc
+	}
+
+	intensity := ""
+	switch rarityKey {
+	case "common":
+		intensity = "It carries a modest but dependable strength."
+	case "uncommon":
+		intensity = "It hums with a practiced edge."
+	case "epic":
+		intensity = "Power coils through it with heroic force."
+	case "mythic":
+		intensity = "Its power is overwhelming, the stuff of legends."
+	default:
+		intensity = "A steady power lingers within."
+	}
+	if totalBonus >= 4 {
+		intensity = "Its power flares with unmistakable might."
+	}
+
+	statFlavor := questRewardStatFlavor(bonuses, rarityKey, totalBonus)
+	if statFlavor == "" {
+		statFlavor = intensity
+	} else if intensity != "" && !strings.Contains(statFlavor, "power") {
+		statFlavor = strings.TrimSpace(fmt.Sprintf("%s %s", statFlavor, intensity))
+	}
+
+	if strings.HasSuffix(trimmedDesc, ".") || strings.HasSuffix(trimmedDesc, "!") || strings.HasSuffix(trimmedDesc, "?") {
+		trimmedDesc = fmt.Sprintf("%s %s", trimmedDesc, statFlavor)
+	} else {
+		trimmedDesc = fmt.Sprintf("%s. %s", trimmedDesc, statFlavor)
+	}
+
+	return trimmedName, strings.TrimSpace(trimmedDesc)
+}
+
+func countWords(value string) int {
+	parts := strings.Fields(value)
+	return len(parts)
+}
+
+func questRewardStatDescriptor(bonuses questRewardStatBonuses) string {
+	stats := questRewardStatKeys(bonuses)
+	if len(stats) == 0 {
+		return ""
+	}
+	if len(stats) == 1 {
+		return questRewardSingleStatDescriptor(stats[0])
+	}
+	pairKey := questRewardStatPairKey(stats[0], stats[1])
+	if descriptor, ok := questRewardPairDescriptors[pairKey]; ok {
+		return descriptor
+	}
+	return questRewardSingleStatDescriptor(stats[0])
+}
+
+func questRewardStatFlavor(bonuses questRewardStatBonuses, rarityKey string, totalBonus int) string {
+	stats := questRewardStatKeys(bonuses)
+	if len(stats) == 0 {
+		return ""
+	}
+	list := questRewardStatList(stats)
+	if list == "" {
+		return ""
+	}
+	verb := "bolsters"
+	switch rarityKey {
+	case "epic", "mythic":
+		verb = "surges with"
+	}
+	if totalBonus >= 4 {
+		verb = "blazes with"
+	}
+	return fmt.Sprintf("It %s %s.", verb, list)
+}
+
+func questRewardStatKeys(bonuses questRewardStatBonuses) []string {
+	type statEntry struct {
+		key   string
+		value int
+	}
+	entries := []statEntry{
+		{key: "strength", value: bonuses.Strength},
+		{key: "dexterity", value: bonuses.Dexterity},
+		{key: "constitution", value: bonuses.Constitution},
+		{key: "intelligence", value: bonuses.Intelligence},
+		{key: "wisdom", value: bonuses.Wisdom},
+		{key: "charisma", value: bonuses.Charisma},
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].value == entries[j].value {
+			return entries[i].key < entries[j].key
+		}
+		return entries[i].value > entries[j].value
+	})
+	keys := []string{}
+	for _, entry := range entries {
+		if entry.value > 0 {
+			keys = append(keys, entry.key)
+		}
+		if len(keys) == 2 {
+			break
+		}
+	}
+	return keys
+}
+
+func questRewardStatList(stats []string) string {
+	if len(stats) == 0 {
+		return ""
+	}
+	if len(stats) == 1 {
+		return stats[0]
+	}
+	return fmt.Sprintf("%s and %s", stats[0], stats[1])
+}
+
+func questRewardStatPairKey(a string, b string) string {
+	if a < b {
+		return a + "+" + b
+	}
+	return b + "+" + a
+}
+
+func questRewardSingleStatDescriptor(stat string) string {
+	switch stat {
+	case "strength":
+		return "Mighty"
+	case "dexterity":
+		return "Swift"
+	case "constitution":
+		return "Stalwart"
+	case "intelligence":
+		return "Keen"
+	case "wisdom":
+		return "Sage"
+	case "charisma":
+		return "Radiant"
+	default:
+		return ""
+	}
+}
+
+var questRewardPairDescriptors = map[string]string{
+	"strength+constitution":     "Stout",
+	"strength+dexterity":        "Forceful",
+	"strength+intelligence":     "Calculated",
+	"strength+wisdom":           "Steadfast",
+	"strength+charisma":         "Commanding",
+	"dexterity+constitution":    "Agile",
+	"dexterity+intelligence":    "Keen",
+	"dexterity+wisdom":          "Wary",
+	"dexterity+charisma":        "Dashing",
+	"constitution+intelligence": "Resolute",
+	"constitution+wisdom":       "Stalwart",
+	"constitution+charisma":     "Dauntless",
+	"intelligence+wisdom":       "Sage",
+	"intelligence+charisma":     "Silvered",
+	"wisdom+charisma":           "Radiant",
+}
+
+func ensureQuestRewardSlotName(name string, slot string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return name
+	}
+	slotKey := strings.ToLower(strings.TrimSpace(slot))
+	keywords, slotNoun := questRewardSlotKeywords(slotKey)
+	if slotNoun == "" {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+	for _, keyword := range keywords {
+		if keyword != "" && strings.Contains(lower, keyword) {
+			return trimmed
+		}
+	}
+	words := strings.Fields(trimmed)
+	if len(words) == 0 {
+		return slotNoun
+	}
+	if len(words) >= 6 {
+		words[len(words)-1] = slotNoun
+		return strings.Join(words, " ")
+	}
+	return fmt.Sprintf("%s %s", trimmed, slotNoun)
+}
+
+func questRewardSlotKeywords(slot string) ([]string, string) {
+	switch slot {
+	case string(models.EquipmentSlotHat):
+		return []string{"hat", "helm", "cap", "hood", "cowl", "circlet"}, "Helm"
+	case string(models.EquipmentSlotNecklace):
+		return []string{"amulet", "pendant", "necklace", "torc", "choker"}, "Amulet"
+	case string(models.EquipmentSlotChest):
+		return []string{"chest", "armor", "vest", "cuirass", "coat", "tunic", "jerkin"}, "Cuirass"
+	case string(models.EquipmentSlotLegs):
+		return []string{"legs", "greaves", "leggings", "pants", "trousers", "kilt"}, "Greaves"
+	case string(models.EquipmentSlotShoes):
+		return []string{"boots", "shoes", "sandals", "sabaton"}, "Boots"
+	case string(models.EquipmentSlotGloves):
+		return []string{"gloves", "gauntlets", "bracers", "mitts"}, "Gloves"
+	case string(models.EquipmentSlotDominantHand):
+		return []string{"blade", "sword", "dagger", "staff", "wand", "mace", "axe", "hammer", "tool"}, "Blade"
+	case string(models.EquipmentSlotOffHand):
+		return []string{"shield", "buckler", "tome", "focus", "orb"}, "Shield"
+	case string(models.EquipmentSlotRing), string(models.EquipmentSlotRingLeft), string(models.EquipmentSlotRingRight):
+		return []string{"ring", "band", "signet"}, "Ring"
+	default:
+		return nil, ""
+	}
+}
+
 func fallbackQuestRewardItem(poi *models.PointOfInterest, draft *models.ZoneSeedPointOfInterestDraft, quest models.ZoneSeedQuestDraft) questRewardItemResponse {
 	name := strings.TrimSpace(quest.Name)
 	if name == "" {
@@ -1023,6 +1488,54 @@ func fallbackQuestRewardItem(poi *models.PointOfInterest, draft *models.ZoneSeed
 	description := "A keepsake earned by completing a local favor."
 	if poiName != "" {
 		description = fmt.Sprintf("A keepsake earned near %s, warm with the memory of the place.", poiName)
+	}
+
+	return questRewardItemResponse{
+		Name:        name,
+		Description: description,
+		RarityTier:  randomRarityTier(),
+	}
+}
+
+func fallbackQuestRewardEquipment(
+	slot string,
+	poi *models.PointOfInterest,
+	draft *models.ZoneSeedPointOfInterestDraft,
+	quest models.ZoneSeedQuestDraft,
+) questRewardItemResponse {
+	slot = strings.TrimSpace(strings.ToLower(slot))
+	base := strings.TrimSpace(quest.Name)
+	if base == "" {
+		base = "Wayfarer's"
+	}
+
+	slotNoun := "Gear"
+	switch slot {
+	case string(models.EquipmentSlotHat):
+		slotNoun = "Cap"
+	case string(models.EquipmentSlotNecklace):
+		slotNoun = "Pendant"
+	case string(models.EquipmentSlotChest):
+		slotNoun = "Vest"
+	case string(models.EquipmentSlotLegs):
+		slotNoun = "Greaves"
+	case string(models.EquipmentSlotShoes):
+		slotNoun = "Boots"
+	case string(models.EquipmentSlotGloves):
+		slotNoun = "Gloves"
+	case string(models.EquipmentSlotDominantHand):
+		slotNoun = "Tool"
+	case string(models.EquipmentSlotOffHand):
+		slotNoun = "Buckler"
+	case string(models.EquipmentSlotRing), string(models.EquipmentSlotRingLeft), string(models.EquipmentSlotRingRight):
+		slotNoun = "Ring"
+	}
+
+	name := fmt.Sprintf("%s %s", base, slotNoun)
+	poiName := poiNameForPrompt(poi, draft)
+	description := "A well-used piece of gear earned for helping out nearby."
+	if poiName != "" {
+		description = fmt.Sprintf("A well-used piece of gear earned near %s, still warm with local pride.", poiName)
 	}
 
 	return questRewardItemResponse{

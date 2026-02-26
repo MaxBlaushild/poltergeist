@@ -21,6 +21,7 @@ class PointOfInterest {
   final String lat;
   final String lng;
   final String? imageURL;
+  final String? thumbnailUrl;
   final String? description;
   final String? clue;
   final String? originalName;
@@ -36,6 +37,7 @@ class PointOfInterest {
     required this.lat,
     required this.lng,
     this.imageURL,
+    this.thumbnailUrl,
     this.description,
     this.clue,
     this.originalName,
@@ -75,6 +77,7 @@ class PointOfInterest {
       lat: json['lat']?.toString() ?? '0',
       lng: json['lng']?.toString() ?? '0',
       imageURL: json['imageURL'] as String?,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
       description: json['description'] as String?,
       clue: json['clue'] as String?,
       originalName: json['originalName'] as String?,

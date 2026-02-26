@@ -9,12 +9,16 @@ class ZoneWidget extends StatefulWidget {
   final VoidCallback? onWidgetOpen;
   final VoidCallback? onWidgetClose;
   final ZoneWidgetController? controller;
+  final bool expandUpwards;
+  final double expandedHeight;
 
   const ZoneWidget({
     super.key,
     this.onWidgetOpen,
     this.onWidgetClose,
     this.controller,
+    this.expandUpwards = false,
+    this.expandedHeight = 260,
   });
 
   @override
@@ -141,13 +145,87 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         final subTextStyle = theme.textTheme.bodySmall?.copyWith(
           color: theme.colorScheme.onSurface,
         );
+        final expandUpwards = widget.expandUpwards;
+        final expandedHeight = widget.expandedHeight;
+        const collapsedHeight = 40.0;
+        final arrowIcon = _isOpen
+            ? (expandUpwards
+                ? Icons.keyboard_arrow_down
+                : Icons.keyboard_arrow_up)
+            : (expandUpwards
+                ? Icons.keyboard_arrow_up
+                : Icons.keyboard_arrow_down);
+        final header = Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                selectedZone?.name ?? 'Hinterlands',
+                style: textStyle,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(
+              arrowIcon,
+              size: 16,
+              color: theme.colorScheme.onSurface,
+            ),
+          ],
+        );
+        final content = _showContent && _isOpen
+            ? SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  top: expandUpwards ? 0 : 8,
+                  bottom: expandUpwards ? 8 : 0,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (selectedZone?.description != null) ...[
+                      Text(
+                        selectedZone!.description!,
+                        style: subTextStyle,
+                      ),
+                    ],
+                    if (_reputation != null) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Reputation: ${_capitalize(_reputation!.name.name)}',
+                            style: textStyle?.copyWith(fontSize: 14),
+                          ),
+                          Text(
+                            '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
+                            style: subTextStyle,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: _reputation!.reputationToNextLevel > 0
+                              ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
+                              : 0.0,
+                          backgroundColor: theme.colorScheme.surfaceVariant,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            theme.colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              )
+            : const SizedBox.shrink();
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: _isOpen ? 256 : 144,
-          constraints: BoxConstraints(
-            minHeight: _isOpen ? 0 : 40,
-          ),
+          height: _isOpen ? expandedHeight : collapsedHeight,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: surfaceColor,
@@ -169,73 +247,16 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                 _setOpen(!_isOpen);
               },
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: MainAxisSize.max,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          selectedZone?.name ?? 'Hinterlands',
-                          style: textStyle,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Icon(
-                        _isOpen ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                        size: 16,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ],
-                  ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 300),
-                    child: _showContent && _isOpen
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (selectedZone?.description != null) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  selectedZone!.description!,
-                                  style: subTextStyle,
-                                ),
-                              ],
-                              if (_reputation != null) ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Reputation: ${_capitalize(_reputation!.name.name)}',
-                                      style: textStyle?.copyWith(fontSize: 14),
-                                    ),
-                                    Text(
-                                      '${_reputation!.reputationOnLevel} / ${_reputation!.reputationToNextLevel}',
-                                      style: subTextStyle,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: _reputation!.reputationToNextLevel > 0
-                                        ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
-                                        : 0.0,
-                                    backgroundColor: theme.colorScheme.surfaceVariant,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      theme.colorScheme.primary,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+                  if (expandUpwards) ...[
+                    if (_isOpen) Expanded(child: content),
+                    header,
+                  ] else ...[
+                    header,
+                    if (_isOpen) Expanded(child: content),
+                  ],
                 ],
               ),
             ),

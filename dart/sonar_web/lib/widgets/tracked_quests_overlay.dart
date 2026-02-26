@@ -128,9 +128,10 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
         final screenWidth = MediaQuery.sizeOf(context).width;
         const rightMargin = 16.0;
         const minSideMargin = 16.0;
+        const collapsedWidth = 96.0;
         final maxAllowedWidth = (screenWidth - rightMargin - minSideMargin)
-            .clamp(80.0, 288.0);
-        final width = _expanded ? maxAllowedWidth : 80.0;
+            .clamp(collapsedWidth, 288.0);
+        final width = _expanded ? maxAllowedWidth : collapsedWidth;
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
@@ -146,9 +147,11 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                   onTap: _toggle,
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
+                    padding: EdgeInsets.fromLTRB(
+                      12,
+                      12,
+                      _expanded ? 12 : 24,
+                      12,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -163,7 +166,7 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                         Icon(
                           _expanded ? Icons.expand_less : Icons.expand_more,
                           color: Colors.white,
-                          size: 20,
+                          size: 24,
                         ),
                       ],
                     ),
@@ -314,9 +317,13 @@ class _QuestPoiTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = discovered &&
-            (poi.imageURL != null && poi.imageURL!.isNotEmpty)
-        ? poi.imageURL!
+    final thumbUrl = poi.thumbnailUrl;
+    final imageUrl = discovered
+        ? (thumbUrl != null && thumbUrl.isNotEmpty
+            ? thumbUrl
+            : (poi.imageURL != null && poi.imageURL!.isNotEmpty
+                ? poi.imageURL!
+                : _placeholderImageUrl))
         : _placeholderImageUrl;
 
     return InkWell(

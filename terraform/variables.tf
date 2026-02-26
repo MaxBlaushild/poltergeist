@@ -127,3 +127,27 @@ variable "ca_private_key" {
   description = "CA Private Key"
   type        = string
 }
+
+variable "polymarket_api_key" {
+  description = "Polymarket API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "polymarket_api_secret" {
+  description = "Polymarket API secret (base64-url encoded)"
+  type        = string
+  sensitive   = true
+}
+
+variable "polymarket_api_passphrase" {
+  description = "Polymarket API passphrase"
+  type        = string
+  sensitive   = true
+}
+
+variable "polymarket_address" {
+  description = "Polymarket API address"
+  type        = string
+  sensitive   = true
+}
