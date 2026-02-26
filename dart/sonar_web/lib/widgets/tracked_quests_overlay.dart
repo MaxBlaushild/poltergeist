@@ -23,12 +23,14 @@ class TrackedQuestsOverlay extends StatefulWidget {
     super.key,
     required this.onFocusPoI,
     required this.onFocusNode,
+    this.onOpenQuestDetails,
     this.controller,
   });
 
   /// When user taps a POI: fly to location then open POI panel.
   final void Function(PointOfInterest poi) onFocusPoI;
   final void Function(QuestNode node) onFocusNode;
+  final void Function(Quest quest)? onOpenQuestDetails;
   final TrackedQuestsOverlayController? controller;
 
   @override
@@ -117,10 +119,9 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
               .where((q) => ql.trackedQuestIds.contains(q.id))
               .toList();
         }
-        final visibleTracked =
-            tracked.isNotEmpty ? tracked : _cachedTracked;
+        final visibleTracked = tracked.isNotEmpty ? tracked : _cachedTracked;
         final discoveredIds = <String>{
-          for (final d in discoveries.discoveries) d.pointOfInterestId
+          for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
 
         if (visibleTracked.isEmpty) return const SizedBox.shrink();
@@ -158,10 +159,9 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                       children: [
                         Text(
                           'Quests',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(color: Colors.white),
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleSmall?.copyWith(color: Colors.white),
                         ),
                         Icon(
                           _expanded ? Icons.expand_less : Icons.expand_more,
@@ -185,12 +185,16 @@ class _TrackedQuestsOverlayState extends State<TrackedQuestsOverlay> {
                                 children: visibleTracked
                                     .map(
                                       (quest) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 8),
+                                        padding: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
                                         child: _TrackedQuestCard(
                                           quest: quest,
                                           discoveredIds: discoveredIds,
                                           onPoITap: _onPoITap,
                                           onNodeTap: widget.onFocusNode,
+                                          onOpenQuestDetails:
+                                              widget.onOpenQuestDetails,
                                         ),
                                       ),
                                     )
@@ -220,12 +224,14 @@ class _TrackedQuestCard extends StatelessWidget {
     required this.discoveredIds,
     required this.onPoITap,
     required this.onNodeTap,
+    this.onOpenQuestDetails,
   });
 
   final Quest quest;
   final Set<String> discoveredIds;
   final void Function(PointOfInterest) onPoITap;
   final void Function(QuestNode) onNodeTap;
+  final void Function(Quest quest)? onOpenQuestDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -244,9 +250,9 @@ class _TrackedQuestCard extends StatelessWidget {
           Text(
             quest.name,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 8),
           if (node == null)
@@ -260,6 +266,9 @@ class _TrackedQuestCard extends StatelessWidget {
               discovered: discoveredIds.contains(poi.id),
               onTap: () => onPoITap(poi),
               onChallengeTap: () => onNodeTap(node),
+              onChevronTap: onOpenQuestDetails == null
+                  ? null
+                  : () => onOpenQuestDetails!(quest),
               challenges: node.challenges.map((c) => c.question).toList(),
             )
           else
@@ -270,10 +279,9 @@ class _TrackedQuestCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     'Reach the highlighted area to submit your answer.',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.white70),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                   ),
                 ),
                 ...node.challenges.map(
@@ -284,10 +292,9 @@ class _TrackedQuestCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Text(
                         q.question,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.white70),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                       ),
                     ),
                   ),
@@ -307,6 +314,7 @@ class _QuestPoiTile extends StatelessWidget {
     required this.onTap,
     required this.onChallengeTap,
     required this.challenges,
+    this.onChevronTap,
   });
 
   final PointOfInterest poi;
@@ -314,75 +322,98 @@ class _QuestPoiTile extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onChallengeTap;
   final List<String> challenges;
+  final VoidCallback? onChevronTap;
 
   @override
   Widget build(BuildContext context) {
     final thumbUrl = poi.thumbnailUrl;
     final imageUrl = discovered
         ? (thumbUrl != null && thumbUrl.isNotEmpty
-            ? thumbUrl
-            : (poi.imageURL != null && poi.imageURL!.isNotEmpty
-                ? poi.imageURL!
-                : _placeholderImageUrl))
+              ? thumbUrl
+              : (poi.imageURL != null && poi.imageURL!.isNotEmpty
+                    ? poi.imageURL!
+                    : _placeholderImageUrl))
         : _placeholderImageUrl;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4, right: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                imageUrl,
-                width: 28,
-                height: 28,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 28,
-                  height: 28,
-                  color: Colors.grey.shade700,
-                  child: const Icon(Icons.place, size: 14, color: Colors.white70),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    poi.name,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                  ...challenges.map(
-                    (q) => GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onChallengeTap,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text(
-                          q,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: Colors.white70),
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4, right: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.network(
+                        imageUrl,
+                        width: 28,
+                        height: 28,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 28,
+                          height: 28,
+                          color: Colors.grey.shade700,
+                          child: const Icon(
+                            Icons.place,
+                            size: 14,
+                            color: Colors.white70,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            poi.name,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                          ...challenges.map(
+                            (q) => GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onChallengeTap,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  q,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: Colors.white70),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const Icon(Icons.chevron_right, size: 16, color: Colors.white70),
-          ],
-        ),
+          ),
+          InkWell(
+            onTap: onChevronTap ?? onTap,
+            borderRadius: BorderRadius.circular(6),
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(Icons.chevron_right, size: 16, color: Colors.white70),
+            ),
+          ),
+        ],
       ),
     );
   }

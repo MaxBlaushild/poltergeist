@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,6 +41,7 @@ type client struct {
 	apiPassphrase string
 	address       string
 	httpClient    *http.Client
+	authLogOnce   sync.Once
 }
 
 type Trade struct {
@@ -80,6 +83,8 @@ func (c *client) ListTrades(ctx context.Context, since *time.Time, limit int) ([
 	if err != nil {
 		return nil, err
 	}
+	c.logAuthConfiguration()
+	log.Printf("Polymarket ListTrades request url=%s since_set=%t limit=%d", reqURL, since != nil, limit)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
@@ -182,6 +187,41 @@ func (c *client) addL2Headers(req *http.Request, body []byte) error {
 	req.Header.Set("POLY_API_KEY", c.apiKey)
 	req.Header.Set("POLY_PASSPHRASE", c.apiPassphrase)
 	return nil
+}
+
+func (c *client) logAuthConfiguration() {
+	c.authLogOnce.Do(func() {
+		switch {
+		case c.hasL2Credentials():
+			log.Printf("Polymarket auth mode=L2 (POLY_* headers)")
+		case c.apiKey != "":
+			log.Printf("Polymarket auth mode=Bearer fallback (POLYMARKET_API_KEY only)")
+		default:
+			log.Printf("Polymarket auth mode=None (no API credentials set)")
+		}
+
+		missing := c.missingL2Fields()
+		if len(missing) > 0 {
+			log.Printf("Polymarket missing L2 credential fields=%v", missing)
+		}
+	})
+}
+
+func (c *client) missingL2Fields() []string {
+	missing := make([]string, 0, 4)
+	if c.apiKey == "" {
+		missing = append(missing, "POLYMARKET_API_KEY")
+	}
+	if c.apiSecret == "" {
+		missing = append(missing, "POLYMARKET_API_SECRET")
+	}
+	if c.apiPassphrase == "" {
+		missing = append(missing, "POLYMARKET_API_PASSPHRASE")
+	}
+	if c.address == "" {
+		missing = append(missing, "POLYMARKET_ADDRESS")
+	}
+	return missing
 }
 
 func decodeURLBase64(value string) ([]byte, error) {

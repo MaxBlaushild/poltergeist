@@ -86,6 +86,10 @@ func main() {
 	importZonesForMetroProcessor := processors.NewImportZonesForMetroProcessor(dbClient)
 	seedZoneDraftProcessor := processors.NewSeedZoneDraftProcessor(dbClient, googlemapsClient, deepPriestClient)
 	applyZoneSeedDraftProcessor := processors.NewApplyZoneSeedDraftProcessor(dbClient, locationSeederClient, deepPriestClient, client)
+	shuffleZoneSeedChallengeProcessor := processors.NewShuffleZoneSeedChallengeProcessor(dbClient)
+	shuffleQuestNodeChallengeProcessor := processors.NewShuffleQuestNodeChallengeProcessor(dbClient, deepPriestClient)
+
+	logPolymarketConfiguration(cfg)
 
 	var polymarketClient polymarket.Client
 	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
@@ -98,6 +102,9 @@ func main() {
 			APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
 			Address:       cfg.Secret.PolymarketAddress,
 		})
+		log.Printf("Polymarket client initialized")
+	} else {
+		log.Printf("Polymarket client disabled: set POLYMARKET_TRADES_URL or POLYMARKET_BASE_URL")
 	}
 
 	texterClient := texter.NewClient()
@@ -154,6 +161,8 @@ func main() {
 	mux.Handle(jobs.ImportZonesForMetroTaskType, importZonesForMetroProcessor)
 	mux.Handle(jobs.SeedZoneDraftTaskType, &seedZoneDraftProcessor)
 	mux.Handle(jobs.ApplyZoneSeedDraftTaskType, &applyZoneSeedDraftProcessor)
+	mux.Handle(jobs.ShuffleZoneSeedChallengeTaskType, &shuffleZoneSeedChallengeProcessor)
+	mux.Handle(jobs.ShuffleQuestNodeChallengeTaskType, &shuffleQuestNodeChallengeProcessor)
 	mux.Handle(jobs.MonitorPolymarketTradesTaskType, monitorPolymarketTradesProcessor)
 	if checkBlockchainTransactionsProcessor != nil {
 		mux.Handle(jobs.CheckBlockchainTransactionsTaskType, checkBlockchainTransactionsProcessor)
@@ -232,5 +241,40 @@ func main() {
 
 	if err := srv.Run(mux); err != nil {
 		log.Fatalf("could not run server: %v", err)
+	}
+}
+
+func logPolymarketConfiguration(cfg *config.Config) {
+	log.Printf(
+		"Polymarket config: trades_url_set=%t base_url_set=%t trades_path=%q alert_to_set=%t alert_from_set=%t limit=%d notional_threshold=%.2f size_threshold=%.2f api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+		cfg.Public.PolymarketTradesURL != "",
+		cfg.Public.PolymarketBaseURL != "",
+		cfg.Public.PolymarketTradesPath,
+		cfg.Public.PolymarketAlertToNumber != "",
+		cfg.Public.PolymarketAlertFromNumber != "",
+		cfg.Public.PolymarketTradesLimit,
+		cfg.Public.PolymarketSuspiciousNotionalThreshold,
+		cfg.Public.PolymarketSuspiciousSizeThreshold,
+		cfg.Secret.PolymarketAPIKey != "",
+		cfg.Secret.PolymarketAPISecret != "",
+		cfg.Secret.PolymarketAPIPassphrase != "",
+		cfg.Secret.PolymarketAddress != "",
+	)
+
+	missingL2 := make([]string, 0, 4)
+	if cfg.Secret.PolymarketAPIKey == "" {
+		missingL2 = append(missingL2, "POLYMARKET_API_KEY")
+	}
+	if cfg.Secret.PolymarketAPISecret == "" {
+		missingL2 = append(missingL2, "POLYMARKET_API_SECRET")
+	}
+	if cfg.Secret.PolymarketAPIPassphrase == "" {
+		missingL2 = append(missingL2, "POLYMARKET_API_PASSPHRASE")
+	}
+	if cfg.Secret.PolymarketAddress == "" {
+		missingL2 = append(missingL2, "POLYMARKET_ADDRESS")
+	}
+	if len(missingL2) > 0 {
+		log.Printf("Polymarket L2 credentials incomplete; missing=%v", missingL2)
 	}
 }

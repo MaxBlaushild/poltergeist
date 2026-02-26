@@ -24,6 +24,7 @@ export const TreasureChests = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [chestToDelete, setChestToDelete] = useState<TreasureChest | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [quickCreating, setQuickCreating] = useState(false);
   const [zoneQuery, setZoneQuery] = useState('');
   const [showZoneSuggestions, setShowZoneSuggestions] = useState(false);
 
@@ -34,6 +35,20 @@ export const TreasureChests = () => {
     gold: '' as string | number,
     items: [] as TreasureChestItemForm[],
   });
+
+  const openCreateChestForm = (coords?: { latitude: number; longitude: number }) => {
+    setEditingChest(null);
+    setShowCreateChest(true);
+    setFormData({
+      latitude: coords ? coords.latitude.toFixed(6) : '',
+      longitude: coords ? coords.longitude.toFixed(6) : '',
+      zoneId: '',
+      gold: '',
+      items: [],
+    });
+    setZoneQuery('');
+    setShowZoneSuggestions(false);
+  };
 
   useEffect(() => {
     fetchChests();
@@ -73,6 +88,36 @@ export const TreasureChests = () => {
     });
     setZoneQuery('');
     setShowZoneSuggestions(false);
+  };
+
+  const handleQuickCreateAtCurrentLocation = () => {
+    if (quickCreating) return;
+
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported in this browser.');
+      openCreateChestForm();
+      return;
+    }
+
+    setQuickCreating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        openCreateChestForm({ latitude, longitude });
+        setQuickCreating(false);
+      },
+      (error) => {
+        console.error('Error getting browser location for quick chest create:', error);
+        alert('Unable to get current location. Opening create form without coordinates.');
+        openCreateChestForm();
+        setQuickCreating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const handleCreateChest = async () => {
@@ -203,9 +248,16 @@ export const TreasureChests = () => {
         <div className="flex flex-wrap gap-2">
           <button
             className="bg-blue-500 text-white px-4 py-2 rounded-md"
-            onClick={() => setShowCreateChest(true)}
+            onClick={() => openCreateChestForm()}
           >
             Create Treasure Chest
+          </button>
+          <button
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleQuickCreateAtCurrentLocation}
+            disabled={quickCreating}
+          >
+            {quickCreating ? 'Locating...' : 'Quick Create at My Location'}
           </button>
           <button
             className="bg-green-500 text-white px-4 py-2 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"

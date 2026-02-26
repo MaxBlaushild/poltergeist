@@ -24,6 +24,8 @@ const (
 	MonitorPolymarketTradesTaskType       = "monitor_polymarket_trades"
 	SeedZoneDraftTaskType                 = "seed_zone_draft"
 	ApplyZoneSeedDraftTaskType            = "apply_zone_seed_draft"
+	ShuffleZoneSeedChallengeTaskType      = "shuffle_zone_seed_challenge"
+	ShuffleQuestNodeChallengeTaskType     = "shuffle_quest_node_challenge"
 )
 
 const (
@@ -91,4 +93,14 @@ type SeedZoneDraftTaskPayload struct {
 
 type ApplyZoneSeedDraftTaskPayload struct {
 	JobID uuid.UUID `json:"jobId"`
+}
+
+type ShuffleZoneSeedChallengeTaskPayload struct {
+	JobID                uuid.UUID  `json:"jobId"`
+	QuestDraftID         *uuid.UUID `json:"questDraftId,omitempty"`
+	MainQuestNodeDraftID *uuid.UUID `json:"mainQuestNodeDraftId,omitempty"`
+}
+
+type ShuffleQuestNodeChallengeTaskPayload struct {
+	QuestNodeChallengeID uuid.UUID `json:"questNodeChallengeId"`
 }

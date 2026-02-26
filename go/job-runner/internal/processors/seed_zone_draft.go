@@ -628,19 +628,11 @@ func (p *SeedZoneDraftProcessor) generateQuests(
 			dialogue = dialogue[:6]
 		}
 
-		challengeQuestion := strings.TrimSpace(draft.ChallengeQuestion)
-		if challengeQuestion == "" {
-			challengeQuestion = fallbackSeedQuestChallengeQuestion(placeIDs[placeID])
-		}
-		challengeQuestion = normalizeSeedChallengeQuestion(challengeQuestion, placeIDs[placeID])
-		challengeDifficulty := 0
-		if draft.ChallengeDifficulty != nil {
-			challengeDifficulty = *draft.ChallengeDifficulty
-		}
-		if challengeDifficulty <= 0 {
-			challengeDifficulty = randomQuestDifficulty()
-		}
-		challengeDifficulty = clampQuestDifficulty(challengeDifficulty)
+		challenge := buildZoneSeedChallengeMetadata(
+			placeIDs[placeID],
+			draft.ChallengeQuestion,
+			draft.ChallengeDifficulty,
+		)
 
 		rewardItem := buildQuestRewardItemDraft(draft.RewardItem, placeIDs[placeID], name)
 
@@ -651,8 +643,8 @@ func (p *SeedZoneDraftProcessor) generateQuests(
 			AcceptanceDialogue:  dialogue,
 			PlaceID:             placeID,
 			QuestGiverDraftID:   questGiverID,
-			ChallengeQuestion:   challengeQuestion,
-			ChallengeDifficulty: challengeDifficulty,
+			ChallengeQuestion:   challenge.Question,
+			ChallengeDifficulty: challenge.Difficulty,
 			Gold:                gold,
 			RewardItem:          rewardItem,
 		})
@@ -999,19 +991,11 @@ func normalizeMainQuestNodes(
 		}
 		used[placeID] = struct{}{}
 
-		challenge := strings.TrimSpace(node.ChallengeQuestion)
-		if challenge == "" {
-			challenge = fallbackSeedQuestChallengeQuestion(placeByID[placeID])
-		}
-		challenge = normalizeSeedChallengeQuestion(challenge, placeByID[placeID])
-		difficulty := 0
-		if node.ChallengeDifficulty != nil {
-			difficulty = *node.ChallengeDifficulty
-		}
-		if difficulty <= 0 {
-			difficulty = randomQuestDifficulty()
-		}
-		difficulty = clampQuestDifficulty(difficulty)
+		challenge := buildZoneSeedChallengeMetadata(
+			placeByID[placeID],
+			node.ChallengeQuestion,
+			node.ChallengeDifficulty,
+		)
 
 		results = append(results, models.ZoneSeedMainQuestNodeDraft{
 			DraftID:             uuid.New(),
@@ -1019,8 +1003,8 @@ func normalizeMainQuestNodes(
 			Title:               strings.TrimSpace(node.Title),
 			Story:               withFallbackStory(strings.TrimSpace(node.Story), len(results)),
 			PlaceID:             placeID,
-			ChallengeQuestion:   challenge,
-			ChallengeDifficulty: difficulty,
+			ChallengeQuestion:   challenge.Question,
+			ChallengeDifficulty: challenge.Difficulty,
 		})
 	}
 
@@ -1034,14 +1018,15 @@ func normalizeMainQuestNodes(
 		}
 		used[placeID] = struct{}{}
 		title := fmt.Sprintf("Chapter %d", len(results)+1)
+		fallbackChallenge := regenerateZoneSeedChallengeMetadata(placeByID[placeID])
 		results = append(results, models.ZoneSeedMainQuestNodeDraft{
 			DraftID:             uuid.New(),
 			OrderIndex:          len(results),
 			Title:               title,
 			Story:               withFallbackStory("", len(results)),
 			PlaceID:             placeID,
-			ChallengeQuestion:   fallbackSeedQuestChallengeQuestion(placeByID[placeID]),
-			ChallengeDifficulty: randomQuestDifficulty(),
+			ChallengeQuestion:   fallbackChallenge.Question,
+			ChallengeDifficulty: fallbackChallenge.Difficulty,
 		})
 	}
 
@@ -1071,14 +1056,15 @@ func buildFallbackMainQuestNodes(
 			break
 		}
 		used[placeID] = struct{}{}
+		challenge := regenerateZoneSeedChallengeMetadata(placeByID[placeID])
 		nodes = append(nodes, models.ZoneSeedMainQuestNodeDraft{
 			DraftID:             uuid.New(),
 			OrderIndex:          i,
 			Title:               fmt.Sprintf("Chapter %d", i+1),
 			Story:               withFallbackStory("", i),
 			PlaceID:             placeID,
-			ChallengeQuestion:   normalizeSeedChallengeQuestion(fallbackSeedQuestChallengeQuestion(placeByID[placeID]), placeByID[placeID]),
-			ChallengeDifficulty: randomQuestDifficulty(),
+			ChallengeQuestion:   challenge.Question,
+			ChallengeDifficulty: challenge.Difficulty,
 		})
 	}
 	if len(nodes) < count {

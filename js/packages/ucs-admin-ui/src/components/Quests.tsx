@@ -145,6 +145,21 @@ const normalizeStatTags = (tags: string[]) =>
 const resolveChallengeSubmissionType = (challenge: QuestNodeChallenge, node?: QuestNode) =>
   (challenge.submissionType || node?.submissionType || 'photo') as QuestNodeSubmissionType;
 
+const formatChallengeShuffleStatus = (status?: string | null) => {
+  switch ((status || '').toLowerCase()) {
+    case 'queued':
+      return 'Queued';
+    case 'in_progress':
+      return 'In progress';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Idle';
+  }
+};
+
 const closePolygonRing = (ring: [number, number][]) => {
   if (ring.length === 0) return ring;
   const [firstLng, firstLat] = ring[0];
@@ -232,6 +247,7 @@ export const Quests = () => {
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const [polygonRefreshNonce, setPolygonRefreshNonce] = useState(0);
   const [deletingQuestId, setDeletingQuestId] = useState<string | null>(null);
+  const [shufflingChallengeId, setShufflingChallengeId] = useState<string | null>(null);
   const [creatingArchetype, setCreatingArchetype] = useState(false);
   const questMapContainer = useRef<HTMLDivElement>(null);
   const questMap = useRef<mapboxgl.Map | null>(null);
@@ -1001,6 +1017,39 @@ export const Quests = () => {
     setQuests((prev) => prev.map((quest) => (quest.id === questId ? updater(quest) : quest)));
   };
 
+  const refreshQuestById = async (questId: string) => {
+    const latest = await apiClient.get<Quest>(`/sonar/quests/${questId}`);
+    setQuests((prev) => {
+      const found = prev.some((quest) => quest.id === questId);
+      if (!found) return [latest, ...prev];
+      return prev.map((quest) => (quest.id === questId ? latest : quest));
+    });
+    return latest;
+  };
+
+  const pollChallengeShuffleStatus = async (
+    questId: string,
+    challengeId: string,
+    maxAttempts = 15
+  ) => {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      try {
+        const latest = await refreshQuestById(questId);
+        const latestChallenge = (latest.nodes ?? [])
+          .flatMap((node) => node.challenges ?? [])
+          .find((challenge) => challenge.id === challengeId);
+        const status = (latestChallenge?.challengeShuffleStatus || '').toLowerCase();
+        if (status !== 'queued' && status !== 'in_progress') {
+          break;
+        }
+      } catch (error) {
+        console.error('Failed to poll challenge shuffle status', error);
+        break;
+      }
+    }
+  };
+
   const handleCreateQuest = async () => {
     try {
       const payload = {
@@ -1396,6 +1445,37 @@ export const Quests = () => {
     } catch (error) {
       console.error('Failed to update challenge', error);
       alert('Failed to update challenge.');
+    }
+  };
+
+  const handleShuffleSavedChallenge = async (node: QuestNode, challenge: QuestNodeChallenge) => {
+    if (!selectedQuest) return;
+    if (challenge.challengeShuffleStatus === 'queued' || challenge.challengeShuffleStatus === 'in_progress') {
+      return;
+    }
+
+    setShufflingChallengeId(challenge.id);
+    try {
+      const queued = await apiClient.post<QuestNodeChallenge>(
+        `/sonar/questNodes/${node.id}/challenges/${challenge.id}/shuffle`,
+        {}
+      );
+
+      updateQuestState(node.questId, (quest) => ({
+        ...quest,
+        nodes: (quest.nodes ?? []).map((n) =>
+          n.id === node.id
+            ? { ...n, challenges: (n.challenges ?? []).map((c) => (c.id === challenge.id ? queued : c)) }
+            : n
+        ),
+      }));
+
+      await pollChallengeShuffleStatus(selectedQuest.id, challenge.id);
+    } catch (error) {
+      console.error('Failed to shuffle challenge', error);
+      alert('Failed to queue challenge shuffle.');
+    } finally {
+      setShufflingChallengeId(null);
     }
   };
 
@@ -2564,6 +2644,9 @@ export const Quests = () => {
                                         Tier {challenge.tier} · Difficulty {challenge.difficulty ?? 0} · Reward {challenge.reward} · Input{' '}
                                         {resolveChallengeSubmissionType(challenge, node).toUpperCase()}
                                       </div>
+                                      <div className="text-xs text-gray-500">
+                                        Shuffle: {formatChallengeShuffleStatus(challenge.challengeShuffleStatus)}
+                                      </div>
                                       {!isEditing && (
                                         <>
                                           <div className="text-gray-600">{challenge.question}</div>
@@ -2578,18 +2661,42 @@ export const Quests = () => {
                                           {challenge.proficiency && (
                                             <div className="text-xs text-gray-500">Proficiency: {challenge.proficiency}</div>
                                           )}
+                                          {challenge.challengeShuffleError && (
+                                            <div className="text-xs text-red-600">
+                                              Shuffle error: {challenge.challengeShuffleError}
+                                            </div>
+                                          )}
                                         </>
                                       )}
                                     </div>
-                                    <button
-                                      type="button"
-                                      className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                                      onClick={() =>
-                                        isEditing ? handleCancelEditChallenge(challenge.id) : handleStartEditChallenge(node, challenge)
-                                      }
-                                    >
-                                      {isEditing ? 'Cancel' : 'Edit'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+                                        onClick={() => handleShuffleSavedChallenge(node, challenge)}
+                                        disabled={
+                                          isEditing ||
+                                          shufflingChallengeId === challenge.id ||
+                                          challenge.challengeShuffleStatus === 'queued' ||
+                                          challenge.challengeShuffleStatus === 'in_progress'
+                                        }
+                                      >
+                                        {shufflingChallengeId === challenge.id ||
+                                        challenge.challengeShuffleStatus === 'queued' ||
+                                        challenge.challengeShuffleStatus === 'in_progress'
+                                          ? 'Shuffling...'
+                                          : 'Shuffle'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                        onClick={() =>
+                                          isEditing ? handleCancelEditChallenge(challenge.id) : handleStartEditChallenge(node, challenge)
+                                        }
+                                      >
+                                        {isEditing ? 'Cancel' : 'Edit'}
+                                      </button>
+                                    </div>
                                   </div>
                                   {isEditing && (
                                     <div className="mt-3">

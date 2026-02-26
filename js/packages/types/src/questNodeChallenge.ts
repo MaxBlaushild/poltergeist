@@ -11,4 +11,6 @@ export interface QuestNodeChallenge {
   difficulty?: number;
   statTags?: string[];
   proficiency?: string | null;
+  challengeShuffleStatus?: string;
+  challengeShuffleError?: string | null;
 }

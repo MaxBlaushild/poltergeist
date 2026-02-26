@@ -34,15 +34,17 @@ func (h *questNodeChallengeHandle) FindByNodeID(ctx context.Context, nodeID uuid
 
 func (h *questNodeChallengeHandle) Update(ctx context.Context, id uuid.UUID, updates *models.QuestNodeChallenge) (*models.QuestNodeChallenge, error) {
 	updatePayload := map[string]interface{}{
-		"tier":              updates.Tier,
-		"question":          updates.Question,
-		"reward":            updates.Reward,
-		"inventory_item_id": updates.InventoryItemID,
-		"submission_type":   updates.SubmissionType,
-		"difficulty":        updates.Difficulty,
-		"stat_tags":         updates.StatTags,
-		"proficiency":       updates.Proficiency,
-		"updated_at":        updates.UpdatedAt,
+		"tier":                     updates.Tier,
+		"question":                 updates.Question,
+		"reward":                   updates.Reward,
+		"inventory_item_id":        updates.InventoryItemID,
+		"submission_type":          updates.SubmissionType,
+		"difficulty":               updates.Difficulty,
+		"stat_tags":                updates.StatTags,
+		"proficiency":              updates.Proficiency,
+		"challenge_shuffle_status": updates.ChallengeShuffleStatus,
+		"challenge_shuffle_error":  updates.ChallengeShuffleError,
+		"updated_at":               updates.UpdatedAt,
 	}
 	if err := h.db.WithContext(ctx).Model(&models.QuestNodeChallenge{}).Where("id = ?", id).Updates(updatePayload).Error; err != nil {
 		return nil, err

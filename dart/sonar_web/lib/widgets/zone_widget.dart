@@ -84,7 +84,10 @@ class _ZoneWidgetState extends State<ZoneWidget> {
     if (location == null) return;
 
     final zoneProvider = context.read<ZoneProvider>();
-    final zone = zoneProvider.findZoneAtCoordinate(location.latitude, location.longitude);
+    final zone = zoneProvider.findZoneAtCoordinate(
+      location.latitude,
+      location.longitude,
+    );
     zoneProvider.setSelectedZone(zone);
   }
 
@@ -150,11 +153,11 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         const collapsedHeight = 40.0;
         final arrowIcon = _isOpen
             ? (expandUpwards
-                ? Icons.keyboard_arrow_down
-                : Icons.keyboard_arrow_up)
+                  ? Icons.keyboard_arrow_down
+                  : Icons.keyboard_arrow_up)
             : (expandUpwards
-                ? Icons.keyboard_arrow_up
-                : Icons.keyboard_arrow_down);
+                  ? Icons.keyboard_arrow_up
+                  : Icons.keyboard_arrow_down);
         final header = Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -165,11 +168,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(
-              arrowIcon,
-              size: 16,
-              color: theme.colorScheme.onSurface,
-            ),
+            Icon(arrowIcon, size: 16, color: theme.colorScheme.onSurface),
           ],
         );
         final content = _showContent && _isOpen
@@ -182,14 +181,7 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (selectedZone?.description != null) ...[
-                      Text(
-                        selectedZone!.description!,
-                        style: subTextStyle,
-                      ),
-                    ],
                     if (_reputation != null) ...[
-                      const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -208,7 +200,8 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
                           value: _reputation!.reputationToNextLevel > 0
-                              ? _reputation!.reputationOnLevel / _reputation!.reputationToNextLevel
+                              ? _reputation!.reputationOnLevel /
+                                    _reputation!.reputationToNextLevel
                               : 0.0,
                           backgroundColor: theme.colorScheme.surfaceVariant,
                           valueColor: AlwaysStoppedAnimation<Color>(
@@ -216,6 +209,12 @@ class _ZoneWidgetState extends State<ZoneWidget> {
                           ),
                         ),
                       ),
+                    ],
+                    if (_reputation != null &&
+                        selectedZone?.description != null)
+                      const SizedBox(height: 8),
+                    if (selectedZone?.description != null) ...[
+                      Text(selectedZone!.description!, style: subTextStyle),
                     ],
                   ],
                 ),
@@ -225,7 +224,13 @@ class _ZoneWidgetState extends State<ZoneWidget> {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           width: _isOpen ? 256 : 144,
-          height: _isOpen ? expandedHeight : collapsedHeight,
+          height: _isOpen ? null : collapsedHeight,
+          constraints: _isOpen
+              ? BoxConstraints(
+                  minHeight: collapsedHeight,
+                  maxHeight: expandedHeight,
+                )
+              : const BoxConstraints.tightFor(height: collapsedHeight),
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: surfaceColor,
@@ -246,19 +251,21 @@ class _ZoneWidgetState extends State<ZoneWidget> {
               onTap: () {
                 _setOpen(!_isOpen);
               },
-              child: Column(
-                mainAxisSize: MainAxisSize.max,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (expandUpwards) ...[
-                    if (_isOpen) Expanded(child: content),
-                    header,
-                  ] else ...[
-                    header,
-                    if (_isOpen) Expanded(child: content),
-                  ],
-                ],
-              ),
+              child: _isOpen
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (expandUpwards) ...[
+                          Flexible(fit: FlexFit.loose, child: content),
+                          header,
+                        ] else ...[
+                          header,
+                          Flexible(fit: FlexFit.loose, child: content),
+                        ],
+                      ],
+                    )
+                  : Center(child: header),
             ),
           ),
         );

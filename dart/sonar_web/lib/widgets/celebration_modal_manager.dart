@@ -25,9 +25,9 @@ class CelebrationModalManager extends StatelessWidget {
                 Text(
                   _titleFor(type),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.amber.shade700,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    color: Colors.amber.shade700,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 _contentFor(type, data, context),
@@ -54,27 +54,31 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Reputation Up!';
       case 'questCompleted':
         return 'Quest Complete!';
+      case 'treasureChestOpened':
+        return 'Treasure Found!';
       default:
         return 'Congratulations!';
     }
   }
 
-  Widget _contentFor(String? type, Map<String, dynamic> data, BuildContext context) {
+  Widget _contentFor(
+    String? type,
+    Map<String, dynamic> data,
+    BuildContext context,
+  ) {
     switch (type) {
       case 'questCompleted':
         final questName = data['questName'] as String? ?? 'Quest';
         final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
-        final itemsAwarded = (data['itemsAwarded'] as List<dynamic>?)
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e as Map))
+                .map((e) => Map<String, dynamic>.from(e))
                 .toList() ??
             const [];
         final rewards = <Widget>[
           if (questName.isNotEmpty)
-            Text(
-              questName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(questName, style: Theme.of(context).textTheme.titleMedium),
         ];
         if (goldAwarded > 0) {
           rewards.add(Text('+$goldAwarded Gold'));
@@ -83,6 +87,44 @@ class CelebrationModalManager extends StatelessWidget {
           final name = item['name'] as String? ?? 'Item';
           final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
           rewards.add(Text('+$quantity $name'));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: rewards,
+        );
+      case 'treasureChestOpened':
+        final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
+        final rewards = <Widget>[
+          Text(
+            'You opened a chest and received:',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 10),
+        ];
+        if (goldAwarded > 0) {
+          rewards.add(
+            Text(
+              '+$goldAwarded Gold',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          );
+        }
+        for (final item in itemsAwarded) {
+          final name = item['name'] as String? ?? 'Item';
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+          rewards.add(Text('+$quantity $name'));
+        }
+        if (goldAwarded <= 0 && itemsAwarded.isEmpty) {
+          rewards.add(const Text('No loot this time.'));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -100,7 +142,10 @@ class CelebrationModalManager extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: const Center(
-                child: Text('+1', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                child: Text(
+                  '+1',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                ),
               ),
             ),
             const SizedBox(height: 8),

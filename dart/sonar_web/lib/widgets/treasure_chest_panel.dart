@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -23,10 +22,12 @@ class TreasureChestPanel extends StatefulWidget {
     super.key,
     required this.treasureChest,
     required this.onClose,
+    this.onOpened,
   });
 
   final TreasureChest treasureChest;
   final VoidCallback onClose;
+  final void Function(Map<String, dynamic> rewardData)? onOpened;
 
   @override
   State<TreasureChestPanel> createState() => _TreasureChestPanelState();
@@ -34,23 +35,14 @@ class TreasureChestPanel extends StatefulWidget {
 
 class _TreasureChestPanelState extends State<TreasureChestPanel> {
   bool _loading = false;
-  bool _opened = false;
-  bool _showCongrats = false;
   String? _error;
   List<InventoryItem> _inventoryItems = [];
   List<OwnedInventoryItem> _ownedItems = [];
-  Timer? _congratsTimer;
 
   @override
   void initState() {
     super.initState();
     _loadInventory();
-  }
-
-  @override
-  void dispose() {
-    _congratsTimer?.cancel();
-    super.dispose();
   }
 
   Future<void> _loadInventory() async {
@@ -69,15 +61,23 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
     }
   }
 
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const R = 6371e3;
     final phi1 = lat1 * math.pi / 180;
     final phi2 = lat2 * math.pi / 180;
     final dPhi = (lat2 - lat1) * math.pi / 180;
     final dLambda = (lon2 - lon1) * math.pi / 180;
-    final a = math.sin(dPhi / 2) * math.sin(dPhi / 2) +
-        math.cos(phi1) * math.cos(phi2) *
-            math.sin(dLambda / 2) * math.sin(dLambda / 2);
+    final a =
+        math.sin(dPhi / 2) * math.sin(dPhi / 2) +
+        math.cos(phi1) *
+            math.cos(phi2) *
+            math.sin(dLambda / 2) *
+            math.sin(dLambda / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return R * c;
   }
@@ -94,9 +94,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
           break;
         }
       }
-      if (inv != null &&
-          inv.unlockTier != null &&
-          inv.unlockTier! >= t) {
+      if (inv != null && inv.unlockTier != null && inv.unlockTier! >= t) {
         return true;
       }
     }
@@ -104,7 +102,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
   }
 
   ({String text, bool disabled}) _buttonState(bool isWithinRange) {
-    if (widget.treasureChest.openedByUser == true || _opened) {
+    if (widget.treasureChest.openedByUser == true) {
       return (text: 'Already opened', disabled: true);
     }
     if (!isWithinRange) {
@@ -126,6 +124,24 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       if (msg != null && msg.toString().isNotEmpty) return msg.toString();
     }
     return e.toString();
+  }
+
+  Map<String, dynamic> _buildRewardModalData() {
+    final itemsAwarded = <Map<String, dynamic>>[];
+    for (final chestItem in widget.treasureChest.items) {
+      if (chestItem.quantity <= 0) continue;
+      final inv = _inventoryItemForId(chestItem.inventoryItemId);
+      itemsAwarded.add({
+        'id': chestItem.inventoryItemId,
+        'name': inv?.name ?? 'Item #${chestItem.inventoryItemId}',
+        'imageUrl': inv?.imageUrl ?? '',
+        'quantity': chestItem.quantity,
+      });
+    }
+    return {
+      'goldAwarded': math.max(0, widget.treasureChest.gold ?? 0),
+      'itemsAwarded': itemsAwarded,
+    };
   }
 
   Future<void> _openChest() async {
@@ -150,20 +166,14 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
       _error = null;
     });
     try {
-      await context.read<PoiService>().openTreasureChest(widget.treasureChest.id);
+      await context.read<PoiService>().openTreasureChest(
+        widget.treasureChest.id,
+      );
       if (!mounted) return;
-      await _loadInventory();
-      if (!mounted) return;
-      _congratsTimer?.cancel();
-      setState(() {
-        _loading = false;
-        _opened = true;
-        _showCongrats = true;
-      });
-      _congratsTimer = Timer(const Duration(seconds: 2), () {
-        if (!mounted) return;
-        setState(() => _showCongrats = false);
-      });
+      final rewardData = _buildRewardModalData();
+      setState(() => _loading = false);
+      widget.onClose();
+      widget.onOpened?.call(rewardData);
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -181,49 +191,6 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
     return null;
   }
 
-  List<Widget> _buildLootTiles(ThemeData theme) {
-    final tiles = <Widget>[];
-    final gold = widget.treasureChest.gold ?? 0;
-    if (gold > 0) {
-      tiles.add(
-        _RewardTile(
-          icon: Icons.paid_rounded,
-          title: '${gold} gold',
-          subtitle: 'Added to your purse',
-          color: const Color(0xFFF5C542),
-        ),
-      );
-    }
-    for (final chestItem in widget.treasureChest.items) {
-      if (chestItem.quantity <= 0) continue;
-      final inv = _inventoryItemForId(chestItem.inventoryItemId);
-      final name = inv?.name ?? 'Item #${chestItem.inventoryItemId}';
-      final imageUrl = inv?.imageUrl ?? '';
-      tiles.add(
-        _RewardTile(
-          icon: Icons.auto_awesome,
-          title: '$name ×${chestItem.quantity}',
-          subtitle: inv?.effectText.isNotEmpty == true
-              ? inv!.effectText
-              : (inv?.flavorText.isNotEmpty == true ? inv!.flavorText : 'Added to inventory'),
-          imageUrl: imageUrl.isNotEmpty ? imageUrl : null,
-          color: theme.colorScheme.primary,
-        ),
-      );
-    }
-    if (tiles.isEmpty) {
-      tiles.add(
-        _RewardTile(
-          icon: Icons.savings_outlined,
-          title: 'No loot this time',
-          subtitle: 'Better luck on the next chest.',
-          color: theme.colorScheme.tertiary,
-        ),
-      );
-    }
-    return tiles;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -238,7 +205,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
         : null;
     final isWithinRange = distance != null && distance <= _openRadiusMeters;
     final button = _buttonState(isWithinRange);
-    final isOpened = widget.treasureChest.openedByUser == true || _opened;
+    final isOpened = widget.treasureChest.openedByUser == true;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -255,8 +222,8 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                   Text(
                     'Treasure Chest',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   IconButton(
                     onPressed: widget.onClose,
@@ -298,10 +265,13 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                                 height: 140,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: theme.colorScheme.primary.withOpacity(0.08),
+                                  color: theme.colorScheme.primary.withOpacity(
+                                    0.08,
+                                  ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: theme.colorScheme.primary.withOpacity(0.35),
+                                      color: theme.colorScheme.primary
+                                          .withOpacity(0.35),
                                       blurRadius: 24,
                                       spreadRadius: 6,
                                     ),
@@ -319,51 +289,13 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                                     width: 128,
                                     height: 128,
                                     color: Colors.grey.shade300,
-                                    child: const Icon(Icons.inventory_2_outlined, size: 48),
-                                  ),
-                                ),
-                              ),
-                              if (_showCongrats)
-                                Positioned(
-                                  top: 0,
-                                  child: AnimatedScale(
-                                    duration: const Duration(milliseconds: 250),
-                                    scale: _showCongrats ? 1 : 0.9,
-                                    child: AnimatedOpacity(
-                                      duration: const Duration(milliseconds: 250),
-                                      opacity: _showCongrats ? 1 : 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF5C542),
-                                          borderRadius: BorderRadius.circular(999),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(0.15),
-                                              blurRadius: 12,
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: const [
-                                            Icon(Icons.auto_awesome, size: 16),
-                                            SizedBox(width: 6),
-                                            Text(
-                                              'Chest opened!',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    child: const Icon(
+                                      Icons.inventory_2_outlined,
+                                      size: 48,
                                     ),
                                   ),
                                 ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -375,11 +307,15 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                                 size: 18,
                                 color: isOpened
                                     ? theme.colorScheme.primary
-                                    : theme.colorScheme.onSurface.withOpacity(0.7),
+                                    : theme.colorScheme.onSurface.withOpacity(
+                                        0.7,
+                                      ),
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                isOpened ? 'Loot claimed' : 'Awaiting discovery',
+                                isOpened
+                                    ? 'Loot claimed'
+                                    : 'Awaiting discovery',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -405,29 +341,8 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                             label:
                                 'Unlock tier ${widget.treasureChest.unlockTier}',
                           ),
-                        if (widget.treasureChest.gold != null &&
-                            widget.treasureChest.gold! > 0)
-                          _InfoChip(
-                            icon: Icons.paid,
-                            label: '${widget.treasureChest.gold} gold',
-                          ),
-                        if (widget.treasureChest.items.isNotEmpty)
-                          _InfoChip(
-                            icon: Icons.inventory_2_outlined,
-                            label:
-                                '${widget.treasureChest.items.length} item types',
-                          ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Rewards',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ..._buildLootTiles(theme),
                     if (_error != null) ...[
                       const SizedBox(height: 12),
                       Text(
@@ -440,11 +355,10 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                     ],
                     const SizedBox(height: 20),
                     FilledButton(
-                      onPressed:
-                          button.disabled || _loading ? null : _openChest,
-                      child: Text(
-                        _loading ? 'Opening…' : button.text,
-                      ),
+                      onPressed: button.disabled || _loading
+                          ? null
+                          : _openChest,
+                      child: Text(_loading ? 'Opening…' : button.text),
                     ),
                   ],
                 ),
@@ -458,10 +372,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-  });
+  const _InfoChip({required this.icon, required this.label});
 
   final IconData icon;
   final String label;
@@ -474,9 +385,7 @@ class _InfoChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceVariant.withOpacity(0.6),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.2),
-        ),
+        border: Border.all(color: theme.colorScheme.outline.withOpacity(0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -487,81 +396,6 @@ class _InfoChip extends StatelessWidget {
             label,
             style: theme.textTheme.bodySmall?.copyWith(
               fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RewardTile extends StatelessWidget {
-  const _RewardTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    this.imageUrl,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final String? imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: theme.colorScheme.outline.withOpacity(0.15),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: imageUrl != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      imageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(icon, color: color),
-                    ),
-                  )
-                : Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-              ],
             ),
           ),
         ],

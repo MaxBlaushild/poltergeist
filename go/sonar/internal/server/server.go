@@ -49,8 +49,9 @@ import (
 )
 
 const (
-	poiPlaceholderImageURL    = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderImageURL     = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
 	poiPlaceholderThumbnailKey = "thumbnails/placeholders/poi-undiscovered.png"
+	questAcceptRadiusMeters    = 50.0
 )
 
 var (
@@ -249,6 +250,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/approve", middleware.WithAuthentication(s.authClient, s.livenessClient, s.approveZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryZoneSeedJob))
+	r.POST("/sonar/admin/zone-seed-jobs/:id/shuffle-challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleZoneSeedJobChallenge))
 	r.DELETE("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneSeedJob))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
@@ -274,6 +276,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
 	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
 	r.PATCH("/sonar/questNodes/:nodeId/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
+	r.POST("/sonar/questNodes/:nodeId/challenges/:challengeId/shuffle", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleQuestNodeChallenge))
 	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
@@ -1726,6 +1729,44 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	if character == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
 		return
+	}
+
+	// Require proximity to quest giver when the character has a known location.
+	characterLat := character.MovementPattern.StartingLatitude
+	characterLng := character.MovementPattern.StartingLongitude
+	if characterLat != 0 || characterLng != 0 {
+		locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
+		if err != nil || strings.TrimSpace(locationStr) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user location not available"})
+			return
+		}
+		parts := strings.Split(locationStr, ",")
+		if len(parts) < 2 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid location format"})
+			return
+		}
+		userLat, err := strconv.ParseFloat(parts[0], 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid latitude in user location"})
+			return
+		}
+		userLng, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid longitude in user location"})
+			return
+		}
+
+		distance := util.HaversineDistance(userLat, userLng, characterLat, characterLng)
+		if distance > questAcceptRadiusMeters {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf(
+					"you must be within %.0f meters of the quest giver. Currently %.0f meters away",
+					questAcceptRadiusMeters,
+					distance,
+				),
+			})
+			return
+		}
 	}
 
 	questID := requestBody.QuestID
@@ -3349,18 +3390,20 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	challenge := &models.QuestNodeChallenge{
-		ID:              uuid.New(),
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
-		QuestNodeID:     nodeID,
-		Tier:            requestBody.Tier,
-		Question:        requestBody.Question,
-		Reward:          requestBody.Reward,
-		InventoryItemID: requestBody.InventoryItemID,
-		SubmissionType:  parsedSubmissionType,
-		Difficulty:      requestBody.Difficulty,
-		StatTags:        statTags,
-		Proficiency:     proficiencyPtr,
+		ID:                     uuid.New(),
+		CreatedAt:              time.Now(),
+		UpdatedAt:              time.Now(),
+		QuestNodeID:            nodeID,
+		Tier:                   requestBody.Tier,
+		Question:               requestBody.Question,
+		Reward:                 requestBody.Reward,
+		InventoryItemID:        requestBody.InventoryItemID,
+		SubmissionType:         parsedSubmissionType,
+		Difficulty:             requestBody.Difficulty,
+		StatTags:               statTags,
+		Proficiency:            proficiencyPtr,
+		ChallengeShuffleStatus: models.QuestNodeChallengeShuffleStatusIdle,
+		ChallengeShuffleError:  nil,
 	}
 
 	if err := s.dbClient.QuestNodeChallenge().Create(ctx, challenge); err != nil {
@@ -3432,15 +3475,17 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	updates := &models.QuestNodeChallenge{
-		Tier:            requestBody.Tier,
-		Question:        requestBody.Question,
-		Reward:          requestBody.Reward,
-		InventoryItemID: requestBody.InventoryItemID,
-		Difficulty:      requestBody.Difficulty,
-		StatTags:        statTags,
-		Proficiency:     proficiencyPtr,
-		SubmissionType:  existing.SubmissionType,
-		UpdatedAt:       time.Now(),
+		Tier:                   requestBody.Tier,
+		Question:               requestBody.Question,
+		Reward:                 requestBody.Reward,
+		InventoryItemID:        requestBody.InventoryItemID,
+		Difficulty:             requestBody.Difficulty,
+		StatTags:               statTags,
+		Proficiency:            proficiencyPtr,
+		SubmissionType:         existing.SubmissionType,
+		ChallengeShuffleStatus: existing.ChallengeShuffleStatus,
+		ChallengeShuffleError:  existing.ChallengeShuffleError,
+		UpdatedAt:              time.Now(),
 	}
 
 	if requestBody.SubmissionType != nil {
@@ -3463,6 +3508,74 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, updated)
+}
+
+func (s *server) shuffleQuestNodeChallenge(ctx *gin.Context) {
+	nodeIDParam := ctx.Param("nodeId")
+	challengeIDParam := ctx.Param("challengeId")
+
+	nodeID, err := uuid.Parse(nodeIDParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
+		return
+	}
+
+	challengeID, err := uuid.Parse(challengeIDParam)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node challenge ID"})
+		return
+	}
+
+	existing, err := s.dbClient.QuestNodeChallenge().FindByID(ctx, challengeID)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
+		return
+	}
+	if existing == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
+		return
+	}
+	if existing.QuestNodeID != nodeID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge does not belong to quest node"})
+		return
+	}
+	if existing.ChallengeShuffleStatus == models.QuestNodeChallengeShuffleStatusQueued ||
+		existing.ChallengeShuffleStatus == models.QuestNodeChallengeShuffleStatusInProgress {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge shuffle already in progress"})
+		return
+	}
+
+	queued := *existing
+	queued.ChallengeShuffleStatus = models.QuestNodeChallengeShuffleStatusQueued
+	queued.ChallengeShuffleError = nil
+	queued.UpdatedAt = time.Now()
+
+	updated, err := s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, &queued)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.ShuffleQuestNodeChallengeTaskPayload{
+		QuestNodeChallengeID: challengeID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ShuffleQuestNodeChallengeTaskType, payloadBytes)); err != nil {
+		failed := *updated
+		errMsg := err.Error()
+		failed.ChallengeShuffleStatus = models.QuestNodeChallengeShuffleStatusFailed
+		failed.ChallengeShuffleError = &errMsg
+		failed.UpdatedAt = time.Now()
+		_, _ = s.dbClient.QuestNodeChallenge().Update(ctx, challengeID, &failed)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, updated)
 }
 
 func (s *server) deleteQuestNode(ctx *gin.Context) {
@@ -4360,6 +4473,110 @@ func (s *server) retryZoneSeedJob(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, job)
 }
 
+func (s *server) shuffleZoneSeedJobChallenge(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone seed job ID"})
+		return
+	}
+
+	var requestBody struct {
+		QuestDraftID         *string `json:"questDraftId"`
+		MainQuestNodeDraftID *string `json:"mainQuestNodeDraftId"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hasQuest := requestBody.QuestDraftID != nil && strings.TrimSpace(*requestBody.QuestDraftID) != ""
+	hasNode := requestBody.MainQuestNodeDraftID != nil && strings.TrimSpace(*requestBody.MainQuestNodeDraftID) != ""
+	if hasQuest == hasNode {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "provide exactly one target: questDraftId or mainQuestNodeDraftId"})
+		return
+	}
+
+	job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone seed job not found"})
+		return
+	}
+	if job.Status == models.ZoneSeedStatusInProgress || job.Status == models.ZoneSeedStatusApplying || job.Status == models.ZoneSeedStatusApplied {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot shuffle challenge for this job status"})
+		return
+	}
+	if !zoneSeedDraftHasContent(job.Draft) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zone seed job has no draft content"})
+		return
+	}
+
+	payload := jobs.ShuffleZoneSeedChallengeTaskPayload{JobID: jobID}
+	if hasQuest {
+		questDraftID, parseErr := uuid.Parse(strings.TrimSpace(*requestBody.QuestDraftID))
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid questDraftId"})
+			return
+		}
+		if !zoneSeedDraftHasQuest(job.Draft, questDraftID) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "questDraftId not found in draft"})
+			return
+		}
+		payload.QuestDraftID = &questDraftID
+		if !job.Draft.SetQuestChallengeShuffleStatus(questDraftID, models.ZoneSeedChallengeShuffleStatusQueued, nil) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "questDraftId not found in draft"})
+			return
+		}
+	} else {
+		nodeDraftID, parseErr := uuid.Parse(strings.TrimSpace(*requestBody.MainQuestNodeDraftID))
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid mainQuestNodeDraftId"})
+			return
+		}
+		if !zoneSeedDraftHasMainQuestNode(job.Draft, nodeDraftID) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainQuestNodeDraftId not found in draft"})
+			return
+		}
+		payload.MainQuestNodeDraftID = &nodeDraftID
+		if !job.Draft.SetMainQuestNodeChallengeShuffleStatus(nodeDraftID, models.ZoneSeedChallengeShuffleStatusQueued, nil) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "mainQuestNodeDraftId not found in draft"})
+			return
+		}
+	}
+
+	job.UpdatedAt = time.Now()
+	if err := s.dbClient.ZoneSeedJob().Update(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.ShuffleZoneSeedChallengeTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		if payload.QuestDraftID != nil {
+			_ = job.Draft.SetQuestChallengeShuffleStatus(*payload.QuestDraftID, models.ZoneSeedChallengeShuffleStatusFailed, &errMsg)
+		}
+		if payload.MainQuestNodeDraftID != nil {
+			_ = job.Draft.SetMainQuestNodeChallengeShuffleStatus(*payload.MainQuestNodeDraftID, models.ZoneSeedChallengeShuffleStatusFailed, &errMsg)
+		}
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ZoneSeedJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{"queued": true, "jobId": jobID})
+}
+
 func zoneSeedDraftHasContent(d models.ZoneSeedDraft) bool {
 	if strings.TrimSpace(d.FantasyName) != "" {
 		return true
@@ -4378,6 +4595,26 @@ func zoneSeedDraftHasContent(d models.ZoneSeedDraft) bool {
 	}
 	if len(d.MainQuests) > 0 {
 		return true
+	}
+	return false
+}
+
+func zoneSeedDraftHasQuest(d models.ZoneSeedDraft, questDraftID uuid.UUID) bool {
+	for _, quest := range d.Quests {
+		if quest.DraftID == questDraftID {
+			return true
+		}
+	}
+	return false
+}
+
+func zoneSeedDraftHasMainQuestNode(d models.ZoneSeedDraft, nodeDraftID uuid.UUID) bool {
+	for _, mainQuest := range d.MainQuests {
+		for _, node := range mainQuest.Nodes {
+			if node.DraftID == nodeDraftID {
+				return true
+			}
+		}
 	}
 	return false
 }

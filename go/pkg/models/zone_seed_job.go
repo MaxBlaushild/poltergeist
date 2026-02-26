@@ -19,6 +19,13 @@ const (
 	ZoneSeedStatusFailed           = "failed"
 )
 
+const (
+	ZoneSeedChallengeShuffleStatusQueued     = "queued"
+	ZoneSeedChallengeShuffleStatusInProgress = "in_progress"
+	ZoneSeedChallengeShuffleStatusCompleted  = "completed"
+	ZoneSeedChallengeShuffleStatusFailed     = "failed"
+)
+
 type ZoneSeedJob struct {
 	ID                uuid.UUID     `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
 	CreatedAt         time.Time     `json:"createdAt"`
@@ -68,16 +75,18 @@ type ZoneSeedCharacterDraft struct {
 }
 
 type ZoneSeedQuestDraft struct {
-	DraftID             uuid.UUID                     `json:"draftId"`
-	Name                string                        `json:"name"`
-	Description         string                        `json:"description"`
-	AcceptanceDialogue  []string                      `json:"acceptanceDialogue,omitempty"`
-	PlaceID             string                        `json:"placeId"`
-	QuestGiverDraftID   uuid.UUID                     `json:"questGiverDraftId"`
-	ChallengeQuestion   string                        `json:"challengeQuestion,omitempty"`
-	ChallengeDifficulty int                           `json:"challengeDifficulty,omitempty"`
-	Gold                int                           `json:"gold"`
-	RewardItem          *ZoneSeedQuestRewardItemDraft `json:"rewardItem,omitempty"`
+	DraftID                uuid.UUID                     `json:"draftId"`
+	Name                   string                        `json:"name"`
+	Description            string                        `json:"description"`
+	AcceptanceDialogue     []string                      `json:"acceptanceDialogue,omitempty"`
+	PlaceID                string                        `json:"placeId"`
+	QuestGiverDraftID      uuid.UUID                     `json:"questGiverDraftId"`
+	ChallengeQuestion      string                        `json:"challengeQuestion,omitempty"`
+	ChallengeDifficulty    int                           `json:"challengeDifficulty,omitempty"`
+	ChallengeShuffleStatus string                        `json:"challengeShuffleStatus,omitempty"`
+	ChallengeShuffleError  *string                       `json:"challengeShuffleError,omitempty"`
+	Gold                   int                           `json:"gold"`
+	RewardItem             *ZoneSeedQuestRewardItemDraft `json:"rewardItem,omitempty"`
 }
 
 type ZoneSeedQuestRewardItemDraft struct {
@@ -98,13 +107,15 @@ type ZoneSeedMainQuestDraft struct {
 }
 
 type ZoneSeedMainQuestNodeDraft struct {
-	DraftID             uuid.UUID `json:"draftId"`
-	OrderIndex          int       `json:"orderIndex"`
-	Title               string    `json:"title,omitempty"`
-	Story               string    `json:"story,omitempty"`
-	PlaceID             string    `json:"placeId"`
-	ChallengeQuestion   string    `json:"challengeQuestion,omitempty"`
-	ChallengeDifficulty int       `json:"challengeDifficulty,omitempty"`
+	DraftID                uuid.UUID `json:"draftId"`
+	OrderIndex             int       `json:"orderIndex"`
+	Title                  string    `json:"title,omitempty"`
+	Story                  string    `json:"story,omitempty"`
+	PlaceID                string    `json:"placeId"`
+	ChallengeQuestion      string    `json:"challengeQuestion,omitempty"`
+	ChallengeDifficulty    int       `json:"challengeDifficulty,omitempty"`
+	ChallengeShuffleStatus string    `json:"challengeShuffleStatus,omitempty"`
+	ChallengeShuffleError  *string   `json:"challengeShuffleError,omitempty"`
 }
 
 func (d ZoneSeedDraft) Value() (driver.Value, error) {
@@ -141,4 +152,30 @@ func (d *ZoneSeedDraft) Scan(value interface{}) error {
 	}
 
 	return json.Unmarshal(bytes, d)
+}
+
+func (d *ZoneSeedDraft) SetQuestChallengeShuffleStatus(questDraftID uuid.UUID, status string, errMsg *string) bool {
+	for idx := range d.Quests {
+		if d.Quests[idx].DraftID != questDraftID {
+			continue
+		}
+		d.Quests[idx].ChallengeShuffleStatus = status
+		d.Quests[idx].ChallengeShuffleError = errMsg
+		return true
+	}
+	return false
+}
+
+func (d *ZoneSeedDraft) SetMainQuestNodeChallengeShuffleStatus(nodeDraftID uuid.UUID, status string, errMsg *string) bool {
+	for mainIdx := range d.MainQuests {
+		for nodeIdx := range d.MainQuests[mainIdx].Nodes {
+			if d.MainQuests[mainIdx].Nodes[nodeIdx].DraftID != nodeDraftID {
+				continue
+			}
+			d.MainQuests[mainIdx].Nodes[nodeIdx].ChallengeShuffleStatus = status
+			d.MainQuests[mainIdx].Nodes[nodeIdx].ChallengeShuffleError = errMsg
+			return true
+		}
+	}
+	return false
 }

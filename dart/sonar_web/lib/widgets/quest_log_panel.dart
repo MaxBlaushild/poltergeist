@@ -23,11 +23,13 @@ class QuestLogPanel extends StatefulWidget {
     required this.onClose,
     required this.onFocusPoI,
     required this.onFocusTurnInQuest,
+    this.initialSelectedQuest,
   });
 
   final VoidCallback onClose;
   final OnFocusPoI onFocusPoI;
   final OnFocusTurnInQuest onFocusTurnInQuest;
+  final Quest? initialSelectedQuest;
 
   @override
   State<QuestLogPanel> createState() => _QuestLogPanelState();
@@ -36,6 +38,21 @@ class QuestLogPanel extends StatefulWidget {
 class _QuestLogPanelState extends State<QuestLogPanel> {
   Quest? _selectedQuest;
   final Map<String, bool> _expanded = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedQuest = widget.initialSelectedQuest;
+  }
+
+  @override
+  void didUpdateWidget(covariant QuestLogPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialSelectedQuest?.id != oldWidget.initialSelectedQuest?.id &&
+        widget.initialSelectedQuest != null) {
+      _selectedQuest = widget.initialSelectedQuest;
+    }
+  }
 
   void _focusPoI(PointOfInterest poi) {
     widget.onClose();
@@ -67,14 +84,18 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           );
         }
         final readyToTurnIn = ql.quests
-            .where((q) =>
-                q.turnedInAt == null &&
-                (q.readyToTurnIn || (q.currentNode == null && q.isAccepted)))
+            .where(
+              (q) =>
+                  q.turnedInAt == null &&
+                  (q.readyToTurnIn || (q.currentNode == null && q.isAccepted)),
+            )
             .toList();
         final readyIds = readyToTurnIn.map((q) => q.id).toSet();
         final tracked = ql.quests
-            .where((q) =>
-                ql.trackedQuestIds.contains(q.id) && !readyIds.contains(q.id))
+            .where(
+              (q) =>
+                  ql.trackedQuestIds.contains(q.id) && !readyIds.contains(q.id),
+            )
             .toList();
         final tagBuckets = <String, List<Quest>>{};
         for (final g in tags.tagGroups) {
@@ -88,8 +109,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
           final tagNames = _questTags(q);
           var added = false;
           for (final g in tags.tagGroups) {
-            final hasMatch = tagNames.any((tName) => tags.tags
-                .any((x) => x.tagGroupId == g.id && x.name == tName));
+            final hasMatch = tagNames.any(
+              (tName) =>
+                  tags.tags.any((x) => x.tagGroupId == g.id && x.name == tName),
+            );
             if (hasMatch) {
               tagBuckets[g.id]!.add(q);
               added = true;
@@ -100,7 +123,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
 
         final completed = ql.completedQuests;
 
-        final hasQuestListItems = readyToTurnIn.isNotEmpty ||
+        final hasQuestListItems =
+            readyToTurnIn.isNotEmpty ||
             tracked.isNotEmpty ||
             tagBuckets.values.any((list) => list.isNotEmpty) ||
             untagged.isNotEmpty;
@@ -157,7 +181,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   ),
                                 ...tags.tagGroups.map((g) {
                                   final list = tagBuckets[g.id] ?? [];
-                                  if (list.isEmpty) return const SizedBox.shrink();
+                                  if (list.isEmpty)
+                                    return const SizedBox.shrink();
                                   return _QuestAccordion(
                                     key: ValueKey(g.id),
                                     title: g.name,
@@ -220,8 +245,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   !(_expanded['completed'] ?? true);
                             });
                           },
-                          onQuestTap: (q) =>
-                              setState(() => _selectedQuest = q),
+                          onQuestTap: (q) => setState(() => _selectedQuest = q),
                         ),
                       ),
                   ],
@@ -279,13 +303,17 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   }
 
   Widget _buildQuestDetail(BuildContext context, Quest quest) {
-    return Consumer3<QuestLogProvider, DiscoveriesProvider, CharacterStatsProvider>(
+    return Consumer3<
+      QuestLogProvider,
+      DiscoveriesProvider,
+      CharacterStatsProvider
+    >(
       builder: (context, ql, discoveries, statsProvider, _) {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
         final node = quest.currentNode;
         final poi = node?.pointOfInterest;
         final discoveredIds = <String>{
-          for (final d in discoveries.discoveries) d.pointOfInterestId
+          for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
 
         return SingleChildScrollView(
@@ -302,8 +330,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               Text(
                 quest.name,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               const SizedBox(height: 8),
@@ -314,10 +342,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     quest.turnedInAt != null
                         ? 'Completed'
                         : quest.readyToTurnIn
-                            ? 'Ready to turn in'
-                            : quest.isAccepted
-                                ? 'In progress'
-                                : 'Not accepted',
+                        ? 'Ready to turn in'
+                        : quest.isAccepted
+                        ? 'In progress'
+                        : 'Not accepted',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   if (quest.turnedInAt == null)
@@ -339,8 +367,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                   child: Text(
                     'Completed ${quest.completionCount} times',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey.shade600,
-                        ),
+                      color: Colors.grey.shade600,
+                    ),
                   ),
                 ),
               const SizedBox(height: 16),
@@ -351,9 +379,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               const SizedBox(height: 16),
               Text(
                 'Rewards',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               if (quest.gold > 0)
@@ -379,7 +407,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
               if (quest.gold <= 0 && quest.itemRewards.isEmpty)
                 Text(
                   'No rewards listed.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
                 ),
               const SizedBox(height: 16),
               if (node == null)
@@ -393,8 +423,8 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 Text(
                   'Current Objective',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 if (poi != null)
@@ -418,9 +448,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 const SizedBox(height: 12),
                 Text(
                   'Challenges',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 ...node.challenges.map((c) {
@@ -447,9 +477,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                         Expanded(
                           child: Text(
                             c.question,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  color: color,
-                                ),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: color),
                           ),
                         ),
                       ],
@@ -481,10 +511,10 @@ class _QuestPoiCard extends StatelessWidget {
     final thumbnailUrl = poi.thumbnailUrl;
     final imageUrl = discovered
         ? (thumbnailUrl != null && thumbnailUrl.isNotEmpty
-            ? thumbnailUrl
-            : (poi.imageURL != null && poi.imageURL!.isNotEmpty
-                ? poi.imageURL!
-                : _placeholderImageUrl))
+              ? thumbnailUrl
+              : (poi.imageURL != null && poi.imageURL!.isNotEmpty
+                    ? poi.imageURL!
+                    : _placeholderImageUrl))
         : _placeholderImageUrl;
     return InkWell(
       onTap: onTap,
@@ -516,9 +546,9 @@ class _QuestPoiCard extends StatelessWidget {
             Expanded(
               child: Text(
                 poi.name,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             const Icon(Icons.chevron_right),
@@ -560,7 +590,10 @@ class _QuestAccordion extends StatelessWidget {
               onTap: onToggle,
               borderRadius: BorderRadius.circular(12),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     if (title == 'Tracked Quests')
@@ -571,26 +604,23 @@ class _QuestAccordion extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
                     Text(
                       '(${quests.length})',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.7),
-                          ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
                     ),
                     Icon(
                       expanded ? Icons.expand_less : Icons.expand_more,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ],
                 ),
@@ -600,101 +630,101 @@ class _QuestAccordion extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Column(
-                  children: quests
-                      .map((q) {
-                        final poi = q.currentNode?.pointOfInterest;
-                        return InkWell(
-                          onTap: () {
-                            if (q.readyToTurnIn && onReadyQuestTap != null) {
-                              onReadyQuestTap!(q);
-                              return;
-                            }
-                            onQuestTap(q);
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            child: Row(
-                              children: [
-                                q.turnedInAt != null || q.readyToTurnIn
-                                    ? Container(
-                                        width: 22,
-                                        height: 22,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF3BB54A),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.check,
-                                          size: 14,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : Icon(
-                                        q.isAccepted
-                                            ? Icons.play_circle_fill
-                                            : Icons.radio_button_unchecked,
-                                        size: 22,
-                                        color: q.isAccepted
-                                            ? Colors.orange
-                                            : Colors.grey.shade400,
-                                      ),
-                                const SizedBox(width: 12),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.network(
-                                    (poi?.thumbnailUrl ?? '').isNotEmpty
-                                        ? poi!.thumbnailUrl!
-                                        : ((poi?.imageURL ?? '').isNotEmpty
-                                            ? poi!.imageURL!
-                                            : _placeholderImageUrl),
-                                    width: 36,
-                                    height: 36,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Container(
-                                      width: 36,
-                                      height: 36,
-                                      color: Colors.grey.shade300,
-                                      child: const Icon(Icons.place, size: 18),
+                  children: quests.map((q) {
+                    final poi = q.currentNode?.pointOfInterest;
+                    return InkWell(
+                      onTap: () {
+                        if (q.readyToTurnIn && onReadyQuestTap != null) {
+                          onReadyQuestTap!(q);
+                          return;
+                        }
+                        onQuestTap(q);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            q.turnedInAt != null || q.readyToTurnIn
+                                ? Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF3BB54A),
+                                      shape: BoxShape.circle,
                                     ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Icon(
+                                    q.isAccepted
+                                        ? Icons.play_circle_fill
+                                        : Icons.radio_button_unchecked,
+                                    size: 22,
+                                    color: q.isAccepted
+                                        ? Colors.orange
+                                        : Colors.grey.shade400,
+                                  ),
+                            const SizedBox(width: 12),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image.network(
+                                (poi?.thumbnailUrl ?? '').isNotEmpty
+                                    ? poi!.thumbnailUrl!
+                                    : ((poi?.imageURL ?? '').isNotEmpty
+                                          ? poi!.imageURL!
+                                          : _placeholderImageUrl),
+                                width: 36,
+                                height: 36,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 36,
+                                  height: 36,
+                                  color: Colors.grey.shade300,
+                                  child: const Icon(Icons.place, size: 18),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                q.name,
+                                style: Theme.of(context).textTheme.bodyLarge,
+                              ),
+                            ),
+                            if (q.completionCount > 1)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade50,
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.orange.shade200,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    q.name,
-                                    style: Theme.of(context).textTheme.bodyLarge,
-                                  ),
-                                ),
-                                if (q.completionCount > 1)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade50,
-                                      borderRadius: BorderRadius.circular(999),
-                                      border: Border.all(
-                                        color: Colors.orange.shade200,
+                                child: Text(
+                                  'x${q.completionCount}',
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: Colors.orange.shade800,
+                                        fontWeight: FontWeight.w600,
                                       ),
-                                    ),
-                                    child: Text(
-                                      'x${q.completionCount}',
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                            color: Colors.orange.shade800,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          );
-                      })
-                      .toList(),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
           ],

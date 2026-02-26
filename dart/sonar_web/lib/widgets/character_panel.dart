@@ -1,16 +1,23 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../constants/gameplay_constants.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../models/location.dart';
 import '../models/quest.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
+import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
+
+const _questAcceptRadiusMeters = kProximityUnlockRadiusMeters;
 
 class CharacterPanel extends StatefulWidget {
   const CharacterPanel({
@@ -25,7 +32,8 @@ class CharacterPanel extends StatefulWidget {
   final Character character;
   final VoidCallback onClose;
   final VoidCallback? onQuestAccepted;
-  final void Function(BuildContext, Character, CharacterAction)? onStartDialogue;
+  final void Function(BuildContext, Character, CharacterAction)?
+  onStartDialogue;
   final void Function(BuildContext, Character, CharacterAction)? onStartShop;
 
   @override
@@ -52,7 +60,9 @@ class _CharacterPanelState extends State<CharacterPanel> {
     } catch (_) {
       _actions = [];
     }
-    debugPrint('CharacterPanel: loaded ${_actions.length} actions for ${widget.character.id}');
+    debugPrint(
+      'CharacterPanel: loaded ${_actions.length} actions for ${widget.character.id}',
+    );
     final hasTalkAction = _actions.any((action) => action.actionType == 'talk');
     if (!hasTalkAction) {
       final fallbackTalk = CharacterAction(
@@ -174,26 +184,24 @@ class _CharacterPanelState extends State<CharacterPanel> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               'Difficulty',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           Text(
             '$roundedDifficulty',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: difficultyColor,
-                ),
+              fontWeight: FontWeight.w700,
+              color: difficultyColor,
+            ),
           ),
         ],
       ),
@@ -207,7 +215,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
   ) {
     final statsProvider = context.watch<CharacterStatsProvider>();
     final roundedDifficulty = _roundToNearestFive(avgDifficulty);
-    final tagSet = tags.map((tag) => tag.trim().toLowerCase()).where((tag) => tag.isNotEmpty).toSet();
+    final tagSet = tags
+        .map((tag) => tag.trim().toLowerCase())
+        .where((tag) => tag.isNotEmpty)
+        .toSet();
     final statAverage = _averageStatValue(statsProvider.stats, tagSet);
     final difficultyColor = _difficultyColor(statAverage, roundedDifficulty);
 
@@ -216,33 +227,34 @@ class _CharacterPanelState extends State<CharacterPanel> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               'Difficulty',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           Text(
             '$roundedDifficulty',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: difficultyColor,
-                ),
+              fontWeight: FontWeight.w700,
+              color: difficultyColor,
+            ),
           ),
         ],
       ),
     );
   }
 
-  List<DialogueMessage> _buildQuestAcceptanceDialogue(Quest? quest, CharacterAction action) {
+  List<DialogueMessage> _buildQuestAcceptanceDialogue(
+    Quest? quest,
+    CharacterAction action,
+  ) {
     final questLines = (quest?.acceptanceDialogue ?? const [])
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
@@ -269,9 +281,8 @@ class _CharacterPanelState extends State<CharacterPanel> {
       ];
     }
 
-    final fallback = quest?.description.trim() ??
-        action.questDescription?.trim() ??
-        '';
+    final fallback =
+        quest?.description.trim() ?? action.questDescription?.trim() ?? '';
     if (fallback.isNotEmpty) {
       return [DialogueMessage(speaker: 'character', text: fallback, order: 0)];
     }
@@ -297,8 +308,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
                 metaTags,
               )
             : (quest == null
-                ? (questId == null ? null : _QuestDifficultyFooter(questId: questId))
-                : _buildQuestDifficultySummary(dialogContext, quest));
+                  ? (questId == null
+                        ? null
+                        : _QuestDifficultyFooter(questId: questId))
+                  : _buildQuestDifficultySummary(dialogContext, quest));
         return RpgDialogueModal(
           character: widget.character,
           action: action,
@@ -320,25 +333,39 @@ class _CharacterPanelState extends State<CharacterPanel> {
   Future<void> _handleQuest(CharacterAction action) async {
     final questId = action.questId;
     if (questId == null) return;
+    final location = context.read<LocationProvider>().location;
+    final distance = _questDistanceFrom(location);
+    final proximityBlockedReason = _questAcceptDisabledReason(
+      location,
+      distance,
+    );
+    if (proximityBlockedReason != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(proximityBlockedReason)));
+      }
+      return;
+    }
     setState(() => _acceptingQuest = true);
     try {
       await context.read<PoiService>().acceptQuest(
-            characterId: widget.character.id,
-            questId: questId,
-          );
+        characterId: widget.character.id,
+        questId: questId,
+      );
       await context.read<QuestLogProvider>().refresh();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Quest accepted')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Quest accepted')));
         widget.onClose();
         widget.onQuestAccepted?.call();
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to accept quest')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to accept quest')));
       }
     } finally {
       if (mounted) setState(() => _acceptingQuest = false);
@@ -355,10 +382,10 @@ class _CharacterPanelState extends State<CharacterPanel> {
         try {
           await context.read<AuthProvider>().refresh();
         } catch (_) {}
-        context.read<CompletedTaskProvider>().showModal('questCompleted', data: {
-          'questName': quest.name,
-          ...resp,
-        });
+        context.read<CompletedTaskProvider>().showModal(
+          'questCompleted',
+          data: {'questName': quest.name, ...resp},
+        );
         widget.onClose();
       }
     } catch (_) {
@@ -377,12 +404,124 @@ class _CharacterPanelState extends State<CharacterPanel> {
     if (questId == null || questId.isEmpty) return null;
     final quests = context.read<QuestLogProvider>().quests;
     try {
-      return quests.firstWhere(
-        (q) => q.id == questId && q.readyToTurnIn,
-      );
+      return quests.firstWhere((q) => q.id == questId && q.readyToTurnIn);
     } catch (_) {
       return null;
     }
+  }
+
+  bool get _hasCharacterLocation {
+    final movementPattern = widget.character.movementPattern;
+    if (movementPattern == null) return false;
+    final lat = widget.character.lat;
+    final lng = widget.character.lng;
+    if (!lat.isFinite || !lng.isFinite) return false;
+    if (lat.abs() > 90 || lng.abs() > 180) return false;
+    return true;
+  }
+
+  double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+    const earthRadiusMeters = 6371e3;
+    final phi1 = lat1 * math.pi / 180;
+    final phi2 = lat2 * math.pi / 180;
+    final dPhi = (lat2 - lat1) * math.pi / 180;
+    final dLambda = (lon2 - lon1) * math.pi / 180;
+    final a =
+        math.sin(dPhi / 2) * math.sin(dPhi / 2) +
+        math.cos(phi1) *
+            math.cos(phi2) *
+            math.sin(dLambda / 2) *
+            math.sin(dLambda / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadiusMeters * c;
+  }
+
+  double? _questDistanceFrom(AppLocation? location) {
+    if (!_hasCharacterLocation || location == null) return null;
+    return _distanceMeters(
+      location.latitude,
+      location.longitude,
+      widget.character.lat,
+      widget.character.lng,
+    );
+  }
+
+  String? _questAcceptDisabledReason(
+    AppLocation? location,
+    double? distanceMeters,
+  ) {
+    if (!_hasCharacterLocation) return null;
+    if (location == null) {
+      return 'Enable location to accept this quest.';
+    }
+    if (distanceMeters == null) {
+      return 'Character location unavailable.';
+    }
+    if (distanceMeters > _questAcceptRadiusMeters) {
+      return '${distanceMeters.round()} m away. Need ${_questAcceptRadiusMeters.round()} m.';
+    }
+    return null;
+  }
+
+  Future<void> _showCharacterImageDialog(String imageUrl) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          child: Stack(
+            alignment: Alignment.topRight,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 18,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: Image.network(
+                      imageUrl,
+                      width: 360,
+                      height: 360,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 360,
+                        height: 360,
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.person, size: 96),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                icon: const Icon(Icons.close),
+                style: IconButton.styleFrom(
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                  shape: const CircleBorder(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -390,10 +529,23 @@ class _CharacterPanelState extends State<CharacterPanel> {
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
     final questActions = _actions
-        .where((action) => ['giveQuest', 'quest', 'quests'].contains(action.actionType))
+        .where(
+          (action) =>
+              ['giveQuest', 'quest', 'quests'].contains(action.actionType),
+        )
         .where((action) => action.questId != null && action.questId!.isNotEmpty)
         .toList();
-    final imageUrl = widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
+    final rawImageUrl =
+        widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
+    final imageUrl = (rawImageUrl != null && rawImageUrl.isNotEmpty)
+        ? rawImageUrl
+        : null;
+    final userLocation = context.watch<LocationProvider>().location;
+    final questDistance = _questDistanceFrom(userLocation);
+    final questAcceptDisabledReason = _questAcceptDisabledReason(
+      userLocation,
+      questDistance,
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -404,46 +556,68 @@ class _CharacterPanelState extends State<CharacterPanel> {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: Colors.grey.shade300,
-                          backgroundImage: imageUrl != null
-                              ? NetworkImage(imageUrl)
-                              : null,
-                          child: imageUrl == null
-                              ? const Icon(Icons.person)
-                              : null,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.character.name,
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                widget.character.name,
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              if (widget.character.description != null)
-                                Text(
-                                  widget.character.description!,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      IconButton(
+                        onPressed: widget.onClose,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  if (imageUrl != null) ...[
+                    const SizedBox(height: 12),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _showCharacterImageDialog(imageUrl),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: SizedBox(
+                              height: 172,
+                              child: Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  child: const Icon(Icons.person, size: 64),
                                 ),
-                            ],
+                              ),
+                            ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close),
-                  ),
+                  ],
+                  if (widget.character.description != null &&
+                      widget.character.description!.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.character.description!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -451,95 +625,96 @@ class _CharacterPanelState extends State<CharacterPanel> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _actions.isEmpty
-                      ? const Center(child: Text('No actions available'))
-                      : ListView(
-                          controller: scrollController,
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.black87,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white70, width: 2),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${widget.character.name}:',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  const Text(
-                                    'Choose an action:',
-                                    style: TextStyle(color: Colors.white70),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  ...questActions.map((action) {
-                                    final quest = _questForAction(action);
-                                    final questReadyToTurnIn = _questReadyToTurnIn(action);
-                                    if (questReadyToTurnIn != null) {
-                                      return _DialogueChoiceButton(
-                                        label: _turningInQuest
-                                            ? 'Turning in…'
-                                            : 'Turn in: ${questReadyToTurnIn.name}',
-                                        icon: Icons.assignment_turned_in,
-                                        onTap: _turningInQuest
-                                            ? null
-                                            : () => _handleTurnIn(questReadyToTurnIn, action),
-                                      );
-                                    }
-                                    if (quest?.isAccepted == true) {
-                                      return const SizedBox.shrink();
-                                    }
-                                    return _DialogueChoiceButton(
-                                      label: _acceptingQuest
-                                          ? 'Accepting quest…'
-                                          : 'Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
-                                      icon: Icons.assignment_turned_in,
-                                      onTap: _acceptingQuest
-                                          ? null
-                                          : () => _showQuestAcceptanceDialog(action),
-                                    );
-                                  }),
-                                  if (shopAction != null)
-                                    _DialogueChoiceButton(
-                                      label: 'Shop',
-                                      icon: Icons.storefront,
-                                      onTap: widget.onStartShop == null
-                                          ? null
-                                          : () {
-                                              widget.onStartShop!(context, widget.character, shopAction);
-                                              widget.onClose();
-                                            },
-                                    ),
-                                  if (talkAction != null)
-                                    _DialogueChoiceButton(
-                                      label: 'Talk',
-                                      icon: Icons.chat_bubble_outline,
-                                      onTap: widget.onStartDialogue == null
-                                          ? null
-                                          : () {
-                                              widget.onStartDialogue!(context, widget.character, talkAction);
-                                            },
-                                    ),
-                                ],
-                              ),
-                            ),
-                            if (widget.character.description != null &&
-                                widget.character.description!.isNotEmpty) ...[
-                              const SizedBox(height: 16),
-                              Text(
-                                widget.character.description!,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
+                  ? const Center(child: Text('No actions available'))
+                  : ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white70, width: 2),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ...questActions.map((action) {
+                                final quest = _questForAction(action);
+                                final questReadyToTurnIn = _questReadyToTurnIn(
+                                  action,
+                                );
+                                if (questReadyToTurnIn != null) {
+                                  return _DialogueChoiceButton(
+                                    label: _turningInQuest
+                                        ? 'Turning in…'
+                                        : 'Turn in: ${questReadyToTurnIn.name}',
+                                    icon: Icons.assignment_turned_in,
+                                    onTap: _turningInQuest
+                                        ? null
+                                        : () => _handleTurnIn(
+                                            questReadyToTurnIn,
+                                            action,
+                                          ),
+                                  );
+                                }
+                                if (quest?.isAccepted == true) {
+                                  return const SizedBox.shrink();
+                                }
+                                final questAcceptBlocked =
+                                    !_acceptingQuest &&
+                                    questAcceptDisabledReason != null;
+                                return _DialogueChoiceButton(
+                                  label: _acceptingQuest
+                                      ? 'Accepting quest…'
+                                      : 'Accept: ${quest?.name ?? action.questName ?? 'Quest'}',
+                                  icon: Icons.assignment_turned_in,
+                                  subtitle: questAcceptBlocked
+                                      ? questAcceptDisabledReason
+                                      : null,
+                                  onTap:
+                                      _acceptingQuest ||
+                                          questAcceptDisabledReason != null
+                                      ? null
+                                      : () =>
+                                            _showQuestAcceptanceDialog(action),
+                                );
+                              }),
+                              if (shopAction != null)
+                                _DialogueChoiceButton(
+                                  label: 'Shop',
+                                  icon: Icons.storefront,
+                                  onTap: widget.onStartShop == null
+                                      ? null
+                                      : () {
+                                          widget.onStartShop!(
+                                            context,
+                                            widget.character,
+                                            shopAction,
+                                          );
+                                          widget.onClose();
+                                        },
+                                ),
+                              if (talkAction != null)
+                                _DialogueChoiceButton(
+                                  label: 'Talk',
+                                  icon: Icons.chat_bubble_outline,
+                                  onTap: widget.onStartDialogue == null
+                                      ? null
+                                      : () {
+                                          widget.onStartDialogue!(
+                                            context,
+                                            widget.character,
+                                            talkAction,
+                                          );
+                                        },
+                                ),
                             ],
-                          ],
+                          ),
                         ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -549,9 +724,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
 }
 
 class _QuestDifficultyFooter extends StatefulWidget {
-  const _QuestDifficultyFooter({
-    required this.questId,
-  });
+  const _QuestDifficultyFooter({required this.questId});
 
   final String questId;
 
@@ -658,26 +831,24 @@ class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               'Difficulty',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           Text(
             '$roundedDifficulty',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: difficultyColor,
-                ),
+              fontWeight: FontWeight.w700,
+              color: difficultyColor,
+            ),
           ),
         ],
       ),
@@ -706,8 +877,8 @@ class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
                   child: Text(
                     'Difficulty',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const SizedBox(
@@ -736,16 +907,16 @@ class _QuestDifficultyFooterState extends State<_QuestDifficultyFooter> {
                   child: Text(
                     'Difficulty',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Text(
                   '—',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.outline,
-                      ),
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                 ),
               ],
             ),
@@ -761,11 +932,13 @@ class _DialogueChoiceButton extends StatelessWidget {
   const _DialogueChoiceButton({
     required this.label,
     required this.icon,
+    this.subtitle,
     this.onTap,
   });
 
   final String label;
   final IconData icon;
+  final String? subtitle;
   final VoidCallback? onTap;
 
   @override
@@ -783,14 +956,38 @@ class _DialogueChoiceButton extends StatelessWidget {
             border: Border.all(color: Colors.white30),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: Colors.white),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: TextStyle(
+              Padding(
+                padding: const EdgeInsets.only(top: 1),
+                child: Icon(
+                  icon,
                   color: onTap == null ? Colors.white38 : Colors.white,
-                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: onTap == null ? Colors.white38 : Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],

@@ -24,6 +24,7 @@ import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/log_provider.dart';
 import '../providers/character_stats_provider.dart';
+import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
@@ -54,11 +55,14 @@ import '../widgets/paper_texture.dart';
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 const _mapThumbnailVersion = 'v4';
-const _poiImageLoadBatchSize = 8;
+const _poiImageLoadBatchSize = 24;
+const _poiSymbolAddBatchSize = 32;
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
-const _stamenWatercolorApiKey =
-    String.fromEnvironment('STADIA_MAPS_API_KEY', defaultValue: '');
+const _stamenWatercolorApiKey = String.fromEnvironment(
+  'STADIA_MAPS_API_KEY',
+  defaultValue: '',
+);
 final String _stamenWatercolorStyle = _stamenWatercolorApiKey.isNotEmpty
     ? '$_stamenWatercolorStyleBase?api_key=$_stamenWatercolorApiKey'
     : _stamenWatercolorStyleBase;
@@ -91,6 +95,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _chestSymbolById = {};
   final Map<String, Circle> _chestCircleById = {};
   final Map<String, bool> _chestCircleOpened = {};
+  final Set<String> _openedTreasureChestIds = <String>{};
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
@@ -116,7 +121,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Set<String> _lastQuestPoiIds = <String>{};
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
-  QuestSubmissionOverlayPhase _questSubmissionPhase = QuestSubmissionOverlayPhase.hidden;
+  QuestSubmissionOverlayPhase _questSubmissionPhase =
+      QuestSubmissionOverlayPhase.hidden;
   String? _questSubmissionMessage;
   int? _questSubmissionScore;
   int? _questSubmissionDifficulty;
@@ -188,6 +194,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     unawaited(_loadTreasureChestsForSelectedZone());
     unawaited(_addZoneBoundaries());
+    if (_styleLoaded && _mapController != null && _markersAdded) {
+      unawaited(_addPoiMarkers());
+    }
     _requestQuestLogIfReady();
   }
 
@@ -305,12 +314,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         unawaited(_updatePoiSymbolForQuestState(poiId, isQuestCurrent: true));
         final poi = _pois.firstWhere(
           (p) => p.id == poiId,
-          orElse: () => PointOfInterest(
-            id: '',
-            name: '',
-            lat: '0',
-            lng: '0',
-          ),
+          orElse: () => PointOfInterest(id: '', name: '', lat: '0', lng: '0'),
         );
         if (poi.id.isEmpty) continue;
         final lat = double.tryParse(poi.lat) ?? 0.0;
@@ -355,10 +359,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final filters = context.read<QuestFilterProvider>();
     final tags = context.read<TagsProvider>();
     final selectedIds = tags.selectedTagIds.toList()..sort();
-    return [
-      filters.enableTagFilter,
-      selectedIds.join(','),
-    ].join('|');
+    return [filters.enableTagFilter, selectedIds.join(',')].join('|');
   }
 
   Set<String> _currentQuestPoiIdsForFilter(QuestLogProvider questLog) {
@@ -431,10 +432,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _mapLoadTimeout = null;
     if (!mounted) return;
     setState(() => _styleLoaded = true);
-    unawaited((() async {
-      await _setSymbolOverlap();
-      await _addPoiMarkers();
-    })());
+    unawaited(
+      (() async {
+        await _setSymbolOverlap();
+        await _addPoiMarkers();
+      })(),
+    );
     if (_zones.isNotEmpty) unawaited(_addZoneBoundaries());
     unawaited(_addQuestPolygons());
     if (_questLogNeedsOverlayApply) {
@@ -456,13 +459,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _animateToUserLocationIfReady() {
-    if (!mounted || !_styleLoaded || _mapLoadFailed || _hasAnimatedToUserLocation) return;
+    if (!mounted ||
+        !_styleLoaded ||
+        _mapLoadFailed ||
+        _hasAnimatedToUserLocation)
+      return;
     final c = _mapController;
     final loc = context.read<LocationProvider>().location;
     if (c == null || loc == null) return;
     final lat = loc.latitude;
     final lng = loc.longitude;
-    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) return;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180)
+      return;
     _hasAnimatedToUserLocation = true;
     setState(() {});
     Future.delayed(const Duration(milliseconds: 400), () {
@@ -471,10 +479,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (controller == null) return;
       try {
         controller.animateCamera(
-          CameraUpdate.newCameraPosition(CameraPosition(
-            target: LatLng(lat, lng),
-            zoom: 15,
-          )),
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: LatLng(lat, lng), zoom: 15),
+          ),
           duration: const Duration(milliseconds: 600),
         );
       } catch (_) {}
@@ -488,13 +495,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (c == null || loc == null) return;
     final lat = loc.latitude;
     final lng = loc.longitude;
-    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180) return;
+    if (!lat.isFinite || !lng.isFinite || lat.abs() > 90 || lng.abs() > 180)
+      return;
     try {
       c.animateCamera(
-        CameraUpdate.newCameraPosition(CameraPosition(
-          target: LatLng(lat, lng),
-          zoom: 15,
-        )),
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: LatLng(lat, lng), zoom: 15),
+        ),
         duration: const Duration(milliseconds: 500),
       );
     } catch (_) {}
@@ -502,14 +509,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   void _flyToLocation(double lat, double lng) {
     final c = _mapController;
-    if (c == null || !lat.isFinite || !lng.isFinite ||
-        lat.abs() > 90 || lng.abs() > 180) return;
+    if (c == null ||
+        !lat.isFinite ||
+        !lng.isFinite ||
+        lat.abs() > 90 ||
+        lng.abs() > 180)
+      return;
     try {
       c.animateCamera(
-        CameraUpdate.newCameraPosition(CameraPosition(
-          target: LatLng(lat, lng),
-          zoom: 16,
-        )),
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: LatLng(lat, lng), zoom: 16),
+        ),
         duration: const Duration(milliseconds: 500),
       );
     } catch (_) {}
@@ -519,7 +529,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final lat = double.tryParse(poi.lat) ?? 0.0;
     final lng = double.tryParse(poi.lng) ?? 0.0;
     _flyToLocation(lat, lng);
-    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(poi.id);
+    final hasDiscovered = context.read<DiscoveriesProvider>().hasDiscovered(
+      poi.id,
+    );
     _showPointOfInterestPanel(poi, hasDiscovered);
   }
 
@@ -619,9 +631,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _pulsePolygon(List<QuestNodePolygonPoint> polygon) async {
     final c = _mapController;
     if (c == null || polygon.length < 3) return;
-    final ring = polygon
-        .map((p) => LatLng(p.latitude, p.longitude))
-        .toList();
+    final ring = polygon.map((p) => LatLng(p.latitude, p.longitude)).toList();
     if (ring.length > 1 &&
         (ring.first.latitude != ring.last.latitude ||
             ring.first.longitude != ring.last.longitude)) {
@@ -643,7 +653,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
   }
 
-  Future<void> _pulseQuestGlow(List<List<QuestNodePolygonPoint>> polygons) async {
+  Future<void> _pulseQuestGlow(
+    List<List<QuestNodePolygonPoint>> polygons,
+  ) async {
     if (_isQuestGlowPulsing) return;
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
@@ -651,20 +663,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final options = <LineOptions>[];
     for (final poly in polygons) {
       if (poly.length < 3) continue;
-      final ring = poly
-          .map((p) => LatLng(p.latitude, p.longitude))
-          .toList();
+      final ring = poly.map((p) => LatLng(p.latitude, p.longitude)).toList();
       if (ring.length > 1 &&
           (ring.first.latitude != ring.last.latitude ||
               ring.first.longitude != ring.last.longitude)) {
         ring.add(ring.first);
       }
-      options.add(LineOptions(
-        geometry: ring,
-        lineColor: '#f5c542',
-        lineWidth: 8.0,
-        lineOpacity: 0.35,
-      ));
+      options.add(
+        LineOptions(
+          geometry: ring,
+          lineColor: '#f5c542',
+          lineWidth: 8.0,
+          lineOpacity: 0.35,
+        ),
+      );
     }
     if (options.isEmpty) {
       _isQuestGlowPulsing = false;
@@ -689,7 +701,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final pois = await svc.getPointsOfInterest();
       final characters = await svc.getCharacters();
       if (!mounted) return;
-      debugPrint('SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}');
+      debugPrint(
+        'SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}',
+      );
       final zoneProvider = context.read<ZoneProvider>();
       zoneProvider.setZones(zones);
       setState(() {
@@ -712,17 +726,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _loadTreasureChestsForSelectedZone() async {
-    final zoneId = context.read<ZoneProvider>().selectedZone?.id ??
+    final zoneId =
+        context.read<ZoneProvider>().selectedZone?.id ??
         (_zones.isNotEmpty ? _zones.first.id : null);
     if (zoneId == null) {
       if (mounted) setState(() => _treasureChests = []);
       return;
     }
     try {
-      final chests = await context.read<PoiService>().getTreasureChestsForZone(zoneId);
+      final chests = await context.read<PoiService>().getTreasureChestsForZone(
+        zoneId,
+      );
       if (!mounted) return;
       setState(() {
-        _treasureChests = chests;
+        _treasureChests = chests
+            .where((chest) => !_openedTreasureChestIds.contains(chest.id))
+            .toList();
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
@@ -760,7 +779,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   String? _mimeTypeFromFile(PlatformFile file) {
-    final ext = (file.extension ?? _extensionFromMime(null, file.name))?.toLowerCase();
+    final ext = (file.extension ?? _extensionFromMime(null, file.name))
+        ?.toLowerCase();
     switch (ext) {
       case 'png':
         return 'image/png';
@@ -886,7 +906,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (type == 'poi') {
         final pois = _pois.where((p) => p.id == idStr).toList();
         if (pois.isNotEmpty && mounted) {
-          _showPointOfInterestPanel(pois.first, context.read<DiscoveriesProvider>().hasDiscovered(idStr));
+          _showPointOfInterestPanel(
+            pois.first,
+            context.read<DiscoveriesProvider>().hasDiscovered(idStr),
+          );
         }
       }
     });
@@ -919,7 +942,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (type == 'poiBorder') {
           final pois = _pois.where((p) => p.id == idStr).toList();
           if (pois.isNotEmpty && mounted) {
-            _showPointOfInterestPanel(pois.first, context.read<DiscoveriesProvider>().hasDiscovered(idStr));
+            _showPointOfInterestPanel(
+              pois.first,
+              context.read<DiscoveriesProvider>().hasDiscovered(idStr),
+            );
           }
           return;
         }
@@ -932,13 +958,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           debugPrint('SinglePlayer: symbol tap POI not found id=$idStr');
           return;
         }
-        debugPrint('SinglePlayer: symbol tap POI found id=$idStr mounted=$mounted');
+        debugPrint(
+          'SinglePlayer: symbol tap POI found id=$idStr mounted=$mounted',
+        );
         if (!mounted) {
           debugPrint('SinglePlayer: symbol tap unmounted');
           return;
         }
         debugPrint('SinglePlayer: showing POI panel ${pois.first.name}');
-        _showPointOfInterestPanel(pois.first, context.read<DiscoveriesProvider>().hasDiscovered(idStr));
+        _showPointOfInterestPanel(
+          pois.first,
+          context.read<DiscoveriesProvider>().hasDiscovered(idStr),
+        );
       } catch (e, st) {
         debugPrint('SinglePlayer: symbol tap error: $e');
         debugPrint('SinglePlayer: symbol tap stack: $st');
@@ -991,12 +1022,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _selectZoneById(String zoneId) {
     final zone = _zones.firstWhere(
       (z) => z.id == zoneId,
-      orElse: () => const Zone(
-        id: '',
-        name: '',
-        latitude: 0,
-        longitude: 0,
-      ),
+      orElse: () => const Zone(id: '', name: '', latitude: 0, longitude: 0),
     );
     if (zone.id.isEmpty) return;
     _selectZone(zone);
@@ -1047,8 +1073,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           await context.read<DiscoveriesProvider>().refresh();
           if (!mounted) return;
           final questLog = context.read<QuestLogProvider>();
-          final isQuestCurrent =
-              _currentQuestPoiIdsForFilter(questLog).contains(poi.id);
+          final isQuestCurrent = _currentQuestPoiIdsForFilter(
+            questLog,
+          ).contains(poi.id);
           unawaited(
             _updatePoiSymbolForQuestState(
               poi.id,
@@ -1130,7 +1157,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<void> _addPoiMarkers() async {
     if (!_styleLoaded || _markersAdded) {
-      debugPrint('SinglePlayer: _addPoiMarkers skip (styleLoaded=$_styleLoaded markersAdded=$_markersAdded)');
+      debugPrint(
+        'SinglePlayer: _addPoiMarkers skip (styleLoaded=$_styleLoaded markersAdded=$_markersAdded)',
+      );
       return;
     }
     final c = _mapController;
@@ -1140,7 +1169,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
-    debugPrint('SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})');
+    debugPrint(
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length})',
+    );
 
     try {
       final questLog = context.read<QuestLogProvider>();
@@ -1152,11 +1183,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final selectedTagIds = tags.selectedTagIds;
       final selectedTagNames = tagFilterActive
           ? tags.tags
-              .where((t) => selectedTagIds.contains(t.id))
-              .map((t) => t.name.toLowerCase())
-              .toSet()
+                .where((t) => selectedTagIds.contains(t.id))
+                .map((t) => t.name.toLowerCase())
+                .toSet()
           : <String>{};
-      debugPrint('SinglePlayer: _addPoiMarkers questPoiIds=${questPoiIds.length}');
+      debugPrint(
+        'SinglePlayer: _addPoiMarkers questPoiIds=${questPoiIds.length}',
+      );
       _lastMapFilterKey = _buildMapFilterKey();
       if (_poiSymbols.isNotEmpty) {
         try {
@@ -1206,40 +1239,53 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         await c.clearCircles();
       } catch (_) {}
 
-      Uint8List? placeholderBytes;
-      Uint8List? questPlaceholderBytes;
-      Uint8List? availablePlaceholderBytes;
-      try {
-        placeholderBytes = await loadPoiThumbnail(null);
-        if (placeholderBytes != null) {
-          await c.addImage('poi_placeholder_$_mapThumbnailVersion', placeholderBytes);
-        }
-      } catch (_) {}
-      try {
-        questPlaceholderBytes = await loadPoiThumbnailWithBorder(null);
-        if (questPlaceholderBytes != null) {
-          await c.addImage('poi_placeholder_quest_$_mapThumbnailVersion', questPlaceholderBytes);
-        }
-      } catch (_) {}
-      try {
-        availablePlaceholderBytes = await loadPoiThumbnailWithQuestMarker(null);
-        if (availablePlaceholderBytes != null) {
+      final placeholderFuture = loadPoiThumbnail(null).catchError((_) => null);
+      final questPlaceholderFuture = loadPoiThumbnailWithBorder(
+        null,
+      ).catchError((_) => null);
+      final availablePlaceholderFuture = loadPoiThumbnailWithQuestMarker(
+        null,
+      ).catchError((_) => null);
+      final chestFuture = loadPoiThumbnail(
+        _chestImageUrl,
+      ).catchError((_) => null);
+
+      final placeholderBytes = await placeholderFuture;
+      if (placeholderBytes != null) {
+        try {
+          await c.addImage(
+            'poi_placeholder_$_mapThumbnailVersion',
+            placeholderBytes,
+          );
+        } catch (_) {}
+      }
+      final questPlaceholderBytes = await questPlaceholderFuture;
+      if (questPlaceholderBytes != null) {
+        try {
+          await c.addImage(
+            'poi_placeholder_quest_$_mapThumbnailVersion',
+            questPlaceholderBytes,
+          );
+        } catch (_) {}
+      }
+      final availablePlaceholderBytes = await availablePlaceholderFuture;
+      if (availablePlaceholderBytes != null) {
+        try {
           await c.addImage(
             'poi_placeholder_available_$_mapThumbnailVersion',
             availablePlaceholderBytes,
           );
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
-      Uint8List? chestBytes;
-      try {
-        chestBytes = await loadPoiThumbnail(_chestImageUrl);
-        if (chestBytes != null) {
-          _chestThumbnailBytes = chestBytes;
-          _chestThumbnailAdded = true;
+      final chestBytes = await chestFuture;
+      if (chestBytes != null) {
+        _chestThumbnailBytes = chestBytes;
+        _chestThumbnailAdded = true;
+        try {
           await c.addImage('chest_thumbnail_$_mapThumbnailVersion', chestBytes);
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
 
       for (final ch in _characters) {
         final points = ch.locations
@@ -1257,18 +1303,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
                 : await loadPoiThumbnail(thumbnailUrl);
             if (imageBytes != null) {
-              final imageId =
-                  hasQuestAvailable ? 'character_${ch.id}_quest' : 'character_${ch.id}';
+              final imageId = hasQuestAvailable
+                  ? 'character_${ch.id}_quest'
+                  : 'character_${ch.id}';
               final versionedId = '${imageId}_$_mapThumbnailVersion';
               try {
                 await c.addImage(versionedId, imageBytes);
               } catch (_) {}
               for (final point in points) {
-              final sym = await c.addSymbol(
-                SymbolOptions(
-                  geometry: point,
-                  iconImage: versionedId,
-                  iconSize: 0.6,
+                final sym = await c.addSymbol(
+                  SymbolOptions(
+                    geometry: point,
+                    iconImage: versionedId,
+                    iconSize: 0.6,
                     iconHaloColor: '#000000',
                     iconHaloWidth: 0.75,
                     iconAnchor: 'center',
@@ -1335,6 +1382,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
       final poiImageUpdates = <_PoiImageUpdate>[];
+      final poiSymbolRequests = <_PoiSymbolRequest>[];
       for (final poi in _pois) {
         final lat = double.tryParse(poi.lat) ?? 0.0;
         final lng = double.tryParse(poi.lng) ?? 0.0;
@@ -1344,7 +1392,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final isQuestCurrent = questPoiIds.contains(poi.id);
         final hasQuestAvailable = poi.hasAvailableQuest;
         final hasCharacter = poi.characters.isNotEmpty;
-        final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
+        final baseEligible =
+            hasCharacter || hasQuestAvailable || isQuestCurrent;
         if (!baseEligible) {
           continue;
         }
@@ -1360,39 +1409,43 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
         String? placeholderId;
         if (isQuestCurrent) {
-          placeholderId = questPlaceholderBytes != null ? 'poi_placeholder_quest' : null;
+          placeholderId = questPlaceholderBytes != null
+              ? 'poi_placeholder_quest'
+              : null;
         } else if (hasQuestAvailable) {
-          placeholderId = availablePlaceholderBytes != null ? 'poi_placeholder_available' : null;
+          placeholderId = availablePlaceholderBytes != null
+              ? 'poi_placeholder_available'
+              : null;
         } else {
           placeholderId = placeholderBytes != null ? 'poi_placeholder' : null;
         }
 
         var addedSymbol = false;
         if (placeholderId != null) {
-          try {
-            final versionedId = '${placeholderId}_$_mapThumbnailVersion';
-            final sym = await c.addSymbol(
-              SymbolOptions(
+          final versionedId = '${placeholderId}_$_mapThumbnailVersion';
+          poiSymbolRequests.add(
+            _PoiSymbolRequest(
+              poiId: poi.id,
+              isQuestCurrent: isQuestCurrent,
+              options: SymbolOptions(
                 geometry: LatLng(lat, lng),
                 iconImage: versionedId,
                 iconSize: isQuestCurrent ? 0.82 : 0.75,
                 iconHaloColor: '#000000',
                 iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
                 iconHaloBlur: 0.0,
-                iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+                iconOpacity: _poiMarkerOpacity(
+                  poi,
+                  isQuestCurrent: isQuestCurrent,
+                  undiscovered: undiscovered,
+                ),
                 iconAnchor: 'center',
                 zIndex: 2,
               ),
-              {'type': 'poi', 'id': poi.id, 'name': poi.name},
-            );
-            if (!mounted) return;
-            _poiSymbols.add(sym);
-            _poiSymbolById[poi.id] = sym;
-            if (isQuestCurrent) {
-              _setQuestPoiHighlight(sym, true);
-            }
-            addedSymbol = true;
-          } catch (_) {}
+              data: {'type': 'poi', 'id': poi.id, 'name': poi.name},
+            ),
+          );
+          addedSymbol = true;
         }
 
         if (!addedSymbol && !useRealImage) {
@@ -1401,7 +1454,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(lat, lng),
               circleRadius: 24,
               circleColor: '#3388ff',
-              circleOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+              circleOpacity: _poiMarkerOpacity(
+                poi,
+                isQuestCurrent: isQuestCurrent,
+                undiscovered: undiscovered,
+              ),
               circleStrokeWidth: 2,
               circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
             ),
@@ -1410,14 +1467,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
 
         if (useRealImage && imageUrl != null) {
-          poiImageUpdates.add(_PoiImageUpdate(
-            poi: poi,
-            imageUrl: imageUrl,
-            isQuestCurrent: isQuestCurrent,
-            hasQuestAvailable: hasQuestAvailable,
-            undiscovered: undiscovered,
-          ));
+          poiImageUpdates.add(
+            _PoiImageUpdate(
+              poi: poi,
+              imageUrl: imageUrl,
+              isQuestCurrent: isQuestCurrent,
+              hasQuestAvailable: hasQuestAvailable,
+              undiscovered: undiscovered,
+            ),
+          );
         }
+      }
+      if (poiSymbolRequests.isNotEmpty) {
+        await _addPoiSymbolsBatched(c, markerGeneration, poiSymbolRequests);
       }
       if (poiImageUpdates.isNotEmpty) {
         unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
@@ -1434,6 +1496,41 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<void> _addPoiSymbolsBatched(
+    MapLibreMapController c,
+    int markerGeneration,
+    List<_PoiSymbolRequest> requests,
+  ) async {
+    if (requests.isEmpty) return;
+    for (var i = 0; i < requests.length; i += _poiSymbolAddBatchSize) {
+      if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+      final end = i + _poiSymbolAddBatchSize;
+      final batch = requests.sublist(
+        i,
+        end > requests.length ? requests.length : end,
+      );
+      final results = await Future.wait(
+        batch.map((request) async {
+          try {
+            final sym = await c.addSymbol(request.options, request.data);
+            return _PoiSymbolResult(request, sym);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+      for (final result in results) {
+        if (result == null) continue;
+        _poiSymbols.add(result.symbol);
+        _poiSymbolById[result.request.poiId] = result.symbol;
+        if (result.request.isQuestCurrent) {
+          _setQuestPoiHighlight(result.symbol, true);
+        }
+      }
+    }
+  }
+
   Future<void> _loadPoiImagesAndUpdate(
     int markerGeneration,
     List<_PoiImageUpdate> updates,
@@ -1442,8 +1539,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     for (var i = 0; i < updates.length; i += _poiImageLoadBatchSize) {
       if (!mounted || markerGeneration != _poiMarkerGeneration) return;
       final end = i + _poiImageLoadBatchSize;
-      final batch =
-          updates.sublist(i, end > updates.length ? updates.length : end);
+      final batch = updates.sublist(
+        i,
+        end > updates.length ? updates.length : end,
+      );
       final results = await Future.wait(
         batch.map((update) => _loadPoiImageUpdate(update)),
       );
@@ -1452,79 +1551,98 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (c == null || !_styleLoaded) return;
       final questLog = context.read<QuestLogProvider>();
       final currentQuestPoiIds = _currentQuestPoiIdsForFilter(questLog);
-
-      for (final result in results) {
-        final bytes = result.bytes;
-        final imageId = result.imageId;
-        if (bytes == null || imageId == null) continue;
-        if (!mounted || markerGeneration != _poiMarkerGeneration) return;
-
-        final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
-        final hasQuestAvailableNow = result.update.poi.hasAvailableQuest;
-        if (isQuestCurrentNow != result.update.isQuestCurrent ||
-            hasQuestAvailableNow != result.update.hasQuestAvailable) {
-          continue;
-        }
-
-        final versionedId = '${imageId}_$_mapThumbnailVersion';
-        try {
-          await c.addImage(versionedId, bytes);
-        } catch (_) {}
-        if (!mounted || markerGeneration != _poiMarkerGeneration) return;
-
-        final sym = _poiSymbolById[result.update.poi.id];
-        if (sym == null) {
-          final lat = double.tryParse(result.update.poi.lat) ?? 0.0;
-          final lng = double.tryParse(result.update.poi.lng) ?? 0.0;
-          try {
-            final newSym = await c.addSymbol(
-              SymbolOptions(
-                geometry: LatLng(lat, lng),
-                iconImage: versionedId,
-                iconSize: result.update.isQuestCurrent ? 0.82 : 0.75,
-                iconHaloColor: '#000000',
-                iconHaloWidth: result.update.isQuestCurrent ? 0.0 : 0.75,
-                iconHaloBlur: 0.0,
-                iconOpacity: result.update.isQuestCurrent
-                    ? 1.0
-                    : (result.update.undiscovered ? 0.5 : 1.0),
-                iconAnchor: 'center',
-                zIndex: 2,
-              ),
-              {
-                'type': 'poi',
-                'id': result.update.poi.id,
-                'name': result.update.poi.name,
-              },
-            );
-            if (!mounted || markerGeneration != _poiMarkerGeneration) return;
-            _poiSymbols.add(newSym);
-            _poiSymbolById[result.update.poi.id] = newSym;
-            _setQuestPoiHighlight(newSym, result.update.isQuestCurrent);
-          } catch (_) {}
-          continue;
-        }
-
-        try {
-          await c.updateSymbol(
-            sym,
-            SymbolOptions(
-              iconImage: versionedId,
-              iconSize: result.update.isQuestCurrent ? 0.82 : 0.75,
-              iconHaloColor: '#000000',
-              iconHaloWidth: result.update.isQuestCurrent ? 0.0 : 0.75,
-              iconHaloBlur: 0.0,
-              iconOpacity: result.update.isQuestCurrent
-                  ? 1.0
-                  : (result.update.undiscovered ? 0.5 : 1.0),
-              iconAnchor: 'center',
-              zIndex: 2,
-            ),
-          );
-          _setQuestPoiHighlight(sym, result.update.isQuestCurrent);
-        } catch (_) {}
-      }
+      await Future.wait(
+        results.map(
+          (result) => _applyPoiImageUpdate(
+            c,
+            markerGeneration,
+            result,
+            currentQuestPoiIds,
+          ),
+        ),
+      );
     }
+  }
+
+  Future<void> _applyPoiImageUpdate(
+    MapLibreMapController c,
+    int markerGeneration,
+    _PoiImageUpdateResult result,
+    Set<String> currentQuestPoiIds,
+  ) async {
+    final bytes = result.bytes;
+    final imageId = result.imageId;
+    if (bytes == null || imageId == null) return;
+    if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+
+    final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
+    final hasQuestAvailableNow = result.update.poi.hasAvailableQuest;
+    if (isQuestCurrentNow != result.update.isQuestCurrent ||
+        hasQuestAvailableNow != result.update.hasQuestAvailable) {
+      return;
+    }
+
+    final versionedId = '${imageId}_$_mapThumbnailVersion';
+    try {
+      await c.addImage(versionedId, bytes);
+    } catch (_) {}
+    if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+
+    final sym = _poiSymbolById[result.update.poi.id];
+    if (sym == null) {
+      final lat = double.tryParse(result.update.poi.lat) ?? 0.0;
+      final lng = double.tryParse(result.update.poi.lng) ?? 0.0;
+      try {
+        final newSym = await c.addSymbol(
+          SymbolOptions(
+            geometry: LatLng(lat, lng),
+            iconImage: versionedId,
+            iconSize: isQuestCurrentNow ? 0.82 : 0.75,
+            iconHaloColor: '#000000',
+            iconHaloWidth: isQuestCurrentNow ? 0.0 : 0.75,
+            iconHaloBlur: 0.0,
+            iconOpacity: _poiMarkerOpacity(
+              result.update.poi,
+              isQuestCurrent: isQuestCurrentNow,
+              undiscovered: result.update.undiscovered,
+            ),
+            iconAnchor: 'center',
+            zIndex: 2,
+          ),
+          {
+            'type': 'poi',
+            'id': result.update.poi.id,
+            'name': result.update.poi.name,
+          },
+        );
+        if (!mounted || markerGeneration != _poiMarkerGeneration) return;
+        _poiSymbols.add(newSym);
+        _poiSymbolById[result.update.poi.id] = newSym;
+        _setQuestPoiHighlight(newSym, isQuestCurrentNow);
+      } catch (_) {}
+      return;
+    }
+
+    try {
+      await c.updateSymbol(
+        sym,
+        SymbolOptions(
+          iconImage: versionedId,
+          iconSize: isQuestCurrentNow ? 0.82 : 0.75,
+          iconHaloColor: '#000000',
+          iconHaloWidth: isQuestCurrentNow ? 0.0 : 0.75,
+          iconHaloBlur: 0.0,
+          iconOpacity: _poiMarkerOpacity(
+            result.update.poi,
+            isQuestCurrent: isQuestCurrentNow,
+            undiscovered: result.update.undiscovered,
+          ),
+          iconAnchor: 'center',
+          zIndex: 2,
+        ),
+      );
+      _setQuestPoiHighlight(sym, isQuestCurrentNow);
+    } catch (_) {}
   }
 
   Future<_PoiImageUpdateResult> _loadPoiImageUpdate(
@@ -1562,7 +1680,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     if (_chestThumbnailBytes != null && !_chestThumbnailAdded) {
       try {
-        await c.addImage('chest_thumbnail_$_mapThumbnailVersion', _chestThumbnailBytes!);
+        await c.addImage(
+          'chest_thumbnail_$_mapThumbnailVersion',
+          _chestThumbnailBytes!,
+        );
         _chestThumbnailAdded = true;
       } catch (_) {}
     }
@@ -1616,16 +1737,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           try {
             await c.updateSymbol(
               existing,
-              SymbolOptions(
-                geometry: LatLng(tc.latitude, tc.longitude),
-              ),
+              SymbolOptions(geometry: LatLng(tc.latitude, tc.longitude)),
             );
           } catch (_) {}
         }
       } else {
         final existing = _chestCircleById[tc.id];
         final opened = tc.openedByUser == true;
-        final needsUpdate = existing == null || _chestCircleOpened[tc.id] != opened;
+        final needsUpdate =
+            existing == null || _chestCircleOpened[tc.id] != opened;
         if (needsUpdate) {
           if (existing != null) {
             try {
@@ -1657,13 +1777,53 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final ring = z.ring;
     if (ring != null && ring.isNotEmpty) {
       final list = ring.map((c) => LatLng(c.latitude, c.longitude)).toList();
-      if (list.length > 1 && (list.first.latitude != list.last.latitude || list.first.longitude != list.last.longitude)) {
+      if (list.length > 1 &&
+          (list.first.latitude != list.last.latitude ||
+              list.first.longitude != list.last.longitude)) {
         list.add(list.first);
       }
       return list;
     }
     // boundary is a WKT string, not usable directly - rely on points/boundaryCoords
     return [];
+  }
+
+  bool _isPointInZone(Zone zone, double lat, double lng) {
+    final ring = zone.ring;
+    if (ring == null || ring.length < 3) return false;
+
+    var inside = false;
+    var j = ring.length - 1;
+    for (var i = 0; i < ring.length; i++) {
+      final xi = ring[i].longitude;
+      final yi = ring[i].latitude;
+      final xj = ring[j].longitude;
+      final yj = ring[j].latitude;
+      final intersect =
+          ((yi > lat) != (yj > lat)) &&
+          (lng < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
+      if (intersect) inside = !inside;
+      j = i;
+    }
+    return inside;
+  }
+
+  double _poiMarkerOpacity(
+    PointOfInterest poi, {
+    required bool isQuestCurrent,
+    required bool undiscovered,
+  }) {
+    if (isQuestCurrent || !undiscovered) return 1.0;
+    if (!mounted) return 0.5;
+
+    final selectedZone = context.read<ZoneProvider>().selectedZone;
+    if (selectedZone == null) return 0.5;
+
+    final lat = double.tryParse(poi.lat);
+    final lng = double.tryParse(poi.lng);
+    if (lat == null || lng == null) return 0.5;
+
+    return _isPointInZone(selectedZone, lat, lng) ? 1.0 : 0.5;
   }
 
   String _earthToneForZone(Zone zone, {int salt = 0}) {
@@ -1694,7 +1854,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _addZoneBoundaries() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) {
-      debugPrint('SinglePlayer: _addZoneBoundaries skip (controller=${c != null} styleLoaded=$_styleLoaded)');
+      debugPrint(
+        'SinglePlayer: _addZoneBoundaries skip (controller=${c != null} styleLoaded=$_styleLoaded)',
+      );
       return;
     }
     if (_zoneFills.isNotEmpty) {
@@ -1721,32 +1883,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final ring = _zoneRing(z);
       if (ring.length < 2) continue;
       if (selectedZoneId == null || selectedZoneId != z.id) {
-        fillOptions.add(FillOptions(
-          geometry: [ring],
-          fillColor: _earthToneForZone(z, salt: i),
-          fillOpacity: 0.4,
-        ));
+        fillOptions.add(
+          FillOptions(
+            geometry: [ring],
+            fillColor: _earthToneForZone(z, salt: i),
+            fillOpacity: 0.4,
+          ),
+        );
         fillData.add({'type': 'zone', 'id': z.id});
       }
-      options.add(LineOptions(
-        geometry: ring,
-        lineColor: '#000000',
-        lineWidth: 7.0,
-        lineOpacity: 0.18,
-        lineBlur: 1.6,
-        lineJoin: 'round',
-      ));
+      options.add(
+        LineOptions(
+          geometry: ring,
+          lineColor: '#000000',
+          lineWidth: 7.0,
+          lineOpacity: 0.18,
+          lineBlur: 1.6,
+          lineJoin: 'round',
+        ),
+      );
       lineData.add({'type': 'zone', 'id': z.id});
-      options.add(LineOptions(
-        geometry: ring,
-        lineColor: '#000000',
-        lineWidth: 2.8,
-        lineOpacity: 0.95,
-        lineJoin: 'round',
-      ));
+      options.add(
+        LineOptions(
+          geometry: ring,
+          lineColor: '#000000',
+          lineWidth: 2.8,
+          lineOpacity: 0.95,
+          lineJoin: 'round',
+        ),
+      );
       lineData.add({'type': 'zone', 'id': z.id});
     }
-    debugPrint('SinglePlayer: _addZoneBoundaries zones=${_zones.length} rings=${options.length}');
+    debugPrint(
+      'SinglePlayer: _addZoneBoundaries zones=${_zones.length} rings=${options.length}',
+    );
     if (options.isEmpty && fillOptions.isEmpty) return;
     try {
       if (fillOptions.isNotEmpty) {
@@ -1757,7 +1927,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final lines = await c.addLines(options, lineData);
       if (!mounted) return;
       _zoneLines.addAll(lines);
-      debugPrint('SinglePlayer: _addZoneBoundaries added ${lines.length} lines');
+      debugPrint(
+        'SinglePlayer: _addZoneBoundaries added ${lines.length} lines',
+      );
     } catch (e, st) {
       debugPrint('SinglePlayer: _addZoneBoundaries error: $e');
       debugPrint('SinglePlayer: _addZoneBoundaries stack: $st');
@@ -1794,25 +1966,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final fillOptions = <FillOptions>[];
     for (final poly in polygons) {
       if (poly.length < 3) continue;
-      final ring = poly
-          .map((p) => LatLng(p.latitude, p.longitude))
-          .toList();
+      final ring = poly.map((p) => LatLng(p.latitude, p.longitude)).toList();
       if (ring.length > 1 &&
           (ring.first.latitude != ring.last.latitude ||
               ring.first.longitude != ring.last.longitude)) {
         ring.add(ring.first);
       }
-      fillOptions.add(FillOptions(
-        geometry: [ring],
-        fillColor: '#f5c542',
-        fillOpacity: 0.5,
-      ));
-      options.add(LineOptions(
-        geometry: ring,
-        lineColor: '#f5c542',
-        lineWidth: 3.0,
-        lineOpacity: 1.0,
-      ));
+      fillOptions.add(
+        FillOptions(geometry: [ring], fillColor: '#f5c542', fillOpacity: 0.5),
+      );
+      options.add(
+        LineOptions(
+          geometry: ring,
+          lineColor: '#f5c542',
+          lineWidth: 3.0,
+          lineOpacity: 1.0,
+        ),
+      );
     }
 
     if (options.isEmpty || fillOptions.isEmpty) return;
@@ -1849,8 +2019,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _questPoiPulseTimer = null;
       return;
     }
-    _questPoiPulseTimer ??=
-        Timer.periodic(const Duration(milliseconds: 1200), (_) {
+    _questPoiPulseTimer ??= Timer.periodic(const Duration(milliseconds: 1200), (
+      _,
+    ) {
       unawaited(_pulseQuestPoiBorders());
     });
   }
@@ -1877,9 +2048,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final selectedTagIds = tags.selectedTagIds;
     final selectedTagNames = tagFilterActive
         ? tags.tags
-            .where((t) => selectedTagIds.contains(t.id))
-            .map((t) => t.name.toLowerCase())
-            .toSet()
+              .where((t) => selectedTagIds.contains(t.id))
+              .map((t) => t.name.toLowerCase())
+              .toSet()
         : <String>{};
     final discoveries = context.read<DiscoveriesProvider>();
     final useRealImage = discoveries.hasDiscovered(poi.id);
@@ -1888,7 +2059,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final hasQuestAvailable = poi.hasAvailableQuest;
     final hasCharacter = poi.characters.isNotEmpty;
     final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
-    final tagMatch = !tagFilterActive ||
+    final tagMatch =
+        !tagFilterActive ||
         poi.tags.any(
           (tag) =>
               selectedTagIds.contains(tag.id) ||
@@ -1913,11 +2085,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     Uint8List? imageBytes;
     if (isQuestCurrent) {
       imageBytes = await loadPoiThumbnailWithBorder(imageUrl);
-      imageId = imageBytes != null ? 'poi_${poi.id}_quest' : 'poi_placeholder_quest';
+      imageId = imageBytes != null
+          ? 'poi_${poi.id}_quest'
+          : 'poi_placeholder_quest';
     } else if (hasQuestAvailable) {
       imageBytes = await loadPoiThumbnailWithQuestMarker(imageUrl);
-      imageId =
-          imageBytes != null ? 'poi_${poi.id}_available' : 'poi_placeholder_available';
+      imageId = imageBytes != null
+          ? 'poi_${poi.id}_available'
+          : 'poi_placeholder_available';
     } else if (useRealImage) {
       imageBytes = await loadPoiThumbnail(imageUrl);
       imageId = imageBytes != null ? 'poi_${poi.id}' : 'poi_placeholder';
@@ -1955,7 +2130,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             iconSize: isQuestCurrent ? 0.82 : 0.75,
             iconHaloColor: '#000000',
             iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
-            iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+            iconOpacity: _poiMarkerOpacity(
+              poi,
+              isQuestCurrent: isQuestCurrent,
+              undiscovered: undiscovered,
+            ),
             iconAnchor: 'center',
             zIndex: 2,
           ),
@@ -1977,7 +2156,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           iconSize: isQuestCurrent ? 0.82 : 0.75,
           iconHaloColor: '#000000',
           iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
-          iconOpacity: isQuestCurrent ? 1.0 : (undiscovered ? 0.5 : 1.0),
+          iconOpacity: _poiMarkerOpacity(
+            poi,
+            isQuestCurrent: isQuestCurrent,
+            undiscovered: undiscovered,
+          ),
           iconAnchor: 'center',
           zIndex: 2,
         ),
@@ -2003,8 +2186,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
             : await loadPoiThumbnail(thumbnailUrl);
         if (imageBytes != null) {
-          imageId =
-              ch.hasAvailableQuest ? 'character_${ch.id}_quest' : 'character_${ch.id}';
+          imageId = ch.hasAvailableQuest
+              ? 'character_${ch.id}_quest'
+              : 'character_${ch.id}';
         }
       } catch (_) {}
       if (imageBytes == null || imageId == null) continue;
@@ -2042,17 +2226,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       for (final border in _questPoiHighlightSymbols) {
         await c.updateSymbol(
           border,
-          SymbolOptions(
-            iconSize: targetSize,
-            iconOpacity: targetOpacity,
-          ),
+          SymbolOptions(iconSize: targetSize, iconOpacity: targetOpacity),
         );
       }
     } catch (_) {}
     _isQuestPoiPulseActive = false;
   }
 
-  bool _isInsidePolygon(double lat, double lng, List<QuestNodePolygonPoint> polygon) {
+  bool _isInsidePolygon(
+    double lat,
+    double lng,
+    List<QuestNodePolygonPoint> polygon,
+  ) {
     if (polygon.length < 3) return false;
     var inside = false;
     for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -2060,14 +2245,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final yi = polygon[i].latitude;
       final xj = polygon[j].longitude;
       final yj = polygon[j].latitude;
-      final intersect = ((yi > lat) != (yj > lat)) &&
+      final intersect =
+          ((yi > lat) != (yj > lat)) &&
           (lng < (xj - xi) * (lat - yi) / (yj - yi + 0.0) + xi);
       if (intersect) inside = !inside;
     }
     return inside;
   }
 
-  Future<void> _showQuestNodeSubmissionModal(Quest quest, QuestNode node) async {
+  Future<void> _showQuestNodeSubmissionModal(
+    Quest quest,
+    QuestNode node,
+  ) async {
     final textController = TextEditingController();
     CapturedImage? capturedImage;
     PlatformFile? capturedVideo;
@@ -2096,21 +2285,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           ),
           child: StatefulBuilder(
             builder: (context, setModalState) {
-              final canUseCamera = kIsWeb ||
+              final canUseCamera =
+                  kIsWeb ||
                   defaultTargetPlatform == TargetPlatform.iOS ||
                   defaultTargetPlatform == TargetPlatform.android;
               final submissionType = node.submissionType;
-              final isTextSubmission = submissionType == QuestNode.submissionTypeText;
-              final isPhotoSubmission = submissionType == QuestNode.submissionTypePhoto;
-              final isVideoSubmission = submissionType == QuestNode.submissionTypeVideo;
+              final isTextSubmission =
+                  submissionType == QuestNode.submissionTypeText;
+              final isPhotoSubmission =
+                  submissionType == QuestNode.submissionTypePhoto;
+              final isVideoSubmission =
+                  submissionType == QuestNode.submissionTypeVideo;
               final selectedChallenge = node.challenges.isEmpty
                   ? null
                   : (selectedChallengeId == null
-                      ? node.challenges.first
-                      : node.challenges.firstWhere(
-                          (c) => c.id == selectedChallengeId,
-                          orElse: () => node.challenges.first,
-                        ));
+                        ? node.challenges.first
+                        : node.challenges.firstWhere(
+                            (c) => c.id == selectedChallengeId,
+                            orElse: () => node.challenges.first,
+                          ));
               final statValues = context.watch<CharacterStatsProvider>().stats;
               final statTags = (selectedChallenge?.statTags ?? const [])
                   .map((tag) => tag.trim().toLowerCase())
@@ -2118,8 +2311,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   .toList();
               final difficultyValue = selectedChallenge?.difficulty ?? 0;
               final statAverage = _averageStatValue(statValues, statTags);
-              final difficultyColor =
-                  _difficultyColor(statAverage, difficultyValue);
+              final difficultyColor = _difficultyColor(
+                statAverage,
+                difficultyValue,
+              );
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2127,8 +2322,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   Text(
                     quest.name,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (node.challenges.length > 1)
@@ -2160,9 +2355,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     Text(
                       'Difficulty: ${selectedChallenge.difficulty}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: difficultyColor,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: difficultyColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                   if (statTags.isNotEmpty) ...[
@@ -2170,8 +2365,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     Text(
                       'Stat modifiers',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Wrap(
@@ -2179,7 +2374,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       runSpacing: 8,
                       children: statTags.map((tag) {
                         final label = _formatStatLabel(tag);
-                        final value = statValues[tag] ??
+                        final value =
+                            statValues[tag] ??
                             CharacterStatsProvider.baseStatValue;
                         return Container(
                           padding: const EdgeInsets.symmetric(
@@ -2187,15 +2383,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceVariant
-                                .withOpacity(0.6),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceVariant.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Text(
@@ -2227,17 +2422,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               onPressed: uploadingSubmission
                                   ? null
                                   : () async {
-                                      final result = await captureImageFromCamera();
+                                      final result =
+                                          await captureImageFromCamera();
                                       if (!mounted) return;
-                                      if (result == null || result.bytes.isEmpty) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                      if (result == null ||
+                                          result.bytes.isEmpty) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text('No photo captured.'),
                                           ),
                                         );
                                         return;
                                       }
-                                      setModalState(() => capturedImage = result);
+                                      setModalState(
+                                        () => capturedImage = result,
+                                      );
                                     },
                               icon: const Icon(Icons.photo_camera),
                               label: const Text('Take photo'),
@@ -2246,7 +2447,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           if (capturedImage != null) ...[
                             const SizedBox(width: 12),
                             TextButton(
-                              onPressed: () => setModalState(() => capturedImage = null),
+                              onPressed: () =>
+                                  setModalState(() => capturedImage = null),
                               child: const Text('Clear'),
                             ),
                           ],
@@ -2278,29 +2480,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             onPressed: uploadingSubmission
                                 ? null
                                 : () async {
-                                    final result = await FilePicker.platform.pickFiles(
-                                      type: FileType.video,
-                                      withData: true,
-                                    );
+                                    final result = await FilePicker.platform
+                                        .pickFiles(
+                                          type: FileType.video,
+                                          withData: true,
+                                        );
                                     if (!mounted) return;
-                                    if (result == null || result.files.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    if (result == null ||
+                                        result.files.isEmpty) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('No video selected.'),
                                         ),
                                       );
                                       return;
                                     }
-                                    setModalState(() => capturedVideo = result.files.first);
+                                    setModalState(
+                                      () => capturedVideo = result.files.first,
+                                    );
                                   },
                             icon: const Icon(Icons.videocam),
-                            label: Text(capturedVideo == null ? 'Select video' : 'Replace video'),
+                            label: Text(
+                              capturedVideo == null
+                                  ? 'Select video'
+                                  : 'Replace video',
+                            ),
                           ),
                         ),
                         if (capturedVideo != null) ...[
                           const SizedBox(width: 12),
                           TextButton(
-                            onPressed: () => setModalState(() => capturedVideo = null),
+                            onPressed: () =>
+                                setModalState(() => capturedVideo = null),
                             child: const Text('Clear'),
                           ),
                         ],
@@ -2359,20 +2572,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             String? imageSubmissionUrl;
                             String? videoSubmissionUrl;
                             if (isPhotoSubmission && capturedImage != null) {
-                              final ext = _extensionFromMime(
+                              final ext =
+                                  _extensionFromMime(
                                     capturedImage!.mimeType,
                                     capturedImage!.name,
                                   ) ??
                                   'jpg';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService.getPresignedUploadUrl(
-                                ApiConstants.crewPointsOfInterestBucket,
-                                key,
-                              );
+                              final url = await mediaService
+                                  .getPresignedUploadUrl(
+                                    ApiConstants.crewPointsOfInterestBucket,
+                                    key,
+                                  );
                               if (url == null) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -2389,8 +2607,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 capturedImage!.mimeType ?? 'image/jpeg',
                               );
                               if (!ok) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -2404,20 +2625,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               imageSubmissionUrl = url.split('?').first;
                             }
                             if (isVideoSubmission && capturedVideo != null) {
-                              final ext = _extensionFromMime(
+                              final ext =
+                                  _extensionFromMime(
                                     _mimeTypeFromFile(capturedVideo!),
                                     capturedVideo!.name,
                                   ) ??
                                   'mp4';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService.getPresignedUploadUrl(
-                                ApiConstants.crewPointsOfInterestBucket,
-                                key,
-                              );
+                              final url = await mediaService
+                                  .getPresignedUploadUrl(
+                                    ApiConstants.crewPointsOfInterestBucket,
+                                    key,
+                                  );
                               if (url == null) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -2430,8 +2656,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               }
                               final bytes = capturedVideo!.bytes;
                               if (bytes == null || bytes.isEmpty) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -2445,11 +2674,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(bytes),
-                                _mimeTypeFromFile(capturedVideo!) ?? 'video/mp4',
+                                _mimeTypeFromFile(capturedVideo!) ??
+                                    'video/mp4',
                               );
                               if (!ok) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -2462,14 +2695,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               }
                               videoSubmissionUrl = url.split('?').first;
                             }
-                            final resp = await questLogProvider.submitQuestNodeChallenge(
-                              node.id,
-                              questNodeChallengeId: selectedChallengeId,
-                              textSubmission: isTextSubmission ? trimmedText : null,
-                              imageSubmissionUrl: imageSubmissionUrl,
-                              videoSubmissionUrl: videoSubmissionUrl,
+                            final resp = await questLogProvider
+                                .submitQuestNodeChallenge(
+                                  node.id,
+                                  questNodeChallengeId: selectedChallengeId,
+                                  textSubmission: isTextSubmission
+                                      ? trimmedText
+                                      : null,
+                                  imageSubmissionUrl: imageSubmissionUrl,
+                                  videoSubmissionUrl: videoSubmissionUrl,
+                                );
+                            final elapsed = DateTime.now().difference(
+                              startedAt,
                             );
-                            final elapsed = DateTime.now().difference(startedAt);
                             if (elapsed < const Duration(milliseconds: 700)) {
                               await Future<void>.delayed(
                                 const Duration(milliseconds: 700),
@@ -2478,17 +2716,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             final success = resp['successful'] == true;
                             final reason = resp['reason']?.toString() ?? '';
                             final score = (resp['score'] as num?)?.toInt();
-                            final difficulty = (resp['difficulty'] as num?)?.toInt();
-                            final combined = (resp['combinedScore'] as num?)?.toInt();
+                            final difficulty = (resp['difficulty'] as num?)
+                                ?.toInt();
+                            final combined = (resp['combinedScore'] as num?)
+                                ?.toInt();
                             final statTags = (resp['statTags'] as List?)
                                 ?.map((tag) => tag.toString())
                                 .toList();
                             final statValues = (resp['statValues'] as Map?)
-                                ?.map((key, value) =>
-                                    MapEntry(key.toString(), (value as num?)?.toInt() ?? 0));
+                                ?.map(
+                                  (key, value) => MapEntry(
+                                    key.toString(),
+                                    (value as num?)?.toInt() ?? 0,
+                                  ),
+                                );
                             final baseMessage = success
-                                ? (reason.isNotEmpty ? reason : 'Challenge completed!')
-                                : (reason.isNotEmpty ? reason : 'Submission failed');
+                                ? (reason.isNotEmpty
+                                      ? reason
+                                      : 'Challenge completed!')
+                                : (reason.isNotEmpty
+                                      ? reason
+                                      : 'Submission failed');
                             _setQuestSubmissionOverlay(
                               success
                                   ? QuestSubmissionOverlayPhase.success
@@ -2517,7 +2765,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (location == null || _zones.isEmpty) return;
 
     final zoneProvider = context.read<ZoneProvider>();
-    final zone = zoneProvider.findZoneAtCoordinate(location.latitude, location.longitude);
+    final zone = zoneProvider.findZoneAtCoordinate(
+      location.latitude,
+      location.longitude,
+    );
     zoneProvider.setSelectedZone(zone);
   }
 
@@ -2530,7 +2781,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     List<String>? statTags,
     Map<String, int>? statValues,
   }) {
-    final hasDetails = score != null ||
+    final hasDetails =
+        score != null ||
         difficulty != null ||
         combinedScore != null ||
         statTags != null ||
@@ -2587,17 +2839,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.watch<QuestLogProvider>();
     final lat = loc?.latitude ?? 0.0;
     final lng = loc?.longitude ?? 0.0;
-    final initialPosition = CameraPosition(
-      target: LatLng(lat, lng),
-      zoom: 15,
-    );
+    final initialPosition = CameraPosition(target: LatLng(lat, lng), zoom: 15);
     const overlayButtonSize = 48.0;
     const overlayButtonSpacing = 12.0;
     const overlayButtonCount = 3;
     const trackedChevronBottomOffset = 36.0;
-    final overlayButtonStackHeight = overlayButtonSize * overlayButtonCount +
+    final overlayButtonStackHeight =
+        overlayButtonSize * overlayButtonCount +
         overlayButtonSpacing * (overlayButtonCount - 1);
-    final trackedQuestTop = MediaQuery.of(context).padding.top +
+    final trackedQuestTop =
+        MediaQuery.of(context).padding.top +
         overlayButtonSize -
         trackedChevronBottomOffset;
 
@@ -2617,7 +2868,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    if (_styleLoaded && !_mapLoadFailed && _mapController != null && loc != null && !_hasAnimatedToUserLocation) {
+    if (_styleLoaded &&
+        !_mapLoadFailed &&
+        _mapController != null &&
+        loc != null &&
+        !_hasAnimatedToUserLocation) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _animateToUserLocationIfReady();
@@ -2625,7 +2880,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     // Retry adding markers/zones when we have style + data but haven't added yet (e.g. style loaded after _loadAll)
-    if (_styleLoaded && !_mapLoadFailed && _mapController != null && _zones.isNotEmpty && !_markersAdded) {
+    if (_styleLoaded &&
+        !_mapLoadFailed &&
+        _mapController != null &&
+        _zones.isNotEmpty &&
+        !_markersAdded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         unawaited(_addPoiMarkers());
@@ -2659,7 +2918,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             onPointerDown: (event) {
               if (kDebugMode) {
                 debugPrint(
-                    'SinglePlayer: map pointer down at ${event.position}');
+                  'SinglePlayer: map pointer down at ${event.position}',
+                );
               }
             },
             child: MapLibreMap(
@@ -2675,7 +2935,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               onMapClick: _handleMapClick,
               onStyleLoadedCallback: _onMapStyleLoaded,
               myLocationEnabled: true,
-              compassEnabled: true,
+              compassEnabled: false,
             ),
           ),
           if (!_styleLoaded && !_mapLoadFailed)
@@ -2745,7 +3005,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   onPointerDown: (event) {
                     if (kDebugMode) {
                       debugPrint(
-                          'SinglePlayer: top controls pointer down at ${event.position}');
+                        'SinglePlayer: top controls pointer down at ${event.position}',
+                      );
                     }
                   },
                   child: SafeArea(
@@ -2773,7 +3034,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                           onTap: () {
                                             if (kDebugMode) {
                                               debugPrint(
-                                                  'SinglePlayer: notifications tapped');
+                                                'SinglePlayer: notifications tapped',
+                                              );
                                             }
                                             _showActivityFeed(context);
                                           },
@@ -2789,9 +3051,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                 color: const Color(0xFFB87333),
                                                 shape: BoxShape.circle,
                                                 border: Border.all(
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .surface,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.surface,
                                                   width: 1,
                                                 ),
                                                 boxShadow: const [
@@ -2813,7 +3075,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                   builder: (context, filters, tags, _) {
                                     final hasActiveFilters =
                                         filters.enableTagFilter &&
-                                            tags.selectedTagIds.isNotEmpty;
+                                        tags.selectedTagIds.isNotEmpty;
                                     return Stack(
                                       clipBehavior: Clip.none,
                                       children: [
@@ -2822,7 +3084,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                           onTap: () {
                                             if (kDebugMode) {
                                               debugPrint(
-                                                  'SinglePlayer: filters tapped');
+                                                'SinglePlayer: filters tapped',
+                                              );
                                             }
                                             _showTagFilter(context);
                                           },
@@ -2879,6 +3142,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   controller: _trackedQuestsController,
                   onFocusPoI: _focusQuestPoI,
                   onFocusNode: _focusQuestNode,
+                  onOpenQuestDetails: _openQuestLogForQuest,
                 ),
               ),
             ),
@@ -2921,7 +3185,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _questSubmissionPhase == QuestSubmissionOverlayPhase.loading ||
+                onTap:
+                    _questSubmissionPhase ==
+                            QuestSubmissionOverlayPhase.loading ||
                         _questSubmissionRevealStep < 5
                     ? null
                     : _dismissQuestSubmissionOverlay,
@@ -2933,26 +3199,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     child: Center(
                       child: LayoutBuilder(
                         builder: (context, constraints) {
-                          final isLoading = _questSubmissionPhase ==
+                          final isLoading =
+                              _questSubmissionPhase ==
                               QuestSubmissionOverlayPhase.loading;
-                          final isFailure = _questSubmissionPhase ==
+                          final isFailure =
+                              _questSubmissionPhase ==
                               QuestSubmissionOverlayPhase.failure;
                           final accentColor = isFailure
                               ? Theme.of(context).colorScheme.error
                               : const Color(0xFFF5C542);
-                          final statsProvider =
-                              context.watch<CharacterStatsProvider>();
-                          final statValues = _questSubmissionStatValues.isNotEmpty
+                          final statsProvider = context
+                              .watch<CharacterStatsProvider>();
+                          final statValues =
+                              _questSubmissionStatValues.isNotEmpty
                               ? _questSubmissionStatValues
                               : statsProvider.stats;
                           final statTags = _questSubmissionStatTags;
-                          final hasDetails = _questSubmissionScore != null ||
+                          final hasDetails =
+                              _questSubmissionScore != null ||
                               _questSubmissionDifficulty != null ||
                               _questSubmissionCombinedScore != null ||
                               statTags.isNotEmpty ||
                               _questSubmissionStatValues.isNotEmpty;
                           final scoreValue = _questSubmissionScore ?? 0;
-                          final combinedValue = _questSubmissionCombinedScore ??
+                          final combinedValue =
+                              _questSubmissionCombinedScore ??
                               (scoreValue +
                                   statTags.fold<int>(
                                     0,
@@ -2965,8 +3236,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                           final difficultyValue =
                               _questSubmissionDifficulty ?? 0;
                           final availableWidth = constraints.maxWidth * 0.9;
-                          final maxWidth =
-                              availableWidth > 420 ? 420.0 : availableWidth;
+                          final maxWidth = availableWidth > 420
+                              ? 420.0
+                              : availableWidth;
                           final minWidth = maxWidth < 280 ? maxWidth : 280.0;
                           final borderRadius = BorderRadius.circular(20);
 
@@ -2984,10 +3256,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                   vertical: 22,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .surface
-                                      .withOpacity(0.98),
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surface.withOpacity(0.98),
                                   borderRadius: borderRadius,
                                   border: Border.all(
                                     color: accentColor.withOpacity(0.9),
@@ -3003,7 +3274,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 ),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
                                     Center(
                                       child: Text(
@@ -3023,17 +3295,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                       Center(
                                         child: Text(
                                           'Calculating...',
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodySmall,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
                                         ),
                                       ),
                                       const SizedBox(height: 10),
                                       LinearProgressIndicator(
                                         minHeight: 6,
                                         color: accentColor,
-                                        backgroundColor:
-                                            accentColor.withOpacity(0.15),
+                                        backgroundColor: accentColor
+                                            .withOpacity(0.15),
                                       ),
                                     ],
                                     if (hasDetails) ...[
@@ -3048,7 +3320,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                     .textTheme
                                                     .displaySmall
                                                     ?.copyWith(
-                                                      fontWeight: FontWeight.w700,
+                                                      fontWeight:
+                                                          FontWeight.w700,
                                                       color: accentColor,
                                                     ),
                                               ),
@@ -3067,17 +3340,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                               const SizedBox(height: 16),
                                               Text(
                                                 'Stat modifiers',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelLarge,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.labelLarge,
                                               ),
                                               const SizedBox(height: 6),
                                               if (statTags.isEmpty)
                                                 Text(
                                                   'None',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall,
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall,
                                                 )
                                               else
                                                 Wrap(
@@ -3088,36 +3361,36 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                         _formatStatLabel(tag);
                                                     final value =
                                                         statValues[tag] ??
-                                                            CharacterStatsProvider
-                                                                .baseStatValue;
-                                                  return Container(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 6,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .surfaceVariant
-                                                          .withOpacity(0.6),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                        999,
+                                                        CharacterStatsProvider
+                                                            .baseStatValue;
+                                                    return Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 6,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Theme.of(context)
+                                                            .colorScheme
+                                                            .surfaceVariant
+                                                            .withOpacity(0.6),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              999,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: accentColor
+                                                              .withOpacity(0.2),
+                                                        ),
                                                       ),
-                                                      border: Border.all(
-                                                        color: accentColor
-                                                            .withOpacity(0.2),
+                                                      child: Text(
+                                                        '+$value $label',
+                                                        style: Theme.of(
+                                                          context,
+                                                        ).textTheme.labelSmall,
                                                       ),
-                                                    ),
-                                                    child: Text(
-                                                      '+$value $label',
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .labelSmall,
-                                                    ),
-                                                  );
-                                                }).toList(),
+                                                    );
+                                                  }).toList(),
                                                 ),
                                             ],
                                           ),
@@ -3134,16 +3407,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                               const SizedBox(height: 16),
                                               Text(
                                                 'Difficulty',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelLarge,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.labelLarge,
                                               ),
                                               const SizedBox(height: 4),
                                               Text(
                                                 '$difficultyValue',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
                                               ),
                                             ],
                                           ),
@@ -3158,48 +3431,49 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                 CrossAxisAlignment.start,
                                             children: [
                                               const SizedBox(height: 16),
-                                            Text(
-                                              'Scoring',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelLarge,
-                                            ),
-                                            const SizedBox(height: 6),
-                                            if (statTags.isNotEmpty)
                                               Text(
-                                                'Modifiers: ${statTags.map((tag) {
-                                                  final label =
-                                                      _formatStatLabel(tag);
-                                                  final value =
-                                                      statValues[tag] ??
-                                                          CharacterStatsProvider
-                                                              .baseStatValue;
-                                                  return '+$value $label';
-                                                }).join(' · ')}',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall,
+                                                'Scoring',
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.labelLarge,
                                               ),
-                                            Text(
-                                              () {
-                                                final parts = <String>['Score $scoreValue'];
-                                                for (final tag in statTags) {
-                                                  final label = _formatStatLabel(tag);
-                                                  final value = statValues[tag] ??
-                                                      CharacterStatsProvider.baseStatValue;
-                                                  parts.add('+$value $label');
-                                                }
-                                                return '${parts.join(' ')} = $combinedValue';
-                                              }(),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall,
+                                              const SizedBox(height: 6),
+                                              if (statTags.isNotEmpty)
+                                                Text(
+                                                  'Modifiers: ${statTags.map((tag) {
+                                                    final label = _formatStatLabel(tag);
+                                                    final value = statValues[tag] ?? CharacterStatsProvider.baseStatValue;
+                                                    return '+$value $label';
+                                                  }).join(' · ')}',
+                                                  style: Theme.of(
+                                                    context,
+                                                  ).textTheme.bodySmall,
+                                                ),
+                                              Text(
+                                                () {
+                                                  final parts = <String>[
+                                                    'Score $scoreValue',
+                                                  ];
+                                                  for (final tag in statTags) {
+                                                    final label =
+                                                        _formatStatLabel(tag);
+                                                    final value =
+                                                        statValues[tag] ??
+                                                        CharacterStatsProvider
+                                                            .baseStatValue;
+                                                    parts.add('+$value $label');
+                                                  }
+                                                  return '${parts.join(' ')} = $combinedValue';
+                                                }(),
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
                                               ),
                                               Text(
                                                 'Difficulty = $difficultyValue',
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodySmall,
+                                                style: Theme.of(
+                                                  context,
+                                                ).textTheme.bodySmall,
                                               ),
                                             ],
                                           ),
@@ -3220,7 +3494,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                               .success
                                                       ? Icons.emoji_events
                                                       : Icons
-                                                          .sentiment_very_dissatisfied,
+                                                            .sentiment_very_dissatisfied,
                                                   size: 22,
                                                   color: accentColor,
                                                 ),
@@ -3251,16 +3525,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                       ? 'Challenge completed!'
                                                       : 'Submission failed'),
                                               textAlign: TextAlign.center,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall,
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
                                             ),
                                             const SizedBox(height: 12),
                                             Text(
                                               'Tap anywhere to dismiss.',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall,
+                                              style: Theme.of(
+                                                context,
+                                              ).textTheme.bodySmall,
                                             ),
                                           ],
                                         ),
@@ -3294,8 +3568,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                                   .textTheme
                                                   .titleMedium
                                                   ?.copyWith(
-                                                    fontWeight:
-                                                        FontWeight.w700,
+                                                    fontWeight: FontWeight.w700,
                                                   ),
                                             ),
                                           ),
@@ -3305,9 +3578,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                       Text(
                                         'Tap anywhere to dismiss.',
                                         textAlign: TextAlign.center,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
                                       ),
                                     ],
                                   ],
@@ -3347,7 +3620,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onClose: () => Navigator.of(context).pop(),
         onQuestAccepted: () => openTrackedQuests = true,
         onStartDialogue: (dialogContext, character, action) {
-          debugPrint('SinglePlayer: onStartDialogue character=${character.id} action=${action.id}');
+          debugPrint(
+            'SinglePlayer: onStartDialogue character=${character.id} action=${action.id}',
+          );
           _showDialogueModal(dialogContext, character, action);
         },
         onStartShop: (dialogContext, character, action) {
@@ -3365,10 +3640,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     CharacterAction action,
   ) async {
     if (!dialogContext.mounted) {
-      debugPrint('SinglePlayer: showShopModal skipped (dialogContext unmounted)');
+      debugPrint(
+        'SinglePlayer: showShopModal skipped (dialogContext unmounted)',
+      );
       return;
     }
-    debugPrint('SinglePlayer: showShopModal open character=${character.id} action=${action.id}');
+    debugPrint(
+      'SinglePlayer: showShopModal open character=${character.id} action=${action.id}',
+    );
     await showDialog<void>(
       context: dialogContext,
       useRootNavigator: true,
@@ -3393,10 +3672,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     CharacterAction action,
   ) async {
     if (!dialogContext.mounted) {
-      debugPrint('SinglePlayer: showDialogueModal skipped (dialogContext unmounted)');
+      debugPrint(
+        'SinglePlayer: showDialogueModal skipped (dialogContext unmounted)',
+      );
       return;
     }
-    debugPrint('SinglePlayer: showDialogueModal open character=${character.id} action=${action.id}');
+    debugPrint(
+      'SinglePlayer: showDialogueModal open character=${character.id} action=${action.id}',
+    );
     await showDialog<void>(
       context: dialogContext,
       useRootNavigator: true,
@@ -3416,6 +3699,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _showTreasureChestPanel(TreasureChest tc) {
+    final parentContext = context;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -3429,6 +3713,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onClose: () {
           Navigator.of(context).pop();
           _loadTreasureChestsForSelectedZone();
+        },
+        onOpened: (rewardData) {
+          if (!mounted) return;
+          setState(() {
+            _openedTreasureChestIds.add(tc.id);
+            _treasureChests.removeWhere((chest) => chest.id == tc.id);
+          });
+          unawaited(_refreshTreasureChestSymbols());
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            parentContext.read<CompletedTaskProvider>().showModal(
+              'treasureChestOpened',
+              data: rewardData,
+            );
+          });
         },
       ),
     );
@@ -3530,7 +3829,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
-  void _showQuestLog(BuildContext context) {
+  void _openQuestLogForQuest(Quest quest) {
+    _showQuestLog(context, initialSelectedQuest: quest);
+  }
+
+  void _showQuestLog(BuildContext context, {Quest? initialSelectedQuest}) {
     _refreshQuestLog();
     context.read<TagsProvider>().refresh();
     showModalBottomSheet(
@@ -3569,6 +3872,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   onClose: () => Navigator.of(context).pop(),
                   onFocusPoI: _focusQuestPoI,
                   onFocusTurnInQuest: _focusQuestTurnIn,
+                  initialSelectedQuest: initialSelectedQuest,
                 ),
               ),
             ],
@@ -3600,10 +3904,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Log',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
+                    Text('Log', style: Theme.of(context).textTheme.titleLarge),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close),
@@ -3656,10 +3957,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                         height: 4,
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.3),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -3695,7 +3995,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       ),
     );
   }
-
 }
 
 class _MapButton extends StatelessWidget {
@@ -3758,6 +4057,27 @@ class _OverlayButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PoiSymbolRequest {
+  const _PoiSymbolRequest({
+    required this.poiId,
+    required this.isQuestCurrent,
+    required this.options,
+    required this.data,
+  });
+
+  final String poiId;
+  final bool isQuestCurrent;
+  final SymbolOptions options;
+  final Map<String, dynamic> data;
+}
+
+class _PoiSymbolResult {
+  const _PoiSymbolResult(this.request, this.symbol);
+
+  final _PoiSymbolRequest request;
+  final Symbol symbol;
 }
 
 class _PoiImageUpdate {
