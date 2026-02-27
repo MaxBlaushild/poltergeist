@@ -772,7 +772,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _treasureChests = chests
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList();
-        _scenarios = scenarios;
+        _scenarios = scenarios
+            .where((scenario) => !scenario.attemptedByUser)
+            .toList();
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
@@ -3995,6 +3997,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _showScenarioPanel(Scenario scenario) {
+    final parentContext = context;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4006,9 +4009,61 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => ScenarioPanel(
         scenario: scenario,
         onClose: () => Navigator.of(context).pop(),
-        onPerformed: (_) async {
+        onPerformed: (result) async {
           if (!mounted) return;
+
+          setState(() {
+            _scenarios.removeWhere((item) => item.id == scenario.id);
+          });
+          await _refreshScenarioSymbols();
+
           await _loadTreasureChestsForSelectedZone();
+          if (!mounted || !parentContext.mounted) return;
+
+          ScenarioOption? selectedOption;
+          if (result.scenarioOptionId != null &&
+              result.scenarioOptionId!.isNotEmpty) {
+            for (final option in scenario.options) {
+              if (option.id == result.scenarioOptionId) {
+                selectedOption = option;
+                break;
+              }
+            }
+          }
+
+          final outcomeText = result.outcomeText.trim().isNotEmpty
+              ? result.outcomeText.trim()
+              : result.successful
+              ? (selectedOption?.successText.trim().isNotEmpty == true
+                    ? selectedOption!.successText.trim()
+                    : 'Your approach succeeds.')
+              : (selectedOption?.failureText.trim().isNotEmpty == true
+                    ? selectedOption!.failureText.trim()
+                    : 'Your approach falls short.');
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !parentContext.mounted) return;
+            parentContext.read<CompletedTaskProvider>().showModal(
+              'scenarioOutcome',
+              data: {
+                'scenarioPrompt': scenario.prompt,
+                'successful': result.successful,
+                'outcomeText': outcomeText,
+                'reason': result.reason,
+                'roll': result.roll,
+                'statTag': result.statTag,
+                'statValue': result.statValue,
+                'proficiencies': result.proficiencies,
+                'proficiencyBonus': result.proficiencyBonus,
+                'creativityBonus': result.creativityBonus,
+                'totalScore': result.totalScore,
+                'threshold': result.threshold,
+                'rewardExperience': result.rewardExperience,
+                'rewardGold': result.rewardGold,
+                'itemsAwarded': result.itemsAwarded,
+              },
+            );
+          });
         },
       ),
     );

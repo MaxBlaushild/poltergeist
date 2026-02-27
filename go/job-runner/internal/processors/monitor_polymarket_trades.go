@@ -15,14 +15,15 @@ import (
 )
 
 type MonitorPolymarketTradesProcessor struct {
-	dbClient         db.DbClient
-	polymarketClient polymarket.Client
-	texterClient     texter.Client
-	alertTo          string
-	alertFrom        string
-	notionalThreshold float64
-	sizeThreshold     float64
-	tradesLimit       int
+	dbClient             db.DbClient
+	polymarketClient     polymarket.Client
+	texterClient         texter.Client
+	alertTo              string
+	alertFrom            string
+	notionalThreshold    float64
+	sizeThreshold        float64
+	tradesLimit          int
+	polymarketConfigHint string
 }
 
 func NewMonitorPolymarketTradesProcessor(
@@ -34,17 +35,19 @@ func NewMonitorPolymarketTradesProcessor(
 	notionalThreshold float64,
 	sizeThreshold float64,
 	tradesLimit int,
+	polymarketConfigHint string,
 ) *MonitorPolymarketTradesProcessor {
 	log.Println("Initializing MonitorPolymarketTradesProcessor")
 	return &MonitorPolymarketTradesProcessor{
-		dbClient:          dbClient,
-		polymarketClient: polymarketClient,
-		texterClient:     texterClient,
-		alertTo:          alertTo,
-		alertFrom:        alertFrom,
-		notionalThreshold: notionalThreshold,
-		sizeThreshold:     sizeThreshold,
-		tradesLimit:       tradesLimit,
+		dbClient:             dbClient,
+		polymarketClient:     polymarketClient,
+		texterClient:         texterClient,
+		alertTo:              alertTo,
+		alertFrom:            alertFrom,
+		notionalThreshold:    notionalThreshold,
+		sizeThreshold:        sizeThreshold,
+		tradesLimit:          tradesLimit,
+		polymarketConfigHint: polymarketConfigHint,
 	}
 }
 
@@ -55,7 +58,15 @@ func (p *MonitorPolymarketTradesProcessor) ProcessTask(ctx context.Context, task
 
 func (p *MonitorPolymarketTradesProcessor) monitor(ctx context.Context) error {
 	if p.polymarketClient == nil {
-		log.Printf("Polymarket client not configured; skipping")
+		log.Printf(
+			"Polymarket client not configured; skipping. hint=%s alert_to_set=%t alert_from_set=%t trades_limit=%d notional_threshold=%.2f size_threshold=%.2f",
+			p.polymarketConfigHint,
+			p.alertTo != "",
+			p.alertFrom != "",
+			p.tradesLimit,
+			p.notionalThreshold,
+			p.sizeThreshold,
+		)
 		return nil
 	}
 

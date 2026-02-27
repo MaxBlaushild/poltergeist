@@ -91,6 +91,9 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
         _loading = false;
       });
       widget.onPerformed?.call(result);
+      if (optionId != null && optionId.isNotEmpty) {
+        widget.onClose();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -150,18 +153,19 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.network(
-                        mysteryState
-                            ? _scenarioMysteryImageUrl
-                            : (widget.scenario.thumbnailUrl.isNotEmpty
-                                  ? widget.scenario.thumbnailUrl
-                                  : widget.scenario.imageUrl),
-                        height: 170,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 170,
-                          color: theme.colorScheme.surfaceVariant,
-                          child: const Icon(Icons.auto_awesome_outlined),
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: Image.network(
+                          mysteryState
+                              ? _scenarioMysteryImageUrl
+                              : (widget.scenario.thumbnailUrl.isNotEmpty
+                                    ? widget.scenario.thumbnailUrl
+                                    : widget.scenario.imageUrl),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: theme.colorScheme.surfaceVariant,
+                            child: const Icon(Icons.auto_awesome_outlined),
+                          ),
                         ),
                       ),
                     ),

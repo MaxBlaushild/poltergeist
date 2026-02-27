@@ -281,7 +281,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
 	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
 	r.PATCH("/sonar/questNodes/:nodeId/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
-	r.POST("/sonar/questNodes/:nodeId/challenges/:challengeId/shuffle", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleQuestNodeChallenge))
+	r.POST("/sonar/questNodeChallenges/:challengeId/shuffle", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleQuestNodeChallenge))
 	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
 	r.POST("/sonar/tags/createGroup", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTagGroup))
@@ -374,6 +374,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenariosForZone))
 	r.POST("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenario))
 	r.PUT("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenario))
+	r.POST("/sonar/scenarios/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioImage))
 	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
 	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
@@ -3523,14 +3524,7 @@ func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
 }
 
 func (s *server) shuffleQuestNodeChallenge(ctx *gin.Context) {
-	nodeIDParam := ctx.Param("nodeId")
 	challengeIDParam := ctx.Param("challengeId")
-
-	nodeID, err := uuid.Parse(nodeIDParam)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest node ID"})
-		return
-	}
 
 	challengeID, err := uuid.Parse(challengeIDParam)
 	if err != nil {
@@ -3545,10 +3539,6 @@ func (s *server) shuffleQuestNodeChallenge(ctx *gin.Context) {
 	}
 	if existing == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest node challenge not found"})
-		return
-	}
-	if existing.QuestNodeID != nodeID {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge does not belong to quest node"})
 		return
 	}
 	if existing.ChallengeShuffleStatus == models.QuestNodeChallengeShuffleStatusQueued ||
@@ -10098,6 +10088,8 @@ type scenarioRewardItemPayload struct {
 
 type scenarioOptionPayload struct {
 	OptionText       string                      `json:"optionText"`
+	SuccessText      string                      `json:"successText"`
+	FailureText      string                      `json:"failureText"`
 	StatTag          string                      `json:"statTag"`
 	Proficiencies    []string                    `json:"proficiencies"`
 	Difficulty       *int                        `json:"difficulty"`
@@ -10134,6 +10126,7 @@ type scenarioPerformRequest struct {
 type scenarioPerformResponse struct {
 	Successful       bool                 `json:"successful"`
 	Reason           string               `json:"reason"`
+	OutcomeText      string               `json:"outcomeText"`
 	ScenarioID       uuid.UUID            `json:"scenarioId"`
 	ScenarioOptionID *uuid.UUID           `json:"scenarioOptionId,omitempty"`
 	Roll             int                  `json:"roll"`
@@ -10154,6 +10147,8 @@ type scenarioFreeformAssessment struct {
 	Proficiencies   []string `json:"proficiencies"`
 	CreativityBonus int      `json:"creativityBonus"`
 	Reasoning       string   `json:"reasoning"`
+	SuccessText     string   `json:"successText"`
+	FailureText     string   `json:"failureText"`
 }
 
 const scenarioFreeformAssessmentPromptTemplate = `
@@ -10183,7 +10178,9 @@ Return JSON only:
   "statTag": "strength|dexterity|constitution|intelligence|wisdom|charisma",
   "proficiencies": ["string"],
   "creativityBonus": 0,
-  "reasoning": "short string"
+  "reasoning": "short string",
+  "successText": "one or two short sentences describing what success looks like for this response",
+  "failureText": "one or two short sentences describing what failure looks like for this response"
 }
 `
 
@@ -10214,6 +10211,20 @@ func normalizeScenarioProficiencies(input []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func sanitizeScenarioOutcomeText(input string, fallback string) string {
+	text := strings.TrimSpace(input)
+	if text == "" {
+		text = strings.TrimSpace(fallback)
+	}
+	if len(text) > 320 {
+		text = strings.TrimSpace(text[:320])
+	}
+	if text == "" {
+		return "The outcome resolves."
+	}
+	return text
 }
 
 func normalizeScenarioThumbnailURL(input string) (string, error) {
@@ -10285,6 +10296,8 @@ func (s *server) assessScenarioFreeform(ctx context.Context, scenarioPrompt, res
 		assessment.CreativityBonus = 10
 	}
 	assessment.Reasoning = strings.TrimSpace(assessment.Reasoning)
+	assessment.SuccessText = strings.TrimSpace(assessment.SuccessText)
+	assessment.FailureText = strings.TrimSpace(assessment.FailureText)
 	return assessment, nil
 }
 
@@ -10396,6 +10409,14 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 		if optionText == "" {
 			return nil, nil, nil, fmt.Errorf("optionText is required")
 		}
+		successText := strings.TrimSpace(optionPayload.SuccessText)
+		if successText == "" {
+			successText = "Your approach works, and momentum turns in your favor."
+		}
+		failureText := strings.TrimSpace(optionPayload.FailureText)
+		if failureText == "" {
+			failureText = "The attempt falls short, and the moment slips away."
+		}
 		statTag, ok := normalizeScenarioStatTag(optionPayload.StatTag)
 		if !ok {
 			return nil, nil, nil, fmt.Errorf("invalid option statTag")
@@ -10425,6 +10446,8 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 
 		options = append(options, models.ScenarioOption{
 			OptionText:       optionText,
+			SuccessText:      successText,
+			FailureText:      failureText,
 			StatTag:          statTag,
 			Proficiencies:    models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
 			Difficulty:       optionDifficulty,
@@ -10531,6 +10554,48 @@ func (s *server) awardScenarioRewards(ctx context.Context, userID uuid.UUID, rew
 	return itemsAwarded, nil
 }
 
+func (s *server) generateScenarioImage(ctx *gin.Context) {
+	id := ctx.Param("id")
+	scenarioID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario ID"})
+		return
+	}
+
+	scenario, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if scenario == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
+		return
+	}
+
+	payload := jobs.GenerateScenarioImageTaskPayload{
+		ScenarioID: scenarioID,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioImageTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"status":   "queued",
+		"scenario": scenario,
+	})
+}
+
 func (s *server) getScenarios(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -10609,12 +10674,16 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 		return
 	}
 
-	response := make([]scenarioWithUserStatus, len(scenarios))
-	for i, scenario := range scenarios {
-		response[i] = scenarioWithUserStatus{
-			Scenario:        scenario,
-			AttemptedByUser: attemptedMap[scenario.ID],
+	response := make([]scenarioWithUserStatus, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		if attemptedMap[scenario.ID] {
+			// Hide resolved scenarios for this user so they no longer appear on map.
+			continue
 		}
+		response = append(response, scenarioWithUserStatus{
+			Scenario:        scenario,
+			AttemptedByUser: false,
+		})
 	}
 	ctx.JSON(http.StatusOK, response)
 }
@@ -10808,6 +10877,9 @@ func (s *server) performScenario(ctx *gin.Context) {
 	rewardItems := []scenarioRewardItem{}
 	threshold := scenario.Difficulty
 	reason := "The outcome was uncertain."
+	outcomeText := ""
+	openEndedSuccessText := ""
+	openEndedFailureText := ""
 	var scenarioOptionID *uuid.UUID
 	var freeformResponse *string
 
@@ -10828,6 +10900,8 @@ func (s *server) performScenario(ctx *gin.Context) {
 		if assessment.Reasoning != "" {
 			reason = assessment.Reasoning
 		}
+		openEndedSuccessText = assessment.SuccessText
+		openEndedFailureText = assessment.FailureText
 		rewardExperience = scenario.RewardExperience
 		rewardGold = scenario.RewardGold
 		rewardItems = scenarioRewardItemsFromScenario(scenario.ItemRewards)
@@ -10856,6 +10930,9 @@ func (s *server) performScenario(ctx *gin.Context) {
 		rewardGold = option.RewardGold
 		rewardItems = scenarioRewardItemsFromOption(option.ItemRewards)
 		reason = "The chosen approach shaped the outcome."
+		if successCandidate := strings.TrimSpace(option.SuccessText); successCandidate != "" {
+			outcomeText = successCandidate
+		}
 		scenarioOptionID = requestBody.ScenarioOptionID
 	}
 
@@ -10879,10 +10956,40 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if scenario.OpenEnded {
+			outcomeText = sanitizeScenarioOutcomeText(
+				openEndedSuccessText,
+				"Your response works, and the situation turns in your favor.",
+			)
+		}
 	} else {
 		rewardExperience = 0
 		rewardGold = 0
-		reason = "The roll did not beat the required threshold."
+		if scenario.OpenEnded {
+			if strings.TrimSpace(reason) == "" {
+				reason = "The roll did not beat the required threshold."
+			}
+			outcomeText = sanitizeScenarioOutcomeText(
+				openEndedFailureText,
+				"Your response falls short, and the moment slips away.",
+			)
+		} else {
+			reason = "The roll did not beat the required threshold."
+			if scenarioOptionID != nil {
+				option := findScenarioOption(scenario, *scenarioOptionID)
+				if option != nil {
+					if failureCandidate := strings.TrimSpace(option.FailureText); failureCandidate != "" {
+						outcomeText = failureCandidate
+					}
+				}
+			}
+			if outcomeText == "" {
+				outcomeText = "The attempt falls short."
+			}
+		}
+	}
+	if success && outcomeText == "" {
+		outcomeText = "Success. Your plan holds."
 	}
 
 	attempt := &models.UserScenarioAttempt{
@@ -10911,6 +11018,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, scenarioPerformResponse{
 		Successful:       success,
 		Reason:           reason,
+		OutcomeText:      outcomeText,
 		ScenarioID:       scenario.ID,
 		ScenarioOptionID: scenarioOptionID,
 		Roll:             roll,

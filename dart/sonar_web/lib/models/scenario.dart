@@ -18,6 +18,8 @@ class ScenarioItemReward {
 class ScenarioOption {
   final String id;
   final String optionText;
+  final String successText;
+  final String failureText;
   final String statTag;
   final List<String> proficiencies;
   final int? difficulty;
@@ -28,6 +30,8 @@ class ScenarioOption {
   const ScenarioOption({
     required this.id,
     required this.optionText,
+    this.successText = '',
+    this.failureText = '',
     required this.statTag,
     this.proficiencies = const [],
     this.difficulty,
@@ -59,6 +63,8 @@ class ScenarioOption {
     return ScenarioOption(
       id: json['id']?.toString() ?? '',
       optionText: json['optionText']?.toString() ?? '',
+      successText: json['successText']?.toString() ?? '',
+      failureText: json['failureText']?.toString() ?? '',
       statTag: json['statTag']?.toString() ?? '',
       proficiencies: proficiencies,
       difficulty: (json['difficulty'] as num?)?.toInt(),
@@ -145,6 +151,7 @@ class Scenario {
 class ScenarioPerformResult {
   final bool successful;
   final String reason;
+  final String outcomeText;
   final String scenarioId;
   final String? scenarioOptionId;
   final int roll;
@@ -157,10 +164,12 @@ class ScenarioPerformResult {
   final int totalScore;
   final int rewardExperience;
   final int rewardGold;
+  final List<Map<String, dynamic>> itemsAwarded;
 
   const ScenarioPerformResult({
     required this.successful,
     required this.reason,
+    required this.outcomeText,
     required this.scenarioId,
     this.scenarioOptionId,
     required this.roll,
@@ -173,6 +182,7 @@ class ScenarioPerformResult {
     required this.totalScore,
     required this.rewardExperience,
     required this.rewardGold,
+    this.itemsAwarded = const [],
   });
 
   factory ScenarioPerformResult.fromJson(Map<String, dynamic> json) {
@@ -188,6 +198,7 @@ class ScenarioPerformResult {
     return ScenarioPerformResult(
       successful: json['successful'] as bool? ?? false,
       reason: json['reason']?.toString() ?? '',
+      outcomeText: json['outcomeText']?.toString() ?? '',
       scenarioId: json['scenarioId']?.toString() ?? '',
       scenarioOptionId: json['scenarioOptionId']?.toString(),
       roll: (json['roll'] as num?)?.toInt() ?? 0,
@@ -200,6 +211,12 @@ class ScenarioPerformResult {
       totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,
       rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
       rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      itemsAwarded:
+          (json['itemsAwarded'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList() ??
+          const [],
     );
   }
 }

@@ -78,6 +78,7 @@ func main() {
 	generateInventoryItemImageProcessor := processors.NewGenerateInventoryItemImageProcessor(dbClient, deepPriestClient, awsClient)
 	generateCharacterImageProcessor := processors.NewGenerateCharacterImageProcessor(dbClient, deepPriestClient, awsClient, client)
 	generatePointOfInterestImageProcessor := processors.NewGeneratePointOfInterestImageProcessor(dbClient, locationSeederClient, client)
+	generateScenarioImageProcessor := processors.NewGenerateScenarioImageProcessor(dbClient, deepPriestClient, awsClient)
 	generateImageThumbnailProcessor := processors.NewGenerateImageThumbnailProcessor(dbClient, awsClient)
 	queueThumbnailBackfillProcessor := processors.NewQueueThumbnailBackfillProcessor(dbClient, client)
 	seedTreasureChestsProcessor := processors.NewSeedTreasureChestsProcessor(dbClient)
@@ -90,6 +91,7 @@ func main() {
 	shuffleQuestNodeChallengeProcessor := processors.NewShuffleQuestNodeChallengeProcessor(dbClient, deepPriestClient)
 
 	logPolymarketConfiguration(cfg)
+	polymarketConfigHint := buildPolymarketConfigHint(cfg)
 
 	var polymarketClient polymarket.Client
 	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
@@ -117,6 +119,7 @@ func main() {
 		cfg.Public.PolymarketSuspiciousNotionalThreshold,
 		cfg.Public.PolymarketSuspiciousSizeThreshold,
 		cfg.Public.PolymarketTradesLimit,
+		polymarketConfigHint,
 	)
 
 	// Initialize Ethereum client for blockchain transaction checking (read-only)
@@ -153,6 +156,7 @@ func main() {
 	mux.Handle(jobs.GenerateInventoryItemImageTaskType, &generateInventoryItemImageProcessor)
 	mux.Handle(jobs.GenerateCharacterImageTaskType, &generateCharacterImageProcessor)
 	mux.Handle(jobs.GeneratePointOfInterestImageTaskType, &generatePointOfInterestImageProcessor)
+	mux.Handle(jobs.GenerateScenarioImageTaskType, &generateScenarioImageProcessor)
 	mux.Handle(jobs.GenerateImageThumbnailTaskType, &generateImageThumbnailProcessor)
 	mux.Handle(jobs.QueueThumbnailBackfillTaskType, &queueThumbnailBackfillProcessor)
 	mux.Handle(jobs.SeedTreasureChestsTaskType, &seedTreasureChestsProcessor)
@@ -277,4 +281,26 @@ func logPolymarketConfiguration(cfg *config.Config) {
 	if len(missingL2) > 0 {
 		log.Printf("Polymarket L2 credentials incomplete; missing=%v", missingL2)
 	}
+}
+
+func buildPolymarketConfigHint(cfg *config.Config) string {
+	missingEndpoint := make([]string, 0, 2)
+	if cfg.Public.PolymarketTradesURL == "" {
+		missingEndpoint = append(missingEndpoint, "POLYMARKET_TRADES_URL")
+	}
+	if cfg.Public.PolymarketBaseURL == "" {
+		missingEndpoint = append(missingEndpoint, "POLYMARKET_BASE_URL")
+	}
+
+	return fmt.Sprintf(
+		"trades_url_set=%t base_url_set=%t trades_path=%q api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t missing_endpoint=%v",
+		cfg.Public.PolymarketTradesURL != "",
+		cfg.Public.PolymarketBaseURL != "",
+		cfg.Public.PolymarketTradesPath,
+		cfg.Secret.PolymarketAPIKey != "",
+		cfg.Secret.PolymarketAPISecret != "",
+		cfg.Secret.PolymarketAPIPassphrase != "",
+		cfg.Secret.PolymarketAddress != "",
+		missingEndpoint,
+	)
 }

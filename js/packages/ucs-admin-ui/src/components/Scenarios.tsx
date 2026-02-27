@@ -1,5 +1,7 @@
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 type ScenarioRewardItem = {
   inventoryItemId: number;
@@ -9,6 +11,8 @@ type ScenarioRewardItem = {
 type ScenarioOption = {
   id?: string;
   optionText: string;
+  successText: string;
+  failureText: string;
   statTag: string;
   proficiencies: string[];
   difficulty?: number | null;
@@ -60,6 +64,8 @@ const statTags = [
 
 const emptyOption = (): ScenarioOption => ({
   optionText: '',
+  successText: 'Your approach works, and momentum turns in your favor.',
+  failureText: 'The attempt falls short, and the moment slips away.',
   statTag: 'charisma',
   proficiencies: [],
   difficulty: null,
@@ -100,6 +106,8 @@ const parseCsv = (value: string): string[] => {
     .filter(Boolean);
 };
 
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
+
 export const Scenarios = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
@@ -113,8 +121,16 @@ export const Scenarios = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ScenarioFormState>(emptyFormState);
+  const [generatingScenarioId, setGeneratingScenarioId] = useState<string | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [expandedScenarioImage, setExpandedScenarioImage] = useState<{ url: string; title: string } | null>(null);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const mapRef = React.useRef<mapboxgl.Map | null>(null);
+  const markerRef = React.useRef<mapboxgl.Marker | null>(null);
+  const formLatitudeRef = React.useRef(form.latitude);
+  const formLongitudeRef = React.useRef(form.longitude);
 
   const load = useCallback(async () => {
     try {
@@ -128,6 +144,12 @@ export const Scenarios = () => {
     } finally {
       setLoading(false);
     }
+  }, [apiClient]);
+
+  const refreshScenarioById = useCallback(async (scenarioId: string) => {
+    const latest = await apiClient.get<ScenarioRecord>(`/sonar/scenarios/${scenarioId}`);
+    setRecords((prev) => prev.map((record) => (record.id === scenarioId ? latest : record)));
+    return latest;
   }, [apiClient]);
 
   useEffect(() => {
@@ -166,7 +188,18 @@ export const Scenarios = () => {
       openEnded: record.openEnded,
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
-      options: record.options.length > 0 ? record.options : [emptyOption()],
+      options:
+        record.options.length > 0
+          ? record.options.map((option) => ({
+              ...option,
+              successText:
+                option.successText?.trim() ||
+                'Your approach works, and momentum turns in your favor.',
+              failureText:
+                option.failureText?.trim() ||
+                'The attempt falls short, and the moment slips away.',
+            }))
+          : [emptyOption()],
       itemRewards: record.itemRewards,
     });
     setShowModal(true);
@@ -177,6 +210,19 @@ export const Scenarios = () => {
     setEditingId(null);
     setForm(emptyFormState());
   };
+
+  useEffect(() => {
+    formLatitudeRef.current = form.latitude;
+    formLongitudeRef.current = form.longitude;
+  }, [form.latitude, form.longitude]);
+
+  const setFormLocation = useCallback((latitude: number, longitude: number) => {
+    setForm((prev) => ({
+      ...prev,
+      latitude: latitude.toFixed(6),
+      longitude: longitude.toFixed(6),
+    }));
+  }, []);
 
   const formPayload = () => ({
     zoneId: form.zoneId,
@@ -193,6 +239,8 @@ export const Scenarios = () => {
       ? []
       : form.options.map((option) => ({
           optionText: option.optionText.trim(),
+          successText: option.successText.trim(),
+          failureText: option.failureText.trim(),
           statTag: option.statTag,
           proficiencies: option.proficiencies,
           difficulty: option.difficulty,
@@ -240,6 +288,109 @@ export const Scenarios = () => {
       alert('Failed to delete scenario.');
     }
   };
+
+  const handleGenerateScenarioImage = async (record: ScenarioRecord) => {
+    if (generatingScenarioId) return;
+    setGeneratingScenarioId(record.id);
+    const previousImageURL = (record.imageUrl || '').trim();
+    try {
+      await apiClient.post(`/sonar/scenarios/${record.id}/generate-image`, {});
+
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        const latest = await refreshScenarioById(record.id);
+        const nextImageURL = (latest.imageUrl || '').trim();
+        if (nextImageURL && nextImageURL !== previousImageURL) {
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('Error generating scenario image:', err);
+      alert('Failed to queue scenario image generation.');
+    } finally {
+      setGeneratingScenarioId(null);
+    }
+  };
+
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported in this browser.');
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGeoLoading(false);
+        setFormLocation(position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        setGeoLoading(false);
+        alert(`Unable to get current location: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, [setFormLocation]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!mapContainerRef.current) return;
+    if (!mapboxgl.accessToken) return;
+    if (mapRef.current) return;
+
+    const parsedLat = Number.parseFloat(formLatitudeRef.current);
+    const parsedLng = Number.parseFloat(formLongitudeRef.current);
+    const selectedZone = zones.find((zone) => zone.id === form.zoneId);
+    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
+    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+
+    const center: [number, number] =
+      Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+        ? [parsedLng, parsedLat]
+        : Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
+          ? [zoneLng, zoneLat]
+          : [-73.98513, 40.7589];
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center,
+      zoom: 13,
+    });
+
+    map.on('click', (event) => {
+      setFormLocation(event.lngLat.lat, event.lngLat.lng);
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [form.zoneId, setFormLocation, showModal, zones]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!mapRef.current) return;
+
+    const lat = Number.parseFloat(form.latitude);
+    const lng = Number.parseFloat(form.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+
+    if (!markerRef.current) {
+      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' }).setLngLat([lng, lat]).addTo(mapRef.current);
+    } else {
+      markerRef.current.setLngLat([lng, lat]);
+    }
+
+    mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
+  }, [form.latitude, form.longitude, showModal]);
 
   const updateOption = (index: number, next: Partial<ScenarioOption>) => {
     setForm((prev) => {
@@ -356,9 +507,34 @@ export const Scenarios = () => {
               </div>
               <div className="text-sm text-gray-700 mb-2">Difficulty: {record.difficulty}</div>
               <div className="text-sm text-gray-800 mb-3 line-clamp-3">{record.prompt}</div>
+              {(record.thumbnailUrl || record.imageUrl) && (
+                <button
+                  type="button"
+                  className="w-full mb-3"
+                  onClick={() =>
+                    setExpandedScenarioImage({
+                      url: record.imageUrl || record.thumbnailUrl,
+                      title: record.prompt,
+                    })
+                  }
+                >
+                  <img
+                    src={record.thumbnailUrl || record.imageUrl}
+                    alt="Scenario"
+                    className="w-full aspect-square object-cover rounded-md border cursor-zoom-in"
+                  />
+                </button>
+              )}
               <div className="flex gap-2">
                 <button className="bg-blue-500 text-white px-3 py-1 rounded-md" onClick={() => openEdit(record)}>
                   Edit
+                </button>
+                <button
+                  className="bg-purple-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+                  onClick={() => handleGenerateScenarioImage(record)}
+                  disabled={generatingScenarioId === record.id}
+                >
+                  {generatingScenarioId === record.id ? 'Generating…' : 'Generate Image'}
                 </button>
                 <button className="bg-red-500 text-white px-3 py-1 rounded-md" onClick={() => setDeleteId(record.id)}>
                   Delete
@@ -420,6 +596,29 @@ export const Scenarios = () => {
                   step="any"
                 />
               </label>
+              <div className="text-sm md:col-span-2">
+                <button
+                  type="button"
+                  className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
+                  onClick={handleUseCurrentLocation}
+                  disabled={geoLoading}
+                >
+                  {geoLoading ? 'Locating…' : 'Use Current Browser Location'}
+                </button>
+              </div>
+              <div className="text-sm md:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <span>Map Location Picker</span>
+                  <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+                </div>
+                {mapboxgl.accessToken ? (
+                  <div ref={mapContainerRef} className="w-full h-64 border rounded-md" />
+                ) : (
+                  <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                  </div>
+                )}
+              </div>
               <label className="text-sm md:col-span-2">
                 Image URL
                 <input
@@ -549,6 +748,22 @@ export const Scenarios = () => {
                           value={option.optionText}
                           onChange={(e) => updateOption(optionIndex, { optionText: e.target.value })}
                           className="w-full border rounded-md p-2"
+                        />
+                      </label>
+                      <label className="text-sm md:col-span-2">
+                        Success Text
+                        <textarea
+                          value={option.successText}
+                          onChange={(e) => updateOption(optionIndex, { successText: e.target.value })}
+                          className="w-full border rounded-md p-2 min-h-[64px]"
+                        />
+                      </label>
+                      <label className="text-sm md:col-span-2">
+                        Failure Text
+                        <textarea
+                          value={option.failureText}
+                          onChange={(e) => updateOption(optionIndex, { failureText: e.target.value })}
+                          className="w-full border rounded-md p-2 min-h-[64px]"
                         />
                       </label>
                       <label className="text-sm">
@@ -709,6 +924,30 @@ export const Scenarios = () => {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {expandedScenarioImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
+          onClick={() => setExpandedScenarioImage(null)}
+        >
+          <div className="max-w-6xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-end mb-2">
+              <button
+                type="button"
+                className="bg-white text-gray-900 px-3 py-1 rounded-md"
+                onClick={() => setExpandedScenarioImage(null)}
+              >
+                Close
+              </button>
+            </div>
+            <img
+              src={expandedScenarioImage.url}
+              alt={expandedScenarioImage.title}
+              className="w-full max-h-[80vh] object-contain rounded-md bg-black"
+            />
           </div>
         </div>
       )}

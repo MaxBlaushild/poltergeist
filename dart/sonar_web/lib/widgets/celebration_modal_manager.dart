@@ -15,6 +15,12 @@ class CelebrationModalManager extends StatelessWidget {
 
         final type = modal['type'] as String?;
         final data = modal['data'] as Map<String, dynamic>? ?? {};
+        final scenarioSuccess = type == 'scenarioOutcome'
+            ? data['successful'] == true
+            : true;
+        final titleColor = type == 'scenarioOutcome'
+            ? (scenarioSuccess ? Colors.amber.shade700 : Colors.red.shade400)
+            : Colors.amber.shade700;
 
         return Dialog(
           child: Padding(
@@ -23,9 +29,9 @@ class CelebrationModalManager extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _titleFor(type),
+                  _titleFor(type, data),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Colors.amber.shade700,
+                    color: titleColor,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -44,7 +50,7 @@ class CelebrationModalManager extends StatelessWidget {
     );
   }
 
-  String _titleFor(String? type) {
+  String _titleFor(String? type, Map<String, dynamic> data) {
     switch (type) {
       case 'challenge':
         return 'Victory!';
@@ -56,6 +62,9 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Quest Complete!';
       case 'treasureChestOpened':
         return 'Treasure Found!';
+      case 'scenarioOutcome':
+        final successful = data['successful'] == true;
+        return successful ? 'Scenario Success!' : 'Scenario Failed';
       default:
         return 'Congratulations!';
     }
@@ -166,6 +175,85 @@ class CelebrationModalManager extends StatelessWidget {
               Text('+${data['reputationAwarded']} Reputation'),
             if (data['goldAwarded'] != null)
               Text('+${data['goldAwarded']} Gold'),
+          ],
+        );
+      case 'scenarioOutcome':
+        final successful = data['successful'] == true;
+        final outcomeText = (data['outcomeText'] as String?)?.trim() ?? '';
+        final reason = (data['reason'] as String?)?.trim() ?? '';
+        final roll = (data['roll'] as num?)?.toInt() ?? 0;
+        final statTag = (data['statTag'] as String?)?.trim() ?? '';
+        final statValue = (data['statValue'] as num?)?.toInt() ?? 0;
+        final proficiencyBonus =
+            (data['proficiencyBonus'] as num?)?.toInt() ?? 0;
+        final creativityBonus = (data['creativityBonus'] as num?)?.toInt() ?? 0;
+        final totalScore = (data['totalScore'] as num?)?.toInt() ?? 0;
+        final threshold = (data['threshold'] as num?)?.toInt() ?? 0;
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
+        final statLabel = statTag.isEmpty
+            ? 'Stat'
+            : '${statTag[0].toUpperCase()}${statTag.substring(1)}';
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              outcomeText.isNotEmpty
+                  ? outcomeText
+                  : (successful
+                        ? 'Your approach succeeds.'
+                        : 'Your approach falls short.'),
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(reason, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              'Roll Math',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '$roll (d20) + $statValue ($statLabel) + $proficiencyBonus (Proficiency) + $creativityBonus (Creativity) = $totalScore',
+            ),
+            Text('Target: $threshold'),
+            const SizedBox(height: 10),
+            Text(
+              successful ? 'Outcome: Success' : 'Outcome: Failure',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            if (rewardExperience > 0 ||
+                rewardGold > 0 ||
+                itemsAwarded.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Rewards',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (rewardExperience > 0) Text('+$rewardExperience XP'),
+              if (rewardGold > 0) Text('+$rewardGold Gold'),
+              for (final item in itemsAwarded)
+                Text(
+                  '+${(item['quantity'] as num?)?.toInt() ?? 1} ${item['name'] as String? ?? 'Item'}',
+                ),
+            ],
           ],
         );
       default:

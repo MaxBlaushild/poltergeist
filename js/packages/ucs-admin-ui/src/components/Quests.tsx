@@ -1457,7 +1457,7 @@ export const Quests = () => {
     setShufflingChallengeId(challenge.id);
     try {
       const queued = await apiClient.post<QuestNodeChallenge>(
-        `/sonar/questNodes/${node.id}/challenges/${challenge.id}/shuffle`,
+        `/sonar/questNodeChallenges/${challenge.id}/shuffle`,
         {}
       );
 
