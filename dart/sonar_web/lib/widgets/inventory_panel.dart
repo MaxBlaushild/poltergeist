@@ -18,10 +18,10 @@ import '../constants/api_constants.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
-  1,  // CipherOfTheLaughingMonkey
-  6,  // CortezsCutlass
-  7,  // RustedMusket
-  9,  // Dagger
+  1, // CipherOfTheLaughingMonkey
+  6, // CortezsCutlass
+  7, // RustedMusket
+  9, // Dagger
   12, // Ale
   14, // WickedSpellbook
 };
@@ -54,10 +54,7 @@ const _equipmentSlotLabels = <String, String>{
 };
 
 class InventoryPanel extends StatefulWidget {
-  const InventoryPanel({
-    super.key,
-    required this.onClose,
-  });
+  const InventoryPanel({super.key, required this.onClose});
 
   final VoidCallback onClose;
 
@@ -128,14 +125,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
       final maxPageIndex = filteredOwned.isEmpty
           ? 0
           : ((filteredOwned.length - 1) ~/ _pageSize);
-      final nextPageIndex = _pageIndex > maxPageIndex ? maxPageIndex : _pageIndex;
+      final nextPageIndex = _pageIndex > maxPageIndex
+          ? maxPageIndex
+          : _pageIndex;
       setState(() {
         _items = items;
         _owned = filteredOwned;
         _equipment = equipment;
-        _equipmentBySlot = {
-          for (final entry in equipment) entry.slot: entry,
-        };
+        _equipmentBySlot = {for (final entry in equipment) entry.slot: entry};
         _equipmentByOwnedId = {
           for (final entry in equipment) entry.ownedInventoryItemId: entry,
         };
@@ -236,7 +233,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return _equipmentSlotLabels[slot] ?? slot;
   }
 
-  Future<void> _loadOutfitStatus(String ownedInventoryItemId, {bool silent = false}) async {
+  Future<void> _loadOutfitStatus(
+    String ownedInventoryItemId, {
+    bool silent = false,
+  }) async {
     if (!silent) {
       setState(() => _loadingOutfitStatus = true);
     }
@@ -251,8 +251,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
         _loadingOutfitStatus = false;
         _outfitError = status?.error;
         if (status != null && status.isPending) {
-          _dismissedOutfitStatuses
-              .removeWhere((key) => key.startsWith('$ownedInventoryItemId::'));
+          _dismissedOutfitStatuses.removeWhere(
+            (key) => key.startsWith('$ownedInventoryItemId::'),
+          );
           clearedDismissal = true;
         }
       });
@@ -306,7 +307,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     }
   }
 
-  Future<void> _useOutfitItem(OwnedInventoryItem owned, InventoryItem inv) async {
+  Future<void> _useOutfitItem(
+    OwnedInventoryItem owned,
+    InventoryItem inv,
+  ) async {
     if (_using) return;
     setState(() {
       _using = true;
@@ -355,9 +359,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
       }
       final selfieUrl = presigned.split('?').first;
       final status = await context.read<InventoryService>().useOutfitItem(
-            owned.id,
-            selfieUrl: selfieUrl,
-          );
+        owned.id,
+        selfieUrl: selfieUrl,
+      );
       if (!mounted) return;
       setState(() {
         _using = false;
@@ -429,9 +433,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
       _error = null;
     });
     try {
-      await context
-          .read<InventoryService>()
-          .equipItem(owned.id, slot: resolvedSlot);
+      await context.read<InventoryService>().equipItem(
+        owned.id,
+        slot: resolvedSlot,
+      );
       if (!mounted) return;
       await context.read<CharacterStatsProvider>().refresh();
       if (!mounted) return;
@@ -583,45 +588,55 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   child: Text(
                     inv.name,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 )
               else
                 const SizedBox.shrink(),
               if (user != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.amber.shade400,
-                    width: 1.5,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.amber.shade400,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.monetization_on,
+                        size: 20,
+                        color: Colors.amber.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'GOLD',
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: Colors.amber.shade800,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$gold',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.monetization_on, size: 20, color: Colors.amber.shade700),
-                    const SizedBox(width: 6),
-                    Text(
-                      'GOLD',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: Colors.amber.shade800,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$gold',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         if (_error != null) ...[
@@ -641,8 +656,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   ),
                 )
               : showDetail && inv != null
-                  ? _buildDetail(context, inv, _selected!)
-                  : _buildGrid(context),
+              ? _buildDetail(context, inv, _selected!)
+              : _buildGrid(context),
         ),
       ],
     );
@@ -695,8 +710,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 ),
                 IconButton(
                   tooltip: 'Next page',
-                  onPressed:
-                      isLastPage ? null : () => setState(() => _pageIndex += 1),
+                  onPressed: isLastPage
+                      ? null
+                      : () => setState(() => _pageIndex += 1),
                   icon: const Icon(Icons.chevron_right),
                 ),
               ],
@@ -707,8 +723,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 24),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withOpacity(0.4),
+                color: theme.colorScheme.surfaceContainerHighest.withOpacity(
+                  0.4,
+                ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: theme.dividerColor),
               ),
@@ -785,11 +802,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Widget _buildEquipmentSlotCard(BuildContext context, String slot) {
     final theme = Theme.of(context);
     final entry = _equipmentBySlot[slot];
-    final inv = entry?.inventoryItem;
-    final hasItem = entry != null && inv != null;
+    final inventoryItem = entry?.inventoryItem;
+    final hasItem = entry != null && inventoryItem != null;
+    final combatSummary = inventoryItem == null
+        ? null
+        : _equipmentCombatSummary(inventoryItem);
 
     void handleTap() {
-      if (!hasItem || entry == null || inv == null) return;
+      if (entry == null || inventoryItem == null) return;
       OwnedInventoryItem? owned;
       for (final o in _owned) {
         if (o.id == entry.ownedInventoryItemId) {
@@ -798,7 +818,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         }
       }
       if (owned == null) return;
-      _selectOwnedItem(owned, inv);
+      _selectOwnedItem(owned, inventoryItem);
     }
 
     return InkWell(
@@ -825,7 +845,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(10),
                       child: Image.network(
-                        inv!.imageUrl,
+                        inventoryItem.imageUrl,
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => Icon(
                           Icons.inventory_2_outlined,
@@ -852,13 +872,24 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    hasItem ? inv!.name : 'Empty',
+                    hasItem ? inventoryItem.name : 'Empty',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  if (combatSummary != null) const SizedBox(height: 2),
+                  if (combatSummary != null)
+                    Text(
+                      combatSummary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -962,7 +993,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 top: 6,
                 left: 6,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green.shade700,
                     borderRadius: BorderRadius.circular(6),
@@ -989,9 +1023,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                     bottomLeft: Radius.circular(12),
                     bottomRight: Radius.circular(12),
                   ),
-                  border: Border(
-                    top: BorderSide(color: theme.dividerColor),
-                  ),
+                  border: Border(top: BorderSide(color: theme.dividerColor)),
                 ),
                 child: Text(
                   inv.name,
@@ -1023,7 +1055,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final equippedSlot = equippedEntry?.slot;
     final isEquipped = equippedSlot != null;
     final canUse =
-        owned.quantity > 0 && (isOutfit || _isUsableInMenu(inv.id)) && !outfitPending;
+        owned.quantity > 0 &&
+        (isOutfit || _isUsableInMenu(inv.id)) &&
+        !outfitPending;
     final hasDetails = inv.flavorText.isNotEmpty || inv.effectText.isNotEmpty;
 
     final metaChips = <Widget>[
@@ -1054,19 +1088,19 @@ class _InventoryPanelState extends State<InventoryPanel> {
         _buildMetaChip(
           context,
           icon: Icons.verified,
-          label: 'Equipped ${_slotLabel(equippedSlot!)}',
+          label: 'Equipped ${_slotLabel(equippedSlot)}',
         ),
       if (isOutfit)
-        _buildMetaChip(
-          context,
-          icon: Icons.auto_awesome,
-          label: 'Outfit item',
-        ),
+        _buildMetaChip(context, icon: Icons.auto_awesome, label: 'Outfit item'),
     ];
 
     final statChips = _buildStatModifierChips(context, inv);
     if (statChips.isNotEmpty) {
       metaChips.addAll(statChips);
+    }
+    final handChips = _buildHandEquipmentChips(context, inv);
+    if (handChips.isNotEmpty) {
+      metaChips.addAll(handChips);
     }
 
     Widget actionArea = const SizedBox.shrink();
@@ -1077,13 +1111,17 @@ class _InventoryPanelState extends State<InventoryPanel> {
           _buildOutfitStatus(context, outfitStatus),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _using || outfitPending ? null : () => _useOutfitItem(owned, inv),
+            onPressed: _using || outfitPending
+                ? null
+                : () => _useOutfitItem(owned, inv),
             child: Text(
               outfitPending
                   ? 'Generating…'
                   : _using
-                      ? 'Using…'
-                      : (outfitStatus?.isFailed == true ? 'Try Again' : 'Take Selfie'),
+                  ? 'Using…'
+                  : (outfitStatus?.isFailed == true
+                        ? 'Try Again'
+                        : 'Take Selfie'),
             ),
           ),
         ],
@@ -1094,7 +1132,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         children: [
           if (isEquipped)
             Text(
-              'Equipped in ${_slotLabel(equippedSlot!)}',
+              'Equipped in ${_slotLabel(equippedSlot)}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -1104,14 +1142,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
             onPressed: _using
                 ? null
                 : isEquipped
-                    ? () => _unequip(equippedSlot!)
-                    : () => _equip(owned, inv),
+                ? () => _unequip(equippedSlot)
+                : () => _equip(owned, inv),
             child: Text(
               _using
                   ? 'Working…'
                   : isEquipped
-                      ? 'Unequip'
-                      : 'Equip',
+                  ? 'Unequip'
+                  : 'Equip',
             ),
           ),
         ],
@@ -1128,11 +1166,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         builder: (context, constraints) {
           final isWide = constraints.maxWidth >= 520;
           final image = _buildDetailImage(context, inv);
-          final metaRow = Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: metaChips,
-          );
+          final metaRow = Wrap(spacing: 8, runSpacing: 8, children: metaChips);
           final infoColumn = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1164,10 +1198,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 _buildDetailSection(
                   context,
                   title: 'Story',
-                  child: Text(
-                    inv.flavorText,
-                    style: theme.textTheme.bodyLarge,
-                  ),
+                  child: Text(inv.flavorText, style: theme.textTheme.bodyLarge),
                 ),
               if (inv.flavorText.isNotEmpty && inv.effectText.isNotEmpty)
                 const SizedBox(height: 12),
@@ -1175,10 +1206,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 _buildDetailSection(
                   context,
                   title: 'Effect',
-                  child: Text(
-                    inv.effectText,
-                    style: theme.textTheme.bodyLarge,
-                  ),
+                  child: Text(inv.effectText, style: theme.textTheme.bodyLarge),
                 ),
             ],
           );
@@ -1266,6 +1294,113 @@ class _InventoryPanelState extends State<InventoryPanel> {
           ),
         )
         .toList();
+  }
+
+  List<Widget> _buildHandEquipmentChips(
+    BuildContext context,
+    InventoryItem inv,
+  ) {
+    final chips = <Widget>[];
+    final handCategory = inv.handItemCategory?.trim();
+    final handedness = inv.handedness?.trim();
+    if (handCategory != null && handCategory.isNotEmpty) {
+      var label = _formatHandCategory(handCategory);
+      if (handedness != null && handedness.isNotEmpty) {
+        label = '$label · ${_formatHandCategory(handedness)}';
+      }
+      chips.add(
+        _buildMetaChip(context, icon: Icons.pan_tool_outlined, label: label),
+      );
+    }
+    if (inv.damageMin != null && inv.damageMax != null) {
+      chips.add(
+        _buildMetaChip(
+          context,
+          icon: Icons.gps_fixed,
+          label: 'Damage ${inv.damageMin}-${inv.damageMax}',
+        ),
+      );
+    }
+    if (inv.swipesPerAttack != null && inv.swipesPerAttack! > 0) {
+      final swipes = inv.swipesPerAttack!;
+      chips.add(
+        _buildMetaChip(
+          context,
+          icon: Icons.swipe_right_alt_outlined,
+          label: '$swipes swipe${swipes == 1 ? '' : 's'} / attack',
+        ),
+      );
+    }
+    if (inv.blockPercentage != null && inv.blockPercentage! > 0) {
+      chips.add(
+        _buildMetaChip(
+          context,
+          icon: Icons.shield_outlined,
+          label: 'Block ${inv.blockPercentage}%',
+        ),
+      );
+    }
+    if (inv.damageBlocked != null && inv.damageBlocked! > 0) {
+      chips.add(
+        _buildMetaChip(
+          context,
+          icon: Icons.security_outlined,
+          label: 'Blocks ${inv.damageBlocked} dmg',
+        ),
+      );
+    }
+    if (inv.spellDamageBonusPercent != null &&
+        inv.spellDamageBonusPercent! > 0) {
+      chips.add(
+        _buildMetaChip(
+          context,
+          icon: Icons.auto_fix_high_outlined,
+          label: 'Spell +${inv.spellDamageBonusPercent}%',
+        ),
+      );
+    }
+    return chips;
+  }
+
+  String? _equipmentCombatSummary(InventoryItem inv) {
+    final parts = <String>[];
+    if (inv.damageMin != null && inv.damageMax != null) {
+      final swipes = inv.swipesPerAttack != null && inv.swipesPerAttack! > 0
+          ? inv.swipesPerAttack!
+          : 1;
+      parts.add(
+        'DMG ${inv.damageMin}-${inv.damageMax} · $swipes swipe${swipes == 1 ? '' : 's'}',
+      );
+    }
+    if (inv.blockPercentage != null && inv.blockPercentage! > 0) {
+      var block = 'Block ${inv.blockPercentage}%';
+      if (inv.damageBlocked != null && inv.damageBlocked! > 0) {
+        block = '$block up to ${inv.damageBlocked}';
+      }
+      parts.add(block);
+    } else if (inv.damageBlocked != null && inv.damageBlocked! > 0) {
+      parts.add('Block ${inv.damageBlocked}');
+    }
+    if (inv.spellDamageBonusPercent != null &&
+        inv.spellDamageBonusPercent! > 0) {
+      parts.add('Spell +${inv.spellDamageBonusPercent}%');
+    }
+    if (parts.isEmpty) return null;
+    return parts.join(' · ');
+  }
+
+  String _formatHandCategory(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ');
+    if (normalized.isEmpty) return value;
+    return normalized
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
   }
 
   Widget _buildDetailSection(

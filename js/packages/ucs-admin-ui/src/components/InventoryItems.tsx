@@ -281,6 +281,9 @@ export const InventoryItems = () => {
     name: '',
     description: '',
     rarityTier: 'Common' as string,
+    equipSlot: '',
+    handItemCategory: '',
+    handedness: '',
   });
 
   const userOptions = useMemo(() => {
@@ -362,6 +365,71 @@ export const InventoryItems = () => {
       name: '',
       description: '',
       rarityTier: 'Common',
+      equipSlot: '',
+      handItemCategory: '',
+      handedness: '',
+    });
+  };
+
+  const normalizeGenerationDataForSubmit = () => {
+    const next = { ...generationData };
+    if (!isHandEquipSlot(next.equipSlot)) {
+      next.handItemCategory = '';
+      next.handedness = '';
+      return next;
+    }
+    if (next.equipSlot === 'dominant_hand') {
+      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+        next.handItemCategory = '';
+      }
+      if (next.handItemCategory === 'staff') {
+        next.handedness = 'two_handed';
+      }
+    }
+    if (next.equipSlot === 'off_hand') {
+      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+        next.handItemCategory = '';
+      }
+      next.handedness = 'one_handed';
+    }
+    return next;
+  };
+
+  const handleGenerationEquipSlotChange = (slot: string) => {
+    setGenerationData((prev) => {
+      const next = { ...prev, equipSlot: slot };
+      if (!isHandEquipSlot(slot)) {
+        next.handItemCategory = '';
+        next.handedness = '';
+        return next;
+      }
+      if (slot === 'dominant_hand') {
+        if (next.handItemCategory === 'shield' || next.handItemCategory === 'orb') {
+          next.handItemCategory = '';
+        }
+        if (next.handItemCategory === 'staff') {
+          next.handedness = 'two_handed';
+        }
+      }
+      if (slot === 'off_hand') {
+        if (next.handItemCategory === 'weapon' || next.handItemCategory === 'staff') {
+          next.handItemCategory = '';
+        }
+        next.handedness = 'one_handed';
+      }
+      return next;
+    });
+  };
+
+  const handleGenerationHandCategoryChange = (category: string) => {
+    setGenerationData((prev) => {
+      const next = { ...prev, handItemCategory: category };
+      if (category === 'staff') {
+        next.handedness = 'two_handed';
+      } else if (prev.equipSlot === 'off_hand') {
+        next.handedness = 'one_handed';
+      }
+      return next;
     });
   };
 
@@ -551,10 +619,18 @@ export const InventoryItems = () => {
 
   const handleGenerateItem = async () => {
     try {
+      const normalized = normalizeGenerationDataForSubmit();
+      if (isHandEquipSlot(normalized.equipSlot) && (!normalized.handItemCategory || !normalized.handedness)) {
+        alert('For hand equipment generation, select both hand item type and handedness.');
+        return;
+      }
       const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items/generate', {
-        name: generationData.name,
-        description: generationData.description,
-        rarityTier: generationData.rarityTier,
+        name: normalized.name,
+        description: normalized.description,
+        rarityTier: normalized.rarityTier,
+        equipSlot: normalized.equipSlot,
+        handItemCategory: normalized.handItemCategory,
+        handedness: normalized.handedness,
       });
       setItems([...items, newItem]);
       setShowGenerateItem(false);
@@ -1814,6 +1890,58 @@ export const InventoryItems = () => {
                 <option value="Not Droppable">Not Droppable</option>
               </select>
             </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Equip Slot:</label>
+              <select
+                value={generationData.equipSlot}
+                onChange={(e) => handleGenerationEquipSlotChange(e.target.value)}
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              >
+                {equipSlotOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {isHandEquipSlot(generationData.equipSlot) && (
+              <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Generated Hand Equipment</label>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Hand Item Type *</label>
+                  <select
+                    value={generationData.handItemCategory}
+                    onChange={(e) => handleGenerationHandCategoryChange(e.target.value)}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  >
+                    <option value="">Select hand item type</option>
+                    {(handItemCategoryOptions[generationData.equipSlot] || []).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Handedness *</label>
+                  <select
+                    value={generationData.handedness}
+                    onChange={(e) => setGenerationData({ ...generationData, handedness: e.target.value })}
+                    disabled={generationData.equipSlot === 'off_hand' || generationData.handItemCategory === 'staff'}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  >
+                    <option value="">Select handedness</option>
+                    {handednessOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
 
             <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
               <button

@@ -411,13 +411,43 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   bool get _hasCharacterLocation {
-    final movementPattern = widget.character.movementPattern;
-    if (movementPattern == null) return false;
-    final lat = widget.character.lat;
-    final lng = widget.character.lng;
-    if (!lat.isFinite || !lng.isFinite) return false;
-    if (lat.abs() > 90 || lng.abs() > 180) return false;
-    return true;
+    return _questGiverCoordinates.isNotEmpty;
+  }
+
+  List<AppLocation> get _questGiverCoordinates {
+    final coordinates = <AppLocation>[];
+    bool isValid(double lat, double lng) {
+      if (!lat.isFinite || !lng.isFinite) return false;
+      if (lat.abs() > 90 || lng.abs() > 180) return false;
+      return lat != 0 || lng != 0;
+    }
+
+    final poiLat = widget.character.pointOfInterestLat;
+    final poiLng = widget.character.pointOfInterestLng;
+    if (poiLat != null && poiLng != null && isValid(poiLat, poiLng)) {
+      return [AppLocation(latitude: poiLat, longitude: poiLng, accuracy: 0)];
+    }
+
+    for (final loc in widget.character.locations) {
+      if (!isValid(loc.latitude, loc.longitude)) continue;
+      coordinates.add(
+        AppLocation(
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracy: 0,
+        ),
+      );
+    }
+
+    final fallbackLat = widget.character.lat;
+    final fallbackLng = widget.character.lng;
+    if (coordinates.isEmpty && isValid(fallbackLat, fallbackLng)) {
+      coordinates.add(
+        AppLocation(latitude: fallbackLat, longitude: fallbackLng, accuracy: 0),
+      );
+    }
+
+    return coordinates;
   }
 
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
@@ -438,12 +468,17 @@ class _CharacterPanelState extends State<CharacterPanel> {
 
   double? _questDistanceFrom(AppLocation? location) {
     if (!_hasCharacterLocation || location == null) return null;
-    return _distanceMeters(
-      location.latitude,
-      location.longitude,
-      widget.character.lat,
-      widget.character.lng,
-    );
+    var nearestMeters = double.infinity;
+    for (final point in _questGiverCoordinates) {
+      final distance = _distanceMeters(
+        location.latitude,
+        location.longitude,
+        point.latitude,
+        point.longitude,
+      );
+      if (distance < nearestMeters) nearestMeters = distance;
+    }
+    return nearestMeters.isFinite ? nearestMeters : null;
   }
 
   String? _questAcceptDisabledReason(

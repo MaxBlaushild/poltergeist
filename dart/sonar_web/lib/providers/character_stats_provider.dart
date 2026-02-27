@@ -32,6 +32,17 @@ class CharacterStatsProvider with ChangeNotifier {
   bool get loading => _loading;
   int get level => _stats?.level ?? 1;
   int get unspentPoints => _stats?.unspentPoints ?? 0;
+  int get health =>
+      _stats?.health ??
+      CharacterStats.deriveHealthFromConstitution(
+        _defaultStats()['constitution'] ?? baseStatValue,
+      );
+  int get mana =>
+      _stats?.mana ??
+      CharacterStats.deriveManaFromMentalStats(
+        _defaultStats()['intelligence'] ?? baseStatValue,
+        _defaultStats()['wisdom'] ?? baseStatValue,
+      );
   bool get hasUnspentPoints => unspentPoints > 0;
   Map<String, int> get baseStats => _stats?.toMap() ?? _defaultStats();
   Map<String, int> get equipmentBonuses =>
@@ -133,10 +144,10 @@ class CharacterStatsProvider with ChangeNotifier {
   }
 
   static Map<String, int> _defaultStats() => {
-        for (final key in statKeys) key: baseStatValue,
-      };
+    for (final key in statKeys) key: baseStatValue,
+  };
 
   static Map<String, int> _defaultBonuses() => {
-        for (final key in statKeys) key: 0,
-      };
+    for (final key in statKeys) key: 0,
+  };
 }

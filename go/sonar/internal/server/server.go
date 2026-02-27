@@ -1747,10 +1747,45 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 		return
 	}
 
-	// Require proximity to quest giver when the character has a known location.
-	characterLat := character.MovementPattern.StartingLatitude
-	characterLng := character.MovementPattern.StartingLongitude
-	if characterLat != 0 || characterLng != 0 {
+	// Require proximity to the nearest known quest giver location.
+	type coordinate struct {
+		lat float64
+		lng float64
+	}
+	isValidCoordinate := func(lat float64, lng float64) bool {
+		if math.IsNaN(lat) || math.IsNaN(lng) {
+			return false
+		}
+		if math.IsInf(lat, 0) || math.IsInf(lng, 0) {
+			return false
+		}
+		if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+			return false
+		}
+		return lat != 0 || lng != 0
+	}
+	candidates := make([]coordinate, 0, len(character.Locations)+1)
+	if character.PointOfInterest != nil {
+		poiLat, latErr := strconv.ParseFloat(strings.TrimSpace(character.PointOfInterest.Lat), 64)
+		poiLng, lngErr := strconv.ParseFloat(strings.TrimSpace(character.PointOfInterest.Lng), 64)
+		if latErr == nil && lngErr == nil && isValidCoordinate(poiLat, poiLng) {
+			candidates = append(candidates, coordinate{lat: poiLat, lng: poiLng})
+		}
+	}
+	if len(candidates) == 0 {
+		for _, loc := range character.Locations {
+			if !isValidCoordinate(loc.Latitude, loc.Longitude) {
+				continue
+			}
+			candidates = append(candidates, coordinate{lat: loc.Latitude, lng: loc.Longitude})
+		}
+	}
+	startLat := character.MovementPattern.StartingLatitude
+	startLng := character.MovementPattern.StartingLongitude
+	if len(candidates) == 0 && isValidCoordinate(startLat, startLng) {
+		candidates = append(candidates, coordinate{lat: startLat, lng: startLng})
+	}
+	if len(candidates) > 0 {
 		locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
 		if err != nil || strings.TrimSpace(locationStr) == "" {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "user location not available"})
@@ -1772,13 +1807,20 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 			return
 		}
 
-		distance := util.HaversineDistance(userLat, userLng, characterLat, characterLng)
-		if distance > questAcceptRadiusMeters {
+		minDistance := math.MaxFloat64
+		for _, point := range candidates {
+			distance := util.HaversineDistance(userLat, userLng, point.lat, point.lng)
+			if distance < minDistance {
+				minDistance = distance
+			}
+		}
+
+		if minDistance > questAcceptRadiusMeters {
 			ctx.JSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf(
 					"you must be within %.0f meters of the quest giver. Currently %.0f meters away",
 					questAcceptRadiusMeters,
-					distance,
+					minDistance,
 				),
 			})
 			return
@@ -6601,9 +6643,12 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 
 func (s *server) generateInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
-		Name        string `json:"name" binding:"required"`
-		Description string `json:"description"`
-		RarityTier  string `json:"rarityTier" binding:"required"`
+		Name             string  `json:"name" binding:"required"`
+		Description      string  `json:"description"`
+		RarityTier       string  `json:"rarityTier" binding:"required"`
+		EquipSlot        *string `json:"equipSlot"`
+		HandItemCategory *string `json:"handItemCategory"`
+		Handedness       *string `json:"handedness"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -6611,12 +6656,54 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		return
 	}
 
+	var equipSlot *string
+	if requestBody.EquipSlot != nil {
+		trimmed := strings.TrimSpace(*requestBody.EquipSlot)
+		if trimmed != "" {
+			if !models.IsValidInventoryEquipSlot(trimmed) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid equip slot"})
+				return
+			}
+			equipSlot = &trimmed
+		}
+	}
+
+	handAttrs := models.HandEquipmentAttributes{
+		HandItemCategory: requestBody.HandItemCategory,
+		Handedness:       requestBody.Handedness,
+	}
+	if equipSlot != nil && models.IsHandEquipSlot(*equipSlot) {
+		if handAttrs.HandItemCategory == nil || strings.TrimSpace(*handAttrs.HandItemCategory) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "handItemCategory is required for hand equipment generation"})
+			return
+		}
+		if handAttrs.Handedness == nil || strings.TrimSpace(*handAttrs.Handedness) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "handedness is required for hand equipment generation"})
+			return
+		}
+		handAttrs = generateInventoryItemHandAttributes(requestBody.RarityTier, *handAttrs.HandItemCategory, *handAttrs.Handedness)
+	}
+	validatedHandAttrs, err := models.NormalizeAndValidateHandEquipment(equipSlot, handAttrs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	item := &models.InventoryItem{
-		Name:                  requestBody.Name,
-		FlavorText:            requestBody.Description,
-		RarityTier:            requestBody.RarityTier,
-		IsCaptureType:         false,
-		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
+		Name:                    requestBody.Name,
+		FlavorText:              requestBody.Description,
+		RarityTier:              requestBody.RarityTier,
+		IsCaptureType:           false,
+		EquipSlot:               equipSlot,
+		HandItemCategory:        validatedHandAttrs.HandItemCategory,
+		Handedness:              validatedHandAttrs.Handedness,
+		DamageMin:               validatedHandAttrs.DamageMin,
+		DamageMax:               validatedHandAttrs.DamageMax,
+		SwipesPerAttack:         validatedHandAttrs.SwipesPerAttack,
+		BlockPercentage:         validatedHandAttrs.BlockPercentage,
+		DamageBlocked:           validatedHandAttrs.DamageBlocked,
+		SpellDamageBonusPercent: validatedHandAttrs.SpellDamageBonusPercent,
+		ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
 	}
 
 	if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -6648,6 +6735,144 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, item)
+}
+
+func generateInventoryItemHandAttributes(rarity string, category string, handedness string) models.HandEquipmentAttributes {
+	normalizedCategory := strings.ToLower(strings.TrimSpace(category))
+	normalizedHandedness := strings.ToLower(strings.TrimSpace(handedness))
+	attrs := models.HandEquipmentAttributes{
+		HandItemCategory: stringPtr(normalizedCategory),
+		Handedness:       stringPtr(normalizedHandedness),
+	}
+
+	switch normalizedCategory {
+	case string(models.HandItemCategoryWeapon), string(models.HandItemCategoryStaff):
+		damageMin, damageMax := generatedInventoryDamageRangeByRarity(rarity)
+		if normalizedHandedness == string(models.HandednessTwoHanded) {
+			damageMin = int(float64(damageMin) * 1.35)
+			damageMax = int(float64(damageMax) * 1.35)
+		}
+		if normalizedCategory == string(models.HandItemCategoryStaff) {
+			damageMin = int(float64(damageMin) * 0.9)
+			damageMax = int(float64(damageMax) * 0.9)
+			spellMin, spellMax := generatedInventorySpellBonusRangeByRarity(rarity)
+			attrs.SpellDamageBonusPercent = intPtr(secureRandomIntBetween(spellMin, spellMax))
+		}
+		attrs.DamageMin = intPtr(maxInt(1, damageMin))
+		attrs.DamageMax = intPtr(maxInt(*attrs.DamageMin, damageMax))
+		attrs.SwipesPerAttack = intPtr(generatedInventorySwipesPerAttack(normalizedCategory, normalizedHandedness))
+	case string(models.HandItemCategoryShield):
+		blockPctMin, blockPctMax := generatedInventoryBlockPercentRangeByRarity(rarity)
+		blockMin, blockMax := generatedInventoryBlockedDamageRangeByRarity(rarity)
+		attrs.BlockPercentage = intPtr(secureRandomIntBetween(blockPctMin, blockPctMax))
+		attrs.DamageBlocked = intPtr(secureRandomIntBetween(blockMin, blockMax))
+	case string(models.HandItemCategoryOrb):
+		spellMin, spellMax := generatedInventorySpellBonusRangeByRarity(rarity)
+		attrs.SpellDamageBonusPercent = intPtr(secureRandomIntBetween(spellMin, spellMax))
+	}
+	return attrs
+}
+
+func generatedInventoryDamageRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 3, 6
+	case "uncommon":
+		return 5, 10
+	case "epic":
+		return 9, 16
+	case "mythic":
+		return 14, 24
+	default:
+		return 3, 6
+	}
+}
+
+func generatedInventorySwipesPerAttack(category string, handedness string) int {
+	if category == string(models.HandItemCategoryStaff) {
+		return secureRandomIntBetween(1, 2)
+	}
+	if handedness == string(models.HandednessTwoHanded) {
+		return secureRandomIntBetween(1, 2)
+	}
+	return secureRandomIntBetween(2, 4)
+}
+
+func generatedInventoryBlockPercentRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 10, 18
+	case "uncommon":
+		return 18, 28
+	case "epic":
+		return 28, 42
+	case "mythic":
+		return 40, 58
+	default:
+		return 10, 18
+	}
+}
+
+func generatedInventoryBlockedDamageRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 2, 5
+	case "uncommon":
+		return 4, 8
+	case "epic":
+		return 8, 14
+	case "mythic":
+		return 13, 20
+	default:
+		return 2, 5
+	}
+}
+
+func generatedInventorySpellBonusRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 8, 14
+	case "uncommon":
+		return 14, 22
+	case "epic":
+		return 22, 34
+	case "mythic":
+		return 34, 50
+	default:
+		return 8, 14
+	}
+}
+
+func secureRandomIntBetween(minValue int, maxValue int) int {
+	if maxValue < minValue {
+		maxValue = minValue
+	}
+	if minValue == maxValue {
+		return minValue
+	}
+	diff := maxValue - minValue + 1
+	n, err := crand.Int(crand.Reader, big.NewInt(int64(diff)))
+	if err != nil {
+		return minValue
+	}
+	return minValue + int(n.Int64())
+}
+
+func intPtr(value int) *int {
+	v := value
+	return &v
+}
+
+func stringPtr(value string) *string {
+	v := value
+	return &v
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (s *server) regenerateInventoryItemImage(ctx *gin.Context) {

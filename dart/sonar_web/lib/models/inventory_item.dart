@@ -13,6 +13,14 @@ class InventoryItem {
   final int intelligenceMod;
   final int wisdomMod;
   final int charismaMod;
+  final String? handItemCategory;
+  final String? handedness;
+  final int? damageMin;
+  final int? damageMax;
+  final int? swipesPerAttack;
+  final int? blockPercentage;
+  final int? damageBlocked;
+  final int? spellDamageBonusPercent;
 
   const InventoryItem({
     required this.id,
@@ -29,6 +37,14 @@ class InventoryItem {
     this.intelligenceMod = 0,
     this.wisdomMod = 0,
     this.charismaMod = 0,
+    this.handItemCategory,
+    this.handedness,
+    this.damageMin,
+    this.damageMax,
+    this.swipesPerAttack,
+    this.blockPercentage,
+    this.damageBlocked,
+    this.spellDamageBonusPercent,
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -47,6 +63,15 @@ class InventoryItem {
       intelligenceMod: (json['intelligenceMod'] as num?)?.toInt() ?? 0,
       wisdomMod: (json['wisdomMod'] as num?)?.toInt() ?? 0,
       charismaMod: (json['charismaMod'] as num?)?.toInt() ?? 0,
+      handItemCategory: json['handItemCategory'] as String?,
+      handedness: json['handedness'] as String?,
+      damageMin: (json['damageMin'] as num?)?.toInt(),
+      damageMax: (json['damageMax'] as num?)?.toInt(),
+      swipesPerAttack: (json['swipesPerAttack'] as num?)?.toInt(),
+      blockPercentage: (json['blockPercentage'] as num?)?.toInt(),
+      damageBlocked: (json['damageBlocked'] as num?)?.toInt(),
+      spellDamageBonusPercent: (json['spellDamageBonusPercent'] as num?)
+          ?.toInt(),
     );
   }
 }

@@ -17,6 +17,8 @@ type characterStatsResponse struct {
 	Intelligence     int                            `json:"intelligence"`
 	Wisdom           int                            `json:"wisdom"`
 	Charisma         int                            `json:"charisma"`
+	Health           int                            `json:"health"`
+	Mana             int                            `json:"mana"`
 	EquipmentBonuses map[string]int                 `json:"equipmentBonuses"`
 	UnspentPoints    int                            `json:"unspentPoints"`
 	Level            int                            `json:"level"`
@@ -168,6 +170,9 @@ func (s *server) allocateCharacterStats(ctx *gin.Context) {
 }
 
 func characterStatsResponseFrom(stats *models.UserCharacterStats, level int, proficiencies []models.UserProficiency, bonuses models.CharacterStatBonuses) characterStatsResponse {
+	effectiveConstitution := stats.Constitution + bonuses.Constitution
+	effectiveIntelligence := stats.Intelligence + bonuses.Intelligence
+	effectiveWisdom := stats.Wisdom + bonuses.Wisdom
 	proficiencyResponse := make([]characterProficiencyResponse, 0, len(proficiencies))
 	for _, proficiency := range proficiencies {
 		proficiencyResponse = append(proficiencyResponse, characterProficiencyResponse{
@@ -182,9 +187,26 @@ func characterStatsResponseFrom(stats *models.UserCharacterStats, level int, pro
 		Intelligence:     stats.Intelligence,
 		Wisdom:           stats.Wisdom,
 		Charisma:         stats.Charisma,
+		Health:           deriveCharacterHealth(effectiveConstitution),
+		Mana:             deriveCharacterMana(effectiveIntelligence, effectiveWisdom),
 		EquipmentBonuses: bonuses.ToMap(),
 		UnspentPoints:    stats.UnspentPoints,
 		Level:            level,
 		Proficiencies:    proficiencyResponse,
 	}
+}
+
+func deriveCharacterHealth(constitution int) int {
+	if constitution < 1 {
+		constitution = 1
+	}
+	return constitution * 10
+}
+
+func deriveCharacterMana(intelligence int, wisdom int) int {
+	mental := intelligence + wisdom
+	if mental < 1 {
+		mental = 1
+	}
+	return mental * 5
 }
