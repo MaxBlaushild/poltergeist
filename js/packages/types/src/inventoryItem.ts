@@ -15,6 +15,14 @@ export type InventoryItem = {
   intelligenceMod?: number;
   wisdomMod?: number;
   charismaMod?: number;
+  handItemCategory?: string | null;
+  handedness?: string | null;
+  damageMin?: number | null;
+  damageMax?: number | null;
+  swipesPerAttack?: number | null;
+  blockPercentage?: number | null;
+  damageBlocked?: number | null;
+  spellDamageBonusPercent?: number | null;
   imageGenerationStatus?: string;
   imageGenerationError?: string;
   createdAt?: string;

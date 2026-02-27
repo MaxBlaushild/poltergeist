@@ -106,6 +106,51 @@ const equipSlotLabel = (slot?: string | null) => {
   return found?.label || slot;
 };
 
+const isHandEquipSlot = (slot?: string | null) =>
+  slot === 'dominant_hand' || slot === 'off_hand';
+
+const handItemCategoryOptions: Record<string, SelectOption[]> = {
+  dominant_hand: [
+    { value: 'weapon', label: 'Weapon' },
+    { value: 'staff', label: 'Staff' },
+  ],
+  off_hand: [
+    { value: 'shield', label: 'Shield' },
+    { value: 'orb', label: 'Magic Orb' },
+  ],
+};
+
+const handednessOptions: SelectOption[] = [
+  { value: 'one_handed', label: 'One-Handed' },
+  { value: 'two_handed', label: 'Two-Handed' },
+];
+
+const handItemCategoryLabel = (category?: string | null) => {
+  switch (category) {
+    case 'weapon':
+      return 'Weapon';
+    case 'staff':
+      return 'Staff';
+    case 'shield':
+      return 'Shield';
+    case 'orb':
+      return 'Magic Orb';
+    default:
+      return category || '';
+  }
+};
+
+const handednessLabel = (handedness?: string | null) => {
+  switch (handedness) {
+    case 'one_handed':
+      return 'One-Handed';
+    case 'two_handed':
+      return 'Two-Handed';
+    default:
+      return handedness || '';
+  }
+};
+
 const statModSummary = (item: InventoryItem) => {
   const mods: string[] = [];
   const push = (label: string, value?: number) => {
@@ -119,6 +164,41 @@ const statModSummary = (item: InventoryItem) => {
   push('WIS', item.wisdomMod);
   push('CHA', item.charismaMod);
   return mods.join(', ');
+};
+
+const handCombatSummary = (item: InventoryItem) => {
+  if (!isHandEquipSlot(item.equipSlot)) return [];
+  const details: string[] = [];
+  if (item.handItemCategory) {
+    details.push(`Type: ${handItemCategoryLabel(item.handItemCategory)}`);
+  }
+  if (item.handedness) {
+    details.push(`Usage: ${handednessLabel(item.handedness)}`);
+  }
+  if (
+    item.damageMin !== undefined &&
+    item.damageMin !== null &&
+    item.damageMax !== undefined &&
+    item.damageMax !== null
+  ) {
+    const swipes = item.swipesPerAttack ?? 0;
+    details.push(`Damage: ${item.damageMin}-${item.damageMax} (${swipes} swipes)`);
+  }
+  if (
+    item.blockPercentage !== undefined &&
+    item.blockPercentage !== null &&
+    item.damageBlocked !== undefined &&
+    item.damageBlocked !== null
+  ) {
+    details.push(`Block: ${item.blockPercentage}% / ${item.damageBlocked} damage`);
+  }
+  if (
+    item.spellDamageBonusPercent !== undefined &&
+    item.spellDamageBonusPercent !== null
+  ) {
+    details.push(`Spell bonus: +${item.spellDamageBonusPercent}%`);
+  }
+  return details;
 };
 
 export const InventoryItems = () => {
@@ -187,6 +267,14 @@ export const InventoryItems = () => {
     intelligenceMod: 0,
     wisdomMod: 0,
     charismaMod: 0,
+    handItemCategory: '',
+    handedness: '',
+    damageMin: undefined as number | undefined,
+    damageMax: undefined as number | undefined,
+    swipesPerAttack: undefined as number | undefined,
+    blockPercentage: undefined as number | undefined,
+    damageBlocked: undefined as number | undefined,
+    spellDamageBonusPercent: undefined as number | undefined,
   });
 
   const [generationData, setGenerationData] = useState({
@@ -253,6 +341,14 @@ export const InventoryItems = () => {
       intelligenceMod: 0,
       wisdomMod: 0,
       charismaMod: 0,
+      handItemCategory: '',
+      handedness: '',
+      damageMin: undefined,
+      damageMax: undefined,
+      swipesPerAttack: undefined,
+      blockPercentage: undefined,
+      damageBlocked: undefined,
+      spellDamageBonusPercent: undefined,
     });
     setImageFile(null);
     setImagePreview(null);
@@ -266,6 +362,110 @@ export const InventoryItems = () => {
       name: '',
       description: '',
       rarityTier: 'Common',
+    });
+  };
+
+  const clearHandFields = () => ({
+    handItemCategory: '',
+    handedness: '',
+    damageMin: undefined as number | undefined,
+    damageMax: undefined as number | undefined,
+    swipesPerAttack: undefined as number | undefined,
+    blockPercentage: undefined as number | undefined,
+    damageBlocked: undefined as number | undefined,
+    spellDamageBonusPercent: undefined as number | undefined,
+  });
+
+  const normalizeHandFieldsForSubmit = () => {
+    const next = { ...formData };
+    if (!isHandEquipSlot(next.equipSlot)) {
+      return { ...next, ...clearHandFields() };
+    }
+
+    if (next.equipSlot === 'dominant_hand') {
+      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+        next.handItemCategory = '';
+      }
+      next.blockPercentage = undefined;
+      next.damageBlocked = undefined;
+      if (next.handItemCategory === 'staff') {
+        next.handedness = 'two_handed';
+      }
+      if (next.handItemCategory === 'weapon') {
+        next.spellDamageBonusPercent = undefined;
+      }
+    }
+
+    if (next.equipSlot === 'off_hand') {
+      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+        next.handItemCategory = '';
+      }
+      next.handedness = 'one_handed';
+      next.damageMin = undefined;
+      next.damageMax = undefined;
+      next.swipesPerAttack = undefined;
+      if (next.handItemCategory === 'shield') {
+        next.spellDamageBonusPercent = undefined;
+      }
+      if (next.handItemCategory === 'orb') {
+        next.blockPercentage = undefined;
+        next.damageBlocked = undefined;
+      }
+    }
+
+    return next;
+  };
+
+  const handleEquipSlotChange = (slot: string) => {
+    setFormData((prev) => {
+      const next = { ...prev, equipSlot: slot };
+      if (!isHandEquipSlot(slot)) {
+        return { ...next, ...clearHandFields() };
+      }
+      if (slot === 'dominant_hand') {
+        if (next.handItemCategory === 'shield' || next.handItemCategory === 'orb') {
+          next.handItemCategory = '';
+        }
+        if (next.handItemCategory === 'staff') {
+          next.handedness = 'two_handed';
+        }
+      }
+      if (slot === 'off_hand') {
+        if (next.handItemCategory === 'weapon' || next.handItemCategory === 'staff') {
+          next.handItemCategory = '';
+        }
+        next.handedness = 'one_handed';
+      }
+      return next;
+    });
+  };
+
+  const handleHandCategoryChange = (category: string) => {
+    setFormData((prev) => {
+      const next = { ...prev, handItemCategory: category };
+      if (category === 'staff') {
+        next.handedness = 'two_handed';
+        next.blockPercentage = undefined;
+        next.damageBlocked = undefined;
+      } else if (category === 'weapon') {
+        next.spellDamageBonusPercent = undefined;
+        next.blockPercentage = undefined;
+        next.damageBlocked = undefined;
+      } else if (category === 'shield') {
+        next.handedness = 'one_handed';
+        next.damageMin = undefined;
+        next.damageMax = undefined;
+        next.swipesPerAttack = undefined;
+        next.spellDamageBonusPercent = undefined;
+      } else if (category === 'orb') {
+        next.handedness = 'one_handed';
+        next.damageMin = undefined;
+        next.damageMax = undefined;
+        next.swipesPerAttack = undefined;
+        next.blockPercentage = undefined;
+        next.damageBlocked = undefined;
+      }
+      return next;
     });
   };
 
@@ -297,7 +497,7 @@ export const InventoryItems = () => {
         imageUrl = presignedUrl.split('?')[0];
       }
 
-      const submitData = { ...formData, imageUrl };
+      const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
       const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items', submitData);
       setItems([...items, newItem]);
       setShowCreateItem(false);
@@ -338,7 +538,7 @@ export const InventoryItems = () => {
         imageUrl = presignedUrl.split('?')[0];
       }
 
-      const submitData = { ...formData, imageUrl };
+      const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
       const updatedItem = await apiClient.put<InventoryItem>(`/sonar/inventory-items/${editingItem.id}`, submitData);
       setItems(items.map(i => i.id === editingItem.id ? updatedItem : i));
       setEditingItem(null);
@@ -437,6 +637,14 @@ export const InventoryItems = () => {
       intelligenceMod: item.intelligenceMod ?? 0,
       wisdomMod: item.wisdomMod ?? 0,
       charismaMod: item.charismaMod ?? 0,
+      handItemCategory: item.handItemCategory ?? '',
+      handedness: item.handedness ?? '',
+      damageMin: item.damageMin ?? undefined,
+      damageMax: item.damageMax ?? undefined,
+      swipesPerAttack: item.swipesPerAttack ?? undefined,
+      blockPercentage: item.blockPercentage ?? undefined,
+      damageBlocked: item.damageBlocked ?? undefined,
+      spellDamageBonusPercent: item.spellDamageBonusPercent ?? undefined,
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -519,6 +727,14 @@ export const InventoryItems = () => {
     { value: 'intelligenceMod', label: 'INT' },
     { value: 'wisdomMod', label: 'WIS' },
     { value: 'charismaMod', label: 'CHA' },
+    { value: 'handItemCategory', label: 'Hand Item Type' },
+    { value: 'handedness', label: 'Handedness' },
+    { value: 'damageMin', label: 'Damage Min' },
+    { value: 'damageMax', label: 'Damage Max' },
+    { value: 'swipesPerAttack', label: 'Swipes Per Attack' },
+    { value: 'blockPercentage', label: 'Block %' },
+    { value: 'damageBlocked', label: 'Damage Blocked' },
+    { value: 'spellDamageBonusPercent', label: 'Spell Bonus %' },
     { value: 'createdAt', label: 'Created At' },
     { value: 'updatedAt', label: 'Updated At' },
   ];
@@ -555,6 +771,14 @@ export const InventoryItems = () => {
         item.intelligenceMod?.toString(),
         item.wisdomMod?.toString(),
         item.charismaMod?.toString(),
+        item.handItemCategory,
+        item.handedness,
+        item.damageMin?.toString(),
+        item.damageMax?.toString(),
+        item.swipesPerAttack?.toString(),
+        item.blockPercentage?.toString(),
+        item.damageBlocked?.toString(),
+        item.spellDamageBonusPercent?.toString(),
       ]
         .filter(Boolean)
         .join(' ')
@@ -954,6 +1178,11 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Equip Slot: {equipSlotLabel(item.equipSlot)}
             </p>
+            {handCombatSummary(item).map((line) => (
+              <p key={`${item.id}-${line}`} style={{ margin: '5px 0', color: '#666' }}>
+                {line}
+              </p>
+            ))}
 
             {statModSummary(item) && (
               <p style={{ margin: '5px 0', color: '#666' }}>
@@ -1182,7 +1411,7 @@ export const InventoryItems = () => {
               <label style={{ display: 'block', marginBottom: '5px' }}>Equip Slot:</label>
               <select
                 value={formData.equipSlot}
-                onChange={(e) => setFormData({ ...formData, equipSlot: e.target.value })}
+                onChange={(e) => handleEquipSlotChange(e.target.value)}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               >
                 {equipSlotOptions.map((option) => (
@@ -1195,6 +1424,137 @@ export const InventoryItems = () => {
                 Choose a slot to make the item equippable. Leave as not equippable for consumables.
               </small>
             </div>
+
+            {isHandEquipSlot(formData.equipSlot) && (
+              <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>Hand Equipment Settings</label>
+
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Hand Item Type *</label>
+                  <select
+                    value={formData.handItemCategory}
+                    onChange={(e) => handleHandCategoryChange(e.target.value)}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  >
+                    <option value="">Select hand item type</option>
+                    {(handItemCategoryOptions[formData.equipSlot] || []).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Handedness *</label>
+                  <select
+                    value={formData.handedness}
+                    onChange={(e) => setFormData({ ...formData, handedness: e.target.value })}
+                    disabled={formData.equipSlot === 'off_hand' || formData.handItemCategory === 'staff'}
+                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  >
+                    <option value="">Select handedness</option>
+                    {handednessOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {formData.equipSlot === 'dominant_hand' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Min *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.damageMin !== undefined ? formData.damageMin : ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          damageMin: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                        })}
+                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Max *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.damageMax !== undefined ? formData.damageMax : ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          damageMax: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                        })}
+                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Swipes / Attack *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.swipesPerAttack !== undefined ? formData.swipesPerAttack : ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          swipesPerAttack: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                        })}
+                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {formData.handItemCategory === 'shield' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Block Percentage *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={formData.blockPercentage !== undefined ? formData.blockPercentage : ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          blockPercentage: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                        })}
+                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Blocked *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={formData.damageBlocked !== undefined ? formData.damageBlocked : ''}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          damageBlocked: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                        })}
+                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {(formData.handItemCategory === 'orb' || formData.handItemCategory === 'staff') && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Spell Damage Bonus % *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={formData.spellDamageBonusPercent !== undefined ? formData.spellDamageBonusPercent : ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        spellDamageBonusPercent: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
+                      })}
+                      style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '8px' }}>Stat Modifiers (while equipped):</label>

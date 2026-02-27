@@ -10,10 +10,10 @@ import (
 )
 
 type equipmentSlotResponse struct {
-	Slot                string               `json:"slot"`
-	OwnedInventoryItemID *uuid.UUID          `json:"ownedInventoryItemId,omitempty"`
-	InventoryItemID     *int                 `json:"inventoryItemId,omitempty"`
-	InventoryItem       *models.InventoryItem `json:"inventoryItem,omitempty"`
+	Slot                 string                `json:"slot"`
+	OwnedInventoryItemID *uuid.UUID            `json:"ownedInventoryItemId,omitempty"`
+	InventoryItemID      *int                  `json:"inventoryItemId,omitempty"`
+	InventoryItem        *models.InventoryItem `json:"inventoryItem,omitempty"`
 }
 
 func (s *server) getUserEquipment(ctx *gin.Context) {
@@ -113,6 +113,48 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 		return
 	}
 
+	equippedSlots, err := s.dbClient.UserEquipment().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var offHandOwnedID *uuid.UUID
+	var dominantEquippedItem *models.InventoryItem
+	for _, equipped := range equippedSlots {
+		if equipped.Slot != string(models.EquipmentSlotOffHand) && equipped.Slot != string(models.EquipmentSlotDominantHand) {
+			continue
+		}
+		equippedOwned, findErr := s.dbClient.InventoryItem().FindByID(ctx, equipped.OwnedInventoryItemID)
+		if findErr != nil || equippedOwned == nil {
+			continue
+		}
+		if equippedOwned.UserID == nil || *equippedOwned.UserID != user.ID || equippedOwned.Quantity <= 0 {
+			continue
+		}
+		equippedItem, findErr := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, equippedOwned.InventoryItemID)
+		if findErr != nil || equippedItem == nil {
+			continue
+		}
+		if equipped.Slot == string(models.EquipmentSlotOffHand) {
+			ownedID := equipped.OwnedInventoryItemID
+			offHandOwnedID = &ownedID
+			continue
+		}
+		dominantEquippedItem = equippedItem
+	}
+
+	if requestedSlot == string(models.EquipmentSlotOffHand) && dominantEquippedItem != nil && isTwoHandedDominantItem(dominantEquippedItem) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot equip an off-hand item while a two-handed dominant-hand item is equipped"})
+		return
+	}
+	if requestedSlot == string(models.EquipmentSlotDominantHand) && isTwoHandedDominantItem(item) && offHandOwnedID != nil {
+		if err := s.dbClient.UserEquipment().UnequipOwnedItem(ctx, user.ID, *offHandOwnedID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	if _, err := s.dbClient.UserEquipment().Equip(ctx, user.ID, requestedSlot, owned.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -125,6 +167,14 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, equipment)
+}
+
+func isTwoHandedDominantItem(item *models.InventoryItem) bool {
+	if item == nil || item.EquipSlot == nil || item.Handedness == nil {
+		return false
+	}
+	return strings.TrimSpace(*item.EquipSlot) == string(models.EquipmentSlotDominantHand) &&
+		strings.TrimSpace(*item.Handedness) == string(models.HandednessTwoHanded)
 }
 
 func (s *server) unequipInventoryItem(ctx *gin.Context) {
@@ -205,10 +255,10 @@ func (s *server) buildEquipmentResponse(ctx *gin.Context, userID uuid.UUID) ([]e
 		ownedID := slot.OwnedInventoryItemID
 		itemID := owned.InventoryItemID
 		response = append(response, equipmentSlotResponse{
-			Slot:                slot.Slot,
+			Slot:                 slot.Slot,
 			OwnedInventoryItemID: &ownedID,
-			InventoryItemID:     &itemID,
-			InventoryItem:       item,
+			InventoryItemID:      &itemID,
+			InventoryItem:        item,
 		})
 	}
 

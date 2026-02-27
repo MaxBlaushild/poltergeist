@@ -26,7 +26,7 @@ const outfitPromptTemplate = `
 	Apply 2–3 shading tones per area, with crisp, blocky edges.
 	Keep the result clean, simple, and non-photorealistic.
 	Avoid gradients, text, and logos.
-	Render a shoulders-up character portrait of the person described below wearing %s.
+	Render %s of the person described below wearing %s.
 	Clean, light background.`
 
 type GenerateOutfitProfilePictureProcessor struct {
@@ -74,71 +74,41 @@ func (p *GenerateOutfitProfilePictureProcessor) ProcessTask(ctx context.Context,
 
 	selfieUrl := p.resolveSelfieURL(payload.SelfieUrl)
 	appearanceDescriptor := p.inferAppearanceDescriptor(ctx, selfieUrl)
-	prompt := fmt.Sprintf(outfitPromptTemplate, outfitName)
-	if appearanceDescriptor != "" {
-		prompt = fmt.Sprintf("%s\nMatch the person's hair and key facial features exactly. Description: %s.", prompt, appearanceDescriptor)
-	} else {
-		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly; if bald or shaved, keep them bald (no hair).", prompt)
-	}
-	genRequest := deep_priest.GenerateImageRequest{
-		Prompt: prompt,
-		Model:  "gpt-image-1",
-		N:      1,
-		Size:   genSize,
-	}
-	deep_priest.ApplyGenerateImageDefaults(&genRequest)
-	resp, err := p.deepPriestClient.GenerateImage(genRequest)
+	frontPrompt := buildOutfitPrompt(outfitName, appearanceDescriptor, false)
+	frontImageBytes, err := p.generateOutfitPortrait(selfieUrl, frontPrompt)
 	if err != nil {
-		log.Printf("Failed to generate outfit image, falling back to edit: %v", err)
-		editRequest := deep_priest.EditImageRequest{
-			Prompt:   prompt,
-			ImageUrl: selfieUrl,
-			Model:    "dall-e-2",
-			N:        1,
-			Size:     genSize,
-		}
-		deep_priest.ApplyEditImageDefaults(&editRequest)
-		// The edit endpoint does not accept these fields; ensure they're unset.
-		editRequest.Quality = ""
-		editRequest.ResponseFormat = ""
-		resp, err = p.deepPriestClient.EditImage(editRequest)
-		if err != nil {
-			log.Printf("Fallback edit failed: %v", err)
-			return p.markOutfitFailed(ctx, gen.ID, err)
-		}
-	}
-
-	candidates, err := decodeBase64Candidates(resp)
-	if err != nil {
-		log.Printf("Failed to decode outfit candidates: %v", err)
-		return p.markOutfitFailed(ctx, gen.ID, err)
-	}
-	if len(candidates) == 0 {
-		return p.markOutfitFailed(ctx, gen.ID, fmt.Errorf("no image candidates returned"))
-	}
-
-	pp, _, err := EnforcePixelLook(candidates[0], iconSize, quantColors, upscaleOutput, true)
-	if err != nil {
-		log.Printf("Failed post-process outfit image: %v", err)
 		return p.markOutfitFailed(ctx, gen.ID, err)
 	}
 
-	imageURL, err := p.uploadOutfitImage(ctx, payload.UserID.String(), pp)
+	backPrompt := buildOutfitPrompt(outfitName, appearanceDescriptor, true)
+	backImageBytes, err := p.generateOutfitPortrait(selfieUrl, backPrompt)
 	if err != nil {
-		log.Printf("Failed to upload outfit image: %v", err)
 		return p.markOutfitFailed(ctx, gen.ID, err)
 	}
 
-	if err := p.dbClient.User().UpdateProfilePictureUrl(ctx, payload.UserID, imageURL); err != nil {
+	frontImageURL, err := p.uploadOutfitImage(ctx, payload.UserID.String(), frontImageBytes)
+	if err != nil {
+		log.Printf("Failed to upload front-facing outfit image: %v", err)
+		return p.markOutfitFailed(ctx, gen.ID, err)
+	}
+
+	backImageURL, err := p.uploadOutfitImage(ctx, payload.UserID.String(), backImageBytes)
+	if err != nil {
+		log.Printf("Failed to upload back-facing outfit image: %v", err)
+		return p.markOutfitFailed(ctx, gen.ID, err)
+	}
+
+	if err := p.dbClient.User().UpdateProfilePictureUrl(ctx, payload.UserID, frontImageURL); err != nil {
 		log.Printf("Failed to update user profile picture: %v", err)
 		return p.markOutfitFailed(ctx, gen.ID, err)
 	}
 
 	clearedErr := ""
 	completeUpdate := &models.OutfitProfileGeneration{
-		Status:            models.OutfitGenerationStatusComplete,
-		ErrorMessage:      &clearedErr,
-		ProfilePictureUrl: &imageURL,
+		Status:                models.OutfitGenerationStatusComplete,
+		ErrorMessage:          &clearedErr,
+		ProfilePictureUrl:     &frontImageURL,
+		BackProfilePictureUrl: &backImageURL,
 	}
 	if err := p.dbClient.OutfitProfileGeneration().Update(ctx, gen.ID, completeUpdate); err != nil {
 		log.Printf("Failed to update outfit generation complete: %v", err)
@@ -182,6 +152,77 @@ func (p *GenerateOutfitProfilePictureProcessor) inferAppearanceDescriptor(ctx co
 		return ""
 	}
 	return desc
+}
+
+func buildOutfitPrompt(outfitName, appearanceDescriptor string, backView bool) string {
+	viewDescription := "a front-facing, shoulders-up character portrait"
+	if backView {
+		viewDescription = "a back-facing, shoulders-up character portrait showing only the back of the head and shoulders"
+	}
+
+	prompt := fmt.Sprintf(outfitPromptTemplate, viewDescription, outfitName)
+	if appearanceDescriptor != "" {
+		if backView {
+			prompt = fmt.Sprintf("%s\nMatch the same person from this appearance description by hair shape, length, color, and texture: %s.", prompt, appearanceDescriptor)
+		} else {
+			prompt = fmt.Sprintf("%s\nMatch the person's hair and key facial features exactly. Description: %s.", prompt, appearanceDescriptor)
+		}
+	} else {
+		prompt = fmt.Sprintf("%s\nMatch the person's hair exactly; if bald or shaved, keep them bald (no hair).", prompt)
+	}
+
+	if backView {
+		prompt = fmt.Sprintf("%s\nThe character must face away from the viewer. Do not show the face, eyes, nose, or mouth.", prompt)
+	}
+
+	return prompt
+}
+
+func (p *GenerateOutfitProfilePictureProcessor) generateOutfitPortrait(selfieURL, prompt string) ([]byte, error) {
+	genRequest := deep_priest.GenerateImageRequest{
+		Prompt: prompt,
+		Model:  "gpt-image-1",
+		N:      1,
+		Size:   genSize,
+	}
+	deep_priest.ApplyGenerateImageDefaults(&genRequest)
+	resp, err := p.deepPriestClient.GenerateImage(genRequest)
+	if err != nil {
+		log.Printf("Failed to generate outfit image, falling back to edit: %v", err)
+		editRequest := deep_priest.EditImageRequest{
+			Prompt:   prompt,
+			ImageUrl: selfieURL,
+			Model:    "dall-e-2",
+			N:        1,
+			Size:     genSize,
+		}
+		deep_priest.ApplyEditImageDefaults(&editRequest)
+		// The edit endpoint does not accept these fields; ensure they're unset.
+		editRequest.Quality = ""
+		editRequest.ResponseFormat = ""
+		resp, err = p.deepPriestClient.EditImage(editRequest)
+		if err != nil {
+			log.Printf("Fallback edit failed: %v", err)
+			return nil, err
+		}
+	}
+
+	candidates, err := decodeBase64Candidates(resp)
+	if err != nil {
+		log.Printf("Failed to decode outfit candidates: %v", err)
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no image candidates returned")
+	}
+
+	pp, _, err := EnforcePixelLook(candidates[0], iconSize, quantColors, upscaleOutput, true)
+	if err != nil {
+		log.Printf("Failed post-process outfit image: %v", err)
+		return nil, err
+	}
+
+	return pp, nil
 }
 
 func (p *GenerateOutfitProfilePictureProcessor) resolveSelfieURL(raw string) string {

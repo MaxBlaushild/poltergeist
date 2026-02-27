@@ -25,6 +25,7 @@ type OutfitProfileGeneration struct {
 	Status                string    `json:"status"`
 	ErrorMessage          *string   `json:"error,omitempty" gorm:"column:error_message"`
 	ProfilePictureUrl     *string   `json:"profilePictureUrl,omitempty" gorm:"column:profile_picture_url"`
+	BackProfilePictureUrl *string   `json:"backProfilePictureUrl,omitempty" gorm:"column:back_profile_picture_url"`
 }
 
 func (OutfitProfileGeneration) TableName() string {

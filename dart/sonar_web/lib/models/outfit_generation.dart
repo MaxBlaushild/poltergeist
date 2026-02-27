@@ -8,6 +8,7 @@ class OutfitGeneration {
   final String status;
   final String? error;
   final String? profilePictureUrl;
+  final String? backProfilePictureUrl;
 
   const OutfitGeneration({
     required this.id,
@@ -19,6 +20,7 @@ class OutfitGeneration {
     required this.status,
     this.error,
     this.profilePictureUrl,
+    this.backProfilePictureUrl,
   });
 
   factory OutfitGeneration.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class OutfitGeneration {
       status: json['status'] as String? ?? '',
       error: json['error'] as String?,
       profilePictureUrl: json['profilePictureUrl'] as String?,
+      backProfilePictureUrl: json['backProfilePictureUrl'] as String?,
     );
   }
 

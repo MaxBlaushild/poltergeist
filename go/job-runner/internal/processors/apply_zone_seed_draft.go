@@ -967,6 +967,11 @@ type questRewardItemResponse struct {
 	RarityTier  string `json:"rarityTier"`
 }
 
+type questRewardHandProfile struct {
+	Category   string
+	Handedness string
+}
+
 const questRewardItemPromptTemplate = `
 You are a fantasy RPG item designer creating a quest reward.
 
@@ -1010,6 +1015,8 @@ Point of Interest:
 
 Create a reward item that fits the quest and location flavor.
 Equipment slot: %s
+Hand equipment constraints:
+%s
 Constraints:
 - Must be wearable/usable equipment for the given slot.
 - Tangible item a player could carry.
@@ -1044,9 +1051,10 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		zoneName = zone.Name
 	}
 	equipSlot := pickQuestRewardEquipSlot(forceEquipment)
+	handProfile := pickQuestRewardHandProfile(equipSlot)
 	fallback := fallbackQuestRewardItem(poi, poiDraft, draft)
 	if equipSlot != nil {
-		fallback = fallbackQuestRewardEquipment(*equipSlot, poi, poiDraft, draft)
+		fallback = fallbackQuestRewardEquipment(*equipSlot, handProfile, poi, poiDraft, draft)
 	}
 	if draftReward != nil && strings.TrimSpace(draftReward.Name) != "" {
 		name := strings.TrimSpace(draftReward.Name)
@@ -1060,11 +1068,11 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		}
 		bonuses := questRewardStatBonuses{}
 		if equipSlot != nil {
-			name = ensureQuestRewardSlotName(name, *equipSlot)
+			name = ensureQuestRewardSlotName(name, *equipSlot, handProfile)
 			bonuses = rollQuestRewardStatBonuses(rarity)
 			name, description = applyQuestRewardIntensity(name, description, rarity, bonuses)
 		}
-		return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses)
+		return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses, handProfile)
 	}
 
 	prompt := ""
@@ -1078,6 +1086,7 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 			truncate(character.Name, 80),
 			poiDetails,
 			*equipSlot,
+			formatQuestRewardHandProfileForPrompt(handProfile),
 		)
 	} else {
 		prompt = fmt.Sprintf(
@@ -1104,7 +1113,7 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		name = fallback.Name
 	}
 	if equipSlot != nil {
-		name = ensureQuestRewardSlotName(name, *equipSlot)
+		name = ensureQuestRewardSlotName(name, *equipSlot, handProfile)
 	}
 	description := strings.TrimSpace(response.Description)
 	if description == "" {
@@ -1120,7 +1129,7 @@ func (p *ApplyZoneSeedDraftProcessor) generateQuestRewardItem(
 		bonuses = rollQuestRewardStatBonuses(rarity)
 		name, description = applyQuestRewardIntensity(name, description, rarity, bonuses)
 	}
-	return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses)
+	return p.createInventoryItemReward(ctx, name, description, rarity, equipSlot, &bonuses, handProfile)
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
@@ -1130,6 +1139,7 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 	rarity string,
 	equipSlot *string,
 	bonuses *questRewardStatBonuses,
+	handProfile *questRewardHandProfile,
 ) (*models.InventoryItem, error) {
 	var normalizedSlot *string
 	if equipSlot != nil {
@@ -1140,6 +1150,18 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 	}
 	if normalizedSlot == nil {
 		bonuses = nil
+		handProfile = nil
+	}
+	handAttrs := models.HandEquipmentAttributes{}
+	if normalizedSlot != nil && handProfile != nil {
+		handAttrs = rollQuestRewardHandAttributes(*normalizedSlot, rarity, handProfile)
+	}
+	validatedHandAttrs, err := models.NormalizeAndValidateHandEquipment(normalizedSlot, handAttrs)
+	if err != nil {
+		// Fall back to a non-hand reward if generated hand attributes are invalid.
+		normalizedSlot = nil
+		bonuses = nil
+		validatedHandAttrs = models.HandEquipmentAttributes{}
 	}
 	item := &models.InventoryItem{
 		Name:                  name,
@@ -1157,6 +1179,14 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 		item.WisdomMod = bonuses.Wisdom
 		item.CharismaMod = bonuses.Charisma
 	}
+	item.HandItemCategory = validatedHandAttrs.HandItemCategory
+	item.Handedness = validatedHandAttrs.Handedness
+	item.DamageMin = validatedHandAttrs.DamageMin
+	item.DamageMax = validatedHandAttrs.DamageMax
+	item.SwipesPerAttack = validatedHandAttrs.SwipesPerAttack
+	item.BlockPercentage = validatedHandAttrs.BlockPercentage
+	item.DamageBlocked = validatedHandAttrs.DamageBlocked
+	item.SpellDamageBonusPercent = validatedHandAttrs.SpellDamageBonusPercent
 
 	if err := p.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
 		return nil, err
@@ -1427,6 +1457,195 @@ func pickQuestRewardEquipSlot(force bool) *string {
 	return &slot
 }
 
+func pickQuestRewardHandProfile(equipSlot *string) *questRewardHandProfile {
+	if equipSlot == nil {
+		return nil
+	}
+	slot := strings.TrimSpace(*equipSlot)
+	switch slot {
+	case string(models.EquipmentSlotDominantHand):
+		if rand.Float64() < 0.25 {
+			return &questRewardHandProfile{
+				Category:   string(models.HandItemCategoryStaff),
+				Handedness: string(models.HandednessTwoHanded),
+			}
+		}
+		handedness := string(models.HandednessOneHanded)
+		if rand.Float64() < 0.35 {
+			handedness = string(models.HandednessTwoHanded)
+		}
+		return &questRewardHandProfile{
+			Category:   string(models.HandItemCategoryWeapon),
+			Handedness: handedness,
+		}
+	case string(models.EquipmentSlotOffHand):
+		category := string(models.HandItemCategoryShield)
+		if rand.Float64() < 0.45 {
+			category = string(models.HandItemCategoryOrb)
+		}
+		return &questRewardHandProfile{
+			Category:   category,
+			Handedness: string(models.HandednessOneHanded),
+		}
+	default:
+		return nil
+	}
+}
+
+func formatQuestRewardHandProfileForPrompt(handProfile *questRewardHandProfile) string {
+	if handProfile == nil {
+		return "- Not hand equipment."
+	}
+	switch handProfile.Category {
+	case string(models.HandItemCategoryWeapon):
+		return fmt.Sprintf("- category: weapon\n- handedness: %s\n- must include a damage range and swipe cadence", handProfile.Handedness)
+	case string(models.HandItemCategoryStaff):
+		return "- category: staff\n- handedness: two_handed\n- must imply both physical damage and a spell power boost"
+	case string(models.HandItemCategoryShield):
+		return "- category: shield\n- handedness: one_handed\n- should imply defensive blocking capability"
+	case string(models.HandItemCategoryOrb):
+		return "- category: orb\n- handedness: one_handed\n- should imply spell amplification"
+	default:
+		return "- Follow slot rules."
+	}
+}
+
+func rollQuestRewardHandAttributes(slot string, rarity string, handProfile *questRewardHandProfile) models.HandEquipmentAttributes {
+	if handProfile == nil {
+		return models.HandEquipmentAttributes{}
+	}
+	attrs := models.HandEquipmentAttributes{
+		HandItemCategory: stringPtr(handProfile.Category),
+		Handedness:       stringPtr(handProfile.Handedness),
+	}
+	switch slot {
+	case string(models.EquipmentSlotDominantHand):
+		damageMin, damageMax := questRewardDamageRangeByRarity(rarity)
+		if handProfile.Handedness == string(models.HandednessTwoHanded) {
+			damageMin = int(float64(damageMin) * 1.35)
+			damageMax = int(float64(damageMax) * 1.35)
+		}
+		if handProfile.Category == string(models.HandItemCategoryStaff) {
+			damageMin = int(float64(damageMin) * 0.9)
+			damageMax = int(float64(damageMax) * 0.9)
+			bonusMin, bonusMax := questRewardSpellBonusRangeByRarity(rarity)
+			attrs.SpellDamageBonusPercent = intPtr(rollRange(bonusMin, bonusMax))
+		}
+		attrs.DamageMin = intPtr(maxInt(1, damageMin))
+		attrs.DamageMax = intPtr(maxInt(*attrs.DamageMin, damageMax))
+		attrs.SwipesPerAttack = intPtr(questRewardSwipesPerAttack(handProfile))
+	case string(models.EquipmentSlotOffHand):
+		if handProfile.Category == string(models.HandItemCategoryShield) {
+			blockPctMin, blockPctMax := questRewardBlockPercentRangeByRarity(rarity)
+			blockMin, blockMax := questRewardBlockedDamageRangeByRarity(rarity)
+			attrs.BlockPercentage = intPtr(rollRange(blockPctMin, blockPctMax))
+			attrs.DamageBlocked = intPtr(rollRange(blockMin, blockMax))
+		}
+		if handProfile.Category == string(models.HandItemCategoryOrb) {
+			bonusMin, bonusMax := questRewardSpellBonusRangeByRarity(rarity)
+			attrs.SpellDamageBonusPercent = intPtr(rollRange(bonusMin, bonusMax))
+		}
+	}
+	return attrs
+}
+
+func questRewardDamageRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 3, 6
+	case "uncommon":
+		return 5, 10
+	case "epic":
+		return 9, 16
+	case "mythic":
+		return 14, 24
+	default:
+		return 3, 6
+	}
+}
+
+func questRewardSwipesPerAttack(handProfile *questRewardHandProfile) int {
+	if handProfile == nil {
+		return 1
+	}
+	if handProfile.Category == string(models.HandItemCategoryStaff) {
+		return rollRange(1, 2)
+	}
+	if handProfile.Handedness == string(models.HandednessTwoHanded) {
+		return rollRange(1, 2)
+	}
+	return rollRange(2, 4)
+}
+
+func questRewardBlockPercentRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 10, 18
+	case "uncommon":
+		return 18, 28
+	case "epic":
+		return 28, 42
+	case "mythic":
+		return 40, 58
+	default:
+		return 10, 18
+	}
+}
+
+func questRewardBlockedDamageRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 2, 5
+	case "uncommon":
+		return 4, 8
+	case "epic":
+		return 8, 14
+	case "mythic":
+		return 13, 20
+	default:
+		return 2, 5
+	}
+}
+
+func questRewardSpellBonusRangeByRarity(rarity string) (int, int) {
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		return 8, 14
+	case "uncommon":
+		return 14, 22
+	case "epic":
+		return 22, 34
+	case "mythic":
+		return 34, 50
+	default:
+		return 8, 14
+	}
+}
+
+func rollRange(minValue int, maxValue int) int {
+	if maxValue < minValue {
+		maxValue = minValue
+	}
+	return minValue + rand.Intn(maxValue-minValue+1)
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func intPtr(value int) *int {
+	v := value
+	return &v
+}
+
+func stringPtr(value string) *string {
+	v := value
+	return &v
+}
+
 func rollQuestRewardStatBonuses(rarity string) questRewardStatBonuses {
 	minBonus, maxBonus := questRewardBonusRange(rarity)
 	if minBonus <= 0 || maxBonus <= 0 {
@@ -1693,13 +1912,13 @@ var questRewardPairDescriptors = map[string]string{
 	"wisdom+charisma":           "Radiant",
 }
 
-func ensureQuestRewardSlotName(name string, slot string) string {
+func ensureQuestRewardSlotName(name string, slot string, handProfile *questRewardHandProfile) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
 		return name
 	}
 	slotKey := strings.ToLower(strings.TrimSpace(slot))
-	keywords, slotNoun := questRewardSlotKeywords(slotKey)
+	keywords, slotNoun := questRewardSlotKeywords(slotKey, handProfile)
 	if slotNoun == "" {
 		return trimmed
 	}
@@ -1720,7 +1939,7 @@ func ensureQuestRewardSlotName(name string, slot string) string {
 	return fmt.Sprintf("%s %s", trimmed, slotNoun)
 }
 
-func questRewardSlotKeywords(slot string) ([]string, string) {
+func questRewardSlotKeywords(slot string, handProfile *questRewardHandProfile) ([]string, string) {
 	switch slot {
 	case string(models.EquipmentSlotHat):
 		return []string{"hat", "helm", "cap", "hood", "cowl", "circlet"}, "Helm"
@@ -1735,8 +1954,17 @@ func questRewardSlotKeywords(slot string) ([]string, string) {
 	case string(models.EquipmentSlotGloves):
 		return []string{"gloves", "gauntlets", "bracers", "mitts"}, "Gloves"
 	case string(models.EquipmentSlotDominantHand):
-		return []string{"blade", "sword", "dagger", "staff", "wand", "mace", "axe", "hammer", "tool"}, "Blade"
+		if handProfile != nil && handProfile.Category == string(models.HandItemCategoryStaff) {
+			return []string{"staff", "rod", "stave", "cane"}, "Staff"
+		}
+		if handProfile != nil && handProfile.Handedness == string(models.HandednessTwoHanded) {
+			return []string{"greatsword", "axe", "hammer", "polearm", "blade"}, "Greatblade"
+		}
+		return []string{"blade", "sword", "dagger", "mace", "axe", "hammer", "tool"}, "Blade"
 	case string(models.EquipmentSlotOffHand):
+		if handProfile != nil && handProfile.Category == string(models.HandItemCategoryOrb) {
+			return []string{"orb", "focus", "globe", "sphere"}, "Orb"
+		}
 		return []string{"shield", "buckler", "tome", "focus", "orb"}, "Shield"
 	case string(models.EquipmentSlotRing), string(models.EquipmentSlotRingLeft), string(models.EquipmentSlotRingRight):
 		return []string{"ring", "band", "signet"}, "Ring"
@@ -1768,6 +1996,7 @@ func fallbackQuestRewardItem(poi *models.PointOfInterest, draft *models.ZoneSeed
 
 func fallbackQuestRewardEquipment(
 	slot string,
+	handProfile *questRewardHandProfile,
 	poi *models.PointOfInterest,
 	draft *models.ZoneSeedPointOfInterestDraft,
 	quest models.ZoneSeedQuestDraft,
@@ -1793,9 +2022,19 @@ func fallbackQuestRewardEquipment(
 	case string(models.EquipmentSlotGloves):
 		slotNoun = "Gloves"
 	case string(models.EquipmentSlotDominantHand):
-		slotNoun = "Tool"
+		if handProfile != nil && handProfile.Category == string(models.HandItemCategoryStaff) {
+			slotNoun = "Staff"
+		} else if handProfile != nil && handProfile.Handedness == string(models.HandednessTwoHanded) {
+			slotNoun = "Greatblade"
+		} else {
+			slotNoun = "Blade"
+		}
 	case string(models.EquipmentSlotOffHand):
-		slotNoun = "Buckler"
+		if handProfile != nil && handProfile.Category == string(models.HandItemCategoryOrb) {
+			slotNoun = "Orb"
+		} else {
+			slotNoun = "Buckler"
+		}
 	case string(models.EquipmentSlotRing), string(models.EquipmentSlotRingLeft), string(models.EquipmentSlotRingRight):
 		slotNoun = "Ring"
 	}

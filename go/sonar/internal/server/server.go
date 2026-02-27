@@ -6505,20 +6505,28 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 
 func (s *server) createInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
-		Name            string  `json:"name" binding:"required"`
-		ImageURL        string  `json:"imageUrl"`
-		FlavorText      string  `json:"flavorText"`
-		EffectText      string  `json:"effectText"`
-		RarityTier      string  `json:"rarityTier" binding:"required"`
-		IsCaptureType   bool    `json:"isCaptureType"`
-		UnlockTier      *int    `json:"unlockTier"`
-		EquipSlot       *string `json:"equipSlot"`
-		StrengthMod     int     `json:"strengthMod"`
-		DexterityMod    int     `json:"dexterityMod"`
-		ConstitutionMod int     `json:"constitutionMod"`
-		IntelligenceMod int     `json:"intelligenceMod"`
-		WisdomMod       int     `json:"wisdomMod"`
-		CharismaMod     int     `json:"charismaMod"`
+		Name                    string  `json:"name" binding:"required"`
+		ImageURL                string  `json:"imageUrl"`
+		FlavorText              string  `json:"flavorText"`
+		EffectText              string  `json:"effectText"`
+		RarityTier              string  `json:"rarityTier" binding:"required"`
+		IsCaptureType           bool    `json:"isCaptureType"`
+		UnlockTier              *int    `json:"unlockTier"`
+		EquipSlot               *string `json:"equipSlot"`
+		StrengthMod             int     `json:"strengthMod"`
+		DexterityMod            int     `json:"dexterityMod"`
+		ConstitutionMod         int     `json:"constitutionMod"`
+		IntelligenceMod         int     `json:"intelligenceMod"`
+		WisdomMod               int     `json:"wisdomMod"`
+		CharismaMod             int     `json:"charismaMod"`
+		HandItemCategory        *string `json:"handItemCategory"`
+		Handedness              *string `json:"handedness"`
+		DamageMin               *int    `json:"damageMin"`
+		DamageMax               *int    `json:"damageMax"`
+		SwipesPerAttack         *int    `json:"swipesPerAttack"`
+		BlockPercentage         *int    `json:"blockPercentage"`
+		DamageBlocked           *int    `json:"damageBlocked"`
+		SpellDamageBonusPercent *int    `json:"spellDamageBonusPercent"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -6537,22 +6545,44 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 			equipSlot = &trimmed
 		}
 	}
+	handAttrs, err := models.NormalizeAndValidateHandEquipment(equipSlot, models.HandEquipmentAttributes{
+		HandItemCategory:        requestBody.HandItemCategory,
+		Handedness:              requestBody.Handedness,
+		DamageMin:               requestBody.DamageMin,
+		DamageMax:               requestBody.DamageMax,
+		SwipesPerAttack:         requestBody.SwipesPerAttack,
+		BlockPercentage:         requestBody.BlockPercentage,
+		DamageBlocked:           requestBody.DamageBlocked,
+		SpellDamageBonusPercent: requestBody.SpellDamageBonusPercent,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	item := &models.InventoryItem{
-		Name:            requestBody.Name,
-		ImageURL:        requestBody.ImageURL,
-		FlavorText:      requestBody.FlavorText,
-		EffectText:      requestBody.EffectText,
-		RarityTier:      requestBody.RarityTier,
-		IsCaptureType:   requestBody.IsCaptureType,
-		UnlockTier:      requestBody.UnlockTier,
-		EquipSlot:       equipSlot,
-		StrengthMod:     requestBody.StrengthMod,
-		DexterityMod:    requestBody.DexterityMod,
-		ConstitutionMod: requestBody.ConstitutionMod,
-		IntelligenceMod: requestBody.IntelligenceMod,
-		WisdomMod:       requestBody.WisdomMod,
-		CharismaMod:     requestBody.CharismaMod,
+		Name:                    requestBody.Name,
+		ImageURL:                requestBody.ImageURL,
+		FlavorText:              requestBody.FlavorText,
+		EffectText:              requestBody.EffectText,
+		RarityTier:              requestBody.RarityTier,
+		IsCaptureType:           requestBody.IsCaptureType,
+		UnlockTier:              requestBody.UnlockTier,
+		EquipSlot:               equipSlot,
+		StrengthMod:             requestBody.StrengthMod,
+		DexterityMod:            requestBody.DexterityMod,
+		ConstitutionMod:         requestBody.ConstitutionMod,
+		IntelligenceMod:         requestBody.IntelligenceMod,
+		WisdomMod:               requestBody.WisdomMod,
+		CharismaMod:             requestBody.CharismaMod,
+		HandItemCategory:        handAttrs.HandItemCategory,
+		Handedness:              handAttrs.Handedness,
+		DamageMin:               handAttrs.DamageMin,
+		DamageMax:               handAttrs.DamageMax,
+		SwipesPerAttack:         handAttrs.SwipesPerAttack,
+		BlockPercentage:         handAttrs.BlockPercentage,
+		DamageBlocked:           handAttrs.DamageBlocked,
+		SpellDamageBonusPercent: handAttrs.SpellDamageBonusPercent,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -6698,20 +6728,28 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name            string  `json:"name"`
-		ImageURL        string  `json:"imageUrl"`
-		FlavorText      string  `json:"flavorText"`
-		EffectText      string  `json:"effectText"`
-		RarityTier      string  `json:"rarityTier"`
-		IsCaptureType   bool    `json:"isCaptureType"`
-		UnlockTier      *int    `json:"unlockTier"`
-		EquipSlot       *string `json:"equipSlot"`
-		StrengthMod     int     `json:"strengthMod"`
-		DexterityMod    int     `json:"dexterityMod"`
-		ConstitutionMod int     `json:"constitutionMod"`
-		IntelligenceMod int     `json:"intelligenceMod"`
-		WisdomMod       int     `json:"wisdomMod"`
-		CharismaMod     int     `json:"charismaMod"`
+		Name                    string  `json:"name"`
+		ImageURL                string  `json:"imageUrl"`
+		FlavorText              string  `json:"flavorText"`
+		EffectText              string  `json:"effectText"`
+		RarityTier              string  `json:"rarityTier"`
+		IsCaptureType           bool    `json:"isCaptureType"`
+		UnlockTier              *int    `json:"unlockTier"`
+		EquipSlot               *string `json:"equipSlot"`
+		StrengthMod             int     `json:"strengthMod"`
+		DexterityMod            int     `json:"dexterityMod"`
+		ConstitutionMod         int     `json:"constitutionMod"`
+		IntelligenceMod         int     `json:"intelligenceMod"`
+		WisdomMod               int     `json:"wisdomMod"`
+		CharismaMod             int     `json:"charismaMod"`
+		HandItemCategory        *string `json:"handItemCategory"`
+		Handedness              *string `json:"handedness"`
+		DamageMin               *int    `json:"damageMin"`
+		DamageMax               *int    `json:"damageMax"`
+		SwipesPerAttack         *int    `json:"swipesPerAttack"`
+		BlockPercentage         *int    `json:"blockPercentage"`
+		DamageBlocked           *int    `json:"damageBlocked"`
+		SpellDamageBonusPercent *int    `json:"spellDamageBonusPercent"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -6730,22 +6768,44 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 			equipSlot = &trimmed
 		}
 	}
+	handAttrs, err := models.NormalizeAndValidateHandEquipment(equipSlot, models.HandEquipmentAttributes{
+		HandItemCategory:        requestBody.HandItemCategory,
+		Handedness:              requestBody.Handedness,
+		DamageMin:               requestBody.DamageMin,
+		DamageMax:               requestBody.DamageMax,
+		SwipesPerAttack:         requestBody.SwipesPerAttack,
+		BlockPercentage:         requestBody.BlockPercentage,
+		DamageBlocked:           requestBody.DamageBlocked,
+		SpellDamageBonusPercent: requestBody.SpellDamageBonusPercent,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	updates := map[string]interface{}{
-		"name":             requestBody.Name,
-		"image_url":        requestBody.ImageURL,
-		"flavor_text":      requestBody.FlavorText,
-		"effect_text":      requestBody.EffectText,
-		"rarity_tier":      requestBody.RarityTier,
-		"is_capture_type":  requestBody.IsCaptureType,
-		"unlock_tier":      requestBody.UnlockTier,
-		"equip_slot":       equipSlot,
-		"strength_mod":     requestBody.StrengthMod,
-		"dexterity_mod":    requestBody.DexterityMod,
-		"constitution_mod": requestBody.ConstitutionMod,
-		"intelligence_mod": requestBody.IntelligenceMod,
-		"wisdom_mod":       requestBody.WisdomMod,
-		"charisma_mod":     requestBody.CharismaMod,
+		"name":                       requestBody.Name,
+		"image_url":                  requestBody.ImageURL,
+		"flavor_text":                requestBody.FlavorText,
+		"effect_text":                requestBody.EffectText,
+		"rarity_tier":                requestBody.RarityTier,
+		"is_capture_type":            requestBody.IsCaptureType,
+		"unlock_tier":                requestBody.UnlockTier,
+		"equip_slot":                 equipSlot,
+		"strength_mod":               requestBody.StrengthMod,
+		"dexterity_mod":              requestBody.DexterityMod,
+		"constitution_mod":           requestBody.ConstitutionMod,
+		"intelligence_mod":           requestBody.IntelligenceMod,
+		"wisdom_mod":                 requestBody.WisdomMod,
+		"charisma_mod":               requestBody.CharismaMod,
+		"hand_item_category":         handAttrs.HandItemCategory,
+		"handedness":                 handAttrs.Handedness,
+		"damage_min":                 handAttrs.DamageMin,
+		"damage_max":                 handAttrs.DamageMax,
+		"swipes_per_attack":          handAttrs.SwipesPerAttack,
+		"block_percentage":           handAttrs.BlockPercentage,
+		"damage_blocked":             handAttrs.DamageBlocked,
+		"spell_damage_bonus_percent": handAttrs.SpellDamageBonusPercent,
 	}
 
 	if requestBody.ImageURL != "" {
