@@ -1,0 +1,541 @@
+package processors
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/MaxBlaushild/poltergeist/pkg/db"
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
+	"github.com/MaxBlaushild/poltergeist/pkg/models"
+	"github.com/hibiken/asynq"
+)
+
+const (
+	scenarioPlaceholderImageURL = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+)
+
+var scenarioGenerationValidStatTags = map[string]struct{}{
+	"strength":     {},
+	"dexterity":    {},
+	"constitution": {},
+	"intelligence": {},
+	"wisdom":       {},
+	"charisma":     {},
+}
+
+const openEndedScenarioGenerationPromptTemplate = `
+You are designing one fantasy RPG map scenario for a location-based game.
+
+Zone:
+- name: %s
+- description: %s
+
+Location context:
+- latitude: %.6f
+- longitude: %.6f
+
+Create an OPEN-ENDED scenario (free-text response from player).
+
+Return JSON only:
+{
+  "prompt": "2-4 vivid sentences",
+  "difficulty": 0-40,
+  "rewardExperience": 0-120,
+  "rewardGold": 0-120,
+  "itemRewards": [
+    { "inventoryItemId": <id from allowed list>, "quantity": 1-3 }
+  ]
+}
+
+Rules:
+- Prompt must be specific to this zone and location, with a clear conflict/opportunity.
+- Keep tone adventurous and grounded in physical surroundings.
+- itemRewards can be empty.
+- Use only inventoryItemId values from this allowed list:
+%s
+`
+
+const choiceScenarioGenerationPromptTemplate = `
+You are designing one fantasy RPG map scenario for a location-based game.
+
+Zone:
+- name: %s
+- description: %s
+
+Location context:
+- latitude: %.6f
+- longitude: %.6f
+
+Create a CHOICE-BASED scenario with 3 options.
+
+Return JSON only:
+{
+  "prompt": "2-4 vivid sentences",
+  "difficulty": 0-40,
+  "options": [
+    {
+      "optionText": "player action text",
+      "successText": "one or two sentences",
+      "failureText": "one or two sentences",
+      "statTag": "strength|dexterity|constitution|intelligence|wisdom|charisma",
+      "proficiencies": ["0-3 short proficiencies"],
+      "difficulty": null or 0-40,
+      "rewardExperience": 0-80,
+      "rewardGold": 0-80,
+      "itemRewards": [
+        { "inventoryItemId": <id from allowed list>, "quantity": 1-2 }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Prompt must be specific to this zone and location, with a clear conflict/opportunity.
+- options must contain exactly 3 entries and each option should feel distinct.
+- proficiencies should be practical, short labels.
+- itemRewards can be empty.
+- Use only inventoryItemId values from this allowed list:
+%s
+`
+
+type scenarioGenerationRewardPayload struct {
+	InventoryItemID int `json:"inventoryItemId"`
+	Quantity        int `json:"quantity"`
+}
+
+type openEndedScenarioGenerationResponse struct {
+	Prompt           string                            `json:"prompt"`
+	Difficulty       *int                              `json:"difficulty"`
+	RewardExperience int                               `json:"rewardExperience"`
+	RewardGold       int                               `json:"rewardGold"`
+	ItemRewards      []scenarioGenerationRewardPayload `json:"itemRewards"`
+}
+
+type choiceScenarioGenerationOptionPayload struct {
+	OptionText       string                            `json:"optionText"`
+	SuccessText      string                            `json:"successText"`
+	FailureText      string                            `json:"failureText"`
+	StatTag          string                            `json:"statTag"`
+	Proficiencies    []string                          `json:"proficiencies"`
+	Difficulty       *int                              `json:"difficulty"`
+	RewardExperience int                               `json:"rewardExperience"`
+	RewardGold       int                               `json:"rewardGold"`
+	ItemRewards      []scenarioGenerationRewardPayload `json:"itemRewards"`
+}
+
+type choiceScenarioGenerationResponse struct {
+	Prompt     string                                  `json:"prompt"`
+	Difficulty *int                                    `json:"difficulty"`
+	Options    []choiceScenarioGenerationOptionPayload `json:"options"`
+}
+
+type GenerateScenarioProcessor struct {
+	dbClient         db.DbClient
+	deepPriestClient deep_priest.DeepPriest
+	asyncClient      *asynq.Client
+}
+
+func NewGenerateScenarioProcessor(
+	dbClient db.DbClient,
+	deepPriestClient deep_priest.DeepPriest,
+	asyncClient *asynq.Client,
+) GenerateScenarioProcessor {
+	log.Println("Initializing GenerateScenarioProcessor")
+	return GenerateScenarioProcessor{
+		dbClient:         dbClient,
+		deepPriestClient: deepPriestClient,
+		asyncClient:      asyncClient,
+	}
+}
+
+func (p *GenerateScenarioProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
+	log.Printf("Processing generate scenario task: %v", task.Type())
+
+	var payload jobs.GenerateScenarioTaskPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	}
+
+	job, err := p.dbClient.ScenarioGenerationJob().FindByID(ctx, payload.JobID)
+	if err != nil {
+		return err
+	}
+	if job == nil {
+		log.Printf("Scenario generation job %s not found", payload.JobID)
+		return nil
+	}
+
+	job.Status = models.ScenarioGenerationStatusInProgress
+	job.ErrorMessage = nil
+	job.UpdatedAt = time.Now()
+	if err := p.dbClient.ScenarioGenerationJob().Update(ctx, job); err != nil {
+		return err
+	}
+
+	if err := p.generateScenario(ctx, job); err != nil {
+		return p.failScenarioGenerationJob(ctx, job, err)
+	}
+
+	return nil
+}
+
+func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *models.ScenarioGenerationJob) error {
+	zone, err := p.dbClient.Zone().FindByID(ctx, job.ZoneID)
+	if err != nil {
+		return fmt.Errorf("failed to load zone: %w", err)
+	}
+	if zone == nil {
+		return fmt.Errorf("zone not found")
+	}
+
+	lat, lng := scenarioGenerationLocation(*zone, job.Latitude, job.Longitude)
+
+	inventoryItems, err := p.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load inventory items: %w", err)
+	}
+	allowedItemIDs := make(map[int]struct{}, len(inventoryItems))
+	for _, item := range inventoryItems {
+		allowedItemIDs[item.ID] = struct{}{}
+	}
+	allowedItemsPrompt := buildAllowedItemsPrompt(inventoryItems)
+
+	scenario := &models.Scenario{
+		ZoneID:           job.ZoneID,
+		Latitude:         lat,
+		Longitude:        lng,
+		ImageURL:         scenarioPlaceholderImageURL,
+		ThumbnailURL:     scenarioPlaceholderImageURL,
+		Difficulty:       24,
+		RewardExperience: 0,
+		RewardGold:       0,
+		OpenEnded:        job.OpenEnded,
+	}
+	options := make([]models.ScenarioOption, 0)
+	rewards := make([]models.ScenarioItemReward, 0)
+
+	zoneName := strings.TrimSpace(zone.Name)
+	if zoneName == "" {
+		zoneName = "Unknown Zone"
+	}
+	zoneDescription := strings.TrimSpace(zone.Description)
+	if zoneDescription == "" {
+		zoneDescription = "No description available."
+	}
+
+	if job.OpenEnded {
+		prompt := fmt.Sprintf(
+			openEndedScenarioGenerationPromptTemplate,
+			zoneName,
+			zoneDescription,
+			lat,
+			lng,
+			allowedItemsPrompt,
+		)
+		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+		if err != nil {
+			return fmt.Errorf("failed to generate open-ended scenario: %w", err)
+		}
+		generated := &openEndedScenarioGenerationResponse{}
+		if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), generated); err != nil {
+			return fmt.Errorf("failed to parse open-ended scenario payload: %w", err)
+		}
+
+		scenario.Prompt = sanitizeScenarioPrompt(generated.Prompt)
+		scenario.Difficulty = sanitizeScenarioDifficulty(generated.Difficulty, 24)
+		scenario.RewardExperience = clampInt(generated.RewardExperience, 0, 120)
+		scenario.RewardGold = clampInt(generated.RewardGold, 0, 120)
+		rewards = sanitizeScenarioRewards(generated.ItemRewards, allowedItemIDs, 3)
+	} else {
+		prompt := fmt.Sprintf(
+			choiceScenarioGenerationPromptTemplate,
+			zoneName,
+			zoneDescription,
+			lat,
+			lng,
+			allowedItemsPrompt,
+		)
+		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
+		if err != nil {
+			return fmt.Errorf("failed to generate choice scenario: %w", err)
+		}
+		generated := &choiceScenarioGenerationResponse{}
+		if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), generated); err != nil {
+			return fmt.Errorf("failed to parse choice scenario payload: %w", err)
+		}
+
+		scenario.Prompt = sanitizeScenarioPrompt(generated.Prompt)
+		scenario.Difficulty = sanitizeScenarioDifficulty(generated.Difficulty, 24)
+		options = sanitizeScenarioOptions(generated.Options, allowedItemIDs)
+		if len(options) == 0 {
+			options = append(options, fallbackScenarioOption())
+		}
+	}
+
+	if err := p.dbClient.Scenario().Create(ctx, scenario); err != nil {
+		return fmt.Errorf("failed to create scenario: %w", err)
+	}
+	if err := p.dbClient.Scenario().ReplaceOptions(ctx, scenario.ID, options); err != nil {
+		return fmt.Errorf("failed to create scenario options: %w", err)
+	}
+	if err := p.dbClient.Scenario().ReplaceItemRewards(ctx, scenario.ID, rewards); err != nil {
+		return fmt.Errorf("failed to create scenario rewards: %w", err)
+	}
+
+	job.Status = models.ScenarioGenerationStatusCompleted
+	job.GeneratedScenarioID = &scenario.ID
+	job.ErrorMessage = nil
+	job.UpdatedAt = time.Now()
+	if err := p.dbClient.ScenarioGenerationJob().Update(ctx, job); err != nil {
+		return fmt.Errorf("failed to update scenario generation job: %w", err)
+	}
+
+	if p.asyncClient != nil {
+		imagePayload, err := json.Marshal(jobs.GenerateScenarioImageTaskPayload{
+			ScenarioID: scenario.ID,
+		})
+		if err == nil {
+			if _, enqueueErr := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioImageTaskType, imagePayload)); enqueueErr != nil {
+				log.Printf("Failed to enqueue scenario image generation for scenario %s: %v", scenario.ID, enqueueErr)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *GenerateScenarioProcessor) failScenarioGenerationJob(ctx context.Context, job *models.ScenarioGenerationJob, err error) error {
+	msg := err.Error()
+	job.Status = models.ScenarioGenerationStatusFailed
+	job.ErrorMessage = &msg
+	job.UpdatedAt = time.Now()
+	if updateErr := p.dbClient.ScenarioGenerationJob().Update(ctx, job); updateErr != nil {
+		log.Printf("Failed to mark scenario generation job %s as failed: %v", job.ID, updateErr)
+	}
+	return err
+}
+
+func extractGeneratedJSONObject(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "```") {
+		trimmed = strings.TrimPrefix(trimmed, "```json")
+		trimmed = strings.TrimPrefix(trimmed, "```JSON")
+		trimmed = strings.TrimPrefix(trimmed, "```")
+		trimmed = strings.TrimSuffix(trimmed, "```")
+		trimmed = strings.TrimSpace(trimmed)
+	}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		return trimmed[start : end+1]
+	}
+	return trimmed
+}
+
+func scenarioGenerationLocation(zone models.Zone, latitude *float64, longitude *float64) (float64, float64) {
+	if latitude != nil && longitude != nil {
+		return *latitude, *longitude
+	}
+
+	point := zone.GetRandomPoint()
+	if point.X() != 0 || point.Y() != 0 {
+		return point.Y(), point.X()
+	}
+
+	if zone.Latitude != 0 || zone.Longitude != 0 {
+		return zone.Latitude, zone.Longitude
+	}
+
+	return 40.7589, -73.98513
+}
+
+func buildAllowedItemsPrompt(items []models.InventoryItem) string {
+	if len(items) == 0 {
+		return "- none"
+	}
+
+	const maxItems = 120
+	lines := make([]string, 0, min(len(items), maxItems)+1)
+	for i, item := range items {
+		if i >= maxItems {
+			lines = append(lines, "- ...")
+			break
+		}
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = "Unnamed Item"
+		}
+		lines = append(lines, fmt.Sprintf("- %d: %s", item.ID, name))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sanitizeScenarioPrompt(prompt string) string {
+	trimmed := strings.TrimSpace(prompt)
+	if trimmed == "" {
+		return "A tense moment unfolds in the district as locals look to you for help."
+	}
+	if len(trimmed) > 700 {
+		return strings.TrimSpace(trimmed[:700])
+	}
+	return trimmed
+}
+
+func sanitizeScenarioDifficulty(value *int, fallback int) int {
+	if value == nil {
+		return fallback
+	}
+	return clampInt(*value, 0, 40)
+}
+
+func sanitizeScenarioRewards(rewards []scenarioGenerationRewardPayload, allowedItemIDs map[int]struct{}, maxCount int) []models.ScenarioItemReward {
+	result := make([]models.ScenarioItemReward, 0, min(len(rewards), maxCount))
+	for _, reward := range rewards {
+		if len(result) >= maxCount {
+			break
+		}
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		if _, ok := allowedItemIDs[reward.InventoryItemID]; !ok {
+			continue
+		}
+		result = append(result, models.ScenarioItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        clampInt(reward.Quantity, 1, 3),
+		})
+	}
+	return result
+}
+
+func sanitizeScenarioOptionRewards(rewards []scenarioGenerationRewardPayload, allowedItemIDs map[int]struct{}, maxCount int) []models.ScenarioOptionItemReward {
+	result := make([]models.ScenarioOptionItemReward, 0, min(len(rewards), maxCount))
+	for _, reward := range rewards {
+		if len(result) >= maxCount {
+			break
+		}
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		if _, ok := allowedItemIDs[reward.InventoryItemID]; !ok {
+			continue
+		}
+		result = append(result, models.ScenarioOptionItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        clampInt(reward.Quantity, 1, 2),
+		})
+	}
+	return result
+}
+
+func sanitizeScenarioOptions(options []choiceScenarioGenerationOptionPayload, allowedItemIDs map[int]struct{}) []models.ScenarioOption {
+	if len(options) == 0 {
+		return nil
+	}
+
+	const maxOptions = 4
+	result := make([]models.ScenarioOption, 0, min(len(options), maxOptions))
+	for _, option := range options {
+		if len(result) >= maxOptions {
+			break
+		}
+		optionText := strings.TrimSpace(option.OptionText)
+		if optionText == "" {
+			continue
+		}
+		successText := strings.TrimSpace(option.SuccessText)
+		if successText == "" {
+			successText = "Your approach works, and momentum turns in your favor."
+		}
+		failureText := strings.TrimSpace(option.FailureText)
+		if failureText == "" {
+			failureText = "The attempt falls short, and the moment slips away."
+		}
+
+		statTag := strings.ToLower(strings.TrimSpace(option.StatTag))
+		if _, ok := scenarioGenerationValidStatTags[statTag]; !ok {
+			statTag = "charisma"
+		}
+
+		proficiencies := sanitizeScenarioProficiencies(option.Proficiencies, 3)
+
+		var difficulty *int
+		if option.Difficulty != nil {
+			d := clampInt(*option.Difficulty, 0, 40)
+			difficulty = &d
+		}
+
+		result = append(result, models.ScenarioOption{
+			OptionText:       optionText,
+			SuccessText:      successText,
+			FailureText:      failureText,
+			StatTag:          statTag,
+			Proficiencies:    models.StringArray(proficiencies),
+			Difficulty:       difficulty,
+			RewardExperience: clampInt(option.RewardExperience, 0, 80),
+			RewardGold:       clampInt(option.RewardGold, 0, 80),
+			ItemRewards:      sanitizeScenarioOptionRewards(option.ItemRewards, allowedItemIDs, 2),
+		})
+	}
+
+	return result
+}
+
+func sanitizeScenarioProficiencies(values []string, maxCount int) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	result := make([]string, 0, min(len(values), maxCount))
+	for _, value := range values {
+		if len(result) >= maxCount {
+			break
+		}
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func fallbackScenarioOption() models.ScenarioOption {
+	return models.ScenarioOption{
+		OptionText:       "Rally nearby allies and confront the threat together.",
+		SuccessText:      "Your coordinated push turns the tide and restores order.",
+		FailureText:      "The plan falters under pressure, leaving the danger unresolved.",
+		StatTag:          "charisma",
+		Proficiencies:    models.StringArray{},
+		RewardExperience: 10,
+		RewardGold:       8,
+		ItemRewards:      []models.ScenarioOptionItemReward{},
+	}
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

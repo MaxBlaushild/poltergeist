@@ -53,6 +53,27 @@ type ScenarioFormState = {
   itemRewards: ScenarioRewardItem[];
 };
 
+type ScenarioGenerationJob = {
+  id: string;
+  zoneId: string;
+  status: string;
+  openEnded: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  generatedScenarioId?: string | null;
+  errorMessage?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ScenarioGenerationFormState = {
+  zoneId: string;
+  openEnded: boolean;
+  includeLocation: boolean;
+  latitude: string;
+  longitude: string;
+};
+
 const statTags = [
   'strength',
   'dexterity',
@@ -89,6 +110,14 @@ const emptyFormState = (): ScenarioFormState => ({
   itemRewards: [],
 });
 
+const emptyGenerationFormState = (): ScenarioGenerationFormState => ({
+  zoneId: '',
+  openEnded: false,
+  includeLocation: false,
+  latitude: '',
+  longitude: '',
+});
+
 const parseIntValue = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -106,6 +135,28 @@ const parseCsv = (value: string): string[] => {
     .filter(Boolean);
 };
 
+const scenarioGenerationStatusBadgeClass = (status: string): string => {
+  switch (status) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    default:
+      return 'bg-gray-600';
+  }
+};
+
+const formatDate = (value?: string): string => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 export const Scenarios = () => {
@@ -117,6 +168,12 @@ export const Scenarios = () => {
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [generationForm, setGenerationForm] = useState<ScenarioGenerationFormState>(emptyGenerationFormState);
+  const [generationJobs, setGenerationJobs] = useState<ScenarioGenerationJob[]>([]);
+  const [generationJobsLoading, setGenerationJobsLoading] = useState(false);
+  const [generationSubmitting, setGenerationSubmitting] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationGeoLoading, setGenerationGeoLoading] = useState(false);
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -131,6 +188,12 @@ export const Scenarios = () => {
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
   const formLatitudeRef = React.useRef(form.latitude);
   const formLongitudeRef = React.useRef(form.longitude);
+  const generationMapContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const generationMapRef = React.useRef<mapboxgl.Map | null>(null);
+  const generationMarkerRef = React.useRef<mapboxgl.Marker | null>(null);
+  const generationLatitudeRef = React.useRef(generationForm.latitude);
+  const generationLongitudeRef = React.useRef(generationForm.longitude);
+  const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +218,211 @@ export const Scenarios = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadGenerationJobs = useCallback(async () => {
+    try {
+      setGenerationJobsLoading(true);
+      const response = await apiClient.get<ScenarioGenerationJob[]>('/sonar/admin/scenario-generation-jobs', {
+        limit: 25,
+      });
+      setGenerationJobs(response);
+      setGenerationError(null);
+    } catch (err) {
+      console.error('Error loading scenario generation jobs:', err);
+      setGenerationError('Failed to load scenario generation jobs.');
+    } finally {
+      setGenerationJobsLoading(false);
+    }
+  }, [apiClient]);
+
+  useEffect(() => {
+    void loadGenerationJobs();
+  }, [loadGenerationJobs]);
+
+  useEffect(() => {
+    if (!generationForm.zoneId && zones.length > 0) {
+      setGenerationForm((prev) => ({ ...prev, zoneId: zones[0].id }));
+    }
+  }, [generationForm.zoneId, zones]);
+
+  useEffect(() => {
+    generationLatitudeRef.current = generationForm.latitude;
+    generationLongitudeRef.current = generationForm.longitude;
+  }, [generationForm.latitude, generationForm.longitude]);
+
+  const hasActiveGenerationJobs = useMemo(
+    () => generationJobs.some((job) => job.status === 'queued' || job.status === 'in_progress'),
+    [generationJobs]
+  );
+
+  useEffect(() => {
+    if (!hasActiveGenerationJobs) return;
+    const interval = window.setInterval(() => {
+      void loadGenerationJobs();
+    }, 3000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [hasActiveGenerationJobs, loadGenerationJobs]);
+
+  useEffect(() => {
+    const completedWithScenario = generationJobs.filter(
+      (job) => job.status === 'completed' && !!job.generatedScenarioId
+    );
+    let shouldReloadScenarios = false;
+    for (const job of completedWithScenario) {
+      if (!seenCompletedGenerationJobsRef.current.has(job.id)) {
+        seenCompletedGenerationJobsRef.current.add(job.id);
+        shouldReloadScenarios = true;
+      }
+    }
+    if (shouldReloadScenarios) {
+      void load();
+    }
+  }, [generationJobs, load]);
+
+  const setGenerationLocation = useCallback((latitude: number, longitude: number) => {
+    setGenerationForm((prev) => ({
+      ...prev,
+      includeLocation: true,
+      latitude: latitude.toFixed(6),
+      longitude: longitude.toFixed(6),
+    }));
+  }, []);
+
+  const handleQueueScenarioGeneration = async () => {
+    if (!generationForm.zoneId) {
+      setGenerationError('Please select a zone.');
+      return;
+    }
+    const payload: {
+      zoneId: string;
+      openEnded: boolean;
+      latitude?: number;
+      longitude?: number;
+    } = {
+      zoneId: generationForm.zoneId,
+      openEnded: generationForm.openEnded,
+    };
+
+    if (generationForm.includeLocation) {
+      const latitude = parseFloatValue(generationForm.latitude, Number.NaN);
+      const longitude = parseFloatValue(generationForm.longitude, Number.NaN);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        setGenerationError('Location is enabled, so latitude and longitude are required.');
+        return;
+      }
+      payload.latitude = latitude;
+      payload.longitude = longitude;
+    }
+
+    try {
+      setGenerationSubmitting(true);
+      setGenerationError(null);
+      const created = await apiClient.post<ScenarioGenerationJob>('/sonar/admin/scenario-generation-jobs', payload);
+      setGenerationJobs((prev) => [created, ...prev]);
+      setGenerationForm((prev) => ({
+        ...prev,
+        includeLocation: false,
+        latitude: '',
+        longitude: '',
+      }));
+    } catch (err) {
+      console.error('Error queueing scenario generation job:', err);
+      setGenerationError('Failed to queue scenario generation job.');
+    } finally {
+      setGenerationSubmitting(false);
+    }
+  };
+
+  const handleUseCurrentGenerationLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGenerationError('Geolocation is not supported in this browser.');
+      return;
+    }
+    setGenerationGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGenerationGeoLoading(false);
+        setGenerationError(null);
+        setGenerationLocation(position.coords.latitude, position.coords.longitude);
+      },
+      (geoError) => {
+        setGenerationGeoLoading(false);
+        setGenerationError(`Unable to get current location: ${geoError.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, [setGenerationLocation]);
+
+  useEffect(() => {
+    if (!generationForm.includeLocation) {
+      generationMarkerRef.current?.remove();
+      generationMarkerRef.current = null;
+      generationMapRef.current?.remove();
+      generationMapRef.current = null;
+      return;
+    }
+    if (!generationMapContainerRef.current) return;
+    if (!mapboxgl.accessToken) return;
+    if (generationMapRef.current) return;
+
+    const parsedLat = Number.parseFloat(generationLatitudeRef.current);
+    const parsedLng = Number.parseFloat(generationLongitudeRef.current);
+    const selectedZone = zones.find((zone) => zone.id === generationForm.zoneId);
+    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
+    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+
+    const center: [number, number] =
+      Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+        ? [parsedLng, parsedLat]
+        : Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
+          ? [zoneLng, zoneLat]
+          : [-73.98513, 40.7589];
+
+    const map = new mapboxgl.Map({
+      container: generationMapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center,
+      zoom: 13,
+    });
+
+    map.on('click', (event) => {
+      setGenerationLocation(event.lngLat.lat, event.lngLat.lng);
+    });
+
+    generationMapRef.current = map;
+
+    return () => {
+      generationMarkerRef.current?.remove();
+      generationMarkerRef.current = null;
+      map.remove();
+      generationMapRef.current = null;
+    };
+  }, [generationForm.includeLocation, generationForm.zoneId, setGenerationLocation, zones]);
+
+  useEffect(() => {
+    if (!generationForm.includeLocation) return;
+    if (!generationMapRef.current) return;
+
+    const latitude = Number.parseFloat(generationForm.latitude);
+    const longitude = Number.parseFloat(generationForm.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      generationMarkerRef.current?.remove();
+      generationMarkerRef.current = null;
+      return;
+    }
+
+    if (!generationMarkerRef.current) {
+      generationMarkerRef.current = new mapboxgl.Marker({ color: '#2563eb' })
+        .setLngLat([longitude, latitude])
+        .addTo(generationMapRef.current);
+    } else {
+      generationMarkerRef.current.setLngLat([longitude, latitude]);
+    }
+
+    generationMapRef.current.easeTo({ center: [longitude, latitude], duration: 350 });
+  }, [generationForm.includeLocation, generationForm.latitude, generationForm.longitude]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -480,6 +748,187 @@ export const Scenarios = () => {
         <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={openCreate}>
           Create Scenario
         </button>
+      </div>
+
+      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg font-semibold">Generate Scenario (Async)</h2>
+          <button
+            type="button"
+            className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+            onClick={() => void loadGenerationJobs()}
+            disabled={generationJobsLoading}
+          >
+            {generationJobsLoading ? 'Refreshing…' : 'Refresh Jobs'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <label className="text-sm">
+            Zone
+            <select
+              value={generationForm.zoneId}
+              onChange={(e) => setGenerationForm((prev) => ({ ...prev, zoneId: e.target.value }))}
+              className="w-full border rounded-md p-2"
+            >
+              <option value="">Select zone</option>
+              {zones.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            Scenario Type
+            <select
+              value={generationForm.openEnded ? 'open_ended' : 'choice'}
+              onChange={(e) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  openEnded: e.target.value === 'open_ended',
+                }))
+              }
+              className="w-full border rounded-md p-2"
+            >
+              <option value="choice">Choice (Options)</option>
+              <option value="open_ended">Open-Ended (Free Text)</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="inline-flex items-center gap-2 mb-3 text-sm">
+          <input
+            type="checkbox"
+            checked={generationForm.includeLocation}
+            onChange={(e) =>
+              setGenerationForm((prev) => ({
+                ...prev,
+                includeLocation: e.target.checked,
+                latitude: e.target.checked ? prev.latitude : '',
+                longitude: e.target.checked ? prev.longitude : '',
+              }))
+            }
+          />
+          Provide a specific location (optional)
+        </label>
+
+        {generationForm.includeLocation && (
+          <div className="border rounded-md p-3 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
+              <label className="text-sm">
+                Latitude
+                <input
+                  value={generationForm.latitude}
+                  onChange={(e) => setGenerationForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  className="w-full border rounded-md p-2"
+                  type="number"
+                  step="any"
+                />
+              </label>
+              <label className="text-sm">
+                Longitude
+                <input
+                  value={generationForm.longitude}
+                  onChange={(e) => setGenerationForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  className="w-full border rounded-md p-2"
+                  type="number"
+                  step="any"
+                />
+              </label>
+            </div>
+            <div className="mb-2">
+              <button
+                type="button"
+                className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
+                onClick={handleUseCurrentGenerationLocation}
+                disabled={generationGeoLoading}
+              >
+                {generationGeoLoading ? 'Locating…' : 'Use Current Browser Location'}
+              </button>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm">Map Location Picker</span>
+                <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+              </div>
+              {mapboxgl.accessToken ? (
+                <div ref={generationMapContainerRef} className="w-full h-56 border rounded-md" />
+              ) : (
+                <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                  Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <button
+            type="button"
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
+            onClick={handleQueueScenarioGeneration}
+            disabled={generationSubmitting}
+          >
+            {generationSubmitting ? 'Queueing…' : 'Queue Scenario Generation'}
+          </button>
+        </div>
+
+        {generationError && <div className="mb-3 text-red-600 text-sm">{generationError}</div>}
+
+        <div className="font-medium mb-2">Recent Generation Jobs</div>
+        {generationJobsLoading && generationJobs.length === 0 ? (
+          <div className="text-sm text-gray-600">Loading jobs...</div>
+        ) : generationJobs.length === 0 ? (
+          <div className="text-sm text-gray-600">No jobs yet.</div>
+        ) : (
+          <div className="grid gap-2">
+            {generationJobs.map((job) => {
+              const zoneName = zones.find((zone) => zone.id === job.zoneId)?.name ?? job.zoneId;
+              const record = job.generatedScenarioId
+                ? records.find((scenario) => scenario.id === job.generatedScenarioId)
+                : undefined;
+              return (
+                <div key={job.id} className="border rounded-md p-2 text-sm bg-gray-50">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="font-mono text-xs">{job.id}</span>
+                    <span
+                      className={`text-white text-xs px-2 py-0.5 rounded ${scenarioGenerationStatusBadgeClass(job.status)}`}
+                    >
+                      {job.status}
+                    </span>
+                    <span>{job.openEnded ? 'Open-Ended' : 'Choice'}</span>
+                  </div>
+                  <div className="text-gray-700">Zone: {zoneName}</div>
+                  <div className="text-gray-700">
+                    Location:{' '}
+                    {typeof job.latitude === 'number' && typeof job.longitude === 'number'
+                      ? `${job.latitude.toFixed(5)}, ${job.longitude.toFixed(5)}`
+                      : 'Auto-selected'}
+                  </div>
+                  <div className="text-gray-600 text-xs">Created: {formatDate(job.createdAt)}</div>
+                  {job.generatedScenarioId && (
+                    <div className="text-gray-700">
+                      Scenario ID: <span className="font-mono text-xs">{job.generatedScenarioId}</span>
+                    </div>
+                  )}
+                  {job.errorMessage && <div className="text-red-600 text-xs mt-1">{job.errorMessage}</div>}
+                  {record && (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        className="bg-blue-500 text-white px-2 py-1 rounded-md text-xs"
+                        onClick={() => openEdit(record)}
+                      >
+                        Open Scenario
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {error && <div className="mb-3 text-red-600">{error}</div>}

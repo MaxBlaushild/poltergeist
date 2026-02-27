@@ -13,6 +13,7 @@ const (
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType         = "generate_scenario_image"
+	GenerateScenarioTaskType              = "generate_scenario"
 	GenerateImageThumbnailTaskType        = "generate_image_thumbnail"
 	QueueThumbnailBackfillTaskType        = "queue_thumbnail_backfill"
 	SeedTreasureChestsTaskType            = "seed_treasure_chests"
@@ -75,6 +76,10 @@ type GeneratePointOfInterestImageTaskPayload struct {
 
 type GenerateScenarioImageTaskPayload struct {
 	ScenarioID uuid.UUID `json:"scenarioId"`
+}
+
+type GenerateScenarioTaskPayload struct {
+	JobID uuid.UUID `json:"jobId"`
 }
 
 type GenerateImageThumbnailTaskPayload struct {

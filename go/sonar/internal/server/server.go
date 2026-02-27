@@ -257,6 +257,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/zone-seed-jobs/:id/retry", middleware.WithAuthentication(s.authClient, s.livenessClient, s.retryZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/shuffle-challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleZoneSeedJobChallenge))
 	r.DELETE("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneSeedJob))
+	r.POST("/sonar/admin/scenario-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenarioGenerationJob))
+	r.GET("/sonar/admin/scenario-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJobs))
+	r.GET("/sonar/admin/scenario-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJob))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
@@ -4650,6 +4653,130 @@ func (s *server) deleteZoneSeedJob(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (s *server) createScenarioGenerationJob(ctx *gin.Context) {
+	var requestBody scenarioGenerationJobRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(strings.TrimSpace(requestBody.ZoneID))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+		return
+	}
+
+	if (requestBody.Latitude == nil) != (requestBody.Longitude == nil) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be provided together"})
+		return
+	}
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		if math.IsNaN(*requestBody.Latitude) || math.IsInf(*requestBody.Latitude, 0) || *requestBody.Latitude < -90 || *requestBody.Latitude > 90 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90"})
+			return
+		}
+		if math.IsNaN(*requestBody.Longitude) || math.IsInf(*requestBody.Longitude, 0) || *requestBody.Longitude < -180 || *requestBody.Longitude > 180 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude must be between -180 and 180"})
+			return
+		}
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if zone == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found"})
+		return
+	}
+
+	job := &models.ScenarioGenerationJob{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		ZoneID:    zoneID,
+		Status:    models.ScenarioGenerationStatusQueued,
+		OpenEnded: requestBody.OpenEnded,
+		Latitude:  requestBody.Latitude,
+		Longitude: requestBody.Longitude,
+	}
+	if err := s.dbClient.ScenarioGenerationJob().Create(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.GenerateScenarioTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ScenarioGenerationStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ScenarioGenerationJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, job)
+}
+
+func (s *server) getScenarioGenerationJobs(ctx *gin.Context) {
+	zoneIDParam := strings.TrimSpace(ctx.Query("zoneId"))
+	limit := 20
+	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
+		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	var (
+		jobsList []models.ScenarioGenerationJob
+		err      error
+	)
+	if zoneIDParam != "" {
+		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+			return
+		}
+		jobsList, err = s.dbClient.ScenarioGenerationJob().FindByZoneID(ctx, zoneID, limit)
+	} else {
+		jobsList, err = s.dbClient.ScenarioGenerationJob().FindRecent(ctx, limit)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, jobsList)
+}
+
+func (s *server) getScenarioGenerationJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid scenario generation job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ScenarioGenerationJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario generation job not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, job)
 }
 
 func (s *server) getZones(ctx *gin.Context) {
@@ -10111,6 +10238,13 @@ type scenarioUpsertRequest struct {
 	OpenEnded        bool                        `json:"openEnded"`
 	Options          []scenarioOptionPayload     `json:"options"`
 	ItemRewards      []scenarioRewardItemPayload `json:"itemRewards"`
+}
+
+type scenarioGenerationJobRequest struct {
+	ZoneID    string   `json:"zoneId"`
+	OpenEnded bool     `json:"openEnded"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
 }
 
 type scenarioWithUserStatus struct {

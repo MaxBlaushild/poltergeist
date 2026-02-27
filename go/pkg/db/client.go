@@ -34,6 +34,7 @@ type client struct {
 	pointOfInterestImportHandle       *pointOfInterestImportHandle
 	zoneImportHandle                  *zoneImportHandle
 	zoneSeedJobHandle                 *zoneSeedJobHandle
+	scenarioGenerationJobHandle       *scenarioGenerationJobHandle
 	inventoryItemHandle               *inventoryItemHandler
 	newUserStarterConfigHandle        *newUserStarterConfigHandle
 	auditItemHandle                   *auditItemHandler
@@ -163,6 +164,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		pointOfInterestImportHandle:       &pointOfInterestImportHandle{db: db},
 		zoneImportHandle:                  &zoneImportHandle{db: db},
 		zoneSeedJobHandle:                 &zoneSeedJobHandle{db: db},
+		scenarioGenerationJobHandle:       &scenarioGenerationJobHandle{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		newUserStarterConfigHandle:        &newUserStarterConfigHandle{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
@@ -434,6 +436,10 @@ func (c *client) ZoneImport() ZoneImportHandle {
 
 func (c *client) ZoneSeedJob() ZoneSeedJobHandle {
 	return c.zoneSeedJobHandle
+}
+
+func (c *client) ScenarioGenerationJob() ScenarioGenerationJobHandle {
+	return c.scenarioGenerationJobHandle
 }
 
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {

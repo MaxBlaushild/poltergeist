@@ -31,6 +31,7 @@ type DbClient interface {
 	PointOfInterestImport() PointOfInterestImportHandle
 	ZoneImport() ZoneImportHandle
 	ZoneSeedJob() ZoneSeedJobHandle
+	ScenarioGenerationJob() ScenarioGenerationJobHandle
 	InventoryItem() InventoryItemHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	AuditItem() AuditItemHandle
@@ -337,6 +338,14 @@ type ZoneSeedJobHandle interface {
 	FindRecent(ctx context.Context, limit int) ([]models.ZoneSeedJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneSeedJob, error)
 	DeleteByID(ctx context.Context, id uuid.UUID) error
+}
+
+type ScenarioGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ScenarioGenerationJob) error
+	Update(ctx context.Context, job *models.ScenarioGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ScenarioGenerationJob, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ScenarioGenerationJob, error)
 }
 
 type InventoryItemHandle interface {
