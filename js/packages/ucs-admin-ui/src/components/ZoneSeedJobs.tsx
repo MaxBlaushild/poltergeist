@@ -86,6 +86,8 @@ type ZoneSeedJob = {
   characterCount: number;
   questCount: number;
   mainQuestCount: number;
+  inputEncounterCount: number;
+  optionEncounterCount: number;
   requiredPlaceTags?: string[];
   createdAt?: string;
   updatedAt?: string;
@@ -153,6 +155,8 @@ export const ZoneSeedJobs = () => {
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
   const [mainQuestCount, setMainQuestCount] = useState('1');
+  const [inputEncounterCount, setInputEncounterCount] = useState('0');
+  const [optionEncounterCount, setOptionEncounterCount] = useState('0');
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
   const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
@@ -252,11 +256,15 @@ export const ZoneSeedJobs = () => {
     const characters = Number.parseInt(characterCount, 10);
     const quests = Number.parseInt(questCount, 10);
     const mainQuests = Number.parseInt(mainQuestCount, 10);
+    const inputEncounters = Number.parseInt(inputEncounterCount, 10);
+    const optionEncounters = Number.parseInt(optionEncounterCount, 10);
     if (
       Number.isNaN(places) ||
       Number.isNaN(characters) ||
       Number.isNaN(quests) ||
-      Number.isNaN(mainQuests)
+      Number.isNaN(mainQuests) ||
+      Number.isNaN(inputEncounters) ||
+      Number.isNaN(optionEncounters)
     ) {
       setError('Counts must be integers.');
       return;
@@ -272,6 +280,8 @@ export const ZoneSeedJobs = () => {
           characterCount: characters,
           questCount: quests,
           mainQuestCount: mainQuests,
+          inputEncounterCount: inputEncounters,
+          optionEncounterCount: optionEncounters,
           requiredPlaceTags,
         }
       );
@@ -489,7 +499,7 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Places
@@ -528,6 +538,26 @@ export const ZoneSeedJobs = () => {
                 className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
                 value={mainQuestCount}
                 onChange={(e) => setMainQuestCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Input encounters
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={inputEncounterCount}
+                onChange={(e) => setInputEncounterCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Option encounters
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={optionEncounterCount}
+                onChange={(e) => setOptionEncounterCount(e.target.value)}
               />
             </div>
           </div>
@@ -701,7 +731,8 @@ export const ZoneSeedJobs = () => {
                       </p>
                       <p className="text-xs text-gray-500">
                         Counts: {job.placeCount} places, {job.characterCount} characters, {job.questCount} quests,{' '}
-                        {job.mainQuestCount ?? 0} main quests
+                        {job.mainQuestCount ?? 0} main quests, {job.inputEncounterCount ?? 0} input encounters,{' '}
+                        {job.optionEncounterCount ?? 0} option encounters
                       </p>
                       {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (
                         <p className="text-xs text-gray-500">

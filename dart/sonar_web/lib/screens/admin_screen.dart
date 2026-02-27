@@ -24,6 +24,8 @@ class _AdminScreenState extends State<AdminScreen> {
   final _seedPlaceCountController = TextEditingController(text: '8');
   final _seedCharacterCountController = TextEditingController(text: '4');
   final _seedQuestCountController = TextEditingController(text: '4');
+  final _seedInputEncounterCountController = TextEditingController(text: '0');
+  final _seedOptionEncounterCountController = TextEditingController(text: '0');
   bool _unlockLoading = false;
   bool _captureLoading = false;
   bool _zonesLoading = false;
@@ -50,6 +52,8 @@ class _AdminScreenState extends State<AdminScreen> {
     _seedPlaceCountController.dispose();
     _seedCharacterCountController.dispose();
     _seedQuestCountController.dispose();
+    _seedInputEncounterCountController.dispose();
+    _seedOptionEncounterCountController.dispose();
     super.dispose();
   }
 
@@ -136,9 +140,10 @@ class _AdminScreenState extends State<AdminScreen> {
       _seedError = null;
     });
     try {
-      final jobs = await context
-          .read<AdminService>()
-          .getZoneSeedJobs(zoneId: _selectedZone!.id, limit: 25);
+      final jobs = await context.read<AdminService>().getZoneSeedJobs(
+        zoneId: _selectedZone!.id,
+        limit: 25,
+      );
       if (!mounted) return;
       setState(() => _seedJobs = jobs);
     } catch (e) {
@@ -152,10 +157,21 @@ class _AdminScreenState extends State<AdminScreen> {
     final zone = _selectedZone;
     if (zone == null || _seedCreating) return;
     final placeCount = int.tryParse(_seedPlaceCountController.text.trim());
-    final characterCount =
-        int.tryParse(_seedCharacterCountController.text.trim());
+    final characterCount = int.tryParse(
+      _seedCharacterCountController.text.trim(),
+    );
     final questCount = int.tryParse(_seedQuestCountController.text.trim());
-    if (placeCount == null || characterCount == null || questCount == null) {
+    final inputEncounterCount = int.tryParse(
+      _seedInputEncounterCountController.text.trim(),
+    );
+    final optionEncounterCount = int.tryParse(
+      _seedOptionEncounterCountController.text.trim(),
+    );
+    if (placeCount == null ||
+        characterCount == null ||
+        questCount == null ||
+        inputEncounterCount == null ||
+        optionEncounterCount == null) {
       setState(() => _seedError = 'Counts must be integers.');
       return;
     }
@@ -166,11 +182,13 @@ class _AdminScreenState extends State<AdminScreen> {
     });
     try {
       await context.read<AdminService>().seedZoneDraft(
-            zoneId: zone.id,
-            placeCount: placeCount,
-            characterCount: characterCount,
-            questCount: questCount,
-          );
+        zoneId: zone.id,
+        placeCount: placeCount,
+        characterCount: characterCount,
+        questCount: questCount,
+        inputEncounterCount: inputEncounterCount,
+        optionEncounterCount: optionEncounterCount,
+      );
       if (!mounted) return;
       setState(() => _seedSuccess = 'Draft queued.');
       await _loadSeedJobs();
@@ -211,9 +229,9 @@ class _AdminScreenState extends State<AdminScreen> {
     });
     try {
       await context.read<AdminService>().unlockPointOfInterestForTeam(
-            teamId: teamId,
-            pointOfInterestId: poiId,
-          );
+        teamId: teamId,
+        pointOfInterestId: poiId,
+      );
       if (mounted) {
         setState(() {
           _unlockLoading = false;
@@ -249,10 +267,10 @@ class _AdminScreenState extends State<AdminScreen> {
     });
     try {
       await context.read<AdminService>().capturePointOfInterestForTeam(
-            teamId: teamId,
-            pointOfInterestId: poiId,
-            tier: tier,
-          );
+        teamId: teamId,
+        pointOfInterestId: poiId,
+        tier: tier,
+      );
       if (mounted) {
         setState(() {
           _captureLoading = false;
@@ -322,9 +340,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           Text(
             'Team & POI',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const Divider(),
           const SizedBox(height: 8),
@@ -346,14 +364,15 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 24),
           Text(
             'Unlock point for team',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const Divider(),
           const SizedBox(height: 8),
           FilledButton(
-            onPressed: _unlockLoading ||
+            onPressed:
+                _unlockLoading ||
                     _teamIdController.text.trim().isEmpty ||
                     _pointOfInterestIdController.text.trim().isEmpty
                 ? null
@@ -363,9 +382,9 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 24),
           Text(
             'Capture for team',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const Divider(),
           const SizedBox(height: 8),
@@ -379,7 +398,8 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _captureLoading ||
+            onPressed:
+                _captureLoading ||
                     _teamIdController.text.trim().isEmpty ||
                     _pointOfInterestIdController.text.trim().isEmpty ||
                     _quantityController.text.trim().isEmpty
@@ -419,20 +439,22 @@ class _AdminScreenState extends State<AdminScreen> {
               Text(
                 'Party Tools',
                 style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const Spacer(),
               OutlinedButton.icon(
                 onPressed: _partyBusy.contains('refresh')
                     ? null
                     : () => _runPartyAction(
-                          'refresh',
-                          () => context.read<PartyProvider>().refresh(),
-                          successMessage: 'Party data refreshed.',
-                        ),
+                        'refresh',
+                        () => context.read<PartyProvider>().refresh(),
+                        successMessage: 'Party data refreshed.',
+                      ),
                 icon: const Icon(Icons.refresh, size: 18),
-                label: Text(_partyBusy.contains('refresh') ? 'Refreshing…' : 'Refresh'),
+                label: Text(
+                  _partyBusy.contains('refresh') ? 'Refreshing…' : 'Refresh',
+                ),
               ),
             ],
           ),
@@ -456,8 +478,8 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(
             'Current Party',
             style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Divider(),
           if (partyProvider.loading)
@@ -480,15 +502,18 @@ class _AdminScreenState extends State<AdminScreen> {
             Text(
               'Members',
               style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             ...party.members.map((member) {
               final isMemberLeader = member.id == party.leaderId;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
@@ -501,14 +526,16 @@ class _AdminScreenState extends State<AdminScreen> {
                         member.username.isNotEmpty
                             ? member.username
                             : member.name.isNotEmpty
-                                ? member.name
-                                : member.id,
+                            ? member.name
+                            : member.id,
                       ),
                     ),
                     if (isMemberLeader)
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.tertiary,
                           borderRadius: BorderRadius.circular(8),
@@ -526,12 +553,12 @@ class _AdminScreenState extends State<AdminScreen> {
                         onPressed: _partyBusy.contains('promote:${member.id}')
                             ? null
                             : () => _runPartyAction(
-                                  'promote:${member.id}',
-                                  () => context
-                                      .read<PartyProvider>()
-                                      .setLeader(member),
-                                  successMessage: 'Leader updated.',
+                                'promote:${member.id}',
+                                () => context.read<PartyProvider>().setLeader(
+                                  member,
                                 ),
+                                successMessage: 'Leader updated.',
+                              ),
                         child: Text(
                           _partyBusy.contains('promote:${member.id}')
                               ? 'Promoting…'
@@ -547,12 +574,14 @@ class _AdminScreenState extends State<AdminScreen> {
               onPressed: _partyBusy.contains('leave')
                   ? null
                   : () => _runPartyAction(
-                        'leave',
-                        () => context.read<PartyProvider>().leaveParty(),
-                        successMessage: 'Left party.',
-                      ),
+                      'leave',
+                      () => context.read<PartyProvider>().leaveParty(),
+                      successMessage: 'Left party.',
+                    ),
               icon: const Icon(Icons.logout, size: 18),
-              label: Text(_partyBusy.contains('leave') ? 'Leaving…' : 'Leave party'),
+              label: Text(
+                _partyBusy.contains('leave') ? 'Leaving…' : 'Leave party',
+              ),
               style: FilledButton.styleFrom(
                 backgroundColor: theme.colorScheme.error,
                 foregroundColor: theme.colorScheme.onError,
@@ -563,8 +592,8 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(
             'Invite User',
             style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Divider(),
           TextField(
@@ -576,29 +605,32 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: _partyBusy.contains('invite') ||
+            onPressed:
+                _partyBusy.contains('invite') ||
                     _partyInviteeIdController.text.trim().isEmpty
                 ? null
                 : () {
                     final id = _partyInviteeIdController.text.trim();
                     _runPartyAction(
                       'invite',
-                      () => context
-                          .read<PartyProvider>()
-                          .inviteToParty(_stubUser(id)),
+                      () => context.read<PartyProvider>().inviteToParty(
+                        _stubUser(id),
+                      ),
                       successMessage: 'Invite sent.',
                     ).then((_) {
                       if (mounted) _partyInviteeIdController.clear();
                     });
                   },
-            child: Text(_partyBusy.contains('invite') ? 'Sending…' : 'Send invite'),
+            child: Text(
+              _partyBusy.contains('invite') ? 'Sending…' : 'Send invite',
+            ),
           ),
           const SizedBox(height: 24),
           Text(
             'Party Invites',
             style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Divider(),
           if (invites.isEmpty)
@@ -611,13 +643,13 @@ class _AdminScreenState extends State<AdminScreen> {
               final inviteeName = invite.invitee.username.isNotEmpty
                   ? invite.invitee.username
                   : invite.invitee.name.isNotEmpty
-                      ? invite.invitee.name
-                      : invite.inviteeId;
+                  ? invite.invitee.name
+                  : invite.inviteeId;
               final inviterName = invite.inviter.username.isNotEmpty
                   ? invite.inviter.username
                   : invite.inviter.name.isNotEmpty
-                      ? invite.inviter.name
-                      : invite.inviterId;
+                  ? invite.inviter.name
+                  : invite.inviterId;
               final isInvitee = invite.inviteeId == auth.user?.id;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -650,12 +682,12 @@ class _AdminScreenState extends State<AdminScreen> {
                         onPressed: _partyBusy.contains('accept:${invite.id}')
                             ? null
                             : () => _runPartyAction(
-                                  'accept:${invite.id}',
-                                  () => context
-                                      .read<PartyProvider>()
-                                      .acceptPartyInvite(invite.id),
-                                  successMessage: 'Invite accepted.',
-                                ),
+                                'accept:${invite.id}',
+                                () => context
+                                    .read<PartyProvider>()
+                                    .acceptPartyInvite(invite.id),
+                                successMessage: 'Invite accepted.',
+                              ),
                         child: Text(
                           _partyBusy.contains('accept:${invite.id}')
                               ? 'Accepting…'
@@ -666,12 +698,12 @@ class _AdminScreenState extends State<AdminScreen> {
                         onPressed: _partyBusy.contains('reject:${invite.id}')
                             ? null
                             : () => _runPartyAction(
-                                  'reject:${invite.id}',
-                                  () => context
-                                      .read<PartyProvider>()
-                                      .rejectPartyInvite(invite.id),
-                                  successMessage: 'Invite rejected.',
-                                ),
+                                'reject:${invite.id}',
+                                () => context
+                                    .read<PartyProvider>()
+                                    .rejectPartyInvite(invite.id),
+                                successMessage: 'Invite rejected.',
+                              ),
                         child: Text(
                           _partyBusy.contains('reject:${invite.id}')
                               ? 'Rejecting…'
@@ -740,10 +772,8 @@ class _AdminScreenState extends State<AdminScreen> {
             value: selectedZone,
             items: _zones
                 .map(
-                  (zone) => DropdownMenuItem(
-                    value: zone,
-                    child: Text(zone.name),
-                  ),
+                  (zone) =>
+                      DropdownMenuItem(value: zone, child: Text(zone.name)),
                 )
                 .toList(),
             onChanged: (value) {
@@ -794,6 +824,32 @@ class _AdminScreenState extends State<AdminScreen> {
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Quests',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _seedInputEncounterCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Input encounters',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _seedOptionEncounterCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Option encounters',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -880,7 +936,10 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: statusColor,
                   borderRadius: BorderRadius.circular(999),
@@ -896,7 +955,9 @@ class _AdminScreenState extends State<AdminScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text('Counts: ${job.placeCount} places · ${job.characterCount} characters · ${job.questCount} quests'),
+          Text(
+            'Counts: ${job.placeCount} places · ${job.characterCount} characters · ${job.questCount} quests · ${job.inputEncounterCount} input encounters · ${job.optionEncounterCount} option encounters',
+          ),
           if (created != null) Text('Created: $created'),
           if (updated != null) Text('Updated: $updated'),
           if (job.errorMessage != null && job.errorMessage!.isNotEmpty)
@@ -916,7 +977,8 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            if (draft.zoneDescription != null && draft.zoneDescription!.isNotEmpty)
+            if (draft.zoneDescription != null &&
+                draft.zoneDescription!.isNotEmpty)
               Text(
                 draft.zoneDescription!,
                 maxLines: 4,
@@ -945,7 +1007,10 @@ class _AdminScreenState extends State<AdminScreen> {
                   context,
                   title: 'Quests',
                   items: draft.quests
-                      .map((q) => '${q.name} · giver ${_shortId(q.questGiverDraftId)}')
+                      .map(
+                        (q) =>
+                            '${q.name} · giver ${_shortId(q.questGiverDraftId)}',
+                      )
                       .toList(),
                 ),
               ],
@@ -955,10 +1020,14 @@ class _AdminScreenState extends State<AdminScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: FilledButton(
-                onPressed:
-                    _seedBusy.contains(job.id) ? null : () => _approveSeedJob(job),
-                child:
-                    Text(_seedBusy.contains(job.id) ? 'Approving...' : 'Approve & apply'),
+                onPressed: _seedBusy.contains(job.id)
+                    ? null
+                    : () => _approveSeedJob(job),
+                child: Text(
+                  _seedBusy.contains(job.id)
+                      ? 'Approving...'
+                      : 'Approve & apply',
+                ),
               ),
             ),
         ],
@@ -992,8 +1061,10 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 6),
           ...items.take(6).map((item) => Text('- $item')),
           if (items.length > 6)
-            Text('... and ${items.length - 6} more',
-                style: theme.textTheme.bodySmall),
+            Text(
+              '... and ${items.length - 6} more',
+              style: theme.textTheme.bodySmall,
+            ),
         ],
       ),
     );

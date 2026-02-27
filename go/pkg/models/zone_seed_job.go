@@ -27,18 +27,20 @@ const (
 )
 
 type ZoneSeedJob struct {
-	ID                uuid.UUID     `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt         time.Time     `json:"createdAt"`
-	UpdatedAt         time.Time     `json:"updatedAt"`
-	ZoneID            uuid.UUID     `json:"zoneId" gorm:"type:uuid"`
-	Status            string        `json:"status"`
-	ErrorMessage      *string       `json:"errorMessage,omitempty"`
-	PlaceCount        int           `json:"placeCount"`
-	CharacterCount    int           `json:"characterCount"`
-	QuestCount        int           `json:"questCount"`
-	MainQuestCount    int           `json:"mainQuestCount"`
-	RequiredPlaceTags StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
-	Draft             ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
+	ID                   uuid.UUID     `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt            time.Time     `json:"createdAt"`
+	UpdatedAt            time.Time     `json:"updatedAt"`
+	ZoneID               uuid.UUID     `json:"zoneId" gorm:"type:uuid"`
+	Status               string        `json:"status"`
+	ErrorMessage         *string       `json:"errorMessage,omitempty"`
+	PlaceCount           int           `json:"placeCount"`
+	CharacterCount       int           `json:"characterCount"`
+	QuestCount           int           `json:"questCount"`
+	MainQuestCount       int           `json:"mainQuestCount"`
+	InputEncounterCount  int           `json:"inputEncounterCount"`
+	OptionEncounterCount int           `json:"optionEncounterCount"`
+	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
+	Draft                ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
 }
 
 func (ZoneSeedJob) TableName() string {

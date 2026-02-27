@@ -12,10 +12,7 @@ class AdminService {
   }) async {
     await _api.post<dynamic>(
       '/sonar/admin/pointOfInterest/unlock',
-      data: {
-        'teamId': teamId,
-        'pointOfInterestId': pointOfInterestId,
-      },
+      data: {'teamId': teamId, 'pointOfInterestId': pointOfInterestId},
     );
   }
 
@@ -40,11 +37,19 @@ class AdminService {
     int? placeCount,
     int? characterCount,
     int? questCount,
+    int? inputEncounterCount,
+    int? optionEncounterCount,
   }) async {
     final payload = <String, dynamic>{};
     if (placeCount != null) payload['placeCount'] = placeCount;
     if (characterCount != null) payload['characterCount'] = characterCount;
     if (questCount != null) payload['questCount'] = questCount;
+    if (inputEncounterCount != null) {
+      payload['inputEncounterCount'] = inputEncounterCount;
+    }
+    if (optionEncounterCount != null) {
+      payload['optionEncounterCount'] = optionEncounterCount;
+    }
 
     final data = await _api.post<Map<String, dynamic>>(
       '/sonar/admin/zones/$zoneId/seed-draft',
@@ -53,7 +58,10 @@ class AdminService {
     return ZoneSeedJob.fromJson(data);
   }
 
-  Future<List<ZoneSeedJob>> getZoneSeedJobs({String? zoneId, int? limit}) async {
+  Future<List<ZoneSeedJob>> getZoneSeedJobs({
+    String? zoneId,
+    int? limit,
+  }) async {
     final params = <String, dynamic>{};
     if (zoneId != null && zoneId.isNotEmpty) params['zoneId'] = zoneId;
     if (limit != null) params['limit'] = limit.toString();

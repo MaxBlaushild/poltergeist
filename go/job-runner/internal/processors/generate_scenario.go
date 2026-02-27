@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +40,12 @@ Location context:
 - latitude: %.6f
 - longitude: %.6f
 
+Variance directives (treat these as hard constraints for diversity):
+%s
+
+Recent scenarios in this zone to avoid echoing:
+%s
+
 Create an OPEN-ENDED scenario (free-text response from player).
 
 Return JSON only:
@@ -54,6 +61,7 @@ Return JSON only:
 
 Rules:
 - Prompt must be specific to this zone and location, with a clear conflict/opportunity.
+- The scenario must feel materially different from the recent scenarios listed above.
 - Keep tone adventurous and grounded in physical surroundings.
 - itemRewards can be empty.
 - Use only inventoryItemId values from this allowed list:
@@ -70,6 +78,12 @@ Zone:
 Location context:
 - latitude: %.6f
 - longitude: %.6f
+
+Variance directives (treat these as hard constraints for diversity):
+%s
+
+Recent scenarios in this zone to avoid echoing:
+%s
 
 Create a CHOICE-BASED scenario with 3 options.
 
@@ -96,12 +110,68 @@ Return JSON only:
 
 Rules:
 - Prompt must be specific to this zone and location, with a clear conflict/opportunity.
+- The scenario must feel materially different from the recent scenarios listed above.
 - options must contain exactly 3 entries and each option should feel distinct.
 - proficiencies should be practical, short labels.
 - itemRewards can be empty.
 - Use only inventoryItemId values from this allowed list:
 %s
 `
+
+var scenarioGenerationEncounterAnchors = []string{
+	"a rooftop weather-vane platform exposed to strong winds",
+	"a cellar beneath a public gathering place",
+	"a narrow bridge crossing dark water",
+	"an overgrown courtyard behind shuttered storefronts",
+	"a market stall district at closing time",
+	"a watchtower stairwell filled with echoing footsteps",
+	"a shrine-side lantern path with failing light",
+	"a freight dock where crates are being moved in haste",
+}
+
+var scenarioGenerationComplications = []string{
+	"a time-sensitive hazard that escalates every minute",
+	"an innocent bystander with conflicting goals",
+	"a fragile object that must not be damaged",
+	"a noisy crowd that can panic if mishandled",
+	"limited visibility due to fog, smoke, or dust",
+	"a deceptive clue that points to the wrong threat",
+	"a rival faction attempting to intervene",
+	"an unstable structure that might collapse",
+}
+
+var scenarioGenerationStakes = []string{
+	"protecting civilians from immediate harm",
+	"preventing the loss of a rare local resource",
+	"stopping an emerging chain reaction",
+	"preserving trust between local groups",
+	"keeping a key route open for the district",
+	"recovering evidence before it disappears",
+	"preventing sabotage of local infrastructure",
+	"containing a supernatural spillover before dawn",
+}
+
+var scenarioGenerationToneStyles = []string{
+	"tense and tactical",
+	"mysterious and uncanny",
+	"social and negotiation-heavy",
+	"investigative with subtle clues",
+	"urgent and cinematic",
+	"grim but hopeful",
+	"wry and streetwise",
+	"ominous with restrained humor",
+}
+
+var scenarioGenerationTwists = []string{
+	"the apparent victim is secretly orchestrating events",
+	"the obvious threat is a distraction for a quieter risk",
+	"the conflict can be de-escalated through unexpected empathy",
+	"a trusted authority figure is unintentionally worsening things",
+	"the key tool works once and then breaks",
+	"an environmental detail becomes the central leverage point",
+	"the safe solution costs immediate personal reputation",
+	"success requires cooperation with a former rival",
+}
 
 type scenarioGenerationRewardPayload struct {
 	InventoryItemID int `json:"inventoryItemId"`
@@ -227,6 +297,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 	if zoneDescription == "" {
 		zoneDescription = "No description available."
 	}
+	varianceSalt := buildScenarioVarianceSalt(job, zoneName)
+	recentScenarioAvoidance := p.buildRecentScenarioAvoidance(ctx, job, 6)
 
 	if job.OpenEnded {
 		prompt := fmt.Sprintf(
@@ -235,6 +307,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			zoneDescription,
 			lat,
 			lng,
+			varianceSalt,
+			recentScenarioAvoidance,
 			allowedItemsPrompt,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
@@ -258,6 +332,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 			zoneDescription,
 			lat,
 			lng,
+			varianceSalt,
+			recentScenarioAvoidance,
 			allowedItemsPrompt,
 		)
 		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
@@ -373,6 +449,97 @@ func buildAllowedItemsPrompt(items []models.InventoryItem) string {
 		lines = append(lines, fmt.Sprintf("- %d: %s", item.ID, name))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (p *GenerateScenarioProcessor) buildRecentScenarioAvoidance(
+	ctx context.Context,
+	job *models.ScenarioGenerationJob,
+	limit int,
+) string {
+	if job == nil || limit <= 0 {
+		return "- none"
+	}
+
+	scenarios, err := p.dbClient.Scenario().FindByZoneID(ctx, job.ZoneID)
+	if err != nil || len(scenarios) == 0 {
+		return "- none"
+	}
+
+	sort.Slice(scenarios, func(i, j int) bool {
+		return scenarios[i].CreatedAt.After(scenarios[j].CreatedAt)
+	})
+
+	lines := make([]string, 0, limit)
+	for _, scenario := range scenarios {
+		prompt := strings.TrimSpace(scenario.Prompt)
+		if prompt == "" {
+			continue
+		}
+		prompt = strings.ReplaceAll(prompt, "\n", " ")
+		if len(prompt) > 220 {
+			prompt = strings.TrimSpace(prompt[:220]) + "..."
+		}
+		lines = append(lines, "- "+prompt)
+		if len(lines) >= limit {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return "- none"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func buildScenarioVarianceSalt(job *models.ScenarioGenerationJob, zoneName string) string {
+	if job == nil {
+		return "- use a clearly different encounter setup than recent scenarios"
+	}
+
+	seed := fmt.Sprintf(
+		"%s|%s|%t|%.6f|%.6f",
+		job.ID.String(),
+		strings.ToLower(strings.TrimSpace(zoneName)),
+		job.OpenEnded,
+		derefFloat64(job.Latitude),
+		derefFloat64(job.Longitude),
+	)
+
+	encounter := scenarioGenerationEncounterAnchors[saltIndex(seed, 1, len(scenarioGenerationEncounterAnchors))]
+	complication := scenarioGenerationComplications[saltIndex(seed, 2, len(scenarioGenerationComplications))]
+	stakes := scenarioGenerationStakes[saltIndex(seed, 3, len(scenarioGenerationStakes))]
+	tone := scenarioGenerationToneStyles[saltIndex(seed, 4, len(scenarioGenerationToneStyles))]
+	twist := scenarioGenerationTwists[saltIndex(seed, 5, len(scenarioGenerationTwists))]
+
+	return strings.Join([]string{
+		"- primary setting anchor: " + encounter,
+		"- main complication: " + complication,
+		"- core stakes: " + stakes,
+		"- tonal style: " + tone,
+		"- structural twist: " + twist,
+		"- do not reuse the same opening beat or central prop from recent scenarios",
+	}, "\n")
+}
+
+func saltIndex(seed string, salt int, size int) int {
+	if size <= 0 {
+		return 0
+	}
+
+	hash := 17 + salt*131
+	for i := 0; i < len(seed); i++ {
+		hash = hash*31 + int(seed[i]) + salt*7
+	}
+	if hash < 0 {
+		hash = -hash
+	}
+	return hash % size
+}
+
+func derefFloat64(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func sanitizeScenarioPrompt(prompt string) string {

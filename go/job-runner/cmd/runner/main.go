@@ -26,6 +26,12 @@ import (
 	"github.com/hibiken/asynq"
 )
 
+const (
+	defaultPolymarketTradesURL  = "https://clob.polymarket.com/data/trades"
+	defaultPolymarketBaseURL    = "https://clob.polymarket.com"
+	defaultPolymarketTradesPath = "/data/trades"
+)
+
 func main() {
 	cfg, err := config.ParseFlagsAndGetConfig()
 	if err != nil {
@@ -94,21 +100,16 @@ func main() {
 	logPolymarketConfiguration(cfg)
 	polymarketConfigHint := buildPolymarketConfigHint(cfg)
 
-	var polymarketClient polymarket.Client
-	if cfg.Public.PolymarketTradesURL != "" || cfg.Public.PolymarketBaseURL != "" {
-		polymarketClient = polymarket.NewClient(polymarket.ClientConfig{
-			BaseURL:       cfg.Public.PolymarketBaseURL,
-			TradesPath:    cfg.Public.PolymarketTradesPath,
-			TradesURL:     cfg.Public.PolymarketTradesURL,
-			APIKey:        cfg.Secret.PolymarketAPIKey,
-			APISecret:     cfg.Secret.PolymarketAPISecret,
-			APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
-			Address:       cfg.Secret.PolymarketAddress,
-		})
-		log.Printf("Polymarket client initialized")
-	} else {
-		log.Printf("Polymarket client disabled: set POLYMARKET_TRADES_URL or POLYMARKET_BASE_URL")
-	}
+	polymarketClient := polymarket.NewClient(polymarket.ClientConfig{
+		BaseURL:       defaultPolymarketBaseURL,
+		TradesPath:    defaultPolymarketTradesPath,
+		TradesURL:     defaultPolymarketTradesURL,
+		APIKey:        cfg.Secret.PolymarketAPIKey,
+		APISecret:     cfg.Secret.PolymarketAPISecret,
+		APIPassphrase: cfg.Secret.PolymarketAPIPassphrase,
+		Address:       cfg.Secret.PolymarketAddress,
+	})
+	log.Printf("Polymarket client initialized with fixed endpoint trades_url=%q", defaultPolymarketTradesURL)
 
 	texterClient := texter.NewClient()
 	monitorPolymarketTradesProcessor := processors.NewMonitorPolymarketTradesProcessor(
@@ -252,10 +253,13 @@ func main() {
 
 func logPolymarketConfiguration(cfg *config.Config) {
 	log.Printf(
-		"Polymarket config: trades_url_set=%t base_url_set=%t trades_path=%q alert_to_set=%t alert_from_set=%t limit=%d notional_threshold=%.2f size_threshold=%.2f api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+		"Polymarket config: endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q legacy_trades_url_env_set=%t legacy_base_url_env_set=%t legacy_trades_path_env_set=%t alert_to_set=%t alert_from_set=%t limit=%d notional_threshold=%.2f size_threshold=%.2f api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+		defaultPolymarketTradesURL,
+		defaultPolymarketBaseURL,
+		defaultPolymarketTradesPath,
 		cfg.Public.PolymarketTradesURL != "",
 		cfg.Public.PolymarketBaseURL != "",
-		cfg.Public.PolymarketTradesPath,
+		cfg.Public.PolymarketTradesPath != "",
 		cfg.Public.PolymarketAlertToNumber != "",
 		cfg.Public.PolymarketAlertFromNumber != "",
 		cfg.Public.PolymarketTradesLimit,
@@ -286,23 +290,14 @@ func logPolymarketConfiguration(cfg *config.Config) {
 }
 
 func buildPolymarketConfigHint(cfg *config.Config) string {
-	missingEndpoint := make([]string, 0, 2)
-	if cfg.Public.PolymarketTradesURL == "" {
-		missingEndpoint = append(missingEndpoint, "POLYMARKET_TRADES_URL")
-	}
-	if cfg.Public.PolymarketBaseURL == "" {
-		missingEndpoint = append(missingEndpoint, "POLYMARKET_BASE_URL")
-	}
-
 	return fmt.Sprintf(
-		"trades_url_set=%t base_url_set=%t trades_path=%q api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t missing_endpoint=%v",
-		cfg.Public.PolymarketTradesURL != "",
-		cfg.Public.PolymarketBaseURL != "",
-		cfg.Public.PolymarketTradesPath,
+		"endpoint_source=fixed_constants trades_url=%q base_url=%q trades_path=%q api_key_set=%t api_secret_set=%t api_passphrase_set=%t address_set=%t",
+		defaultPolymarketTradesURL,
+		defaultPolymarketBaseURL,
+		defaultPolymarketTradesPath,
 		cfg.Secret.PolymarketAPIKey != "",
 		cfg.Secret.PolymarketAPISecret != "",
 		cfg.Secret.PolymarketAPIPassphrase != "",
 		cfg.Secret.PolymarketAddress != "",
-		missingEndpoint,
 	)
 }

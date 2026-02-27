@@ -6,6 +6,8 @@ class ZoneSeedJob {
   final int placeCount;
   final int characterCount;
   final int questCount;
+  final int inputEncounterCount;
+  final int optionEncounterCount;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final ZoneSeedDraft? draft;
@@ -18,6 +20,8 @@ class ZoneSeedJob {
     required this.placeCount,
     required this.characterCount,
     required this.questCount,
+    required this.inputEncounterCount,
+    required this.optionEncounterCount,
     this.createdAt,
     this.updatedAt,
     this.draft,
@@ -32,6 +36,9 @@ class ZoneSeedJob {
       placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
       characterCount: (json['characterCount'] as num?)?.toInt() ?? 0,
       questCount: (json['questCount'] as num?)?.toInt() ?? 0,
+      inputEncounterCount: (json['inputEncounterCount'] as num?)?.toInt() ?? 0,
+      optionEncounterCount:
+          (json['optionEncounterCount'] as num?)?.toInt() ?? 0,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
       draft: json['draft'] is Map<String, dynamic>
@@ -114,7 +121,9 @@ class ZoneSeedPointOfInterestDraft {
       placeId: json['placeId'] as String? ?? '',
       name: json['name'] as String? ?? '',
       address: json['address'] as String?,
-      types: (json['types'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
+      types: (json['types'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       rating: (json['rating'] as num?)?.toDouble(),

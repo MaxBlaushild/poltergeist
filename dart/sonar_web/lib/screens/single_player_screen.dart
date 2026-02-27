@@ -106,6 +106,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _scenarioSymbolById = {};
   final Map<String, Circle> _scenarioCircleById = {};
   final Map<String, bool> _scenarioCircleMystery = {};
+  final Set<String> _resolvedScenarioIds = <String>{};
+  final Set<String> _resolvedScenarioSignatures = <String>{};
   final Set<String> _openedTreasureChestIds = <String>{};
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
@@ -131,6 +133,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _questAvailabilityRefreshInFlight = false;
   DateTime? _lastQuestLogRefreshAt;
   bool _questLogNeedsOverlayApply = false;
+  bool _scenarioVisibilityRefreshPending = false;
+  Future<void> _scenarioRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
@@ -207,8 +211,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     unawaited(_loadTreasureChestsForSelectedZone());
     unawaited(_addZoneBoundaries());
-    if (_styleLoaded && _mapController != null && _markersAdded) {
-      unawaited(_addPoiMarkers());
+    if (_styleLoaded && _mapController != null) {
+      if (_markersAdded) {
+        unawaited(_refreshUndiscoveredPoiOpacitiesForZone());
+      } else {
+        unawaited(_addPoiMarkers());
+      }
     }
     _requestQuestLogIfReady();
   }
@@ -217,9 +225,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     _updateSelectedZoneFromLocation();
     _requestQuestLogIfReady();
+    _refreshScenarioVisibilityForLocationChange();
+  }
+
+  void _refreshScenarioVisibilityForLocationChange() {
     if (_styleLoaded && _mapController != null && _markersAdded) {
+      _scenarioVisibilityRefreshPending = false;
       unawaited(_refreshScenarioSymbols());
+      return;
     }
+    _scenarioVisibilityRefreshPending = true;
   }
 
   void _onAuthChanged() {
@@ -459,6 +474,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       (() async {
         await _setSymbolOverlap();
         await _addPoiMarkers();
+        if (_scenarioVisibilityRefreshPending) {
+          _scenarioVisibilityRefreshPending = false;
+          await _refreshScenarioSymbols();
+        }
       })(),
     );
     if (_zones.isNotEmpty) unawaited(_addZoneBoundaries());
@@ -773,7 +792,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList();
         _scenarios = scenarios
-            .where((scenario) => !scenario.attemptedByUser)
+            .where(
+              (scenario) =>
+                  !scenario.attemptedByUser &&
+                  !_resolvedScenarioIds.contains(scenario.id) &&
+                  !_resolvedScenarioSignatures.contains(
+                    _scenarioSignature(scenario),
+                  ),
+            )
             .toList();
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
@@ -869,10 +895,66 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return imageId;
   }
 
-  Future<void> _refreshScenarioSymbols() async {
+  Future<void> _refreshScenarioSymbols() {
+    _scenarioRefreshSequence = _scenarioRefreshSequence.then((_) async {
+      try {
+        await _refreshScenarioSymbolsNow();
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshScenarioSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshScenarioSymbols stack: $st');
+      }
+    });
+    return _scenarioRefreshSequence;
+  }
+
+  Future<void> _refreshScenarioSymbolsNow() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
     await _loadScenarioMysteryThumbnail(c);
+
+    // Remove untracked/duplicate scenario symbols that can appear due to
+    // overlapping async refresh calls.
+    final duplicateOrOrphanSymbols = <Symbol>[];
+    for (final symbol in _scenarioSymbols.toList()) {
+      final id = _scenarioIdFromData(symbol.data);
+      if (id == null) {
+        duplicateOrOrphanSymbols.add(symbol);
+        continue;
+      }
+      final tracked = _scenarioSymbolById[id];
+      if (tracked == null || !identical(tracked, symbol)) {
+        duplicateOrOrphanSymbols.add(symbol);
+      }
+    }
+    if (duplicateOrOrphanSymbols.isNotEmpty) {
+      try {
+        await c.removeSymbols(duplicateOrOrphanSymbols);
+      } catch (_) {}
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _scenarioSymbols.remove(symbol);
+      }
+    }
+
+    final duplicateOrOrphanCircles = <Circle>[];
+    for (final circle in _scenarioCircles.toList()) {
+      final id = _scenarioIdFromData(circle.data);
+      if (id == null) {
+        duplicateOrOrphanCircles.add(circle);
+        continue;
+      }
+      final tracked = _scenarioCircleById[id];
+      if (tracked == null || !identical(tracked, circle)) {
+        duplicateOrOrphanCircles.add(circle);
+      }
+    }
+    if (duplicateOrOrphanCircles.isNotEmpty) {
+      for (final circle in duplicateOrOrphanCircles) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+        _scenarioCircles.remove(circle);
+      }
+    }
 
     final desiredIds = _scenarios.map((scenario) => scenario.id).toSet();
     for (final entry in _scenarioSymbolById.entries.toList()) {
@@ -984,6 +1066,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioCircleMystery[scenario.id] = mystery;
       }
     }
+  }
+
+  String? _scenarioIdFromData(dynamic raw) {
+    if (raw == null || raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    if (data['type']?.toString() != 'scenario') return null;
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return id;
   }
 
   String? _extensionFromMime(String? mimeType, String? filename) {
@@ -1747,6 +1838,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (poiImageUpdates.isNotEmpty) {
         unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
       }
+      if (_scenarioVisibilityRefreshPending) {
+        _scenarioVisibilityRefreshPending = false;
+        await _refreshScenarioSymbols();
+      }
       _ensureQuestPoiPulseTimer();
       if (mounted && hadEmptyDiscoveries) {
         setState(() => _addedMarkersWithEmptyDiscoveries = true);
@@ -2274,6 +2369,34 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _questPoiHighlightSymbols.remove(sym);
     }
     _ensureQuestPoiPulseTimer();
+  }
+
+  Future<void> _refreshUndiscoveredPoiOpacitiesForZone() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded || !_markersAdded) return;
+
+    final questPoiIds = _currentQuestPoiIdsForFilter(
+      context.read<QuestLogProvider>(),
+    );
+    final discoveries = context.read<DiscoveriesProvider>();
+
+    for (final poi in _pois) {
+      final symbol = _poiSymbolById[poi.id];
+      if (symbol == null) continue;
+
+      final isQuestCurrent = questPoiIds.contains(poi.id);
+      final undiscovered = !discoveries.hasDiscovered(poi.id);
+      if (!undiscovered || isQuestCurrent) continue;
+
+      final opacity = _poiMarkerOpacity(
+        poi,
+        isQuestCurrent: isQuestCurrent,
+        undiscovered: undiscovered,
+      );
+      try {
+        await c.updateSymbol(symbol, SymbolOptions(iconOpacity: opacity));
+      } catch (_) {}
+    }
   }
 
   void _ensureQuestPoiPulseTimer() {
@@ -3996,6 +4119,72 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  Future<void> _removeScenarioLocally(
+    String scenarioId, {
+    String? performedScenarioId,
+    Scenario? fallbackScenario,
+  }) async {
+    if (!mounted) return;
+
+    final scenarioIds = <String>{};
+    final trimmedTappedId = scenarioId.trim();
+    if (trimmedTappedId.isNotEmpty) {
+      scenarioIds.add(trimmedTappedId);
+    }
+    final trimmedPerformedId = performedScenarioId?.trim() ?? '';
+    if (trimmedPerformedId.isNotEmpty) {
+      scenarioIds.add(trimmedPerformedId);
+    }
+    if (scenarioIds.isEmpty) return;
+
+    final scenariosToRemove = _scenarios
+        .where(
+          (item) =>
+              scenarioIds.contains(item.id) ||
+              _scenarioMatchesFallback(item, fallbackScenario),
+        )
+        .toList();
+
+    _resolvedScenarioIds.addAll(scenarioIds);
+    for (final item in scenariosToRemove) {
+      _resolvedScenarioSignatures.add(_scenarioSignature(item));
+    }
+    if (scenariosToRemove.isEmpty && fallbackScenario != null) {
+      _resolvedScenarioSignatures.add(_scenarioSignature(fallbackScenario));
+    }
+    setState(() {
+      _scenarios.removeWhere(
+        (item) =>
+            scenarioIds.contains(item.id) ||
+            _scenarioMatchesFallback(item, fallbackScenario),
+      );
+    });
+
+    await _refreshScenarioSymbols();
+  }
+
+  String _scenarioSignature(Scenario scenario) {
+    final prompt = scenario.prompt.trim().toLowerCase();
+    final lat = scenario.latitude.toStringAsFixed(5);
+    final lng = scenario.longitude.toStringAsFixed(5);
+    return '${scenario.zoneId}|$lat|$lng|$prompt';
+  }
+
+  bool _scenarioMatchesFallback(Scenario scenario, Scenario? fallback) {
+    if (fallback == null) return false;
+    const epsilon = 0.000001;
+    final sameLat = (scenario.latitude - fallback.latitude).abs() <= epsilon;
+    final sameLng = (scenario.longitude - fallback.longitude).abs() <= epsilon;
+    if (!sameLat || !sameLng) return false;
+    if (scenario.zoneId != fallback.zoneId) return false;
+
+    final prompt = scenario.prompt.trim();
+    final fallbackPrompt = fallback.prompt.trim();
+    return prompt.isNotEmpty &&
+        fallbackPrompt.isNotEmpty &&
+        prompt == fallbackPrompt;
+  }
+
   void _showScenarioPanel(Scenario scenario) {
     final parentContext = context;
     showModalBottomSheet(
@@ -4012,12 +4201,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onPerformed: (result) async {
           if (!mounted) return;
 
-          setState(() {
-            _scenarios.removeWhere((item) => item.id == scenario.id);
-          });
-          await _refreshScenarioSymbols();
-
-          await _loadTreasureChestsForSelectedZone();
+          await _removeScenarioLocally(
+            scenario.id,
+            performedScenarioId: result.scenarioId,
+            fallbackScenario: scenario,
+          );
+          unawaited(_loadTreasureChestsForSelectedZone());
           if (!mounted || !parentContext.mounted) return;
 
           ScenarioOption? selectedOption;

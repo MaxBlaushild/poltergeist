@@ -90,10 +90,10 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
         _attemptedLocally = true;
         _loading = false;
       });
-      widget.onPerformed?.call(result);
-      if (optionId != null && optionId.isNotEmpty) {
-        widget.onClose();
+      if (mounted) {
+        Navigator.of(context).maybePop();
       }
+      widget.onPerformed?.call(result);
     } catch (error) {
       if (!mounted) return;
       setState(() {

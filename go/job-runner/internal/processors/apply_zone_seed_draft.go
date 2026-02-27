@@ -173,6 +173,32 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		}
 	}
 
+	scenarioLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	inputQueued, inputFailed := p.enqueueScenarioGenerationJobs(
+		ctx,
+		job.ZoneID,
+		true,
+		job.InputEncounterCount,
+		scenarioLocations,
+	)
+	optionQueued, optionFailed := p.enqueueScenarioGenerationJobs(
+		ctx,
+		job.ZoneID,
+		false,
+		job.OptionEncounterCount,
+		scenarioLocations,
+	)
+	if inputFailed > 0 || optionFailed > 0 {
+		log.Printf(
+			"Zone seed job %v seeded scenario generation jobs with failures (input queued=%d failed=%d, option queued=%d failed=%d)",
+			job.ID,
+			inputQueued,
+			inputFailed,
+			optionQueued,
+			optionFailed,
+		)
+	}
+
 	job.Status = models.ZoneSeedStatusApplied
 	job.ErrorMessage = nil
 	job.UpdatedAt = time.Now()
@@ -237,6 +263,103 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueThumbnailTask(poiID uuid.UUID, imag
 	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
 		log.Printf("Failed to enqueue thumbnail task: %v", err)
 	}
+}
+
+type zoneSeedScenarioLocation struct {
+	Latitude  float64
+	Longitude float64
+}
+
+func zoneSeedScenarioLocations(pois []models.ZoneSeedPointOfInterestDraft) []zoneSeedScenarioLocation {
+	locations := make([]zoneSeedScenarioLocation, 0, len(pois))
+	for _, poi := range pois {
+		if poi.Latitude < -90 || poi.Latitude > 90 || poi.Longitude < -180 || poi.Longitude > 180 {
+			continue
+		}
+		locations = append(locations, zoneSeedScenarioLocation{
+			Latitude:  poi.Latitude,
+			Longitude: poi.Longitude,
+		})
+	}
+	return locations
+}
+
+func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
+	ctx context.Context,
+	zoneID uuid.UUID,
+	openEnded bool,
+	count int,
+	locations []zoneSeedScenarioLocation,
+) (queued int, failed int) {
+	if count <= 0 {
+		return 0, 0
+	}
+
+	for i := 0; i < count; i++ {
+		var latitude *float64
+		var longitude *float64
+		if len(locations) > 0 {
+			loc := locations[i%len(locations)]
+			lat := loc.Latitude
+			lng := loc.Longitude
+			latitude = &lat
+			longitude = &lng
+		}
+
+		job := &models.ScenarioGenerationJob{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			ZoneID:    zoneID,
+			Status:    models.ScenarioGenerationStatusQueued,
+			OpenEnded: openEnded,
+			Latitude:  latitude,
+			Longitude: longitude,
+		}
+		if err := p.dbClient.ScenarioGenerationJob().Create(ctx, job); err != nil {
+			log.Printf("Failed to create scenario generation job (openEnded=%t): %v", openEnded, err)
+			failed++
+			continue
+		}
+
+		payload, err := json.Marshal(jobs.GenerateScenarioTaskPayload{JobID: job.ID})
+		if err != nil {
+			errMsg := err.Error()
+			job.Status = models.ScenarioGenerationStatusFailed
+			job.ErrorMessage = &errMsg
+			job.UpdatedAt = time.Now()
+			_ = p.dbClient.ScenarioGenerationJob().Update(ctx, job)
+			log.Printf("Failed to marshal scenario generation payload for job %s: %v", job.ID, err)
+			failed++
+			continue
+		}
+
+		if p.asyncClient == nil {
+			errMsg := "async client unavailable"
+			job.Status = models.ScenarioGenerationStatusFailed
+			job.ErrorMessage = &errMsg
+			job.UpdatedAt = time.Now()
+			_ = p.dbClient.ScenarioGenerationJob().Update(ctx, job)
+			log.Printf("Failed to enqueue scenario generation task for job %s: %s", job.ID, errMsg)
+			failed++
+			continue
+		}
+
+		if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateScenarioTaskType, payload)); err != nil {
+			errMsg := err.Error()
+			job.Status = models.ScenarioGenerationStatusFailed
+			job.ErrorMessage = &errMsg
+			job.UpdatedAt = time.Now()
+			_ = p.dbClient.ScenarioGenerationJob().Update(ctx, job)
+			log.Printf("Failed to enqueue scenario generation task for job %s: %v", job.ID, err)
+			failed++
+			continue
+		}
+
+		queued++
+	}
+
+	return queued, failed
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
