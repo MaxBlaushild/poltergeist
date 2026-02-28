@@ -153,7 +153,10 @@ func (p *ProcessRecurringQuestsProcessor) cloneQuest(
 		return nil, err
 	}
 
-	if err := p.copyQuestRewards(ctx, newQuest.ID, source.ItemRewards, now); err != nil {
+	if err := p.copyQuestItemRewards(ctx, newQuest.ID, source.ItemRewards, now); err != nil {
+		return nil, err
+	}
+	if err := p.copyQuestSpellRewards(ctx, newQuest.ID, source.SpellRewards, now); err != nil {
 		return nil, err
 	}
 
@@ -164,7 +167,7 @@ func (p *ProcessRecurringQuestsProcessor) cloneQuest(
 	return newQuest, nil
 }
 
-func (p *ProcessRecurringQuestsProcessor) copyQuestRewards(ctx context.Context, questID uuid.UUID, rewards []models.QuestItemReward, now time.Time) error {
+func (p *ProcessRecurringQuestsProcessor) copyQuestItemRewards(ctx context.Context, questID uuid.UUID, rewards []models.QuestItemReward, now time.Time) error {
 	if len(rewards) == 0 {
 		return nil
 	}
@@ -186,6 +189,29 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestRewards(ctx context.Context, 
 		return nil
 	}
 	return p.dbClient.QuestItemReward().ReplaceForQuest(ctx, questID, newRewards)
+}
+
+func (p *ProcessRecurringQuestsProcessor) copyQuestSpellRewards(ctx context.Context, questID uuid.UUID, rewards []models.QuestSpellReward, now time.Time) error {
+	if len(rewards) == 0 {
+		return nil
+	}
+	newRewards := make([]models.QuestSpellReward, 0, len(rewards))
+	for _, reward := range rewards {
+		if reward.SpellID == uuid.Nil {
+			continue
+		}
+		newRewards = append(newRewards, models.QuestSpellReward{
+			ID:        uuid.New(),
+			CreatedAt: now,
+			UpdatedAt: now,
+			QuestID:   questID,
+			SpellID:   reward.SpellID,
+		})
+	}
+	if len(newRewards) == 0 {
+		return nil
+	}
+	return p.dbClient.QuestSpellReward().ReplaceForQuest(ctx, questID, newRewards)
 }
 
 func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, questID uuid.UUID, nodes []models.QuestNode, now time.Time) error {

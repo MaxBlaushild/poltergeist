@@ -1,3 +1,5 @@
+import 'spell.dart';
+
 class CharacterProficiency {
   final String proficiency;
   final int level;
@@ -88,6 +90,7 @@ class CharacterStats {
   final int level;
   final List<CharacterProficiency> proficiencies;
   final List<CharacterStatus> statuses;
+  final List<Spell> spells;
 
   const CharacterStats({
     required this.strength,
@@ -106,6 +109,7 @@ class CharacterStats {
     required this.level,
     this.proficiencies = const [],
     this.statuses = const [],
+    this.spells = const [],
   });
 
   factory CharacterStats.fromJson(Map<String, dynamic> json) {
@@ -174,6 +178,21 @@ class CharacterStats {
                     CharacterStatus.fromJson(entry as Map<String, dynamic>),
               )
               .where((entry) => entry.name.isNotEmpty)
+              .toList() ??
+          const [],
+      spells:
+          (json['spells'] as List<dynamic>?)
+              ?.map((entry) {
+                if (entry is Map<String, dynamic>) {
+                  return Spell.fromJson(entry);
+                }
+                if (entry is Map) {
+                  return Spell.fromJson(Map<String, dynamic>.from(entry));
+                }
+                return null;
+              })
+              .whereType<Spell>()
+              .where((entry) => entry.id.isNotEmpty)
               .toList() ??
           const [],
     );

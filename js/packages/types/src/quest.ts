@@ -1,5 +1,6 @@
 import { InventoryItem } from './inventoryItem';
 import { QuestNode } from './questNode';
+import { Spell } from './spell';
 
 export interface QuestItemReward {
   id?: string;
@@ -7,6 +8,13 @@ export interface QuestItemReward {
   inventoryItemId: number;
   inventoryItem?: InventoryItem;
   quantity: number;
+}
+
+export interface QuestSpellReward {
+  id?: string;
+  questId?: string;
+  spellId: string;
+  spell?: Spell;
 }
 
 export interface Quest {
@@ -26,5 +34,6 @@ export interface Quest {
   completionCount?: number;
   gold?: number;
   itemRewards?: QuestItemReward[];
+  spellRewards?: QuestSpellReward[];
   nodes?: QuestNode[];
 }

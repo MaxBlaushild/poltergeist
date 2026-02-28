@@ -30,6 +30,12 @@ type ItemAwarded struct {
 	Quantity int    `json:"quantity"`
 }
 
+type SpellAwarded struct {
+	ID      uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	IconURL string    `json:"iconUrl"`
+}
+
 type POIInfo struct {
 	ID       uuid.UUID `json:"id"`
 	Name     string    `json:"name"`
@@ -55,9 +61,10 @@ type ChallengeCompletedActivity struct {
 }
 
 type QuestCompletedActivity struct {
-	QuestID      uuid.UUID     `json:"questId"`
-	GoldAwarded  int           `json:"goldAwarded"`
-	ItemsAwarded []ItemAwarded `json:"itemsAwarded"`
+	QuestID       uuid.UUID      `json:"questId"`
+	GoldAwarded   int            `json:"goldAwarded"`
+	ItemsAwarded  []ItemAwarded  `json:"itemsAwarded"`
+	SpellsAwarded []SpellAwarded `json:"spellsAwarded"`
 }
 
 type ItemReceivedActivity struct {

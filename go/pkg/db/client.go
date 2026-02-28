@@ -35,6 +35,8 @@ type client struct {
 	zoneImportHandle                  *zoneImportHandle
 	zoneSeedJobHandle                 *zoneSeedJobHandle
 	scenarioGenerationJobHandle       *scenarioGenerationJobHandle
+	spellHandle                       *spellHandler
+	userSpellHandle                   *userSpellHandler
 	inventoryItemHandle               *inventoryItemHandler
 	newUserStarterConfigHandle        *newUserStarterConfigHandle
 	auditItemHandle                   *auditItemHandler
@@ -81,6 +83,7 @@ type client struct {
 	questAcceptanceV2Handle           *questAcceptanceV2Handle
 	questHandle                       *questHandle
 	questItemRewardHandle             *questItemRewardHandle
+	questSpellRewardHandle            *questSpellRewardHandle
 	questNodeHandle                   *questNodeHandle
 	questNodeChallengeHandle          *questNodeChallengeHandle
 	questNodeChildHandle              *questNodeChildHandle
@@ -166,6 +169,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		zoneImportHandle:                  &zoneImportHandle{db: db},
 		zoneSeedJobHandle:                 &zoneSeedJobHandle{db: db},
 		scenarioGenerationJobHandle:       &scenarioGenerationJobHandle{db: db},
+		spellHandle:                       &spellHandler{db: db},
+		userSpellHandle:                   &userSpellHandler{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		newUserStarterConfigHandle:        &newUserStarterConfigHandle{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
@@ -220,6 +225,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questAcceptanceV2Handle:           &questAcceptanceV2Handle{db: db},
 		questHandle:                       &questHandle{db: db},
 		questItemRewardHandle:             &questItemRewardHandle{db: db},
+		questSpellRewardHandle:            &questSpellRewardHandle{db: db},
 		questNodeHandle:                   &questNodeHandle{db: db},
 		questNodeChallengeHandle:          &questNodeChallengeHandle{db: db},
 		questNodeChildHandle:              &questNodeChildHandle{db: db},
@@ -448,6 +454,14 @@ func (c *client) ScenarioGenerationJob() ScenarioGenerationJobHandle {
 	return c.scenarioGenerationJobHandle
 }
 
+func (c *client) Spell() SpellHandle {
+	return c.spellHandle
+}
+
+func (c *client) UserSpell() UserSpellHandle {
+	return c.userSpellHandle
+}
+
 func (c *client) PointOfInterestGroup() PointOfInterestGroupHandle {
 	return c.pointOfInterestGroupHandle
 }
@@ -562,6 +576,10 @@ func (c *client) Quest() QuestHandle {
 
 func (c *client) QuestItemReward() QuestItemRewardHandle {
 	return c.questItemRewardHandle
+}
+
+func (c *client) QuestSpellReward() QuestSpellRewardHandle {
+	return c.questSpellRewardHandle
 }
 
 func (c *client) QuestNode() QuestNodeHandle {

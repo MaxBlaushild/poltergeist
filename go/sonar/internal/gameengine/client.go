@@ -48,7 +48,7 @@ type SubmissionResult struct {
 type GameEngineClient interface {
 	ProcessSuccessfulSubmission(ctx context.Context, submission Submission, challenge *models.PointOfInterestChallenge) (*SubmissionResult, error)
 	ProcessSubmission(ctx context.Context, submission Submission) (*SubmissionResult, error)
-	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, err error)
+	AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, pointOfInterestGroupID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, spellsAwarded []models.SpellAwarded, err error)
 	AwardQuestNodeSubmissionRewards(ctx context.Context, userID uuid.UUID, teamID *uuid.UUID, quest *models.Quest, node *models.QuestNode, challenge *models.QuestNodeChallenge, questCompleted bool) error
 }
 
@@ -642,13 +642,13 @@ func (c *gameEngineClient) addTaskCompleteMessage(ctx context.Context, submissio
 	return nil
 }
 
-func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, questID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, err error) {
+func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID uuid.UUID, questID uuid.UUID, teamID *uuid.UUID) (goldAwarded int, itemsAwarded []models.ItemAwarded, spellsAwarded []models.SpellAwarded, err error) {
 	quest, err := c.db.Quest().FindByID(ctx, questID)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if quest == nil {
-		return 0, nil, fmt.Errorf("quest not found")
+		return 0, nil, nil, fmt.Errorf("quest not found")
 	}
 
 	var zoneID uuid.UUID
@@ -667,17 +667,17 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		}
 	}
 	if zoneID == uuid.Nil {
-		return 0, nil, fmt.Errorf("quest has no zone for reward distribution")
+		return 0, nil, nil, fmt.Errorf("quest has no zone for reward distribution")
 	}
 
 	partyMembers, err := c.getPartyMembers(ctx, &userID, zoneID)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if len(partyMembers) == 0 {
 		user, err := c.db.User().FindByID(ctx, userID)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 		if user != nil {
 			log.Printf("[DEBUG] No eligible party members for rewards, falling back to user %s", userID)
@@ -689,7 +689,7 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 	if goldAwarded > 0 {
 		for _, member := range partyMembers {
 			if err := c.db.User().AddGold(ctx, member.ID, goldAwarded); err != nil {
-				return goldAwarded, itemsAwarded, err
+				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
 		}
 	}
@@ -703,13 +703,13 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		if item.ID == 0 {
 			itemRecord, err := c.db.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
 			if err != nil {
-				return goldAwarded, itemsAwarded, err
+				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
 			item = *itemRecord
 		}
 		for _, member := range partyMembers {
 			if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &member.ID, reward.InventoryItemID, reward.Quantity); err != nil {
-				return goldAwarded, itemsAwarded, err
+				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
 		}
 		itemsAwarded = append(itemsAwarded, models.ItemAwarded{
@@ -720,24 +720,57 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		})
 	}
 
+	spellsAwarded = []models.SpellAwarded{}
+	seenSpellRewards := map[uuid.UUID]bool{}
+	for _, reward := range quest.SpellRewards {
+		if reward.SpellID == uuid.Nil {
+			continue
+		}
+		spell := reward.Spell
+		if spell.ID == uuid.Nil {
+			spellRecord, err := c.db.Spell().FindByID(ctx, reward.SpellID)
+			if err != nil {
+				return goldAwarded, itemsAwarded, spellsAwarded, err
+			}
+			if spellRecord == nil {
+				continue
+			}
+			spell = *spellRecord
+		}
+		for _, member := range partyMembers {
+			if err := c.db.UserSpell().GrantToUser(ctx, member.ID, reward.SpellID); err != nil {
+				return goldAwarded, itemsAwarded, spellsAwarded, err
+			}
+		}
+		if !seenSpellRewards[spell.ID] {
+			seenSpellRewards[spell.ID] = true
+			spellsAwarded = append(spellsAwarded, models.SpellAwarded{
+				ID:      spell.ID,
+				Name:    spell.Name,
+				IconURL: spell.IconURL,
+			})
+		}
+	}
+
 	proficiencies := questProficiencies(quest)
 	if len(proficiencies) > 0 {
 		for _, member := range partyMembers {
 			for _, proficiency := range proficiencies {
 				if err := c.db.UserProficiency().Increment(ctx, member.ID, proficiency, 1); err != nil {
-					return goldAwarded, itemsAwarded, err
+					return goldAwarded, itemsAwarded, spellsAwarded, err
 				}
 			}
 		}
 	}
 
 	questActivityData, err := json.Marshal(models.QuestCompletedActivity{
-		QuestID:      quest.ID,
-		GoldAwarded:  goldAwarded,
-		ItemsAwarded: itemsAwarded,
+		QuestID:       quest.ID,
+		GoldAwarded:   goldAwarded,
+		ItemsAwarded:  itemsAwarded,
+		SpellsAwarded: spellsAwarded,
 	})
 	if err != nil {
-		return goldAwarded, itemsAwarded, err
+		return goldAwarded, itemsAwarded, spellsAwarded, err
 	}
 	for _, member := range partyMembers {
 		if err := c.db.Activity().CreateActivity(ctx, models.Activity{
@@ -746,11 +779,11 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 			Data:         questActivityData,
 			Seen:         false,
 		}); err != nil {
-			return goldAwarded, itemsAwarded, err
+			return goldAwarded, itemsAwarded, spellsAwarded, err
 		}
 	}
 
-	return goldAwarded, itemsAwarded, nil
+	return goldAwarded, itemsAwarded, spellsAwarded, nil
 }
 
 func (c *gameEngineClient) trackQuestForPartyMembers(ctx context.Context, challenge *models.PointOfInterestChallenge, userID *uuid.UUID) error {

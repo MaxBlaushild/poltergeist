@@ -404,7 +404,22 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     ),
                   );
                 }),
-              if (quest.gold <= 0 && quest.itemRewards.isEmpty)
+              if (quest.spellRewards.isNotEmpty)
+                ...quest.spellRewards.map((reward) {
+                  final spellName = reward.spell?.name.trim().isNotEmpty == true
+                      ? reward.spell!.name.trim()
+                      : 'Spell';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '+Spell: $spellName',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  );
+                }),
+              if (quest.gold <= 0 &&
+                  quest.itemRewards.isEmpty &&
+                  quest.spellRewards.isEmpty)
                 Text(
                   'No rewards listed.',
                   style: Theme.of(

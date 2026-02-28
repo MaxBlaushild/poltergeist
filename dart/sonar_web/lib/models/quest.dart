@@ -1,5 +1,6 @@
 import 'inventory_item.dart';
 import 'quest_node.dart';
+import 'spell.dart';
 
 class QuestItemReward {
   final int inventoryItemId;
@@ -17,8 +18,31 @@ class QuestItemReward {
       inventoryItemId: (json['inventoryItemId'] as num?)?.toInt() ?? 0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
       inventoryItem: json['inventoryItem'] is Map<String, dynamic>
-          ? InventoryItem.fromJson(json['inventoryItem'] as Map<String, dynamic>)
+          ? InventoryItem.fromJson(
+              json['inventoryItem'] as Map<String, dynamic>,
+            )
           : null,
+    );
+  }
+}
+
+class QuestSpellReward {
+  final String spellId;
+  final Spell? spell;
+
+  const QuestSpellReward({required this.spellId, this.spell});
+
+  factory QuestSpellReward.fromJson(Map<String, dynamic> json) {
+    Spell? spell;
+    final rawSpell = json['spell'];
+    if (rawSpell is Map<String, dynamic>) {
+      spell = Spell.fromJson(rawSpell);
+    } else if (rawSpell is Map) {
+      spell = Spell.fromJson(Map<String, dynamic>.from(rawSpell));
+    }
+    return QuestSpellReward(
+      spellId: json['spellId']?.toString() ?? '',
+      spell: spell,
     );
   }
 }
@@ -37,6 +61,7 @@ class Quest {
   final DateTime? nextRecurrenceAt;
   final int gold;
   final List<QuestItemReward> itemRewards;
+  final List<QuestSpellReward> spellRewards;
   final List<QuestNode> nodes;
   final bool isAccepted;
   final DateTime? turnedInAt;
@@ -58,6 +83,7 @@ class Quest {
     this.nextRecurrenceAt,
     this.gold = 0,
     this.itemRewards = const [],
+    this.spellRewards = const [],
     this.nodes = const [],
     this.isAccepted = false,
     this.turnedInAt,
@@ -71,7 +97,8 @@ class Quest {
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      acceptanceDialogue: (json['acceptanceDialogue'] as List<dynamic>?)
+      acceptanceDialogue:
+          (json['acceptanceDialogue'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -85,11 +112,29 @@ class Quest {
           ? DateTime.tryParse(json['nextRecurrenceAt'] as String)
           : null,
       gold: (json['gold'] as num?)?.toInt() ?? 0,
-      itemRewards: (json['itemRewards'] as List<dynamic>?)
+      itemRewards:
+          (json['itemRewards'] as List<dynamic>?)
               ?.map((e) => QuestItemReward.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      nodes: (json['nodes'] as List<dynamic>?)
+      spellRewards:
+          (json['spellRewards'] as List<dynamic>?)
+              ?.map((e) {
+                if (e is Map<String, dynamic>) {
+                  return QuestSpellReward.fromJson(e);
+                }
+                if (e is Map) {
+                  return QuestSpellReward.fromJson(
+                    Map<String, dynamic>.from(e),
+                  );
+                }
+                return null;
+              })
+              .whereType<QuestSpellReward>()
+              .toList() ??
+          const [],
+      nodes:
+          (json['nodes'] as List<dynamic>?)
               ?.map((e) => QuestNode.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],

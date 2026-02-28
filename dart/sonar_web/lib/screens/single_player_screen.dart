@@ -4260,6 +4260,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 'rewardExperience': result.rewardExperience,
                 'rewardGold': result.rewardGold,
                 'itemsAwarded': result.itemsAwarded,
+                'spellsAwarded': result.spellsAwarded
+                    .map((spell) => spell.toJson())
+                    .toList(),
               },
             );
           });

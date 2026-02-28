@@ -29,6 +29,7 @@ type characterStatsResponse struct {
 	Level            int                            `json:"level"`
 	Proficiencies    []characterProficiencyResponse `json:"proficiencies"`
 	Statuses         []characterStatusResponse      `json:"statuses"`
+	Spells           []characterSpellResponse       `json:"spells"`
 }
 
 type characterProficiencyResponse struct {
@@ -45,6 +46,16 @@ type characterStatusResponse struct {
 	EffectType  string    `json:"effectType"`
 	StartedAt   time.Time `json:"startedAt"`
 	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+type characterSpellResponse struct {
+	ID            uuid.UUID `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	IconURL       string    `json:"iconUrl"`
+	EffectText    string    `json:"effectText"`
+	SchoolOfMagic string    `json:"schoolOfMagic"`
+	ManaCost      int       `json:"manaCost"`
 }
 
 type characterStatsAllocationRequest struct {
@@ -91,8 +102,13 @@ func (s *server) getCharacterStats(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses))
+	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses, spells))
 }
 
 func (s *server) getUserCharacterProfile(ctx *gin.Context) {
@@ -142,10 +158,15 @@ func (s *server) getUserCharacterProfile(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, userCharacterProfileResponse{
 		User:      *target,
-		Stats:     characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses),
+		Stats:     characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses, spells),
 		UserLevel: userLevel,
 	})
 }
@@ -197,8 +218,13 @@ func (s *server) allocateCharacterStats(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	spells, err := s.dbClient.UserSpell().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses))
+	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses, spells))
 }
 
 func characterStatsResponseFrom(
@@ -208,6 +234,7 @@ func characterStatsResponseFrom(
 	equipmentBonuses models.CharacterStatBonuses,
 	statusBonuses models.CharacterStatBonuses,
 	statuses []models.UserStatus,
+	spells []models.UserSpell,
 ) characterStatsResponse {
 	totalBonuses := equipmentBonuses.Add(statusBonuses)
 	maxHealth, maxMana, currentHealth, currentMana := deriveCharacterResources(stats, totalBonuses)
@@ -235,6 +262,7 @@ func characterStatsResponseFrom(
 		Level:            level,
 		Proficiencies:    proficiencyResponse,
 		Statuses:         characterStatusResponsesFrom(statuses),
+		Spells:           characterSpellResponsesFrom(spells),
 	}
 }
 
@@ -254,6 +282,26 @@ func characterStatusResponsesFrom(statuses []models.UserStatus) []characterStatu
 			EffectType:  effectType,
 			StartedAt:   status.StartedAt,
 			ExpiresAt:   status.ExpiresAt,
+		})
+	}
+	return response
+}
+
+func characterSpellResponsesFrom(spells []models.UserSpell) []characterSpellResponse {
+	response := make([]characterSpellResponse, 0, len(spells))
+	for _, userSpell := range spells {
+		spell := userSpell.Spell
+		if spell.ID == uuid.Nil {
+			continue
+		}
+		response = append(response, characterSpellResponse{
+			ID:            spell.ID,
+			Name:          spell.Name,
+			Description:   spell.Description,
+			IconURL:       spell.IconURL,
+			EffectText:    spell.EffectText,
+			SchoolOfMagic: spell.SchoolOfMagic,
+			ManaCost:      spell.ManaCost,
 		})
 	}
 	return response

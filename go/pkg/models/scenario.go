@@ -38,6 +38,7 @@ type Scenario struct {
 	SuccessStatuses           ScenarioFailureStatusTemplates `json:"successStatuses" gorm:"column:success_statuses;type:jsonb"`
 	Options                   []ScenarioOption               `json:"options" gorm:"foreignKey:ScenarioID"`
 	ItemRewards               []ScenarioItemReward           `json:"itemRewards" gorm:"foreignKey:ScenarioID"`
+	SpellRewards              []ScenarioSpellReward          `json:"spellRewards" gorm:"foreignKey:ScenarioID"`
 }
 
 func (s *Scenario) TableName() string {

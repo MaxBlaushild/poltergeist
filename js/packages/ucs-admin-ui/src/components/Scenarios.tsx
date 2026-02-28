@@ -2,10 +2,15 @@ import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { Spell } from '@poltergeist/types';
 
 type ScenarioRewardItem = {
   inventoryItemId: number;
   quantity: number;
+};
+
+type ScenarioRewardSpell = {
+  spellId: string;
 };
 
 type ScenarioFailurePenaltyMode = 'shared' | 'individual';
@@ -47,6 +52,7 @@ type ScenarioOption = {
   successManaRestoreValue: number;
   successStatuses: ScenarioFailureStatus[];
   itemRewards: ScenarioRewardItem[];
+  spellRewards: ScenarioRewardSpell[];
 };
 
 type ScenarioRecord = {
@@ -75,6 +81,7 @@ type ScenarioRecord = {
   successStatuses: ScenarioFailureStatus[];
   options: ScenarioOption[];
   itemRewards: ScenarioRewardItem[];
+  spellRewards: ScenarioRewardSpell[];
   attemptedByUser?: boolean;
 };
 
@@ -103,6 +110,7 @@ type ScenarioFormState = {
   successStatuses: ScenarioFailureStatus[];
   options: ScenarioOption[];
   itemRewards: ScenarioRewardItem[];
+  spellRewards: ScenarioRewardSpell[];
 };
 
 type ScenarioGenerationJob = {
@@ -171,6 +179,7 @@ const emptyOption = (): ScenarioOption => ({
   successManaRestoreValue: 0,
   successStatuses: [],
   itemRewards: [],
+  spellRewards: [],
 });
 
 const emptyFormState = (): ScenarioFormState => ({
@@ -198,6 +207,7 @@ const emptyFormState = (): ScenarioFormState => ({
   successStatuses: [],
   options: [emptyOption()],
   itemRewards: [],
+  spellRewards: [],
 });
 
 const emptyGenerationFormState = (): ScenarioGenerationFormState => ({
@@ -292,6 +302,7 @@ export const Scenarios = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
+  const [spells, setSpells] = useState<Spell[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
@@ -347,6 +358,24 @@ export const Scenarios = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    const loadSpells = async () => {
+      try {
+        const response = await apiClient.get<Spell[]>('/sonar/spells');
+        if (!active) return;
+        setSpells(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Error loading spells:', err);
+        if (active) setSpells([]);
+      }
+    };
+    void loadSpells();
+    return () => {
+      active = false;
+    };
+  }, [apiClient]);
 
   const loadGenerationJobs = useCallback(async () => {
     try {
@@ -625,9 +654,13 @@ export const Scenarios = () => {
               successStatuses: (option.successStatuses ?? []).map((status) =>
                 normalizeFailureStatus(status)
               ),
+              spellRewards: (option.spellRewards ?? []).map((reward) => ({
+                spellId: reward.spellId,
+              })),
             }))
           : [emptyOption()],
       itemRewards: record.itemRewards,
+      spellRewards: (record.spellRewards ?? []).map((reward) => ({ spellId: reward.spellId })),
     });
     setShowModal(true);
   };
@@ -753,8 +786,16 @@ export const Scenarios = () => {
               ? toStatusPayload(option.successStatuses)
               : [],
             itemRewards: option.itemRewards,
+            spellRewards: option.spellRewards
+              .map((reward) => ({ spellId: reward.spellId.trim() }))
+              .filter((reward) => reward.spellId.length > 0),
           })),
       itemRewards: form.openEnded ? form.itemRewards : [],
+      spellRewards: form.openEnded
+        ? form.spellRewards
+            .map((reward) => ({ spellId: reward.spellId.trim() }))
+            .filter((reward) => reward.spellId.length > 0)
+        : [],
     };
   };
 
@@ -954,6 +995,42 @@ export const Scenarios = () => {
     });
   };
 
+  const addOptionSpellReward = (optionIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.spellRewards = [...option.spellRewards, { spellId: '' }];
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const updateOptionSpellReward = (
+    optionIndex: number,
+    rewardIndex: number,
+    next: Partial<ScenarioRewardSpell>
+  ) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      const rewards = [...option.spellRewards];
+      rewards[rewardIndex] = { ...rewards[rewardIndex], ...next };
+      option.spellRewards = rewards;
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const removeOptionSpellReward = (optionIndex: number, rewardIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.spellRewards = option.spellRewards.filter((_, i) => i !== rewardIndex);
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
   const addScenarioItemReward = () => {
     setForm((prev) => ({
       ...prev,
@@ -973,6 +1050,31 @@ export const Scenarios = () => {
     setForm((prev) => ({
       ...prev,
       itemRewards: prev.itemRewards.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addScenarioSpellReward = () => {
+    setForm((prev) => ({
+      ...prev,
+      spellRewards: [...prev.spellRewards, { spellId: '' }],
+    }));
+  };
+
+  const updateScenarioSpellReward = (
+    index: number,
+    next: Partial<ScenarioRewardSpell>
+  ) => {
+    setForm((prev) => {
+      const rewards = [...prev.spellRewards];
+      rewards[index] = { ...rewards[index], ...next };
+      return { ...prev, spellRewards: rewards };
+    });
+  };
+
+  const removeScenarioSpellReward = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      spellRewards: prev.spellRewards.filter((_, i) => i !== index),
     }));
   };
 
@@ -2033,6 +2135,40 @@ export const Scenarios = () => {
                   </div>
                 ))}
 
+                <div className="flex items-center justify-between mb-2 mt-4">
+                  <div className="font-medium">Spell Rewards</div>
+                  <button className="bg-green-600 text-white px-3 py-1 rounded-md" type="button" onClick={addScenarioSpellReward}>
+                    Add Spell
+                  </button>
+                </div>
+                {form.spellRewards.map((reward, index) => (
+                  <div key={`scenario-spell-${index}`} className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                    <select
+                      value={reward.spellId}
+                      onChange={(e) =>
+                        updateScenarioSpellReward(index, {
+                          spellId: e.target.value,
+                        })
+                      }
+                      className="border rounded-md p-2"
+                    >
+                      <option value="">Select spell</option>
+                      {spells.map((spell) => (
+                        <option key={spell.id} value={spell.id}>
+                          {spell.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="bg-red-500 text-white px-3 py-1 rounded-md"
+                      onClick={() => removeScenarioSpellReward(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+
                 {renderFailurePenaltyEditor({
                   title: 'Failure Penalty (Open-Ended)',
                   healthDrainType: form.failureHealthDrainType,
@@ -2297,6 +2433,46 @@ export const Scenarios = () => {
                             type="button"
                             className="bg-red-500 text-white px-3 py-1 rounded-md"
                             onClick={() => removeOptionItemReward(optionIndex, rewardIndex)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-medium text-sm">Option Spell Rewards</div>
+                        <button
+                          type="button"
+                          className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
+                          onClick={() => addOptionSpellReward(optionIndex)}
+                        >
+                          Add Spell
+                        </button>
+                      </div>
+                      {option.spellRewards.map((reward, rewardIndex) => (
+                        <div key={rewardIndex} className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                          <select
+                            value={reward.spellId}
+                            onChange={(e) =>
+                              updateOptionSpellReward(optionIndex, rewardIndex, {
+                                spellId: e.target.value,
+                              })
+                            }
+                            className="border rounded-md p-2"
+                          >
+                            <option value="">Select spell</option>
+                            {spells.map((spell) => (
+                              <option key={spell.id} value={spell.id}>
+                                {spell.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="bg-red-500 text-white px-3 py-1 rounded-md"
+                            onClick={() => removeOptionSpellReward(optionIndex, rewardIndex)}
                           >
                             Remove
                           </button>

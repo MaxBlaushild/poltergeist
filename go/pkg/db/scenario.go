@@ -124,8 +124,12 @@ func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("Options").
 		Preload("Options.ItemRewards").
 		Preload("Options.ItemRewards.InventoryItem").
+		Preload("Options.SpellRewards").
+		Preload("Options.SpellRewards.Spell").
 		Preload("ItemRewards").
-		Preload("ItemRewards.InventoryItem")
+		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell")
 }
 
 func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) error {
@@ -213,6 +217,9 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 		if err := tx.Where("scenario_option_id IN (?)", optionIDs).Delete(&models.ScenarioOptionItemReward{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("scenario_option_id IN (?)", optionIDs).Delete(&models.ScenarioOptionSpellReward{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioOption{}).Error; err != nil {
 			return err
 		}
@@ -240,6 +247,15 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 					return err
 				}
 			}
+			for _, reward := range option.SpellRewards {
+				reward.ID = uuid.New()
+				reward.ScenarioOptionID = option.ID
+				reward.CreatedAt = now
+				reward.UpdatedAt = now
+				if err := tx.Create(&reward).Error; err != nil {
+					return err
+				}
+			}
 		}
 		return nil
 	})
@@ -248,6 +264,25 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 func (h *scenarioHandle) ReplaceItemRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemReward) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioItemReward{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, reward := range rewards {
+			reward.ID = uuid.New()
+			reward.ScenarioID = scenarioID
+			reward.CreatedAt = now
+			reward.UpdatedAt = now
+			if err := tx.Create(&reward).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (h *scenarioHandle) ReplaceSpellRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioSpellReward) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioSpellReward{}).Error; err != nil {
 			return err
 		}
 		now := time.Now()

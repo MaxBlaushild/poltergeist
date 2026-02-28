@@ -30,6 +30,7 @@ type ScenarioOption struct {
 	SuccessManaRestoreValue   int                            `json:"successManaRestoreValue" gorm:"column:success_mana_restore_value"`
 	SuccessStatuses           ScenarioFailureStatusTemplates `json:"successStatuses" gorm:"column:success_statuses;type:jsonb"`
 	ItemRewards               []ScenarioOptionItemReward     `json:"itemRewards" gorm:"foreignKey:ScenarioOptionID"`
+	SpellRewards              []ScenarioOptionSpellReward    `json:"spellRewards" gorm:"foreignKey:ScenarioOptionID"`
 }
 
 func (s *ScenarioOption) TableName() string {

@@ -32,6 +32,8 @@ type DbClient interface {
 	ZoneImport() ZoneImportHandle
 	ZoneSeedJob() ZoneSeedJobHandle
 	ScenarioGenerationJob() ScenarioGenerationJobHandle
+	Spell() SpellHandle
+	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
 	AuditItem() AuditItemHandle
@@ -87,6 +89,7 @@ type DbClient interface {
 	MovementPattern() MovementPatternHandle
 	Quest() QuestHandle
 	QuestItemReward() QuestItemRewardHandle
+	QuestSpellReward() QuestSpellRewardHandle
 	QuestNode() QuestNodeHandle
 	QuestNodeChallenge() QuestNodeChallengeHandle
 	QuestNodeChild() QuestNodeChildHandle
@@ -347,6 +350,20 @@ type ScenarioGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioGenerationJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ScenarioGenerationJob, error)
+}
+
+type SpellHandle interface {
+	Create(ctx context.Context, spell *models.Spell) error
+	FindByID(ctx context.Context, spellID uuid.UUID) (*models.Spell, error)
+	FindAll(ctx context.Context) ([]models.Spell, error)
+	Update(ctx context.Context, spellID uuid.UUID, updates map[string]interface{}) error
+	Delete(ctx context.Context, spellID uuid.UUID) error
+}
+
+type UserSpellHandle interface {
+	GrantToUser(ctx context.Context, userID uuid.UUID, spellID uuid.UUID) error
+	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserSpell, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type InventoryItemHandle interface {
@@ -814,6 +831,11 @@ type QuestItemRewardHandle interface {
 	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestItemReward, error)
 }
 
+type QuestSpellRewardHandle interface {
+	ReplaceForQuest(ctx context.Context, questID uuid.UUID, rewards []models.QuestSpellReward) error
+	FindByQuestID(ctx context.Context, questID uuid.UUID) ([]models.QuestSpellReward, error)
+}
+
 type QuestNodeHandle interface {
 	Create(ctx context.Context, node *models.QuestNode) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.QuestNode, error)
@@ -882,6 +904,7 @@ type ScenarioHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error
 	ReplaceItemRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemReward) error
+	ReplaceSpellRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioSpellReward) error
 	FindAttemptByUserAndScenario(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) (*models.UserScenarioAttempt, error)
 	CreateAttempt(ctx context.Context, attempt *models.UserScenarioAttempt) error
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)

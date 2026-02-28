@@ -11,6 +11,7 @@ export * from './pointOfInterest';
 export * from './verificationCode';
 export * from './pointOfInterestGroup';
 export * from './inventoryItem';
+export * from './spell';
 export * from './matchInventoryItemEffect';
 export * from './auditItem';
 export * from './imageGeneration';

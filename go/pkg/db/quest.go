@@ -31,7 +31,7 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"quest_giver_character_id": updates.QuestGiverCharacterID,
 		"recurring_quest_id":       updates.RecurringQuestID,
 		"recurrence_frequency":     updates.RecurrenceFrequency,
-		"next_recurrence_at":        updates.NextRecurrenceAt,
+		"next_recurrence_at":       updates.NextRecurrenceAt,
 		"gold":                     updates.Gold,
 		"updated_at":               updates.UpdatedAt,
 	}
@@ -43,6 +43,8 @@ func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
 		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
 			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
 		}).
@@ -62,6 +64,8 @@ func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
 		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
 			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
 		}).
@@ -79,6 +83,8 @@ func (h *questHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]mod
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
 		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
 			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
 		}).
@@ -96,6 +102,8 @@ func (h *questHandle) FindByQuestGiverCharacterID(ctx context.Context, character
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
 		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
 			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
 		}).
@@ -113,6 +121,8 @@ func (h *questHandle) FindAll(ctx context.Context) ([]models.Quest, error) {
 	if err := h.db.WithContext(ctx).
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("SpellRewards").
+		Preload("SpellRewards.Spell").
 		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
 			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
 		}).

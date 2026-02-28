@@ -85,6 +85,12 @@ class CelebrationModalManager extends StatelessWidget {
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList() ??
             const [];
+        final spellsAwarded =
+            (data['spellsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
         final rewards = <Widget>[
           if (questName.isNotEmpty)
             Text(questName, style: Theme.of(context).textTheme.titleMedium),
@@ -96,6 +102,10 @@ class CelebrationModalManager extends StatelessWidget {
           final name = item['name'] as String? ?? 'Item';
           final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
           rewards.add(Text('+$quantity $name'));
+        }
+        for (final spell in spellsAwarded) {
+          final name = spell['name'] as String? ?? 'Spell';
+          rewards.add(Text('+Spell: $name'));
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -214,6 +224,12 @@ class CelebrationModalManager extends StatelessWidget {
             const [];
         final itemsAwarded =
             (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList() ??
+            const [];
+        final spellsAwarded =
+            (data['spellsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList() ??
@@ -497,7 +513,8 @@ class CelebrationModalManager extends StatelessWidget {
             ],
             if (rewardExperience > 0 ||
                 rewardGold > 0 ||
-                itemsAwarded.isNotEmpty) ...[
+                itemsAwarded.isNotEmpty ||
+                spellsAwarded.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text(
                 'Rewards',
@@ -511,6 +528,8 @@ class CelebrationModalManager extends StatelessWidget {
                 Text(
                   '+${(item['quantity'] as num?)?.toInt() ?? 1} ${item['name'] as String? ?? 'Item'}',
                 ),
+              for (final spell in spellsAwarded)
+                Text('+Spell: ${spell['name'] as String? ?? 'Spell'}'),
             ],
           ],
         );

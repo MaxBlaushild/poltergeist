@@ -40,22 +40,23 @@ func NextQuestRecurrenceAt(base time.Time, frequency string) (time.Time, bool) {
 }
 
 type Quest struct {
-	ID                    uuid.UUID         `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt             time.Time         `json:"createdAt"`
-	UpdatedAt             time.Time         `json:"updatedAt"`
-	Name                  string            `json:"name"`
-	Description           string            `json:"description"`
-	AcceptanceDialogue    StringArray       `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
-	ImageURL              string            `json:"imageUrl"`
-	ZoneID                *uuid.UUID        `json:"zoneId" gorm:"type:uuid"`
-	QuestArchetypeID      *uuid.UUID        `json:"questArchetypeId" gorm:"type:uuid"`
-	QuestGiverCharacterID *uuid.UUID        `json:"questGiverCharacterId" gorm:"type:uuid"`
-	RecurringQuestID      *uuid.UUID        `json:"recurringQuestId,omitempty" gorm:"type:uuid"`
-	RecurrenceFrequency   *string           `json:"recurrenceFrequency,omitempty"`
-	NextRecurrenceAt      *time.Time        `json:"nextRecurrenceAt,omitempty"`
-	Gold                  int               `json:"gold"`
-	ItemRewards           []QuestItemReward `json:"itemRewards" gorm:"foreignKey:QuestID"`
-	Nodes                 []QuestNode       `json:"nodes" gorm:"foreignKey:QuestID"`
+	ID                    uuid.UUID          `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt             time.Time          `json:"createdAt"`
+	UpdatedAt             time.Time          `json:"updatedAt"`
+	Name                  string             `json:"name"`
+	Description           string             `json:"description"`
+	AcceptanceDialogue    StringArray        `json:"acceptanceDialogue,omitempty" gorm:"type:jsonb"`
+	ImageURL              string             `json:"imageUrl"`
+	ZoneID                *uuid.UUID         `json:"zoneId" gorm:"type:uuid"`
+	QuestArchetypeID      *uuid.UUID         `json:"questArchetypeId" gorm:"type:uuid"`
+	QuestGiverCharacterID *uuid.UUID         `json:"questGiverCharacterId" gorm:"type:uuid"`
+	RecurringQuestID      *uuid.UUID         `json:"recurringQuestId,omitempty" gorm:"type:uuid"`
+	RecurrenceFrequency   *string            `json:"recurrenceFrequency,omitempty"`
+	NextRecurrenceAt      *time.Time         `json:"nextRecurrenceAt,omitempty"`
+	Gold                  int                `json:"gold"`
+	ItemRewards           []QuestItemReward  `json:"itemRewards" gorm:"foreignKey:QuestID"`
+	SpellRewards          []QuestSpellReward `json:"spellRewards" gorm:"foreignKey:QuestID"`
+	Nodes                 []QuestNode        `json:"nodes" gorm:"foreignKey:QuestID"`
 }
 
 func (q *Quest) TableName() string {

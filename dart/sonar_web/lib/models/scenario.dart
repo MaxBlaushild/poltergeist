@@ -1,3 +1,5 @@
+import 'spell.dart';
+
 class ScenarioItemReward {
   final int inventoryItemId;
   final int quantity;
@@ -15,6 +17,27 @@ class ScenarioItemReward {
   }
 }
 
+class ScenarioSpellReward {
+  final String spellId;
+  final Spell? spell;
+
+  const ScenarioSpellReward({required this.spellId, this.spell});
+
+  factory ScenarioSpellReward.fromJson(Map<String, dynamic> json) {
+    Spell? spell;
+    final rawSpell = json['spell'];
+    if (rawSpell is Map<String, dynamic>) {
+      spell = Spell.fromJson(rawSpell);
+    } else if (rawSpell is Map) {
+      spell = Spell.fromJson(Map<String, dynamic>.from(rawSpell));
+    }
+    return ScenarioSpellReward(
+      spellId: json['spellId']?.toString() ?? '',
+      spell: spell,
+    );
+  }
+}
+
 class ScenarioOption {
   final String id;
   final String optionText;
@@ -26,6 +49,7 @@ class ScenarioOption {
   final int rewardExperience;
   final int rewardGold;
   final List<ScenarioItemReward> itemRewards;
+  final List<ScenarioSpellReward> spellRewards;
 
   const ScenarioOption({
     required this.id,
@@ -38,6 +62,7 @@ class ScenarioOption {
     this.rewardExperience = 0,
     this.rewardGold = 0,
     this.itemRewards = const [],
+    this.spellRewards = const [],
   });
 
   factory ScenarioOption.fromJson(Map<String, dynamic> json) {
@@ -60,6 +85,20 @@ class ScenarioOption {
       }
     }
 
+    final spellRewards = <ScenarioSpellReward>[];
+    final rawSpellRewards = json['spellRewards'];
+    if (rawSpellRewards is List) {
+      for (final reward in rawSpellRewards) {
+        if (reward is Map<String, dynamic>) {
+          spellRewards.add(ScenarioSpellReward.fromJson(reward));
+        } else if (reward is Map) {
+          spellRewards.add(
+            ScenarioSpellReward.fromJson(Map<String, dynamic>.from(reward)),
+          );
+        }
+      }
+    }
+
     return ScenarioOption(
       id: json['id']?.toString() ?? '',
       optionText: json['optionText']?.toString() ?? '',
@@ -71,6 +110,7 @@ class ScenarioOption {
       rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
       rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
       itemRewards: rewards,
+      spellRewards: spellRewards,
     );
   }
 }
@@ -89,6 +129,7 @@ class Scenario {
   final bool openEnded;
   final List<ScenarioOption> options;
   final List<ScenarioItemReward> itemRewards;
+  final List<ScenarioSpellReward> spellRewards;
   final bool attemptedByUser;
 
   const Scenario({
@@ -105,6 +146,7 @@ class Scenario {
     required this.openEnded,
     this.options = const [],
     this.itemRewards = const [],
+    this.spellRewards = const [],
     this.attemptedByUser = false,
   });
 
@@ -129,6 +171,20 @@ class Scenario {
       }
     }
 
+    final spellRewards = <ScenarioSpellReward>[];
+    final rawSpellRewards = json['spellRewards'];
+    if (rawSpellRewards is List) {
+      for (final reward in rawSpellRewards) {
+        if (reward is Map<String, dynamic>) {
+          spellRewards.add(ScenarioSpellReward.fromJson(reward));
+        } else if (reward is Map) {
+          spellRewards.add(
+            ScenarioSpellReward.fromJson(Map<String, dynamic>.from(reward)),
+          );
+        }
+      }
+    }
+
     return Scenario(
       id: json['id']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',
@@ -143,6 +199,7 @@ class Scenario {
       openEnded: json['openEnded'] as bool? ?? false,
       options: options,
       itemRewards: itemRewards,
+      spellRewards: spellRewards,
       attemptedByUser: json['attemptedByUser'] as bool? ?? false,
     );
   }
@@ -171,6 +228,7 @@ class ScenarioPerformResult {
   final int rewardExperience;
   final int rewardGold;
   final List<Map<String, dynamic>> itemsAwarded;
+  final List<Spell> spellsAwarded;
 
   const ScenarioPerformResult({
     required this.successful,
@@ -195,6 +253,7 @@ class ScenarioPerformResult {
     required this.rewardExperience,
     required this.rewardGold,
     this.itemsAwarded = const [],
+    this.spellsAwarded = const [],
   });
 
   factory ScenarioPerformResult.fromJson(Map<String, dynamic> json) {
@@ -265,6 +324,12 @@ class ScenarioPerformResult {
           (json['itemsAwarded'] as List<dynamic>?)
               ?.whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
+              .toList() ??
+          const [],
+      spellsAwarded:
+          (json['spellsAwarded'] as List<dynamic>?)
+              ?.whereType<Map>()
+              .map((spell) => Spell.fromJson(Map<String, dynamic>.from(spell)))
               .toList() ??
           const [],
     );

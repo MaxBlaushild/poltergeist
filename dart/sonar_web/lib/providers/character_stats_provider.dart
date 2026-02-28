@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/character_stats.dart';
+import '../models/spell.dart';
 import '../services/character_stats_service.dart';
 import 'activity_feed_provider.dart';
 import 'auth_provider.dart';
@@ -55,6 +56,7 @@ class CharacterStatsProvider with ChangeNotifier {
   List<CharacterProficiency> get proficiencies =>
       _stats?.proficiencies ?? const [];
   List<CharacterStatus> get statuses => _stats?.statuses ?? const [];
+  List<Spell> get spells => _stats?.spells ?? const [];
   bool get hasProficiencies => proficiencies.isNotEmpty;
   bool get hasStatuses => statuses.isNotEmpty;
 

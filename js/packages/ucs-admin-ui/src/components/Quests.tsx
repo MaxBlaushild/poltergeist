@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useTagContext, useZoneContext } from '@poltergeist/contexts';
-import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestArchetype, QuestArchetypeChallenge, QuestArchetypeNode, QuestNode, QuestNodeChallenge, QuestNodeSubmissionType, Tag } from '@poltergeist/types';
+import { Candidate, Character, InventoryItem, LocationArchetype, PointOfInterest, Quest, QuestArchetype, QuestArchetypeChallenge, QuestArchetypeNode, QuestNode, QuestNodeChallenge, QuestNodeSubmissionType, Spell, Tag } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import * as wellknown from 'wellknown';
@@ -33,6 +33,7 @@ const emptyQuestForm = {
   recurrenceFrequency: '',
   gold: 0,
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
+  spellRewards: [] as { spellId: string }[],
 };
 
 const questStatOptions = [
@@ -96,6 +97,10 @@ const buildChallengeFormFromChallenge = (
 const emptyQuestReward = {
   inventoryItemId: '',
   quantity: 1,
+};
+
+const emptyQuestSpellReward = {
+  spellId: '',
 };
 
 const parsePolygonPoints = (input: string): [number, number][] | null => {
@@ -208,6 +213,7 @@ export const Quests = () => {
   const [pointsOfInterest, setPointsOfInterest] = useState<PointOfInterest[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [spells, setSpells] = useState<Spell[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -266,11 +272,12 @@ export const Quests = () => {
         apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest'),
         apiClient.get<Character[]>('/sonar/characters'),
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
+        apiClient.get<Spell[]>('/sonar/spells'),
       ]);
 
       if (!isMounted) return;
 
-      const [questsResult, poiResult, charactersResult, inventoryResult] = results;
+      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult] = results;
       if (questsResult.status === 'fulfilled') {
         setQuests(questsResult.value);
       } else {
@@ -294,6 +301,12 @@ export const Quests = () => {
         setInventoryItems(inventoryResult.value);
       } else {
         console.error('Failed to load inventory items', inventoryResult.reason);
+      }
+
+      if (spellsResult.status === 'fulfilled') {
+        setSpells(spellsResult.value);
+      } else {
+        console.error('Failed to load spells', spellsResult.reason);
       }
 
       setLoading(false);
@@ -1067,6 +1080,9 @@ export const Quests = () => {
             quantity: Number(reward.quantity) || 0,
           }))
           .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
+        spellRewards: questForm.spellRewards
+          .map((reward) => ({ spellId: reward.spellId.trim() }))
+          .filter((reward) => reward.spellId.length > 0),
       };
       const created = await apiClient.post<Quest>('/sonar/quests', payload);
       setQuests((prev) => [created, ...prev]);
@@ -1097,6 +1113,9 @@ export const Quests = () => {
             quantity: Number(reward.quantity) || 0,
           }))
           .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
+        spellRewards: questForm.spellRewards
+          .map((reward) => ({ spellId: reward.spellId.trim() }))
+          .filter((reward) => reward.spellId.length > 0),
       };
       const updated = await apiClient.patch<Quest>(`/sonar/quests/${selectedQuest.id}`, payload);
       updateQuestState(selectedQuest.id, () => updated);
@@ -1292,6 +1311,9 @@ export const Quests = () => {
         inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
         quantity: reward.quantity ?? 1,
       })),
+      spellRewards: (quest.spellRewards ?? []).map((reward) => ({
+        spellId: reward.spellId ?? '',
+      })),
     });
   };
 
@@ -1311,10 +1333,36 @@ export const Quests = () => {
     }));
   };
 
-  const handleRemoveQuestReward = (index: number) => {
+const handleRemoveQuestReward = (index: number) => {
     setQuestForm((prev) => ({
       ...prev,
       itemRewards: prev.itemRewards.filter((_, rewardIndex) => rewardIndex !== index),
+    }));
+  };
+
+  const handleAddQuestSpellReward = () => {
+    setQuestForm((prev) => ({
+      ...prev,
+      spellRewards: [...prev.spellRewards, { ...emptyQuestSpellReward }],
+    }));
+  };
+
+  const handleUpdateQuestSpellReward = (
+    index: number,
+    updates: Partial<{ spellId: string }>
+  ) => {
+    setQuestForm((prev) => ({
+      ...prev,
+      spellRewards: prev.spellRewards.map((reward, rewardIndex) =>
+        rewardIndex === index ? { ...reward, ...updates } : reward
+      ),
+    }));
+  };
+
+  const handleRemoveQuestSpellReward = (index: number) => {
+    setQuestForm((prev) => ({
+      ...prev,
+      spellRewards: prev.spellRewards.filter((_, rewardIndex) => rewardIndex !== index),
     }));
   };
 
@@ -1859,6 +1907,52 @@ export const Quests = () => {
                 </div>
               )}
             </div>
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-sm font-medium text-gray-700">Spell Rewards</label>
+                <button
+                  type="button"
+                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                  onClick={handleAddQuestSpellReward}
+                >
+                  Add Spell Reward
+                </button>
+              </div>
+              {questForm.spellRewards.length === 0 ? (
+                <div className="mt-2 text-xs text-gray-500">No spell rewards yet.</div>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {questForm.spellRewards.map((reward, index) => (
+                    <div
+                      key={`create-spell-reward-${index}`}
+                      className="grid grid-cols-[1fr_auto] gap-2 items-center"
+                    >
+                      <select
+                        className="block w-full border border-gray-300 rounded-md p-2"
+                        value={reward.spellId}
+                        onChange={(e) =>
+                          handleUpdateQuestSpellReward(index, { spellId: e.target.value })
+                        }
+                      >
+                        <option value="">Select spell</option>
+                        {spells.map((spell) => (
+                          <option key={spell.id} value={spell.id}>
+                            {spell.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                        onClick={() => handleRemoveQuestSpellReward(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <div className="mt-4">
             <button
@@ -2093,6 +2187,52 @@ export const Quests = () => {
                             type="button"
                             className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
                             onClick={() => handleRemoveQuestReward(index)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700">Spell Rewards</label>
+                    <button
+                      type="button"
+                      className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      onClick={handleAddQuestSpellReward}
+                    >
+                      Add Spell Reward
+                    </button>
+                  </div>
+                  {questForm.spellRewards.length === 0 ? (
+                    <div className="mt-2 text-xs text-gray-500">No spell rewards yet.</div>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {questForm.spellRewards.map((reward, index) => (
+                        <div
+                          key={`edit-spell-reward-${index}`}
+                          className="grid grid-cols-[1fr_auto] gap-2 items-center"
+                        >
+                          <select
+                            className="block w-full border border-gray-300 rounded-md p-2"
+                            value={reward.spellId}
+                            onChange={(e) =>
+                              handleUpdateQuestSpellReward(index, { spellId: e.target.value })
+                            }
+                          >
+                            <option value="">Select spell</option>
+                            {spells.map((spell) => (
+                              <option key={spell.id} value={spell.id}>
+                                {spell.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                            onClick={() => handleRemoveQuestSpellReward(index)}
                           >
                             Remove
                           </button>

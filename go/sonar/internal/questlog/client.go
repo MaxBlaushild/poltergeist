@@ -20,23 +20,23 @@ type LatLng struct {
 }
 
 type QuestNodeChallenge struct {
-	ID              uuid.UUID `json:"id"`
-	Tier            int       `json:"tier"`
-	Question        string    `json:"question"`
-	Reward          int       `json:"reward"`
-	InventoryItemID *int      `json:"inventoryItemId"`
+	ID              uuid.UUID                      `json:"id"`
+	Tier            int                            `json:"tier"`
+	Question        string                         `json:"question"`
+	Reward          int                            `json:"reward"`
+	InventoryItemID *int                           `json:"inventoryItemId"`
 	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
-	Difficulty      int       `json:"difficulty"`
-	StatTags        []string  `json:"statTags,omitempty"`
-	Proficiency     *string   `json:"proficiency,omitempty"`
+	Difficulty      int                            `json:"difficulty"`
+	StatTags        []string                       `json:"statTags,omitempty"`
+	Proficiency     *string                        `json:"proficiency,omitempty"`
 }
 
 type QuestNode struct {
-	ID              uuid.UUID                     `json:"id"`
-	OrderIndex      int                           `json:"orderIndex"`
-	PointOfInterest *models.PointOfInterest       `json:"pointOfInterest,omitempty"`
-	Polygon         []LatLng                      `json:"polygon,omitempty"`
-	Challenges      []QuestNodeChallenge          `json:"challenges"`
+	ID              uuid.UUID                      `json:"id"`
+	OrderIndex      int                            `json:"orderIndex"`
+	PointOfInterest *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
+	Polygon         []LatLng                       `json:"polygon,omitempty"`
+	Challenges      []QuestNodeChallenge           `json:"challenges"`
 	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
 }
 
@@ -46,21 +46,27 @@ type QuestItemReward struct {
 	Quantity        int                   `json:"quantity"`
 }
 
+type QuestSpellReward struct {
+	SpellID uuid.UUID     `json:"spellId"`
+	Spell   *models.Spell `json:"spell,omitempty"`
+}
+
 type Quest struct {
-	ID                    uuid.UUID         `json:"id"`
-	Name                  string            `json:"name"`
-	Description           string            `json:"description"`
-	AcceptanceDialogue    []string          `json:"acceptanceDialogue,omitempty"`
-	ImageUrl              string            `json:"imageUrl"`
-	Gold                  int               `json:"gold"`
-	ItemRewards           []QuestItemReward `json:"itemRewards"`
-	QuestGiverCharacterID *uuid.UUID        `json:"questGiverCharacterId,omitempty"`
-	RecurringQuestID      *uuid.UUID        `json:"recurringQuestId,omitempty"`
-	IsAccepted            bool              `json:"isAccepted"`
-	TurnedInAt            *time.Time        `json:"turnedInAt,omitempty"`
-	CompletionCount       int               `json:"completionCount,omitempty"`
-	ReadyToTurnIn         bool              `json:"readyToTurnIn"`
-	CurrentNode           *QuestNode        `json:"currentNode,omitempty"`
+	ID                    uuid.UUID          `json:"id"`
+	Name                  string             `json:"name"`
+	Description           string             `json:"description"`
+	AcceptanceDialogue    []string           `json:"acceptanceDialogue,omitempty"`
+	ImageUrl              string             `json:"imageUrl"`
+	Gold                  int                `json:"gold"`
+	ItemRewards           []QuestItemReward  `json:"itemRewards"`
+	SpellRewards          []QuestSpellReward `json:"spellRewards"`
+	QuestGiverCharacterID *uuid.UUID         `json:"questGiverCharacterId,omitempty"`
+	RecurringQuestID      *uuid.UUID         `json:"recurringQuestId,omitempty"`
+	IsAccepted            bool               `json:"isAccepted"`
+	TurnedInAt            *time.Time         `json:"turnedInAt,omitempty"`
+	CompletionCount       int                `json:"completionCount,omitempty"`
+	ReadyToTurnIn         bool               `json:"readyToTurnIn"`
+	CurrentNode           *QuestNode         `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -151,6 +157,17 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 				Quantity:        reward.Quantity,
 			})
 		}
+		spellRewards := make([]QuestSpellReward, 0, len(quest.SpellRewards))
+		for _, reward := range quest.SpellRewards {
+			var spell *models.Spell
+			if reward.Spell.ID != uuid.Nil {
+				spell = &reward.Spell
+			}
+			spellRewards = append(spellRewards, QuestSpellReward{
+				SpellID: reward.SpellID,
+				Spell:   spell,
+			})
+		}
 
 		seriesID := quest.ID
 		if quest.RecurringQuestID != nil {
@@ -165,6 +182,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			ImageUrl:              quest.ImageURL,
 			Gold:                  quest.Gold,
 			ItemRewards:           itemRewards,
+			SpellRewards:          spellRewards,
 			QuestGiverCharacterID: quest.QuestGiverCharacterID,
 			RecurringQuestID:      &seriesIDCopy,
 			IsAccepted:            accepted,
