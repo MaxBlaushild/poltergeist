@@ -35,6 +35,8 @@ export interface Spell {
   name: string;
   description: string;
   iconUrl: string;
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
   effectText: string;
   schoolOfMagic: string;
   manaCost: number;

@@ -10,6 +10,7 @@ const (
 	CreateProfilePictureTaskType          = "create_profile_picture"
 	GenerateOutfitProfilePictureTaskType  = "generate_outfit_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
+	GenerateSpellIconTaskType             = "generate_spell_icon"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType         = "generate_scenario_image"
@@ -62,6 +63,14 @@ type GenerateInventoryItemImageTaskPayload struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	RarityTier      string `json:"rarityTier"`
+}
+
+type GenerateSpellIconTaskPayload struct {
+	SpellID       uuid.UUID `json:"spellId"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	SchoolOfMagic string    `json:"schoolOfMagic"`
+	EffectText    string    `json:"effectText"`
 }
 
 type GenerateCharacterImageTaskPayload struct {

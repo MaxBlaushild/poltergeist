@@ -205,6 +205,7 @@ export const Spells = () => {
 
   const [loading, setLoading] = useState(true);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [generatingIconSpellId, setGeneratingIconSpellId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -214,9 +215,11 @@ export const Spells = () => {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (suppressLoading = false) => {
     try {
-      setLoading(true);
+      if (!suppressLoading) {
+        setLoading(true);
+      }
       setError(null);
       const response = await apiClient.get<Spell[]>('/sonar/spells');
       setSpells(Array.isArray(response) ? response : []);
@@ -224,13 +227,28 @@ export const Spells = () => {
       console.error('Failed to load spells', err);
       setError('Failed to load spells.');
     } finally {
-      setLoading(false);
+      if (!suppressLoading) {
+        setLoading(false);
+      }
     }
   }, [apiClient]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const hasPendingGeneration = spells.some((spell) =>
+      ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
+    );
+    if (!hasPendingGeneration) return;
+
+    const interval = setInterval(() => {
+      void load(true);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [spells, load]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -352,6 +370,34 @@ export const Spells = () => {
     }
   };
 
+  const handleGenerateIcon = async (spell: Spell) => {
+    try {
+      setGeneratingIconSpellId(spell.id);
+      const updated = await apiClient.post<Spell>(`/sonar/spells/${spell.id}/generate-icon`, {});
+      setSpells((prev) => prev.map((current) => (current.id === spell.id ? updated : current)));
+    } catch (err) {
+      console.error('Failed to generate spell icon', err);
+      alert('Failed to queue spell icon generation.');
+    } finally {
+      setGeneratingIconSpellId(null);
+    }
+  };
+
+  const formatGenerationStatus = (status?: string) => {
+    switch ((status || '').trim()) {
+      case 'queued':
+        return 'Queued';
+      case 'in_progress':
+        return 'In Progress';
+      case 'complete':
+        return 'Complete';
+      case 'failed':
+        return 'Failed';
+      default:
+        return 'None';
+    }
+  };
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto">
@@ -390,6 +436,12 @@ export const Spells = () => {
                   <div>
                     <div className="text-lg font-semibold">{spell.name}</div>
                     <div className="text-sm text-gray-600">{spell.schoolOfMagic} · Mana {spell.manaCost}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
+                    </div>
+                    {spell.imageGenerationStatus === 'failed' && spell.imageGenerationError ? (
+                      <div className="text-xs text-red-600 mt-1">Error: {spell.imageGenerationError}</div>
+                    ) : null}
                   </div>
                   {spell.iconUrl ? (
                     <img src={spell.iconUrl} alt={spell.name} className="w-12 h-12 rounded-md object-cover border" />
@@ -401,6 +453,16 @@ export const Spells = () => {
                 <div className="flex items-center gap-2 mt-4">
                   <button className="qa-btn qa-btn-secondary" onClick={() => openEdit(spell)}>
                     Edit
+                  </button>
+                  <button
+                    className="qa-btn qa-btn-secondary"
+                    onClick={() => handleGenerateIcon(spell)}
+                    disabled={
+                      generatingIconSpellId === spell.id ||
+                      ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
+                    }
+                  >
+                    {generatingIconSpellId === spell.id ? 'Queueing...' : 'Generate Icon'}
                   </button>
                   <button className="qa-btn qa-btn-danger" onClick={() => setDeleteId(spell.id)}>
                     Delete

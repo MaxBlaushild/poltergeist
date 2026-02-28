@@ -1,14 +1,17 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
@@ -122,13 +125,14 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 	}
 
 	return &models.Spell{
-		Name:          name,
-		Description:   strings.TrimSpace(body.Description),
-		IconURL:       strings.TrimSpace(body.IconURL),
-		EffectText:    strings.TrimSpace(body.EffectText),
-		SchoolOfMagic: schoolOfMagic,
-		ManaCost:      body.ManaCost,
-		Effects:       effects,
+		Name:                  name,
+		Description:           strings.TrimSpace(body.Description),
+		IconURL:               strings.TrimSpace(body.IconURL),
+		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
+		EffectText:            strings.TrimSpace(body.EffectText),
+		SchoolOfMagic:         schoolOfMagic,
+		ManaCost:              body.ManaCost,
+		Effects:               effects,
 	}, nil
 }
 
@@ -187,6 +191,13 @@ func (s *server) createSpell(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if spell.IconURL != "" {
+		spell.ImageGenerationStatus = models.SpellImageGenerationStatusComplete
+		clearErr := ""
+		spell.ImageGenerationError = &clearErr
+	} else {
+		spell.ImageGenerationStatus = models.SpellImageGenerationStatusNone
+	}
 
 	if err := s.dbClient.Spell().Create(ctx, spell); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -213,7 +224,8 @@ func (s *server) updateSpell(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
+	existingSpell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
 			return
@@ -235,9 +247,29 @@ func (s *server) updateSpell(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
-		"name":            spell.Name,
-		"description":     spell.Description,
-		"icon_url":        spell.IconURL,
+		"name":        spell.Name,
+		"description": spell.Description,
+		"icon_url":    spell.IconURL,
+		"image_generation_status": func() string {
+			if spell.IconURL != "" {
+				return models.SpellImageGenerationStatusComplete
+			}
+			if existingSpell.ImageGenerationStatus == models.SpellImageGenerationStatusQueued ||
+				existingSpell.ImageGenerationStatus == models.SpellImageGenerationStatusInProgress {
+				return existingSpell.ImageGenerationStatus
+			}
+			return models.SpellImageGenerationStatusNone
+		}(),
+		"image_generation_error": func() interface{} {
+			if spell.IconURL != "" {
+				return ""
+			}
+			if existingSpell.ImageGenerationStatus == models.SpellImageGenerationStatusQueued ||
+				existingSpell.ImageGenerationStatus == models.SpellImageGenerationStatusInProgress {
+				return existingSpell.ImageGenerationError
+			}
+			return ""
+		}(),
 		"effect_text":     spell.EffectText,
 		"school_of_magic": spell.SchoolOfMagic,
 		"mana_cost":       spell.ManaCost,
@@ -281,6 +313,69 @@ func (s *server) deleteSpell(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "spell deleted successfully"})
+}
+
+func (s *server) generateSpellIcon(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	spellID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
+		return
+	}
+
+	spell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
+		"image_generation_status": models.SpellImageGenerationStatusQueued,
+		"image_generation_error":  "",
+	}); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue spell icon generation: " + err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateSpellIconTaskPayload{
+		SpellID:       spell.ID,
+		Name:          spell.Name,
+		Description:   spell.Description,
+		SchoolOfMagic: spell.SchoolOfMagic,
+		EffectText:    spell.EffectText,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateSpellIconTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		_ = s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
+			"image_generation_status": models.SpellImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updatedSpell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, updatedSpell)
 }
 
 func (s *server) getCurrentUserSpells(ctx *gin.Context) {

@@ -25,6 +25,9 @@ func (h *spellHandler) Create(ctx context.Context, spell *models.Spell) error {
 	if spell.Effects == nil {
 		spell.Effects = models.SpellEffects{}
 	}
+	if spell.ImageGenerationStatus == "" {
+		spell.ImageGenerationStatus = models.SpellImageGenerationStatusNone
+	}
 	return h.db.WithContext(ctx).Create(spell).Error
 }
 

@@ -56,18 +56,28 @@ func (s *SpellEffects) Scan(value interface{}) error {
 }
 
 type Spell struct {
-	ID            uuid.UUID    `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	UpdatedAt     time.Time    `json:"updatedAt"`
-	Name          string       `json:"name"`
-	Description   string       `json:"description"`
-	IconURL       string       `json:"iconUrl" gorm:"column:icon_url"`
-	EffectText    string       `json:"effectText" gorm:"column:effect_text"`
-	SchoolOfMagic string       `json:"schoolOfMagic" gorm:"column:school_of_magic"`
-	ManaCost      int          `json:"manaCost" gorm:"column:mana_cost"`
-	Effects       SpellEffects `json:"effects" gorm:"column:effects;type:jsonb"`
+	ID                    uuid.UUID    `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt             time.Time    `json:"createdAt"`
+	UpdatedAt             time.Time    `json:"updatedAt"`
+	Name                  string       `json:"name"`
+	Description           string       `json:"description"`
+	IconURL               string       `json:"iconUrl" gorm:"column:icon_url"`
+	ImageGenerationStatus string       `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string      `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	EffectText            string       `json:"effectText" gorm:"column:effect_text"`
+	SchoolOfMagic         string       `json:"schoolOfMagic" gorm:"column:school_of_magic"`
+	ManaCost              int          `json:"manaCost" gorm:"column:mana_cost"`
+	Effects               SpellEffects `json:"effects" gorm:"column:effects;type:jsonb"`
 }
 
 func (s *Spell) TableName() string {
 	return "spells"
 }
+
+const (
+	SpellImageGenerationStatusNone       = "none"
+	SpellImageGenerationStatusQueued     = "queued"
+	SpellImageGenerationStatusInProgress = "in_progress"
+	SpellImageGenerationStatusComplete   = "complete"
+	SpellImageGenerationStatusFailed     = "failed"
+)
