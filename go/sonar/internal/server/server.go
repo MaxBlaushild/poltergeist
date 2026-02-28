@@ -10693,30 +10693,66 @@ type scenarioRewardItemPayload struct {
 }
 
 type scenarioOptionPayload struct {
-	OptionText       string                      `json:"optionText"`
-	SuccessText      string                      `json:"successText"`
-	FailureText      string                      `json:"failureText"`
-	StatTag          string                      `json:"statTag"`
-	Proficiencies    []string                    `json:"proficiencies"`
-	Difficulty       *int                        `json:"difficulty"`
-	RewardExperience int                         `json:"rewardExperience"`
-	RewardGold       int                         `json:"rewardGold"`
-	ItemRewards      []scenarioRewardItemPayload `json:"itemRewards"`
+	OptionText                string                         `json:"optionText"`
+	SuccessText               string                         `json:"successText"`
+	FailureText               string                         `json:"failureText"`
+	StatTag                   string                         `json:"statTag"`
+	Proficiencies             []string                       `json:"proficiencies"`
+	Difficulty                *int                           `json:"difficulty"`
+	RewardExperience          int                            `json:"rewardExperience"`
+	RewardGold                int                            `json:"rewardGold"`
+	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
+	FailureHealthDrainValue   int                            `json:"failureHealthDrainValue"`
+	FailureManaDrainType      string                         `json:"failureManaDrainType"`
+	FailureManaDrainValue     int                            `json:"failureManaDrainValue"`
+	FailureStatuses           []scenarioFailureStatusPayload `json:"failureStatuses"`
+	SuccessHealthRestoreType  string                         `json:"successHealthRestoreType"`
+	SuccessHealthRestoreValue int                            `json:"successHealthRestoreValue"`
+	SuccessManaRestoreType    string                         `json:"successManaRestoreType"`
+	SuccessManaRestoreValue   int                            `json:"successManaRestoreValue"`
+	SuccessStatuses           []scenarioFailureStatusPayload `json:"successStatuses"`
+	ItemRewards               []scenarioRewardItemPayload    `json:"itemRewards"`
+}
+
+type scenarioFailureStatusPayload struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	Effect          string `json:"effect"`
+	Positive        *bool  `json:"positive"`
+	DurationSeconds int    `json:"durationSeconds"`
+	StrengthMod     int    `json:"strengthMod"`
+	DexterityMod    int    `json:"dexterityMod"`
+	ConstitutionMod int    `json:"constitutionMod"`
+	IntelligenceMod int    `json:"intelligenceMod"`
+	WisdomMod       int    `json:"wisdomMod"`
+	CharismaMod     int    `json:"charismaMod"`
 }
 
 type scenarioUpsertRequest struct {
-	ZoneID           string                      `json:"zoneId"`
-	Latitude         float64                     `json:"latitude"`
-	Longitude        float64                     `json:"longitude"`
-	Prompt           string                      `json:"prompt"`
-	ImageURL         string                      `json:"imageUrl"`
-	ThumbnailURL     string                      `json:"thumbnailUrl"`
-	Difficulty       *int                        `json:"difficulty"`
-	RewardExperience int                         `json:"rewardExperience"`
-	RewardGold       int                         `json:"rewardGold"`
-	OpenEnded        bool                        `json:"openEnded"`
-	Options          []scenarioOptionPayload     `json:"options"`
-	ItemRewards      []scenarioRewardItemPayload `json:"itemRewards"`
+	ZoneID                    string                         `json:"zoneId"`
+	Latitude                  float64                        `json:"latitude"`
+	Longitude                 float64                        `json:"longitude"`
+	Prompt                    string                         `json:"prompt"`
+	ImageURL                  string                         `json:"imageUrl"`
+	ThumbnailURL              string                         `json:"thumbnailUrl"`
+	Difficulty                *int                           `json:"difficulty"`
+	RewardExperience          int                            `json:"rewardExperience"`
+	RewardGold                int                            `json:"rewardGold"`
+	OpenEnded                 bool                           `json:"openEnded"`
+	FailurePenaltyMode        string                         `json:"failurePenaltyMode"`
+	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
+	FailureHealthDrainValue   int                            `json:"failureHealthDrainValue"`
+	FailureManaDrainType      string                         `json:"failureManaDrainType"`
+	FailureManaDrainValue     int                            `json:"failureManaDrainValue"`
+	FailureStatuses           []scenarioFailureStatusPayload `json:"failureStatuses"`
+	SuccessRewardMode         string                         `json:"successRewardMode"`
+	SuccessHealthRestoreType  string                         `json:"successHealthRestoreType"`
+	SuccessHealthRestoreValue int                            `json:"successHealthRestoreValue"`
+	SuccessManaRestoreType    string                         `json:"successManaRestoreType"`
+	SuccessManaRestoreValue   int                            `json:"successManaRestoreValue"`
+	SuccessStatuses           []scenarioFailureStatusPayload `json:"successStatuses"`
+	Options                   []scenarioOptionPayload        `json:"options"`
+	ItemRewards               []scenarioRewardItemPayload    `json:"itemRewards"`
 }
 
 type scenarioGenerationJobRequest struct {
@@ -10737,22 +10773,28 @@ type scenarioPerformRequest struct {
 }
 
 type scenarioPerformResponse struct {
-	Successful       bool                 `json:"successful"`
-	Reason           string               `json:"reason"`
-	OutcomeText      string               `json:"outcomeText"`
-	ScenarioID       uuid.UUID            `json:"scenarioId"`
-	ScenarioOptionID *uuid.UUID           `json:"scenarioOptionId,omitempty"`
-	Roll             int                  `json:"roll"`
-	StatTag          string               `json:"statTag"`
-	StatValue        int                  `json:"statValue"`
-	Proficiencies    []string             `json:"proficiencies"`
-	ProficiencyBonus int                  `json:"proficiencyBonus"`
-	CreativityBonus  int                  `json:"creativityBonus"`
-	Threshold        int                  `json:"threshold"`
-	TotalScore       int                  `json:"totalScore"`
-	RewardExperience int                  `json:"rewardExperience"`
-	RewardGold       int                  `json:"rewardGold"`
-	ItemsAwarded     []models.ItemAwarded `json:"itemsAwarded"`
+	Successful             bool                           `json:"successful"`
+	Reason                 string                         `json:"reason"`
+	OutcomeText            string                         `json:"outcomeText"`
+	ScenarioID             uuid.UUID                      `json:"scenarioId"`
+	ScenarioOptionID       *uuid.UUID                     `json:"scenarioOptionId,omitempty"`
+	Roll                   int                            `json:"roll"`
+	StatTag                string                         `json:"statTag"`
+	StatValue              int                            `json:"statValue"`
+	Proficiencies          []string                       `json:"proficiencies"`
+	ProficiencyBonus       int                            `json:"proficiencyBonus"`
+	CreativityBonus        int                            `json:"creativityBonus"`
+	Threshold              int                            `json:"threshold"`
+	TotalScore             int                            `json:"totalScore"`
+	FailureHealthDrained   int                            `json:"failureHealthDrained"`
+	FailureManaDrained     int                            `json:"failureManaDrained"`
+	FailureStatusesApplied []scenarioAppliedFailureStatus `json:"failureStatusesApplied"`
+	SuccessHealthRestored  int                            `json:"successHealthRestored"`
+	SuccessManaRestored    int                            `json:"successManaRestored"`
+	SuccessStatusesApplied []scenarioAppliedFailureStatus `json:"successStatusesApplied"`
+	RewardExperience       int                            `json:"rewardExperience"`
+	RewardGold             int                            `json:"rewardGold"`
+	ItemsAwarded           []models.ItemAwarded           `json:"itemsAwarded"`
 }
 
 type scenarioFreeformAssessment struct {
@@ -10802,10 +10844,266 @@ type scenarioRewardItem struct {
 	Quantity        int
 }
 
+type scenarioFailurePenalty struct {
+	HealthDrainType  models.ScenarioFailureDrainType
+	HealthDrainValue int
+	ManaDrainType    models.ScenarioFailureDrainType
+	ManaDrainValue   int
+	Statuses         models.ScenarioFailureStatusTemplates
+}
+
+type scenarioSuccessReward struct {
+	HealthRestoreType  models.ScenarioFailureDrainType
+	HealthRestoreValue int
+	ManaRestoreType    models.ScenarioFailureDrainType
+	ManaRestoreValue   int
+	Statuses           models.ScenarioFailureStatusTemplates
+}
+
+type scenarioAppliedFailureStatus struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	Effect          string `json:"effect"`
+	Positive        bool   `json:"positive"`
+	DurationSeconds int    `json:"durationSeconds"`
+}
+
+type scenarioAppliedFailurePenalty struct {
+	HealthDrained int
+	ManaDrained   int
+	Statuses      []scenarioAppliedFailureStatus
+}
+
+type scenarioAppliedSuccessReward struct {
+	HealthRestored int
+	ManaRestored   int
+	Statuses       []scenarioAppliedFailureStatus
+}
+
 func normalizeScenarioStatTag(raw string) (string, bool) {
 	tag := strings.ToLower(strings.TrimSpace(raw))
 	_, ok := scenarioValidStatTags[tag]
 	return tag, ok
+}
+
+func normalizeScenarioFailurePenaltyMode(raw string, openEnded bool) (models.ScenarioFailurePenaltyMode, error) {
+	if openEnded {
+		return models.ScenarioFailurePenaltyModeShared, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(models.ScenarioFailurePenaltyModeShared):
+		return models.ScenarioFailurePenaltyModeShared, nil
+	case string(models.ScenarioFailurePenaltyModeIndividual):
+		return models.ScenarioFailurePenaltyModeIndividual, nil
+	default:
+		return "", fmt.Errorf("invalid failurePenaltyMode")
+	}
+}
+
+func normalizeScenarioSuccessRewardMode(raw string, openEnded bool) (models.ScenarioSuccessRewardMode, error) {
+	if openEnded {
+		return models.ScenarioSuccessRewardModeShared, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(models.ScenarioSuccessRewardModeShared):
+		return models.ScenarioSuccessRewardModeShared, nil
+	case string(models.ScenarioSuccessRewardModeIndividual):
+		return models.ScenarioSuccessRewardModeIndividual, nil
+	default:
+		return "", fmt.Errorf("invalid successRewardMode")
+	}
+}
+
+func normalizeScenarioFailureDrainType(raw string) (models.ScenarioFailureDrainType, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", string(models.ScenarioFailureDrainTypeNone):
+		return models.ScenarioFailureDrainTypeNone, nil
+	case string(models.ScenarioFailureDrainTypeFlat):
+		return models.ScenarioFailureDrainTypeFlat, nil
+	case string(models.ScenarioFailureDrainTypePercent):
+		return models.ScenarioFailureDrainTypePercent, nil
+	default:
+		return "", fmt.Errorf("invalid failure drain type")
+	}
+}
+
+func normalizeScenarioFailureDrainValue(
+	drainType models.ScenarioFailureDrainType,
+	value int,
+	fieldName string,
+) (int, error) {
+	if drainType == models.ScenarioFailureDrainTypeNone {
+		return 0, nil
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("%s must be zero or greater", fieldName)
+	}
+	if drainType == models.ScenarioFailureDrainTypePercent && value > 100 {
+		return 0, fmt.Errorf("%s percent must be 100 or less", fieldName)
+	}
+	return value, nil
+}
+
+func parseScenarioFailureStatusTemplates(
+	input []scenarioFailureStatusPayload,
+	fieldName string,
+) (models.ScenarioFailureStatusTemplates, error) {
+	templates := make(models.ScenarioFailureStatusTemplates, 0, len(input))
+	for idx, status := range input {
+		name := strings.TrimSpace(status.Name)
+		if name == "" {
+			return nil, fmt.Errorf("%s[%d].name is required", fieldName, idx)
+		}
+		if status.DurationSeconds <= 0 {
+			return nil, fmt.Errorf("%s[%d].durationSeconds must be > 0", fieldName, idx)
+		}
+		positive := true
+		if status.Positive != nil {
+			positive = *status.Positive
+		}
+		templates = append(templates, models.ScenarioFailureStatusTemplate{
+			Name:            name,
+			Description:     strings.TrimSpace(status.Description),
+			Effect:          strings.TrimSpace(status.Effect),
+			Positive:        positive,
+			DurationSeconds: status.DurationSeconds,
+			StrengthMod:     status.StrengthMod,
+			DexterityMod:    status.DexterityMod,
+			ConstitutionMod: status.ConstitutionMod,
+			IntelligenceMod: status.IntelligenceMod,
+			WisdomMod:       status.WisdomMod,
+			CharismaMod:     status.CharismaMod,
+		})
+	}
+	return templates, nil
+}
+
+func scenarioFailurePenaltyFromScenario(scenario *models.Scenario) scenarioFailurePenalty {
+	if scenario == nil {
+		return scenarioFailurePenalty{
+			HealthDrainType: models.ScenarioFailureDrainTypeNone,
+			ManaDrainType:   models.ScenarioFailureDrainTypeNone,
+			Statuses:        models.ScenarioFailureStatusTemplates{},
+		}
+	}
+	statuses := scenario.FailureStatuses
+	if statuses == nil {
+		statuses = models.ScenarioFailureStatusTemplates{}
+	}
+	return scenarioFailurePenalty{
+		HealthDrainType:  scenario.FailureHealthDrainType,
+		HealthDrainValue: scenario.FailureHealthDrainValue,
+		ManaDrainType:    scenario.FailureManaDrainType,
+		ManaDrainValue:   scenario.FailureManaDrainValue,
+		Statuses:         statuses,
+	}
+}
+
+func scenarioFailurePenaltyFromOption(option *models.ScenarioOption) scenarioFailurePenalty {
+	if option == nil {
+		return scenarioFailurePenalty{
+			HealthDrainType: models.ScenarioFailureDrainTypeNone,
+			ManaDrainType:   models.ScenarioFailureDrainTypeNone,
+			Statuses:        models.ScenarioFailureStatusTemplates{},
+		}
+	}
+	statuses := option.FailureStatuses
+	if statuses == nil {
+		statuses = models.ScenarioFailureStatusTemplates{}
+	}
+	return scenarioFailurePenalty{
+		HealthDrainType:  option.FailureHealthDrainType,
+		HealthDrainValue: option.FailureHealthDrainValue,
+		ManaDrainType:    option.FailureManaDrainType,
+		ManaDrainValue:   option.FailureManaDrainValue,
+		Statuses:         statuses,
+	}
+}
+
+func scenarioSuccessRewardFromScenario(scenario *models.Scenario) scenarioSuccessReward {
+	if scenario == nil {
+		return scenarioSuccessReward{
+			HealthRestoreType: models.ScenarioFailureDrainTypeNone,
+			ManaRestoreType:   models.ScenarioFailureDrainTypeNone,
+			Statuses:          models.ScenarioFailureStatusTemplates{},
+		}
+	}
+	statuses := scenario.SuccessStatuses
+	if statuses == nil {
+		statuses = models.ScenarioFailureStatusTemplates{}
+	}
+	return scenarioSuccessReward{
+		HealthRestoreType:  scenario.SuccessHealthRestoreType,
+		HealthRestoreValue: scenario.SuccessHealthRestoreValue,
+		ManaRestoreType:    scenario.SuccessManaRestoreType,
+		ManaRestoreValue:   scenario.SuccessManaRestoreValue,
+		Statuses:           statuses,
+	}
+}
+
+func scenarioSuccessRewardFromOption(option *models.ScenarioOption) scenarioSuccessReward {
+	if option == nil {
+		return scenarioSuccessReward{
+			HealthRestoreType: models.ScenarioFailureDrainTypeNone,
+			ManaRestoreType:   models.ScenarioFailureDrainTypeNone,
+			Statuses:          models.ScenarioFailureStatusTemplates{},
+		}
+	}
+	statuses := option.SuccessStatuses
+	if statuses == nil {
+		statuses = models.ScenarioFailureStatusTemplates{}
+	}
+	return scenarioSuccessReward{
+		HealthRestoreType:  option.SuccessHealthRestoreType,
+		HealthRestoreValue: option.SuccessHealthRestoreValue,
+		ManaRestoreType:    option.SuccessManaRestoreType,
+		ManaRestoreValue:   option.SuccessManaRestoreValue,
+		Statuses:           statuses,
+	}
+}
+
+func resolveScenarioFailurePenalty(scenario *models.Scenario, selectedOption *models.ScenarioOption) scenarioFailurePenalty {
+	if scenario == nil {
+		return scenarioFailurePenaltyFromScenario(nil)
+	}
+	if scenario.OpenEnded {
+		return scenarioFailurePenaltyFromScenario(scenario)
+	}
+	if scenario.FailurePenaltyMode == models.ScenarioFailurePenaltyModeIndividual {
+		return scenarioFailurePenaltyFromOption(selectedOption)
+	}
+	return scenarioFailurePenaltyFromScenario(scenario)
+}
+
+func resolveScenarioSuccessReward(scenario *models.Scenario, selectedOption *models.ScenarioOption) scenarioSuccessReward {
+	if scenario == nil {
+		return scenarioSuccessRewardFromScenario(nil)
+	}
+	if scenario.OpenEnded {
+		return scenarioSuccessRewardFromScenario(scenario)
+	}
+	if scenario.SuccessRewardMode == models.ScenarioSuccessRewardModeIndividual {
+		return scenarioSuccessRewardFromOption(selectedOption)
+	}
+	return scenarioSuccessRewardFromScenario(scenario)
+}
+
+func scenarioDrainAmount(drainType models.ScenarioFailureDrainType, value int, maxValue int) int {
+	if value <= 0 || maxValue <= 0 {
+		return 0
+	}
+	switch drainType {
+	case models.ScenarioFailureDrainTypeFlat:
+		return value
+	case models.ScenarioFailureDrainTypePercent:
+		drain := (maxValue * value) / 100
+		if drain == 0 {
+			drain = 1
+		}
+		return drain
+	default:
+		return 0
+	}
 }
 
 func normalizeScenarioProficiencies(input []string) []string {
@@ -10976,6 +11274,180 @@ func (s *server) getScenarioStatAndProficiencyBonuses(ctx context.Context, userI
 	return statValue, proficiencyBonus, nil
 }
 
+func (s *server) getScenarioResourceState(
+	ctx context.Context,
+	userID uuid.UUID,
+) (*models.UserCharacterStats, int, int, int, int, error) {
+	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, 0, 0, err
+	}
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, 0, 0, err
+	}
+	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, 0, 0, err
+	}
+	totalBonuses := equipmentBonuses.Add(statusBonuses)
+	maxHealth, maxMana, currentHealth, currentMana := deriveCharacterResources(
+		stats,
+		totalBonuses,
+	)
+	return stats, maxHealth, maxMana, currentHealth, currentMana, nil
+}
+
+func (s *server) applyScenarioFailurePenalty(
+	ctx context.Context,
+	userID uuid.UUID,
+	penalty scenarioFailurePenalty,
+) (scenarioAppliedFailurePenalty, error) {
+	applied := scenarioAppliedFailurePenalty{
+		Statuses: []scenarioAppliedFailureStatus{},
+	}
+	if penalty.HealthDrainType == "" {
+		penalty.HealthDrainType = models.ScenarioFailureDrainTypeNone
+	}
+	if penalty.ManaDrainType == "" {
+		penalty.ManaDrainType = models.ScenarioFailureDrainTypeNone
+	}
+
+	healthDrain := 0
+	manaDrain := 0
+	if penalty.HealthDrainType != models.ScenarioFailureDrainTypeNone || penalty.ManaDrainType != models.ScenarioFailureDrainTypeNone {
+		_, maxHealth, maxMana, currentHealth, currentMana, err := s.getScenarioResourceState(ctx, userID)
+		if err != nil {
+			return applied, err
+		}
+		healthDrain = min(
+			scenarioDrainAmount(penalty.HealthDrainType, penalty.HealthDrainValue, maxHealth),
+			currentHealth,
+		)
+		manaDrain = min(
+			scenarioDrainAmount(penalty.ManaDrainType, penalty.ManaDrainValue, maxMana),
+			currentMana,
+		)
+	}
+	if healthDrain > 0 || manaDrain > 0 {
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, healthDrain, manaDrain); err != nil {
+			return applied, err
+		}
+	}
+	applied.HealthDrained = healthDrain
+	applied.ManaDrained = manaDrain
+
+	now := time.Now()
+	for _, statusTemplate := range penalty.Statuses {
+		name := strings.TrimSpace(statusTemplate.Name)
+		if name == "" || statusTemplate.DurationSeconds <= 0 {
+			continue
+		}
+		status := &models.UserStatus{
+			UserID:          userID,
+			Name:            name,
+			Description:     strings.TrimSpace(statusTemplate.Description),
+			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			Positive:        statusTemplate.Positive,
+			EffectType:      models.UserStatusEffectTypeStatModifier,
+			StrengthMod:     statusTemplate.StrengthMod,
+			DexterityMod:    statusTemplate.DexterityMod,
+			ConstitutionMod: statusTemplate.ConstitutionMod,
+			IntelligenceMod: statusTemplate.IntelligenceMod,
+			WisdomMod:       statusTemplate.WisdomMod,
+			CharismaMod:     statusTemplate.CharismaMod,
+			StartedAt:       now,
+			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+		}
+		if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
+			return applied, err
+		}
+		applied.Statuses = append(applied.Statuses, scenarioAppliedFailureStatus{
+			Name:            name,
+			Description:     strings.TrimSpace(statusTemplate.Description),
+			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			Positive:        statusTemplate.Positive,
+			DurationSeconds: statusTemplate.DurationSeconds,
+		})
+	}
+	return applied, nil
+}
+
+func (s *server) applyScenarioSuccessReward(
+	ctx context.Context,
+	userID uuid.UUID,
+	reward scenarioSuccessReward,
+) (scenarioAppliedSuccessReward, error) {
+	applied := scenarioAppliedSuccessReward{
+		Statuses: []scenarioAppliedFailureStatus{},
+	}
+	if reward.HealthRestoreType == "" {
+		reward.HealthRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+	if reward.ManaRestoreType == "" {
+		reward.ManaRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+
+	healthRestore := 0
+	manaRestore := 0
+	if reward.HealthRestoreType != models.ScenarioFailureDrainTypeNone || reward.ManaRestoreType != models.ScenarioFailureDrainTypeNone {
+		stats, maxHealth, maxMana, _, _, err := s.getScenarioResourceState(ctx, userID)
+		if err != nil {
+			return applied, err
+		}
+		healthRestore = min(
+			scenarioDrainAmount(reward.HealthRestoreType, reward.HealthRestoreValue, maxHealth),
+			stats.HealthDeficit,
+		)
+		manaRestore = min(
+			scenarioDrainAmount(reward.ManaRestoreType, reward.ManaRestoreValue, maxMana),
+			stats.ManaDeficit,
+		)
+	}
+	if healthRestore > 0 || manaRestore > 0 {
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -healthRestore, -manaRestore); err != nil {
+			return applied, err
+		}
+	}
+	applied.HealthRestored = healthRestore
+	applied.ManaRestored = manaRestore
+
+	now := time.Now()
+	for _, statusTemplate := range reward.Statuses {
+		name := strings.TrimSpace(statusTemplate.Name)
+		if name == "" || statusTemplate.DurationSeconds <= 0 {
+			continue
+		}
+		status := &models.UserStatus{
+			UserID:          userID,
+			Name:            name,
+			Description:     strings.TrimSpace(statusTemplate.Description),
+			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			Positive:        statusTemplate.Positive,
+			EffectType:      models.UserStatusEffectTypeStatModifier,
+			StrengthMod:     statusTemplate.StrengthMod,
+			DexterityMod:    statusTemplate.DexterityMod,
+			ConstitutionMod: statusTemplate.ConstitutionMod,
+			IntelligenceMod: statusTemplate.IntelligenceMod,
+			WisdomMod:       statusTemplate.WisdomMod,
+			CharismaMod:     statusTemplate.CharismaMod,
+			StartedAt:       now,
+			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+		}
+		if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
+			return applied, err
+		}
+		applied.Statuses = append(applied.Statuses, scenarioAppliedFailureStatus{
+			Name:            name,
+			Description:     strings.TrimSpace(statusTemplate.Description),
+			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			Positive:        statusTemplate.Positive,
+			DurationSeconds: statusTemplate.DurationSeconds,
+		})
+	}
+	return applied, nil
+}
+
 func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
@@ -11007,18 +11479,94 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 	if !body.OpenEnded && (body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0) {
 		return nil, nil, nil, fmt.Errorf("scenario-level rewards are only for open-ended scenarios")
 	}
+	failurePenaltyMode, err := normalizeScenarioFailurePenaltyMode(body.FailurePenaltyMode, body.OpenEnded)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	successRewardMode, err := normalizeScenarioSuccessRewardMode(body.SuccessRewardMode, body.OpenEnded)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	failureHealthDrainType, err := normalizeScenarioFailureDrainType(body.FailureHealthDrainType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid failureHealthDrainType")
+	}
+	failureHealthDrainValue, err := normalizeScenarioFailureDrainValue(
+		failureHealthDrainType,
+		body.FailureHealthDrainValue,
+		"failureHealthDrainValue",
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	failureManaDrainType, err := normalizeScenarioFailureDrainType(body.FailureManaDrainType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid failureManaDrainType")
+	}
+	failureManaDrainValue, err := normalizeScenarioFailureDrainValue(
+		failureManaDrainType,
+		body.FailureManaDrainValue,
+		"failureManaDrainValue",
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	failureStatuses, err := parseScenarioFailureStatusTemplates(body.FailureStatuses, "failureStatuses")
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	successHealthRestoreType, err := normalizeScenarioFailureDrainType(body.SuccessHealthRestoreType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid successHealthRestoreType")
+	}
+	successHealthRestoreValue, err := normalizeScenarioFailureDrainValue(
+		successHealthRestoreType,
+		body.SuccessHealthRestoreValue,
+		"successHealthRestoreValue",
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	successManaRestoreType, err := normalizeScenarioFailureDrainType(body.SuccessManaRestoreType)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid successManaRestoreType")
+	}
+	successManaRestoreValue, err := normalizeScenarioFailureDrainValue(
+		successManaRestoreType,
+		body.SuccessManaRestoreValue,
+		"successManaRestoreValue",
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	successStatuses, err := parseScenarioFailureStatusTemplates(body.SuccessStatuses, "successStatuses")
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	scenario := &models.Scenario{
-		ZoneID:           zoneID,
-		Latitude:         body.Latitude,
-		Longitude:        body.Longitude,
-		Prompt:           strings.TrimSpace(body.Prompt),
-		ImageURL:         strings.TrimSpace(body.ImageURL),
-		ThumbnailURL:     thumbnailURL,
-		Difficulty:       difficulty,
-		RewardExperience: body.RewardExperience,
-		RewardGold:       body.RewardGold,
-		OpenEnded:        body.OpenEnded,
+		ZoneID:                    zoneID,
+		Latitude:                  body.Latitude,
+		Longitude:                 body.Longitude,
+		Prompt:                    strings.TrimSpace(body.Prompt),
+		ImageURL:                  strings.TrimSpace(body.ImageURL),
+		ThumbnailURL:              thumbnailURL,
+		Difficulty:                difficulty,
+		RewardExperience:          body.RewardExperience,
+		RewardGold:                body.RewardGold,
+		OpenEnded:                 body.OpenEnded,
+		FailurePenaltyMode:        failurePenaltyMode,
+		FailureHealthDrainType:    failureHealthDrainType,
+		FailureHealthDrainValue:   failureHealthDrainValue,
+		FailureManaDrainType:      failureManaDrainType,
+		FailureManaDrainValue:     failureManaDrainValue,
+		FailureStatuses:           failureStatuses,
+		SuccessRewardMode:         successRewardMode,
+		SuccessHealthRestoreType:  successHealthRestoreType,
+		SuccessHealthRestoreValue: successHealthRestoreValue,
+		SuccessManaRestoreType:    successManaRestoreType,
+		SuccessManaRestoreValue:   successManaRestoreValue,
+		SuccessStatuses:           successStatuses,
 	}
 
 	options := []models.ScenarioOption{}
@@ -11042,6 +11590,68 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 		if optionPayload.RewardExperience < 0 || optionPayload.RewardGold < 0 {
 			return nil, nil, nil, fmt.Errorf("option reward values must be zero or greater")
 		}
+		optionFailureHealthDrainType, err := normalizeScenarioFailureDrainType(optionPayload.FailureHealthDrainType)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid option failureHealthDrainType")
+		}
+		optionFailureHealthDrainValue, err := normalizeScenarioFailureDrainValue(
+			optionFailureHealthDrainType,
+			optionPayload.FailureHealthDrainValue,
+			"option failureHealthDrainValue",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		optionFailureManaDrainType, err := normalizeScenarioFailureDrainType(optionPayload.FailureManaDrainType)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid option failureManaDrainType")
+		}
+		optionFailureManaDrainValue, err := normalizeScenarioFailureDrainValue(
+			optionFailureManaDrainType,
+			optionPayload.FailureManaDrainValue,
+			"option failureManaDrainValue",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		optionFailureStatuses, err := parseScenarioFailureStatusTemplates(
+			optionPayload.FailureStatuses,
+			"option failureStatuses",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		optionSuccessHealthRestoreType, err := normalizeScenarioFailureDrainType(optionPayload.SuccessHealthRestoreType)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid option successHealthRestoreType")
+		}
+		optionSuccessHealthRestoreValue, err := normalizeScenarioFailureDrainValue(
+			optionSuccessHealthRestoreType,
+			optionPayload.SuccessHealthRestoreValue,
+			"option successHealthRestoreValue",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		optionSuccessManaRestoreType, err := normalizeScenarioFailureDrainType(optionPayload.SuccessManaRestoreType)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid option successManaRestoreType")
+		}
+		optionSuccessManaRestoreValue, err := normalizeScenarioFailureDrainValue(
+			optionSuccessManaRestoreType,
+			optionPayload.SuccessManaRestoreValue,
+			"option successManaRestoreValue",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		optionSuccessStatuses, err := parseScenarioFailureStatusTemplates(
+			optionPayload.SuccessStatuses,
+			"option successStatuses",
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
 		var optionDifficulty *int
 		if optionPayload.Difficulty != nil {
 			if *optionPayload.Difficulty < 0 {
@@ -11063,15 +11673,25 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 		}
 
 		options = append(options, models.ScenarioOption{
-			OptionText:       optionText,
-			SuccessText:      successText,
-			FailureText:      failureText,
-			StatTag:          statTag,
-			Proficiencies:    models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
-			Difficulty:       optionDifficulty,
-			RewardExperience: optionPayload.RewardExperience,
-			RewardGold:       optionPayload.RewardGold,
-			ItemRewards:      itemRewards,
+			OptionText:                optionText,
+			SuccessText:               successText,
+			FailureText:               failureText,
+			StatTag:                   statTag,
+			Proficiencies:             models.StringArray(normalizeScenarioProficiencies(optionPayload.Proficiencies)),
+			Difficulty:                optionDifficulty,
+			RewardExperience:          optionPayload.RewardExperience,
+			RewardGold:                optionPayload.RewardGold,
+			FailureHealthDrainType:    optionFailureHealthDrainType,
+			FailureHealthDrainValue:   optionFailureHealthDrainValue,
+			FailureManaDrainType:      optionFailureManaDrainType,
+			FailureManaDrainValue:     optionFailureManaDrainValue,
+			FailureStatuses:           optionFailureStatuses,
+			SuccessHealthRestoreType:  optionSuccessHealthRestoreType,
+			SuccessHealthRestoreValue: optionSuccessHealthRestoreValue,
+			SuccessManaRestoreType:    optionSuccessManaRestoreType,
+			SuccessManaRestoreValue:   optionSuccessManaRestoreValue,
+			SuccessStatuses:           optionSuccessStatuses,
+			ItemRewards:               itemRewards,
 		})
 	}
 
@@ -11499,6 +12119,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 	openEndedSuccessText := ""
 	openEndedFailureText := ""
 	var scenarioOptionID *uuid.UUID
+	var selectedOption *models.ScenarioOption
 	var freeformResponse *string
 
 	if scenario.OpenEnded {
@@ -11552,6 +12173,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 			outcomeText = successCandidate
 		}
 		scenarioOptionID = requestBody.ScenarioOptionID
+		selectedOption = option
 	}
 
 	if threshold < 0 {
@@ -11568,8 +12190,20 @@ func (s *server) performScenario(ctx *gin.Context) {
 	success := totalScore >= threshold
 
 	itemsAwarded := []models.ItemAwarded{}
+	appliedFailurePenalty := scenarioAppliedFailurePenalty{
+		Statuses: []scenarioAppliedFailureStatus{},
+	}
+	appliedSuccessReward := scenarioAppliedSuccessReward{
+		Statuses: []scenarioAppliedFailureStatus{},
+	}
 	if success {
 		itemsAwarded, err = s.awardScenarioRewards(ctx, user.ID, rewardExperience, rewardGold, rewardItems, proficiencies)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		successReward := resolveScenarioSuccessReward(scenario, selectedOption)
+		appliedSuccessReward, err = s.applyScenarioSuccessReward(ctx, user.ID, successReward)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -11605,6 +12239,12 @@ func (s *server) performScenario(ctx *gin.Context) {
 				outcomeText = "The attempt falls short."
 			}
 		}
+		penalty := resolveScenarioFailurePenalty(scenario, selectedOption)
+		appliedFailurePenalty, err = s.applyScenarioFailurePenalty(ctx, user.ID, penalty)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if success && outcomeText == "" {
 		outcomeText = "Success. Your plan holds."
@@ -11634,21 +12274,27 @@ func (s *server) performScenario(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, scenarioPerformResponse{
-		Successful:       success,
-		Reason:           reason,
-		OutcomeText:      outcomeText,
-		ScenarioID:       scenario.ID,
-		ScenarioOptionID: scenarioOptionID,
-		Roll:             roll,
-		StatTag:          statTag,
-		StatValue:        statValue,
-		Proficiencies:    proficiencies,
-		ProficiencyBonus: proficiencyBonus,
-		CreativityBonus:  creativityBonus,
-		Threshold:        threshold,
-		TotalScore:       totalScore,
-		RewardExperience: rewardExperience,
-		RewardGold:       rewardGold,
-		ItemsAwarded:     itemsAwarded,
+		Successful:             success,
+		Reason:                 reason,
+		OutcomeText:            outcomeText,
+		ScenarioID:             scenario.ID,
+		ScenarioOptionID:       scenarioOptionID,
+		Roll:                   roll,
+		StatTag:                statTag,
+		StatValue:              statValue,
+		Proficiencies:          proficiencies,
+		ProficiencyBonus:       proficiencyBonus,
+		CreativityBonus:        creativityBonus,
+		Threshold:              threshold,
+		TotalScore:             totalScore,
+		FailureHealthDrained:   appliedFailurePenalty.HealthDrained,
+		FailureManaDrained:     appliedFailurePenalty.ManaDrained,
+		FailureStatusesApplied: appliedFailurePenalty.Statuses,
+		SuccessHealthRestored:  appliedSuccessReward.HealthRestored,
+		SuccessManaRestored:    appliedSuccessReward.ManaRestored,
+		SuccessStatusesApplied: appliedSuccessReward.Statuses,
+		RewardExperience:       rewardExperience,
+		RewardGold:             rewardGold,
+		ItemsAwarded:           itemsAwarded,
 	})
 }

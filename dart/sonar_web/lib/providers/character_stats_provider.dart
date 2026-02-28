@@ -80,10 +80,10 @@ class CharacterStatsProvider with ChangeNotifier {
     _syncKnownLevelUps();
   }
 
-  Future<void> refresh({bool force = false}) async {
+  Future<void> refresh({bool force = false, bool silent = false}) async {
     if (_refreshing || _userId == null) return;
     _refreshing = true;
-    if (!_loading) {
+    if (!silent && !_loading) {
       _loading = true;
       notifyListeners();
     }
@@ -92,11 +92,18 @@ class CharacterStatsProvider with ChangeNotifier {
       final stats = await _service.getStats();
       if (stats != null) {
         _stats = stats;
+        if (silent) {
+          notifyListeners();
+        }
       }
     } finally {
-      _loading = false;
+      if (!silent) {
+        _loading = false;
+      }
       _refreshing = false;
-      notifyListeners();
+      if (!silent) {
+        notifyListeners();
+      }
     }
   }
 

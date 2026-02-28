@@ -14,6 +14,110 @@ type scenarioHandle struct {
 	db *gorm.DB
 }
 
+func normalizeScenarioFailurePenaltyDefaults(scenario *models.Scenario) {
+	if scenario == nil {
+		return
+	}
+	if scenario.FailurePenaltyMode == "" {
+		scenario.FailurePenaltyMode = models.ScenarioFailurePenaltyModeShared
+	}
+	if scenario.FailureHealthDrainType == "" {
+		scenario.FailureHealthDrainType = models.ScenarioFailureDrainTypeNone
+	}
+	if scenario.FailureManaDrainType == "" {
+		scenario.FailureManaDrainType = models.ScenarioFailureDrainTypeNone
+	}
+	if scenario.FailureHealthDrainType == models.ScenarioFailureDrainTypeNone {
+		scenario.FailureHealthDrainValue = 0
+	}
+	if scenario.FailureManaDrainType == models.ScenarioFailureDrainTypeNone {
+		scenario.FailureManaDrainValue = 0
+	}
+	if scenario.FailureHealthDrainValue < 0 {
+		scenario.FailureHealthDrainValue = 0
+	}
+	if scenario.FailureManaDrainValue < 0 {
+		scenario.FailureManaDrainValue = 0
+	}
+	if scenario.FailureStatuses == nil {
+		scenario.FailureStatuses = models.ScenarioFailureStatusTemplates{}
+	}
+
+	if scenario.SuccessRewardMode == "" {
+		scenario.SuccessRewardMode = models.ScenarioSuccessRewardModeShared
+	}
+	if scenario.SuccessHealthRestoreType == "" {
+		scenario.SuccessHealthRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+	if scenario.SuccessManaRestoreType == "" {
+		scenario.SuccessManaRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+	if scenario.SuccessHealthRestoreType == models.ScenarioFailureDrainTypeNone {
+		scenario.SuccessHealthRestoreValue = 0
+	}
+	if scenario.SuccessManaRestoreType == models.ScenarioFailureDrainTypeNone {
+		scenario.SuccessManaRestoreValue = 0
+	}
+	if scenario.SuccessHealthRestoreValue < 0 {
+		scenario.SuccessHealthRestoreValue = 0
+	}
+	if scenario.SuccessManaRestoreValue < 0 {
+		scenario.SuccessManaRestoreValue = 0
+	}
+	if scenario.SuccessStatuses == nil {
+		scenario.SuccessStatuses = models.ScenarioFailureStatusTemplates{}
+	}
+}
+
+func normalizeScenarioOptionFailurePenaltyDefaults(option *models.ScenarioOption) {
+	if option == nil {
+		return
+	}
+	if option.FailureHealthDrainType == "" {
+		option.FailureHealthDrainType = models.ScenarioFailureDrainTypeNone
+	}
+	if option.FailureManaDrainType == "" {
+		option.FailureManaDrainType = models.ScenarioFailureDrainTypeNone
+	}
+	if option.FailureHealthDrainType == models.ScenarioFailureDrainTypeNone {
+		option.FailureHealthDrainValue = 0
+	}
+	if option.FailureManaDrainType == models.ScenarioFailureDrainTypeNone {
+		option.FailureManaDrainValue = 0
+	}
+	if option.FailureHealthDrainValue < 0 {
+		option.FailureHealthDrainValue = 0
+	}
+	if option.FailureManaDrainValue < 0 {
+		option.FailureManaDrainValue = 0
+	}
+	if option.FailureStatuses == nil {
+		option.FailureStatuses = models.ScenarioFailureStatusTemplates{}
+	}
+
+	if option.SuccessHealthRestoreType == "" {
+		option.SuccessHealthRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+	if option.SuccessManaRestoreType == "" {
+		option.SuccessManaRestoreType = models.ScenarioFailureDrainTypeNone
+	}
+	if option.SuccessHealthRestoreType == models.ScenarioFailureDrainTypeNone {
+		option.SuccessHealthRestoreValue = 0
+	}
+	if option.SuccessManaRestoreType == models.ScenarioFailureDrainTypeNone {
+		option.SuccessManaRestoreValue = 0
+	}
+	if option.SuccessHealthRestoreValue < 0 {
+		option.SuccessHealthRestoreValue = 0
+	}
+	if option.SuccessManaRestoreValue < 0 {
+		option.SuccessManaRestoreValue = 0
+	}
+	if option.SuccessStatuses == nil {
+		option.SuccessStatuses = models.ScenarioFailureStatusTemplates{}
+	}
+}
+
 func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
@@ -28,6 +132,7 @@ func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) 
 	scenario.ID = uuid.New()
 	scenario.CreatedAt = time.Now()
 	scenario.UpdatedAt = time.Now()
+	normalizeScenarioFailurePenaltyDefaults(scenario)
 	if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
 		return err
 	}
@@ -63,23 +168,36 @@ func (h *scenarioHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]
 func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	normalizeScenarioFailurePenaltyDefaults(updates)
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
 	}
 
 	payload := map[string]interface{}{
-		"zone_id":           updates.ZoneID,
-		"latitude":          updates.Latitude,
-		"longitude":         updates.Longitude,
-		"geometry":          updates.Geometry,
-		"prompt":            updates.Prompt,
-		"image_url":         updates.ImageURL,
-		"difficulty":        updates.Difficulty,
-		"reward_experience": updates.RewardExperience,
-		"reward_gold":       updates.RewardGold,
-		"open_ended":        updates.OpenEnded,
-		"updated_at":        updates.UpdatedAt,
-		"thumbnail_url":     updates.ThumbnailURL,
+		"zone_id":                      updates.ZoneID,
+		"latitude":                     updates.Latitude,
+		"longitude":                    updates.Longitude,
+		"geometry":                     updates.Geometry,
+		"prompt":                       updates.Prompt,
+		"image_url":                    updates.ImageURL,
+		"difficulty":                   updates.Difficulty,
+		"reward_experience":            updates.RewardExperience,
+		"reward_gold":                  updates.RewardGold,
+		"open_ended":                   updates.OpenEnded,
+		"failure_penalty_mode":         updates.FailurePenaltyMode,
+		"failure_health_drain_type":    updates.FailureHealthDrainType,
+		"failure_health_drain_value":   updates.FailureHealthDrainValue,
+		"failure_mana_drain_type":      updates.FailureManaDrainType,
+		"failure_mana_drain_value":     updates.FailureManaDrainValue,
+		"failure_statuses":             updates.FailureStatuses,
+		"success_reward_mode":          updates.SuccessRewardMode,
+		"success_health_restore_type":  updates.SuccessHealthRestoreType,
+		"success_health_restore_value": updates.SuccessHealthRestoreValue,
+		"success_mana_restore_type":    updates.SuccessManaRestoreType,
+		"success_mana_restore_value":   updates.SuccessManaRestoreValue,
+		"success_statuses":             updates.SuccessStatuses,
+		"updated_at":                   updates.UpdatedAt,
+		"thumbnail_url":                updates.ThumbnailURL,
 	}
 
 	return h.db.WithContext(ctx).Model(&models.Scenario{}).Where("id = ?", id).Updates(payload).Error
@@ -101,6 +219,7 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 
 		now := time.Now()
 		for _, option := range options {
+			normalizeScenarioOptionFailurePenaltyDefaults(&option)
 			option.ID = uuid.New()
 			option.ScenarioID = scenarioID
 			option.CreatedAt = now

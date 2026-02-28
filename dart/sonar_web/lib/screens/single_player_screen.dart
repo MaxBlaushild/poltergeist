@@ -4247,6 +4247,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 'creativityBonus': result.creativityBonus,
                 'totalScore': result.totalScore,
                 'threshold': result.threshold,
+                'failureHealthDrained': result.failureHealthDrained,
+                'failureManaDrained': result.failureManaDrained,
+                'failureStatusesApplied': result.failureStatusesApplied
+                    .map((status) => status.toJson())
+                    .toList(),
+                'successHealthRestored': result.successHealthRestored,
+                'successManaRestored': result.successManaRestored,
+                'successStatusesApplied': result.successStatusesApplied
+                    .map((status) => status.toJson())
+                    .toList(),
                 'rewardExperience': result.rewardExperience,
                 'rewardGold': result.rewardGold,
                 'itemsAwarded': result.itemsAwarded,

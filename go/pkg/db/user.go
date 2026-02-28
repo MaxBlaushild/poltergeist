@@ -28,7 +28,7 @@ func (h *userHandle) SetUsername(ctx context.Context, userID uuid.UUID, username
 
 func (h *userHandle) FindLikeByUsername(ctx context.Context, username string) ([]*models.User, error) {
 	var users []*models.User
-	if err := h.db.WithContext(ctx).Where("username LIKE ?", "%"+username+"%").Find(&users).Error; err != nil {
+	if err := h.db.WithContext(ctx).Where("LOWER(username) LIKE LOWER(?)", "%"+username+"%").Find(&users).Error; err != nil {
 		return nil, err
 	}
 	return users, nil

@@ -162,6 +162,12 @@ class ScenarioPerformResult {
   final int creativityBonus;
   final int threshold;
   final int totalScore;
+  final int failureHealthDrained;
+  final int failureManaDrained;
+  final List<ScenarioAppliedFailureStatus> failureStatusesApplied;
+  final int successHealthRestored;
+  final int successManaRestored;
+  final List<ScenarioAppliedFailureStatus> successStatusesApplied;
   final int rewardExperience;
   final int rewardGold;
   final List<Map<String, dynamic>> itemsAwarded;
@@ -180,6 +186,12 @@ class ScenarioPerformResult {
     required this.creativityBonus,
     required this.threshold,
     required this.totalScore,
+    this.failureHealthDrained = 0,
+    this.failureManaDrained = 0,
+    this.failureStatusesApplied = const [],
+    this.successHealthRestored = 0,
+    this.successManaRestored = 0,
+    this.successStatusesApplied = const [],
     required this.rewardExperience,
     required this.rewardGold,
     this.itemsAwarded = const [],
@@ -192,6 +204,36 @@ class ScenarioPerformResult {
       for (final p in rawProficiencies) {
         final value = p?.toString().trim() ?? '';
         if (value.isNotEmpty) proficiencies.add(value);
+      }
+    }
+    final failureStatuses = <ScenarioAppliedFailureStatus>[];
+    final rawFailureStatuses = json['failureStatusesApplied'];
+    if (rawFailureStatuses is List) {
+      for (final status in rawFailureStatuses) {
+        if (status is Map<String, dynamic>) {
+          failureStatuses.add(ScenarioAppliedFailureStatus.fromJson(status));
+        } else if (status is Map) {
+          failureStatuses.add(
+            ScenarioAppliedFailureStatus.fromJson(
+              Map<String, dynamic>.from(status),
+            ),
+          );
+        }
+      }
+    }
+    final successStatuses = <ScenarioAppliedFailureStatus>[];
+    final rawSuccessStatuses = json['successStatusesApplied'];
+    if (rawSuccessStatuses is List) {
+      for (final status in rawSuccessStatuses) {
+        if (status is Map<String, dynamic>) {
+          successStatuses.add(ScenarioAppliedFailureStatus.fromJson(status));
+        } else if (status is Map) {
+          successStatuses.add(
+            ScenarioAppliedFailureStatus.fromJson(
+              Map<String, dynamic>.from(status),
+            ),
+          );
+        }
       }
     }
 
@@ -209,6 +251,14 @@ class ScenarioPerformResult {
       creativityBonus: (json['creativityBonus'] as num?)?.toInt() ?? 0,
       threshold: (json['threshold'] as num?)?.toInt() ?? 0,
       totalScore: (json['totalScore'] as num?)?.toInt() ?? 0,
+      failureHealthDrained:
+          (json['failureHealthDrained'] as num?)?.toInt() ?? 0,
+      failureManaDrained: (json['failureManaDrained'] as num?)?.toInt() ?? 0,
+      failureStatusesApplied: failureStatuses,
+      successHealthRestored:
+          (json['successHealthRestored'] as num?)?.toInt() ?? 0,
+      successManaRestored: (json['successManaRestored'] as num?)?.toInt() ?? 0,
+      successStatusesApplied: successStatuses,
       rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
       rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
       itemsAwarded:
@@ -219,4 +269,38 @@ class ScenarioPerformResult {
           const [],
     );
   }
+}
+
+class ScenarioAppliedFailureStatus {
+  final String name;
+  final String description;
+  final String effect;
+  final bool positive;
+  final int durationSeconds;
+
+  const ScenarioAppliedFailureStatus({
+    required this.name,
+    required this.description,
+    required this.effect,
+    required this.positive,
+    required this.durationSeconds,
+  });
+
+  factory ScenarioAppliedFailureStatus.fromJson(Map<String, dynamic> json) {
+    return ScenarioAppliedFailureStatus(
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      effect: json['effect']?.toString() ?? '',
+      positive: json['positive'] as bool? ?? false,
+      durationSeconds: (json['durationSeconds'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'description': description,
+    'effect': effect,
+    'positive': positive,
+    'durationSeconds': durationSeconds,
+  };
 }

@@ -8,6 +8,24 @@ type ScenarioRewardItem = {
   quantity: number;
 };
 
+type ScenarioFailurePenaltyMode = 'shared' | 'individual';
+type ScenarioSuccessRewardMode = 'shared' | 'individual';
+type ScenarioFailureDrainType = 'none' | 'flat' | 'percent';
+
+type ScenarioFailureStatus = {
+  name: string;
+  description: string;
+  effect: string;
+  positive: boolean;
+  durationSeconds: number;
+  strengthMod: number;
+  dexterityMod: number;
+  constitutionMod: number;
+  intelligenceMod: number;
+  wisdomMod: number;
+  charismaMod: number;
+};
+
 type ScenarioOption = {
   id?: string;
   optionText: string;
@@ -18,6 +36,16 @@ type ScenarioOption = {
   difficulty?: number | null;
   rewardExperience: number;
   rewardGold: number;
+  failureHealthDrainType: ScenarioFailureDrainType;
+  failureHealthDrainValue: number;
+  failureManaDrainType: ScenarioFailureDrainType;
+  failureManaDrainValue: number;
+  failureStatuses: ScenarioFailureStatus[];
+  successHealthRestoreType: ScenarioFailureDrainType;
+  successHealthRestoreValue: number;
+  successManaRestoreType: ScenarioFailureDrainType;
+  successManaRestoreValue: number;
+  successStatuses: ScenarioFailureStatus[];
   itemRewards: ScenarioRewardItem[];
 };
 
@@ -33,6 +61,18 @@ type ScenarioRecord = {
   rewardExperience: number;
   rewardGold: number;
   openEnded: boolean;
+  failurePenaltyMode: ScenarioFailurePenaltyMode;
+  failureHealthDrainType: ScenarioFailureDrainType;
+  failureHealthDrainValue: number;
+  failureManaDrainType: ScenarioFailureDrainType;
+  failureManaDrainValue: number;
+  failureStatuses: ScenarioFailureStatus[];
+  successRewardMode: ScenarioSuccessRewardMode;
+  successHealthRestoreType: ScenarioFailureDrainType;
+  successHealthRestoreValue: number;
+  successManaRestoreType: ScenarioFailureDrainType;
+  successManaRestoreValue: number;
+  successStatuses: ScenarioFailureStatus[];
   options: ScenarioOption[];
   itemRewards: ScenarioRewardItem[];
   attemptedByUser?: boolean;
@@ -49,6 +89,18 @@ type ScenarioFormState = {
   openEnded: boolean;
   rewardExperience: string;
   rewardGold: string;
+  failurePenaltyMode: ScenarioFailurePenaltyMode;
+  failureHealthDrainType: ScenarioFailureDrainType;
+  failureHealthDrainValue: string;
+  failureManaDrainType: ScenarioFailureDrainType;
+  failureManaDrainValue: string;
+  failureStatuses: ScenarioFailureStatus[];
+  successRewardMode: ScenarioSuccessRewardMode;
+  successHealthRestoreType: ScenarioFailureDrainType;
+  successHealthRestoreValue: string;
+  successManaRestoreType: ScenarioFailureDrainType;
+  successManaRestoreValue: string;
+  successStatuses: ScenarioFailureStatus[];
   options: ScenarioOption[];
   itemRewards: ScenarioRewardItem[];
 };
@@ -83,6 +135,22 @@ const statTags = [
   'charisma',
 ] as const;
 
+const failureDrainTypes: ScenarioFailureDrainType[] = ['none', 'flat', 'percent'];
+
+const emptyFailureStatus = (): ScenarioFailureStatus => ({
+  name: '',
+  description: '',
+  effect: '',
+  positive: true,
+  durationSeconds: 60,
+  strengthMod: 0,
+  dexterityMod: 0,
+  constitutionMod: 0,
+  intelligenceMod: 0,
+  wisdomMod: 0,
+  charismaMod: 0,
+});
+
 const emptyOption = (): ScenarioOption => ({
   optionText: '',
   successText: 'Your approach works, and momentum turns in your favor.',
@@ -92,6 +160,16 @@ const emptyOption = (): ScenarioOption => ({
   difficulty: null,
   rewardExperience: 0,
   rewardGold: 0,
+  failureHealthDrainType: 'none',
+  failureHealthDrainValue: 0,
+  failureManaDrainType: 'none',
+  failureManaDrainValue: 0,
+  failureStatuses: [],
+  successHealthRestoreType: 'none',
+  successHealthRestoreValue: 0,
+  successManaRestoreType: 'none',
+  successManaRestoreValue: 0,
+  successStatuses: [],
   itemRewards: [],
 });
 
@@ -106,6 +184,18 @@ const emptyFormState = (): ScenarioFormState => ({
   openEnded: false,
   rewardExperience: '0',
   rewardGold: '0',
+  failurePenaltyMode: 'shared',
+  failureHealthDrainType: 'none',
+  failureHealthDrainValue: '0',
+  failureManaDrainType: 'none',
+  failureManaDrainValue: '0',
+  failureStatuses: [],
+  successRewardMode: 'shared',
+  successHealthRestoreType: 'none',
+  successHealthRestoreValue: '0',
+  successManaRestoreType: 'none',
+  successManaRestoreValue: '0',
+  successStatuses: [],
   options: [emptyOption()],
   itemRewards: [],
 });
@@ -133,6 +223,45 @@ const parseCsv = (value: string): string[] => {
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
+};
+
+const normalizeFailureDrainType = (value?: string | null): ScenarioFailureDrainType => {
+  if (value === 'flat' || value === 'percent') return value;
+  return 'none';
+};
+
+const normalizeFailurePenaltyMode = (value?: string | null): ScenarioFailurePenaltyMode => {
+  if (value === 'individual') return 'individual';
+  return 'shared';
+};
+
+const normalizeSuccessRewardMode = (value?: string | null): ScenarioSuccessRewardMode => {
+  if (value === 'individual') return 'individual';
+  return 'shared';
+};
+
+const normalizeFailureStatus = (
+  status?: Partial<ScenarioFailureStatus> | null
+): ScenarioFailureStatus => {
+  const base = emptyFailureStatus();
+  if (!status) return base;
+  return {
+    ...base,
+    ...status,
+    name: (status.name ?? '').trim(),
+    description: (status.description ?? '').trim(),
+    effect: (status.effect ?? '').trim(),
+    durationSeconds: Number.isFinite(status.durationSeconds)
+      ? Number(status.durationSeconds)
+      : base.durationSeconds,
+    strengthMod: Number.isFinite(status.strengthMod) ? Number(status.strengthMod) : 0,
+    dexterityMod: Number.isFinite(status.dexterityMod) ? Number(status.dexterityMod) : 0,
+    constitutionMod: Number.isFinite(status.constitutionMod) ? Number(status.constitutionMod) : 0,
+    intelligenceMod: Number.isFinite(status.intelligenceMod) ? Number(status.intelligenceMod) : 0,
+    wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
+    charismaMod: Number.isFinite(status.charismaMod) ? Number(status.charismaMod) : 0,
+    positive: status.positive ?? true,
+  };
 };
 
 const scenarioGenerationStatusBadgeClass = (status: string): string => {
@@ -456,6 +585,22 @@ export const Scenarios = () => {
       openEnded: record.openEnded,
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
+      failurePenaltyMode: normalizeFailurePenaltyMode(record.failurePenaltyMode),
+      failureHealthDrainType: normalizeFailureDrainType(record.failureHealthDrainType),
+      failureHealthDrainValue: String(record.failureHealthDrainValue ?? 0),
+      failureManaDrainType: normalizeFailureDrainType(record.failureManaDrainType),
+      failureManaDrainValue: String(record.failureManaDrainValue ?? 0),
+      failureStatuses: (record.failureStatuses ?? []).map((status) =>
+        normalizeFailureStatus(status)
+      ),
+      successRewardMode: normalizeSuccessRewardMode(record.successRewardMode),
+      successHealthRestoreType: normalizeFailureDrainType(record.successHealthRestoreType),
+      successHealthRestoreValue: String(record.successHealthRestoreValue ?? 0),
+      successManaRestoreType: normalizeFailureDrainType(record.successManaRestoreType),
+      successManaRestoreValue: String(record.successManaRestoreValue ?? 0),
+      successStatuses: (record.successStatuses ?? []).map((status) =>
+        normalizeFailureStatus(status)
+      ),
       options:
         record.options.length > 0
           ? record.options.map((option) => ({
@@ -466,6 +611,20 @@ export const Scenarios = () => {
               failureText:
                 option.failureText?.trim() ||
                 'The attempt falls short, and the moment slips away.',
+              failureHealthDrainType: normalizeFailureDrainType(option.failureHealthDrainType),
+              failureHealthDrainValue: option.failureHealthDrainValue ?? 0,
+              failureManaDrainType: normalizeFailureDrainType(option.failureManaDrainType),
+              failureManaDrainValue: option.failureManaDrainValue ?? 0,
+              failureStatuses: (option.failureStatuses ?? []).map((status) =>
+                normalizeFailureStatus(status)
+              ),
+              successHealthRestoreType: normalizeFailureDrainType(option.successHealthRestoreType),
+              successHealthRestoreValue: option.successHealthRestoreValue ?? 0,
+              successManaRestoreType: normalizeFailureDrainType(option.successManaRestoreType),
+              successManaRestoreValue: option.successManaRestoreValue ?? 0,
+              successStatuses: (option.successStatuses ?? []).map((status) =>
+                normalizeFailureStatus(status)
+              ),
             }))
           : [emptyOption()],
       itemRewards: record.itemRewards,
@@ -492,32 +651,112 @@ export const Scenarios = () => {
     }));
   }, []);
 
-  const formPayload = () => ({
-    zoneId: form.zoneId,
-    latitude: parseFloatValue(form.latitude),
-    longitude: parseFloatValue(form.longitude),
-    prompt: form.prompt.trim(),
-    imageUrl: form.imageUrl.trim(),
-    thumbnailUrl: form.thumbnailUrl.trim(),
-    difficulty: parseIntValue(form.difficulty, 24),
-    openEnded: form.openEnded,
-    rewardExperience: form.openEnded ? parseIntValue(form.rewardExperience) : 0,
-    rewardGold: form.openEnded ? parseIntValue(form.rewardGold) : 0,
-    options: form.openEnded
-      ? []
-      : form.options.map((option) => ({
-          optionText: option.optionText.trim(),
-          successText: option.successText.trim(),
-          failureText: option.failureText.trim(),
-          statTag: option.statTag,
-          proficiencies: option.proficiencies,
-          difficulty: option.difficulty,
-          rewardExperience: option.rewardExperience,
-          rewardGold: option.rewardGold,
-          itemRewards: option.itemRewards,
-        })),
-    itemRewards: form.openEnded ? form.itemRewards : [],
-  });
+  const formPayload = () => {
+    const toStatusPayload = (statuses: ScenarioFailureStatus[]) =>
+      statuses
+        .map((status) => ({
+          ...status,
+          name: status.name.trim(),
+          description: status.description.trim(),
+          effect: status.effect.trim(),
+          durationSeconds: parseIntValue(String(status.durationSeconds), 0),
+        }))
+        .filter((status) => status.name !== '' && status.durationSeconds > 0);
+
+    const scenarioPenaltyMode: ScenarioFailurePenaltyMode = form.openEnded
+      ? 'shared'
+      : form.failurePenaltyMode;
+    const useOptionPenalties = !form.openEnded && scenarioPenaltyMode === 'individual';
+    const successRewardMode: ScenarioSuccessRewardMode = form.openEnded
+      ? 'shared'
+      : form.successRewardMode;
+    const useOptionSuccessRewards = !form.openEnded && successRewardMode === 'individual';
+
+    return {
+      zoneId: form.zoneId,
+      latitude: parseFloatValue(form.latitude),
+      longitude: parseFloatValue(form.longitude),
+      prompt: form.prompt.trim(),
+      imageUrl: form.imageUrl.trim(),
+      thumbnailUrl: form.thumbnailUrl.trim(),
+      difficulty: parseIntValue(form.difficulty, 24),
+      openEnded: form.openEnded,
+      rewardExperience: form.openEnded ? parseIntValue(form.rewardExperience) : 0,
+      rewardGold: form.openEnded ? parseIntValue(form.rewardGold) : 0,
+      failurePenaltyMode: scenarioPenaltyMode,
+      successRewardMode,
+      failureHealthDrainType: form.failureHealthDrainType,
+      failureHealthDrainValue:
+        form.failureHealthDrainType === 'none'
+          ? 0
+          : parseIntValue(form.failureHealthDrainValue, 0),
+      failureManaDrainType: form.failureManaDrainType,
+      failureManaDrainValue:
+        form.failureManaDrainType === 'none'
+          ? 0
+          : parseIntValue(form.failureManaDrainValue, 0),
+      failureStatuses: toStatusPayload(form.failureStatuses),
+      successHealthRestoreType: form.successHealthRestoreType,
+      successHealthRestoreValue:
+        form.successHealthRestoreType === 'none'
+          ? 0
+          : parseIntValue(form.successHealthRestoreValue, 0),
+      successManaRestoreType: form.successManaRestoreType,
+      successManaRestoreValue:
+        form.successManaRestoreType === 'none'
+          ? 0
+          : parseIntValue(form.successManaRestoreValue, 0),
+      successStatuses: toStatusPayload(form.successStatuses),
+      options: form.openEnded
+        ? []
+        : form.options.map((option) => ({
+            optionText: option.optionText.trim(),
+            successText: option.successText.trim(),
+            failureText: option.failureText.trim(),
+            statTag: option.statTag,
+            proficiencies: option.proficiencies,
+            difficulty: option.difficulty,
+            rewardExperience: option.rewardExperience,
+            rewardGold: option.rewardGold,
+            failureHealthDrainType: useOptionPenalties
+              ? option.failureHealthDrainType
+              : 'none',
+            failureHealthDrainValue:
+              useOptionPenalties && option.failureHealthDrainType !== 'none'
+                ? option.failureHealthDrainValue
+                : 0,
+            failureManaDrainType: useOptionPenalties
+              ? option.failureManaDrainType
+              : 'none',
+            failureManaDrainValue:
+              useOptionPenalties && option.failureManaDrainType !== 'none'
+                ? option.failureManaDrainValue
+                : 0,
+            failureStatuses: useOptionPenalties
+              ? toStatusPayload(option.failureStatuses)
+              : [],
+            successHealthRestoreType: useOptionSuccessRewards
+              ? option.successHealthRestoreType
+              : 'none',
+            successHealthRestoreValue:
+              useOptionSuccessRewards && option.successHealthRestoreType !== 'none'
+                ? option.successHealthRestoreValue
+                : 0,
+            successManaRestoreType: useOptionSuccessRewards
+              ? option.successManaRestoreType
+              : 'none',
+            successManaRestoreValue:
+              useOptionSuccessRewards && option.successManaRestoreType !== 'none'
+                ? option.successManaRestoreValue
+                : 0,
+            successStatuses: useOptionSuccessRewards
+              ? toStatusPayload(option.successStatuses)
+              : [],
+            itemRewards: option.itemRewards,
+          })),
+      itemRewards: form.openEnded ? form.itemRewards : [],
+    };
+  };
 
   const save = async () => {
     try {
@@ -736,6 +975,614 @@ export const Scenarios = () => {
       itemRewards: prev.itemRewards.filter((_, i) => i !== index),
     }));
   };
+
+  const addScenarioFailureStatus = () => {
+    setForm((prev) => ({
+      ...prev,
+      failureStatuses: [...prev.failureStatuses, emptyFailureStatus()],
+    }));
+  };
+
+  const updateScenarioFailureStatus = (
+    index: number,
+    next: Partial<ScenarioFailureStatus>
+  ) => {
+    setForm((prev) => {
+      const statuses = [...prev.failureStatuses];
+      statuses[index] = { ...statuses[index], ...next };
+      return { ...prev, failureStatuses: statuses };
+    });
+  };
+
+  const removeScenarioFailureStatus = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      failureStatuses: prev.failureStatuses.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addOptionFailureStatus = (optionIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.failureStatuses = [...option.failureStatuses, emptyFailureStatus()];
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const updateOptionFailureStatus = (
+    optionIndex: number,
+    statusIndex: number,
+    next: Partial<ScenarioFailureStatus>
+  ) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      const statuses = [...option.failureStatuses];
+      statuses[statusIndex] = { ...statuses[statusIndex], ...next };
+      option.failureStatuses = statuses;
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const removeOptionFailureStatus = (optionIndex: number, statusIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.failureStatuses = option.failureStatuses.filter((_, i) => i !== statusIndex);
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const addScenarioSuccessStatus = () => {
+    setForm((prev) => ({
+      ...prev,
+      successStatuses: [...prev.successStatuses, emptyFailureStatus()],
+    }));
+  };
+
+  const updateScenarioSuccessStatus = (
+    index: number,
+    next: Partial<ScenarioFailureStatus>
+  ) => {
+    setForm((prev) => {
+      const statuses = [...prev.successStatuses];
+      statuses[index] = { ...statuses[index], ...next };
+      return { ...prev, successStatuses: statuses };
+    });
+  };
+
+  const removeScenarioSuccessStatus = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      successStatuses: prev.successStatuses.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addOptionSuccessStatus = (optionIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.successStatuses = [...option.successStatuses, emptyFailureStatus()];
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const updateOptionSuccessStatus = (
+    optionIndex: number,
+    statusIndex: number,
+    next: Partial<ScenarioFailureStatus>
+  ) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      const statuses = [...option.successStatuses];
+      statuses[statusIndex] = { ...statuses[statusIndex], ...next };
+      option.successStatuses = statuses;
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const removeOptionSuccessStatus = (optionIndex: number, statusIndex: number) => {
+    setForm((prev) => {
+      const options = [...prev.options];
+      const option = options[optionIndex];
+      option.successStatuses = option.successStatuses.filter((_, i) => i !== statusIndex);
+      options[optionIndex] = option;
+      return { ...prev, options };
+    });
+  };
+
+  const renderFailurePenaltyEditor = (config: {
+    title: string;
+    healthDrainType: ScenarioFailureDrainType;
+    healthDrainValue: number;
+    manaDrainType: ScenarioFailureDrainType;
+    manaDrainValue: number;
+    statuses: ScenarioFailureStatus[];
+    onHealthDrainTypeChange: (value: ScenarioFailureDrainType) => void;
+    onHealthDrainValueChange: (value: number) => void;
+    onManaDrainTypeChange: (value: ScenarioFailureDrainType) => void;
+    onManaDrainValueChange: (value: number) => void;
+    onAddStatus: () => void;
+    onUpdateStatus: (index: number, next: Partial<ScenarioFailureStatus>) => void;
+    onRemoveStatus: (index: number) => void;
+  }) => (
+    <div className="border rounded-md p-3 mt-3">
+      <div className="font-medium mb-2">{config.title}</div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+        <label className="text-sm">
+          Health Drain Type
+          <select
+            value={config.healthDrainType}
+            onChange={(e) =>
+              config.onHealthDrainTypeChange(e.target.value as ScenarioFailureDrainType)
+            }
+            className="w-full border rounded-md p-2"
+          >
+            {failureDrainTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Health Drain Value
+          <input
+            value={config.healthDrainValue}
+            onChange={(e) =>
+              config.onHealthDrainValueChange(parseIntValue(e.target.value, 0))
+            }
+            className="w-full border rounded-md p-2"
+            type="number"
+            min={0}
+            max={config.healthDrainType === 'percent' ? 100 : undefined}
+            disabled={config.healthDrainType === 'none'}
+          />
+        </label>
+        <label className="text-sm">
+          Mana Drain Type
+          <select
+            value={config.manaDrainType}
+            onChange={(e) =>
+              config.onManaDrainTypeChange(e.target.value as ScenarioFailureDrainType)
+            }
+            className="w-full border rounded-md p-2"
+          >
+            {failureDrainTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Mana Drain Value
+          <input
+            value={config.manaDrainValue}
+            onChange={(e) =>
+              config.onManaDrainValueChange(parseIntValue(e.target.value, 0))
+            }
+            className="w-full border rounded-md p-2"
+            type="number"
+            min={0}
+            max={config.manaDrainType === 'percent' ? 100 : undefined}
+            disabled={config.manaDrainType === 'none'}
+          />
+        </label>
+      </div>
+
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-medium text-sm">Failure Statuses</div>
+        <button
+          type="button"
+          className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
+          onClick={config.onAddStatus}
+        >
+          Add Status
+        </button>
+      </div>
+
+      {config.statuses.length === 0 && (
+        <div className="text-sm text-gray-600">No failure statuses configured.</div>
+      )}
+
+      {config.statuses.map((status, statusIndex) => (
+        <div key={statusIndex} className="border rounded-md p-3 mb-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+            <label className="text-sm">
+              Name
+              <input
+                value={status.name}
+                onChange={(e) => config.onUpdateStatus(statusIndex, { name: e.target.value })}
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+            <label className="text-sm">
+              Duration (seconds)
+              <input
+                value={status.durationSeconds}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    durationSeconds: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+                min={1}
+              />
+            </label>
+            <label className="text-sm md:col-span-2">
+              Description
+              <input
+                value={status.description}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { description: e.target.value })
+                }
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+            <label className="text-sm md:col-span-2">
+              Effect
+              <input
+                value={status.effect}
+                onChange={(e) => config.onUpdateStatus(statusIndex, { effect: e.target.value })}
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-sm mb-2">
+            <input
+              type="checkbox"
+              checked={status.positive}
+              onChange={(e) => config.onUpdateStatus(statusIndex, { positive: e.target.checked })}
+            />
+            Positive status
+          </label>
+
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
+            <label className="text-xs">
+              STR
+              <input
+                value={status.strengthMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    strengthMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              DEX
+              <input
+                value={status.dexterityMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    dexterityMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              CON
+              <input
+                value={status.constitutionMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    constitutionMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              INT
+              <input
+                value={status.intelligenceMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    intelligenceMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              WIS
+              <input
+                value={status.wisdomMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    wisdomMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              CHA
+              <input
+                value={status.charismaMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    charismaMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="bg-red-500 text-white px-3 py-1 rounded-md text-xs"
+            onClick={() => config.onRemoveStatus(statusIndex)}
+          >
+            Remove Status
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSuccessRewardEditor = (config: {
+    title: string;
+    healthRestoreType: ScenarioFailureDrainType;
+    healthRestoreValue: number;
+    manaRestoreType: ScenarioFailureDrainType;
+    manaRestoreValue: number;
+    statuses: ScenarioFailureStatus[];
+    onHealthRestoreTypeChange: (value: ScenarioFailureDrainType) => void;
+    onHealthRestoreValueChange: (value: number) => void;
+    onManaRestoreTypeChange: (value: ScenarioFailureDrainType) => void;
+    onManaRestoreValueChange: (value: number) => void;
+    onAddStatus: () => void;
+    onUpdateStatus: (index: number, next: Partial<ScenarioFailureStatus>) => void;
+    onRemoveStatus: (index: number) => void;
+  }) => (
+    <div className="border rounded-md p-3 mt-3">
+      <div className="font-medium mb-2">{config.title}</div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+        <label className="text-sm">
+          Health Restore Type
+          <select
+            value={config.healthRestoreType}
+            onChange={(e) =>
+              config.onHealthRestoreTypeChange(e.target.value as ScenarioFailureDrainType)
+            }
+            className="w-full border rounded-md p-2"
+          >
+            {failureDrainTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Health Restore Value
+          <input
+            value={config.healthRestoreValue}
+            onChange={(e) =>
+              config.onHealthRestoreValueChange(parseIntValue(e.target.value, 0))
+            }
+            className="w-full border rounded-md p-2"
+            type="number"
+            min={0}
+            max={config.healthRestoreType === 'percent' ? 100 : undefined}
+            disabled={config.healthRestoreType === 'none'}
+          />
+        </label>
+        <label className="text-sm">
+          Mana Restore Type
+          <select
+            value={config.manaRestoreType}
+            onChange={(e) =>
+              config.onManaRestoreTypeChange(e.target.value as ScenarioFailureDrainType)
+            }
+            className="w-full border rounded-md p-2"
+          >
+            {failureDrainTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          Mana Restore Value
+          <input
+            value={config.manaRestoreValue}
+            onChange={(e) =>
+              config.onManaRestoreValueChange(parseIntValue(e.target.value, 0))
+            }
+            className="w-full border rounded-md p-2"
+            type="number"
+            min={0}
+            max={config.manaRestoreType === 'percent' ? 100 : undefined}
+            disabled={config.manaRestoreType === 'none'}
+          />
+        </label>
+      </div>
+
+      <div className="flex items-center justify-between mb-2">
+        <div className="font-medium text-sm">Success Statuses</div>
+        <button
+          type="button"
+          className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
+          onClick={config.onAddStatus}
+        >
+          Add Status
+        </button>
+      </div>
+
+      {config.statuses.length === 0 && (
+        <div className="text-sm text-gray-600">No success statuses configured.</div>
+      )}
+
+      {config.statuses.map((status, statusIndex) => (
+        <div key={statusIndex} className="border rounded-md p-3 mb-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+            <label className="text-sm">
+              Name
+              <input
+                value={status.name}
+                onChange={(e) => config.onUpdateStatus(statusIndex, { name: e.target.value })}
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+            <label className="text-sm">
+              Duration (seconds)
+              <input
+                value={status.durationSeconds}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    durationSeconds: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+                min={1}
+              />
+            </label>
+            <label className="text-sm md:col-span-2">
+              Description
+              <input
+                value={status.description}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { description: e.target.value })
+                }
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+            <label className="text-sm md:col-span-2">
+              Effect
+              <input
+                value={status.effect}
+                onChange={(e) => config.onUpdateStatus(statusIndex, { effect: e.target.value })}
+                className="w-full border rounded-md p-2"
+              />
+            </label>
+          </div>
+
+          <label className="inline-flex items-center gap-2 text-sm mb-2">
+            <input
+              type="checkbox"
+              checked={status.positive}
+              onChange={(e) => config.onUpdateStatus(statusIndex, { positive: e.target.checked })}
+            />
+            Positive status
+          </label>
+
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
+            <label className="text-xs">
+              STR
+              <input
+                value={status.strengthMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    strengthMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              DEX
+              <input
+                value={status.dexterityMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    dexterityMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              CON
+              <input
+                value={status.constitutionMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    constitutionMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              INT
+              <input
+                value={status.intelligenceMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    intelligenceMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              WIS
+              <input
+                value={status.wisdomMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    wisdomMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+            <label className="text-xs">
+              CHA
+              <input
+                value={status.charismaMod}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    charismaMod: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-1"
+                type="number"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            className="bg-red-500 text-white px-3 py-1 rounded-md text-xs"
+            onClick={() => config.onRemoveStatus(statusIndex)}
+          >
+            Remove Status
+          </button>
+        </div>
+      ))}
+    </div>
+  );
 
   if (loading) {
     return <div className="m-10">Loading scenarios...</div>;
@@ -1103,7 +1950,13 @@ export const Scenarios = () => {
                   setForm((prev) => ({
                     ...prev,
                     openEnded: e.target.checked,
-                    options: e.target.checked ? [emptyOption()] : prev.options,
+                    failurePenaltyMode: e.target.checked ? 'shared' : prev.failurePenaltyMode,
+                    successRewardMode: e.target.checked ? 'shared' : prev.successRewardMode,
+                    options: e.target.checked
+                      ? prev.options
+                      : prev.options.length > 0
+                        ? prev.options
+                        : [emptyOption()],
                   }))
                 }
               />
@@ -1179,6 +2032,46 @@ export const Scenarios = () => {
                     </button>
                   </div>
                 ))}
+
+                {renderFailurePenaltyEditor({
+                  title: 'Failure Penalty (Open-Ended)',
+                  healthDrainType: form.failureHealthDrainType,
+                  healthDrainValue: parseIntValue(form.failureHealthDrainValue, 0),
+                  manaDrainType: form.failureManaDrainType,
+                  manaDrainValue: parseIntValue(form.failureManaDrainValue, 0),
+                  onHealthDrainTypeChange: (value) =>
+                    setForm((prev) => ({ ...prev, failureHealthDrainType: value })),
+                  onHealthDrainValueChange: (value) =>
+                    setForm((prev) => ({ ...prev, failureHealthDrainValue: String(value) })),
+                  onManaDrainTypeChange: (value) =>
+                    setForm((prev) => ({ ...prev, failureManaDrainType: value })),
+                  onManaDrainValueChange: (value) =>
+                    setForm((prev) => ({ ...prev, failureManaDrainValue: String(value) })),
+                  statuses: form.failureStatuses,
+                  onAddStatus: addScenarioFailureStatus,
+                  onUpdateStatus: updateScenarioFailureStatus,
+                  onRemoveStatus: removeScenarioFailureStatus,
+                })}
+
+                {renderSuccessRewardEditor({
+                  title: 'Success Rewards (Open-Ended)',
+                  healthRestoreType: form.successHealthRestoreType,
+                  healthRestoreValue: parseIntValue(form.successHealthRestoreValue, 0),
+                  manaRestoreType: form.successManaRestoreType,
+                  manaRestoreValue: parseIntValue(form.successManaRestoreValue, 0),
+                  onHealthRestoreTypeChange: (value) =>
+                    setForm((prev) => ({ ...prev, successHealthRestoreType: value })),
+                  onHealthRestoreValueChange: (value) =>
+                    setForm((prev) => ({ ...prev, successHealthRestoreValue: String(value) })),
+                  onManaRestoreTypeChange: (value) =>
+                    setForm((prev) => ({ ...prev, successManaRestoreType: value })),
+                  onManaRestoreValueChange: (value) =>
+                    setForm((prev) => ({ ...prev, successManaRestoreValue: String(value) })),
+                  statuses: form.successStatuses,
+                  onAddStatus: addScenarioSuccessStatus,
+                  onUpdateStatus: updateScenarioSuccessStatus,
+                  onRemoveStatus: removeScenarioSuccessStatus,
+                })}
               </div>
             ) : (
               <div className="border rounded-md p-3 mb-4">
@@ -1188,6 +2081,83 @@ export const Scenarios = () => {
                     Add Option
                   </button>
                 </div>
+
+                <label className="text-sm block mb-3">
+                  Failure Penalty Mode
+                  <select
+                    value={form.failurePenaltyMode}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        failurePenaltyMode: e.target.value as ScenarioFailurePenaltyMode,
+                      }))
+                    }
+                    className="w-full border rounded-md p-2"
+                  >
+                    <option value="shared">Shared (scenario-level)</option>
+                    <option value="individual">Individual (per option)</option>
+                  </select>
+                </label>
+
+                {form.failurePenaltyMode === 'shared' &&
+                  renderFailurePenaltyEditor({
+                    title: 'Shared Failure Penalty',
+                    healthDrainType: form.failureHealthDrainType,
+                    healthDrainValue: parseIntValue(form.failureHealthDrainValue, 0),
+                    manaDrainType: form.failureManaDrainType,
+                    manaDrainValue: parseIntValue(form.failureManaDrainValue, 0),
+                    onHealthDrainTypeChange: (value) =>
+                      setForm((prev) => ({ ...prev, failureHealthDrainType: value })),
+                    onHealthDrainValueChange: (value) =>
+                      setForm((prev) => ({ ...prev, failureHealthDrainValue: String(value) })),
+                    onManaDrainTypeChange: (value) =>
+                      setForm((prev) => ({ ...prev, failureManaDrainType: value })),
+                    onManaDrainValueChange: (value) =>
+                      setForm((prev) => ({ ...prev, failureManaDrainValue: String(value) })),
+                    statuses: form.failureStatuses,
+                    onAddStatus: addScenarioFailureStatus,
+                    onUpdateStatus: updateScenarioFailureStatus,
+                    onRemoveStatus: removeScenarioFailureStatus,
+                  })}
+
+                <label className="text-sm block mb-3">
+                  Success Reward Mode
+                  <select
+                    value={form.successRewardMode}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        successRewardMode: e.target.value as ScenarioSuccessRewardMode,
+                      }))
+                    }
+                    className="w-full border rounded-md p-2"
+                  >
+                    <option value="shared">Shared (scenario-level)</option>
+                    <option value="individual">Individual (per option)</option>
+                  </select>
+                </label>
+
+                {form.successRewardMode === 'shared' &&
+                  renderSuccessRewardEditor({
+                    title: 'Shared Success Rewards',
+                    healthRestoreType: form.successHealthRestoreType,
+                    healthRestoreValue: parseIntValue(form.successHealthRestoreValue, 0),
+                    manaRestoreType: form.successManaRestoreType,
+                    manaRestoreValue: parseIntValue(form.successManaRestoreValue, 0),
+                    onHealthRestoreTypeChange: (value) =>
+                      setForm((prev) => ({ ...prev, successHealthRestoreType: value })),
+                    onHealthRestoreValueChange: (value) =>
+                      setForm((prev) => ({ ...prev, successHealthRestoreValue: String(value) })),
+                    onManaRestoreTypeChange: (value) =>
+                      setForm((prev) => ({ ...prev, successManaRestoreType: value })),
+                    onManaRestoreValueChange: (value) =>
+                      setForm((prev) => ({ ...prev, successManaRestoreValue: String(value) })),
+                    statuses: form.successStatuses,
+                    onAddStatus: addScenarioSuccessStatus,
+                    onUpdateStatus: updateScenarioSuccessStatus,
+                    onRemoveStatus: removeScenarioSuccessStatus,
+                  })}
+
                 {form.options.map((option, optionIndex) => (
                   <div key={optionIndex} className="border rounded-md p-3 mb-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1333,6 +2303,52 @@ export const Scenarios = () => {
                         </div>
                       ))}
                     </div>
+
+                    {form.failurePenaltyMode === 'individual' &&
+                      renderFailurePenaltyEditor({
+                        title: 'Option Failure Penalty',
+                        healthDrainType: option.failureHealthDrainType,
+                        healthDrainValue: option.failureHealthDrainValue,
+                        manaDrainType: option.failureManaDrainType,
+                        manaDrainValue: option.failureManaDrainValue,
+                        onHealthDrainTypeChange: (value) =>
+                          updateOption(optionIndex, { failureHealthDrainType: value }),
+                        onHealthDrainValueChange: (value) =>
+                          updateOption(optionIndex, { failureHealthDrainValue: value }),
+                        onManaDrainTypeChange: (value) =>
+                          updateOption(optionIndex, { failureManaDrainType: value }),
+                        onManaDrainValueChange: (value) =>
+                          updateOption(optionIndex, { failureManaDrainValue: value }),
+                        statuses: option.failureStatuses,
+                        onAddStatus: () => addOptionFailureStatus(optionIndex),
+                        onUpdateStatus: (statusIndex, next) =>
+                          updateOptionFailureStatus(optionIndex, statusIndex, next),
+                        onRemoveStatus: (statusIndex) =>
+                          removeOptionFailureStatus(optionIndex, statusIndex),
+                      })}
+
+                    {form.successRewardMode === 'individual' &&
+                      renderSuccessRewardEditor({
+                        title: 'Option Success Rewards',
+                        healthRestoreType: option.successHealthRestoreType,
+                        healthRestoreValue: option.successHealthRestoreValue,
+                        manaRestoreType: option.successManaRestoreType,
+                        manaRestoreValue: option.successManaRestoreValue,
+                        onHealthRestoreTypeChange: (value) =>
+                          updateOption(optionIndex, { successHealthRestoreType: value }),
+                        onHealthRestoreValueChange: (value) =>
+                          updateOption(optionIndex, { successHealthRestoreValue: value }),
+                        onManaRestoreTypeChange: (value) =>
+                          updateOption(optionIndex, { successManaRestoreType: value }),
+                        onManaRestoreValueChange: (value) =>
+                          updateOption(optionIndex, { successManaRestoreValue: value }),
+                        statuses: option.successStatuses,
+                        onAddStatus: () => addOptionSuccessStatus(optionIndex),
+                        onUpdateStatus: (statusIndex, next) =>
+                          updateOptionSuccessStatus(optionIndex, statusIndex, next),
+                        onRemoveStatus: (statusIndex) =>
+                          removeOptionSuccessStatus(optionIndex, statusIndex),
+                      })}
 
                     <div className="mt-3">
                       <button

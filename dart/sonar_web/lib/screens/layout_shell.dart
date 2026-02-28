@@ -30,6 +30,7 @@ class LayoutShell extends StatefulWidget {
 
 class _LayoutShellState extends State<LayoutShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _sideDrawerKey = GlobalKey<_SideDrawerState>();
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +38,11 @@ class _LayoutShellState extends State<LayoutShell> {
       scaffoldKey: _scaffoldKey,
       child: Scaffold(
         key: _scaffoldKey,
-        endDrawer: const _SideDrawer(),
+        onEndDrawerChanged: (isOpened) {
+          if (!isOpened) return;
+          _sideDrawerKey.currentState?.handleDrawerOpened();
+        },
+        endDrawer: _SideDrawer(key: _sideDrawerKey),
         body: SafeArea(
           top: false,
           bottom: false,
@@ -56,10 +61,7 @@ class _LayoutShellState extends State<LayoutShell> {
 }
 
 class _LogoutCleaner extends StatefulWidget {
-  const _LogoutCleaner({
-    required this.child,
-    required this.scaffoldKey,
-  });
+  const _LogoutCleaner({required this.child, required this.scaffoldKey});
 
   final Widget child;
   final GlobalKey<ScaffoldState> scaffoldKey;
@@ -140,8 +142,9 @@ class _LayoutHeader extends StatelessWidget {
                 _UserAvatar(auth: auth)
               else if (!auth.loading)
                 TextButton(
-                  onPressed: () => context
-                      .go('/?from=${Uri.encodeComponent('/single-player')}'),
+                  onPressed: () => context.go(
+                    '/?from=${Uri.encodeComponent('/single-player')}',
+                  ),
                   child: const Text('Log in'),
                 ),
             ],
@@ -159,7 +162,9 @@ class _UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasUnspentPoints = context.watch<CharacterStatsProvider>().hasUnspentPoints;
+    final hasUnspentPoints = context
+        .watch<CharacterStatsProvider>()
+        .hasUnspentPoints;
     return GestureDetector(
       onTap: () {
         Scaffold.of(context).openEndDrawer();
@@ -170,11 +175,13 @@ class _UserAvatar extends StatelessWidget {
           CircleAvatar(
             radius: 20,
             backgroundColor: Colors.grey.shade300,
-            backgroundImage: auth.user?.profilePictureUrl != null &&
+            backgroundImage:
+                auth.user?.profilePictureUrl != null &&
                     auth.user!.profilePictureUrl.isNotEmpty
                 ? NetworkImage(auth.user!.profilePictureUrl)
                 : null,
-            child: auth.user?.profilePictureUrl == null ||
+            child:
+                auth.user?.profilePictureUrl == null ||
                     auth.user!.profilePictureUrl.isEmpty
                 ? const Icon(Icons.person)
                 : null,
@@ -207,7 +214,7 @@ class _UserAvatar extends StatelessWidget {
 }
 
 class _SideDrawer extends StatefulWidget {
-  const _SideDrawer();
+  const _SideDrawer({super.key});
 
   @override
   State<_SideDrawer> createState() => _SideDrawerState();
@@ -216,6 +223,18 @@ class _SideDrawer extends StatefulWidget {
 class _SideDrawerState extends State<_SideDrawer> {
   int _tabIndex = 0;
   User? _profileUser;
+
+  void handleDrawerOpened() {
+    _refreshCharacterStatsIfVisible();
+  }
+
+  void _refreshCharacterStatsIfVisible() {
+    if (_profileUser != null || _tabIndex != 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<CharacterStatsProvider>().refresh(silent: true);
+    });
+  }
 
   void _selectTab(int index) {
     final shouldRefreshQuestLog = index == 2;
@@ -235,10 +254,7 @@ class _SideDrawerState extends State<_SideDrawer> {
         });
       }
       if (shouldRefreshCharacterStats) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          context.read<CharacterStatsProvider>().refresh();
-        });
+        _refreshCharacterStatsIfVisible();
       }
       return;
     }
@@ -259,10 +275,7 @@ class _SideDrawerState extends State<_SideDrawer> {
       });
     }
     if (shouldRefreshCharacterStats) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.read<CharacterStatsProvider>().refresh();
-      });
+      _refreshCharacterStatsIfVisible();
     }
   }
 
@@ -272,6 +285,7 @@ class _SideDrawerState extends State<_SideDrawer> {
 
   void _closeProfile() {
     setState(() => _profileUser = null);
+    _refreshCharacterStatsIfVisible();
   }
 
   @override
@@ -357,46 +371,44 @@ class _SideDrawerState extends State<_SideDrawer> {
                                   onBack: _closeProfile,
                                 )
                               : _tabIndex == 0
-                                  ? const CharacterTabContent(
-                                      key: ValueKey('character'),
-                                    )
-                                  : _tabIndex == 1
-                                      ? InventoryPanel(
-                                          key: const ValueKey('inventory'),
-                                          onClose: () =>
-                                              Navigator.of(context).pop(),
-                                        )
-                                      : _tabIndex == 2
-                                      ? QuestLogPanel(
-                                          key: const ValueKey('quest-log'),
-                                          onClose: () =>
-                                              Navigator.of(context).pop(),
-                                          onFocusPoI: (poi) {
-                                            context
-                                                .read<MapFocusProvider>()
-                                                .focusPoi(poi);
-                                            context.go('/single-player');
-                                          },
-                                          onFocusTurnInQuest: (quest) {
-                                            context
-                                                .read<MapFocusProvider>()
-                                                .focusTurnInQuest(quest);
-                                            context.go('/single-player');
-                                          },
-                                        )
-                                      : _tabIndex == 3
-                                          ? PartyTabContent(
-                                              key: const ValueKey('party'),
-                                              onViewProfile: _openProfile,
-                                            )
-                                          : _tabIndex == 4
-                                              ? FriendsTabContent(
-                                                  key: const ValueKey('friends'),
-                                                  onViewProfile: _openProfile,
-                                                )
-                                              : const ReputationTabContent(
-                                                  key: ValueKey('reputation'),
-                                                ),
+                              ? const CharacterTabContent(
+                                  key: ValueKey('character'),
+                                )
+                              : _tabIndex == 1
+                              ? InventoryPanel(
+                                  key: const ValueKey('inventory'),
+                                  onClose: () => Navigator.of(context).pop(),
+                                )
+                              : _tabIndex == 2
+                              ? QuestLogPanel(
+                                  key: const ValueKey('quest-log'),
+                                  onClose: () => Navigator.of(context).pop(),
+                                  onFocusPoI: (poi) {
+                                    context.read<MapFocusProvider>().focusPoi(
+                                      poi,
+                                    );
+                                    context.go('/single-player');
+                                  },
+                                  onFocusTurnInQuest: (quest) {
+                                    context
+                                        .read<MapFocusProvider>()
+                                        .focusTurnInQuest(quest);
+                                    context.go('/single-player');
+                                  },
+                                )
+                              : _tabIndex == 3
+                              ? PartyTabContent(
+                                  key: const ValueKey('party'),
+                                  onViewProfile: _openProfile,
+                                )
+                              : _tabIndex == 4
+                              ? FriendsTabContent(
+                                  key: const ValueKey('friends'),
+                                  onViewProfile: _openProfile,
+                                )
+                              : const ReputationTabContent(
+                                  key: ValueKey('reputation'),
+                                ),
                         ),
                       ),
                     ),
@@ -426,8 +438,9 @@ class _DrawerCharacterProfile extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final displayName = user.username.isNotEmpty ? user.username : user.name;
-    final secondaryName =
-        user.username.isNotEmpty && user.name != user.username ? user.name : null;
+    final secondaryName = user.username.isNotEmpty && user.name != user.username
+        ? user.name
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -516,10 +529,12 @@ class _DrawerMenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
-    final textColor =
-        selected ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurface;
-    final bgColor =
-        selected ? theme.colorScheme.primaryContainer : theme.colorScheme.surface;
+    final textColor = selected
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurface;
+    final bgColor = selected
+        ? theme.colorScheme.primaryContainer
+        : theme.colorScheme.surface;
     final borderColor = selected ? accent : theme.colorScheme.outlineVariant;
     return Material(
       color: Colors.transparent,
@@ -549,8 +564,9 @@ class _DrawerMenuButton extends StatelessWidget {
               Icon(
                 icon,
                 size: 18,
-                color:
-                    selected ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
+                color: selected
+                    ? theme.colorScheme.onPrimaryContainer
+                    : theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Text(
