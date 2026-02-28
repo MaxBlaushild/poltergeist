@@ -1,3 +1,17 @@
+export type InventoryConsumeStatus = {
+  name: string;
+  description: string;
+  effect: string;
+  positive: boolean;
+  durationSeconds: number;
+  strengthMod: number;
+  dexterityMod: number;
+  constitutionMod: number;
+  intelligenceMod: number;
+  wisdomMod: number;
+  charismaMod: number;
+};
+
 export type InventoryItem = {
   id: number;
   name: string;
@@ -23,6 +37,10 @@ export type InventoryItem = {
   blockPercentage?: number | null;
   damageBlocked?: number | null;
   spellDamageBonusPercent?: number | null;
+  consumeHealthDelta?: number;
+  consumeManaDelta?: number;
+  consumeStatusesToAdd?: InventoryConsumeStatus[];
+  consumeStatusesToRemove?: string[];
   imageGenerationStatus?: string;
   imageGenerationError?: string;
   createdAt?: string;

@@ -574,6 +574,7 @@ type UserStatusHandle interface {
 	Create(ctx context.Context, status *models.UserStatus) error
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserStatus, error)
 	GetActiveStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
+	DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 

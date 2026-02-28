@@ -15,6 +15,8 @@ const (
 	challengeAnswer = "This territory was claimed with cold, hard gemstones."
 )
 
+var ErrNoLegacyItemEffect = errors.New("no legacy effect found for this item")
+
 func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem models.OwnedInventoryItem, metadata *UseItemMetadata) error {
 	switch ownedInventoryItem.InventoryItemID {
 	case 1:
@@ -101,7 +103,7 @@ func (q *client) ApplyItemEffectByID(ctx context.Context, ownedInventoryItem mod
 		// Negate up to 3 damage when held.
 		return nil
 	default:
-		return errors.New("no effect found for this item")
+		return ErrNoLegacyItemEffect
 	}
 }
 

@@ -201,6 +201,13 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return _itemsUsableInMenu.contains(inventoryItemId);
   }
 
+  bool _hasConsumableEffects(InventoryItem inv) {
+    return inv.consumeHealthDelta != 0 ||
+        inv.consumeManaDelta != 0 ||
+        inv.consumeStatusesToAdd.isNotEmpty ||
+        inv.consumeStatusesToRemove.isNotEmpty;
+  }
+
   bool _isOutfitItem(InventoryItem inv) {
     String normalize(String input) {
       final lower = input.toLowerCase();
@@ -509,6 +516,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
       await context.read<InventoryService>().useItem(owned.id);
       if (!mounted) return;
       await context.read<AuthProvider>().refresh();
+      if (!mounted) return;
+      await context.read<CharacterStatsProvider>().refresh();
       if (!mounted) return;
       await _load();
       if (!mounted) return;
@@ -1056,7 +1065,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final isEquipped = equippedSlot != null;
     final canUse =
         owned.quantity > 0 &&
-        (isOutfit || _isUsableInMenu(inv.id)) &&
+        (isOutfit || _isUsableInMenu(inv.id) || _hasConsumableEffects(inv)) &&
         !outfitPending;
     final hasDetails = inv.flavorText.isNotEmpty || inv.effectText.isNotEmpty;
 
@@ -1092,6 +1101,35 @@ class _InventoryPanelState extends State<InventoryPanel> {
         ),
       if (isOutfit)
         _buildMetaChip(context, icon: Icons.auto_awesome, label: 'Outfit item'),
+      if (inv.consumeHealthDelta != 0)
+        _buildMetaChip(
+          context,
+          icon: inv.consumeHealthDelta > 0
+              ? Icons.favorite
+              : Icons.heart_broken,
+          label:
+              'Use HP ${inv.consumeHealthDelta > 0 ? '+' : ''}${inv.consumeHealthDelta}',
+        ),
+      if (inv.consumeManaDelta != 0)
+        _buildMetaChip(
+          context,
+          icon: Icons.bolt,
+          label:
+              'Use MP ${inv.consumeManaDelta > 0 ? '+' : ''}${inv.consumeManaDelta}',
+        ),
+      if (inv.consumeStatusesToAdd.isNotEmpty)
+        _buildMetaChip(
+          context,
+          icon: Icons.add_circle_outline,
+          label:
+              'Adds ${inv.consumeStatusesToAdd.map((status) => status.name).join(', ')}',
+        ),
+      if (inv.consumeStatusesToRemove.isNotEmpty)
+        _buildMetaChip(
+          context,
+          icon: Icons.remove_circle_outline,
+          label: 'Removes ${inv.consumeStatusesToRemove.join(', ')}',
+        ),
     ];
 
     final statChips = _buildStatModifierChips(context, inv);

@@ -6549,28 +6549,32 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 
 func (s *server) createInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
-		Name                    string  `json:"name" binding:"required"`
-		ImageURL                string  `json:"imageUrl"`
-		FlavorText              string  `json:"flavorText"`
-		EffectText              string  `json:"effectText"`
-		RarityTier              string  `json:"rarityTier" binding:"required"`
-		IsCaptureType           bool    `json:"isCaptureType"`
-		UnlockTier              *int    `json:"unlockTier"`
-		EquipSlot               *string `json:"equipSlot"`
-		StrengthMod             int     `json:"strengthMod"`
-		DexterityMod            int     `json:"dexterityMod"`
-		ConstitutionMod         int     `json:"constitutionMod"`
-		IntelligenceMod         int     `json:"intelligenceMod"`
-		WisdomMod               int     `json:"wisdomMod"`
-		CharismaMod             int     `json:"charismaMod"`
-		HandItemCategory        *string `json:"handItemCategory"`
-		Handedness              *string `json:"handedness"`
-		DamageMin               *int    `json:"damageMin"`
-		DamageMax               *int    `json:"damageMax"`
-		SwipesPerAttack         *int    `json:"swipesPerAttack"`
-		BlockPercentage         *int    `json:"blockPercentage"`
-		DamageBlocked           *int    `json:"damageBlocked"`
-		SpellDamageBonusPercent *int    `json:"spellDamageBonusPercent"`
+		Name                    string                         `json:"name" binding:"required"`
+		ImageURL                string                         `json:"imageUrl"`
+		FlavorText              string                         `json:"flavorText"`
+		EffectText              string                         `json:"effectText"`
+		RarityTier              string                         `json:"rarityTier" binding:"required"`
+		IsCaptureType           bool                           `json:"isCaptureType"`
+		UnlockTier              *int                           `json:"unlockTier"`
+		EquipSlot               *string                        `json:"equipSlot"`
+		StrengthMod             int                            `json:"strengthMod"`
+		DexterityMod            int                            `json:"dexterityMod"`
+		ConstitutionMod         int                            `json:"constitutionMod"`
+		IntelligenceMod         int                            `json:"intelligenceMod"`
+		WisdomMod               int                            `json:"wisdomMod"`
+		CharismaMod             int                            `json:"charismaMod"`
+		HandItemCategory        *string                        `json:"handItemCategory"`
+		Handedness              *string                        `json:"handedness"`
+		DamageMin               *int                           `json:"damageMin"`
+		DamageMax               *int                           `json:"damageMax"`
+		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
+		BlockPercentage         *int                           `json:"blockPercentage"`
+		DamageBlocked           *int                           `json:"damageBlocked"`
+		SpellDamageBonusPercent *int                           `json:"spellDamageBonusPercent"`
+		ConsumeHealthDelta      int                            `json:"consumeHealthDelta"`
+		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
+		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
+		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -6603,6 +6607,12 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	consumeStatusesToAdd, err := parseScenarioFailureStatusTemplates(requestBody.ConsumeStatusesToAdd, "consumeStatusesToAdd")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
 
 	item := &models.InventoryItem{
 		Name:                    requestBody.Name,
@@ -6627,6 +6637,10 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		BlockPercentage:         handAttrs.BlockPercentage,
 		DamageBlocked:           handAttrs.DamageBlocked,
 		SpellDamageBonusPercent: handAttrs.SpellDamageBonusPercent,
+		ConsumeHealthDelta:      requestBody.ConsumeHealthDelta,
+		ConsumeManaDelta:        requestBody.ConsumeManaDelta,
+		ConsumeStatusesToAdd:    consumeStatusesToAdd,
+		ConsumeStatusesToRemove: consumeStatusesToRemove,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -6705,6 +6719,8 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		BlockPercentage:         validatedHandAttrs.BlockPercentage,
 		DamageBlocked:           validatedHandAttrs.DamageBlocked,
 		SpellDamageBonusPercent: validatedHandAttrs.SpellDamageBonusPercent,
+		ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
+		ConsumeStatusesToRemove: models.StringArray{},
 		ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
 	}
 
@@ -6955,28 +6971,32 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                    string  `json:"name"`
-		ImageURL                string  `json:"imageUrl"`
-		FlavorText              string  `json:"flavorText"`
-		EffectText              string  `json:"effectText"`
-		RarityTier              string  `json:"rarityTier"`
-		IsCaptureType           bool    `json:"isCaptureType"`
-		UnlockTier              *int    `json:"unlockTier"`
-		EquipSlot               *string `json:"equipSlot"`
-		StrengthMod             int     `json:"strengthMod"`
-		DexterityMod            int     `json:"dexterityMod"`
-		ConstitutionMod         int     `json:"constitutionMod"`
-		IntelligenceMod         int     `json:"intelligenceMod"`
-		WisdomMod               int     `json:"wisdomMod"`
-		CharismaMod             int     `json:"charismaMod"`
-		HandItemCategory        *string `json:"handItemCategory"`
-		Handedness              *string `json:"handedness"`
-		DamageMin               *int    `json:"damageMin"`
-		DamageMax               *int    `json:"damageMax"`
-		SwipesPerAttack         *int    `json:"swipesPerAttack"`
-		BlockPercentage         *int    `json:"blockPercentage"`
-		DamageBlocked           *int    `json:"damageBlocked"`
-		SpellDamageBonusPercent *int    `json:"spellDamageBonusPercent"`
+		Name                    string                         `json:"name"`
+		ImageURL                string                         `json:"imageUrl"`
+		FlavorText              string                         `json:"flavorText"`
+		EffectText              string                         `json:"effectText"`
+		RarityTier              string                         `json:"rarityTier"`
+		IsCaptureType           bool                           `json:"isCaptureType"`
+		UnlockTier              *int                           `json:"unlockTier"`
+		EquipSlot               *string                        `json:"equipSlot"`
+		StrengthMod             int                            `json:"strengthMod"`
+		DexterityMod            int                            `json:"dexterityMod"`
+		ConstitutionMod         int                            `json:"constitutionMod"`
+		IntelligenceMod         int                            `json:"intelligenceMod"`
+		WisdomMod               int                            `json:"wisdomMod"`
+		CharismaMod             int                            `json:"charismaMod"`
+		HandItemCategory        *string                        `json:"handItemCategory"`
+		Handedness              *string                        `json:"handedness"`
+		DamageMin               *int                           `json:"damageMin"`
+		DamageMax               *int                           `json:"damageMax"`
+		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
+		BlockPercentage         *int                           `json:"blockPercentage"`
+		DamageBlocked           *int                           `json:"damageBlocked"`
+		SpellDamageBonusPercent *int                           `json:"spellDamageBonusPercent"`
+		ConsumeHealthDelta      int                            `json:"consumeHealthDelta"`
+		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
+		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
+		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -7009,6 +7029,12 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	consumeStatusesToAdd, err := parseScenarioFailureStatusTemplates(requestBody.ConsumeStatusesToAdd, "consumeStatusesToAdd")
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
 
 	updates := map[string]interface{}{
 		"name":                       requestBody.Name,
@@ -7033,6 +7059,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"block_percentage":           handAttrs.BlockPercentage,
 		"damage_blocked":             handAttrs.DamageBlocked,
 		"spell_damage_bonus_percent": handAttrs.SpellDamageBonusPercent,
+		"consume_health_delta":       requestBody.ConsumeHealthDelta,
+		"consume_mana_delta":         requestBody.ConsumeManaDelta,
+		"consume_statuses_to_add":    consumeStatusesToAdd,
+		"consume_statuses_to_remove": consumeStatusesToRemove,
 	}
 
 	if requestBody.ImageURL != "" {
@@ -10976,6 +11006,24 @@ func parseScenarioFailureStatusTemplates(
 		})
 	}
 	return templates, nil
+}
+
+func parseInventoryConsumeStatusNames(input []string) models.StringArray {
+	statusNames := make(models.StringArray, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, rawName := range input {
+		name := strings.TrimSpace(rawName)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		statusNames = append(statusNames, name)
+	}
+	return statusNames
 }
 
 func scenarioFailurePenaltyFromScenario(scenario *models.Scenario) scenarioFailurePenalty {

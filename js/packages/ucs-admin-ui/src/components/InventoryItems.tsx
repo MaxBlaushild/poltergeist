@@ -9,6 +9,65 @@ type SelectOption = {
   secondary?: string;
 };
 
+type InventoryConsumeStatus = {
+  name: string;
+  description: string;
+  effect: string;
+  positive: boolean;
+  durationSeconds: number;
+  strengthMod: number;
+  dexterityMod: number;
+  constitutionMod: number;
+  intelligenceMod: number;
+  wisdomMod: number;
+  charismaMod: number;
+};
+
+type InventoryItemRecord = InventoryItem & {
+  consumeHealthDelta?: number;
+  consumeManaDelta?: number;
+  consumeStatusesToAdd?: InventoryConsumeStatus[];
+  consumeStatusesToRemove?: string[];
+};
+
+const emptyConsumeStatus = (): InventoryConsumeStatus => ({
+  name: '',
+  description: '',
+  effect: '',
+  positive: true,
+  durationSeconds: 60,
+  strengthMod: 0,
+  dexterityMod: 0,
+  constitutionMod: 0,
+  intelligenceMod: 0,
+  wisdomMod: 0,
+  charismaMod: 0,
+});
+
+const normalizeConsumeStatus = (
+  status?: Partial<InventoryConsumeStatus> | null
+): InventoryConsumeStatus => {
+  const base = emptyConsumeStatus();
+  if (!status) return base;
+  return {
+    ...base,
+    ...status,
+    name: (status.name ?? '').trim(),
+    description: (status.description ?? '').trim(),
+    effect: (status.effect ?? '').trim(),
+    durationSeconds: Number.isFinite(status.durationSeconds)
+      ? Number(status.durationSeconds)
+      : base.durationSeconds,
+    strengthMod: Number.isFinite(status.strengthMod) ? Number(status.strengthMod) : 0,
+    dexterityMod: Number.isFinite(status.dexterityMod) ? Number(status.dexterityMod) : 0,
+    constitutionMod: Number.isFinite(status.constitutionMod) ? Number(status.constitutionMod) : 0,
+    intelligenceMod: Number.isFinite(status.intelligenceMod) ? Number(status.intelligenceMod) : 0,
+    wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
+    charismaMod: Number.isFinite(status.charismaMod) ? Number(status.charismaMod) : 0,
+    positive: status.positive ?? true,
+  };
+};
+
 const SearchableSelect = ({
   label,
   placeholder,
@@ -151,7 +210,7 @@ const handednessLabel = (handedness?: string | null) => {
   }
 };
 
-const statModSummary = (item: InventoryItem) => {
+const statModSummary = (item: InventoryItemRecord) => {
   const mods: string[] = [];
   const push = (label: string, value?: number) => {
     if (!value || value === 0) return;
@@ -166,7 +225,7 @@ const statModSummary = (item: InventoryItem) => {
   return mods.join(', ');
 };
 
-const handCombatSummary = (item: InventoryItem) => {
+const handCombatSummary = (item: InventoryItemRecord) => {
   if (!isHandEquipSlot(item.equipSlot)) return [];
   const details: string[] = [];
   if (item.handItemCategory) {
@@ -201,22 +260,41 @@ const handCombatSummary = (item: InventoryItem) => {
   return details;
 };
 
+const consumeSummary = (item: InventoryItemRecord) => {
+  const details: string[] = [];
+  if ((item.consumeHealthDelta ?? 0) !== 0) {
+    const value = item.consumeHealthDelta ?? 0;
+    details.push(`Health on use: ${value > 0 ? '+' : ''}${value}`);
+  }
+  if ((item.consumeManaDelta ?? 0) !== 0) {
+    const value = item.consumeManaDelta ?? 0;
+    details.push(`Mana on use: ${value > 0 ? '+' : ''}${value}`);
+  }
+  if ((item.consumeStatusesToAdd?.length ?? 0) > 0) {
+    details.push(`Adds statuses: ${item.consumeStatusesToAdd?.map((status) => status.name).join(', ')}`);
+  }
+  if ((item.consumeStatusesToRemove?.length ?? 0) > 0) {
+    details.push(`Removes statuses: ${item.consumeStatusesToRemove?.join(', ')}`);
+  }
+  return details;
+};
+
 export const InventoryItems = () => {
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [items, setItems] = useState<InventoryItemRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateItem, setShowCreateItem] = useState(false);
   const [showGenerateItem, setShowGenerateItem] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
+  const [editingItem, setEditingItem] = useState<InventoryItemRecord | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [itemToDelete, setItemToDelete] = useState<InventoryItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<InventoryItemRecord | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [useOutfitItem, setUseOutfitItem] = useState<InventoryItem | null>(null);
+  const [useOutfitItem, setUseOutfitItem] = useState<InventoryItemRecord | null>(null);
   const [useOutfitUser, setUseOutfitUser] = useState('');
   const [useOutfitSelfieUrl, setUseOutfitSelfieUrl] = useState('');
   const [useOutfitStatus, setUseOutfitStatus] = useState<string | null>(null);
@@ -275,6 +353,10 @@ export const InventoryItems = () => {
     blockPercentage: undefined as number | undefined,
     damageBlocked: undefined as number | undefined,
     spellDamageBonusPercent: undefined as number | undefined,
+    consumeHealthDelta: 0,
+    consumeManaDelta: 0,
+    consumeStatusesToAdd: [] as InventoryConsumeStatus[],
+    consumeStatusesToRemove: [] as string[],
   });
 
   const [generationData, setGenerationData] = useState({
@@ -318,7 +400,7 @@ export const InventoryItems = () => {
 
   const fetchItems = async () => {
     try {
-      const response = await apiClient.get<InventoryItem[]>('/sonar/inventory-items');
+      const response = await apiClient.get<InventoryItemRecord[]>('/sonar/inventory-items');
       setItems(response);
       setLoading(false);
     } catch (error) {
@@ -352,6 +434,10 @@ export const InventoryItems = () => {
       blockPercentage: undefined,
       damageBlocked: undefined,
       spellDamageBonusPercent: undefined,
+      consumeHealthDelta: 0,
+      consumeManaDelta: 0,
+      consumeStatusesToAdd: [],
+      consumeStatusesToRemove: [],
     });
     setImageFile(null);
     setImagePreview(null);
@@ -481,7 +567,65 @@ export const InventoryItems = () => {
       }
     }
 
+    next.consumeStatusesToAdd = (next.consumeStatusesToAdd ?? [])
+      .map((status) => normalizeConsumeStatus(status))
+      .filter((status) => status.name !== '' && status.durationSeconds > 0);
+    next.consumeStatusesToRemove = Array.from(
+      new Set(
+        (next.consumeStatusesToRemove ?? [])
+          .map((name) => name.trim())
+          .filter((name) => name !== '')
+      )
+    );
+
     return next;
+  };
+
+  const addConsumeStatusToAdd = () => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeStatusesToAdd: [...prev.consumeStatusesToAdd, emptyConsumeStatus()],
+    }));
+  };
+
+  const updateConsumeStatusToAdd = (
+    index: number,
+    next: Partial<InventoryConsumeStatus>
+  ) => {
+    setFormData((prev) => {
+      const statuses = [...prev.consumeStatusesToAdd];
+      statuses[index] = { ...statuses[index], ...next };
+      return { ...prev, consumeStatusesToAdd: statuses };
+    });
+  };
+
+  const removeConsumeStatusToAdd = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeStatusesToAdd: prev.consumeStatusesToAdd.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addConsumeStatusToRemove = () => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeStatusesToRemove: [...prev.consumeStatusesToRemove, ''],
+    }));
+  };
+
+  const updateConsumeStatusToRemove = (index: number, value: string) => {
+    setFormData((prev) => {
+      const names = [...prev.consumeStatusesToRemove];
+      names[index] = value;
+      return { ...prev, consumeStatusesToRemove: names };
+    });
+  };
+
+  const removeConsumeStatusToRemove = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeStatusesToRemove: prev.consumeStatusesToRemove.filter((_, i) => i !== index),
+    }));
   };
 
   const handleEquipSlotChange = (slot: string) => {
@@ -566,7 +710,7 @@ export const InventoryItems = () => {
       }
 
       const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
-      const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items', submitData);
+      const newItem = await apiClient.post<InventoryItemRecord>('/sonar/inventory-items', submitData);
       setItems([...items, newItem]);
       setShowCreateItem(false);
       resetForm();
@@ -607,7 +751,7 @@ export const InventoryItems = () => {
       }
 
       const submitData = { ...normalizeHandFieldsForSubmit(), imageUrl };
-      const updatedItem = await apiClient.put<InventoryItem>(`/sonar/inventory-items/${editingItem.id}`, submitData);
+      const updatedItem = await apiClient.put<InventoryItemRecord>(`/sonar/inventory-items/${editingItem.id}`, submitData);
       setItems(items.map(i => i.id === editingItem.id ? updatedItem : i));
       setEditingItem(null);
       resetForm();
@@ -624,7 +768,7 @@ export const InventoryItems = () => {
         alert('For hand equipment generation, select both hand item type and handedness.');
         return;
       }
-      const newItem = await apiClient.post<InventoryItem>('/sonar/inventory-items/generate', {
+      const newItem = await apiClient.post<InventoryItemRecord>('/sonar/inventory-items/generate', {
         name: normalized.name,
         description: normalized.description,
         rarityTier: normalized.rarityTier,
@@ -641,9 +785,9 @@ export const InventoryItems = () => {
     }
   };
 
-  const handleRegenerateImage = async (item: InventoryItem) => {
+  const handleRegenerateImage = async (item: InventoryItemRecord) => {
     try {
-      const updated = await apiClient.post<InventoryItem>(`/sonar/inventory-items/${item.id}/regenerate`, {});
+      const updated = await apiClient.post<InventoryItemRecord>(`/sonar/inventory-items/${item.id}/regenerate`, {});
       setItems(items.map(i => i.id === item.id ? updated : i));
     } catch (error) {
       console.error('Error regenerating inventory item image:', error);
@@ -676,7 +820,7 @@ export const InventoryItems = () => {
   const isOutfitName = (name?: string) =>
     (name || '').trim().toLowerCase().endsWith('outfit');
 
-  const handleDeleteItem = async (item: InventoryItem) => {
+  const handleDeleteItem = async (item: InventoryItemRecord) => {
     setItemToDelete(item);
     setShowDeleteConfirm(true);
   };
@@ -695,7 +839,7 @@ export const InventoryItems = () => {
     }
   };
 
-  const handleEditItem = (item: InventoryItem) => {
+  const handleEditItem = (item: InventoryItemRecord) => {
     setEditingItem(item);
     setFormData({
       name: item.name,
@@ -721,6 +865,12 @@ export const InventoryItems = () => {
       blockPercentage: item.blockPercentage ?? undefined,
       damageBlocked: item.damageBlocked ?? undefined,
       spellDamageBonusPercent: item.spellDamageBonusPercent ?? undefined,
+      consumeHealthDelta: item.consumeHealthDelta ?? 0,
+      consumeManaDelta: item.consumeManaDelta ?? 0,
+      consumeStatusesToAdd: (item.consumeStatusesToAdd ?? []).map((status) =>
+        normalizeConsumeStatus(status)
+      ),
+      consumeStatusesToRemove: [...(item.consumeStatusesToRemove ?? [])],
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -811,6 +961,8 @@ export const InventoryItems = () => {
     { value: 'blockPercentage', label: 'Block %' },
     { value: 'damageBlocked', label: 'Damage Blocked' },
     { value: 'spellDamageBonusPercent', label: 'Spell Bonus %' },
+    { value: 'consumeHealthDelta', label: 'Use Health Delta' },
+    { value: 'consumeManaDelta', label: 'Use Mana Delta' },
     { value: 'createdAt', label: 'Created At' },
     { value: 'updatedAt', label: 'Updated At' },
   ];
@@ -855,6 +1007,10 @@ export const InventoryItems = () => {
         item.blockPercentage?.toString(),
         item.damageBlocked?.toString(),
         item.spellDamageBonusPercent?.toString(),
+        item.consumeHealthDelta?.toString(),
+        item.consumeManaDelta?.toString(),
+        item.consumeStatusesToAdd?.map((status) => status.name).join(' '),
+        item.consumeStatusesToRemove?.join(' '),
       ]
         .filter(Boolean)
         .join(' ')
@@ -886,7 +1042,7 @@ export const InventoryItems = () => {
 
     const sorted = [...filtered].sort((a, b) => {
       const direction = sortDirection === 'asc' ? 1 : -1;
-      const field = sortField as keyof InventoryItem;
+      const field = sortField as keyof InventoryItemRecord;
       if (field === 'rarityTier') {
         const rankA = rarityRank[a.rarityTier] ?? 999;
         const rankB = rarityRank[b.rarityTier] ?? 999;
@@ -1256,6 +1412,11 @@ export const InventoryItems = () => {
             </p>
             {handCombatSummary(item).map((line) => (
               <p key={`${item.id}-${line}`} style={{ margin: '5px 0', color: '#666' }}>
+                {line}
+              </p>
+            ))}
+            {consumeSummary(item).map((line) => (
+              <p key={`${item.id}-consume-${line}`} style={{ margin: '5px 0', color: '#666' }}>
                 {line}
               </p>
             ))}
@@ -1631,6 +1792,214 @@ export const InventoryItems = () => {
                 )}
               </div>
             )}
+
+            <div style={{ marginBottom: '15px', padding: '12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+                Consume Effects
+              </label>
+              <small style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '10px' }}>
+                Positive values restore resources. Negative values drain resources.
+              </small>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Health Delta</label>
+                  <input
+                    type="number"
+                    value={formData.consumeHealthDelta}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      consumeHealthDelta: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Mana Delta</label>
+                  <input
+                    type="number"
+                    value={formData.consumeManaDelta}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      consumeManaDelta: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Statuses Added On Consume</label>
+                  <button
+                    type="button"
+                    onClick={addConsumeStatusToAdd}
+                    className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
+                  >
+                    Add Status
+                  </button>
+                </div>
+                {formData.consumeStatusesToAdd.length === 0 && (
+                  <small style={{ color: '#666', fontSize: '12px' }}>
+                    No statuses will be added.
+                  </small>
+                )}
+                {formData.consumeStatusesToAdd.map((status, statusIndex) => (
+                  <div key={`consume-add-${statusIndex}`} style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px', marginBottom: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Name</label>
+                        <input
+                          type="text"
+                          value={status.name}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { name: e.target.value })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Duration (seconds)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={status.durationSeconds}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { durationSeconds: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Description</label>
+                        <input
+                          type="text"
+                          value={status.description}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { description: e.target.value })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Effect</label>
+                        <input
+                          type="text"
+                          value={status.effect}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { effect: e.target.value })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>STR</label>
+                        <input
+                          type="number"
+                          value={status.strengthMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { strengthMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>DEX</label>
+                        <input
+                          type="number"
+                          value={status.dexterityMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { dexterityMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>CON</label>
+                        <input
+                          type="number"
+                          value={status.constitutionMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { constitutionMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>INT</label>
+                        <input
+                          type="number"
+                          value={status.intelligenceMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { intelligenceMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>WIS</label>
+                        <input
+                          type="number"
+                          value={status.wisdomMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { wisdomMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>CHA</label>
+                        <input
+                          type="number"
+                          value={status.charismaMod}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { charismaMod: parseInt(e.target.value, 10) || 0 })}
+                          style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={status.positive}
+                          onChange={(e) => updateConsumeStatusToAdd(statusIndex, { positive: e.target.checked })}
+                        />
+                        Positive status
+                      </label>
+                      <button
+                        type="button"
+                        className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                        onClick={() => removeConsumeStatusToAdd(statusIndex)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Statuses Removed On Consume</label>
+                  <button
+                    type="button"
+                    onClick={addConsumeStatusToRemove}
+                    className="bg-blue-600 text-white px-2 py-1 rounded-md text-xs"
+                  >
+                    Add Name
+                  </button>
+                </div>
+                {formData.consumeStatusesToRemove.length === 0 && (
+                  <small style={{ color: '#666', fontSize: '12px' }}>
+                    No statuses will be removed.
+                  </small>
+                )}
+                {formData.consumeStatusesToRemove.map((name, index) => (
+                  <div key={`consume-remove-${index}`} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                    <input
+                      type="text"
+                      value={name}
+                      placeholder="Status name (e.g. Poisoned)"
+                      onChange={(e) => updateConsumeStatusToRemove(index, e.target.value)}
+                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    />
+                    <button
+                      type="button"
+                      className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                      onClick={() => removeConsumeStatusToRemove(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', marginBottom: '8px' }}>Stat Modifiers (while equipped):</label>

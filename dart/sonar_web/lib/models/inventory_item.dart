@@ -21,6 +21,10 @@ class InventoryItem {
   final int? blockPercentage;
   final int? damageBlocked;
   final int? spellDamageBonusPercent;
+  final int consumeHealthDelta;
+  final int consumeManaDelta;
+  final List<InventoryConsumeStatus> consumeStatusesToAdd;
+  final List<String> consumeStatusesToRemove;
 
   const InventoryItem({
     required this.id,
@@ -45,6 +49,10 @@ class InventoryItem {
     this.blockPercentage,
     this.damageBlocked,
     this.spellDamageBonusPercent,
+    this.consumeHealthDelta = 0,
+    this.consumeManaDelta = 0,
+    this.consumeStatusesToAdd = const [],
+    this.consumeStatusesToRemove = const [],
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -72,6 +80,84 @@ class InventoryItem {
       damageBlocked: (json['damageBlocked'] as num?)?.toInt(),
       spellDamageBonusPercent: (json['spellDamageBonusPercent'] as num?)
           ?.toInt(),
+      consumeHealthDelta: (json['consumeHealthDelta'] as num?)?.toInt() ?? 0,
+      consumeManaDelta: (json['consumeManaDelta'] as num?)?.toInt() ?? 0,
+      consumeStatusesToAdd:
+          (json['consumeStatusesToAdd'] as List<dynamic>?)
+              ?.map(
+                (entry) => InventoryConsumeStatus.fromJson(
+                  entry as Map<String, dynamic>,
+                ),
+              )
+              .where((entry) => entry.name.isNotEmpty)
+              .toList() ??
+          const [],
+      consumeStatusesToRemove:
+          (json['consumeStatusesToRemove'] as List<dynamic>?)
+              ?.map((entry) => entry.toString().trim())
+              .where((entry) => entry.isNotEmpty)
+              .toList() ??
+          const [],
+    );
+  }
+}
+
+class InventoryConsumeStatus {
+  final String name;
+  final String description;
+  final String effect;
+  final bool positive;
+  final int durationSeconds;
+  final int strengthMod;
+  final int dexterityMod;
+  final int constitutionMod;
+  final int intelligenceMod;
+  final int wisdomMod;
+  final int charismaMod;
+
+  const InventoryConsumeStatus({
+    required this.name,
+    required this.description,
+    required this.effect,
+    required this.positive,
+    required this.durationSeconds,
+    required this.strengthMod,
+    required this.dexterityMod,
+    required this.constitutionMod,
+    required this.intelligenceMod,
+    required this.wisdomMod,
+    required this.charismaMod,
+  });
+
+  factory InventoryConsumeStatus.fromJson(Map<String, dynamic> json) {
+    bool parseBool(dynamic raw, {bool fallback = true}) {
+      if (raw is bool) return raw;
+      if (raw is String) {
+        final normalized = raw.trim().toLowerCase();
+        if (normalized == 'true') return true;
+        if (normalized == 'false') return false;
+      }
+      return fallback;
+    }
+
+    int intValue(String key) {
+      final raw = json[key];
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    return InventoryConsumeStatus(
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      effect: json['effect']?.toString() ?? '',
+      positive: parseBool(json['positive'], fallback: true),
+      durationSeconds: intValue('durationSeconds'),
+      strengthMod: intValue('strengthMod'),
+      dexterityMod: intValue('dexterityMod'),
+      constitutionMod: intValue('constitutionMod'),
+      intelligenceMod: intValue('intelligenceMod'),
+      wisdomMod: intValue('wisdomMod'),
+      charismaMod: intValue('charismaMod'),
     );
   }
 }

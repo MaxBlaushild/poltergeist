@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -62,6 +63,31 @@ func (h *userStatusHandler) GetActiveStatBonuses(ctx context.Context, userID uui
 		return models.CharacterStatBonuses{}, result.Error
 	}
 	return bonuses, nil
+}
+
+func (h *userStatusHandler) DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error {
+	normalized := make([]string, 0, len(names))
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		clean := strings.ToLower(strings.TrimSpace(name))
+		if clean == "" {
+			continue
+		}
+		if _, exists := seen[clean]; exists {
+			continue
+		}
+		seen[clean] = struct{}{}
+		normalized = append(normalized, clean)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Where("user_id = ? AND started_at <= ? AND expires_at > ? AND lower(name) IN ?", userID, now, now, normalized).
+		Delete(&models.UserStatus{}).
+		Error
 }
 
 func (h *userStatusHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
