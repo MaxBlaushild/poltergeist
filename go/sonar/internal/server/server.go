@@ -226,6 +226,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getNewUserStarterConfig))
 	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
+	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
 	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
 	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
@@ -8903,6 +8904,82 @@ func (s *server) updateUserGold(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, user)
+}
+
+func (s *server) adminCreateUserStatus(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	var requestBody struct {
+		Name            string `json:"name" binding:"required"`
+		Description     string `json:"description"`
+		Effect          string `json:"effect"`
+		DurationSeconds int    `json:"durationSeconds" binding:"required"`
+		StrengthMod     int    `json:"strengthMod"`
+		DexterityMod    int    `json:"dexterityMod"`
+		ConstitutionMod int    `json:"constitutionMod"`
+		IntelligenceMod int    `json:"intelligenceMod"`
+		WisdomMod       int    `json:"wisdomMod"`
+		CharismaMod     int    `json:"charismaMod"`
+	}
+
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	requestBody.Name = strings.TrimSpace(requestBody.Name)
+	if requestBody.Name == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if requestBody.DurationSeconds <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "durationSeconds must be > 0"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	now := time.Now()
+	status := &models.UserStatus{
+		UserID:          userID,
+		Name:            requestBody.Name,
+		Description:     strings.TrimSpace(requestBody.Description),
+		Effect:          strings.TrimSpace(requestBody.Effect),
+		EffectType:      models.UserStatusEffectTypeStatModifier,
+		StrengthMod:     requestBody.StrengthMod,
+		DexterityMod:    requestBody.DexterityMod,
+		ConstitutionMod: requestBody.ConstitutionMod,
+		IntelligenceMod: requestBody.IntelligenceMod,
+		WisdomMod:       requestBody.WisdomMod,
+		CharismaMod:     requestBody.CharismaMod,
+		StartedAt:       now,
+		ExpiresAt:       now.Add(time.Duration(requestBody.DurationSeconds) * time.Second),
+	}
+
+	if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user status: " + err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusCreated, status)
 }
 
 func (s *server) deleteUsers(ctx *gin.Context) {

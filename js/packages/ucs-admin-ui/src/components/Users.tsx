@@ -22,6 +22,19 @@ export const Users = () => {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [editingGold, setEditingGold] = useState(false);
   const [goldInputValue, setGoldInputValue] = useState<string>('');
+  const [statusName, setStatusName] = useState('');
+  const [statusDescription, setStatusDescription] = useState('');
+  const [statusEffect, setStatusEffect] = useState('');
+  const [statusDurationMinutes, setStatusDurationMinutes] = useState('60');
+  const [statusStrengthMod, setStatusStrengthMod] = useState('0');
+  const [statusDexterityMod, setStatusDexterityMod] = useState('0');
+  const [statusConstitutionMod, setStatusConstitutionMod] = useState('0');
+  const [statusIntelligenceMod, setStatusIntelligenceMod] = useState('0');
+  const [statusWisdomMod, setStatusWisdomMod] = useState('0');
+  const [statusCharismaMod, setStatusCharismaMod] = useState('0');
+  const [grantingStatus, setGrantingStatus] = useState(false);
+  const [statusGrantMessage, setStatusGrantMessage] = useState<string | null>(null);
+  const [statusGrantKind, setStatusGrantKind] = useState<'success' | 'error' | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -65,6 +78,18 @@ export const Users = () => {
     setSelectedDiscoveries(new Set());
     setEditingGold(false);
     setGoldInputValue('');
+    setStatusName('');
+    setStatusDescription('');
+    setStatusEffect('');
+    setStatusDurationMinutes('60');
+    setStatusStrengthMod('0');
+    setStatusDexterityMod('0');
+    setStatusConstitutionMod('0');
+    setStatusIntelligenceMod('0');
+    setStatusWisdomMod('0');
+    setStatusCharismaMod('0');
+    setStatusGrantMessage(null);
+    setStatusGrantKind(null);
     
     try {
       const [discoveriesRes, submissionsRes, activitiesRes] = await Promise.all([
@@ -103,6 +128,67 @@ export const Users = () => {
     } catch (error) {
       console.error('Error updating user gold:', error);
       alert('Failed to update gold amount');
+    }
+  };
+
+  const parseModifierValue = (value: string) => {
+    const parsed = parseInt(value, 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const grantStatus = async () => {
+    if (!selectedUser) return;
+
+    const trimmedName = statusName.trim();
+    if (!trimmedName) {
+      setStatusGrantMessage('Status name is required.');
+      setStatusGrantKind('error');
+      return;
+    }
+
+    const durationMinutes = parseInt(statusDurationMinutes, 10);
+    if (Number.isNaN(durationMinutes) || durationMinutes <= 0) {
+      setStatusGrantMessage('Duration must be a positive number of minutes.');
+      setStatusGrantKind('error');
+      return;
+    }
+
+    try {
+      setGrantingStatus(true);
+      setStatusGrantMessage(null);
+      setStatusGrantKind(null);
+
+      await apiClient.post(`/sonar/admin/users/${selectedUser.id}/statuses`, {
+        name: trimmedName,
+        description: statusDescription.trim(),
+        effect: statusEffect.trim(),
+        durationSeconds: durationMinutes * 60,
+        strengthMod: parseModifierValue(statusStrengthMod),
+        dexterityMod: parseModifierValue(statusDexterityMod),
+        constitutionMod: parseModifierValue(statusConstitutionMod),
+        intelligenceMod: parseModifierValue(statusIntelligenceMod),
+        wisdomMod: parseModifierValue(statusWisdomMod),
+        charismaMod: parseModifierValue(statusCharismaMod),
+      });
+
+      setStatusGrantMessage('Status granted successfully.');
+      setStatusGrantKind('success');
+      setStatusName('');
+      setStatusDescription('');
+      setStatusEffect('');
+      setStatusDurationMinutes('60');
+      setStatusStrengthMod('0');
+      setStatusDexterityMod('0');
+      setStatusConstitutionMod('0');
+      setStatusIntelligenceMod('0');
+      setStatusWisdomMod('0');
+      setStatusCharismaMod('0');
+    } catch (error) {
+      console.error('Error granting status:', error);
+      setStatusGrantMessage('Failed to grant status.');
+      setStatusGrantKind('error');
+    } finally {
+      setGrantingStatus(false);
     }
   };
 
@@ -458,6 +544,143 @@ export const Users = () => {
                   )}
                 </div>
 
+                {/* Statuses Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold">Grant Status</h3>
+                  </div>
+                  <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input
+                          type="text"
+                          value={statusName}
+                          onChange={(e) => setStatusName(e.target.value)}
+                          placeholder="Inspired"
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={statusDurationMinutes}
+                          onChange={(e) => setStatusDurationMinutes(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={statusDescription}
+                        onChange={(e) => setStatusDescription(e.target.value)}
+                        placeholder="A surge of confidence."
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Effect</label>
+                      <input
+                        type="text"
+                        value={statusEffect}
+                        onChange={(e) => setStatusEffect(e.target.value)}
+                        placeholder="+2 Strength"
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Stat Modifiers</label>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">STR</label>
+                          <input
+                            type="number"
+                            value={statusStrengthMod}
+                            onChange={(e) => setStatusStrengthMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">DEX</label>
+                          <input
+                            type="number"
+                            value={statusDexterityMod}
+                            onChange={(e) => setStatusDexterityMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">CON</label>
+                          <input
+                            type="number"
+                            value={statusConstitutionMod}
+                            onChange={(e) => setStatusConstitutionMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">INT</label>
+                          <input
+                            type="number"
+                            value={statusIntelligenceMod}
+                            onChange={(e) => setStatusIntelligenceMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">WIS</label>
+                          <input
+                            type="number"
+                            value={statusWisdomMod}
+                            onChange={(e) => setStatusWisdomMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-600 mb-1">CHA</label>
+                          <input
+                            type="number"
+                            value={statusCharismaMod}
+                            onChange={(e) => setStatusCharismaMod(e.target.value)}
+                            className="w-full px-2 py-2 border rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {statusGrantMessage && (
+                      <div
+                        className={`rounded-md border px-3 py-2 text-sm ${
+                          statusGrantKind === 'success'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-rose-200 bg-rose-50 text-rose-800'
+                        }`}
+                      >
+                        {statusGrantMessage}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={grantStatus}
+                      disabled={grantingStatus || statusName.trim() === ''}
+                      className={`px-4 py-2 rounded text-white ${
+                        grantingStatus || statusName.trim() === ''
+                          ? 'bg-gray-400 cursor-not-allowed'
+                          : 'bg-indigo-600 hover:bg-indigo-700'
+                      }`}
+                    >
+                      {grantingStatus ? 'Granting...' : 'Grant Status'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Discoveries Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
@@ -714,4 +937,3 @@ export const Users = () => {
     </div>
   );
 };
-
