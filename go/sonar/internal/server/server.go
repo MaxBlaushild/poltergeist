@@ -6631,6 +6631,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
 		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
+		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -6669,6 +6670,22 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		return
 	}
 	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
+	consumeSpellIDs, err := parseInventoryConsumeSpellIDs(requestBody.ConsumeSpellIDs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	for idx, rawSpellID := range consumeSpellIDs {
+		spellID, _ := uuid.Parse(rawSpellID)
+		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("consumeSpellIds[%d] not found", idx)})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	item := &models.InventoryItem{
 		Name:                    requestBody.Name,
@@ -6697,6 +6714,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta:        requestBody.ConsumeManaDelta,
 		ConsumeStatusesToAdd:    consumeStatusesToAdd,
 		ConsumeStatusesToRemove: consumeStatusesToRemove,
+		ConsumeSpellIDs:         consumeSpellIDs,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -6777,6 +6795,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		SpellDamageBonusPercent: validatedHandAttrs.SpellDamageBonusPercent,
 		ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
 		ConsumeStatusesToRemove: models.StringArray{},
+		ConsumeSpellIDs:         models.StringArray{},
 		ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
 	}
 
@@ -7053,6 +7072,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
 		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
+		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -7091,6 +7111,22 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		return
 	}
 	consumeStatusesToRemove := parseInventoryConsumeStatusNames(requestBody.ConsumeStatusesToRemove)
+	consumeSpellIDs, err := parseInventoryConsumeSpellIDs(requestBody.ConsumeSpellIDs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	for idx, rawSpellID := range consumeSpellIDs {
+		spellID, _ := uuid.Parse(rawSpellID)
+		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("consumeSpellIds[%d] not found", idx)})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	updates := map[string]interface{}{
 		"name":                       requestBody.Name,
@@ -7119,6 +7155,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"consume_mana_delta":         requestBody.ConsumeManaDelta,
 		"consume_statuses_to_add":    consumeStatusesToAdd,
 		"consume_statuses_to_remove": consumeStatusesToRemove,
+		"consume_spell_ids":          consumeSpellIDs,
 	}
 
 	if requestBody.ImageURL != "" {
@@ -11096,6 +11133,27 @@ func parseInventoryConsumeStatusNames(input []string) models.StringArray {
 		statusNames = append(statusNames, name)
 	}
 	return statusNames
+}
+
+func parseInventoryConsumeSpellIDs(input []string) (models.StringArray, error) {
+	spellIDs := make(models.StringArray, 0, len(input))
+	seen := map[uuid.UUID]struct{}{}
+	for idx, rawID := range input {
+		trimmed := strings.TrimSpace(rawID)
+		if trimmed == "" {
+			continue
+		}
+		spellID, err := uuid.Parse(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("consumeSpellIds[%d] must be a valid UUID", idx)
+		}
+		if _, exists := seen[spellID]; exists {
+			continue
+		}
+		seen[spellID] = struct{}{}
+		spellIDs = append(spellIDs, spellID.String())
+	}
+	return spellIDs, nil
 }
 
 func scenarioFailurePenaltyFromScenario(scenario *models.Scenario) scenarioFailurePenalty {

@@ -1,5 +1,5 @@
 import { useAPI, useMediaContext } from '@poltergeist/contexts';
-import { InventoryItem, Rarity } from '@poltergeist/types';
+import { InventoryItem, Rarity, Spell } from '@poltergeist/types';
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useUsers } from '../hooks/useUsers.ts';
 
@@ -28,6 +28,7 @@ type InventoryItemRecord = InventoryItem & {
   consumeManaDelta?: number;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
+  consumeSpellIds?: string[];
 };
 
 const emptyConsumeStatus = (): InventoryConsumeStatus => ({
@@ -260,7 +261,10 @@ const handCombatSummary = (item: InventoryItemRecord) => {
   return details;
 };
 
-const consumeSummary = (item: InventoryItemRecord) => {
+const consumeSummary = (
+  item: InventoryItemRecord,
+  spellNamesByID: Map<string, string>
+) => {
   const details: string[] = [];
   if ((item.consumeHealthDelta ?? 0) !== 0) {
     const value = item.consumeHealthDelta ?? 0;
@@ -276,6 +280,13 @@ const consumeSummary = (item: InventoryItemRecord) => {
   if ((item.consumeStatusesToRemove?.length ?? 0) > 0) {
     details.push(`Removes statuses: ${item.consumeStatusesToRemove?.join(', ')}`);
   }
+  if ((item.consumeSpellIds?.length ?? 0) > 0) {
+    details.push(
+      `Grants spells: ${item.consumeSpellIds
+        ?.map((spellID) => spellNamesByID.get(spellID) ?? spellID)
+        .join(', ')}`
+    );
+  }
   return details;
 };
 
@@ -284,6 +295,7 @@ export const InventoryItems = () => {
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
   const { users } = useUsers();
   const [items, setItems] = useState<InventoryItemRecord[]>([]);
+  const [spells, setSpells] = useState<Spell[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateItem, setShowCreateItem] = useState(false);
@@ -357,6 +369,7 @@ export const InventoryItems = () => {
     consumeManaDelta: 0,
     consumeStatusesToAdd: [] as InventoryConsumeStatus[],
     consumeStatusesToRemove: [] as string[],
+    consumeSpellIds: [] as string[],
   });
 
   const [generationData, setGenerationData] = useState({
@@ -383,6 +396,7 @@ export const InventoryItems = () => {
 
   useEffect(() => {
     fetchItems();
+    fetchSpells();
   }, []);
 
   useEffect(() => {
@@ -408,6 +422,20 @@ export const InventoryItems = () => {
       setLoading(false);
     }
   };
+
+  const fetchSpells = async () => {
+    try {
+      const response = await apiClient.get<Spell[]>('/sonar/spells');
+      setSpells(Array.isArray(response) ? response : []);
+    } catch (error) {
+      console.error('Error fetching spells:', error);
+      setSpells([]);
+    }
+  };
+
+  const spellNamesByID = useMemo(() => {
+    return new Map((spells ?? []).map((spell) => [spell.id, spell.name]));
+  }, [spells]);
 
   const resetForm = () => {
     setFormData({
@@ -438,6 +466,7 @@ export const InventoryItems = () => {
       consumeManaDelta: 0,
       consumeStatusesToAdd: [],
       consumeStatusesToRemove: [],
+      consumeSpellIds: [],
     });
     setImageFile(null);
     setImagePreview(null);
@@ -577,6 +606,13 @@ export const InventoryItems = () => {
           .filter((name) => name !== '')
       )
     );
+    next.consumeSpellIds = Array.from(
+      new Set(
+        (next.consumeSpellIds ?? [])
+          .map((spellID) => spellID.trim())
+          .filter((spellID) => spellID !== '')
+      )
+    );
 
     return next;
   };
@@ -625,6 +661,28 @@ export const InventoryItems = () => {
     setFormData((prev) => ({
       ...prev,
       consumeStatusesToRemove: prev.consumeStatusesToRemove.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addConsumeSpellId = () => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeSpellIds: [...prev.consumeSpellIds, ''],
+    }));
+  };
+
+  const updateConsumeSpellId = (index: number, value: string) => {
+    setFormData((prev) => {
+      const spellIDs = [...prev.consumeSpellIds];
+      spellIDs[index] = value;
+      return { ...prev, consumeSpellIds: spellIDs };
+    });
+  };
+
+  const removeConsumeSpellId = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      consumeSpellIds: prev.consumeSpellIds.filter((_, i) => i !== index),
     }));
   };
 
@@ -871,6 +929,7 @@ export const InventoryItems = () => {
         normalizeConsumeStatus(status)
       ),
       consumeStatusesToRemove: [...(item.consumeStatusesToRemove ?? [])],
+      consumeSpellIds: [...(item.consumeSpellIds ?? [])],
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -963,6 +1022,7 @@ export const InventoryItems = () => {
     { value: 'spellDamageBonusPercent', label: 'Spell Bonus %' },
     { value: 'consumeHealthDelta', label: 'Use Health Delta' },
     { value: 'consumeManaDelta', label: 'Use Mana Delta' },
+    { value: 'consumeSpellIds', label: 'Use Grants Spells' },
     { value: 'createdAt', label: 'Created At' },
     { value: 'updatedAt', label: 'Updated At' },
   ];
@@ -1011,6 +1071,7 @@ export const InventoryItems = () => {
         item.consumeManaDelta?.toString(),
         item.consumeStatusesToAdd?.map((status) => status.name).join(' '),
         item.consumeStatusesToRemove?.join(' '),
+        item.consumeSpellIds?.map((spellID) => spellNamesByID.get(spellID) ?? spellID).join(' '),
       ]
         .filter(Boolean)
         .join(' ')
@@ -1066,7 +1127,7 @@ export const InventoryItems = () => {
     });
 
     return sorted;
-  }, [items, searchQuery, filters, sortField, sortDirection]);
+  }, [items, searchQuery, filters, sortField, sortDirection, spellNamesByID]);
 
   if (loading) {
     return <div className="m-10">Loading inventory items...</div>;
@@ -1415,7 +1476,7 @@ export const InventoryItems = () => {
                 {line}
               </p>
             ))}
-            {consumeSummary(item).map((line) => (
+            {consumeSummary(item, spellNamesByID).map((line) => (
               <p key={`${item.id}-consume-${line}`} style={{ margin: '5px 0', color: '#666' }}>
                 {line}
               </p>
@@ -1993,6 +2054,47 @@ export const InventoryItems = () => {
                       type="button"
                       className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
                       onClick={() => removeConsumeStatusToRemove(index)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 600 }}>Spells Granted On Consume</label>
+                  <button
+                    type="button"
+                    onClick={addConsumeSpellId}
+                    className="bg-indigo-600 text-white px-2 py-1 rounded-md text-xs"
+                  >
+                    Add Spell
+                  </button>
+                </div>
+                {formData.consumeSpellIds.length === 0 && (
+                  <small style={{ color: '#666', fontSize: '12px' }}>
+                    No spells will be granted.
+                  </small>
+                )}
+                {formData.consumeSpellIds.map((spellID, index) => (
+                  <div key={`consume-spell-${index}`} style={{ display: 'flex', gap: '8px', marginBottom: '6px' }}>
+                    <select
+                      value={spellID}
+                      onChange={(e) => updateConsumeSpellId(index, e.target.value)}
+                      style={{ flex: 1, padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                    >
+                      <option value="">Select spell</option>
+                      {spells.map((spell) => (
+                        <option key={spell.id} value={spell.id}>
+                          {spell.name} ({spell.schoolOfMagic})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="bg-red-600 text-white px-2 py-1 rounded-md text-xs"
+                      onClick={() => removeConsumeSpellId(index)}
                     >
                       Remove
                     </button>

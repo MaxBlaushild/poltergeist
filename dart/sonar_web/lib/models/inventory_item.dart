@@ -25,6 +25,7 @@ class InventoryItem {
   final int consumeManaDelta;
   final List<InventoryConsumeStatus> consumeStatusesToAdd;
   final List<String> consumeStatusesToRemove;
+  final List<String> consumeSpellIds;
 
   const InventoryItem({
     required this.id,
@@ -53,6 +54,7 @@ class InventoryItem {
     this.consumeManaDelta = 0,
     this.consumeStatusesToAdd = const [],
     this.consumeStatusesToRemove = const [],
+    this.consumeSpellIds = const [],
   });
 
   factory InventoryItem.fromJson(Map<String, dynamic> json) {
@@ -94,6 +96,12 @@ class InventoryItem {
           const [],
       consumeStatusesToRemove:
           (json['consumeStatusesToRemove'] as List<dynamic>?)
+              ?.map((entry) => entry.toString().trim())
+              .where((entry) => entry.isNotEmpty)
+              .toList() ??
+          const [],
+      consumeSpellIds:
+          (json['consumeSpellIds'] as List<dynamic>?)
               ?.map((entry) => entry.toString().trim())
               .where((entry) => entry.isNotEmpty)
               .toList() ??

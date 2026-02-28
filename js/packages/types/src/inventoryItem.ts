@@ -41,6 +41,7 @@ export type InventoryItem = {
   consumeManaDelta?: number;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
+  consumeSpellIds?: string[];
   imageGenerationStatus?: string;
   imageGenerationError?: string;
   createdAt?: string;

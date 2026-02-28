@@ -144,7 +144,7 @@ func inventoryItemHasConfiguredConsumeEffects(item *models.InventoryItem) bool {
 	if item.ConsumeHealthDelta != 0 || item.ConsumeManaDelta != 0 {
 		return true
 	}
-	return len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0
+	return len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0 || len(item.ConsumeSpellIDs) > 0
 }
 
 func (c *client) applyConfiguredConsumeEffects(
@@ -190,6 +190,19 @@ func (c *client) applyConfiguredConsumeEffects(
 			ExpiresAt:       now.Add(time.Duration(template.DurationSeconds) * time.Second),
 		}
 		if err := c.db.UserStatus().Create(ctx, status); err != nil {
+			return err
+		}
+	}
+	for _, rawSpellID := range item.ConsumeSpellIDs {
+		trimmed := strings.TrimSpace(rawSpellID)
+		if trimmed == "" {
+			continue
+		}
+		spellID, err := uuid.Parse(trimmed)
+		if err != nil {
+			continue
+		}
+		if err := c.db.UserSpell().GrantToUser(ctx, userID, spellID); err != nil {
 			return err
 		}
 	}

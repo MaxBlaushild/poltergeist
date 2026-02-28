@@ -205,7 +205,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return inv.consumeHealthDelta != 0 ||
         inv.consumeManaDelta != 0 ||
         inv.consumeStatusesToAdd.isNotEmpty ||
-        inv.consumeStatusesToRemove.isNotEmpty;
+        inv.consumeStatusesToRemove.isNotEmpty ||
+        inv.consumeSpellIds.isNotEmpty;
   }
 
   bool _isOutfitItem(InventoryItem inv) {
@@ -1129,6 +1130,13 @@ class _InventoryPanelState extends State<InventoryPanel> {
           context,
           icon: Icons.remove_circle_outline,
           label: 'Removes ${inv.consumeStatusesToRemove.join(', ')}',
+        ),
+      if (inv.consumeSpellIds.isNotEmpty)
+        _buildMetaChip(
+          context,
+          icon: Icons.auto_awesome,
+          label:
+              'Grants ${inv.consumeSpellIds.length} spell${inv.consumeSpellIds.length == 1 ? '' : 's'}',
         ),
     ];
 
