@@ -74,6 +74,17 @@ type CharacterStatBonuses struct {
 	Charisma     int `json:"charisma"`
 }
 
+func (b CharacterStatBonuses) Add(other CharacterStatBonuses) CharacterStatBonuses {
+	return CharacterStatBonuses{
+		Strength:     b.Strength + other.Strength,
+		Dexterity:    b.Dexterity + other.Dexterity,
+		Constitution: b.Constitution + other.Constitution,
+		Intelligence: b.Intelligence + other.Intelligence,
+		Wisdom:       b.Wisdom + other.Wisdom,
+		Charisma:     b.Charisma + other.Charisma,
+	}
+}
+
 func (b CharacterStatBonuses) ToMap() map[string]int {
 	return map[string]int{
 		"strength":     b.Strength,

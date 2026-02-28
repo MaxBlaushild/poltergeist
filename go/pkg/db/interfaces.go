@@ -57,6 +57,7 @@ type DbClient interface {
 	UserLevel() UserLevelHandle
 	UserCharacterStats() UserCharacterStatsHandle
 	UserEquipment() UserEquipmentHandle
+	UserStatus() UserStatusHandle
 	UserProficiency() UserProficiencyHandle
 	UserZoneReputation() UserZoneReputationHandle
 	Friend() FriendHandle
@@ -566,6 +567,13 @@ type UserEquipmentHandle interface {
 	UnequipSlot(ctx context.Context, userID uuid.UUID, slot string) error
 	UnequipOwnedItem(ctx context.Context, userID uuid.UUID, ownedInventoryItemID uuid.UUID) error
 	GetStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
+}
+
+type UserStatusHandle interface {
+	Create(ctx context.Context, status *models.UserStatus) error
+	FindActiveByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserStatus, error)
+	GetActiveStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
+	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
 type UserZoneReputationHandle interface {

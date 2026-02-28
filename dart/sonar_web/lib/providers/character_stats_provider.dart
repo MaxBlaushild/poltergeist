@@ -47,10 +47,14 @@ class CharacterStatsProvider with ChangeNotifier {
   Map<String, int> get baseStats => _stats?.toMap() ?? _defaultStats();
   Map<String, int> get equipmentBonuses =>
       _stats?.bonusMap() ?? _defaultBonuses();
+  Map<String, int> get statusBonuses =>
+      _stats?.statusBonusMap() ?? _defaultBonuses();
   Map<String, int> get stats => _stats?.effectiveMap() ?? _defaultStats();
   List<CharacterProficiency> get proficiencies =>
       _stats?.proficiencies ?? const [];
+  List<CharacterStatus> get statuses => _stats?.statuses ?? const [];
   bool get hasProficiencies => proficiencies.isNotEmpty;
+  bool get hasStatuses => statuses.isNotEmpty;
 
   void updateAuth(AuthProvider auth) {
     final newUserId = auth.user?.id;

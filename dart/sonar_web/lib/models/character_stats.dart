@@ -16,6 +16,45 @@ class CharacterProficiency {
   }
 }
 
+class CharacterStatus {
+  final String id;
+  final String name;
+  final String description;
+  final String effect;
+  final String effectType;
+  final DateTime? startedAt;
+  final DateTime? expiresAt;
+
+  const CharacterStatus({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.effect,
+    required this.effectType,
+    this.startedAt,
+    this.expiresAt,
+  });
+
+  factory CharacterStatus.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic raw) {
+      if (raw is String && raw.trim().isNotEmpty) {
+        return DateTime.tryParse(raw.trim());
+      }
+      return null;
+    }
+
+    return CharacterStatus(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      effect: json['effect']?.toString() ?? '',
+      effectType: json['effectType']?.toString() ?? '',
+      startedAt: parseDate(json['startedAt']),
+      expiresAt: parseDate(json['expiresAt']),
+    );
+  }
+}
+
 class CharacterStats {
   static const int healthPerConstitutionPoint = 10;
   static const int manaPerMentalStatPoint = 5;
@@ -29,9 +68,11 @@ class CharacterStats {
   final int health;
   final int mana;
   final Map<String, int> equipmentBonuses;
+  final Map<String, int> statusBonuses;
   final int unspentPoints;
   final int level;
   final List<CharacterProficiency> proficiencies;
+  final List<CharacterStatus> statuses;
 
   const CharacterStats({
     required this.strength,
@@ -43,9 +84,11 @@ class CharacterStats {
     required this.health,
     required this.mana,
     this.equipmentBonuses = const {},
+    this.statusBonuses = const {},
     required this.unspentPoints,
     required this.level,
     this.proficiencies = const [],
+    this.statuses = const [],
   });
 
   factory CharacterStats.fromJson(Map<String, dynamic> json) {
@@ -62,11 +105,13 @@ class CharacterStats {
     final wisdom = intValue('wisdom', 'Wisdom');
     final charisma = intValue('charisma', 'Charisma');
     final equipmentBonuses = _parseBonusMap(json['equipmentBonuses']);
+    final statusBonuses = _parseBonusMap(json['statusBonuses']);
+    final combinedBonuses = _mergeBonusMaps(equipmentBonuses, statusBonuses);
     final effectiveConstitution =
-        constitution + (equipmentBonuses['constitution'] ?? 0);
+        constitution + (combinedBonuses['constitution'] ?? 0);
     final effectiveIntelligence =
-        intelligence + (equipmentBonuses['intelligence'] ?? 0);
-    final effectiveWisdom = wisdom + (equipmentBonuses['wisdom'] ?? 0);
+        intelligence + (combinedBonuses['intelligence'] ?? 0);
+    final effectiveWisdom = wisdom + (combinedBonuses['wisdom'] ?? 0);
     final health = json['health'] is num
         ? (json['health'] as num).toInt()
         : deriveHealthFromConstitution(effectiveConstitution);
@@ -84,6 +129,7 @@ class CharacterStats {
       health: health,
       mana: mana,
       equipmentBonuses: equipmentBonuses,
+      statusBonuses: statusBonuses,
       unspentPoints: intValue('unspentPoints', 'unspent_points'),
       level: intValue('level', 'Level'),
       proficiencies:
@@ -94,6 +140,15 @@ class CharacterStats {
                 ),
               )
               .where((entry) => entry.proficiency.isNotEmpty)
+              .toList() ??
+          const [],
+      statuses:
+          (json['statuses'] as List<dynamic>?)
+              ?.map(
+                (entry) =>
+                    CharacterStatus.fromJson(entry as Map<String, dynamic>),
+              )
+              .where((entry) => entry.name.isNotEmpty)
               .toList() ??
           const [],
     );
@@ -119,7 +174,7 @@ class CharacterStats {
     'charisma': charisma,
   };
 
-  Map<String, int> bonusMap() => {
+  Map<String, int> equipmentBonusMap() => {
     'strength': equipmentBonuses['strength'] ?? 0,
     'dexterity': equipmentBonuses['dexterity'] ?? 0,
     'constitution': equipmentBonuses['constitution'] ?? 0,
@@ -127,6 +182,18 @@ class CharacterStats {
     'wisdom': equipmentBonuses['wisdom'] ?? 0,
     'charisma': equipmentBonuses['charisma'] ?? 0,
   };
+
+  Map<String, int> statusBonusMap() => {
+    'strength': statusBonuses['strength'] ?? 0,
+    'dexterity': statusBonuses['dexterity'] ?? 0,
+    'constitution': statusBonuses['constitution'] ?? 0,
+    'intelligence': statusBonuses['intelligence'] ?? 0,
+    'wisdom': statusBonuses['wisdom'] ?? 0,
+    'charisma': statusBonuses['charisma'] ?? 0,
+  };
+
+  Map<String, int> bonusMap() =>
+      _mergeBonusMaps(equipmentBonusMap(), statusBonusMap());
 
   Map<String, int> effectiveMap() {
     final base = toMap();
@@ -145,5 +212,21 @@ class CharacterStats {
       });
     }
     return const {};
+  }
+
+  static Map<String, int> _mergeBonusMaps(
+    Map<String, int> first,
+    Map<String, int> second,
+  ) {
+    return {
+      'strength': (first['strength'] ?? 0) + (second['strength'] ?? 0),
+      'dexterity': (first['dexterity'] ?? 0) + (second['dexterity'] ?? 0),
+      'constitution':
+          (first['constitution'] ?? 0) + (second['constitution'] ?? 0),
+      'intelligence':
+          (first['intelligence'] ?? 0) + (second['intelligence'] ?? 0),
+      'wisdom': (first['wisdom'] ?? 0) + (second['wisdom'] ?? 0),
+      'charisma': (first['charisma'] ?? 0) + (second['charisma'] ?? 0),
+    };
   }
 }

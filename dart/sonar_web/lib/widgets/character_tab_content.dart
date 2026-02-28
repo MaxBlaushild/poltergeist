@@ -31,6 +31,7 @@ class CharacterTabContent extends StatefulWidget {
 }
 
 class _CharacterTabContentState extends State<CharacterTabContent> {
+  static const double _damageLabelColumnWidth = 120;
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   static const Map<String, String> _labels = {
     'strength': 'Strength',
@@ -214,6 +215,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final hasUnspentPoints = unspentPoints > 0;
     final proficiencies =
         overrideStats?.proficiencies ?? statsProvider.proficiencies;
+    final statuses = overrideStats?.statuses ?? statsProvider.statuses;
     final hasProficiencies = proficiencies.isNotEmpty;
     final canEdit = !_isReadOnly;
 
@@ -354,14 +356,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                 ],
               ),
               const SizedBox(height: 16),
-              _buildResourceCard(
-                context,
-                health: health,
-                mana: mana,
-                constitution: effectiveConstitution,
-                intelligence: effectiveIntelligence,
-                wisdom: effectiveWisdom,
-              ),
+              _buildResourceCard(context, health: health, mana: mana),
               const SizedBox(height: 16),
               _buildDamageCard(context),
               const SizedBox(height: 16),
@@ -503,6 +498,16 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                             baseStats[key] ??
                             CharacterStatsProvider.baseStatValue;
                         final bonusValue = bonusStats[key] ?? 0;
+                        final bonusLabel = bonusValue == 0
+                            ? ''
+                            : bonusValue > 0
+                            ? '+$bonusValue'
+                            : '$bonusValue';
+                        final bonusColor = bonusValue == 0
+                            ? theme.colorScheme.onSurfaceVariant
+                            : bonusValue > 0
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.error;
                         final pendingValue = _pending[key] ?? 0;
                         final displayValue = baseValue + pendingValue;
                         final remaining = unspentPoints - _pendingTotal;
@@ -550,9 +555,9 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                                 child: Align(
                                   alignment: Alignment.centerRight,
                                   child: Text(
-                                    bonusValue > 0 ? '+$bonusValue' : '',
+                                    bonusLabel,
                                     style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: theme.colorScheme.primary,
+                                      color: bonusColor,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -610,6 +615,8 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                 ),
               ),
               const SizedBox(height: 16),
+              _buildStatusesCard(context, statuses),
+              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -652,7 +659,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                               ),
                             ),
                             child: Text(
-                              '${proficiency.proficiency} · ${proficiency.level}',
+                              '${_toTitleCase(proficiency.proficiency)} · ${proficiency.level}',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 fontWeight: FontWeight.w600,
                               ),
@@ -841,15 +848,20 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     );
   }
 
-  Widget _buildResourceCard(
-    BuildContext context, {
-    required int health,
-    required int mana,
-    required int constitution,
-    required int intelligence,
-    required int wisdom,
-  }) {
+  Widget _buildStatusesCard(
+    BuildContext context,
+    List<CharacterStatus> statuses,
+  ) {
     final theme = Theme.of(context);
+    final sortedStatuses = List<CharacterStatus>.from(statuses)
+      ..sort((a, b) {
+        final aTime = a.expiresAt;
+        final bTime = b.expiresAt;
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return aTime.compareTo(bTime);
+      });
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -861,12 +873,101 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Health & Mana',
+            'Statuses',
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+          if (sortedStatuses.isEmpty)
+            Text(
+              'No active statuses.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (sortedStatuses.isNotEmpty)
+            Column(
+              children: sortedStatuses.map((status) {
+                final effectText = status.effect.trim().isNotEmpty
+                    ? status.effect.trim()
+                    : _toTitleCase(status.effectType);
+                final remainingText = _statusRemainingText(status.expiresAt);
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              status.name,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            remainingText,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (status.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          status.description.trim(),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ],
+                      if (effectText.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Effect: $effectText',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResourceCard(
+    BuildContext context, {
+    required int health,
+    required int mana,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           _buildResourceBar(
             context,
             label: 'Health',
@@ -883,13 +984,6 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
             maxValue: mana,
             icon: Icons.auto_fix_high,
             fillColor: const Color(0xFF1E6FA7),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Health scales with CON ($constitution). Mana scales with INT + WIS ($intelligence + $wisdom).',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
         ],
       ),
@@ -951,19 +1045,22 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
   }) {
     final theme = Theme.of(context);
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
+        SizedBox(
+          width: _damageLabelColumnWidth,
+          child: Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-        const Spacer(),
-        Flexible(
+        Expanded(
           child: Text(
             value,
-            textAlign: TextAlign.end,
+            textAlign: TextAlign.left,
             overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodyMedium?.copyWith(
               fontWeight: FontWeight.w700,
@@ -972,6 +1069,45 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
         ),
       ],
     );
+  }
+
+  String _statusRemainingText(DateTime? expiresAt) {
+    if (expiresAt == null) return 'Active';
+    final remaining = expiresAt.toLocal().difference(DateTime.now());
+    if (remaining.inSeconds <= 0) return 'Expired';
+    if (remaining.inDays > 0) {
+      final hours = remaining.inHours.remainder(24);
+      if (hours > 0) {
+        return '${remaining.inDays}d ${hours}h left';
+      }
+      return '${remaining.inDays}d left';
+    }
+    if (remaining.inHours > 0) {
+      final minutes = remaining.inMinutes.remainder(60);
+      if (minutes > 0) {
+        return '${remaining.inHours}h ${minutes}m left';
+      }
+      return '${remaining.inHours}h left';
+    }
+    final minutes = remaining.inMinutes;
+    if (minutes > 0) {
+      return '${minutes}m left';
+    }
+    return '${remaining.inSeconds}s left';
+  }
+
+  String _toTitleCase(String value) {
+    final normalized = value
+        .trim()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .toLowerCase();
+    if (normalized.isEmpty) return value;
+    return normalized
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+        .join(' ');
   }
 
   void _updateFades() {

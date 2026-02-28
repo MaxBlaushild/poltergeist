@@ -60,6 +60,7 @@ type client struct {
 	userLevelHandle                   *userLevelHandler
 	userCharacterStatsHandle          *userCharacterStatsHandler
 	userEquipmentHandle               *userEquipmentHandler
+	userStatusHandle                  *userStatusHandler
 	userProficiencyHandle             *userProficiencyHandle
 	userZoneReputationHandle          *userZoneReputationHandler
 	partyHandle                       *partyHandle
@@ -190,6 +191,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		userLevelHandle:                   &userLevelHandler{db: db},
 		userCharacterStatsHandle:          &userCharacterStatsHandler{db: db},
 		userEquipmentHandle:               &userEquipmentHandler{db: db},
+		userStatusHandle:                  &userStatusHandler{db: db},
 		userProficiencyHandle:             &userProficiencyHandle{db: db},
 		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
 		partyHandle:                       &partyHandle{db: db},
@@ -336,6 +338,10 @@ func (c *client) UserCharacterStats() UserCharacterStatsHandle {
 
 func (c *client) UserEquipment() UserEquipmentHandle {
 	return c.userEquipmentHandle
+}
+
+func (c *client) UserStatus() UserStatusHandle {
+	return c.userStatusHandle
 }
 
 func (c *client) UserProficiency() UserProficiencyHandle {

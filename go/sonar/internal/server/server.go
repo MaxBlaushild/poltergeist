@@ -7395,28 +7395,34 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		bonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, user.ID)
+		equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, user.ID)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		totalBonuses := equipmentBonuses.Add(statusBonuses)
 		statValues = map[string]int{}
 		statValueSum := 0
 		for _, tag := range statTags {
 			value := 0
 			switch tag {
 			case "strength":
-				value = stats.Strength + bonuses.Strength
+				value = stats.Strength + totalBonuses.Strength
 			case "dexterity":
-				value = stats.Dexterity + bonuses.Dexterity
+				value = stats.Dexterity + totalBonuses.Dexterity
 			case "constitution":
-				value = stats.Constitution + bonuses.Constitution
+				value = stats.Constitution + totalBonuses.Constitution
 			case "intelligence":
-				value = stats.Intelligence + bonuses.Intelligence
+				value = stats.Intelligence + totalBonuses.Intelligence
 			case "wisdom":
-				value = stats.Wisdom + bonuses.Wisdom
+				value = stats.Wisdom + totalBonuses.Wisdom
 			case "charisma":
-				value = stats.Charisma + bonuses.Charisma
+				value = stats.Charisma + totalBonuses.Charisma
 			}
 			statValues[tag] = value
 			statValueSum += value
@@ -8616,25 +8622,31 @@ func (s *server) deleteUser(ctx *gin.Context) {
 		return
 	}
 
-	// 17. Delete all owned inventory items
+	// 17. Delete all user statuses
+	if err := s.dbClient.UserStatus().DeleteAllForUser(ctx, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user statuses: " + err.Error()})
+		return
+	}
+
+	// 18. Delete all owned inventory items
 	if err := s.dbClient.InventoryItem().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete owned inventory items: " + err.Error()})
 		return
 	}
 
-	// 18. Delete all user team relationships
+	// 19. Delete all user team relationships
 	if err := s.dbClient.UserTeam().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user team relationships: " + err.Error()})
 		return
 	}
 
-	// 19. Delete all parties where user is leader
+	// 20. Delete all parties where user is leader
 	if err := s.dbClient.Party().DeleteAllForUser(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete parties: " + err.Error()})
 		return
 	}
 
-	// 20. Finally, delete the user
+	// 21. Finally, delete the user
 	if err := s.dbClient.User().Delete(ctx, userID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -8971,7 +8983,13 @@ func (s *server) deleteUsers(ctx *gin.Context) {
 			return
 		}
 
-		// 10. Finally, delete the user
+		// 10. Delete all user statuses
+		if err := s.dbClient.UserStatus().DeleteAllForUser(ctx, userID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user statuses for user " + userID.String() + ": " + err.Error()})
+			return
+		}
+
+		// 11. Finally, delete the user
 		if err := s.dbClient.User().Delete(ctx, userID); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user " + userID.String() + ": " + err.Error()})
 			return
@@ -10737,25 +10755,30 @@ func (s *server) getScenarioStatAndProficiencyBonuses(ctx context.Context, userI
 	if err != nil {
 		return 0, 0, err
 	}
-	bonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
 	if err != nil {
 		return 0, 0, err
 	}
+	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	totalBonuses := equipmentBonuses.Add(statusBonuses)
 
 	statValue := 0
 	switch statTag {
 	case "strength":
-		statValue = stats.Strength + bonuses.Strength
+		statValue = stats.Strength + totalBonuses.Strength
 	case "dexterity":
-		statValue = stats.Dexterity + bonuses.Dexterity
+		statValue = stats.Dexterity + totalBonuses.Dexterity
 	case "constitution":
-		statValue = stats.Constitution + bonuses.Constitution
+		statValue = stats.Constitution + totalBonuses.Constitution
 	case "intelligence":
-		statValue = stats.Intelligence + bonuses.Intelligence
+		statValue = stats.Intelligence + totalBonuses.Intelligence
 	case "wisdom":
-		statValue = stats.Wisdom + bonuses.Wisdom
+		statValue = stats.Wisdom + totalBonuses.Wisdom
 	case "charisma":
-		statValue = stats.Charisma + bonuses.Charisma
+		statValue = stats.Charisma + totalBonuses.Charisma
 	default:
 		return 0, 0, fmt.Errorf("invalid stat tag")
 	}
