@@ -2,6 +2,17 @@ import { useAPI } from '@poltergeist/contexts';
 import { User, PointOfInterestDiscovery, PointOfInterestChallengeSubmission, ActivityFeed, PointOfInterest } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 
+type AdminCharacterStats = {
+  health: number;
+  maxHealth: number;
+  mana: number;
+  maxMana: number;
+};
+
+type UserCharacterProfileResponse = {
+  stats?: Partial<AdminCharacterStats>;
+};
+
 export const Users = () => {
   const { apiClient } = useAPI();
   const [users, setUsers] = useState<User[]>([]);
@@ -36,6 +47,13 @@ export const Users = () => {
   const [grantingStatus, setGrantingStatus] = useState(false);
   const [statusGrantMessage, setStatusGrantMessage] = useState<string | null>(null);
   const [statusGrantKind, setStatusGrantKind] = useState<'success' | 'error' | null>(null);
+  const [resourceStats, setResourceStats] = useState<AdminCharacterStats | null>(null);
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceAmountHealth, setResourceAmountHealth] = useState('0');
+  const [resourceAmountMana, setResourceAmountMana] = useState('0');
+  const [resourceSubmitting, setResourceSubmitting] = useState(false);
+  const [resourceMessage, setResourceMessage] = useState<string | null>(null);
+  const [resourceMessageKind, setResourceMessageKind] = useState<'success' | 'error' | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -74,6 +92,20 @@ export const Users = () => {
     }
   };
 
+  const normalizeResourceStats = (stats?: Partial<AdminCharacterStats> | null): AdminCharacterStats | null => {
+    if (!stats) return null;
+    const health = Number.isFinite(stats.health as number) ? Number(stats.health) : 0;
+    const maxHealth = Number.isFinite(stats.maxHealth as number) ? Number(stats.maxHealth) : health;
+    const mana = Number.isFinite(stats.mana as number) ? Number(stats.mana) : 0;
+    const maxMana = Number.isFinite(stats.maxMana as number) ? Number(stats.maxMana) : mana;
+    return {
+      health,
+      maxHealth: Math.max(maxHealth, 1),
+      mana,
+      maxMana: Math.max(maxMana, 1),
+    };
+  };
+
   const selectUser = async (user: User) => {
     setSelectedUser(user);
     setSelectedDiscoveries(new Set());
@@ -92,19 +124,30 @@ export const Users = () => {
     setStatusCharismaMod('0');
     setStatusGrantMessage(null);
     setStatusGrantKind(null);
+    setResourceAmountHealth('0');
+    setResourceAmountMana('0');
+    setResourceMessage(null);
+    setResourceMessageKind(null);
+    setResourceStats(null);
+    setResourceLoading(true);
     
     try {
-      const [discoveriesRes, submissionsRes, activitiesRes] = await Promise.all([
+      const [discoveriesRes, submissionsRes, activitiesRes, characterProfileRes] = await Promise.all([
         apiClient.get<PointOfInterestDiscovery[]>(`/sonar/users/${user.id}/discoveries`),
         apiClient.get<PointOfInterestChallengeSubmission[]>(`/sonar/users/${user.id}/submissions`),
-        apiClient.get<ActivityFeed[]>(`/sonar/users/${user.id}/activities`)
+        apiClient.get<ActivityFeed[]>(`/sonar/users/${user.id}/activities`),
+        apiClient.get<UserCharacterProfileResponse>(`/sonar/users/${user.id}/character`)
       ]);
       
       setDiscoveries(discoveriesRes);
       setSubmissions(submissionsRes);
       setActivities(activitiesRes);
+      setResourceStats(normalizeResourceStats(characterProfileRes?.stats));
     } catch (error) {
       console.error('Error fetching user details:', error);
+      setResourceStats(null);
+    } finally {
+      setResourceLoading(false);
     }
   };
 
@@ -194,6 +237,52 @@ export const Users = () => {
     } finally {
       setGrantingStatus(false);
     }
+  };
+
+  const parseResourceAmount = (value: string) => {
+    const parsed = parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed < 0) return 0;
+    return parsed;
+  };
+
+  const adjustResources = async (healthDelta: number, manaDelta: number, successMessage: string) => {
+    if (!selectedUser) return;
+    if (healthDelta === 0 && manaDelta === 0) {
+      setResourceMessage('Enter at least one non-zero amount.');
+      setResourceMessageKind('error');
+      return;
+    }
+
+    try {
+      setResourceSubmitting(true);
+      setResourceMessage(null);
+      setResourceMessageKind(null);
+      const response = await apiClient.post<AdminCharacterStats>(`/sonar/admin/users/${selectedUser.id}/resources`, {
+        healthDelta,
+        manaDelta,
+      });
+      setResourceStats(normalizeResourceStats(response));
+      setResourceMessage(successMessage);
+      setResourceMessageKind('success');
+    } catch (error) {
+      console.error('Error adjusting user resources:', error);
+      setResourceMessage('Failed to adjust resources.');
+      setResourceMessageKind('error');
+    } finally {
+      setResourceSubmitting(false);
+    }
+  };
+
+  const applyDamageAndDrain = async () => {
+    const healthAmount = parseResourceAmount(resourceAmountHealth);
+    const manaAmount = parseResourceAmount(resourceAmountMana);
+    await adjustResources(-healthAmount, -manaAmount, 'Damage/drain applied.');
+  };
+
+  const restoreHealthAndMana = async () => {
+    const healthAmount = parseResourceAmount(resourceAmountHealth);
+    const manaAmount = parseResourceAmount(resourceAmountMana);
+    await adjustResources(healthAmount, manaAmount, 'Resources restored.');
   };
 
   const handleDeleteUser = async () => {
@@ -546,6 +635,128 @@ export const Users = () => {
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* Resources Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold">Health & Mana</h3>
+                  </div>
+                  <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                    {resourceLoading ? (
+                      <div className="text-sm text-gray-500">Loading resources...</div>
+                    ) : resourceStats ? (
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="font-medium text-red-700">Health</span>
+                            <span className="text-gray-700">
+                              {resourceStats.health} / {resourceStats.maxHealth}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded bg-red-100 overflow-hidden">
+                            <div
+                              className="h-full bg-red-500"
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    (resourceStats.health / Math.max(resourceStats.maxHealth, 1)) * 100,
+                                  ),
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="font-medium text-blue-700">Mana</span>
+                            <span className="text-gray-700">
+                              {resourceStats.mana} / {resourceStats.maxMana}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded bg-blue-100 overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500"
+                              style={{
+                                width: `${Math.max(
+                                  0,
+                                  Math.min(
+                                    100,
+                                    (resourceStats.mana / Math.max(resourceStats.maxMana, 1)) * 100,
+                                  ),
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">Resource values unavailable.</div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Health amount</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={resourceAmountHealth}
+                          onChange={(e) => setResourceAmountHealth(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mana amount</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={resourceAmountMana}
+                          onChange={(e) => setResourceAmountMana(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    {resourceMessage && (
+                      <div
+                        className={`rounded-md border px-3 py-2 text-sm ${
+                          resourceMessageKind === 'success'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-rose-200 bg-rose-50 text-rose-800'
+                        }`}
+                      >
+                        {resourceMessage}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={applyDamageAndDrain}
+                        disabled={resourceSubmitting || resourceLoading}
+                        className={`px-4 py-2 rounded text-white ${
+                          resourceSubmitting || resourceLoading
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-red-600 hover:bg-red-700'
+                        }`}
+                      >
+                        Apply Damage/Drain
+                      </button>
+                      <button
+                        onClick={restoreHealthAndMana}
+                        disabled={resourceSubmitting || resourceLoading}
+                        className={`px-4 py-2 rounded text-white ${
+                          resourceSubmitting || resourceLoading
+                            ? 'bg-gray-400 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Statuses Section */}

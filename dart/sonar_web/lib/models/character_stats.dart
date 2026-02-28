@@ -79,7 +79,9 @@ class CharacterStats {
   final int wisdom;
   final int charisma;
   final int health;
+  final int maxHealth;
   final int mana;
+  final int maxMana;
   final Map<String, int> equipmentBonuses;
   final Map<String, int> statusBonuses;
   final int unspentPoints;
@@ -95,7 +97,9 @@ class CharacterStats {
     required this.wisdom,
     required this.charisma,
     required this.health,
+    required this.maxHealth,
     required this.mana,
+    required this.maxMana,
     this.equipmentBonuses = const {},
     this.statusBonuses = const {},
     required this.unspentPoints,
@@ -131,6 +135,12 @@ class CharacterStats {
     final mana = json['mana'] is num
         ? (json['mana'] as num).toInt()
         : deriveManaFromMentalStats(effectiveIntelligence, effectiveWisdom);
+    final maxHealth = json['maxHealth'] is num
+        ? (json['maxHealth'] as num).toInt()
+        : deriveHealthFromConstitution(effectiveConstitution);
+    final maxMana = json['maxMana'] is num
+        ? (json['maxMana'] as num).toInt()
+        : deriveManaFromMentalStats(effectiveIntelligence, effectiveWisdom);
 
     return CharacterStats(
       strength: strength,
@@ -140,7 +150,9 @@ class CharacterStats {
       wisdom: wisdom,
       charisma: charisma,
       health: health,
+      maxHealth: maxHealth,
       mana: mana,
+      maxMana: maxMana,
       equipmentBonuses: equipmentBonuses,
       statusBonuses: statusBonuses,
       unspentPoints: intValue('unspentPoints', 'unspent_points'),

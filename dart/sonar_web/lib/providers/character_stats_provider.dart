@@ -32,17 +32,19 @@ class CharacterStatsProvider with ChangeNotifier {
   bool get loading => _loading;
   int get level => _stats?.level ?? 1;
   int get unspentPoints => _stats?.unspentPoints ?? 0;
-  int get health =>
-      _stats?.health ??
+  int get maxHealth =>
+      _stats?.maxHealth ??
       CharacterStats.deriveHealthFromConstitution(
         _defaultStats()['constitution'] ?? baseStatValue,
       );
-  int get mana =>
-      _stats?.mana ??
+  int get maxMana =>
+      _stats?.maxMana ??
       CharacterStats.deriveManaFromMentalStats(
         _defaultStats()['intelligence'] ?? baseStatValue,
         _defaultStats()['wisdom'] ?? baseStatValue,
       );
+  int get health => _stats?.health ?? maxHealth;
+  int get mana => _stats?.mana ?? maxMana;
   bool get hasUnspentPoints => unspentPoints > 0;
   Map<String, int> get baseStats => _stats?.toMap() ?? _defaultStats();
   Map<String, int> get equipmentBonuses =>

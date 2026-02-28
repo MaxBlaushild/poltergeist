@@ -1,0 +1,3 @@
+ALTER TABLE user_character_stats
+ADD COLUMN health_deficit INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN mana_deficit INTEGER NOT NULL DEFAULT 0;

@@ -227,6 +227,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
+	r.POST("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAdjustUserResources))
 	r.PATCH("/sonar/users/:id/gold", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateUserGold))
 	r.DELETE("/sonar/users/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUser))
 	r.DELETE("/sonar/users", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteUsers))
@@ -8987,6 +8988,85 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, status)
+}
+
+func (s *server) adminAdjustUserResources(ctx *gin.Context) {
+	_, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
+		return
+	}
+
+	var requestBody struct {
+		HealthDelta int `json:"healthDelta"`
+		ManaDelta   int `json:"manaDelta"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.HealthDelta == 0 && requestBody.ManaDelta == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one of healthDelta or manaDelta must be non-zero"})
+		return
+	}
+
+	user, err := s.dbClient.User().FindByID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user: " + err.Error()})
+		return
+	}
+	if user == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+
+	userLevel, err := s.dbClient.UserLevel().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, userLevel.Level); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	stats, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(
+		ctx,
+		userID,
+		-requestBody.HealthDelta,
+		-requestBody.ManaDelta,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	proficiencies, err := s.dbClient.UserProficiency().FindByUserID(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	statusBonuses, statuses, err := s.getActiveStatusBonusesAndStatuses(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses))
 }
 
 func (s *server) deleteUsers(ctx *gin.Context) {

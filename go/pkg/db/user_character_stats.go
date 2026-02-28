@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	ErrNoStatAllocations     = errors.New("no stat allocations")
-	ErrInvalidStatAllocation = errors.New("invalid stat allocation")
+	ErrNoStatAllocations      = errors.New("no stat allocations")
+	ErrInvalidStatAllocation  = errors.New("invalid stat allocation")
 	ErrInsufficientStatPoints = errors.New("insufficient stat points")
 )
 
@@ -70,6 +70,46 @@ func (h *userCharacterStatsHandler) AddStatPoints(ctx context.Context, userID uu
 		if err := applyStatAdditions(stats, additions); err != nil {
 			return err
 		}
+		stats.UpdatedAt = time.Now()
+		if err := tx.Save(stats).Error; err != nil {
+			return err
+		}
+		result = stats
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (h *userCharacterStatsHandler) AdjustResourceDeficits(
+	ctx context.Context,
+	userID uuid.UUID,
+	healthDeficitDelta int,
+	manaDeficitDelta int,
+) (*models.UserCharacterStats, error) {
+	if healthDeficitDelta == 0 && manaDeficitDelta == 0 {
+		return h.FindOrCreateForUser(ctx, userID)
+	}
+
+	var result *models.UserCharacterStats
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stats, err := h.findOrCreateForUserTx(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		stats.HealthDeficit += healthDeficitDelta
+		if stats.HealthDeficit < 0 {
+			stats.HealthDeficit = 0
+		}
+
+		stats.ManaDeficit += manaDeficitDelta
+		if stats.ManaDeficit < 0 {
+			stats.ManaDeficit = 0
+		}
+
 		stats.UpdatedAt = time.Now()
 		if err := tx.Save(stats).Error; err != nil {
 			return err
@@ -150,6 +190,8 @@ func defaultCharacterStats(userID uuid.UUID) *models.UserCharacterStats {
 		Intelligence:     models.CharacterStatBaseValue,
 		Wisdom:           models.CharacterStatBaseValue,
 		Charisma:         models.CharacterStatBaseValue,
+		HealthDeficit:    0,
+		ManaDeficit:      0,
 		UnspentPoints:    0,
 		LastLevelAwarded: 1,
 	}

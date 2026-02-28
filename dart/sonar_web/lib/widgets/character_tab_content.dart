@@ -201,15 +201,17 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final effectiveWisdom =
         (baseStats['wisdom'] ?? CharacterStatsProvider.baseStatValue) +
         (bonusStats['wisdom'] ?? 0);
-    final health =
-        overrideStats?.health ??
+    final maxHealth =
+        overrideStats?.maxHealth ??
         CharacterStats.deriveHealthFromConstitution(effectiveConstitution);
-    final mana =
-        overrideStats?.mana ??
+    final maxMana =
+        overrideStats?.maxMana ??
         CharacterStats.deriveManaFromMentalStats(
           effectiveIntelligence,
           effectiveWisdom,
         );
+    final health = overrideStats?.health ?? statsProvider.health;
+    final mana = overrideStats?.mana ?? statsProvider.mana;
     final unspentPoints =
         overrideStats?.unspentPoints ?? statsProvider.unspentPoints;
     final hasUnspentPoints = unspentPoints > 0;
@@ -356,7 +358,13 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                 ],
               ),
               const SizedBox(height: 16),
-              _buildResourceCard(context, health: health, mana: mana),
+              _buildResourceCard(
+                context,
+                health: health,
+                maxHealth: maxHealth,
+                mana: mana,
+                maxMana: maxMana,
+              ),
               const SizedBox(height: 16),
               _buildDamageCard(context),
               const SizedBox(height: 16),
@@ -989,7 +997,9 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
   Widget _buildResourceCard(
     BuildContext context, {
     required int health,
+    required int maxHealth,
     required int mana,
+    required int maxMana,
   }) {
     final theme = Theme.of(context);
     return Container(
@@ -1005,7 +1015,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
             context,
             label: 'Health',
             value: health,
-            maxValue: health,
+            maxValue: maxHealth,
             icon: Icons.favorite,
             fillColor: const Color(0xFFB33939),
           ),
@@ -1014,7 +1024,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
             context,
             label: 'Mana',
             value: mana,
-            maxValue: mana,
+            maxValue: maxMana,
             icon: Icons.auto_fix_high,
             fillColor: const Color(0xFF1E6FA7),
           ),

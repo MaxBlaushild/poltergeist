@@ -20,7 +20,9 @@ type characterStatsResponse struct {
 	Wisdom           int                            `json:"wisdom"`
 	Charisma         int                            `json:"charisma"`
 	Health           int                            `json:"health"`
+	MaxHealth        int                            `json:"maxHealth"`
 	Mana             int                            `json:"mana"`
+	MaxMana          int                            `json:"maxMana"`
 	EquipmentBonuses map[string]int                 `json:"equipmentBonuses"`
 	StatusBonuses    map[string]int                 `json:"statusBonuses"`
 	UnspentPoints    int                            `json:"unspentPoints"`
@@ -208,9 +210,7 @@ func characterStatsResponseFrom(
 	statuses []models.UserStatus,
 ) characterStatsResponse {
 	totalBonuses := equipmentBonuses.Add(statusBonuses)
-	effectiveConstitution := stats.Constitution + totalBonuses.Constitution
-	effectiveIntelligence := stats.Intelligence + totalBonuses.Intelligence
-	effectiveWisdom := stats.Wisdom + totalBonuses.Wisdom
+	maxHealth, maxMana, currentHealth, currentMana := deriveCharacterResources(stats, totalBonuses)
 	proficiencyResponse := make([]characterProficiencyResponse, 0, len(proficiencies))
 	for _, proficiency := range proficiencies {
 		proficiencyResponse = append(proficiencyResponse, characterProficiencyResponse{
@@ -225,8 +225,10 @@ func characterStatsResponseFrom(
 		Intelligence:     stats.Intelligence,
 		Wisdom:           stats.Wisdom,
 		Charisma:         stats.Charisma,
-		Health:           deriveCharacterHealth(effectiveConstitution),
-		Mana:             deriveCharacterMana(effectiveIntelligence, effectiveWisdom),
+		Health:           currentHealth,
+		MaxHealth:        maxHealth,
+		Mana:             currentMana,
+		MaxMana:          maxMana,
 		EquipmentBonuses: equipmentBonuses.ToMap(),
 		StatusBonuses:    statusBonuses.ToMap(),
 		UnspentPoints:    stats.UnspentPoints,
@@ -285,4 +287,33 @@ func deriveCharacterMana(intelligence int, wisdom int) int {
 		mental = 1
 	}
 	return mental * 5
+}
+
+func deriveCharacterResources(
+	stats *models.UserCharacterStats,
+	bonuses models.CharacterStatBonuses,
+) (maxHealth int, maxMana int, currentHealth int, currentMana int) {
+	effectiveConstitution := stats.Constitution + bonuses.Constitution
+	effectiveIntelligence := stats.Intelligence + bonuses.Intelligence
+	effectiveWisdom := stats.Wisdom + bonuses.Wisdom
+	maxHealth = deriveCharacterHealth(effectiveConstitution)
+	maxMana = deriveCharacterMana(effectiveIntelligence, effectiveWisdom)
+
+	currentHealth = maxHealth - stats.HealthDeficit
+	if currentHealth < 0 {
+		currentHealth = 0
+	}
+	if currentHealth > maxHealth {
+		currentHealth = maxHealth
+	}
+
+	currentMana = maxMana - stats.ManaDeficit
+	if currentMana < 0 {
+		currentMana = 0
+	}
+	if currentMana > maxMana {
+		currentMana = maxMana
+	}
+
+	return maxHealth, maxMana, currentHealth, currentMana
 }
