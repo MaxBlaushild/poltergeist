@@ -21,6 +21,7 @@ class CharacterStatus {
   final String name;
   final String description;
   final String effect;
+  final bool positive;
   final String effectType;
   final DateTime? startedAt;
   final DateTime? expiresAt;
@@ -30,6 +31,7 @@ class CharacterStatus {
     required this.name,
     required this.description,
     required this.effect,
+    required this.positive,
     required this.effectType,
     this.startedAt,
     this.expiresAt,
@@ -43,11 +45,22 @@ class CharacterStatus {
       return null;
     }
 
+    bool parseBool(dynamic raw, {bool fallback = true}) {
+      if (raw is bool) return raw;
+      if (raw is String) {
+        final normalized = raw.trim().toLowerCase();
+        if (normalized == 'true') return true;
+        if (normalized == 'false') return false;
+      }
+      return fallback;
+    }
+
     return CharacterStatus(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
       effect: json['effect']?.toString() ?? '',
+      positive: parseBool(json['positive'], fallback: true),
       effectType: json['effectType']?.toString() ?? '',
       startedAt: parseDate(json['startedAt']),
       expiresAt: parseDate(json['expiresAt']),

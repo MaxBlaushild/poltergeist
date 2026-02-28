@@ -39,6 +39,7 @@ type characterStatusResponse struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	Effect      string    `json:"effect"`
+	Positive    bool      `json:"positive"`
 	EffectType  string    `json:"effectType"`
 	StartedAt   time.Time `json:"startedAt"`
 	ExpiresAt   time.Time `json:"expiresAt"`
@@ -247,6 +248,7 @@ func characterStatusResponsesFrom(statuses []models.UserStatus) []characterStatu
 			Name:        status.Name,
 			Description: status.Description,
 			Effect:      status.Effect,
+			Positive:    status.Positive,
 			EffectType:  effectType,
 			StartedAt:   status.StartedAt,
 			ExpiresAt:   status.ExpiresAt,

@@ -8923,6 +8923,7 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		Name            string `json:"name" binding:"required"`
 		Description     string `json:"description"`
 		Effect          string `json:"effect"`
+		Positive        *bool  `json:"positive"`
 		DurationSeconds int    `json:"durationSeconds" binding:"required"`
 		StrengthMod     int    `json:"strengthMod"`
 		DexterityMod    int    `json:"dexterityMod"`
@@ -8957,12 +8958,18 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		return
 	}
 
+	isPositive := true
+	if requestBody.Positive != nil {
+		isPositive = *requestBody.Positive
+	}
+
 	now := time.Now()
 	status := &models.UserStatus{
 		UserID:          userID,
 		Name:            requestBody.Name,
 		Description:     strings.TrimSpace(requestBody.Description),
 		Effect:          strings.TrimSpace(requestBody.Effect),
+		Positive:        isPositive,
 		EffectType:      models.UserStatusEffectTypeStatModifier,
 		StrengthMod:     requestBody.StrengthMod,
 		DexterityMod:    requestBody.DexterityMod,

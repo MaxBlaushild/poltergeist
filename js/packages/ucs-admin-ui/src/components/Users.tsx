@@ -25,6 +25,7 @@ export const Users = () => {
   const [statusName, setStatusName] = useState('');
   const [statusDescription, setStatusDescription] = useState('');
   const [statusEffect, setStatusEffect] = useState('');
+  const [statusPositive, setStatusPositive] = useState(true);
   const [statusDurationMinutes, setStatusDurationMinutes] = useState('60');
   const [statusStrengthMod, setStatusStrengthMod] = useState('0');
   const [statusDexterityMod, setStatusDexterityMod] = useState('0');
@@ -81,6 +82,7 @@ export const Users = () => {
     setStatusName('');
     setStatusDescription('');
     setStatusEffect('');
+    setStatusPositive(true);
     setStatusDurationMinutes('60');
     setStatusStrengthMod('0');
     setStatusDexterityMod('0');
@@ -162,6 +164,7 @@ export const Users = () => {
         name: trimmedName,
         description: statusDescription.trim(),
         effect: statusEffect.trim(),
+        positive: statusPositive,
         durationSeconds: durationMinutes * 60,
         strengthMod: parseModifierValue(statusStrengthMod),
         dexterityMod: parseModifierValue(statusDexterityMod),
@@ -176,6 +179,7 @@ export const Users = () => {
       setStatusName('');
       setStatusDescription('');
       setStatusEffect('');
+      setStatusPositive(true);
       setStatusDurationMinutes('60');
       setStatusStrengthMod('0');
       setStatusDexterityMod('0');
@@ -593,6 +597,34 @@ export const Users = () => {
                         placeholder="+2 Strength"
                         className="w-full px-3 py-2 border rounded-lg"
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setStatusPositive(true)}
+                          className={`px-3 py-2 rounded border text-sm font-medium ${
+                            statusPositive
+                              ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                              : 'border-gray-300 bg-white text-gray-700'
+                          }`}
+                        >
+                          ↑ Buff
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStatusPositive(false)}
+                          className={`px-3 py-2 rounded border text-sm font-medium ${
+                            !statusPositive
+                              ? 'border-rose-300 bg-rose-100 text-rose-800'
+                              : 'border-gray-300 bg-white text-gray-700'
+                          }`}
+                        >
+                          ↓ Debuff
+                        </button>
+                      </div>
                     </div>
 
                     <div>

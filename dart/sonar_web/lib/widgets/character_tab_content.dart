@@ -893,6 +893,16 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                     ? status.effect.trim()
                     : _toTitleCase(status.effectType);
                 final remainingText = _statusRemainingText(status.expiresAt);
+                final accentColor = status.positive
+                    ? const Color(0xFF1B873F)
+                    : const Color(0xFFB33A3A);
+                final chipBackground = status.positive
+                    ? const Color(0xFFEAF7EE)
+                    : const Color(0xFFFDECEC);
+                final statusIcon = status.positive
+                    ? Icons.arrow_circle_up
+                    : Icons.arrow_circle_down;
+                final statusLabel = status.positive ? 'Buff' : 'Debuff';
                 return Container(
                   width: double.infinity,
                   margin: const EdgeInsets.only(bottom: 8),
@@ -901,23 +911,46 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
+                    color: chipBackground,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.35),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
+                          Icon(statusIcon, size: 16, color: accentColor),
+                          const SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               status.name,
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
+                                color: accentColor,
                               ),
                             ),
                           ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: accentColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Text(
                             remainingText,
                             style: theme.textTheme.labelSmall?.copyWith(
@@ -938,7 +971,7 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                         Text(
                           'Effect: $effectText',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: accentColor,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

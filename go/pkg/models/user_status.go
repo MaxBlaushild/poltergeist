@@ -20,6 +20,7 @@ type UserStatus struct {
 	Name            string               `json:"name"`
 	Description     string               `json:"description"`
 	Effect          string               `json:"effect"`
+	Positive        bool                 `json:"positive" gorm:"column:positive"`
 	EffectType      UserStatusEffectType `json:"effectType" gorm:"column:effect_type"`
 	StrengthMod     int                  `json:"strengthMod" gorm:"column:strength_mod"`
 	DexterityMod    int                  `json:"dexterityMod" gorm:"column:dexterity_mod"`
