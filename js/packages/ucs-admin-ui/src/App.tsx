@@ -42,6 +42,7 @@ import { InsiderTrades } from './components/InsiderTrades.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
 import Spells from './components/Spells.tsx';
+import Monsters from './components/Monsters.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -88,6 +89,7 @@ const Navigation = () => {
         <Link to="/characters" className="text-white hover:text-gray-300">Characters</Link>
         <Link to="/inventory-items" className="text-white hover:text-gray-300">Inventory Items</Link>
         <Link to="/spells" className="text-white hover:text-gray-300">Spells</Link>
+        <Link to="/monsters" className="text-white hover:text-gray-300">Monsters</Link>
         <Link to="/starter-config" className="text-white hover:text-gray-300">Starter Config</Link>
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
@@ -273,6 +275,11 @@ const router = createBrowserRouter([
       {
         path: "/spells",
         element: <Spells />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/monsters",
+        element: <Monsters />,
         loader: onlyAuthenticated,
       },
     ]

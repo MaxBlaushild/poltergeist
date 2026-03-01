@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/character_stats.dart';
 import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
-import '../models/spell.dart';
 import '../models/user.dart';
 import '../models/user_level.dart';
 import '../providers/auth_provider.dart';
@@ -219,7 +218,6 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
     final proficiencies =
         overrideStats?.proficiencies ?? statsProvider.proficiencies;
     final statuses = overrideStats?.statuses ?? statsProvider.statuses;
-    final spells = overrideStats?.spells ?? statsProvider.spells;
     final hasProficiencies = proficiencies.isNotEmpty;
     final canEdit = !_isReadOnly;
 
@@ -627,8 +625,6 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
               const SizedBox(height: 16),
               _buildStatusesCard(context, statuses),
               const SizedBox(height: 16),
-              _buildSpellsCard(context, spells),
-              const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -969,102 +965,6 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSpellsCard(BuildContext context, List<Spell> spells) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Spells',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (spells.isEmpty)
-            Text(
-              'No spells learned yet.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          if (spells.isNotEmpty)
-            Column(
-              children: spells.map((spell) {
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: theme.colorScheme.outlineVariant),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (spell.iconUrl.trim().isNotEmpty)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            spell.iconUrl,
-                            width: 32,
-                            height: 32,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.auto_fix_high, size: 20),
-                          ),
-                        )
-                      else
-                        const Icon(Icons.auto_fix_high, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              spell.name,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            if (spell.schoolOfMagic.trim().isNotEmpty)
-                              Text(
-                                '${spell.schoolOfMagic} · Mana ${spell.manaCost}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            if (spell.effectText.trim().isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                spell.effectText.trim(),
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 );

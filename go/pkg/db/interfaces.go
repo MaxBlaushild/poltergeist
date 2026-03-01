@@ -95,6 +95,8 @@ type DbClient interface {
 	QuestNodeChild() QuestNodeChildHandle
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
+	MonsterTemplate() MonsterTemplateHandle
+	Monster() MonsterHandle
 	Scenario() ScenarioHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
@@ -909,6 +911,26 @@ type ScenarioHandle interface {
 	CreateAttempt(ctx context.Context, attempt *models.UserScenarioAttempt) error
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
+}
+
+type MonsterHandle interface {
+	Create(ctx context.Context, monster *models.Monster) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Monster, error)
+	FindAll(ctx context.Context) ([]models.Monster, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error)
+	CountByTemplateID(ctx context.Context, templateID uuid.UUID) (int64, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Monster) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	ReplaceItemRewards(ctx context.Context, monsterID uuid.UUID, rewards []models.MonsterItemReward) error
+}
+
+type MonsterTemplateHandle interface {
+	Create(ctx context.Context, template *models.MonsterTemplate) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterTemplate, error)
+	FindAll(ctx context.Context) ([]models.MonsterTemplate, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	ReplaceSpells(ctx context.Context, templateID uuid.UUID, spells []models.MonsterTemplateSpell) error
 }
 
 type DocumentHandle interface {

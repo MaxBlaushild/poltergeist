@@ -6,6 +6,7 @@ class Spell {
   final String effectText;
   final String schoolOfMagic;
   final int manaCost;
+  final List<SpellEffect> effects;
 
   const Spell({
     required this.id,
@@ -15,6 +16,7 @@ class Spell {
     this.effectText = '',
     this.schoolOfMagic = '',
     this.manaCost = 0,
+    this.effects = const [],
   });
 
   factory Spell.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,13 @@ class Spell {
       effectText: json['effectText']?.toString() ?? '',
       schoolOfMagic: json['schoolOfMagic']?.toString() ?? '',
       manaCost: (json['manaCost'] as num?)?.toInt() ?? 0,
+      effects:
+          (json['effects'] as List<dynamic>?)
+              ?.map(
+                (entry) => SpellEffect.fromJson(entry as Map<String, dynamic>),
+              )
+              .toList() ??
+          const [],
     );
   }
 
@@ -37,5 +46,22 @@ class Spell {
     'effectText': effectText,
     'schoolOfMagic': schoolOfMagic,
     'manaCost': manaCost,
+    'effects': effects.map((effect) => effect.toJson()).toList(),
   };
+}
+
+class SpellEffect {
+  final String type;
+  final int amount;
+
+  const SpellEffect({required this.type, this.amount = 0});
+
+  factory SpellEffect.fromJson(Map<String, dynamic> json) {
+    return SpellEffect(
+      type: json['type']?.toString() ?? '',
+      amount: (json['amount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'type': type, 'amount': amount};
 }

@@ -11,6 +11,7 @@ import '../providers/party_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/character_stats_provider.dart';
+import '../widgets/abilities_tab_content.dart';
 import '../widgets/character_tab_content.dart';
 import '../widgets/friends_tab_content.dart';
 import '../widgets/inventory_panel.dart';
@@ -229,7 +230,8 @@ class _SideDrawerState extends State<_SideDrawer> {
   }
 
   void _refreshCharacterStatsIfVisible() {
-    if (_profileUser != null || _tabIndex != 0) return;
+    final showsCharacterOrAbilities = _tabIndex == 0 || _tabIndex == 6;
+    if (_profileUser != null || !showsCharacterOrAbilities) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<CharacterStatsProvider>().refresh(silent: true);
@@ -239,7 +241,7 @@ class _SideDrawerState extends State<_SideDrawer> {
   void _selectTab(int index) {
     final shouldRefreshQuestLog = index == 2;
     final shouldRefreshActivityFeed = index == 0;
-    final shouldRefreshCharacterStats = index == 0;
+    final shouldRefreshCharacterStats = index == 0 || index == 6;
     if (_tabIndex == index) {
       if (shouldRefreshQuestLog) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -327,6 +329,12 @@ class _SideDrawerState extends State<_SideDrawer> {
                             onTap: () => _selectTab(0),
                           ),
                           _DrawerMenuButton(
+                            label: 'Abilities',
+                            icon: Icons.auto_fix_high,
+                            selected: _tabIndex == 6,
+                            onTap: () => _selectTab(6),
+                          ),
+                          _DrawerMenuButton(
                             label: 'Inventory',
                             icon: Icons.inventory_2,
                             selected: _tabIndex == 1,
@@ -405,6 +413,10 @@ class _SideDrawerState extends State<_SideDrawer> {
                               ? FriendsTabContent(
                                   key: const ValueKey('friends'),
                                   onViewProfile: _openProfile,
+                                )
+                              : _tabIndex == 6
+                              ? const AbilitiesTabContent(
+                                  key: ValueKey('abilities'),
                                 )
                               : const ReputationTabContent(
                                   key: ValueKey('reputation'),

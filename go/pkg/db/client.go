@@ -90,6 +90,8 @@ type client struct {
 	questNodeProgressHandle           *questNodeProgressHandle
 	movementPatternHandle             *movementPatternHandler
 	treasureChestHandle               *treasureChestHandle
+	monsterTemplateHandle             *monsterTemplateHandle
+	monsterHandle                     *monsterHandle
 	scenarioHandle                    *scenarioHandle
 	documentHandle                    *documentHandler
 	documentTagHandle                 *documentTagHandler
@@ -232,6 +234,8 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		questNodeProgressHandle:           &questNodeProgressHandle{db: db},
 		movementPatternHandle:             &movementPatternHandler{db: db},
 		treasureChestHandle:               &treasureChestHandle{db: db},
+		monsterTemplateHandle:             &monsterTemplateHandle{db: db},
+		monsterHandle:                     &monsterHandle{db: db},
 		scenarioHandle:                    &scenarioHandle{db: db},
 		documentHandle:                    &documentHandler{db: db},
 		documentTagHandle:                 &documentTagHandler{db: db},
@@ -600,6 +604,14 @@ func (c *client) QuestNodeProgress() QuestNodeProgressHandle {
 
 func (c *client) TreasureChest() TreasureChestHandle {
 	return c.treasureChestHandle
+}
+
+func (c *client) MonsterTemplate() MonsterTemplateHandle {
+	return c.monsterTemplateHandle
+}
+
+func (c *client) Monster() MonsterHandle {
+	return c.monsterHandle
 }
 
 func (c *client) Scenario() ScenarioHandle {

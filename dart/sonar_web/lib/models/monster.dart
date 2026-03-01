@@ -1,0 +1,255 @@
+import 'spell.dart';
+
+class MonsterTemplate {
+  final String id;
+  final String name;
+  final String description;
+  final int baseStrength;
+  final int baseDexterity;
+  final int baseConstitution;
+  final int baseIntelligence;
+  final int baseWisdom;
+  final int baseCharisma;
+  final List<Spell> spells;
+
+  const MonsterTemplate({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.baseStrength = 10,
+    this.baseDexterity = 10,
+    this.baseConstitution = 10,
+    this.baseIntelligence = 10,
+    this.baseWisdom = 10,
+    this.baseCharisma = 10,
+    this.spells = const [],
+  });
+
+  factory MonsterTemplate.fromJson(Map<String, dynamic> json) {
+    final spells = <Spell>[];
+    final rawSpells = json['spells'];
+    if (rawSpells is List) {
+      for (final spell in rawSpells) {
+        if (spell is Map<String, dynamic>) {
+          spells.add(Spell.fromJson(spell));
+        } else if (spell is Map) {
+          spells.add(Spell.fromJson(Map<String, dynamic>.from(spell)));
+        }
+      }
+    }
+
+    return MonsterTemplate(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      baseStrength: (json['baseStrength'] as num?)?.toInt() ?? 10,
+      baseDexterity: (json['baseDexterity'] as num?)?.toInt() ?? 10,
+      baseConstitution: (json['baseConstitution'] as num?)?.toInt() ?? 10,
+      baseIntelligence: (json['baseIntelligence'] as num?)?.toInt() ?? 10,
+      baseWisdom: (json['baseWisdom'] as num?)?.toInt() ?? 10,
+      baseCharisma: (json['baseCharisma'] as num?)?.toInt() ?? 10,
+      spells: spells,
+    );
+  }
+}
+
+class MonsterItemReward {
+  final String id;
+  final int inventoryItemId;
+  final int quantity;
+  final String inventoryItemName;
+  final String inventoryItemImageUrl;
+
+  const MonsterItemReward({
+    required this.id,
+    required this.inventoryItemId,
+    required this.quantity,
+    this.inventoryItemName = '',
+    this.inventoryItemImageUrl = '',
+  });
+
+  factory MonsterItemReward.fromJson(Map<String, dynamic> json) {
+    final rawInventoryItem = json['inventoryItem'];
+    String inventoryItemName = '';
+    String inventoryItemImageUrl = '';
+    if (rawInventoryItem is Map<String, dynamic>) {
+      inventoryItemName = rawInventoryItem['name']?.toString() ?? '';
+      inventoryItemImageUrl = rawInventoryItem['imageUrl']?.toString() ?? '';
+    } else if (rawInventoryItem is Map) {
+      final cast = Map<String, dynamic>.from(rawInventoryItem);
+      inventoryItemName = cast['name']?.toString() ?? '';
+      inventoryItemImageUrl = cast['imageUrl']?.toString() ?? '';
+    }
+
+    return MonsterItemReward(
+      id: json['id']?.toString() ?? '',
+      inventoryItemId: (json['inventoryItemId'] as num?)?.toInt() ?? 0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      inventoryItemName: inventoryItemName,
+      inventoryItemImageUrl: inventoryItemImageUrl,
+    );
+  }
+}
+
+class Monster {
+  final String id;
+  final String name;
+  final String description;
+  final String imageUrl;
+  final String thumbnailUrl;
+  final String zoneId;
+  final double latitude;
+  final double longitude;
+  final String templateId;
+  final MonsterTemplate? template;
+  final int? weaponInventoryItemId;
+  final String weaponInventoryItemName;
+  final int level;
+  final int strength;
+  final int dexterity;
+  final int constitution;
+  final int intelligence;
+  final int wisdom;
+  final int charisma;
+  final int health;
+  final int maxHealth;
+  final int mana;
+  final int maxMana;
+  final int attackDamageMin;
+  final int attackDamageMax;
+  final int attackSwipesPerAttack;
+  final int rewardExperience;
+  final int rewardGold;
+  final String imageGenerationStatus;
+  final String? imageGenerationError;
+  final List<Spell> spells;
+  final List<MonsterItemReward> itemRewards;
+
+  const Monster({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.imageUrl = '',
+    this.thumbnailUrl = '',
+    required this.zoneId,
+    required this.latitude,
+    required this.longitude,
+    this.templateId = '',
+    this.template,
+    this.weaponInventoryItemId,
+    this.weaponInventoryItemName = '',
+    this.level = 1,
+    this.strength = 10,
+    this.dexterity = 10,
+    this.constitution = 10,
+    this.intelligence = 10,
+    this.wisdom = 10,
+    this.charisma = 10,
+    this.health = 1,
+    this.maxHealth = 1,
+    this.mana = 1,
+    this.maxMana = 1,
+    this.attackDamageMin = 1,
+    this.attackDamageMax = 1,
+    this.attackSwipesPerAttack = 1,
+    this.rewardExperience = 0,
+    this.rewardGold = 0,
+    this.imageGenerationStatus = 'none',
+    this.imageGenerationError,
+    this.spells = const [],
+    this.itemRewards = const [],
+  });
+
+  factory Monster.fromJson(Map<String, dynamic> json) {
+    MonsterTemplate? template;
+    final rawTemplate = json['template'];
+    if (rawTemplate is Map<String, dynamic>) {
+      template = MonsterTemplate.fromJson(rawTemplate);
+    } else if (rawTemplate is Map) {
+      template = MonsterTemplate.fromJson(
+        Map<String, dynamic>.from(rawTemplate),
+      );
+    }
+
+    int? weaponInventoryItemId;
+    final rawWeaponInventoryItemId = json['weaponInventoryItemId'];
+    if (rawWeaponInventoryItemId is num) {
+      weaponInventoryItemId = rawWeaponInventoryItemId.toInt();
+    }
+
+    String weaponInventoryItemName = '';
+    final rawWeaponInventoryItem = json['weaponInventoryItem'];
+    if (rawWeaponInventoryItem is Map<String, dynamic>) {
+      weaponInventoryItemName =
+          rawWeaponInventoryItem['name']?.toString() ?? '';
+    } else if (rawWeaponInventoryItem is Map) {
+      final cast = Map<String, dynamic>.from(rawWeaponInventoryItem);
+      weaponInventoryItemName = cast['name']?.toString() ?? '';
+    }
+
+    final spells = <Spell>[];
+    final rawSpells = json['spells'];
+    if (rawSpells is List) {
+      for (final spell in rawSpells) {
+        if (spell is Map<String, dynamic>) {
+          spells.add(Spell.fromJson(spell));
+        } else if (spell is Map) {
+          spells.add(Spell.fromJson(Map<String, dynamic>.from(spell)));
+        }
+      }
+    } else if (template != null) {
+      spells.addAll(template.spells);
+    }
+
+    final itemRewards = <MonsterItemReward>[];
+    final rawItemRewards = json['itemRewards'];
+    if (rawItemRewards is List) {
+      for (final reward in rawItemRewards) {
+        if (reward is Map<String, dynamic>) {
+          itemRewards.add(MonsterItemReward.fromJson(reward));
+        } else if (reward is Map) {
+          itemRewards.add(
+            MonsterItemReward.fromJson(Map<String, dynamic>.from(reward)),
+          );
+        }
+      }
+    }
+
+    return Monster(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      zoneId: json['zoneId']?.toString() ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+      templateId: json['templateId']?.toString() ?? template?.id ?? '',
+      template: template,
+      weaponInventoryItemId: weaponInventoryItemId,
+      weaponInventoryItemName: weaponInventoryItemName,
+      level: (json['level'] as num?)?.toInt() ?? 1,
+      strength: (json['strength'] as num?)?.toInt() ?? 10,
+      dexterity: (json['dexterity'] as num?)?.toInt() ?? 10,
+      constitution: (json['constitution'] as num?)?.toInt() ?? 10,
+      intelligence: (json['intelligence'] as num?)?.toInt() ?? 10,
+      wisdom: (json['wisdom'] as num?)?.toInt() ?? 10,
+      charisma: (json['charisma'] as num?)?.toInt() ?? 10,
+      health: (json['health'] as num?)?.toInt() ?? 1,
+      maxHealth: (json['maxHealth'] as num?)?.toInt() ?? 1,
+      mana: (json['mana'] as num?)?.toInt() ?? 1,
+      maxMana: (json['maxMana'] as num?)?.toInt() ?? 1,
+      attackDamageMin: (json['attackDamageMin'] as num?)?.toInt() ?? 1,
+      attackDamageMax: (json['attackDamageMax'] as num?)?.toInt() ?? 1,
+      attackSwipesPerAttack:
+          (json['attackSwipesPerAttack'] as num?)?.toInt() ?? 1,
+      rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
+      rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
+      imageGenerationStatus:
+          json['imageGenerationStatus']?.toString() ?? 'none',
+      imageGenerationError: json['imageGenerationError']?.toString(),
+      spells: spells,
+      itemRewards: itemRewards,
+    );
+  }
+}

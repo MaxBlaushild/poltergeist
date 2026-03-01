@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -31,6 +33,17 @@ type spellUpsertRequest struct {
 	SchoolOfMagic string               `json:"schoolOfMagic"`
 	ManaCost      int                  `json:"manaCost"`
 	Effects       []spellEffectPayload `json:"effects"`
+}
+
+type castSpellRequest struct {
+	TargetUserID *string `json:"targetUserId"`
+}
+
+type castSpellHealResult struct {
+	UserID    uuid.UUID `json:"userId"`
+	Restored  int       `json:"restored"`
+	Health    int       `json:"health"`
+	MaxHealth int       `json:"maxHealth"`
 }
 
 func normalizeSpellStatusNames(values []string) models.StringArray {
@@ -376,6 +389,192 @@ func (s *server) generateSpellIcon(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, updatedSpell)
+}
+
+func (s *server) applySpellHealToUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	amount int,
+) (restored int, health int, maxHealth int, err error) {
+	if amount <= 0 {
+		return 0, 0, 0, nil
+	}
+
+	stats, maxHealth, _, currentHealth, _, err := s.getScenarioResourceState(ctx, userID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if stats.HealthDeficit <= 0 {
+		return 0, currentHealth, maxHealth, nil
+	}
+
+	restoreAmount := amount
+	if restoreAmount > stats.HealthDeficit {
+		restoreAmount = stats.HealthDeficit
+	}
+	if restoreAmount <= 0 {
+		return 0, currentHealth, maxHealth, nil
+	}
+
+	if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -restoreAmount, 0); err != nil {
+		return 0, 0, 0, err
+	}
+
+	currentHealth += restoreAmount
+	if currentHealth > maxHealth {
+		currentHealth = maxHealth
+	}
+	return restoreAmount, currentHealth, maxHealth, nil
+}
+
+func (s *server) castSpell(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	spellID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
+		return
+	}
+
+	userSpells, err := s.dbClient.UserSpell().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var spellToCast *models.Spell
+	for _, userSpell := range userSpells {
+		if userSpell.SpellID == spellID {
+			spell := userSpell.Spell
+			spellToCast = &spell
+			break
+		}
+	}
+	if spellToCast == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found for user"})
+		return
+	}
+
+	targetHealAmount := 0
+	groupHealAmount := 0
+	for _, effect := range spellToCast.Effects {
+		if effect.Amount <= 0 {
+			continue
+		}
+		switch effect.Type {
+		case models.SpellEffectTypeRestoreLifePartyMember:
+			targetHealAmount += effect.Amount
+		case models.SpellEffectTypeRestoreLifeAllParty:
+			groupHealAmount += effect.Amount
+		}
+	}
+	if targetHealAmount <= 0 && groupHealAmount <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "this spell has no castable healing effect"})
+		return
+	}
+
+	var request castSpellRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil && !errors.Is(err, io.EOF) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	allowedTargets := map[uuid.UUID]bool{
+		user.ID: true,
+	}
+	for _, member := range partyMembers {
+		allowedTargets[member.ID] = true
+	}
+
+	var targetUserID uuid.UUID
+	if targetHealAmount > 0 {
+		if request.TargetUserID == nil || strings.TrimSpace(*request.TargetUserID) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId is required for targeted heal spells"})
+			return
+		}
+		targetUserID, err = uuid.Parse(strings.TrimSpace(*request.TargetUserID))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId must be a valid UUID"})
+			return
+		}
+		if !allowedTargets[targetUserID] {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId must be in your party"})
+			return
+		}
+	}
+
+	_, _, _, _, currentMana, err := s.getScenarioResourceState(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if currentMana < spellToCast.ManaCost {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error":       "not enough mana",
+			"currentMana": currentMana,
+			"manaCost":    spellToCast.ManaCost,
+		})
+		return
+	}
+
+	if spellToCast.ManaCost > 0 {
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, user.ID, 0, spellToCast.ManaCost); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	healByUser := map[uuid.UUID]int{}
+	if targetHealAmount > 0 {
+		healByUser[targetUserID] += targetHealAmount
+	}
+	if groupHealAmount > 0 {
+		for recipientID := range allowedTargets {
+			healByUser[recipientID] += groupHealAmount
+		}
+	}
+
+	heals := []castSpellHealResult{}
+	for recipientID, totalHeal := range healByUser {
+		restored, health, maxHealth, err := s.applySpellHealToUser(ctx, recipientID, totalHeal)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if restored <= 0 {
+			continue
+		}
+		heals = append(heals, castSpellHealResult{
+			UserID:    recipientID,
+			Restored:  restored,
+			Health:    health,
+			MaxHealth: maxHealth,
+		})
+	}
+
+	_, _, maxMana, _, manaAfter, err := s.getScenarioResourceState(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"spellId":     spellToCast.ID,
+		"spellName":   spellToCast.Name,
+		"manaSpent":   spellToCast.ManaCost,
+		"currentMana": manaAfter,
+		"maxMana":     maxMana,
+		"heals":       heals,
+	})
 }
 
 func (s *server) getCurrentUserSpells(ctx *gin.Context) {

@@ -32,9 +32,14 @@ class ApiConstants {
   static const String usersSearchEndpoint = '/sonar/users/search';
   static const String friendsEndpoint = '/sonar/friends';
   static const String friendInvitesEndpoint = '/sonar/friendInvites';
-  static const String friendInvitesCreateEndpoint = '/sonar/friendInvites/create';
-  static const String friendInvitesAcceptEndpoint = '/sonar/friendInvites/accept';
+  static const String friendInvitesCreateEndpoint =
+      '/sonar/friendInvites/create';
+  static const String friendInvitesAcceptEndpoint =
+      '/sonar/friendInvites/accept';
 
   static String userCharacterEndpoint(String userId) =>
       '/sonar/users/$userId/character';
+
+  static String castSpellEndpoint(String spellId) =>
+      '/sonar/spells/$spellId/cast';
 }

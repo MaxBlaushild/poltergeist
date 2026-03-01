@@ -1,4 +1,5 @@
 import '../models/character_stats.dart';
+import '../constants/api_constants.dart';
 import 'api_client.dart';
 
 class CharacterStatsService {
@@ -8,7 +9,9 @@ class CharacterStatsService {
 
   Future<CharacterStats?> getStats() async {
     try {
-      final data = await _api.get<Map<String, dynamic>>('/sonar/character-stats');
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/character-stats',
+      );
       return CharacterStats.fromJson(data);
     } catch (_) {
       return null;
@@ -26,5 +29,20 @@ class CharacterStatsService {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>> castSpell(
+    String spellId, {
+    String? targetUserId,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (targetUserId != null && targetUserId.trim().isNotEmpty) {
+      payload['targetUserId'] = targetUserId.trim();
+    }
+    final data = await _api.post<Map<String, dynamic>>(
+      ApiConstants.castSpellEndpoint(spellId),
+      data: payload,
+    );
+    return data;
   }
 }

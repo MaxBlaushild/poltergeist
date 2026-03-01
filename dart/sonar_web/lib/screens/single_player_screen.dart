@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
@@ -42,6 +43,7 @@ import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
 import '../widgets/inventory_panel.dart';
 import '../widgets/log_panel.dart';
+import '../widgets/monster_panel.dart';
 import '../widgets/new_item_modal.dart';
 import '../widgets/point_of_interest_panel.dart';
 import '../widgets/quest_log_panel.dart';
@@ -86,6 +88,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
   List<Scenario> _scenarios = [];
+  List<Monster> _monsters = [];
   List<Line> _zoneLines = [];
   List<Fill> _zoneFills = [];
   List<Line> _questLines = [];
@@ -106,6 +109,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _scenarioSymbolById = {};
   final Map<String, Circle> _scenarioCircleById = {};
   final Map<String, bool> _scenarioCircleMystery = {};
+  List<Symbol> _monsterSymbols = [];
+  List<Circle> _monsterCircles = [];
+  final Map<String, Symbol> _monsterSymbolById = {};
+  final Map<String, Circle> _monsterCircleById = {};
   final Set<String> _resolvedScenarioIds = <String>{};
   final Set<String> _resolvedScenarioSignatures = <String>{};
   final Set<String> _openedTreasureChestIds = <String>{};
@@ -456,6 +463,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _scenarioSymbolById.clear();
       _scenarioCircleById.clear();
       _scenarioCircleMystery.clear();
+      _monsterSymbols = [];
+      _monsterCircles = [];
+      _monsterSymbolById.clear();
+      _monsterCircleById.clear();
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
       _questLines = [];
@@ -776,6 +787,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         setState(() {
           _treasureChests = [];
           _scenarios = [];
+          _monsters = [];
         });
       }
       return;
@@ -784,8 +796,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final svc = context.read<PoiService>();
       final chestsFuture = svc.getTreasureChestsForZone(zoneId);
       final scenariosFuture = svc.getScenariosForZone(zoneId);
+      final monstersFuture = svc.getMonstersForZone(zoneId);
       final chests = await chestsFuture;
       final scenarios = await scenariosFuture;
+      final monsters = await monstersFuture;
       if (!mounted) return;
       setState(() {
         _treasureChests = chests
@@ -801,10 +815,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
             )
             .toList();
+        _monsters = monsters;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
         await _refreshScenarioSymbols();
+        await _refreshMonsterSymbols();
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
@@ -812,10 +828,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         setState(() {
           _treasureChests = [];
           _scenarios = [];
+          _monsters = [];
         });
         if (_styleLoaded && _mapController != null && _markersAdded) {
           await _refreshTreasureChestSymbols();
           await _refreshScenarioSymbols();
+          await _refreshMonsterSymbols();
         }
       }
     }
@@ -836,6 +854,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Scenario? _scenarioById(String id) {
     for (final scenario in _scenarios) {
       if (scenario.id == id) return scenario;
+    }
+    return null;
+  }
+
+  Monster? _monsterById(String id) {
+    for (final monster in _monsters) {
+      if (monster.id == id) return monster;
     }
     return null;
   }
@@ -1068,6 +1093,118 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  Future<void> _refreshMonsterSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    final desiredIds = _monsters.map((monster) => monster.id).toSet();
+    for (final entry in _monsterSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _monsterSymbols.remove(entry.value);
+        _monsterSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _monsterCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _monsterCircles.remove(entry.value);
+        _monsterCircleById.remove(entry.key);
+      }
+    }
+
+    for (final monster in _monsters) {
+      final sourceUrl = monster.thumbnailUrl.isNotEmpty
+          ? monster.thumbnailUrl
+          : monster.imageUrl;
+
+      if (sourceUrl.isNotEmpty) {
+        try {
+          final imageBytes = await loadPoiThumbnail(sourceUrl);
+          if (imageBytes != null) {
+            final imageId = 'monster_${monster.id}_$_mapThumbnailVersion';
+            try {
+              await c.addImage(imageId, imageBytes);
+            } catch (_) {}
+
+            final existingCircle = _monsterCircleById[monster.id];
+            if (existingCircle != null) {
+              try {
+                await c.removeCircle(existingCircle);
+              } catch (_) {}
+              _monsterCircles.remove(existingCircle);
+              _monsterCircleById.remove(monster.id);
+            }
+
+            final existingSymbol = _monsterSymbolById[monster.id];
+            if (existingSymbol == null) {
+              final symbol = await c.addSymbol(
+                SymbolOptions(
+                  geometry: LatLng(monster.latitude, monster.longitude),
+                  iconImage: imageId,
+                  iconSize: 0.78,
+                  iconHaloColor: '#000000',
+                  iconHaloWidth: 0.75,
+                  iconAnchor: 'center',
+                ),
+                {'type': 'monster', 'id': monster.id},
+              );
+              if (!mounted) return;
+              _monsterSymbols.add(symbol);
+              _monsterSymbolById[monster.id] = symbol;
+            } else {
+              try {
+                await c.updateSymbol(
+                  existingSymbol,
+                  SymbolOptions(
+                    geometry: LatLng(monster.latitude, monster.longitude),
+                    iconImage: imageId,
+                  ),
+                );
+              } catch (_) {}
+            }
+            continue;
+          }
+        } catch (_) {}
+      }
+
+      final existingSymbol = _monsterSymbolById[monster.id];
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _monsterSymbols.remove(existingSymbol);
+        _monsterSymbolById.remove(monster.id);
+      }
+
+      final existingCircle = _monsterCircleById[monster.id];
+      if (existingCircle != null) {
+        try {
+          await c.removeCircle(existingCircle);
+        } catch (_) {}
+        _monsterCircles.remove(existingCircle);
+        _monsterCircleById.remove(monster.id);
+      }
+      final circle = await c.addCircle(
+        CircleOptions(
+          geometry: LatLng(monster.latitude, monster.longitude),
+          circleRadius: 24,
+          circleColor: '#b63f3f',
+          circleStrokeWidth: 2,
+          circleStrokeColor: '#ffffff',
+        ),
+        {'type': 'monster', 'id': monster.id},
+      );
+      if (!mounted) return;
+      _monsterCircles.add(circle);
+      _monsterCircleById[monster.id] = circle;
+    }
+  }
+
   String? _scenarioIdFromData(dynamic raw) {
     if (raw == null || raw is! Map) return null;
     final data = Map<String, dynamic>.from(raw);
@@ -1204,8 +1341,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _setupTapHandlers(MapLibreMapController c) {
     c.onCircleTapped.add((circle) {
       final raw = circle.data;
-      if (raw == null || raw is! Map) return;
-      final data = Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
+      if (raw == null) return;
+      final data = Map<String, dynamic>.from(raw);
       final type = data['type'] as String?;
       final idStr = data['id']?.toString();
       if (type == null || idStr == null || idStr.isEmpty) return;
@@ -1230,6 +1367,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
         return;
       }
+      if (type == 'monster') {
+        final monster = _monsterById(idStr);
+        if (monster != null) {
+          _showMonsterPanel(monster);
+        }
+        return;
+      }
       if (type == 'poi') {
         final pois = _pois.where((p) => p.id == idStr).toList();
         if (pois.isNotEmpty && mounted) {
@@ -1244,11 +1388,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       try {
         debugPrint('SinglePlayer: onSymbolTapped');
         final raw = symbol.data;
-        if (raw == null || raw is! Map) {
+        if (raw == null) {
+          debugPrint('SinglePlayer: symbol tap data is null');
+          return;
+        }
+        final data = Map<String, dynamic>.from(raw);
+        if (data.isEmpty) {
           debugPrint('SinglePlayer: symbol tap data is null or not Map');
           return;
         }
-        final data = Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
         final type = data['type'] as String?;
         final idStr = data['id']?.toString();
         if (type == null || idStr == null || idStr.isEmpty) return;
@@ -1263,6 +1411,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final scenario = _scenarioById(idStr);
           if (scenario != null && mounted) {
             _showScenarioPanel(scenario);
+          }
+          return;
+        }
+        if (type == 'monster') {
+          final monster = _monsterById(idStr);
+          if (monster != null && mounted) {
+            _showMonsterPanel(monster);
           }
           return;
         }
@@ -1311,8 +1466,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     });
     c.onFillTapped.add((fill) {
       final raw = fill.data;
-      if (raw == null || raw is! Map) return;
-      final data = Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
+      if (raw == null) return;
+      final data = Map<String, dynamic>.from(raw);
       final type = data['type'] as String?;
       final idStr = data['id']?.toString();
       if (type == 'zone' && idStr != null && idStr.isNotEmpty) {
@@ -1321,8 +1476,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     });
     c.onLineTapped.add((line) {
       final raw = line.data;
-      if (raw == null || raw is! Map) return;
-      final data = Map<String, dynamic>.from(raw as Map<dynamic, dynamic>);
+      if (raw == null) return;
+      final data = Map<String, dynamic>.from(raw);
       final type = data['type'] as String?;
       final idStr = data['id']?.toString();
       if (type == 'zone' && idStr != null && idStr.isNotEmpty) {
@@ -1504,7 +1659,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
     debugPrint(
-      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length})',
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length} monsters=${_monsters.length})',
     );
 
     try {
@@ -1588,6 +1743,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       _scenarioCircleById.clear();
       _scenarioCircleMystery.clear();
+      if (_monsterSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_monsterSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _monsterSymbols.clear();
+      }
+      _monsterSymbolById.clear();
+      if (_monsterCircles.isNotEmpty) {
+        for (final circle in _monsterCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _monsterCircles.clear();
+      }
+      _monsterCircleById.clear();
       try {
         await c.clearCircles();
       } catch (_) {}
@@ -1732,6 +1905,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
       }
       await _refreshScenarioSymbols();
+      await _refreshMonsterSymbols();
 
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
@@ -4115,6 +4289,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             );
           });
         },
+      ),
+    );
+  }
+
+  void _showMonsterPanel(Monster monster) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => MonsterPanel(
+        monster: monster,
+        onClose: () => Navigator.of(context).pop(),
       ),
     );
   }

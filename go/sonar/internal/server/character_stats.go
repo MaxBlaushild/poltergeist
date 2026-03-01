@@ -49,13 +49,14 @@ type characterStatusResponse struct {
 }
 
 type characterSpellResponse struct {
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	IconURL       string    `json:"iconUrl"`
-	EffectText    string    `json:"effectText"`
-	SchoolOfMagic string    `json:"schoolOfMagic"`
-	ManaCost      int       `json:"manaCost"`
+	ID            uuid.UUID           `json:"id"`
+	Name          string              `json:"name"`
+	Description   string              `json:"description"`
+	IconURL       string              `json:"iconUrl"`
+	EffectText    string              `json:"effectText"`
+	SchoolOfMagic string              `json:"schoolOfMagic"`
+	ManaCost      int                 `json:"manaCost"`
+	Effects       models.SpellEffects `json:"effects"`
 }
 
 type characterStatsAllocationRequest struct {
@@ -302,6 +303,7 @@ func characterSpellResponsesFrom(spells []models.UserSpell) []characterSpellResp
 			EffectText:    spell.EffectText,
 			SchoolOfMagic: spell.SchoolOfMagic,
 			ManaCost:      spell.ManaCost,
+			Effects:       spell.Effects,
 		})
 	}
 	return response

@@ -11,6 +11,7 @@ const (
 	GenerateOutfitProfilePictureTaskType  = "generate_outfit_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateSpellIconTaskType             = "generate_spell_icon"
+	GenerateMonsterImageTaskType          = "generate_monster_image"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType         = "generate_scenario_image"
@@ -71,6 +72,10 @@ type GenerateSpellIconTaskPayload struct {
 	Description   string    `json:"description"`
 	SchoolOfMagic string    `json:"schoolOfMagic"`
 	EffectText    string    `json:"effectText"`
+}
+
+type GenerateMonsterImageTaskPayload struct {
+	MonsterID uuid.UUID `json:"monsterId"`
 }
 
 type GenerateCharacterImageTaskPayload struct {

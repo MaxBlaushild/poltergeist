@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/character_stats.dart';
@@ -124,6 +125,28 @@ class CharacterStatsProvider with ChangeNotifier {
     _stats = stats;
     notifyListeners();
     return true;
+  }
+
+  Future<String?> castSpell(String spellId, {String? targetUserId}) async {
+    if (_userId == null) {
+      return 'You must be logged in to cast spells.';
+    }
+    try {
+      await _service.castSpell(spellId, targetUserId: targetUserId);
+      await refresh(silent: true);
+      return null;
+    } catch (e) {
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final message = data['error'];
+          if (message is String && message.trim().isNotEmpty) {
+            return message.trim();
+          }
+        }
+      }
+      return 'Failed to cast spell.';
+    }
   }
 
   @override
