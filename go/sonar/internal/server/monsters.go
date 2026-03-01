@@ -37,19 +37,21 @@ type monsterRewardItemPayload struct {
 }
 
 type monsterUpsertRequest struct {
-	Name                  string                     `json:"name"`
-	Description           string                     `json:"description"`
-	ImageURL              string                     `json:"imageUrl"`
-	ThumbnailURL          string                     `json:"thumbnailUrl"`
-	ZoneID                string                     `json:"zoneId"`
-	Latitude              float64                    `json:"latitude"`
-	Longitude             float64                    `json:"longitude"`
-	TemplateID            string                     `json:"templateId"`
-	WeaponInventoryItemID *int                       `json:"weaponInventoryItemId"`
-	Level                 int                        `json:"level"`
-	RewardExperience      int                        `json:"rewardExperience"`
-	RewardGold            int                        `json:"rewardGold"`
-	ItemRewards           []monsterRewardItemPayload `json:"itemRewards"`
+	Name                        string                     `json:"name"`
+	Description                 string                     `json:"description"`
+	ImageURL                    string                     `json:"imageUrl"`
+	ThumbnailURL                string                     `json:"thumbnailUrl"`
+	ZoneID                      string                     `json:"zoneId"`
+	Latitude                    float64                    `json:"latitude"`
+	Longitude                   float64                    `json:"longitude"`
+	TemplateID                  string                     `json:"templateId"`
+	DominantHandInventoryItemID *int                       `json:"dominantHandInventoryItemId"`
+	OffHandInventoryItemID      *int                       `json:"offHandInventoryItemId"`
+	WeaponInventoryItemID       *int                       `json:"weaponInventoryItemId"`
+	Level                       int                        `json:"level"`
+	RewardExperience            int                        `json:"rewardExperience"`
+	RewardGold                  int                        `json:"rewardGold"`
+	ItemRewards                 []monsterRewardItemPayload `json:"itemRewards"`
 }
 
 type monsterTemplateResponse struct {
@@ -72,41 +74,45 @@ type monsterTemplateResponse struct {
 }
 
 type monsterResponse struct {
-	ID                    uuid.UUID                  `json:"id"`
-	CreatedAt             time.Time                  `json:"createdAt"`
-	UpdatedAt             time.Time                  `json:"updatedAt"`
-	Name                  string                     `json:"name"`
-	Description           string                     `json:"description"`
-	ImageURL              string                     `json:"imageUrl"`
-	ThumbnailURL          string                     `json:"thumbnailUrl"`
-	ZoneID                uuid.UUID                  `json:"zoneId"`
-	Zone                  models.Zone                `json:"zone"`
-	Latitude              float64                    `json:"latitude"`
-	Longitude             float64                    `json:"longitude"`
-	TemplateID            *uuid.UUID                 `json:"templateId,omitempty"`
-	Template              *monsterTemplateResponse   `json:"template,omitempty"`
-	WeaponInventoryItemID *int                       `json:"weaponInventoryItemId,omitempty"`
-	WeaponInventoryItem   *models.InventoryItem      `json:"weaponInventoryItem,omitempty"`
-	Level                 int                        `json:"level"`
-	Strength              int                        `json:"strength"`
-	Dexterity             int                        `json:"dexterity"`
-	Constitution          int                        `json:"constitution"`
-	Intelligence          int                        `json:"intelligence"`
-	Wisdom                int                        `json:"wisdom"`
-	Charisma              int                        `json:"charisma"`
-	Health                int                        `json:"health"`
-	MaxHealth             int                        `json:"maxHealth"`
-	Mana                  int                        `json:"mana"`
-	MaxMana               int                        `json:"maxMana"`
-	AttackDamageMin       int                        `json:"attackDamageMin"`
-	AttackDamageMax       int                        `json:"attackDamageMax"`
-	AttackSwipesPerAttack int                        `json:"attackSwipesPerAttack"`
-	Spells                []models.Spell             `json:"spells"`
-	RewardExperience      int                        `json:"rewardExperience"`
-	RewardGold            int                        `json:"rewardGold"`
-	ItemRewards           []models.MonsterItemReward `json:"itemRewards"`
-	ImageGenerationStatus string                     `json:"imageGenerationStatus"`
-	ImageGenerationError  *string                    `json:"imageGenerationError,omitempty"`
+	ID                          uuid.UUID                  `json:"id"`
+	CreatedAt                   time.Time                  `json:"createdAt"`
+	UpdatedAt                   time.Time                  `json:"updatedAt"`
+	Name                        string                     `json:"name"`
+	Description                 string                     `json:"description"`
+	ImageURL                    string                     `json:"imageUrl"`
+	ThumbnailURL                string                     `json:"thumbnailUrl"`
+	ZoneID                      uuid.UUID                  `json:"zoneId"`
+	Zone                        models.Zone                `json:"zone"`
+	Latitude                    float64                    `json:"latitude"`
+	Longitude                   float64                    `json:"longitude"`
+	TemplateID                  *uuid.UUID                 `json:"templateId,omitempty"`
+	Template                    *monsterTemplateResponse   `json:"template,omitempty"`
+	DominantHandInventoryItemID *int                       `json:"dominantHandInventoryItemId,omitempty"`
+	DominantHandInventoryItem   *models.InventoryItem      `json:"dominantHandInventoryItem,omitempty"`
+	OffHandInventoryItemID      *int                       `json:"offHandInventoryItemId,omitempty"`
+	OffHandInventoryItem        *models.InventoryItem      `json:"offHandInventoryItem,omitempty"`
+	WeaponInventoryItemID       *int                       `json:"weaponInventoryItemId,omitempty"`
+	WeaponInventoryItem         *models.InventoryItem      `json:"weaponInventoryItem,omitempty"`
+	Level                       int                        `json:"level"`
+	Strength                    int                        `json:"strength"`
+	Dexterity                   int                        `json:"dexterity"`
+	Constitution                int                        `json:"constitution"`
+	Intelligence                int                        `json:"intelligence"`
+	Wisdom                      int                        `json:"wisdom"`
+	Charisma                    int                        `json:"charisma"`
+	Health                      int                        `json:"health"`
+	MaxHealth                   int                        `json:"maxHealth"`
+	Mana                        int                        `json:"mana"`
+	MaxMana                     int                        `json:"maxMana"`
+	AttackDamageMin             int                        `json:"attackDamageMin"`
+	AttackDamageMax             int                        `json:"attackDamageMax"`
+	AttackSwipesPerAttack       int                        `json:"attackSwipesPerAttack"`
+	Spells                      []models.Spell             `json:"spells"`
+	RewardExperience            int                        `json:"rewardExperience"`
+	RewardGold                  int                        `json:"rewardGold"`
+	ItemRewards                 []models.MonsterItemReward `json:"itemRewards"`
+	ImageGenerationStatus       string                     `json:"imageGenerationStatus"`
+	ImageGenerationError        *string                    `json:"imageGenerationError,omitempty"`
 }
 
 func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTemplateResponse {
@@ -166,42 +172,55 @@ func monsterResponseFrom(monster *models.Monster) monsterResponse {
 		thumbnailURL = imageURL
 	}
 
+	dominantItemID := monster.DominantHandInventoryItemID
+	dominantItem := monster.DominantHandInventoryItem
+	if dominantItemID == nil {
+		dominantItemID = monster.WeaponInventoryItemID
+	}
+	if dominantItem == nil {
+		dominantItem = monster.WeaponInventoryItem
+	}
+
 	return monsterResponse{
-		ID:                    monster.ID,
-		CreatedAt:             monster.CreatedAt,
-		UpdatedAt:             monster.UpdatedAt,
-		Name:                  monster.Name,
-		Description:           monster.Description,
-		ImageURL:              imageURL,
-		ThumbnailURL:          thumbnailURL,
-		ZoneID:                monster.ZoneID,
-		Zone:                  monster.Zone,
-		Latitude:              monster.Latitude,
-		Longitude:             monster.Longitude,
-		TemplateID:            monster.TemplateID,
-		Template:              monsterTemplateResponseFrom(monster.Template),
-		WeaponInventoryItemID: monster.WeaponInventoryItemID,
-		WeaponInventoryItem:   monster.WeaponInventoryItem,
-		Level:                 monster.EffectiveLevel(),
-		Strength:              stats.Strength,
-		Dexterity:             stats.Dexterity,
-		Constitution:          stats.Constitution,
-		Intelligence:          stats.Intelligence,
-		Wisdom:                stats.Wisdom,
-		Charisma:              stats.Charisma,
-		Health:                maxHealth,
-		MaxHealth:             maxHealth,
-		Mana:                  maxMana,
-		MaxMana:               maxMana,
-		AttackDamageMin:       damageMin,
-		AttackDamageMax:       damageMax,
-		AttackSwipesPerAttack: swipes,
-		Spells:                spells,
-		RewardExperience:      monster.RewardExperience,
-		RewardGold:            monster.RewardGold,
-		ItemRewards:           monster.ItemRewards,
-		ImageGenerationStatus: monster.ImageGenerationStatus,
-		ImageGenerationError:  monster.ImageGenerationError,
+		ID:                          monster.ID,
+		CreatedAt:                   monster.CreatedAt,
+		UpdatedAt:                   monster.UpdatedAt,
+		Name:                        monster.Name,
+		Description:                 monster.Description,
+		ImageURL:                    imageURL,
+		ThumbnailURL:                thumbnailURL,
+		ZoneID:                      monster.ZoneID,
+		Zone:                        monster.Zone,
+		Latitude:                    monster.Latitude,
+		Longitude:                   monster.Longitude,
+		TemplateID:                  monster.TemplateID,
+		Template:                    monsterTemplateResponseFrom(monster.Template),
+		DominantHandInventoryItemID: dominantItemID,
+		DominantHandInventoryItem:   dominantItem,
+		OffHandInventoryItemID:      monster.OffHandInventoryItemID,
+		OffHandInventoryItem:        monster.OffHandInventoryItem,
+		WeaponInventoryItemID:       dominantItemID,
+		WeaponInventoryItem:         dominantItem,
+		Level:                       monster.EffectiveLevel(),
+		Strength:                    stats.Strength,
+		Dexterity:                   stats.Dexterity,
+		Constitution:                stats.Constitution,
+		Intelligence:                stats.Intelligence,
+		Wisdom:                      stats.Wisdom,
+		Charisma:                    stats.Charisma,
+		Health:                      maxHealth,
+		MaxHealth:                   maxHealth,
+		Mana:                        maxMana,
+		MaxMana:                     maxMana,
+		AttackDamageMin:             damageMin,
+		AttackDamageMax:             damageMax,
+		AttackSwipesPerAttack:       swipes,
+		Spells:                      spells,
+		RewardExperience:            monster.RewardExperience,
+		RewardGold:                  monster.RewardGold,
+		ItemRewards:                 monster.ItemRewards,
+		ImageGenerationStatus:       monster.ImageGenerationStatus,
+		ImageGenerationError:        monster.ImageGenerationError,
 	}
 }
 
@@ -297,18 +316,46 @@ func (s *server) parseMonsterUpsertRequest(
 		return nil, nil, fmt.Errorf("rewardGold must be zero or greater")
 	}
 
-	if body.WeaponInventoryItemID == nil || *body.WeaponInventoryItemID <= 0 {
-		return nil, nil, fmt.Errorf("weaponInventoryItemId is required")
+	dominantItemID := body.DominantHandInventoryItemID
+	if dominantItemID == nil || (dominantItemID != nil && *dominantItemID <= 0) {
+		if body.WeaponInventoryItemID != nil && *body.WeaponInventoryItemID > 0 {
+			dominantItemID = body.WeaponInventoryItemID
+		}
 	}
-	weaponItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, *body.WeaponInventoryItemID)
+	if dominantItemID == nil || *dominantItemID <= 0 {
+		return nil, nil, fmt.Errorf("dominantHandInventoryItemId is required")
+	}
+	dominantItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, *dominantItemID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, fmt.Errorf("weaponInventoryItemId not found")
+			return nil, nil, fmt.Errorf("dominantHandInventoryItemId not found")
 		}
 		return nil, nil, err
 	}
-	if weaponItem.DamageMin == nil || weaponItem.DamageMax == nil {
-		return nil, nil, fmt.Errorf("weaponInventoryItemId must reference a weapon-like item with damage")
+	if !isEligibleMonsterDominantHandItem(dominantItem) {
+		return nil, nil, fmt.Errorf("dominantHandInventoryItemId must reference an eligible dominant-hand weapon or staff")
+	}
+
+	var offHandItemID *int
+	var offHandItem *models.InventoryItem
+	if body.OffHandInventoryItemID != nil && *body.OffHandInventoryItemID <= 0 {
+		return nil, nil, fmt.Errorf("offHandInventoryItemId must be positive when set")
+	}
+	if body.OffHandInventoryItemID != nil && *body.OffHandInventoryItemID > 0 {
+		offHandItemID = body.OffHandInventoryItemID
+		offHandItem, err = s.dbClient.InventoryItem().FindInventoryItemByID(ctx, *offHandItemID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, fmt.Errorf("offHandInventoryItemId not found")
+			}
+			return nil, nil, err
+		}
+		if !isEligibleMonsterOffHandItem(offHandItem) {
+			return nil, nil, fmt.Errorf("offHandInventoryItemId must reference an eligible off-hand item or one-handed weapon")
+		}
+		if isTwoHandedDominantItem(dominantItem) {
+			return nil, nil, fmt.Errorf("offHandInventoryItemId cannot be set when dominant hand item is two_handed")
+		}
 	}
 
 	imageURL := strings.TrimSpace(body.ImageURL)
@@ -357,21 +404,69 @@ func (s *server) parseMonsterUpsertRequest(
 	}
 
 	monster := &models.Monster{
-		Name:                  name,
-		Description:           description,
-		ImageURL:              imageURL,
-		ThumbnailURL:          thumbnailURL,
-		ZoneID:                zoneID,
-		Latitude:              body.Latitude,
-		Longitude:             body.Longitude,
-		TemplateID:            &templateID,
-		WeaponInventoryItemID: body.WeaponInventoryItemID,
-		Level:                 body.Level,
-		RewardExperience:      body.RewardExperience,
-		RewardGold:            body.RewardGold,
-		ImageGenerationStatus: models.MonsterImageGenerationStatusNone,
+		Name:                        name,
+		Description:                 description,
+		ImageURL:                    imageURL,
+		ThumbnailURL:                thumbnailURL,
+		ZoneID:                      zoneID,
+		Latitude:                    body.Latitude,
+		Longitude:                   body.Longitude,
+		TemplateID:                  &templateID,
+		DominantHandInventoryItemID: dominantItemID,
+		OffHandInventoryItemID:      offHandItemID,
+		WeaponInventoryItemID:       dominantItemID,
+		Level:                       body.Level,
+		RewardExperience:            body.RewardExperience,
+		RewardGold:                  body.RewardGold,
+		ImageGenerationStatus:       models.MonsterImageGenerationStatusNone,
 	}
 	return monster, itemRewards, nil
+}
+
+func isEligibleMonsterDominantHandItem(item *models.InventoryItem) bool {
+	if item == nil || item.EquipSlot == nil {
+		return false
+	}
+	if strings.TrimSpace(*item.EquipSlot) != string(models.EquipmentSlotDominantHand) {
+		return false
+	}
+	if item.HandItemCategory == nil {
+		return false
+	}
+	category := strings.TrimSpace(*item.HandItemCategory)
+	if category != string(models.HandItemCategoryWeapon) && category != string(models.HandItemCategoryStaff) {
+		return false
+	}
+	return item.DamageMin != nil && item.DamageMax != nil && item.SwipesPerAttack != nil
+}
+
+func isEligibleMonsterOffHandItem(item *models.InventoryItem) bool {
+	if item == nil || item.EquipSlot == nil {
+		return false
+	}
+	equipSlot := strings.TrimSpace(*item.EquipSlot)
+	category := ""
+	if item.HandItemCategory != nil {
+		category = strings.TrimSpace(*item.HandItemCategory)
+	}
+	handedness := ""
+	if item.Handedness != nil {
+		handedness = strings.TrimSpace(*item.Handedness)
+	}
+	if equipSlot == string(models.EquipmentSlotOffHand) &&
+		handedness == string(models.HandednessOneHanded) &&
+		(category == string(models.HandItemCategoryShield) || category == string(models.HandItemCategoryOrb)) {
+		return true
+	}
+	if equipSlot == string(models.EquipmentSlotDominantHand) &&
+		handedness == string(models.HandednessOneHanded) &&
+		category == string(models.HandItemCategoryWeapon) &&
+		item.DamageMin != nil &&
+		item.DamageMax != nil &&
+		item.SwipesPerAttack != nil {
+		return true
+	}
+	return false
 }
 
 func (s *server) getMonsterTemplates(ctx *gin.Context) {

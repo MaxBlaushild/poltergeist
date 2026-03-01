@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
+import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Spell } from '@poltergeist/types';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 type MonsterTemplateRecord = {
   id: string;
@@ -44,15 +46,12 @@ type MonsterRecord = {
   longitude: number;
   templateId?: string;
   template?: MonsterTemplateRecord;
+  dominantHandInventoryItemId?: number;
+  dominantHandInventoryItem?: InventoryItemLite;
+  offHandInventoryItemId?: number;
+  offHandInventoryItem?: InventoryItemLite;
   weaponInventoryItemId?: number;
-  weaponInventoryItem?: {
-    id: number;
-    name: string;
-    imageUrl?: string;
-    damageMin?: number | null;
-    damageMax?: number | null;
-    swipesPerAttack?: number | null;
-  };
+  weaponInventoryItem?: InventoryItemLite;
   level: number;
   strength: number;
   dexterity: number;
@@ -79,9 +78,20 @@ type InventoryItemLite = {
   id: number;
   name: string;
   imageUrl?: string;
+  equipSlot?: string | null;
+  handItemCategory?: string | null;
+  handedness?: string | null;
   damageMin?: number | null;
   damageMax?: number | null;
   swipesPerAttack?: number | null;
+  blockPercentage?: number | null;
+  damageBlocked?: number | null;
+  spellDamageBonusPercent?: number | null;
+};
+
+type ImagePreviewState = {
+  url: string;
+  alt: string;
 };
 
 type MonsterTemplateFormState = {
@@ -113,7 +123,8 @@ type MonsterFormState = {
   latitude: string;
   longitude: string;
   templateId: string;
-  weaponInventoryItemId: string;
+  dominantHandInventoryItemId: string;
+  offHandInventoryItemId: string;
   level: string;
   rewardExperience: string;
   rewardGold: string;
@@ -128,6 +139,13 @@ const parseIntSafe = (value: string, fallback = 0): number => {
 const parseFloatSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const parseOptionalInt = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 const emptyTemplateForm = (): MonsterTemplateFormState => ({
@@ -187,7 +205,8 @@ const emptyMonsterForm = (): MonsterFormState => ({
   latitude: '',
   longitude: '',
   templateId: '',
-  weaponInventoryItemId: '',
+  dominantHandInventoryItemId: '',
+  offHandInventoryItemId: '',
   level: '1',
   rewardExperience: '0',
   rewardGold: '0',
@@ -203,9 +222,15 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
   latitude: String(monster.latitude ?? ''),
   longitude: String(monster.longitude ?? ''),
   templateId: monster.templateId ?? monster.template?.id ?? '',
-  weaponInventoryItemId:
-    monster.weaponInventoryItemId !== undefined && monster.weaponInventoryItemId !== null
-      ? String(monster.weaponInventoryItemId)
+  dominantHandInventoryItemId:
+    monster.dominantHandInventoryItemId !== undefined && monster.dominantHandInventoryItemId !== null
+      ? String(monster.dominantHandInventoryItemId)
+      : monster.weaponInventoryItemId !== undefined && monster.weaponInventoryItemId !== null
+        ? String(monster.weaponInventoryItemId)
+        : '',
+  offHandInventoryItemId:
+    monster.offHandInventoryItemId !== undefined && monster.offHandInventoryItemId !== null
+      ? String(monster.offHandInventoryItemId)
       : '',
   level: String(monster.level ?? 1),
   rewardExperience: String(monster.rewardExperience ?? 0),
@@ -225,7 +250,9 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
   templateId: form.templateId.trim(),
-  weaponInventoryItemId: parseIntSafe(form.weaponInventoryItemId, 0),
+  dominantHandInventoryItemId: parseIntSafe(form.dominantHandInventoryItemId, 0),
+  offHandInventoryItemId: parseOptionalInt(form.offHandInventoryItemId),
+  weaponInventoryItemId: parseIntSafe(form.dominantHandInventoryItemId, 0),
   level: parseIntSafe(form.level, 1),
   rewardExperience: parseIntSafe(form.rewardExperience, 0),
   rewardGold: parseIntSafe(form.rewardGold, 0),
@@ -252,15 +279,17 @@ const formatGenerationStatus = (status?: string) => {
   }
 };
 
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
+
 export const Monsters = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
-  const { inventoryItems } = useInventory();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MonsterTemplateRecord[]>([]);
   const [records, setRecords] = useState<MonsterRecord[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -271,9 +300,16 @@ export const Monsters = () => {
   const [showMonsterModal, setShowMonsterModal] = useState(false);
   const [editingMonster, setEditingMonster] = useState<MonsterRecord | null>(null);
   const [monsterForm, setMonsterForm] = useState<MonsterFormState>(emptyMonsterForm());
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
 
   const [generatingMonsterId, setGeneratingMonsterId] = useState<string | null>(null);
   const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
+  const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const mapRef = React.useRef<mapboxgl.Map | null>(null);
+  const markerRef = React.useRef<mapboxgl.Marker | null>(null);
+  const formLatitudeRef = React.useRef(monsterForm.latitude);
+  const formLongitudeRef = React.useRef(monsterForm.longitude);
 
   const load = useCallback(async (suppressLoading = false) => {
     try {
@@ -281,14 +317,16 @@ export const Monsters = () => {
         setLoading(true);
       }
       setError(null);
-      const [templateResp, monsterResp, spellResp] = await Promise.all([
+      const [templateResp, monsterResp, spellResp, inventoryResp] = await Promise.all([
         apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
         apiClient.get<MonsterRecord[]>('/sonar/monsters'),
         apiClient.get<Spell[]>('/sonar/spells'),
+        apiClient.get<InventoryItemLite[]>('/sonar/admin/inventoryItems'),
       ]);
       setTemplates(Array.isArray(templateResp) ? templateResp : []);
       setRecords(Array.isArray(monsterResp) ? monsterResp : []);
       setSpells(Array.isArray(spellResp) ? spellResp : []);
+      setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
     } catch (err) {
       console.error('Failed to load monsters/templates', err);
       setError('Failed to load monsters/templates.');
@@ -320,6 +358,11 @@ export const Monsters = () => {
     return () => clearInterval(interval);
   }, [load, records, templates]);
 
+  useEffect(() => {
+    formLatitudeRef.current = monsterForm.latitude;
+    formLongitudeRef.current = monsterForm.longitude;
+  }, [monsterForm.latitude, monsterForm.longitude]);
+
   const zoneNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const zone of zones) {
@@ -336,11 +379,56 @@ export const Monsters = () => {
     return map;
   }, [templates]);
 
-  const weaponItems = useMemo(() => {
-    return (inventoryItems as InventoryItemLite[]).filter(
-      (item) => item.damageMin !== undefined && item.damageMin !== null && item.damageMax !== undefined && item.damageMax !== null
-    );
+  const dominantHandItems = useMemo(() => {
+    return inventoryItems.filter((item) => {
+      const equipSlot = (item.equipSlot ?? '').trim().toLowerCase();
+      const category = (item.handItemCategory ?? '').trim().toLowerCase();
+      return (
+        equipSlot === 'dominant_hand' &&
+        (category === 'weapon' || category === 'staff') &&
+        item.damageMin !== undefined &&
+        item.damageMin !== null &&
+        item.damageMax !== undefined &&
+        item.damageMax !== null
+      );
+    });
   }, [inventoryItems]);
+
+  const offHandItems = useMemo(() => {
+    return inventoryItems.filter((item) => {
+      const equipSlot = (item.equipSlot ?? '').trim().toLowerCase();
+      const category = (item.handItemCategory ?? '').trim().toLowerCase();
+      const handedness = (item.handedness ?? '').trim().toLowerCase();
+      const isOffhandUtility =
+        equipSlot === 'off_hand' &&
+        handedness === 'one_handed' &&
+        (category === 'shield' || category === 'orb');
+      const isOneHandedWeapon =
+        equipSlot === 'dominant_hand' &&
+        handedness === 'one_handed' &&
+        category === 'weapon' &&
+        item.damageMin !== undefined &&
+        item.damageMin !== null &&
+        item.damageMax !== undefined &&
+        item.damageMax !== null;
+      return isOffhandUtility || isOneHandedWeapon;
+    });
+  }, [inventoryItems]);
+
+  const dominantHandItemById = useMemo(() => {
+    const map = new Map<number, InventoryItemLite>();
+    for (const item of dominantHandItems) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [dominantHandItems]);
+
+  const selectedDominantHandItem = useMemo(() => {
+    const selectedID = parseIntSafe(monsterForm.dominantHandInventoryItemId, 0);
+    return selectedID > 0 ? dominantHandItemById.get(selectedID) : undefined;
+  }, [monsterForm.dominantHandInventoryItemId, dominantHandItemById]);
+
+  const dominantIsTwoHanded = (selectedDominantHandItem?.handedness ?? '').trim().toLowerCase() === 'two_handed';
 
   const spellAbilities = useMemo(
     () => spells.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique'),
@@ -448,7 +536,7 @@ export const Monsters = () => {
       ...emptyMonsterForm(),
       zoneId: zones[0]?.id ?? '',
       templateId: templates[0]?.id ?? '',
-      weaponInventoryItemId: weaponItems[0] ? String(weaponItems[0].id) : '',
+      dominantHandInventoryItemId: dominantHandItems[0] ? String(dominantHandItems[0].id) : '',
     });
     setShowMonsterModal(true);
   };
@@ -472,12 +560,16 @@ export const Monsters = () => {
         alert('Zone and template are required.');
         return;
       }
-      if (!payload.weaponInventoryItemId || payload.weaponInventoryItemId <= 0) {
-        alert('Weapon is required.');
+      if (!payload.dominantHandInventoryItemId || payload.dominantHandInventoryItemId <= 0) {
+        alert('A dominant hand weapon is required.');
         return;
       }
       if (payload.level <= 0) {
         alert('Level must be positive.');
+        return;
+      }
+      if (dominantIsTwoHanded && payload.offHandInventoryItemId) {
+        alert('Two-handed dominant weapons cannot be combined with an off-hand item.');
         return;
       }
 
@@ -552,6 +644,120 @@ export const Monsters = () => {
   const updateTemplateTechniqueIds = (selected: HTMLSelectElement) => {
     const techniqueIds = Array.from(selected.selectedOptions).map((option) => option.value);
     setTemplateForm((prev) => ({ ...prev, techniqueIds }));
+  };
+
+  const updateDominantHandSelection = (value: string) => {
+    setMonsterForm((prev) => {
+      const selectedID = parseIntSafe(value, 0);
+      const selected = selectedID > 0 ? dominantHandItemById.get(selectedID) : undefined;
+      const handedness = (selected?.handedness ?? '').trim().toLowerCase();
+      return {
+        ...prev,
+        dominantHandInventoryItemId: value,
+        offHandInventoryItemId: handedness === 'two_handed' ? '' : prev.offHandInventoryItemId,
+      };
+    });
+  };
+
+  const setMonsterLocation = useCallback((latitude: number, longitude: number) => {
+    setMonsterForm((prev) => ({
+      ...prev,
+      latitude: latitude.toFixed(6),
+      longitude: longitude.toFixed(6),
+    }));
+  }, []);
+
+  const handleUseCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported in this browser.');
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGeoLoading(false);
+        setMonsterLocation(position.coords.latitude, position.coords.longitude);
+      },
+      (error) => {
+        setGeoLoading(false);
+        alert(`Unable to get current location: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, [setMonsterLocation]);
+
+  useEffect(() => {
+    if (!showMonsterModal) return;
+    if (!mapContainerRef.current) return;
+    if (!mapboxgl.accessToken) return;
+    if (mapRef.current) return;
+
+    const parsedLat = Number.parseFloat(formLatitudeRef.current);
+    const parsedLng = Number.parseFloat(formLongitudeRef.current);
+    const selectedZone = zones.find((zone) => zone.id === monsterForm.zoneId);
+    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
+    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+
+    const center: [number, number] =
+      Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+        ? [parsedLng, parsedLat]
+        : Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
+          ? [zoneLng, zoneLat]
+          : [-73.98513, 40.7589];
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center,
+      zoom: 13,
+    });
+
+    map.on('click', (event) => {
+      setMonsterLocation(event.lngLat.lat, event.lngLat.lng);
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [monsterForm.zoneId, setMonsterLocation, showMonsterModal, zones]);
+
+  useEffect(() => {
+    if (!showMonsterModal) return;
+    if (!mapRef.current) return;
+
+    const lat = Number.parseFloat(monsterForm.latitude);
+    const lng = Number.parseFloat(monsterForm.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+
+    if (!markerRef.current) {
+      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' }).setLngLat([lng, lat]).addTo(mapRef.current);
+    } else {
+      markerRef.current.setLngLat([lng, lat]);
+    }
+
+    mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
+  }, [monsterForm.latitude, monsterForm.longitude, showMonsterModal]);
+
+  const openMonsterImagePreview = (monster: MonsterRecord) => {
+    const url = monster.imageUrl || monster.thumbnailUrl;
+    if (!url) return;
+    setImagePreview({
+      url,
+      alt: `${monster.name || 'Monster'} image`,
+    });
+  };
+
+  const closeImagePreview = () => {
+    setImagePreview(null);
   };
 
   return (
@@ -659,11 +865,18 @@ export const Monsters = () => {
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <div className="flex gap-3 min-w-0">
                           {monster.thumbnailUrl || monster.imageUrl ? (
-                            <img
-                              src={monster.thumbnailUrl || monster.imageUrl}
-                              alt={monster.name}
-                              className="w-16 h-16 rounded object-cover border border-gray-200"
-                            />
+                            <button
+                              type="button"
+                              className="block"
+                              onClick={() => openMonsterImagePreview(monster)}
+                              title="Open image preview"
+                            >
+                              <img
+                                src={monster.thumbnailUrl || monster.imageUrl}
+                                alt={monster.name}
+                                className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
+                              />
+                            </button>
                           ) : (
                             <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">?</div>
                           )}
@@ -676,7 +889,15 @@ export const Monsters = () => {
                               Template: {monster.template?.name ?? (monster.templateId ? templateNameById.get(monster.templateId) : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Weapon: {monster.weaponInventoryItem?.name ?? (monster.weaponInventoryItemId ? `#${monster.weaponInventoryItemId}` : 'N/A')}
+                              Dominant Hand: {monster.dominantHandInventoryItem?.name ??
+                                monster.weaponInventoryItem?.name ??
+                                (monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId
+                                  ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
+                                  : 'N/A')}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Off Hand: {monster.offHandInventoryItem?.name ??
+                                (monster.offHandInventoryItemId ? `#${monster.offHandInventoryItemId}` : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
                               Damage {monster.attackDamageMin}-{monster.attackDamageMax} · Swipes {monster.attackSwipesPerAttack}
@@ -905,7 +1126,7 @@ export const Monsters = () => {
                 />
               </label>
 
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="block text-sm mb-1">Zone</span>
                   <select
@@ -920,16 +1141,32 @@ export const Monsters = () => {
                   </select>
                 </label>
                 <label className="block">
-                  <span className="block text-sm mb-1">Weapon</span>
+                  <span className="block text-sm mb-1">Dominant Hand</span>
                   <select
                     className="w-full border border-gray-300 rounded-md p-2"
-                    value={monsterForm.weaponInventoryItemId}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, weaponInventoryItemId: event.target.value }))}
+                    value={monsterForm.dominantHandInventoryItemId}
+                    onChange={(event) => updateDominantHandSelection(event.target.value)}
                   >
-                    <option value="">Select weapon</option>
-                    {weaponItems.map((item) => (
+                    <option value="">Select dominant hand item</option>
+                    {dominantHandItems.map((item) => (
                       <option key={item.id} value={String(item.id)}>
                         {item.name} ({item.damageMin}-{item.damageMax} · {item.swipesPerAttack ?? 1} swipes)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Off Hand</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={monsterForm.offHandInventoryItemId}
+                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, offHandInventoryItemId: event.target.value }))}
+                    disabled={dominantIsTwoHanded}
+                  >
+                    <option value="">None</option>
+                    {offHandItems.map((item) => (
+                      <option key={item.id} value={String(item.id)}>
+                        {item.name}
                       </option>
                     ))}
                   </select>
@@ -963,6 +1200,31 @@ export const Monsters = () => {
                     onChange={(event) => setMonsterForm((prev) => ({ ...prev, level: event.target.value }))}
                   />
                 </label>
+              </div>
+
+              <div className="text-sm">
+                <button
+                  type="button"
+                  className="qa-btn qa-btn-secondary"
+                  onClick={handleUseCurrentLocation}
+                  disabled={geoLoading}
+                >
+                  {geoLoading ? 'Locating...' : 'Use Current Browser Location'}
+                </button>
+              </div>
+
+              <div className="text-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <span>Map Location Picker</span>
+                  <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+                </div>
+                {mapboxgl.accessToken ? (
+                  <div ref={mapContainerRef} className="w-full h-64 border border-gray-300 rounded-md" />
+                ) : (
+                  <div className="w-full border border-gray-300 rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                  </div>
+                )}
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
@@ -1034,7 +1296,7 @@ export const Monsters = () => {
                         onChange={(event) => updateMonsterItemReward(index, { inventoryItemId: event.target.value })}
                       >
                         <option value="">Select item</option>
-                        {(inventoryItems as InventoryItemLite[]).map((item) => (
+                        {inventoryItems.map((item) => (
                           <option key={item.id} value={String(item.id)}>{item.name}</option>
                         ))}
                       </select>
@@ -1067,6 +1329,31 @@ export const Monsters = () => {
                 <button className="qa-btn qa-btn-primary" onClick={saveMonster}>Save Monster</button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {imagePreview ? (
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60]"
+          onClick={closeImagePreview}
+        >
+          <div
+            className="relative bg-white rounded-lg shadow-xl p-3 max-w-5xl w-full max-h-[92vh] flex items-center justify-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute top-2 right-2 qa-btn qa-btn-secondary"
+              onClick={closeImagePreview}
+            >
+              Close
+            </button>
+            <img
+              src={imagePreview.url}
+              alt={imagePreview.alt}
+              className="max-w-full max-h-[84vh] rounded object-contain"
+            />
           </div>
         </div>
       ) : null}

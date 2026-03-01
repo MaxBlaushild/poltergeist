@@ -9,28 +9,32 @@ import (
 )
 
 type Monster struct {
-	ID                    uuid.UUID           `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt             time.Time           `json:"createdAt"`
-	UpdatedAt             time.Time           `json:"updatedAt"`
-	Name                  string              `json:"name"`
-	Description           string              `json:"description"`
-	ImageURL              string              `json:"imageUrl" gorm:"column:image_url"`
-	ThumbnailURL          string              `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	ZoneID                uuid.UUID           `json:"zoneId" gorm:"column:zone_id"`
-	Zone                  Zone                `json:"zone"`
-	Latitude              float64             `json:"latitude"`
-	Longitude             float64             `json:"longitude"`
-	Geometry              string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	TemplateID            *uuid.UUID          `json:"templateId,omitempty" gorm:"column:template_id"`
-	Template              *MonsterTemplate    `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
-	WeaponInventoryItemID *int                `json:"weaponInventoryItemId,omitempty" gorm:"column:weapon_inventory_item_id"`
-	WeaponInventoryItem   *InventoryItem      `json:"weaponInventoryItem,omitempty" gorm:"foreignKey:WeaponInventoryItemID"`
-	Level                 int                 `json:"level"`
-	RewardExperience      int                 `json:"rewardExperience" gorm:"column:reward_experience"`
-	RewardGold            int                 `json:"rewardGold" gorm:"column:reward_gold"`
-	ImageGenerationStatus string              `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
-	ImageGenerationError  *string             `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
-	ItemRewards           []MonsterItemReward `json:"itemRewards" gorm:"foreignKey:MonsterID"`
+	ID                          uuid.UUID           `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt                   time.Time           `json:"createdAt"`
+	UpdatedAt                   time.Time           `json:"updatedAt"`
+	Name                        string              `json:"name"`
+	Description                 string              `json:"description"`
+	ImageURL                    string              `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL                string              `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ZoneID                      uuid.UUID           `json:"zoneId" gorm:"column:zone_id"`
+	Zone                        Zone                `json:"zone"`
+	Latitude                    float64             `json:"latitude"`
+	Longitude                   float64             `json:"longitude"`
+	Geometry                    string              `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	TemplateID                  *uuid.UUID          `json:"templateId,omitempty" gorm:"column:template_id"`
+	Template                    *MonsterTemplate    `json:"template,omitempty" gorm:"foreignKey:TemplateID"`
+	DominantHandInventoryItemID *int                `json:"dominantHandInventoryItemId,omitempty" gorm:"column:dominant_hand_inventory_item_id"`
+	DominantHandInventoryItem   *InventoryItem      `json:"dominantHandInventoryItem,omitempty" gorm:"foreignKey:DominantHandInventoryItemID"`
+	OffHandInventoryItemID      *int                `json:"offHandInventoryItemId,omitempty" gorm:"column:off_hand_inventory_item_id"`
+	OffHandInventoryItem        *InventoryItem      `json:"offHandInventoryItem,omitempty" gorm:"foreignKey:OffHandInventoryItemID"`
+	WeaponInventoryItemID       *int                `json:"weaponInventoryItemId,omitempty" gorm:"column:weapon_inventory_item_id"`
+	WeaponInventoryItem         *InventoryItem      `json:"weaponInventoryItem,omitempty" gorm:"foreignKey:WeaponInventoryItemID"`
+	Level                       int                 `json:"level"`
+	RewardExperience            int                 `json:"rewardExperience" gorm:"column:reward_experience"`
+	RewardGold                  int                 `json:"rewardGold" gorm:"column:reward_gold"`
+	ImageGenerationStatus       string              `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError        *string             `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	ItemRewards                 []MonsterItemReward `json:"itemRewards" gorm:"foreignKey:MonsterID"`
 }
 
 type MonsterTemplate struct {
@@ -149,17 +153,32 @@ func (m *Monster) DerivedAttackProfile() (damageMin int, damageMax int, swipesPe
 	dexterityBonus := maxInt(0, (stats.Dexterity-10)/4)
 	totalBonus := strengthBonus + dexterityBonus
 
-	if m.WeaponInventoryItem != nil &&
-		m.WeaponInventoryItem.DamageMin != nil &&
-		m.WeaponInventoryItem.DamageMax != nil {
-		damageMin = maxInt(1, *m.WeaponInventoryItem.DamageMin+totalBonus)
-		damageMax = maxInt(damageMin, *m.WeaponInventoryItem.DamageMax+totalBonus)
-		if m.WeaponInventoryItem.SwipesPerAttack != nil && *m.WeaponInventoryItem.SwipesPerAttack > 0 {
-			swipesPerAttack = *m.WeaponInventoryItem.SwipesPerAttack
-		} else {
-			swipesPerAttack = 1
+	dominantWeapon := m.DominantHandInventoryItem
+	if dominantWeapon == nil {
+		dominantWeapon = m.WeaponInventoryItem
+	}
+
+	if dominantWeapon != nil &&
+		dominantWeapon.DamageMin != nil &&
+		dominantWeapon.DamageMax != nil {
+		damageMin = maxInt(1, *dominantWeapon.DamageMin+totalBonus)
+		damageMax = maxInt(damageMin, *dominantWeapon.DamageMax+totalBonus)
+		swipesPerAttack = 1
+		if dominantWeapon.SwipesPerAttack != nil && *dominantWeapon.SwipesPerAttack > 0 {
+			swipesPerAttack = *dominantWeapon.SwipesPerAttack
 		}
-		return damageMin, damageMax, swipesPerAttack
+		if m.OffHandInventoryItem != nil &&
+			m.OffHandInventoryItem.DamageMin != nil &&
+			m.OffHandInventoryItem.DamageMax != nil {
+			damageMin += maxInt(1, *m.OffHandInventoryItem.DamageMin)
+			damageMax += maxInt(1, *m.OffHandInventoryItem.DamageMax)
+			if m.OffHandInventoryItem.SwipesPerAttack != nil && *m.OffHandInventoryItem.SwipesPerAttack > 0 {
+				swipesPerAttack += *m.OffHandInventoryItem.SwipesPerAttack
+			} else {
+				swipesPerAttack += 1
+			}
+		}
+		return damageMin, damageMax, maxInt(1, swipesPerAttack)
 	}
 
 	damageMin = maxInt(1, stats.Strength/3+m.EffectiveLevel()/2)

@@ -19,6 +19,8 @@ func (h *monsterHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("Template").
 		Preload("Template.Spells").
 		Preload("Template.Spells.Spell").
+		Preload("DominantHandInventoryItem").
+		Preload("OffHandInventoryItem").
 		Preload("WeaponInventoryItem").
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem")
@@ -35,6 +37,9 @@ func (h *monsterHandle) Create(ctx context.Context, monster *models.Monster) err
 	monster.UpdatedAt = now
 	if monster.Level < 1 {
 		monster.Level = 1
+	}
+	if monster.DominantHandInventoryItemID != nil && monster.WeaponInventoryItemID == nil {
+		monster.WeaponInventoryItemID = monster.DominantHandInventoryItemID
 	}
 	if monster.ImageGenerationStatus == "" {
 		monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
@@ -91,22 +96,27 @@ func (h *monsterHandle) Update(ctx context.Context, id uuid.UUID, updates *model
 	}
 
 	payload := map[string]interface{}{
-		"name":                     updates.Name,
-		"description":              updates.Description,
-		"image_url":                updates.ImageURL,
-		"thumbnail_url":            updates.ThumbnailURL,
-		"zone_id":                  updates.ZoneID,
-		"latitude":                 updates.Latitude,
-		"longitude":                updates.Longitude,
-		"geometry":                 updates.Geometry,
-		"template_id":              updates.TemplateID,
-		"weapon_inventory_item_id": updates.WeaponInventoryItemID,
-		"level":                    updates.Level,
-		"reward_experience":        updates.RewardExperience,
-		"reward_gold":              updates.RewardGold,
-		"image_generation_status":  updates.ImageGenerationStatus,
-		"image_generation_error":   updates.ImageGenerationError,
-		"updated_at":               updates.UpdatedAt,
+		"name":                            updates.Name,
+		"description":                     updates.Description,
+		"image_url":                       updates.ImageURL,
+		"thumbnail_url":                   updates.ThumbnailURL,
+		"zone_id":                         updates.ZoneID,
+		"latitude":                        updates.Latitude,
+		"longitude":                       updates.Longitude,
+		"geometry":                        updates.Geometry,
+		"template_id":                     updates.TemplateID,
+		"dominant_hand_inventory_item_id": updates.DominantHandInventoryItemID,
+		"off_hand_inventory_item_id":      updates.OffHandInventoryItemID,
+		"weapon_inventory_item_id":        updates.WeaponInventoryItemID,
+		"level":                           updates.Level,
+		"reward_experience":               updates.RewardExperience,
+		"reward_gold":                     updates.RewardGold,
+		"image_generation_status":         updates.ImageGenerationStatus,
+		"image_generation_error":          updates.ImageGenerationError,
+		"updated_at":                      updates.UpdatedAt,
+	}
+	if updates.DominantHandInventoryItemID != nil {
+		payload["weapon_inventory_item_id"] = updates.DominantHandInventoryItemID
 	}
 	return h.db.WithContext(ctx).Model(&models.Monster{}).Where("id = ?", id).Updates(payload).Error
 }
