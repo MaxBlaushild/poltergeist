@@ -29,6 +29,7 @@ type spellUpsertRequest struct {
 	Name          string               `json:"name"`
 	Description   string               `json:"description"`
 	IconURL       string               `json:"iconUrl"`
+	AbilityType   string               `json:"abilityType"`
 	EffectText    string               `json:"effectText"`
 	SchoolOfMagic string               `json:"schoolOfMagic"`
 	ManaCost      int                  `json:"manaCost"`
@@ -44,6 +45,17 @@ type castSpellHealResult struct {
 	Restored  int       `json:"restored"`
 	Health    int       `json:"health"`
 	MaxHealth int       `json:"maxHealth"`
+}
+
+func normalizeSpellAbilityType(value string) models.SpellAbilityType {
+	return models.NormalizeSpellAbilityType(strings.TrimSpace(strings.ToLower(value)))
+}
+
+func isSpellOfType(spell *models.Spell, abilityType models.SpellAbilityType) bool {
+	if spell == nil {
+		return false
+	}
+	return normalizeSpellAbilityType(string(spell.AbilityType)) == abilityType
 }
 
 func normalizeSpellStatusNames(values []string) models.StringArray {
@@ -124,12 +136,24 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	if body.ManaCost < 0 {
-		return nil, fmt.Errorf("manaCost must be zero or greater")
+	rawAbilityType := strings.TrimSpace(strings.ToLower(body.AbilityType))
+	abilityType := models.SpellAbilityTypeSpell
+	if rawAbilityType != "" {
+		if !models.IsValidSpellAbilityType(rawAbilityType) {
+			return nil, fmt.Errorf("abilityType must be spell or technique")
+		}
+		abilityType = models.SpellAbilityType(rawAbilityType)
 	}
 	schoolOfMagic := strings.TrimSpace(body.SchoolOfMagic)
 	if schoolOfMagic == "" {
 		return nil, fmt.Errorf("schoolOfMagic is required")
+	}
+	if body.ManaCost < 0 {
+		return nil, fmt.Errorf("manaCost must be zero or greater")
+	}
+	manaCost := body.ManaCost
+	if abilityType == models.SpellAbilityTypeTechnique {
+		manaCost = 0
 	}
 
 	effects, err := s.parseSpellEffects(body.Effects)
@@ -142,9 +166,10 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 		Description:           strings.TrimSpace(body.Description),
 		IconURL:               strings.TrimSpace(body.IconURL),
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
+		AbilityType:           abilityType,
 		EffectText:            strings.TrimSpace(body.EffectText),
 		SchoolOfMagic:         schoolOfMagic,
-		ManaCost:              body.ManaCost,
+		ManaCost:              manaCost,
 		Effects:               effects,
 	}, nil
 }
@@ -161,6 +186,31 @@ func (s *server) getSpells(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, spells)
+}
+
+func filterSpellsByType(spells []models.Spell, abilityType models.SpellAbilityType) []models.Spell {
+	filtered := make([]models.Spell, 0, len(spells))
+	for _, spell := range spells {
+		if normalizeSpellAbilityType(string(spell.AbilityType)) != abilityType {
+			continue
+		}
+		filtered = append(filtered, spell)
+	}
+	return filtered
+}
+
+func (s *server) getTechniques(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	spells, err := s.dbClient.Spell().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, filterSpellsByType(spells, models.SpellAbilityTypeTechnique))
 }
 
 func (s *server) getSpell(ctx *gin.Context) {
@@ -187,15 +237,57 @@ func (s *server) getSpell(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, spell)
 }
 
-func (s *server) createSpell(ctx *gin.Context) {
+func (s *server) getTechnique(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
+	spellID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid technique ID"})
+		return
+	}
+
+	spell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !isSpellOfType(spell, models.SpellAbilityTypeTechnique) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, spell)
+}
+
+func (s *server) createSpell(ctx *gin.Context) {
 	var requestBody spellUpsertRequest
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	s.createSpellWithBoundRequest(ctx, requestBody)
+}
+
+func (s *server) createTechnique(ctx *gin.Context) {
+	var requestBody spellUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	requestBody.AbilityType = string(models.SpellAbilityTypeTechnique)
+	requestBody.ManaCost = 0
+	s.createSpellWithBoundRequest(ctx, requestBody)
+}
+
+func (s *server) createSpellWithBoundRequest(ctx *gin.Context, requestBody spellUpsertRequest) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -225,34 +317,12 @@ func (s *server) createSpell(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, created)
 }
 
-func (s *server) updateSpell(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
-	spellID, err := uuid.Parse(ctx.Param("id"))
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
-		return
-	}
-
-	existingSpell, err := s.dbClient.Spell().FindByID(ctx, spellID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
-			return
-		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var requestBody spellUpsertRequest
-	if err := ctx.Bind(&requestBody); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
+func (s *server) updateSpellWithBoundRequest(
+	ctx *gin.Context,
+	spellID uuid.UUID,
+	existingSpell *models.Spell,
+	requestBody spellUpsertRequest,
+) {
 	spell, err := s.parseSpellUpsertRequest(requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -260,9 +330,10 @@ func (s *server) updateSpell(ctx *gin.Context) {
 	}
 
 	if err := s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
-		"name":        spell.Name,
-		"description": spell.Description,
-		"icon_url":    spell.IconURL,
+		"name":         spell.Name,
+		"description":  spell.Description,
+		"icon_url":     spell.IconURL,
+		"ability_type": spell.AbilityType,
 		"image_generation_status": func() string {
 			if spell.IconURL != "" {
 				return models.SpellImageGenerationStatusComplete
@@ -300,6 +371,72 @@ func (s *server) updateSpell(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, updated)
 }
 
+func (s *server) updateSpell(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	spellID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
+		return
+	}
+
+	existingSpell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody spellUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	s.updateSpellWithBoundRequest(ctx, spellID, existingSpell, requestBody)
+}
+
+func (s *server) updateTechnique(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	techniqueID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid technique ID"})
+		return
+	}
+
+	existing, err := s.dbClient.Spell().FindByID(ctx, techniqueID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !isSpellOfType(existing, models.SpellAbilityTypeTechnique) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+		return
+	}
+
+	var requestBody spellUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	requestBody.AbilityType = string(models.SpellAbilityTypeTechnique)
+	requestBody.ManaCost = 0
+	s.updateSpellWithBoundRequest(ctx, techniqueID, existing, requestBody)
+}
+
 func (s *server) deleteSpell(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -328,7 +465,44 @@ func (s *server) deleteSpell(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "spell deleted successfully"})
 }
 
-func (s *server) generateSpellIcon(ctx *gin.Context) {
+func (s *server) deleteTechnique(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	techniqueID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid technique ID"})
+		return
+	}
+
+	spell, err := s.dbClient.Spell().FindByID(ctx, techniqueID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !isSpellOfType(spell, models.SpellAbilityTypeTechnique) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found"})
+		return
+	}
+
+	if err := s.dbClient.Spell().Delete(ctx, techniqueID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "technique deleted successfully"})
+}
+
+func (s *server) generateSpellIconForType(
+	ctx *gin.Context,
+	notFoundLabel string,
+	requiredType *models.SpellAbilityType,
+) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -336,17 +510,21 @@ func (s *server) generateSpellIcon(ctx *gin.Context) {
 
 	spellID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid %s ID", notFoundLabel)})
 		return
 	}
 
 	spell, err := s.dbClient.Spell().FindByID(ctx, spellID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
+			ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("%s not found", notFoundLabel)})
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if requiredType != nil && !isSpellOfType(spell, *requiredType) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("%s not found", notFoundLabel)})
 		return
 	}
 
@@ -391,6 +569,15 @@ func (s *server) generateSpellIcon(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, updatedSpell)
 }
 
+func (s *server) generateSpellIcon(ctx *gin.Context) {
+	s.generateSpellIconForType(ctx, "spell", nil)
+}
+
+func (s *server) generateTechniqueIcon(ctx *gin.Context) {
+	abilityType := models.SpellAbilityTypeTechnique
+	s.generateSpellIconForType(ctx, "technique", &abilityType)
+}
+
 func (s *server) applySpellHealToUser(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -427,7 +614,21 @@ func (s *server) applySpellHealToUser(
 	return restoreAmount, currentHealth, maxHealth, nil
 }
 
-func (s *server) castSpell(ctx *gin.Context) {
+func filterUserSpellsByType(
+	userSpells []models.UserSpell,
+	abilityType models.SpellAbilityType,
+) []models.UserSpell {
+	filtered := make([]models.UserSpell, 0, len(userSpells))
+	for _, userSpell := range userSpells {
+		if normalizeSpellAbilityType(string(userSpell.Spell.AbilityType)) != abilityType {
+			continue
+		}
+		filtered = append(filtered, userSpell)
+	}
+	return filtered
+}
+
+func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellAbilityType) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -450,14 +651,23 @@ func (s *server) castSpell(ctx *gin.Context) {
 	for _, userSpell := range userSpells {
 		if userSpell.SpellID == spellID {
 			spell := userSpell.Spell
+			if requiredType != nil && normalizeSpellAbilityType(string(spell.AbilityType)) != *requiredType {
+				continue
+			}
 			spellToCast = &spell
 			break
 		}
 	}
 	if spellToCast == nil {
+		if requiredType != nil && *requiredType == models.SpellAbilityTypeTechnique {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "technique not found for user"})
+			return
+		}
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found for user"})
 		return
 	}
+	abilityType := normalizeSpellAbilityType(string(spellToCast.AbilityType))
+	isTechnique := abilityType == models.SpellAbilityTypeTechnique
 
 	targetHealAmount := 0
 	groupHealAmount := 0
@@ -473,7 +683,7 @@ func (s *server) castSpell(ctx *gin.Context) {
 		}
 	}
 	if targetHealAmount <= 0 && groupHealAmount <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "this spell has no castable healing effect"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "this ability has no castable healing effect"})
 		return
 	}
 
@@ -498,7 +708,7 @@ func (s *server) castSpell(ctx *gin.Context) {
 	var targetUserID uuid.UUID
 	if targetHealAmount > 0 {
 		if request.TargetUserID == nil || strings.TrimSpace(*request.TargetUserID) == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId is required for targeted heal spells"})
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId is required for targeted heal abilities"})
 			return
 		}
 		targetUserID, err = uuid.Parse(strings.TrimSpace(*request.TargetUserID))
@@ -512,24 +722,26 @@ func (s *server) castSpell(ctx *gin.Context) {
 		}
 	}
 
-	_, _, _, _, currentMana, err := s.getScenarioResourceState(ctx, user.ID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if currentMana < spellToCast.ManaCost {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error":       "not enough mana",
-			"currentMana": currentMana,
-			"manaCost":    spellToCast.ManaCost,
-		})
-		return
-	}
-
-	if spellToCast.ManaCost > 0 {
-		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, user.ID, 0, spellToCast.ManaCost); err != nil {
+	if !isTechnique {
+		_, _, _, _, currentMana, err := s.getScenarioResourceState(ctx, user.ID)
+		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+		if currentMana < spellToCast.ManaCost {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error":       "not enough mana",
+				"currentMana": currentMana,
+				"manaCost":    spellToCast.ManaCost,
+			})
+			return
+		}
+
+		if spellToCast.ManaCost > 0 {
+			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, user.ID, 0, spellToCast.ManaCost); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 		}
 	}
 
@@ -570,11 +782,26 @@ func (s *server) castSpell(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"spellId":     spellToCast.ID,
 		"spellName":   spellToCast.Name,
-		"manaSpent":   spellToCast.ManaCost,
+		"abilityType": string(abilityType),
+		"manaSpent": func() int {
+			if isTechnique {
+				return 0
+			}
+			return spellToCast.ManaCost
+		}(),
 		"currentMana": manaAfter,
 		"maxMana":     maxMana,
 		"heals":       heals,
 	})
+}
+
+func (s *server) castSpell(ctx *gin.Context) {
+	s.castSpellWithType(ctx, nil)
+}
+
+func (s *server) castTechnique(ctx *gin.Context) {
+	abilityType := models.SpellAbilityTypeTechnique
+	s.castSpellWithType(ctx, &abilityType)
 }
 
 func (s *server) getCurrentUserSpells(ctx *gin.Context) {
@@ -589,5 +816,20 @@ func (s *server) getCurrentUserSpells(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, userSpells)
+	ctx.JSON(http.StatusOK, filterUserSpellsByType(userSpells, models.SpellAbilityTypeSpell))
+}
+
+func (s *server) getCurrentUserTechniques(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	userSpells, err := s.dbClient.UserSpell().FindByUserID(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, filterUserSpellsByType(userSpells, models.SpellAbilityTypeTechnique))
 }

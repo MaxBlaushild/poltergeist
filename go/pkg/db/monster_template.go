@@ -51,15 +51,19 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
 	payload := map[string]interface{}{
-		"name":              updates.Name,
-		"description":       updates.Description,
-		"base_strength":     updates.BaseStrength,
-		"base_dexterity":    updates.BaseDexterity,
-		"base_constitution": updates.BaseConstitution,
-		"base_intelligence": updates.BaseIntelligence,
-		"base_wisdom":       updates.BaseWisdom,
-		"base_charisma":     updates.BaseCharisma,
-		"updated_at":        updates.UpdatedAt,
+		"name":                    updates.Name,
+		"description":             updates.Description,
+		"image_url":               updates.ImageURL,
+		"thumbnail_url":           updates.ThumbnailURL,
+		"base_strength":           updates.BaseStrength,
+		"base_dexterity":          updates.BaseDexterity,
+		"base_constitution":       updates.BaseConstitution,
+		"base_intelligence":       updates.BaseIntelligence,
+		"base_wisdom":             updates.BaseWisdom,
+		"base_charisma":           updates.BaseCharisma,
+		"image_generation_status": updates.ImageGenerationStatus,
+		"image_generation_error":  updates.ImageGenerationError,
+		"updated_at":              updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.MonsterTemplate{}).Where("id = ?", id).Updates(payload).Error
 }

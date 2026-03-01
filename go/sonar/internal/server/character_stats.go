@@ -53,6 +53,7 @@ type characterSpellResponse struct {
 	Name          string              `json:"name"`
 	Description   string              `json:"description"`
 	IconURL       string              `json:"iconUrl"`
+	AbilityType   string              `json:"abilityType"`
 	EffectText    string              `json:"effectText"`
 	SchoolOfMagic string              `json:"schoolOfMagic"`
 	ManaCost      int                 `json:"manaCost"`
@@ -300,6 +301,7 @@ func characterSpellResponsesFrom(spells []models.UserSpell) []characterSpellResp
 			Name:          spell.Name,
 			Description:   spell.Description,
 			IconURL:       spell.IconURL,
+			AbilityType:   string(models.NormalizeSpellAbilityType(string(spell.AbilityType))),
 			EffectText:    spell.EffectText,
 			SchoolOfMagic: spell.SchoolOfMagic,
 			ManaCost:      spell.ManaCost,

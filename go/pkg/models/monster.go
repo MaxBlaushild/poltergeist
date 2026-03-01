@@ -34,18 +34,22 @@ type Monster struct {
 }
 
 type MonsterTemplate struct {
-	ID               uuid.UUID              `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt        time.Time              `json:"createdAt"`
-	UpdatedAt        time.Time              `json:"updatedAt"`
-	Name             string                 `json:"name"`
-	Description      string                 `json:"description"`
-	BaseStrength     int                    `json:"baseStrength" gorm:"column:base_strength"`
-	BaseDexterity    int                    `json:"baseDexterity" gorm:"column:base_dexterity"`
-	BaseConstitution int                    `json:"baseConstitution" gorm:"column:base_constitution"`
-	BaseIntelligence int                    `json:"baseIntelligence" gorm:"column:base_intelligence"`
-	BaseWisdom       int                    `json:"baseWisdom" gorm:"column:base_wisdom"`
-	BaseCharisma     int                    `json:"baseCharisma" gorm:"column:base_charisma"`
-	Spells           []MonsterTemplateSpell `json:"spells" gorm:"foreignKey:MonsterTemplateID"`
+	ID                    uuid.UUID              `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt             time.Time              `json:"createdAt"`
+	UpdatedAt             time.Time              `json:"updatedAt"`
+	Name                  string                 `json:"name"`
+	Description           string                 `json:"description"`
+	ImageURL              string                 `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL          string                 `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	BaseStrength          int                    `json:"baseStrength" gorm:"column:base_strength"`
+	BaseDexterity         int                    `json:"baseDexterity" gorm:"column:base_dexterity"`
+	BaseConstitution      int                    `json:"baseConstitution" gorm:"column:base_constitution"`
+	BaseIntelligence      int                    `json:"baseIntelligence" gorm:"column:base_intelligence"`
+	BaseWisdom            int                    `json:"baseWisdom" gorm:"column:base_wisdom"`
+	BaseCharisma          int                    `json:"baseCharisma" gorm:"column:base_charisma"`
+	ImageGenerationStatus string                 `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string                `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	Spells                []MonsterTemplateSpell `json:"spells" gorm:"foreignKey:MonsterTemplateID"`
 }
 
 type MonsterTemplateSpell struct {
@@ -177,4 +181,12 @@ const (
 	MonsterImageGenerationStatusInProgress = "in_progress"
 	MonsterImageGenerationStatusComplete   = "complete"
 	MonsterImageGenerationStatusFailed     = "failed"
+)
+
+const (
+	MonsterTemplateImageGenerationStatusNone       = "none"
+	MonsterTemplateImageGenerationStatusQueued     = "queued"
+	MonsterTemplateImageGenerationStatusInProgress = "in_progress"
+	MonsterTemplateImageGenerationStatusComplete   = "complete"
+	MonsterTemplateImageGenerationStatusFailed     = "failed"
 )

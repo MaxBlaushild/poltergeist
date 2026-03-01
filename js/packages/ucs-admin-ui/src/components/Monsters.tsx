@@ -8,6 +8,8 @@ type MonsterTemplateRecord = {
   updatedAt: string;
   name: string;
   description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
   baseStrength: number;
   baseDexterity: number;
   baseConstitution: number;
@@ -15,6 +17,8 @@ type MonsterTemplateRecord = {
   baseWisdom: number;
   baseCharisma: number;
   spells: Spell[];
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
 };
 
 type MonsterRewardItem = {
@@ -83,6 +87,8 @@ type InventoryItemLite = {
 type MonsterTemplateFormState = {
   name: string;
   description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
   baseStrength: string;
   baseDexterity: string;
   baseConstitution: string;
@@ -90,6 +96,7 @@ type MonsterTemplateFormState = {
   baseWisdom: string;
   baseCharisma: string;
   spellIds: string[];
+  techniqueIds: string[];
 };
 
 type MonsterFormItem = {
@@ -126,6 +133,8 @@ const parseFloatSafe = (value: string, fallback = 0): number => {
 const emptyTemplateForm = (): MonsterTemplateFormState => ({
   name: '',
   description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
   baseStrength: '10',
   baseDexterity: '10',
   baseConstitution: '10',
@@ -133,30 +142,40 @@ const emptyTemplateForm = (): MonsterTemplateFormState => ({
   baseWisdom: '10',
   baseCharisma: '10',
   spellIds: [],
+  techniqueIds: [],
 });
 
 const templateFormFromRecord = (template: MonsterTemplateRecord): MonsterTemplateFormState => ({
   name: template.name ?? '',
   description: template.description ?? '',
+  imageUrl: template.imageUrl ?? '',
+  thumbnailUrl: template.thumbnailUrl ?? '',
   baseStrength: String(template.baseStrength ?? 10),
   baseDexterity: String(template.baseDexterity ?? 10),
   baseConstitution: String(template.baseConstitution ?? 10),
   baseIntelligence: String(template.baseIntelligence ?? 10),
   baseWisdom: String(template.baseWisdom ?? 10),
   baseCharisma: String(template.baseCharisma ?? 10),
-  spellIds: (template.spells ?? []).map((spell) => spell.id),
+  spellIds: (template.spells ?? [])
+    .filter((spell) => (spell.abilityType ?? 'spell') !== 'technique')
+    .map((spell) => spell.id),
+  techniqueIds: (template.spells ?? [])
+    .filter((spell) => (spell.abilityType ?? 'spell') === 'technique')
+    .map((spell) => spell.id),
 });
 
 const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
   name: form.name.trim(),
   description: form.description.trim(),
+  imageUrl: form.imageUrl.trim(),
+  thumbnailUrl: form.thumbnailUrl.trim(),
   baseStrength: parseIntSafe(form.baseStrength, 10),
   baseDexterity: parseIntSafe(form.baseDexterity, 10),
   baseConstitution: parseIntSafe(form.baseConstitution, 10),
   baseIntelligence: parseIntSafe(form.baseIntelligence, 10),
   baseWisdom: parseIntSafe(form.baseWisdom, 10),
   baseCharisma: parseIntSafe(form.baseCharisma, 10),
-  spellIds: form.spellIds,
+  spellIds: Array.from(new Set([...form.spellIds, ...form.techniqueIds])),
 });
 
 const emptyMonsterForm = (): MonsterFormState => ({
@@ -254,6 +273,7 @@ export const Monsters = () => {
   const [monsterForm, setMonsterForm] = useState<MonsterFormState>(emptyMonsterForm());
 
   const [generatingMonsterId, setGeneratingMonsterId] = useState<string | null>(null);
+  const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
 
   const load = useCallback(async (suppressLoading = false) => {
     try {
@@ -284,9 +304,13 @@ export const Monsters = () => {
   }, [load]);
 
   useEffect(() => {
-    const hasPendingGeneration = records.some((record) =>
+    const hasPendingMonsterGeneration = records.some((record) =>
       ['queued', 'in_progress'].includes(record.imageGenerationStatus || '')
     );
+    const hasPendingTemplateGeneration = templates.some((template) =>
+      ['queued', 'in_progress'].includes(template.imageGenerationStatus || '')
+    );
+    const hasPendingGeneration = hasPendingMonsterGeneration || hasPendingTemplateGeneration;
     if (!hasPendingGeneration) return;
 
     const interval = window.setInterval(() => {
@@ -294,7 +318,7 @@ export const Monsters = () => {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [load, records]);
+  }, [load, records, templates]);
 
   const zoneNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -317,6 +341,15 @@ export const Monsters = () => {
       (item) => item.damageMin !== undefined && item.damageMin !== null && item.damageMax !== undefined && item.damageMax !== null
     );
   }, [inventoryItems]);
+
+  const spellAbilities = useMemo(
+    () => spells.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique'),
+    [spells]
+  );
+  const techniqueAbilities = useMemo(
+    () => spells.filter((spell) => (spell.abilityType ?? 'spell') === 'technique'),
+    [spells]
+  );
 
   const filteredTemplates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -487,6 +520,22 @@ export const Monsters = () => {
     }
   };
 
+  const handleGenerateTemplateImage = async (template: MonsterTemplateRecord) => {
+    try {
+      setGeneratingTemplateId(template.id);
+      const updated = await apiClient.post<MonsterTemplateRecord>(
+        `/sonar/monster-templates/${template.id}/generate-image`,
+        {}
+      );
+      setTemplates((prev) => prev.map((record) => (record.id === template.id ? updated : record)));
+    } catch (err) {
+      console.error('Failed to queue monster template image generation', err);
+      alert('Failed to queue monster template image generation.');
+    } finally {
+      setGeneratingTemplateId(null);
+    }
+  };
+
   const updateMonsterItemReward = (index: number, nextReward: Partial<MonsterFormItem>) => {
     setMonsterForm((prev) => {
       const next = [...prev.itemRewards];
@@ -500,6 +549,11 @@ export const Monsters = () => {
     setTemplateForm((prev) => ({ ...prev, spellIds }));
   };
 
+  const updateTemplateTechniqueIds = (selected: HTMLSelectElement) => {
+    const techniqueIds = Array.from(selected.selectedOptions).map((option) => option.value);
+    setTemplateForm((prev) => ({ ...prev, techniqueIds }));
+  };
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -508,7 +562,7 @@ export const Monsters = () => {
             <div>
               <h1 className="qa-card-title">Monsters</h1>
               <p className="text-sm text-gray-600">
-                Configure monster templates (base stats + spells), then place monsters with level and weapon loadouts.
+                Configure monster templates (base stats + abilities), then place monsters with level and weapon loadouts.
               </p>
             </div>
             <div className="flex gap-2">
@@ -542,17 +596,48 @@ export const Monsters = () => {
                   {filteredTemplates.map((template) => (
                     <div key={template.id} className="border border-gray-200 rounded-md p-3 bg-white">
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-base">{template.name}</div>
+                        <div className="flex gap-3 min-w-0">
+                          {template.thumbnailUrl || template.imageUrl ? (
+                            <img
+                              src={template.thumbnailUrl || template.imageUrl}
+                              alt={template.name}
+                              className="w-14 h-14 rounded object-cover border border-gray-200"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded bg-gray-200 flex items-center justify-center text-gray-500">?</div>
+                          )}
+                          <div>
+                            <div className="font-semibold text-base">{template.name}</div>
                           {template.description ? (
                             <p className="text-sm text-gray-600 mt-1">{template.description}</p>
                           ) : null}
                           <p className="text-sm text-gray-600 mt-1">
                             STR {template.baseStrength} · DEX {template.baseDexterity} · CON {template.baseConstitution} · INT {template.baseIntelligence} · WIS {template.baseWisdom} · CHA {template.baseCharisma}
                           </p>
-                          <p className="text-sm text-gray-500 mt-1">Spells: {template.spells?.length ?? 0}</p>
+                          <p className="text-sm text-gray-500 mt-1">
+                            Spells: {template.spells?.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique').length ?? 0}
+                            {' · '}
+                            Techniques: {template.spells?.filter((spell) => (spell.abilityType ?? 'spell') === 'technique').length ?? 0}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Image generation: {formatGenerationStatus(template.imageGenerationStatus)}
+                          </p>
+                          {template.imageGenerationError ? (
+                            <p className="text-xs text-red-600 mt-1">{template.imageGenerationError}</p>
+                          ) : null}
+                          </div>
                         </div>
                         <div className="flex gap-2">
+                          <button
+                            className="qa-btn qa-btn-secondary"
+                            onClick={() => handleGenerateTemplateImage(template)}
+                            disabled={
+                              generatingTemplateId === template.id ||
+                              ['queued', 'in_progress'].includes(template.imageGenerationStatus || '')
+                            }
+                          >
+                            {generatingTemplateId === template.id ? 'Queueing...' : 'Generate Image'}
+                          </button>
                           <button className="qa-btn qa-btn-secondary" onClick={() => openEditTemplate(template)}>Edit</button>
                           <button className="qa-btn qa-btn-danger" onClick={() => deleteTemplate(template)}>Delete</button>
                         </div>
@@ -659,6 +744,25 @@ export const Monsters = () => {
                 </label>
               </div>
 
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Image URL</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.imageUrl}
+                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Thumbnail URL</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.thumbnailUrl}
+                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, thumbnailUrl: event.target.value }))}
+                  />
+                </label>
+              </div>
+
               <div className="grid md:grid-cols-3 gap-4">
                 <label className="block">
                   <span className="block text-sm mb-1">Base STR</span>
@@ -730,8 +834,22 @@ export const Monsters = () => {
                   value={templateForm.spellIds}
                   onChange={(event) => updateTemplateSpellIds(event.target)}
                 >
-                  {spells.map((spell) => (
+                  {spellAbilities.map((spell) => (
                     <option key={spell.id} value={spell.id}>{spell.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="block text-sm mb-1">Techniques</span>
+                <select
+                  multiple
+                  className="w-full border border-gray-300 rounded-md p-2 min-h-[180px]"
+                  value={templateForm.techniqueIds}
+                  onChange={(event) => updateTemplateTechniqueIds(event.target)}
+                >
+                  {techniqueAbilities.map((technique) => (
+                    <option key={technique.id} value={technique.id}>{technique.name}</option>
                   ))}
                 </select>
               </label>

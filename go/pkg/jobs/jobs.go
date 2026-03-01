@@ -12,6 +12,7 @@ const (
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateSpellIconTaskType             = "generate_spell_icon"
 	GenerateMonsterImageTaskType          = "generate_monster_image"
+	GenerateMonsterTemplateImageTaskType  = "generate_monster_template_image"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType         = "generate_scenario_image"
@@ -76,6 +77,10 @@ type GenerateSpellIconTaskPayload struct {
 
 type GenerateMonsterImageTaskPayload struct {
 	MonsterID uuid.UUID `json:"monsterId"`
+}
+
+type GenerateMonsterTemplateImageTaskPayload struct {
+	MonsterTemplateID uuid.UUID `json:"monsterTemplateId"`
 }
 
 type GenerateCharacterImageTaskPayload struct {

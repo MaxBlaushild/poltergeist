@@ -45,4 +45,19 @@ class CharacterStatsService {
     );
     return data;
   }
+
+  Future<Map<String, dynamic>> castTechnique(
+    String techniqueId, {
+    String? targetUserId,
+  }) async {
+    final payload = <String, dynamic>{};
+    if (targetUserId != null && targetUserId.trim().isNotEmpty) {
+      payload['targetUserId'] = targetUserId.trim();
+    }
+    final data = await _api.post<Map<String, dynamic>>(
+      ApiConstants.castTechniqueEndpoint(techniqueId),
+      data: payload,
+    );
+    return data;
+  }
 }

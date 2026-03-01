@@ -29,6 +29,7 @@ type SpellFormState = {
   name: string;
   description: string;
   iconUrl: string;
+  abilityType: 'spell' | 'technique';
   effectText: string;
   schoolOfMagic: string;
   manaCost: string;
@@ -70,6 +71,7 @@ const emptyForm = (): SpellFormState => ({
   name: '',
   description: '',
   iconUrl: '',
+  abilityType: 'spell',
   effectText: '',
   schoolOfMagic: '',
   manaCost: '0',
@@ -157,9 +159,10 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     name: spell.name ?? '',
     description: spell.description ?? '',
     iconUrl: spell.iconUrl ?? '',
+    abilityType: spell.abilityType === 'technique' ? 'technique' : 'spell',
     effectText: spell.effectText ?? '',
     schoolOfMagic: spell.schoolOfMagic ?? '',
-    manaCost: String(spell.manaCost ?? 0),
+    manaCost: String(spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)),
     effects,
   };
 };
@@ -193,9 +196,10 @@ const payloadFromForm = (form: SpellFormState) => {
     name: form.name.trim(),
     description: form.description.trim(),
     iconUrl: form.iconUrl.trim(),
+    abilityType: form.abilityType,
     effectText: form.effectText.trim(),
     schoolOfMagic: form.schoolOfMagic.trim(),
-    manaCost: parseIntSafe(form.manaCost, 0),
+    manaCost: form.abilityType === 'technique' ? 0 : parseIntSafe(form.manaCost, 0),
     effects,
   };
 };
@@ -256,6 +260,7 @@ export const Spells = () => {
     return spells.filter((spell) => {
       return (
         spell.name.toLowerCase().includes(query) ||
+        (spell.abilityType ?? 'spell').toLowerCase().includes(query) ||
         spell.schoolOfMagic.toLowerCase().includes(query) ||
         spell.effectText.toLowerCase().includes(query)
       );
@@ -404,11 +409,11 @@ export const Spells = () => {
         <div className="qa-card mb-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="qa-card-title">Spells</h1>
-              <p className="text-sm text-gray-600">Manage spell definitions and effect payloads.</p>
+              <h1 className="qa-card-title">Spells & Techniques</h1>
+              <p className="text-sm text-gray-600">Manage ability definitions and effect payloads.</p>
             </div>
             <button className="qa-btn qa-btn-primary" onClick={openCreate}>
-              Create Spell
+              Create Ability
             </button>
           </div>
         </div>
@@ -416,18 +421,18 @@ export const Spells = () => {
         <div className="qa-card mb-6">
           <input
             className="block w-full border border-gray-300 rounded-md p-2"
-            placeholder="Search by name, school, or effect text..."
+            placeholder="Search by name, type, school, or effect text..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
         {loading ? (
-          <div className="qa-card">Loading spells...</div>
+          <div className="qa-card">Loading abilities...</div>
         ) : error ? (
           <div className="qa-card text-red-600">{error}</div>
         ) : filtered.length === 0 ? (
-          <div className="qa-card text-gray-600">No spells found.</div>
+          <div className="qa-card text-gray-600">No abilities found.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map((spell) => (
@@ -435,7 +440,11 @@ export const Spells = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-lg font-semibold">{spell.name}</div>
-                    <div className="text-sm text-gray-600">{spell.schoolOfMagic} · Mana {spell.manaCost}</div>
+                    <div className="text-sm text-gray-600">
+                      {(spell.abilityType ?? 'spell') === 'technique'
+                        ? `${spell.schoolOfMagic} · Technique`
+                        : `${spell.schoolOfMagic} · Mana ${spell.manaCost}`}
+                    </div>
                     <div className="text-xs text-gray-500 mt-1">
                       Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
                     </div>
@@ -478,7 +487,7 @@ export const Spells = () => {
             <div className="bg-white w-full max-w-5xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto">
               <div className="p-5 border-b flex items-center justify-between">
                 <h2 className="text-xl font-semibold">
-                  {editingSpell ? `Edit ${editingSpell.name}` : 'Create Spell'}
+                  {editingSpell ? `Edit ${editingSpell.name}` : 'Create Ability'}
                 </h2>
                 <button className="text-gray-600 hover:text-gray-900" onClick={closeModal}>
                   Close
@@ -514,12 +523,30 @@ export const Spells = () => {
                     />
                   </label>
                   <label className="text-sm">
+                    Ability Type
+                    <select
+                      className="w-full border rounded-md p-2"
+                      value={form.abilityType}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          abilityType: e.target.value === 'technique' ? 'technique' : 'spell',
+                          manaCost: e.target.value === 'technique' ? '0' : prev.manaCost,
+                        }))
+                      }
+                    >
+                      <option value="spell">Spell</option>
+                      <option value="technique">Technique</option>
+                    </select>
+                  </label>
+                  <label className="text-sm">
                     Mana Cost
                     <input
                       className="w-full border rounded-md p-2"
                       type="number"
                       min={0}
                       value={form.manaCost}
+                      disabled={form.abilityType === 'technique'}
                       onChange={(e) => setForm((prev) => ({ ...prev, manaCost: e.target.value }))}
                     />
                   </label>

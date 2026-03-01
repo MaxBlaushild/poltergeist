@@ -18,8 +18,8 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
   static const String _targetedHealEffectType = 'restore_life_party_member';
   static const String _groupHealEffectType = 'restore_life_all_party_members';
 
-  final Map<String, String> _selectedTargetBySpell = {};
-  String? _castingSpellId;
+  final Map<String, String> _selectedTargetByAbility = {};
+  String? _castingAbilityId;
   String? _feedbackMessage;
   bool _feedbackIsError = false;
 
@@ -32,8 +32,8 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
     });
   }
 
-  int _targetedHealAmount(Spell spell) {
-    return spell.effects
+  int _targetedHealAmount(Spell ability) {
+    return ability.effects
         .where((effect) => effect.type == _targetedHealEffectType)
         .fold<int>(
           0,
@@ -41,8 +41,8 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
         );
   }
 
-  int _groupHealAmount(Spell spell) {
-    return spell.effects
+  int _groupHealAmount(Spell ability) {
+    return ability.effects
         .where((effect) => effect.type == _groupHealEffectType)
         .fold<int>(
           0,
@@ -66,30 +66,93 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
     return byId.values.toList();
   }
 
-  Future<void> _castSpell(Spell spell, {String? targetUserId}) async {
-    if (_castingSpellId != null) return;
+  Future<void> _castAbility(
+    Spell ability, {
+    required bool isTechnique,
+    String? targetUserId,
+  }) async {
+    if (_castingAbilityId != null) return;
     setState(() {
-      _castingSpellId = spell.id;
+      _castingAbilityId = ability.id;
       _feedbackMessage = null;
       _feedbackIsError = false;
     });
 
-    final error = await context.read<CharacterStatsProvider>().castSpell(
-      spell.id,
-      targetUserId: targetUserId,
-    );
+    final provider = context.read<CharacterStatsProvider>();
+    final error = isTechnique
+        ? await provider.castTechnique(ability.id, targetUserId: targetUserId)
+        : await provider.castSpell(ability.id, targetUserId: targetUserId);
 
     if (!mounted) return;
     setState(() {
-      _castingSpellId = null;
+      _castingAbilityId = null;
       if (error == null) {
-        _feedbackMessage = '${spell.name} cast successfully.';
+        _feedbackMessage = '${ability.name} used successfully.';
         _feedbackIsError = false;
       } else {
         _feedbackMessage = error;
         _feedbackIsError = true;
       }
     });
+  }
+
+  Widget _buildAbilitySection({
+    required String emptyMessage,
+    required List<Spell> abilities,
+    required bool isTechnique,
+    required int mana,
+    required List<User> targets,
+    required ThemeData theme,
+  }) {
+    if (abilities.isEmpty) {
+      return Text(
+        emptyMessage,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Column(
+      children: abilities.map((ability) {
+        final selectedTarget = _selectedTargetByAbility[ability.id];
+        final requiresTarget = _targetedHealAmount(ability) > 0;
+        final fallbackTarget = targets.isNotEmpty ? targets.first.id : null;
+        final isSelectedValid =
+            selectedTarget != null &&
+            targets.any((member) => member.id == selectedTarget);
+        final resolvedTarget = isSelectedValid
+            ? selectedTarget
+            : fallbackTarget;
+        return _AbilityRow(
+          ability: ability,
+          mana: mana,
+          isTechnique: isTechnique,
+          targets: targets,
+          selectedTargetId: resolvedTarget,
+          casting: _castingAbilityId == ability.id,
+          displayName: _displayName,
+          targetedHealAmount: _targetedHealAmount(ability),
+          groupHealAmount: _groupHealAmount(ability),
+          onTargetChanged: requiresTarget
+              ? (value) {
+                  setState(() {
+                    if (value == null || value.isEmpty) {
+                      _selectedTargetByAbility.remove(ability.id);
+                    } else {
+                      _selectedTargetByAbility[ability.id] = value;
+                    }
+                  });
+                }
+              : null,
+          onCast: () => _castAbility(
+            ability,
+            isTechnique: isTechnique,
+            targetUserId: requiresTarget ? resolvedTarget : null,
+          ),
+        );
+      }).toList(),
+    );
   }
 
   @override
@@ -107,6 +170,7 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
     final statsProvider = context.watch<CharacterStatsProvider>();
     final partyProvider = context.watch<PartyProvider>();
     final spells = statsProvider.spells;
+    final techniques = statsProvider.techniques;
     final loading = statsProvider.loading;
     final mana = statsProvider.mana;
     final theme = Theme.of(context);
@@ -125,13 +189,6 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'Spells',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
               if (_feedbackMessage != null) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -160,61 +217,46 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
                 ),
                 const SizedBox(height: 8),
               ],
-              if (loading && spells.isEmpty)
+              if (loading && spells.isEmpty && techniques.isEmpty)
                 const Center(
                   child: Padding(
                     padding: EdgeInsets.all(12),
                     child: CircularProgressIndicator(),
                   ),
                 ),
-              if (!loading && spells.isEmpty)
+              if (!loading) ...[
                 Text(
-                  'No spells learned yet.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                  'Spells',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              if (spells.isNotEmpty)
-                Column(
-                  children: spells.map((spell) {
-                    final selectedTarget = _selectedTargetBySpell[spell.id];
-                    final requiresTarget = _targetedHealAmount(spell) > 0;
-                    final fallbackTarget = targets.isNotEmpty
-                        ? targets.first.id
-                        : null;
-                    final isSelectedValid =
-                        selectedTarget != null &&
-                        targets.any((member) => member.id == selectedTarget);
-                    final resolvedTarget = isSelectedValid
-                        ? selectedTarget
-                        : fallbackTarget;
-                    return _SpellRow(
-                      spell: spell,
-                      mana: mana,
-                      targets: targets,
-                      selectedTargetId: resolvedTarget,
-                      casting: _castingSpellId == spell.id,
-                      displayName: _displayName,
-                      targetedHealAmount: _targetedHealAmount(spell),
-                      groupHealAmount: _groupHealAmount(spell),
-                      onTargetChanged: requiresTarget
-                          ? (value) {
-                              setState(() {
-                                if (value == null || value.isEmpty) {
-                                  _selectedTargetBySpell.remove(spell.id);
-                                } else {
-                                  _selectedTargetBySpell[spell.id] = value;
-                                }
-                              });
-                            }
-                          : null,
-                      onCast: () => _castSpell(
-                        spell,
-                        targetUserId: requiresTarget ? resolvedTarget : null,
-                      ),
-                    );
-                  }).toList(),
+                const SizedBox(height: 8),
+                _buildAbilitySection(
+                  emptyMessage: 'No spells learned yet.',
+                  abilities: spells,
+                  isTechnique: false,
+                  mana: mana,
+                  targets: targets,
+                  theme: theme,
                 ),
+                const SizedBox(height: 10),
+                Text(
+                  'Techniques',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildAbilitySection(
+                  emptyMessage: 'No techniques learned yet.',
+                  abilities: techniques,
+                  isTechnique: true,
+                  mana: mana,
+                  targets: targets,
+                  theme: theme,
+                ),
+              ],
             ],
           ),
         ),
@@ -223,10 +265,11 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
   }
 }
 
-class _SpellRow extends StatelessWidget {
-  const _SpellRow({
-    required this.spell,
+class _AbilityRow extends StatelessWidget {
+  const _AbilityRow({
+    required this.ability,
     required this.mana,
+    required this.isTechnique,
     required this.targets,
     required this.selectedTargetId,
     required this.casting,
@@ -237,8 +280,9 @@ class _SpellRow extends StatelessWidget {
     this.onTargetChanged,
   });
 
-  final Spell spell;
+  final Spell ability;
   final int mana;
+  final bool isTechnique;
   final List<User> targets;
   final String? selectedTargetId;
   final bool casting;
@@ -253,20 +297,20 @@ class _SpellRow extends StatelessWidget {
     final theme = Theme.of(context);
     final hasTargetedHeal = targetedHealAmount > 0;
     final hasGroupHeal = groupHealAmount > 0;
-    final isHealingSpell = hasTargetedHeal || hasGroupHeal;
-    final hasEnoughMana = mana >= spell.manaCost;
+    final isHealingAbility = hasTargetedHeal || hasGroupHeal;
+    final hasEnoughMana = isTechnique || mana >= ability.manaCost;
     final hasValidTarget =
         !hasTargetedHeal || (selectedTargetId ?? '').isNotEmpty;
     final canCast =
-        isHealingSpell && hasEnoughMana && hasValidTarget && !casting;
+        isHealingAbility && hasEnoughMana && hasValidTarget && !casting;
 
     final castLabel = casting
         ? 'Casting...'
         : hasTargetedHeal && !hasGroupHeal
-        ? 'Cast Targeted Heal'
+        ? 'Use Targeted Heal'
         : !hasTargetedHeal && hasGroupHeal
-        ? 'Cast Group Heal'
-        : 'Cast Heal';
+        ? 'Use Group Heal'
+        : 'Use Heal';
 
     return Container(
       width: double.infinity,
@@ -280,11 +324,11 @@ class _SpellRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (spell.iconUrl.trim().isNotEmpty)
+          if (ability.iconUrl.trim().isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: Image.network(
-                spell.iconUrl,
+                ability.iconUrl,
                 width: 32,
                 height: 32,
                 fit: BoxFit.cover,
@@ -293,42 +337,47 @@ class _SpellRow extends StatelessWidget {
               ),
             )
           else
-            const Icon(Icons.auto_fix_high, size: 20),
+            Icon(
+              isTechnique ? Icons.sports_martial_arts : Icons.auto_fix_high,
+              size: 20,
+            ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  spell.name,
+                  ability.name,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (spell.schoolOfMagic.trim().isNotEmpty)
+                if (ability.schoolOfMagic.trim().isNotEmpty)
                   Text(
-                    '${spell.schoolOfMagic} · Mana ${spell.manaCost}',
+                    isTechnique
+                        ? '${ability.schoolOfMagic} · Technique'
+                        : '${ability.schoolOfMagic} · Mana ${ability.manaCost}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                if (spell.effectText.trim().isNotEmpty) ...[
+                if (ability.effectText.trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
-                    spell.effectText.trim(),
+                    ability.effectText.trim(),
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
-                if (!isHealingSpell) ...[
+                if (!isHealingAbility) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Casting is only available for healing spells here.',
+                    'Casting is only available for healing abilities here.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
-                if (isHealingSpell) ...[
+                if (isHealingAbility) ...[
                   const SizedBox(height: 8),
                   Opacity(
                     opacity: hasEnoughMana ? 1.0 : 0.55,
@@ -363,7 +412,7 @@ class _SpellRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (!hasEnoughMana) ...[
+                  if (!hasEnoughMana && !isTechnique) ...[
                     const SizedBox(height: 6),
                     Text(
                       'Not enough mana to cast this spell.',

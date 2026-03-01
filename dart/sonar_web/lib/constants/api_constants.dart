@@ -42,4 +42,7 @@ class ApiConstants {
 
   static String castSpellEndpoint(String spellId) =>
       '/sonar/spells/$spellId/cast';
+
+  static String castTechniqueEndpoint(String techniqueId) =>
+      '/sonar/techniques/$techniqueId/cast';
 }

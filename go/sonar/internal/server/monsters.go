@@ -20,6 +20,8 @@ import (
 type monsterTemplateUpsertRequest struct {
 	Name             string   `json:"name"`
 	Description      string   `json:"description"`
+	ImageURL         string   `json:"imageUrl"`
+	ThumbnailURL     string   `json:"thumbnailUrl"`
 	BaseStrength     int      `json:"baseStrength"`
 	BaseDexterity    int      `json:"baseDexterity"`
 	BaseConstitution int      `json:"baseConstitution"`
@@ -51,18 +53,22 @@ type monsterUpsertRequest struct {
 }
 
 type monsterTemplateResponse struct {
-	ID               uuid.UUID      `json:"id"`
-	CreatedAt        time.Time      `json:"createdAt"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
-	Name             string         `json:"name"`
-	Description      string         `json:"description"`
-	BaseStrength     int            `json:"baseStrength"`
-	BaseDexterity    int            `json:"baseDexterity"`
-	BaseConstitution int            `json:"baseConstitution"`
-	BaseIntelligence int            `json:"baseIntelligence"`
-	BaseWisdom       int            `json:"baseWisdom"`
-	BaseCharisma     int            `json:"baseCharisma"`
-	Spells           []models.Spell `json:"spells"`
+	ID                    uuid.UUID      `json:"id"`
+	CreatedAt             time.Time      `json:"createdAt"`
+	UpdatedAt             time.Time      `json:"updatedAt"`
+	Name                  string         `json:"name"`
+	Description           string         `json:"description"`
+	ImageURL              string         `json:"imageUrl"`
+	ThumbnailURL          string         `json:"thumbnailUrl"`
+	BaseStrength          int            `json:"baseStrength"`
+	BaseDexterity         int            `json:"baseDexterity"`
+	BaseConstitution      int            `json:"baseConstitution"`
+	BaseIntelligence      int            `json:"baseIntelligence"`
+	BaseWisdom            int            `json:"baseWisdom"`
+	BaseCharisma          int            `json:"baseCharisma"`
+	Spells                []models.Spell `json:"spells"`
+	ImageGenerationStatus string         `json:"imageGenerationStatus"`
+	ImageGenerationError  *string        `json:"imageGenerationError,omitempty"`
 }
 
 type monsterResponse struct {
@@ -115,18 +121,22 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		spells = append(spells, templateSpell.Spell)
 	}
 	return &monsterTemplateResponse{
-		ID:               template.ID,
-		CreatedAt:        template.CreatedAt,
-		UpdatedAt:        template.UpdatedAt,
-		Name:             template.Name,
-		Description:      template.Description,
-		BaseStrength:     template.BaseStrength,
-		BaseDexterity:    template.BaseDexterity,
-		BaseConstitution: template.BaseConstitution,
-		BaseIntelligence: template.BaseIntelligence,
-		BaseWisdom:       template.BaseWisdom,
-		BaseCharisma:     template.BaseCharisma,
-		Spells:           spells,
+		ID:                    template.ID,
+		CreatedAt:             template.CreatedAt,
+		UpdatedAt:             template.UpdatedAt,
+		Name:                  template.Name,
+		Description:           template.Description,
+		ImageURL:              template.ImageURL,
+		ThumbnailURL:          template.ThumbnailURL,
+		BaseStrength:          template.BaseStrength,
+		BaseDexterity:         template.BaseDexterity,
+		BaseConstitution:      template.BaseConstitution,
+		BaseIntelligence:      template.BaseIntelligence,
+		BaseWisdom:            template.BaseWisdom,
+		BaseCharisma:          template.BaseCharisma,
+		Spells:                spells,
+		ImageGenerationStatus: template.ImageGenerationStatus,
+		ImageGenerationError:  template.ImageGenerationError,
 	}
 }
 
@@ -144,14 +154,26 @@ func monsterResponseFrom(monster *models.Monster) monsterResponse {
 			spells = append(spells, templateSpell.Spell)
 		}
 	}
+	imageURL := monster.ImageURL
+	if imageURL == "" && monster.Template != nil {
+		imageURL = monster.Template.ImageURL
+	}
+	thumbnailURL := monster.ThumbnailURL
+	if thumbnailURL == "" && monster.Template != nil {
+		thumbnailURL = monster.Template.ThumbnailURL
+	}
+	if thumbnailURL == "" {
+		thumbnailURL = imageURL
+	}
+
 	return monsterResponse{
 		ID:                    monster.ID,
 		CreatedAt:             monster.CreatedAt,
 		UpdatedAt:             monster.UpdatedAt,
 		Name:                  monster.Name,
 		Description:           monster.Description,
-		ImageURL:              monster.ImageURL,
-		ThumbnailURL:          monster.ThumbnailURL,
+		ImageURL:              imageURL,
+		ThumbnailURL:          thumbnailURL,
 		ZoneID:                monster.ZoneID,
 		Zone:                  monster.Zone,
 		Latitude:              monster.Latitude,
@@ -223,12 +245,17 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	template := &models.MonsterTemplate{
 		Name:             name,
 		Description:      strings.TrimSpace(body.Description),
+		ImageURL:         strings.TrimSpace(body.ImageURL),
+		ThumbnailURL:     strings.TrimSpace(body.ThumbnailURL),
 		BaseStrength:     body.BaseStrength,
 		BaseDexterity:    body.BaseDexterity,
 		BaseConstitution: body.BaseConstitution,
 		BaseIntelligence: body.BaseIntelligence,
 		BaseWisdom:       body.BaseWisdom,
 		BaseCharisma:     body.BaseCharisma,
+	}
+	if template.ThumbnailURL == "" && template.ImageURL != "" {
+		template.ThumbnailURL = template.ImageURL
 	}
 	return template, spells, nil
 }
@@ -286,6 +313,12 @@ func (s *server) parseMonsterUpsertRequest(
 
 	imageURL := strings.TrimSpace(body.ImageURL)
 	thumbnailURL := strings.TrimSpace(body.ThumbnailURL)
+	if imageURL == "" {
+		imageURL = strings.TrimSpace(template.ImageURL)
+	}
+	if thumbnailURL == "" {
+		thumbnailURL = strings.TrimSpace(template.ThumbnailURL)
+	}
 	if thumbnailURL == "" && imageURL != "" {
 		thumbnailURL = imageURL
 	}
@@ -400,6 +433,15 @@ func (s *server) createMonsterTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if template.ImageURL != "" {
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusComplete
+		emptyError := ""
+		template.ImageGenerationError = &emptyError
+	} else {
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusNone
+		emptyError := ""
+		template.ImageGenerationError = &emptyError
+	}
 
 	if err := s.dbClient.MonsterTemplate().Create(ctx, template); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -429,7 +471,8 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid template ID"})
 		return
 	}
-	if _, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID); err != nil {
+	existingTemplate, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
 			return
@@ -448,6 +491,19 @@ func (s *server) updateMonsterTemplate(ctx *gin.Context) {
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if template.ImageURL != "" {
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusComplete
+		emptyError := ""
+		template.ImageGenerationError = &emptyError
+	} else if existingTemplate.ImageGenerationStatus == models.MonsterTemplateImageGenerationStatusQueued ||
+		existingTemplate.ImageGenerationStatus == models.MonsterTemplateImageGenerationStatusInProgress {
+		template.ImageGenerationStatus = existingTemplate.ImageGenerationStatus
+		template.ImageGenerationError = existingTemplate.ImageGenerationError
+	} else {
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusNone
+		emptyError := ""
+		template.ImageGenerationError = &emptyError
 	}
 
 	if err := s.dbClient.MonsterTemplate().Update(ctx, templateID, template); err != nil {
@@ -503,6 +559,59 @@ func (s *server) deleteMonsterTemplate(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "template deleted successfully"})
+}
+
+func (s *server) generateMonsterTemplateImage(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	templateID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid template ID"})
+		return
+	}
+
+	template, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusQueued
+	emptyError := ""
+	template.ImageGenerationError = &emptyError
+	if err := s.dbClient.MonsterTemplate().Update(ctx, templateID, template); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue monster template image generation: " + err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateMonsterTemplateImageTaskPayload{MonsterTemplateID: templateID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build monster template image generation payload"})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplateImageTaskType, payloadBytes)); err != nil {
+		template.ImageGenerationStatus = models.MonsterTemplateImageGenerationStatusFailed
+		errMessage := err.Error()
+		template.ImageGenerationError = &errMessage
+		_ = s.dbClient.MonsterTemplate().Update(ctx, templateID, template)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to queue monster template image generation: " + err.Error()})
+		return
+	}
+
+	updatedTemplate, err := s.dbClient.MonsterTemplate().FindByID(ctx, templateID)
+	if err != nil {
+		ctx.JSON(http.StatusOK, monsterTemplateResponseFrom(template))
+		return
+	}
+	ctx.JSON(http.StatusOK, monsterTemplateResponseFrom(updatedTemplate))
 }
 
 func (s *server) getMonsters(ctx *gin.Context) {

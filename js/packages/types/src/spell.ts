@@ -35,6 +35,7 @@ export interface Spell {
   name: string;
   description: string;
   iconUrl: string;
+  abilityType?: 'spell' | 'technique' | string;
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
   effectText: string;

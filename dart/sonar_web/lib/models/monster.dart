@@ -4,6 +4,8 @@ class MonsterTemplate {
   final String id;
   final String name;
   final String description;
+  final String imageUrl;
+  final String thumbnailUrl;
   final int baseStrength;
   final int baseDexterity;
   final int baseConstitution;
@@ -11,11 +13,14 @@ class MonsterTemplate {
   final int baseWisdom;
   final int baseCharisma;
   final List<Spell> spells;
+  final List<Spell> techniques;
 
   const MonsterTemplate({
     required this.id,
     required this.name,
     this.description = '',
+    this.imageUrl = '',
+    this.thumbnailUrl = '',
     this.baseStrength = 10,
     this.baseDexterity = 10,
     this.baseConstitution = 10,
@@ -23,6 +28,7 @@ class MonsterTemplate {
     this.baseWisdom = 10,
     this.baseCharisma = 10,
     this.spells = const [],
+    this.techniques = const [],
   });
 
   factory MonsterTemplate.fromJson(Map<String, dynamic> json) {
@@ -38,17 +44,27 @@ class MonsterTemplate {
       }
     }
 
+    final spellAbilities = spells
+        .where((spell) => spell.abilityType.toLowerCase() != 'technique')
+        .toList(growable: false);
+    final techniques = spells
+        .where((spell) => spell.abilityType.toLowerCase() == 'technique')
+        .toList(growable: false);
+
     return MonsterTemplate(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       description: json['description']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       baseStrength: (json['baseStrength'] as num?)?.toInt() ?? 10,
       baseDexterity: (json['baseDexterity'] as num?)?.toInt() ?? 10,
       baseConstitution: (json['baseConstitution'] as num?)?.toInt() ?? 10,
       baseIntelligence: (json['baseIntelligence'] as num?)?.toInt() ?? 10,
       baseWisdom: (json['baseWisdom'] as num?)?.toInt() ?? 10,
       baseCharisma: (json['baseCharisma'] as num?)?.toInt() ?? 10,
-      spells: spells,
+      spells: spellAbilities,
+      techniques: techniques,
     );
   }
 }
@@ -123,6 +139,7 @@ class Monster {
   final String imageGenerationStatus;
   final String? imageGenerationError;
   final List<Spell> spells;
+  final List<Spell> techniques;
   final List<MonsterItemReward> itemRewards;
 
   const Monster({
@@ -157,6 +174,7 @@ class Monster {
     this.imageGenerationStatus = 'none',
     this.imageGenerationError,
     this.spells = const [],
+    this.techniques = const [],
     this.itemRewards = const [],
   });
 
@@ -187,19 +205,26 @@ class Monster {
       weaponInventoryItemName = cast['name']?.toString() ?? '';
     }
 
-    final spells = <Spell>[];
+    final allAbilities = <Spell>[];
     final rawSpells = json['spells'];
     if (rawSpells is List) {
       for (final spell in rawSpells) {
         if (spell is Map<String, dynamic>) {
-          spells.add(Spell.fromJson(spell));
+          allAbilities.add(Spell.fromJson(spell));
         } else if (spell is Map) {
-          spells.add(Spell.fromJson(Map<String, dynamic>.from(spell)));
+          allAbilities.add(Spell.fromJson(Map<String, dynamic>.from(spell)));
         }
       }
     } else if (template != null) {
-      spells.addAll(template.spells);
+      allAbilities.addAll(template.spells);
+      allAbilities.addAll(template.techniques);
     }
+    final spells = allAbilities
+        .where((spell) => spell.abilityType.toLowerCase() != 'technique')
+        .toList(growable: false);
+    final techniques = allAbilities
+        .where((spell) => spell.abilityType.toLowerCase() == 'technique')
+        .toList(growable: false);
 
     final itemRewards = <MonsterItemReward>[];
     final rawItemRewards = json['itemRewards'];
@@ -249,6 +274,7 @@ class Monster {
           json['imageGenerationStatus']?.toString() ?? 'none',
       imageGenerationError: json['imageGenerationError']?.toString(),
       spells: spells,
+      techniques: techniques,
       itemRewards: itemRewards,
     );
   }

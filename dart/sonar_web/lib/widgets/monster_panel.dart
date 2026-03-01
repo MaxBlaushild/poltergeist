@@ -195,6 +195,27 @@ class MonsterPanel extends StatelessWidget {
                               ],
                             ),
                     ),
+                    const SizedBox(height: 10),
+                    _SectionCard(
+                      title: 'Techniques',
+                      child: monster.techniques.isEmpty
+                          ? Text(
+                              'No techniques',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final technique in monster.techniques)
+                                  Text(
+                                    '• ${technique.name}',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                              ],
+                            ),
+                    ),
                   ],
                 ),
               ),

@@ -28,6 +28,9 @@ func (h *spellHandler) Create(ctx context.Context, spell *models.Spell) error {
 	if spell.ImageGenerationStatus == "" {
 		spell.ImageGenerationStatus = models.SpellImageGenerationStatusNone
 	}
+	if spell.AbilityType == "" {
+		spell.AbilityType = models.SpellAbilityTypeSpell
+	}
 	return h.db.WithContext(ctx).Create(spell).Error
 }
 

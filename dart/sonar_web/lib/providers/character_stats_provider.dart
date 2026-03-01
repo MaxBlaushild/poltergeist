@@ -57,7 +57,13 @@ class CharacterStatsProvider with ChangeNotifier {
   List<CharacterProficiency> get proficiencies =>
       _stats?.proficiencies ?? const [];
   List<CharacterStatus> get statuses => _stats?.statuses ?? const [];
-  List<Spell> get spells => _stats?.spells ?? const [];
+  List<Spell> get abilities => _stats?.spells ?? const [];
+  List<Spell> get spells => abilities
+      .where((spell) => spell.abilityType.toLowerCase() != 'technique')
+      .toList(growable: false);
+  List<Spell> get techniques => abilities
+      .where((spell) => spell.abilityType.toLowerCase() == 'technique')
+      .toList(growable: false);
   bool get hasProficiencies => proficiencies.isNotEmpty;
   bool get hasStatuses => statuses.isNotEmpty;
 
@@ -146,6 +152,31 @@ class CharacterStatsProvider with ChangeNotifier {
         }
       }
       return 'Failed to cast spell.';
+    }
+  }
+
+  Future<String?> castTechnique(
+    String techniqueId, {
+    String? targetUserId,
+  }) async {
+    if (_userId == null) {
+      return 'You must be logged in to use techniques.';
+    }
+    try {
+      await _service.castTechnique(techniqueId, targetUserId: targetUserId);
+      await refresh(silent: true);
+      return null;
+    } catch (e) {
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final message = data['error'];
+          if (message is String && message.trim().isNotEmpty) {
+            return message.trim();
+          }
+        }
+      }
+      return 'Failed to use technique.';
     }
   }
 
