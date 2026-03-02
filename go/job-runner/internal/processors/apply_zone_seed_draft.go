@@ -1255,6 +1255,7 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 	item.Handedness = validatedHandAttrs.Handedness
 	item.DamageMin = validatedHandAttrs.DamageMin
 	item.DamageMax = validatedHandAttrs.DamageMax
+	item.DamageAffinity = validatedHandAttrs.DamageAffinity
 	item.SwipesPerAttack = validatedHandAttrs.SwipesPerAttack
 	item.BlockPercentage = validatedHandAttrs.BlockPercentage
 	item.DamageBlocked = validatedHandAttrs.DamageBlocked

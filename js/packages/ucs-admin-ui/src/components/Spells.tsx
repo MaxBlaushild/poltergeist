@@ -20,6 +20,7 @@ type SpellEffectForm = {
   type: string;
   customType: string;
   amount: string;
+  damageAffinity: string;
   statusesToApply: SpellStatusTemplateForm[];
   statusesToRemove: string;
   effectData: string;
@@ -76,6 +77,17 @@ const knownEffectTypes = [
   'remove_detrimental_statuses',
 ] as const;
 
+const damageAffinityOptions = [
+  'physical',
+  'fire',
+  'ice',
+  'lightning',
+  'poison',
+  'arcane',
+  'holy',
+  'shadow',
+] as const;
+
 const emptyStatusTemplate = (): SpellStatusTemplateForm => ({
   name: '',
   description: '',
@@ -94,6 +106,7 @@ const emptyEffect = (): SpellEffectForm => ({
   type: 'deal_damage',
   customType: '',
   amount: '0',
+  damageAffinity: 'physical',
   statusesToApply: [],
   statusesToRemove: '',
   effectData: '',
@@ -217,6 +230,7 @@ const formFromSpell = (spell: Spell): SpellFormState => {
               effect.amount !== undefined && effect.amount !== null
                 ? String(effect.amount)
                 : '0',
+            damageAffinity: (effect.damageAffinity ?? 'physical').toString(),
             statusesToApply: (effect.statusesToApply ?? []).map((status) => ({
               name: status.name ?? '',
               description: status.description ?? '',
@@ -269,6 +283,10 @@ const payloadFromForm = (form: SpellFormState) => {
     return {
       type: effectType,
       amount: parseIntSafe(effect.amount, 0),
+      damageAffinity:
+        effectType === 'deal_damage'
+          ? (effect.damageAffinity?.trim().toLowerCase() || 'physical')
+          : undefined,
       statusesToApply,
       statusesToRemove,
       effectData,
@@ -616,36 +634,45 @@ export const Spells = () => {
               <h1 className="qa-card-title">Spells & Techniques</h1>
               <p className="text-sm text-gray-600">Manage ability definitions and effect payloads.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={bulkAbilityCount}
-                onChange={(e) => setBulkAbilityCount(e.target.value)}
-                className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk ability count"
-              />
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={bulkAbilityTargetLevel}
-                onChange={(e) => setBulkAbilityTargetLevel(e.target.value)}
-                className="w-28 rounded-md border border-gray-300 px-2 py-2 text-sm"
-                aria-label="Bulk ability target level"
-                placeholder="Target lvl"
-              />
-              <select
-                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
-                value={bulkAbilityType}
-                onChange={(e) =>
-                  setBulkAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
-                }
-              >
-                <option value="spell">Spells</option>
-                <option value="technique">Techniques</option>
-              </select>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="text-xs text-gray-600">
+                Count
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={bulkAbilityCount}
+                  onChange={(e) => setBulkAbilityCount(e.target.value)}
+                  className="mt-1 w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  aria-label="Bulk ability count"
+                />
+              </label>
+              <label className="text-xs text-gray-600">
+                Target Level
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={bulkAbilityTargetLevel}
+                  onChange={(e) => setBulkAbilityTargetLevel(e.target.value)}
+                  className="mt-1 w-28 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  aria-label="Bulk ability target level"
+                  placeholder="Target lvl"
+                />
+              </label>
+              <label className="text-xs text-gray-600">
+                Ability Type
+                <select
+                  className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  value={bulkAbilityType}
+                  onChange={(e) =>
+                    setBulkAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
+                  }
+                >
+                  <option value="spell">Spells</option>
+                  <option value="technique">Techniques</option>
+                </select>
+              </label>
               <button
                 className="qa-btn qa-btn-secondary"
                 onClick={handleBulkGenerateAbilities}
@@ -945,7 +972,7 @@ export const Spells = () => {
                   <div className="space-y-3">
                     {form.effects.map((effect, effectIndex) => (
                       <div key={effectIndex} className="border rounded-md p-3 bg-gray-50">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
                           <label className="text-sm">
                             Effect Type
                             <select
@@ -996,6 +1023,28 @@ export const Spells = () => {
                               }
                             />
                           </label>
+                          {normalizeEffectType(effect) === 'deal_damage' ? (
+                            <label className="text-sm">
+                              Damage Affinity
+                              <select
+                                className="w-full border rounded-md p-2"
+                                value={effect.damageAffinity || 'physical'}
+                                onChange={(e) =>
+                                  updateEffect(effectIndex, {
+                                    damageAffinity: e.target.value,
+                                  })
+                                }
+                              >
+                                {damageAffinityOptions.map((affinity) => (
+                                  <option key={affinity} value={affinity}>
+                                    {affinity}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : (
+                            <div />
+                          )}
                         </div>
 
                         <label className="text-sm block mb-3">

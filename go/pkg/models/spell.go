@@ -47,6 +47,7 @@ func IsValidSpellAbilityType(raw string) bool {
 type SpellEffect struct {
 	Type             SpellEffectType                `json:"type"`
 	Amount           int                            `json:"amount,omitempty"`
+	DamageAffinity   *string                        `json:"damageAffinity,omitempty"`
 	StatusesToApply  ScenarioFailureStatusTemplates `json:"statusesToApply,omitempty"`
 	StatusesToRemove StringArray                    `json:"statusesToRemove,omitempty"`
 	EffectData       map[string]interface{}         `json:"effectData,omitempty"`

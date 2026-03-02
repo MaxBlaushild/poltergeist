@@ -25,6 +25,7 @@ type InventoryItem struct {
 	Handedness              *string                        `json:"handedness" gorm:"column:handedness"`
 	DamageMin               *int                           `json:"damageMin" gorm:"column:damage_min"`
 	DamageMax               *int                           `json:"damageMax" gorm:"column:damage_max"`
+	DamageAffinity          *string                        `json:"damageAffinity" gorm:"column:damage_affinity"`
 	SwipesPerAttack         *int                           `json:"swipesPerAttack" gorm:"column:swipes_per_attack"`
 	BlockPercentage         *int                           `json:"blockPercentage" gorm:"column:block_percentage"`
 	DamageBlocked           *int                           `json:"damageBlocked" gorm:"column:damage_blocked"`

@@ -56,6 +56,34 @@ func containsAnyKeyword(haystack string, keywords []string) bool {
 	return false
 }
 
+func inferGeneratedDamageAffinity(text string, abilityType models.SpellAbilityType) string {
+	if containsAnyKeyword(text, []string{"fire", "flame", "ember", "inferno", "burn", "pyro"}) {
+		return string(models.DamageAffinityFire)
+	}
+	if containsAnyKeyword(text, []string{"ice", "frost", "glacier", "chill", "cryo"}) {
+		return string(models.DamageAffinityIce)
+	}
+	if containsAnyKeyword(text, []string{"lightning", "storm", "thunder", "volt", "spark"}) {
+		return string(models.DamageAffinityLightning)
+	}
+	if containsAnyKeyword(text, []string{"venom", "poison", "toxin", "blight"}) {
+		return string(models.DamageAffinityPoison)
+	}
+	if containsAnyKeyword(text, []string{"holy", "radiant", "sun", "dawn", "sanct"}) {
+		return string(models.DamageAffinityHoly)
+	}
+	if containsAnyKeyword(text, []string{"shadow", "void", "night", "umbral", "hex"}) {
+		return string(models.DamageAffinityShadow)
+	}
+	if abilityType == models.SpellAbilityTypeTechnique {
+		return string(models.DamageAffinityPhysical)
+	}
+	if containsAnyKeyword(text, []string{"arcane", "rune", "spell", "mana", "astral"}) {
+		return string(models.DamageAffinityArcane)
+	}
+	return string(models.DamageAffinityPhysical)
+}
+
 func inferGeneratedAbilityEffects(
 	spec jobs.SpellCreationSpec,
 	abilityType models.SpellAbilityType,
@@ -171,9 +199,11 @@ func inferGeneratedAbilityEffectsWithPreference(
 			damage = 10
 		}
 		damage = scaleAbilityAmountForLevel(damage, targetLevel)
+		damageAffinity := inferGeneratedDamageAffinity(text, abilityType)
 		return models.SpellEffects{{
-			Type:   models.SpellEffectTypeDealDamage,
-			Amount: damage,
+			Type:           models.SpellEffectTypeDealDamage,
+			Amount:         damage,
+			DamageAffinity: &damageAffinity,
 		}}
 	}
 }
@@ -293,10 +323,14 @@ func buildGeneratedAbilityEffectText(effects models.SpellEffects, abilityType mo
 	for _, effect := range effects {
 		switch effect.Type {
 		case models.SpellEffectTypeDealDamage:
+			damageLabel := "damage"
+			if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
+				damageLabel = fmt.Sprintf("%s damage", strings.TrimSpace(*effect.DamageAffinity))
+			}
 			if effect.Amount > 0 {
-				parts = append(parts, fmt.Sprintf("Deals %d damage.", effect.Amount))
+				parts = append(parts, fmt.Sprintf("Deals %d %s.", effect.Amount, damageLabel))
 			} else {
-				parts = append(parts, "Deals direct damage.")
+				parts = append(parts, fmt.Sprintf("Deals direct %s.", damageLabel))
 			}
 		case models.SpellEffectTypeRestoreLifePartyMember:
 			if effect.Amount > 0 {

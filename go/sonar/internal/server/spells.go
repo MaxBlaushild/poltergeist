@@ -24,6 +24,7 @@ import (
 type spellEffectPayload struct {
 	Type             string                         `json:"type"`
 	Amount           *int                           `json:"amount"`
+	DamageAffinity   *string                        `json:"damageAffinity"`
 	StatusesToApply  []scenarioFailureStatusPayload `json:"statusesToApply"`
 	StatusesToRemove []string                       `json:"statusesToRemove"`
 	EffectData       map[string]interface{}         `json:"effectData"`
@@ -691,6 +692,7 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 			return nil, err
 		}
 		statusesToRemove := normalizeSpellStatusNames(effectPayload.StatusesToRemove)
+		var damageAffinity *string
 
 		switch effectType {
 		case models.SpellEffectTypeDealDamage,
@@ -698,6 +700,15 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 			models.SpellEffectTypeRestoreLifeAllParty:
 			if amount <= 0 {
 				return nil, fmt.Errorf("effects[%d].amount must be greater than 0", index)
+			}
+			if effectType == models.SpellEffectTypeDealDamage {
+				rawAffinity := ""
+				if effectPayload.DamageAffinity != nil {
+					rawAffinity = strings.TrimSpace(*effectPayload.DamageAffinity)
+				}
+				normalized := models.NormalizeDamageAffinity(rawAffinity)
+				normalizedValue := string(normalized)
+				damageAffinity = &normalizedValue
 			}
 		case models.SpellEffectTypeApplyBeneficialStatus:
 			if len(statusesToApply) == 0 {
@@ -714,6 +725,7 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 		effects = append(effects, models.SpellEffect{
 			Type:             effectType,
 			Amount:           amount,
+			DamageAffinity:   damageAffinity,
 			StatusesToApply:  statusesToApply,
 			StatusesToRemove: statusesToRemove,
 			EffectData:       effectPayload.EffectData,

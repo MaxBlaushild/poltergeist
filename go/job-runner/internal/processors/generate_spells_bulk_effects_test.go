@@ -24,6 +24,9 @@ func TestInferGeneratedAbilityEffectsTechniqueHasDamage(t *testing.T) {
 	if effects[0].Amount <= 0 {
 		t.Fatalf("expected positive damage amount, got %d", effects[0].Amount)
 	}
+	if effects[0].DamageAffinity == nil || strings.TrimSpace(*effects[0].DamageAffinity) == "" {
+		t.Fatalf("expected damage affinity to be set for damage effect")
+	}
 }
 
 func TestInferGeneratedAbilityEffectsHealingSpell(t *testing.T) {
@@ -115,6 +118,32 @@ func TestInferGeneratedAbilityEffectsScalesWithTargetLevel(t *testing.T) {
 	}
 	if highEffects[0].Amount <= lowEffects[0].Amount {
 		t.Fatalf("expected high-level amount > low-level amount, got low=%d high=%d", lowEffects[0].Amount, highEffects[0].Amount)
+	}
+}
+
+func TestInferGeneratedAbilityEffectsInfersElementalAffinity(t *testing.T) {
+	spec := jobs.SpellCreationSpec{
+		Name:        "Inferno Spear",
+		Description: "A spear of flame that pierces defenses.",
+	}
+
+	effects := inferGeneratedAbilityEffects(spec, models.SpellAbilityTypeSpell, 20)
+	if len(effects) == 0 {
+		t.Fatalf("expected at least one effect")
+	}
+	if effects[0].Type != models.SpellEffectTypeDealDamage {
+		t.Fatalf("expected damage effect, got %s", effects[0].Type)
+	}
+	if effects[0].DamageAffinity == nil {
+		t.Fatalf("expected damage affinity for damage effect")
+	}
+	if *effects[0].DamageAffinity != string(models.DamageAffinityFire) {
+		t.Fatalf("expected fire affinity, got %q", *effects[0].DamageAffinity)
+	}
+
+	text := strings.ToLower(buildGeneratedAbilityEffectText(effects, models.SpellAbilityTypeSpell))
+	if !strings.Contains(text, "fire damage") {
+		t.Fatalf("expected effect text to include affinity, got %q", text)
 	}
 }
 

@@ -38,6 +38,7 @@ type HandEquipmentAttributes struct {
 	Handedness              *string
 	DamageMin               *int
 	DamageMax               *int
+	DamageAffinity          *string
 	SwipesPerAttack         *int
 	BlockPercentage         *int
 	DamageBlocked           *int
@@ -80,6 +81,7 @@ func NormalizeAndValidateHandEquipment(
 		Handedness:              normalizeOptionalLowerString(input.Handedness),
 		DamageMin:               input.DamageMin,
 		DamageMax:               input.DamageMax,
+		DamageAffinity:          normalizeOptionalLowerString(input.DamageAffinity),
 		SwipesPerAttack:         input.SwipesPerAttack,
 		BlockPercentage:         input.BlockPercentage,
 		DamageBlocked:           input.DamageBlocked,
@@ -125,6 +127,16 @@ func validateDominantHandAttributes(attrs HandEquipmentAttributes) (HandEquipmen
 	if attrs.DamageMin == nil || attrs.DamageMax == nil || attrs.SwipesPerAttack == nil {
 		return HandEquipmentAttributes{}, fmt.Errorf("dominant hand items require damageMin, damageMax, and swipesPerAttack")
 	}
+	if attrs.DamageAffinity == nil {
+		defaultAffinity := string(DamageAffinityPhysical)
+		if category == string(HandItemCategoryStaff) {
+			defaultAffinity = string(DamageAffinityArcane)
+		}
+		attrs.DamageAffinity = &defaultAffinity
+	}
+	if !IsValidDamageAffinity(*attrs.DamageAffinity) {
+		return HandEquipmentAttributes{}, fmt.Errorf("damageAffinity must be one of: physical, fire, ice, lightning, poison, arcane, holy, shadow")
+	}
 	if *attrs.DamageMin <= 0 || *attrs.DamageMax <= 0 || *attrs.SwipesPerAttack <= 0 {
 		return HandEquipmentAttributes{}, fmt.Errorf("damageMin, damageMax, and swipesPerAttack must be positive")
 	}
@@ -163,6 +175,9 @@ func validateOffHandAttributes(attrs HandEquipmentAttributes) (HandEquipmentAttr
 	if attrs.DamageMin != nil || attrs.DamageMax != nil || attrs.SwipesPerAttack != nil {
 		return HandEquipmentAttributes{}, fmt.Errorf("off hand items cannot set damage fields")
 	}
+	if attrs.DamageAffinity != nil {
+		return HandEquipmentAttributes{}, fmt.Errorf("off hand items cannot set damageAffinity")
+	}
 
 	category := *attrs.HandItemCategory
 	switch category {
@@ -198,6 +213,7 @@ func hasAnyHandEquipmentField(attrs HandEquipmentAttributes) bool {
 		attrs.Handedness != nil ||
 		attrs.DamageMin != nil ||
 		attrs.DamageMax != nil ||
+		attrs.DamageAffinity != nil ||
 		attrs.SwipesPerAttack != nil ||
 		attrs.BlockPercentage != nil ||
 		attrs.DamageBlocked != nil ||

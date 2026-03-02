@@ -6888,6 +6888,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		Handedness              *string                        `json:"handedness"`
 		DamageMin               *int                           `json:"damageMin"`
 		DamageMax               *int                           `json:"damageMax"`
+		DamageAffinity          *string                        `json:"damageAffinity"`
 		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
 		BlockPercentage         *int                           `json:"blockPercentage"`
 		DamageBlocked           *int                           `json:"damageBlocked"`
@@ -6920,6 +6921,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		Handedness:              requestBody.Handedness,
 		DamageMin:               requestBody.DamageMin,
 		DamageMax:               requestBody.DamageMax,
+		DamageAffinity:          requestBody.DamageAffinity,
 		SwipesPerAttack:         requestBody.SwipesPerAttack,
 		BlockPercentage:         requestBody.BlockPercentage,
 		DamageBlocked:           requestBody.DamageBlocked,
@@ -6971,6 +6973,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		Handedness:              handAttrs.Handedness,
 		DamageMin:               handAttrs.DamageMin,
 		DamageMax:               handAttrs.DamageMax,
+		DamageAffinity:          handAttrs.DamageAffinity,
 		SwipesPerAttack:         handAttrs.SwipesPerAttack,
 		BlockPercentage:         handAttrs.BlockPercentage,
 		DamageBlocked:           handAttrs.DamageBlocked,
@@ -7004,6 +7007,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		EquipSlot        *string `json:"equipSlot"`
 		HandItemCategory *string `json:"handItemCategory"`
 		Handedness       *string `json:"handedness"`
+		DamageAffinity   *string `json:"damageAffinity"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -7026,6 +7030,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 	handAttrs := models.HandEquipmentAttributes{
 		HandItemCategory: requestBody.HandItemCategory,
 		Handedness:       requestBody.Handedness,
+		DamageAffinity:   requestBody.DamageAffinity,
 	}
 	if equipSlot != nil && models.IsHandEquipSlot(*equipSlot) {
 		if handAttrs.HandItemCategory == nil || strings.TrimSpace(*handAttrs.HandItemCategory) == "" {
@@ -7054,6 +7059,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		Handedness:              validatedHandAttrs.Handedness,
 		DamageMin:               validatedHandAttrs.DamageMin,
 		DamageMax:               validatedHandAttrs.DamageMax,
+		DamageAffinity:          validatedHandAttrs.DamageAffinity,
 		SwipesPerAttack:         validatedHandAttrs.SwipesPerAttack,
 		BlockPercentage:         validatedHandAttrs.BlockPercentage,
 		DamageBlocked:           validatedHandAttrs.DamageBlocked,
@@ -7188,6 +7194,7 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 			item.Handedness = attrs.Handedness
 			item.DamageMin = attrs.DamageMin
 			item.DamageMax = attrs.DamageMax
+			item.DamageAffinity = attrs.DamageAffinity
 			item.SwipesPerAttack = attrs.SwipesPerAttack
 			item.BlockPercentage = attrs.BlockPercentage
 			item.DamageBlocked = attrs.DamageBlocked
@@ -7262,22 +7269,52 @@ func inventorySetStatDisplayName(key string) string {
 }
 
 func inventorySetThemeFromStats(majorStat string, minorStat string, targetLevel int) string {
-	prefix := "Apprentice"
+	rank := "Wayfarer"
 	switch {
 	case targetLevel >= 80:
-		prefix = "Ascendant"
+		rank = "Ascendant"
 	case targetLevel >= 55:
-		prefix = "Paragon"
+		rank = "Paragon"
 	case targetLevel >= 30:
-		prefix = "Vanguard"
+		rank = "Vanguard"
 	}
 
-	major := inventorySetStatDisplayName(majorStat)
-	minor := inventorySetStatDisplayName(minorStat)
-	if minor == "Unknown" || major == minor {
-		return fmt.Sprintf("%s %s", prefix, major)
+	majorTitle := "Wayfarer"
+	switch normalizeInventorySetStatKey(majorStat) {
+	case "strength":
+		majorTitle = "Warbrand"
+	case "dexterity":
+		majorTitle = "Nightstep"
+	case "constitution":
+		majorTitle = "Stoneward"
+	case "intelligence":
+		majorTitle = "Spellweaver"
+	case "wisdom":
+		majorTitle = "Dawnseer"
+	case "charisma":
+		majorTitle = "Crownsworn"
 	}
-	return fmt.Sprintf("%s %s %s", prefix, major, minor)
+
+	minorAspect := ""
+	switch normalizeInventorySetStatKey(minorStat) {
+	case "strength":
+		minorAspect = "Ember"
+	case "dexterity":
+		minorAspect = "Shade"
+	case "constitution":
+		minorAspect = "Bulwark"
+	case "intelligence":
+		minorAspect = "Rune"
+	case "wisdom":
+		minorAspect = "Grove"
+	case "charisma":
+		minorAspect = "Crown"
+	}
+
+	if minorAspect == "" || normalizeInventorySetStatKey(majorStat) == normalizeInventorySetStatKey(minorStat) {
+		return fmt.Sprintf("%s %s", rank, majorTitle)
+	}
+	return fmt.Sprintf("%s %s of the %s", rank, majorTitle, minorAspect)
 }
 
 func inventorySetRarityForTargetLevel(targetLevel int) string {
@@ -7449,6 +7486,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 			item.Handedness = attrs.Handedness
 			item.DamageMin = attrs.DamageMin
 			item.DamageMax = attrs.DamageMax
+			item.DamageAffinity = attrs.DamageAffinity
 			item.SwipesPerAttack = attrs.SwipesPerAttack
 			item.BlockPercentage = attrs.BlockPercentage
 			item.DamageBlocked = attrs.DamageBlocked
@@ -8345,6 +8383,7 @@ func generateInventoryItemHandAttributes(rarity string, category string, handedn
 		}
 		attrs.DamageMin = intPtr(maxInt(1, damageMin))
 		attrs.DamageMax = intPtr(maxInt(*attrs.DamageMin, damageMax))
+		attrs.DamageAffinity = stringPtr(generatedInventoryDamageAffinity(normalizedCategory))
 		attrs.SwipesPerAttack = intPtr(generatedInventorySwipesPerAttack(normalizedCategory, normalizedHandedness))
 	case string(models.HandItemCategoryShield):
 		blockPctMin, blockPctMax := generatedInventoryBlockPercentRangeByRarity(rarity)
@@ -8356,6 +8395,33 @@ func generateInventoryItemHandAttributes(rarity string, category string, handedn
 		attrs.SpellDamageBonusPercent = intPtr(secureRandomIntBetween(spellMin, spellMax))
 	}
 	return attrs
+}
+
+func generatedInventoryDamageAffinity(category string) string {
+	var options []models.DamageAffinity
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case string(models.HandItemCategoryStaff):
+		options = []models.DamageAffinity{
+			models.DamageAffinityArcane,
+			models.DamageAffinityFire,
+			models.DamageAffinityIce,
+			models.DamageAffinityLightning,
+			models.DamageAffinityShadow,
+			models.DamageAffinityHoly,
+		}
+	default:
+		options = []models.DamageAffinity{
+			models.DamageAffinityPhysical,
+			models.DamageAffinityFire,
+			models.DamageAffinityIce,
+			models.DamageAffinityLightning,
+			models.DamageAffinityPoison,
+		}
+	}
+	if len(options) == 0 {
+		return string(models.DamageAffinityPhysical)
+	}
+	return string(options[secureRandomIntBetween(0, len(options)-1)])
 }
 
 func generatedInventoryDamageRangeByRarity(rarity string) (int, int) {
@@ -8560,6 +8626,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		Handedness              *string                        `json:"handedness"`
 		DamageMin               *int                           `json:"damageMin"`
 		DamageMax               *int                           `json:"damageMax"`
+		DamageAffinity          *string                        `json:"damageAffinity"`
 		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
 		BlockPercentage         *int                           `json:"blockPercentage"`
 		DamageBlocked           *int                           `json:"damageBlocked"`
@@ -8592,6 +8659,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		Handedness:              requestBody.Handedness,
 		DamageMin:               requestBody.DamageMin,
 		DamageMax:               requestBody.DamageMax,
+		DamageAffinity:          requestBody.DamageAffinity,
 		SwipesPerAttack:         requestBody.SwipesPerAttack,
 		BlockPercentage:         requestBody.BlockPercentage,
 		DamageBlocked:           requestBody.DamageBlocked,
@@ -8643,6 +8711,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"handedness":                 handAttrs.Handedness,
 		"damage_min":                 handAttrs.DamageMin,
 		"damage_max":                 handAttrs.DamageMax,
+		"damage_affinity":            handAttrs.DamageAffinity,
 		"swipes_per_attack":          handAttrs.SwipesPerAttack,
 		"block_percentage":           handAttrs.BlockPercentage,
 		"damage_blocked":             handAttrs.DamageBlocked,

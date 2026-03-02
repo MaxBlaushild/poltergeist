@@ -190,6 +190,17 @@ const itemSetStatOptions: SelectOption[] = [
   { value: 'charisma', label: 'Charisma' },
 ];
 
+const damageAffinityOptions: SelectOption[] = [
+  { value: 'physical', label: 'Physical' },
+  { value: 'fire', label: 'Fire' },
+  { value: 'ice', label: 'Ice' },
+  { value: 'lightning', label: 'Lightning' },
+  { value: 'poison', label: 'Poison' },
+  { value: 'arcane', label: 'Arcane' },
+  { value: 'holy', label: 'Holy' },
+  { value: 'shadow', label: 'Shadow' },
+];
+
 const equipSlotLabel = (slot?: string | null) => {
   if (!slot) return 'Not equippable';
   const found = equipSlotOptions.find((opt) => opt.value === slot);
@@ -273,6 +284,9 @@ const handCombatSummary = (item: InventoryItemRecord) => {
   ) {
     const swipes = item.swipesPerAttack ?? 0;
     details.push(`Damage: ${item.damageMin}-${item.damageMax} (${swipes} swipes)`);
+  }
+  if (item.damageAffinity) {
+    details.push(`Affinity: ${item.damageAffinity}`);
   }
   if (
     item.blockPercentage !== undefined &&
@@ -415,6 +429,7 @@ export const InventoryItems = () => {
     handedness: '',
     damageMin: undefined as number | undefined,
     damageMax: undefined as number | undefined,
+    damageAffinity: 'physical',
     swipesPerAttack: undefined as number | undefined,
     blockPercentage: undefined as number | undefined,
     damageBlocked: undefined as number | undefined,
@@ -526,6 +541,7 @@ export const InventoryItems = () => {
       handedness: '',
       damageMin: undefined,
       damageMax: undefined,
+      damageAffinity: 'physical',
       swipesPerAttack: undefined,
       blockPercentage: undefined,
       damageBlocked: undefined,
@@ -621,6 +637,7 @@ export const InventoryItems = () => {
     handedness: '',
     damageMin: undefined as number | undefined,
     damageMax: undefined as number | undefined,
+    damageAffinity: undefined as string | undefined,
     swipesPerAttack: undefined as number | undefined,
     blockPercentage: undefined as number | undefined,
     damageBlocked: undefined as number | undefined,
@@ -636,6 +653,9 @@ export const InventoryItems = () => {
     if (next.equipSlot === 'dominant_hand') {
       if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
         next.handItemCategory = '';
+      }
+      if (!next.damageAffinity) {
+        next.damageAffinity = next.handItemCategory === 'staff' ? 'arcane' : 'physical';
       }
       next.blockPercentage = undefined;
       next.damageBlocked = undefined;
@@ -654,6 +674,7 @@ export const InventoryItems = () => {
       next.handedness = 'one_handed';
       next.damageMin = undefined;
       next.damageMax = undefined;
+      next.damageAffinity = undefined;
       next.swipesPerAttack = undefined;
       if (next.handItemCategory === 'shield') {
         next.spellDamageBonusPercent = undefined;
@@ -783,9 +804,11 @@ export const InventoryItems = () => {
       const next = { ...prev, handItemCategory: category };
       if (category === 'staff') {
         next.handedness = 'two_handed';
+        next.damageAffinity = 'arcane';
         next.blockPercentage = undefined;
         next.damageBlocked = undefined;
       } else if (category === 'weapon') {
+        next.damageAffinity = 'physical';
         next.spellDamageBonusPercent = undefined;
         next.blockPercentage = undefined;
         next.damageBlocked = undefined;
@@ -793,12 +816,14 @@ export const InventoryItems = () => {
         next.handedness = 'one_handed';
         next.damageMin = undefined;
         next.damageMax = undefined;
+        next.damageAffinity = undefined;
         next.swipesPerAttack = undefined;
         next.spellDamageBonusPercent = undefined;
       } else if (category === 'orb') {
         next.handedness = 'one_handed';
         next.damageMin = undefined;
         next.damageMax = undefined;
+        next.damageAffinity = undefined;
         next.swipesPerAttack = undefined;
         next.blockPercentage = undefined;
         next.damageBlocked = undefined;
@@ -1180,6 +1205,7 @@ export const InventoryItems = () => {
       handedness: item.handedness ?? '',
       damageMin: item.damageMin ?? undefined,
       damageMax: item.damageMax ?? undefined,
+      damageAffinity: item.damageAffinity ?? 'physical',
       swipesPerAttack: item.swipesPerAttack ?? undefined,
       blockPercentage: item.blockPercentage ?? undefined,
       damageBlocked: item.damageBlocked ?? undefined,
@@ -2133,11 +2159,11 @@ export const InventoryItems = () => {
                   </select>
                 </div>
 
-                {formData.equipSlot === 'dominant_hand' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Min *</label>
-                      <input
+	                {formData.equipSlot === 'dominant_hand' && (
+	                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '10px' }}>
+	                    <div>
+	                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Min *</label>
+	                      <input
                         type="number"
                         min="1"
                         value={formData.damageMin !== undefined ? formData.damageMin : ''}
@@ -2171,11 +2197,30 @@ export const InventoryItems = () => {
                           ...formData,
                           swipesPerAttack: e.target.value === '' ? undefined : parseInt(e.target.value, 10),
                         })}
-                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
-                      />
-                    </div>
-                  </div>
-                )}
+	                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+	                      />
+	                    </div>
+	                    <div>
+	                      <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>Damage Affinity *</label>
+	                      <select
+	                        value={formData.damageAffinity ?? 'physical'}
+	                        onChange={(e) =>
+	                          setFormData({
+	                            ...formData,
+	                            damageAffinity: e.target.value,
+	                          })
+	                        }
+	                        style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+	                      >
+	                        {damageAffinityOptions.map((option) => (
+	                          <option key={option.value} value={option.value}>
+	                            {option.label}
+	                          </option>
+	                        ))}
+	                      </select>
+	                    </div>
+	                  </div>
+	                )}
 
                 {formData.handItemCategory === 'shield' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '10px' }}>

@@ -12,6 +12,17 @@ export type InventoryConsumeStatus = {
   charismaMod: number;
 };
 
+type DamageAffinity =
+  | 'physical'
+  | 'fire'
+  | 'ice'
+  | 'lightning'
+  | 'poison'
+  | 'arcane'
+  | 'holy'
+  | 'shadow'
+  | string;
+
 export type InventoryItem = {
   id: number;
   name: string;
@@ -33,6 +44,7 @@ export type InventoryItem = {
   handedness?: string | null;
   damageMin?: number | null;
   damageMax?: number | null;
+  damageAffinity?: DamageAffinity | null;
   swipesPerAttack?: number | null;
   blockPercentage?: number | null;
   damageBlocked?: number | null;
