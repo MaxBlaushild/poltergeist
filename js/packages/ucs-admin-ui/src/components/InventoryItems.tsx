@@ -31,6 +31,27 @@ type InventoryItemRecord = InventoryItem & {
   consumeSpellIds?: string[];
 };
 
+type InventorySetGenerationResponse = {
+  sourceItemId?: number;
+  setTheme: string;
+  targetLevel?: number;
+  majorStat?: string;
+  minorStat?: string;
+  createdItems: InventoryItemRecord[];
+  skippedSlots: string[];
+  enqueueWarnings?: string[];
+  message: string;
+};
+
+type ConsumableQualitiesResponse = {
+  sourceItemId: number;
+  baseName: string;
+  createdItems: InventoryItemRecord[];
+  skippedQualities: string[];
+  enqueueWarnings?: string[];
+  message: string;
+};
+
 const emptyConsumeStatus = (): InventoryConsumeStatus => ({
   name: '',
   description: '',
@@ -158,6 +179,15 @@ const equipSlotOptions: SelectOption[] = [
   { value: 'ring', label: 'Ring (Either Hand)' },
   { value: 'ring_left', label: 'Ring (Left)' },
   { value: 'ring_right', label: 'Ring (Right)' },
+];
+
+const itemSetStatOptions: SelectOption[] = [
+  { value: 'strength', label: 'Strength' },
+  { value: 'dexterity', label: 'Dexterity' },
+  { value: 'constitution', label: 'Constitution' },
+  { value: 'intelligence', label: 'Intelligence' },
+  { value: 'wisdom', label: 'Wisdom' },
+  { value: 'charisma', label: 'Charisma' },
 ];
 
 const equipSlotLabel = (slot?: string | null) => {
@@ -290,6 +320,21 @@ const consumeSummary = (
   return details;
 };
 
+const hasConsumableEffects = (item: InventoryItemRecord) => {
+  if ((item.consumeHealthDelta ?? 0) !== 0) return true;
+  if ((item.consumeManaDelta ?? 0) !== 0) return true;
+  if ((item.consumeStatusesToAdd?.length ?? 0) > 0) return true;
+  if ((item.consumeStatusesToRemove?.length ?? 0) > 0) return true;
+  if ((item.consumeSpellIds?.length ?? 0) > 0) return true;
+  return false;
+};
+
+const isMinorConsumableSeed = (item: InventoryItemRecord) => {
+  if (item.equipSlot) return false;
+  if (!hasConsumableEffects(item)) return false;
+  return /^\s*minor\s+/i.test(item.name ?? '');
+};
+
 export const InventoryItems = () => {
   const { apiClient } = useAPI();
   const { uploadMedia, getPresignedUploadURL } = useMediaContext();
@@ -303,6 +348,9 @@ export const InventoryItems = () => {
   const [editingItem, setEditingItem] = useState<InventoryItemRecord | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<InventoryItemRecord | null>(null);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [selectedItemIDs, setSelectedItemIDs] = useState<Set<number>>(new Set());
+  const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -312,6 +360,12 @@ export const InventoryItems = () => {
   const [useOutfitStatus, setUseOutfitStatus] = useState<string | null>(null);
   const [useOutfitStatusKind, setUseOutfitStatusKind] = useState<'success' | 'error' | null>(null);
   const [useOutfitSubmitting, setUseOutfitSubmitting] = useState(false);
+  const [setGenerationBusyIds, setSetGenerationBusyIds] = useState<Set<number>>(new Set());
+  const [bulkSetTargetLevel, setBulkSetTargetLevel] = useState('25');
+  const [bulkSetMajorStat, setBulkSetMajorStat] = useState('strength');
+  const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
+  const [bulkSetGenerationBusy, setBulkSetGenerationBusy] = useState(false);
+  const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] = useState<Set<number>>(new Set());
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showFilters, setShowFilters] = useState(false);
@@ -410,6 +464,20 @@ export const InventoryItems = () => {
     }, 5000);
 
     return () => clearInterval(interval);
+  }, [items]);
+
+  useEffect(() => {
+    setSelectedItemIDs((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(items.map((item) => item.id));
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      return next.size === prev.size ? prev : next;
+    });
   }, [items]);
 
   const fetchItems = async () => {
@@ -889,11 +957,204 @@ export const InventoryItems = () => {
     try {
       await apiClient.delete(`/sonar/inventory-items/${itemToDelete.id}`);
       setItems(items.filter(i => i.id !== itemToDelete.id));
+      setSelectedItemIDs((prev) => {
+        if (!prev.has(itemToDelete.id)) return prev;
+        const next = new Set(prev);
+        next.delete(itemToDelete.id);
+        return next;
+      });
       setShowDeleteConfirm(false);
       setItemToDelete(null);
     } catch (error) {
       console.error('Error deleting inventory item:', error);
       alert('Error deleting inventory item.');
+    }
+  };
+
+  const toggleItemSelection = (itemID: number, checked: boolean) => {
+    setSelectedItemIDs((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(itemID);
+      } else {
+        next.delete(itemID);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = (checked: boolean, itemIDs: number[]) => {
+    setSelectedItemIDs((prev) => {
+      const next = new Set(prev);
+      for (const itemID of itemIDs) {
+        if (checked) {
+          next.add(itemID);
+        } else {
+          next.delete(itemID);
+        }
+      }
+      return next;
+    });
+  };
+
+  const confirmBulkDelete = async () => {
+    const ids = Array.from(selectedItemIDs);
+    if (ids.length === 0) return;
+
+    try {
+      setBulkDeleteBusy(true);
+      await apiClient.post('/sonar/inventory-items/bulk-delete', { ids });
+      const selectedIDSet = new Set(ids);
+      setItems((prev) => prev.filter((item) => !selectedIDSet.has(item.id)));
+      setSelectedItemIDs(new Set());
+      setShowBulkDeleteConfirm(false);
+    } catch (error) {
+      console.error('Error bulk deleting inventory items:', error);
+      alert('Error bulk deleting inventory items.');
+    } finally {
+      setBulkDeleteBusy(false);
+    }
+  };
+
+  const handleGenerateSet = async (item: InventoryItemRecord) => {
+    if (!item.equipSlot) {
+      alert('Only equippable items can generate a set.');
+      return;
+    }
+
+    setSetGenerationBusyIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+
+    try {
+      const response = await apiClient.post<InventorySetGenerationResponse>(
+        `/sonar/inventory-items/${item.id}/generate-set`,
+        {}
+      );
+
+      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      setItems((prev) => {
+        const byId = new Map(prev.map((entry) => [entry.id, entry]));
+        createdItems.forEach((created) => {
+          byId.set(created.id, created);
+        });
+        return Array.from(byId.values());
+      });
+
+      const skippedCount = Array.isArray(response.skippedSlots) ? response.skippedSlots.length : 0;
+      const warningCount = Array.isArray(response.enqueueWarnings) ? response.enqueueWarnings.length : 0;
+      alert(
+        `Set generation complete. Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
+          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+      );
+    } catch (error) {
+      console.error('Error generating equipment set:', error);
+      alert('Error generating item set.');
+    } finally {
+      setSetGenerationBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
+
+  const handleGenerateSetFromStats = async () => {
+    const targetLevel = Number.parseInt(bulkSetTargetLevel, 10);
+    if (!Number.isFinite(targetLevel) || targetLevel < 1 || targetLevel > 100) {
+      alert('Target level must be between 1 and 100.');
+      return;
+    }
+    if (!bulkSetMajorStat || !bulkSetMinorStat) {
+      alert('Major and minor stats are required.');
+      return;
+    }
+    if (bulkSetMajorStat === bulkSetMinorStat) {
+      alert('Major and minor stats must be different.');
+      return;
+    }
+
+    setBulkSetGenerationBusy(true);
+    try {
+      const response = await apiClient.post<InventorySetGenerationResponse>(
+        '/sonar/inventory-items/generate-equippable-set',
+        {
+          targetLevel,
+          majorStat: bulkSetMajorStat,
+          minorStat: bulkSetMinorStat,
+        }
+      );
+      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      setItems((prev) => {
+        const byId = new Map(prev.map((entry) => [entry.id, entry]));
+        createdItems.forEach((created) => {
+          byId.set(created.id, created);
+        });
+        return Array.from(byId.values());
+      });
+
+      const skippedCount = Array.isArray(response.skippedSlots) ? response.skippedSlots.length : 0;
+      const warningCount = Array.isArray(response.enqueueWarnings) ? response.enqueueWarnings.length : 0;
+      alert(
+        `Generated set "${response.setTheme}". Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
+          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+      );
+    } catch (error) {
+      console.error('Error generating stat-driven equipment set:', error);
+      alert('Error generating equipment set.');
+    } finally {
+      setBulkSetGenerationBusy(false);
+    }
+  };
+
+  const handleGenerateConsumableQualities = async (item: InventoryItemRecord) => {
+    if (!isMinorConsumableSeed(item)) {
+      alert('Only minor consumables can generate quality progression.');
+      return;
+    }
+
+    setConsumableGenerationBusyIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+
+    try {
+      const response = await apiClient.post<ConsumableQualitiesResponse>(
+        `/sonar/inventory-items/${item.id}/generate-consumable-qualities`,
+        {}
+      );
+
+      const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
+      setItems((prev) => {
+        const byId = new Map(prev.map((entry) => [entry.id, entry]));
+        createdItems.forEach((created) => {
+          byId.set(created.id, created);
+        });
+        return Array.from(byId.values());
+      });
+
+      const skippedCount = Array.isArray(response.skippedQualities)
+        ? response.skippedQualities.length
+        : 0;
+      const warningCount = Array.isArray(response.enqueueWarnings)
+        ? response.enqueueWarnings.length
+        : 0;
+      alert(
+        `Consumable quality generation complete. Created ${createdItems.length} item(s), skipped ${skippedCount} quality tier(s)` +
+          (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
+      );
+    } catch (error) {
+      console.error('Error generating consumable qualities:', error);
+      alert('Error generating consumable qualities.');
+    } finally {
+      setConsumableGenerationBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     }
   };
 
@@ -1129,6 +1390,14 @@ export const InventoryItems = () => {
     return sorted;
   }, [items, searchQuery, filters, sortField, sortDirection, spellNamesByID]);
 
+  const visibleItemIDs = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
+  const selectedVisibleCount = useMemo(
+    () => visibleItems.reduce((count, item) => count + (selectedItemIDs.has(item.id) ? 1 : 0), 0),
+    [visibleItems, selectedItemIDs]
+  );
+  const allVisibleSelected = visibleItems.length > 0 && selectedVisibleCount === visibleItems.length;
+  const hasSelectedItems = selectedItemIDs.size > 0;
+
   if (loading) {
     return <div className="m-10">Loading inventory items...</div>;
   }
@@ -1150,6 +1419,68 @@ export const InventoryItems = () => {
           >
             Generate Inventory Item
           </button>
+          <button
+            className="bg-red-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+            onClick={() => setShowBulkDeleteConfirm(true)}
+            disabled={!hasSelectedItems || bulkDeleteBusy}
+          >
+            {bulkDeleteBusy ? 'Deleting...' : `Delete Selected (${selectedItemIDs.size})`}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
+        <div className="mb-2 text-sm font-semibold text-gray-800">Generate Full Equippable Set</div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Target Level</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={bulkSetTargetLevel}
+              onChange={(e) => setBulkSetTargetLevel(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Major Stat</label>
+            <select
+              value={bulkSetMajorStat}
+              onChange={(e) => setBulkSetMajorStat(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm"
+            >
+              {itemSetStatOptions.map((option) => (
+                <option key={`major-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Minor Stat</label>
+            <select
+              value={bulkSetMinorStat}
+              onChange={(e) => setBulkSetMinorStat(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm"
+            >
+              {itemSetStatOptions.map((option) => (
+                <option key={`minor-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={handleGenerateSetFromStats}
+              disabled={bulkSetGenerationBusy}
+              className="w-full rounded-md bg-violet-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {bulkSetGenerationBusy ? 'Generating Set...' : 'Generate Full Set'}
+            </button>
+          </div>
         </div>
       </div>
       
@@ -1440,6 +1771,21 @@ export const InventoryItems = () => {
         </div>
       )}
 
+      <div className="mb-4 flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 md:flex-row md:items-center md:justify-between">
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            onChange={(e) => toggleSelectAllVisible(e.target.checked, visibleItemIDs)}
+            className="h-4 w-4 cursor-pointer"
+          />
+          Select all visible ({visibleItems.length})
+        </label>
+        <span className="text-sm text-gray-700">
+          {selectedItemIDs.size} selected
+        </span>
+      </div>
+
       {/* Items Grid */}
       <div style={{
         display: 'grid',
@@ -1458,10 +1804,19 @@ export const InventoryItems = () => {
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
-            <h2 style={{ 
-              margin: '0 0 15px 0',
-              color: '#333'
-            }}>{item.name}</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+              <h2 style={{ 
+                margin: '0 0 15px 0',
+                color: '#333'
+              }}>{item.name}</h2>
+              <input
+                type="checkbox"
+                checked={selectedItemIDs.has(item.id)}
+                onChange={(e) => toggleItemSelection(item.id, e.target.checked)}
+                style={{ width: 18, height: 18, cursor: 'pointer' }}
+                aria-label={`Select ${item.name}`}
+              />
+            </div>
 
             <p style={{ margin: '5px 0', color: '#666' }}>
               ID: {item.id}
@@ -1554,6 +1909,24 @@ export const InventoryItems = () => {
               >
                 Regenerate Image
               </button>
+              {isMinorConsumableSeed(item) && (
+                <button
+                  onClick={() => handleGenerateConsumableQualities(item)}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  disabled={consumableGenerationBusyIds.has(item.id)}
+                >
+                  {consumableGenerationBusyIds.has(item.id) ? 'Generating Qualities...' : 'Generate Qualities'}
+                </button>
+              )}
+              {item.equipSlot && (
+                <button
+                  onClick={() => handleGenerateSet(item)}
+                  className="bg-violet-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  disabled={setGenerationBusyIds.has(item.id)}
+                >
+                  {setGenerationBusyIds.has(item.id) ? 'Generating Set...' : 'Generate Set'}
+                </button>
+              )}
               <button
                 onClick={() => handleDeleteItem(item)}
                 className="bg-red-500 text-white px-4 py-2 rounded-md"
@@ -2470,6 +2843,50 @@ export const InventoryItems = () => {
                   setItemToDelete(null);
                 }}
                 className="bg-gray-500 text-white px-4 py-2 rounded-md"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: '#fff',
+            padding: '30px',
+            borderRadius: '8px',
+            width: '420px'
+          }}>
+            <h2>Confirm Bulk Delete</h2>
+            <p>
+              Delete {selectedItemIDs.size} selected inventory item(s)? This action cannot be undone.
+            </p>
+            <div style={{ marginTop: '20px', display: 'flex', gap: '10px' }}>
+              <button
+                onClick={confirmBulkDelete}
+                className="bg-red-600 text-white px-4 py-2 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed"
+                disabled={selectedItemIDs.size === 0 || bulkDeleteBusy}
+              >
+                {bulkDeleteBusy ? 'Deleting...' : 'Delete Selected'}
+              </button>
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                className="bg-gray-500 text-white px-4 py-2 rounded-md"
+                disabled={bulkDeleteBusy}
               >
                 Cancel
               </button>

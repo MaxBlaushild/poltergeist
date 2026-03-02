@@ -259,15 +259,17 @@ func (p *GenerateMonsterTemplatesBulkProcessor) findOrCreateAbilityForTemplate(
 	}
 
 	name := nextUniqueGeneratedAbilityName(candidates[0], pool.byName)
-	description, effectText, schoolOfMagic, manaCost := generatedAbilityDetails(template, abilityType)
+	description, seededEffectText, schoolOfMagic, manaCost := generatedAbilityDetails(template, abilityType)
 	spec := jobs.SpellCreationSpec{
 		Name:          name,
 		Description:   description,
-		EffectText:    effectText,
+		EffectText:    seededEffectText,
 		SchoolOfMagic: schoolOfMagic,
 		ManaCost:      manaCost,
 		AbilityType:   string(abilityType),
 	}
+	effects := inferGeneratedAbilityEffects(spec, abilityType, manaCost)
+	effectText := buildGeneratedAbilityEffectText(effects, abilityType)
 	emptyError := ""
 	spell := &models.Spell{
 		Name:                  name,
@@ -276,7 +278,7 @@ func (p *GenerateMonsterTemplatesBulkProcessor) findOrCreateAbilityForTemplate(
 		EffectText:            effectText,
 		SchoolOfMagic:         schoolOfMagic,
 		ManaCost:              manaCost,
-		Effects:               inferGeneratedAbilityEffects(spec, abilityType, manaCost),
+		Effects:               effects,
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 	}

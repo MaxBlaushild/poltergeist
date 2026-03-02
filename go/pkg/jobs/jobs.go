@@ -107,26 +107,42 @@ type SpellCreationSpec struct {
 	ManaCost      int    `json:"manaCost"`
 }
 
+type SpellBulkEffectCounts struct {
+	DealDamage               int `json:"dealDamage"`
+	RestoreLifePartyMember   int `json:"restoreLifePartyMember"`
+	RestoreLifeAllParty      int `json:"restoreLifeAllPartyMembers"`
+	ApplyBeneficialStatuses  int `json:"applyBeneficialStatuses"`
+	RemoveDetrimentalEffects int `json:"removeDetrimentalStatuses"`
+}
+
 type GenerateSpellsBulkTaskPayload struct {
-	JobID       uuid.UUID           `json:"jobId"`
-	Source      string              `json:"source"`
-	AbilityType string              `json:"abilityType"`
-	TotalCount  int                 `json:"totalCount"`
-	Spells      []SpellCreationSpec `json:"spells"`
+	JobID        uuid.UUID              `json:"jobId"`
+	Source       string                 `json:"source"`
+	AbilityType  string                 `json:"abilityType"`
+	TotalCount   int                    `json:"totalCount"`
+	TargetLevel  *int                   `json:"targetLevel,omitempty"`
+	EffectCounts *SpellBulkEffectCounts `json:"effectCounts,omitempty"`
+	// Deprecated: retained for backward compatibility with older clients.
+	EffectMix *SpellBulkEffectCounts `json:"effectMix,omitempty"`
+	Spells    []SpellCreationSpec    `json:"spells"`
 }
 
 type SpellBulkStatus struct {
-	JobID        uuid.UUID  `json:"jobId"`
-	Status       string     `json:"status"`
-	Source       string     `json:"source"`
-	AbilityType  string     `json:"abilityType"`
-	TotalCount   int        `json:"totalCount"`
-	CreatedCount int        `json:"createdCount"`
-	Error        string     `json:"error,omitempty"`
-	QueuedAt     *time.Time `json:"queuedAt,omitempty"`
-	StartedAt    *time.Time `json:"startedAt,omitempty"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	JobID        uuid.UUID              `json:"jobId"`
+	Status       string                 `json:"status"`
+	Source       string                 `json:"source"`
+	AbilityType  string                 `json:"abilityType"`
+	TotalCount   int                    `json:"totalCount"`
+	CreatedCount int                    `json:"createdCount"`
+	TargetLevel  *int                   `json:"targetLevel,omitempty"`
+	EffectCounts *SpellBulkEffectCounts `json:"effectCounts,omitempty"`
+	// Deprecated: retained for backward compatibility with older clients.
+	EffectMix   *SpellBulkEffectCounts `json:"effectMix,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	QueuedAt    *time.Time             `json:"queuedAt,omitempty"`
+	StartedAt   *time.Time             `json:"startedAt,omitempty"`
+	CompletedAt *time.Time             `json:"completedAt,omitempty"`
+	UpdatedAt   time.Time              `json:"updatedAt"`
 }
 
 type GenerateMonsterImageTaskPayload struct {

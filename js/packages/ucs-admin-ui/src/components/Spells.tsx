@@ -41,13 +41,31 @@ type BulkAbilityStatus = {
   status: string;
   source?: string;
   abilityType?: string;
+  targetLevel?: number;
   totalCount: number;
   createdCount: number;
+  effectCounts?: BulkEffectCountsPayload;
   error?: string;
   queuedAt?: string;
   startedAt?: string;
   completedAt?: string;
   updatedAt?: string;
+};
+
+type BulkEffectCountsPayload = {
+  dealDamage: number;
+  restoreLifePartyMember: number;
+  restoreLifeAllPartyMembers: number;
+  applyBeneficialStatuses: number;
+  removeDetrimentalStatuses: number;
+};
+
+type BulkEffectCountsForm = {
+  dealDamage: string;
+  restoreLifePartyMember: string;
+  restoreLifeAllPartyMembers: string;
+  applyBeneficialStatuses: string;
+  removeDetrimentalStatuses: string;
 };
 
 const knownEffectTypes = [
@@ -96,6 +114,57 @@ const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const DEFAULT_BULK_ABILITY_COUNT = '8';
+
+const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => {
+  const clamped = Math.max(1, total);
+  const weightedTypes: Array<{ key: keyof BulkEffectCountsPayload; weight: number }> = [
+    { key: 'dealDamage', weight: 45 },
+    { key: 'restoreLifePartyMember', weight: 20 },
+    { key: 'restoreLifeAllPartyMembers', weight: 10 },
+    { key: 'applyBeneficialStatuses', weight: 15 },
+    { key: 'removeDetrimentalStatuses', weight: 10 },
+  ];
+  const totalWeight = weightedTypes.reduce((sum, entry) => sum + entry.weight, 0);
+  const entries = weightedTypes.map((entry) => ({
+    key: entry.key,
+    count: Math.floor((clamped * entry.weight) / totalWeight),
+    remainder: (clamped * entry.weight) % totalWeight,
+  }));
+  let assigned = entries.reduce((sum, entry) => sum + entry.count, 0);
+  while (assigned < clamped) {
+    entries.sort((a, b) => b.remainder - a.remainder);
+    entries[assigned % entries.length].count += 1;
+    assigned += 1;
+  }
+  const counts = entries.reduce<BulkEffectCountsPayload>(
+    (acc, entry) => ({ ...acc, [entry.key]: entry.count }),
+    {
+      dealDamage: 0,
+      restoreLifePartyMember: 0,
+      restoreLifeAllPartyMembers: 0,
+      applyBeneficialStatuses: 0,
+      removeDetrimentalStatuses: 0,
+    }
+  );
+
+  return {
+    dealDamage: String(counts.dealDamage),
+    restoreLifePartyMember: String(counts.restoreLifePartyMember),
+    restoreLifeAllPartyMembers: String(counts.restoreLifeAllPartyMembers),
+    applyBeneficialStatuses: String(counts.applyBeneficialStatuses),
+    removeDetrimentalStatuses: String(counts.removeDetrimentalStatuses),
+  };
+};
+
+const parseBulkEffectCounts = (counts: BulkEffectCountsForm): BulkEffectCountsPayload => ({
+  dealDamage: Math.max(0, parseIntSafe(counts.dealDamage, 0)),
+  restoreLifePartyMember: Math.max(0, parseIntSafe(counts.restoreLifePartyMember, 0)),
+  restoreLifeAllPartyMembers: Math.max(0, parseIntSafe(counts.restoreLifeAllPartyMembers, 0)),
+  applyBeneficialStatuses: Math.max(0, parseIntSafe(counts.applyBeneficialStatuses, 0)),
+  removeDetrimentalStatuses: Math.max(0, parseIntSafe(counts.removeDetrimentalStatuses, 0)),
+});
 
 const parseStatusTemplate = (
   template: SpellStatusTemplateForm
@@ -232,12 +301,16 @@ export const Spells = () => {
   const [form, setForm] = useState<SpellFormState>(emptyForm());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [bulkAbilityCount, setBulkAbilityCount] = useState('8');
+  const [bulkAbilityCount, setBulkAbilityCount] = useState(DEFAULT_BULK_ABILITY_COUNT);
+  const [bulkAbilityTargetLevel, setBulkAbilityTargetLevel] = useState('25');
   const [bulkAbilityType, setBulkAbilityType] = useState<'spell' | 'technique'>('spell');
   const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
   const [bulkAbilityJob, setBulkAbilityJob] = useState<BulkAbilityStatus | null>(null);
   const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
   const [bulkAbilityMessage, setBulkAbilityMessage] = useState<string | null>(null);
+  const [bulkEffectCounts, setBulkEffectCounts] = useState<BulkEffectCountsForm>(
+    buildSuggestedBulkEffectCounts(parseIntSafe(DEFAULT_BULK_ABILITY_COUNT, 8))
+  );
 
   const load = useCallback(async (suppressLoading = false) => {
     try {
@@ -441,6 +514,17 @@ export const Spells = () => {
       setBulkAbilityError('Count must be between 1 and 100.');
       return;
     }
+    const targetLevel = Number.parseInt(bulkAbilityTargetLevel, 10);
+    if (!Number.isFinite(targetLevel) || targetLevel < 1 || targetLevel > 100) {
+      setBulkAbilityError('Target level must be between 1 and 100.');
+      return;
+    }
+    const effectCounts = parseBulkEffectCounts(bulkEffectCounts);
+    const totalConfiguredCount = Object.values(effectCounts).reduce((sum, value) => sum + value, 0);
+    if (totalConfiguredCount !== count) {
+      setBulkAbilityError(`Effect counts must add up to ${count}.`);
+      return;
+    }
 
     try {
       setBulkAbilityBusy(true);
@@ -455,6 +539,8 @@ export const Spells = () => {
       const response = await apiClient.post<BulkAbilityStatus>(path, {
         count,
         abilityType: bulkAbilityType,
+        targetLevel,
+        effectCounts,
       });
       setBulkAbilityJob(response);
       if (response.status === 'completed') {
@@ -496,6 +582,15 @@ export const Spells = () => {
     }
   };
 
+  const configuredEffectCountTotal = useMemo(
+    () =>
+      Object.values(parseBulkEffectCounts(bulkEffectCounts)).reduce(
+        (sum, value) => sum + value,
+        0
+      ),
+    [bulkEffectCounts]
+  );
+
   useEffect(() => {
     if (!bulkAbilityJob?.jobId) {
       return;
@@ -531,6 +626,16 @@ export const Spells = () => {
                 className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
                 aria-label="Bulk ability count"
               />
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={bulkAbilityTargetLevel}
+                onChange={(e) => setBulkAbilityTargetLevel(e.target.value)}
+                className="w-28 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk ability target level"
+                placeholder="Target lvl"
+              />
               <select
                 className="rounded-md border border-gray-300 px-2 py-2 text-sm"
                 value={bulkAbilityType}
@@ -553,6 +658,104 @@ export const Spells = () => {
               </button>
             </div>
           </div>
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+            <label className="text-xs text-gray-600">
+              Deal Damage Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.dealDamage}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({ ...prev, dealDamage: e.target.value }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Heal One Ally Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.restoreLifePartyMember}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    restoreLifePartyMember: e.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Heal All Allies Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.restoreLifeAllPartyMembers}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    restoreLifeAllPartyMembers: e.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Apply Buff Status Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.applyBeneficialStatuses}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    applyBeneficialStatuses: e.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              Remove Debuffs Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.removeDetrimentalStatuses}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    removeDetrimentalStatuses: e.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Configure exact counts per effect type. Total configured must equal the bulk count.
+          </p>
+          <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
+            <span>
+              Configured: {configuredEffectCountTotal}/{Number.parseInt(bulkAbilityCount, 10) || 0}
+            </span>
+            <button
+              className="qa-btn qa-btn-secondary"
+              onClick={() =>
+                setBulkEffectCounts(
+                  buildSuggestedBulkEffectCounts(Math.max(1, Number.parseInt(bulkAbilityCount, 10) || 1))
+                )
+              }
+              disabled={bulkAbilityBusy}
+            >
+              Auto-Fill Counts
+            </button>
+          </div>
           {bulkAbilityJob && (
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
               <span className="font-semibold uppercase tracking-wide">
@@ -561,6 +764,9 @@ export const Spells = () => {
               <span>
                 Type: {bulkAbilityJob.abilityType === 'technique' ? 'Technique' : 'Spell'}
               </span>
+              {typeof bulkAbilityJob.targetLevel === 'number' ? (
+                <span>Target Level: {bulkAbilityJob.targetLevel}</span>
+              ) : null}
               <span>
                 Progress: {bulkAbilityJob.createdCount}/{bulkAbilityJob.totalCount}
               </span>

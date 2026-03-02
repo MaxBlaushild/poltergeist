@@ -53,8 +53,12 @@ type castSpellHealResult struct {
 }
 
 type bulkGenerateSpellsRequest struct {
-	Count       int    `json:"count"`
-	AbilityType string `json:"abilityType"`
+	Count        int                         `json:"count"`
+	AbilityType  string                      `json:"abilityType"`
+	TargetLevel  *int                        `json:"targetLevel"`
+	EffectCounts *jobs.SpellBulkEffectCounts `json:"effectCounts"`
+	// Deprecated: retained for backward compatibility with older clients.
+	EffectMix *jobs.SpellBulkEffectCounts `json:"effectMix"`
 }
 
 type generatedAbilityPayload struct {
@@ -203,6 +207,63 @@ func sanitizeGeneratedAbilitySpec(spec jobs.SpellCreationSpec, abilityType model
 	spec.AbilityType = string(abilityType)
 	spec.ManaCost = clampBulkSpellManaCost(spec.ManaCost, abilityType)
 	return spec
+}
+
+func sanitizeBulkAbilityEffectCounts(
+	raw *jobs.SpellBulkEffectCounts,
+	totalCount int,
+) (*jobs.SpellBulkEffectCounts, error) {
+	if raw == nil {
+		return nil, nil
+	}
+
+	sanitized := &jobs.SpellBulkEffectCounts{
+		DealDamage:               raw.DealDamage,
+		RestoreLifePartyMember:   raw.RestoreLifePartyMember,
+		RestoreLifeAllParty:      raw.RestoreLifeAllParty,
+		ApplyBeneficialStatuses:  raw.ApplyBeneficialStatuses,
+		RemoveDetrimentalEffects: raw.RemoveDetrimentalEffects,
+	}
+
+	configuredCounts := []struct {
+		label string
+		value int
+	}{
+		{label: "effectCounts.dealDamage", value: sanitized.DealDamage},
+		{label: "effectCounts.restoreLifePartyMember", value: sanitized.RestoreLifePartyMember},
+		{label: "effectCounts.restoreLifeAllPartyMembers", value: sanitized.RestoreLifeAllParty},
+		{label: "effectCounts.applyBeneficialStatuses", value: sanitized.ApplyBeneficialStatuses},
+		{label: "effectCounts.removeDetrimentalStatuses", value: sanitized.RemoveDetrimentalEffects},
+	}
+
+	total := 0
+	for _, configured := range configuredCounts {
+		if configured.value < 0 {
+			return nil, fmt.Errorf("%s must be greater than or equal to 0", configured.label)
+		}
+		if configured.value > totalCount {
+			return nil, fmt.Errorf("%s must be less than or equal to count", configured.label)
+		}
+		total += configured.value
+	}
+	if total == 0 {
+		return nil, fmt.Errorf("effectCounts must include at least one positive value")
+	}
+	if total != totalCount {
+		return nil, fmt.Errorf("effectCounts must add up to count (%d)", totalCount)
+	}
+	return sanitized, nil
+}
+
+func sanitizeBulkAbilityTargetLevel(raw *int) (*int, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	value := *raw
+	if value < 1 || value > 100 {
+		return nil, fmt.Errorf("targetLevel must be between 1 and 100")
+	}
+	return &value, nil
 }
 
 func formatAbilityNamesForPrompt(names []string) string {
@@ -476,6 +537,20 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		}
 		abilityType = models.NormalizeSpellAbilityType(requestBody.AbilityType)
 	}
+	requestedEffectCounts := requestBody.EffectCounts
+	if requestedEffectCounts == nil {
+		requestedEffectCounts = requestBody.EffectMix
+	}
+	targetLevel, err := sanitizeBulkAbilityTargetLevel(requestBody.TargetLevel)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	effectCounts, err := sanitizeBulkAbilityEffectCounts(requestedEffectCounts, requestBody.Count)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	existingSpells, err := s.dbClient.Spell().FindAll(ctx)
 	if err != nil {
@@ -511,6 +586,9 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		AbilityType:  string(abilityType),
 		TotalCount:   len(spellSpecs),
 		CreatedCount: 0,
+		TargetLevel:  targetLevel,
+		EffectCounts: effectCounts,
+		EffectMix:    effectCounts,
 		QueuedAt:     &queuedAt,
 		UpdatedAt:    queuedAt,
 	}
@@ -520,11 +598,14 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 	}
 
 	payload := jobs.GenerateSpellsBulkTaskPayload{
-		JobID:       jobID,
-		Source:      source,
-		AbilityType: string(abilityType),
-		TotalCount:  len(spellSpecs),
-		Spells:      spellSpecs,
+		JobID:        jobID,
+		Source:       source,
+		AbilityType:  string(abilityType),
+		TotalCount:   len(spellSpecs),
+		TargetLevel:  targetLevel,
+		EffectCounts: effectCounts,
+		EffectMix:    effectCounts,
+		Spells:       spellSpecs,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -550,6 +631,8 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		"abilityType":  status.AbilityType,
 		"totalCount":   status.TotalCount,
 		"createdCount": status.CreatedCount,
+		"targetLevel":  status.TargetLevel,
+		"effectCounts": status.EffectCounts,
 		"queuedAt":     status.QueuedAt,
 		"updatedAt":    status.UpdatedAt,
 	})

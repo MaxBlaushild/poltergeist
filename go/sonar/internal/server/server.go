@@ -184,9 +184,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getInventoryItem))
 	r.POST("/sonar/inventory-items", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createInventoryItem))
 	r.POST("/sonar/inventory-items/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItem))
+	r.POST("/sonar/inventory-items/generate-equippable-set", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateEquippableInventorySet))
+	r.POST("/sonar/inventory-items/:id/generate-consumable-qualities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateConsumableQualities))
+	r.POST("/sonar/inventory-items/:id/generate-set", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateInventoryItemSet))
 	r.POST("/sonar/inventory-items/:id/regenerate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.regenerateInventoryItemImage))
 	r.PUT("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateInventoryItem))
 	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
+	r.POST("/sonar/inventory-items/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteInventoryItems))
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
 	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
 	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
@@ -7091,6 +7095,1233 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, item)
 }
 
+func (s *server) generateInventoryItemSet(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	sourceItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if sourceItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+	if sourceItem.EquipSlot == nil || strings.TrimSpace(*sourceItem.EquipSlot) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source item must be equippable"})
+		return
+	}
+
+	sourceSlot := normalizeInventorySetSlot(*sourceItem.EquipSlot)
+	if !models.IsValidInventoryEquipSlot(sourceSlot) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source item has invalid equip slot"})
+		return
+	}
+
+	setTheme := inventorySetThemeFromName(sourceItem.Name)
+	profile := deriveInventorySetProfile(sourceItem)
+	targetSlots := inventorySetTargetSlots(sourceSlot)
+
+	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	existingKeys := make(map[string]struct{}, len(existingItems))
+	for _, existing := range existingItems {
+		if existing.EquipSlot == nil || strings.TrimSpace(*existing.EquipSlot) == "" {
+			continue
+		}
+		existingKeys[inventorySetItemKey(normalizeInventorySetSlot(*existing.EquipSlot), existing.Name)] = struct{}{}
+	}
+
+	createdItems := make([]models.InventoryItem, 0, len(targetSlots))
+	skippedSlots := make([]string, 0)
+	enqueueWarnings := make([]string, 0)
+	for _, slot := range targetSlots {
+		name, handCategory := inventorySetItemName(sourceItem, setTheme, slot, profile)
+		itemKey := inventorySetItemKey(slot, name)
+		if _, exists := existingKeys[itemKey]; exists {
+			skippedSlots = append(skippedSlots, slot)
+			continue
+		}
+
+		strengthMod, dexterityMod, constitutionMod, intelligenceMod, wisdomMod, charismaMod := inventorySetScaledStats(sourceItem, slot, profile)
+
+		item := &models.InventoryItem{
+			Name:                    name,
+			FlavorText:              inventorySetFlavorText(setTheme, slot, handCategory),
+			EffectText:              "",
+			RarityTier:              sourceItem.RarityTier,
+			IsCaptureType:           false,
+			SellValue:               cloneIntPtr(sourceItem.SellValue),
+			UnlockTier:              cloneIntPtr(sourceItem.UnlockTier),
+			EquipSlot:               stringPtr(slot),
+			StrengthMod:             strengthMod,
+			DexterityMod:            dexterityMod,
+			ConstitutionMod:         constitutionMod,
+			IntelligenceMod:         intelligenceMod,
+			WisdomMod:               wisdomMod,
+			CharismaMod:             charismaMod,
+			ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
+			ConsumeStatusesToRemove: models.StringArray{},
+			ConsumeSpellIDs:         models.StringArray{},
+			ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
+		}
+
+		if models.IsHandEquipSlot(slot) {
+			attrs, handErr := inventorySetHandAttributesForSlot(sourceItem, slot, profile)
+			if handErr != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": handErr.Error()})
+				return
+			}
+			item.HandItemCategory = attrs.HandItemCategory
+			item.Handedness = attrs.Handedness
+			item.DamageMin = attrs.DamageMin
+			item.DamageMax = attrs.DamageMax
+			item.SwipesPerAttack = attrs.SwipesPerAttack
+			item.BlockPercentage = attrs.BlockPercentage
+			item.DamageBlocked = attrs.DamageBlocked
+			item.SpellDamageBonusPercent = attrs.SpellDamageBonusPercent
+		}
+
+		resolvedHandCategory := handCategory
+		if item.HandItemCategory != nil {
+			resolvedHandCategory = *item.HandItemCategory
+		}
+		item.EffectText = inventorySetEffectText(item, resolvedHandCategory)
+
+		if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create set item: " + err.Error()})
+			return
+		}
+
+		if err := s.enqueueInventoryItemImageGeneration(ctx, item.ID, item.Name, item.FlavorText, item.RarityTier); err != nil {
+			enqueueWarnings = append(enqueueWarnings, fmt.Sprintf("%s: %s", item.Name, err.Error()))
+		}
+
+		createdItems = append(createdItems, *item)
+		existingKeys[itemKey] = struct{}{}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"sourceItemId":    sourceItem.ID,
+		"setTheme":        setTheme,
+		"createdItems":    createdItems,
+		"skippedSlots":    skippedSlots,
+		"enqueueWarnings": enqueueWarnings,
+		"message":         fmt.Sprintf("created %d set item(s)", len(createdItems)),
+	})
+}
+
+func normalizeInventorySetStatKey(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "strength":
+		return "strength"
+	case "dexterity":
+		return "dexterity"
+	case "constitution":
+		return "constitution"
+	case "intelligence":
+		return "intelligence"
+	case "wisdom":
+		return "wisdom"
+	case "charisma":
+		return "charisma"
+	default:
+		return ""
+	}
+}
+
+func inventorySetStatDisplayName(key string) string {
+	switch normalizeInventorySetStatKey(key) {
+	case "strength":
+		return "Strength"
+	case "dexterity":
+		return "Dexterity"
+	case "constitution":
+		return "Constitution"
+	case "intelligence":
+		return "Intelligence"
+	case "wisdom":
+		return "Wisdom"
+	case "charisma":
+		return "Charisma"
+	default:
+		return "Unknown"
+	}
+}
+
+func inventorySetThemeFromStats(majorStat string, minorStat string, targetLevel int) string {
+	prefix := "Apprentice"
+	switch {
+	case targetLevel >= 80:
+		prefix = "Ascendant"
+	case targetLevel >= 55:
+		prefix = "Paragon"
+	case targetLevel >= 30:
+		prefix = "Vanguard"
+	}
+
+	major := inventorySetStatDisplayName(majorStat)
+	minor := inventorySetStatDisplayName(minorStat)
+	if minor == "Unknown" || major == minor {
+		return fmt.Sprintf("%s %s", prefix, major)
+	}
+	return fmt.Sprintf("%s %s %s", prefix, major, minor)
+}
+
+func inventorySetRarityForTargetLevel(targetLevel int) string {
+	switch {
+	case targetLevel >= 80:
+		return "Mythic"
+	case targetLevel >= 55:
+		return "Epic"
+	case targetLevel >= 30:
+		return "Uncommon"
+	default:
+		return "Common"
+	}
+}
+
+func inventorySetPrimaryStatPointsForTargetLevel(targetLevel int) int {
+	level := targetLevel
+	if level < 1 {
+		level = 1
+	}
+	if level > 100 {
+		level = 100
+	}
+	points := int(math.Round(2 + (float64(level) * 0.18)))
+	return maxInt(2, points)
+}
+
+func setInventoryStatValue(item *models.InventoryItem, stat string, value int) {
+	if item == nil {
+		return
+	}
+	switch normalizeInventorySetStatKey(stat) {
+	case "strength":
+		item.StrengthMod = value
+	case "dexterity":
+		item.DexterityMod = value
+	case "constitution":
+		item.ConstitutionMod = value
+	case "intelligence":
+		item.IntelligenceMod = value
+	case "wisdom":
+		item.WisdomMod = value
+	case "charisma":
+		item.CharismaMod = value
+	}
+}
+
+func inventorySetAllEquippableSlots() []string {
+	return []string{
+		string(models.EquipmentSlotHat),
+		string(models.EquipmentSlotNecklace),
+		string(models.EquipmentSlotChest),
+		string(models.EquipmentSlotLegs),
+		string(models.EquipmentSlotShoes),
+		string(models.EquipmentSlotGloves),
+		string(models.EquipmentSlotDominantHand),
+		string(models.EquipmentSlotOffHand),
+		string(models.EquipmentSlotRing),
+	}
+}
+
+func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
+	var requestBody struct {
+		TargetLevel int    `json:"targetLevel" binding:"required"`
+		MajorStat   string `json:"majorStat" binding:"required"`
+		MinorStat   string `json:"minorStat" binding:"required"`
+		SetTheme    string `json:"setTheme"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if requestBody.TargetLevel < 1 || requestBody.TargetLevel > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetLevel must be between 1 and 100"})
+		return
+	}
+
+	majorStat := normalizeInventorySetStatKey(requestBody.MajorStat)
+	minorStat := normalizeInventorySetStatKey(requestBody.MinorStat)
+	if majorStat == "" || minorStat == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "majorStat and minorStat must be one of: strength, dexterity, constitution, intelligence, wisdom, charisma",
+		})
+		return
+	}
+	if majorStat == minorStat {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "majorStat and minorStat must be different"})
+		return
+	}
+
+	setTheme := strings.TrimSpace(requestBody.SetTheme)
+	if setTheme == "" {
+		setTheme = inventorySetThemeFromStats(majorStat, minorStat, requestBody.TargetLevel)
+	}
+	rarity := inventorySetRarityForTargetLevel(requestBody.TargetLevel)
+	majorPoints := inventorySetPrimaryStatPointsForTargetLevel(requestBody.TargetLevel)
+	minorPoints := maxInt(1, int(math.Round(float64(majorPoints)*0.6)))
+
+	sourceItem := &models.InventoryItem{
+		Name:                    fmt.Sprintf("%s Core", setTheme),
+		RarityTier:              rarity,
+		IsCaptureType:           false,
+		UnlockTier:              intPtr(requestBody.TargetLevel),
+		EquipSlot:               stringPtr(string(models.EquipmentSlotChest)),
+		ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
+		ConsumeStatusesToRemove: models.StringArray{},
+		ConsumeSpellIDs:         models.StringArray{},
+	}
+	setInventoryStatValue(sourceItem, majorStat, majorPoints)
+	setInventoryStatValue(sourceItem, minorStat, minorPoints)
+
+	profile := deriveInventorySetProfile(sourceItem)
+	targetSlots := inventorySetAllEquippableSlots()
+
+	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	existingKeys := make(map[string]struct{}, len(existingItems))
+	for _, existing := range existingItems {
+		if existing.EquipSlot == nil || strings.TrimSpace(*existing.EquipSlot) == "" {
+			continue
+		}
+		existingKeys[inventorySetItemKey(normalizeInventorySetSlot(*existing.EquipSlot), existing.Name)] = struct{}{}
+	}
+
+	createdItems := make([]models.InventoryItem, 0, len(targetSlots))
+	skippedSlots := make([]string, 0)
+	enqueueWarnings := make([]string, 0)
+	for _, slot := range targetSlots {
+		name, handCategory := inventorySetItemName(sourceItem, setTheme, slot, profile)
+		itemKey := inventorySetItemKey(slot, name)
+		if _, exists := existingKeys[itemKey]; exists {
+			skippedSlots = append(skippedSlots, slot)
+			continue
+		}
+
+		strengthMod, dexterityMod, constitutionMod, intelligenceMod, wisdomMod, charismaMod := inventorySetScaledStats(sourceItem, slot, profile)
+
+		item := &models.InventoryItem{
+			Name:                    name,
+			FlavorText:              inventorySetFlavorText(setTheme, slot, handCategory),
+			EffectText:              "",
+			RarityTier:              rarity,
+			IsCaptureType:           false,
+			UnlockTier:              intPtr(requestBody.TargetLevel),
+			EquipSlot:               stringPtr(slot),
+			StrengthMod:             strengthMod,
+			DexterityMod:            dexterityMod,
+			ConstitutionMod:         constitutionMod,
+			IntelligenceMod:         intelligenceMod,
+			WisdomMod:               wisdomMod,
+			CharismaMod:             charismaMod,
+			ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
+			ConsumeStatusesToRemove: models.StringArray{},
+			ConsumeSpellIDs:         models.StringArray{},
+			ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
+		}
+
+		if models.IsHandEquipSlot(slot) {
+			attrs, handErr := inventorySetHandAttributesForSlot(sourceItem, slot, profile)
+			if handErr != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": handErr.Error()})
+				return
+			}
+			item.HandItemCategory = attrs.HandItemCategory
+			item.Handedness = attrs.Handedness
+			item.DamageMin = attrs.DamageMin
+			item.DamageMax = attrs.DamageMax
+			item.SwipesPerAttack = attrs.SwipesPerAttack
+			item.BlockPercentage = attrs.BlockPercentage
+			item.DamageBlocked = attrs.DamageBlocked
+			item.SpellDamageBonusPercent = attrs.SpellDamageBonusPercent
+		}
+
+		resolvedHandCategory := handCategory
+		if item.HandItemCategory != nil {
+			resolvedHandCategory = *item.HandItemCategory
+		}
+		item.EffectText = inventorySetEffectText(item, resolvedHandCategory)
+
+		if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create set item: " + err.Error()})
+			return
+		}
+
+		if err := s.enqueueInventoryItemImageGeneration(ctx, item.ID, item.Name, item.FlavorText, item.RarityTier); err != nil {
+			enqueueWarnings = append(enqueueWarnings, fmt.Sprintf("%s: %s", item.Name, err.Error()))
+		}
+
+		createdItems = append(createdItems, *item)
+		existingKeys[itemKey] = struct{}{}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"setTheme":        setTheme,
+		"targetLevel":     requestBody.TargetLevel,
+		"majorStat":       majorStat,
+		"minorStat":       minorStat,
+		"createdItems":    createdItems,
+		"skippedSlots":    skippedSlots,
+		"enqueueWarnings": enqueueWarnings,
+		"message":         fmt.Sprintf("created %d equippable set item(s)", len(createdItems)),
+	})
+}
+
+type consumableQualityConfig struct {
+	Label              string
+	LevelMin           int
+	LevelMax           int
+	PowerMultiplier    float64
+	DurationMultiplier float64
+	DefaultRarity      string
+}
+
+var consumableQualityConfigs = []consumableQualityConfig{
+	{Label: "Minor", LevelMin: 1, LevelMax: 15, PowerMultiplier: 1.0, DurationMultiplier: 1.0, DefaultRarity: "Common"},
+	{Label: "Lesser", LevelMin: 16, LevelMax: 30, PowerMultiplier: 1.8, DurationMultiplier: 1.4, DefaultRarity: "Common"},
+	{Label: "Greater", LevelMin: 31, LevelMax: 50, PowerMultiplier: 3.0, DurationMultiplier: 2.0, DefaultRarity: "Uncommon"},
+	{Label: "Major", LevelMin: 51, LevelMax: 70, PowerMultiplier: 5.0, DurationMultiplier: 3.0, DefaultRarity: "Epic"},
+	{Label: "Superior", LevelMin: 71, LevelMax: 85, PowerMultiplier: 7.5, DurationMultiplier: 4.2, DefaultRarity: "Epic"},
+	{Label: "Superb", LevelMin: 86, LevelMax: 100, PowerMultiplier: 10.5, DurationMultiplier: 5.8, DefaultRarity: "Mythic"},
+}
+
+func (s *server) generateConsumableQualities(ctx *gin.Context) {
+	idStr := ctx.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory item ID"})
+		return
+	}
+
+	sourceItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if sourceItem == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+		return
+	}
+	if sourceItem.EquipSlot != nil && strings.TrimSpace(*sourceItem.EquipSlot) != "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source item must be a non-equippable consumable"})
+		return
+	}
+	if !inventoryItemHasConsumableEffects(sourceItem) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "source item has no consumable effects to scale"})
+		return
+	}
+
+	sourceQualityLabel, baseName, hasQuality := parseConsumableQualityAndBaseName(sourceItem.Name)
+	if !hasQuality {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "source item name must include a quality prefix like 'Minor'",
+		})
+		return
+	}
+	if strings.ToLower(sourceQualityLabel) != "minor" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "source consumable must start with 'Minor' to generate full quality progression",
+		})
+		return
+	}
+
+	sourceQuality, ok := findConsumableQualityConfig(sourceQualityLabel)
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unsupported source consumable quality"})
+		return
+	}
+
+	existingItems, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	existingNames := make(map[string]struct{}, len(existingItems))
+	for _, existing := range existingItems {
+		existingNames[strings.ToLower(strings.TrimSpace(existing.Name))] = struct{}{}
+	}
+
+	createdItems := make([]models.InventoryItem, 0, len(consumableQualityConfigs))
+	skippedQualities := make([]string, 0)
+	enqueueWarnings := make([]string, 0)
+
+	for _, quality := range consumableQualityConfigs {
+		itemName := fmt.Sprintf("%s %s", quality.Label, baseName)
+		normalizedName := strings.ToLower(strings.TrimSpace(itemName))
+		if _, exists := existingNames[normalizedName]; exists {
+			skippedQualities = append(skippedQualities, quality.Label)
+			continue
+		}
+
+		powerScale := quality.PowerMultiplier / sourceQuality.PowerMultiplier
+		durationScale := quality.DurationMultiplier / sourceQuality.DurationMultiplier
+
+		statusesToAdd := scaleConsumableStatuses(sourceItem.ConsumeStatusesToAdd, powerScale, durationScale)
+		consumeHealthDelta := scaleConsumableValue(sourceItem.ConsumeHealthDelta, powerScale)
+		consumeManaDelta := scaleConsumableValue(sourceItem.ConsumeManaDelta, powerScale)
+
+		item := &models.InventoryItem{
+			Name:                    itemName,
+			ImageURL:                "",
+			FlavorText:              buildConsumableQualityFlavorText(baseName, quality),
+			EffectText:              buildConsumableQualityEffectText(baseName, quality, consumeHealthDelta, consumeManaDelta, statusesToAdd, sourceItem.ConsumeStatusesToRemove),
+			RarityTier:              selectConsumableQualityRarity(sourceItem.RarityTier, quality.DefaultRarity),
+			IsCaptureType:           false,
+			SellValue:               scaleConsumableOptionalInt(sourceItem.SellValue, powerScale),
+			UnlockTier:              scaleConsumableOptionalInt(sourceItem.UnlockTier, math.Max(1.0, powerScale*0.5)),
+			EquipSlot:               nil,
+			StrengthMod:             0,
+			DexterityMod:            0,
+			ConstitutionMod:         0,
+			IntelligenceMod:         0,
+			WisdomMod:               0,
+			CharismaMod:             0,
+			HandItemCategory:        nil,
+			Handedness:              nil,
+			DamageMin:               nil,
+			DamageMax:               nil,
+			SwipesPerAttack:         nil,
+			BlockPercentage:         nil,
+			DamageBlocked:           nil,
+			SpellDamageBonusPercent: nil,
+			ConsumeHealthDelta:      consumeHealthDelta,
+			ConsumeManaDelta:        consumeManaDelta,
+			ConsumeStatusesToAdd:    statusesToAdd,
+			ConsumeStatusesToRemove: sourceItem.ConsumeStatusesToRemove,
+			ConsumeSpellIDs:         sourceItem.ConsumeSpellIDs,
+			ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
+		}
+
+		if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create consumable quality item: " + err.Error()})
+			return
+		}
+
+		if err := s.enqueueInventoryItemImageGeneration(ctx, item.ID, item.Name, item.FlavorText, item.RarityTier); err != nil {
+			enqueueWarnings = append(enqueueWarnings, fmt.Sprintf("%s: %s", item.Name, err.Error()))
+		}
+
+		createdItems = append(createdItems, *item)
+		existingNames[normalizedName] = struct{}{}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"sourceItemId":     sourceItem.ID,
+		"baseName":         baseName,
+		"createdItems":     createdItems,
+		"skippedQualities": skippedQualities,
+		"enqueueWarnings":  enqueueWarnings,
+		"message":          fmt.Sprintf("created %d consumable quality item(s)", len(createdItems)),
+	})
+}
+
+func inventoryItemHasConsumableEffects(item *models.InventoryItem) bool {
+	if item == nil {
+		return false
+	}
+	if item.ConsumeHealthDelta != 0 || item.ConsumeManaDelta != 0 {
+		return true
+	}
+	if len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0 || len(item.ConsumeSpellIDs) > 0 {
+		return true
+	}
+	return false
+}
+
+func parseConsumableQualityAndBaseName(name string) (string, string, bool) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", "", false
+	}
+
+	for _, quality := range consumableQualityConfigs {
+		prefix := strings.ToLower(quality.Label + " ")
+		if strings.HasPrefix(strings.ToLower(trimmed), prefix) {
+			baseName := strings.TrimSpace(trimmed[len(prefix):])
+			if baseName == "" {
+				return "", "", false
+			}
+			return quality.Label, baseName, true
+		}
+	}
+
+	return "", "", false
+}
+
+func findConsumableQualityConfig(label string) (consumableQualityConfig, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(label))
+	for _, quality := range consumableQualityConfigs {
+		if strings.ToLower(quality.Label) == normalized {
+			return quality, true
+		}
+	}
+	return consumableQualityConfig{}, false
+}
+
+func scaleConsumableValue(value int, multiplier float64) int {
+	if value == 0 {
+		return 0
+	}
+	scaled := int(math.Round(float64(value) * multiplier))
+	if scaled == 0 {
+		if value > 0 {
+			return 1
+		}
+		return -1
+	}
+	return scaled
+}
+
+func scaleConsumableOptionalInt(value *int, multiplier float64) *int {
+	if value == nil {
+		return nil
+	}
+	scaled := scaleConsumableValue(*value, multiplier)
+	if scaled < 0 {
+		scaled = 0
+	}
+	return &scaled
+}
+
+func scaleConsumableStatuses(
+	statuses models.ScenarioFailureStatusTemplates,
+	powerMultiplier float64,
+	durationMultiplier float64,
+) models.ScenarioFailureStatusTemplates {
+	if len(statuses) == 0 {
+		return models.ScenarioFailureStatusTemplates{}
+	}
+
+	scaled := make(models.ScenarioFailureStatusTemplates, 0, len(statuses))
+	for _, status := range statuses {
+		next := status
+		if next.DurationSeconds > 0 {
+			next.DurationSeconds = maxInt(1, int(math.Round(float64(next.DurationSeconds)*durationMultiplier)))
+		}
+		next.DamagePerTick = scaleConsumableValue(next.DamagePerTick, powerMultiplier)
+		next.StrengthMod = scaleConsumableValue(next.StrengthMod, powerMultiplier)
+		next.DexterityMod = scaleConsumableValue(next.DexterityMod, powerMultiplier)
+		next.ConstitutionMod = scaleConsumableValue(next.ConstitutionMod, powerMultiplier)
+		next.IntelligenceMod = scaleConsumableValue(next.IntelligenceMod, powerMultiplier)
+		next.WisdomMod = scaleConsumableValue(next.WisdomMod, powerMultiplier)
+		next.CharismaMod = scaleConsumableValue(next.CharismaMod, powerMultiplier)
+		scaled = append(scaled, next)
+	}
+	return scaled
+}
+
+func buildConsumableQualityFlavorText(baseName string, quality consumableQualityConfig) string {
+	return fmt.Sprintf(
+		"A %s-grade %s, expertly refined for demanding journeys.",
+		strings.ToLower(quality.Label),
+		strings.ToLower(strings.TrimSpace(baseName)),
+	)
+}
+
+func buildConsumableQualityEffectText(
+	baseName string,
+	quality consumableQualityConfig,
+	healthDelta int,
+	manaDelta int,
+	statuses models.ScenarioFailureStatusTemplates,
+	statusesToRemove []string,
+) string {
+	effects := make([]string, 0, 5)
+	if healthDelta != 0 {
+		effects = append(effects, fmt.Sprintf("Health %+d", healthDelta))
+	}
+	if manaDelta != 0 {
+		effects = append(effects, fmt.Sprintf("Mana %+d", manaDelta))
+	}
+	if len(statuses) > 0 {
+		effects = append(effects, fmt.Sprintf("Bestows %d scaled status effect(s)", len(statuses)))
+	}
+	if len(statusesToRemove) > 0 {
+		effects = append(effects, fmt.Sprintf("Removes %d status effect(s)", len(statusesToRemove)))
+	}
+	if len(effects) == 0 {
+		effects = append(effects, "General consumable utility")
+	}
+
+	return fmt.Sprintf(
+		"%s quality. %s.",
+		quality.Label,
+		strings.Join(effects, ". "),
+	)
+}
+
+func selectConsumableQualityRarity(sourceRarity string, targetDefault string) string {
+	normalize := func(value string) string {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "common":
+			return "Common"
+		case "uncommon":
+			return "Uncommon"
+		case "epic":
+			return "Epic"
+		case "mythic":
+			return "Mythic"
+		case "not droppable":
+			return "Not Droppable"
+		default:
+			return "Common"
+		}
+	}
+	rank := map[string]int{
+		"Common":        1,
+		"Uncommon":      2,
+		"Epic":          3,
+		"Mythic":        4,
+		"Not Droppable": 5,
+	}
+
+	normalizedSource := normalize(sourceRarity)
+	normalizedTarget := normalize(targetDefault)
+	if rank[normalizedSource] > rank[normalizedTarget] {
+		return normalizedSource
+	}
+	return normalizedTarget
+}
+
+func enqueueInventoryItemImageTaskPayload(inventoryItemID int, name string, description string, rarityTier string) ([]byte, error) {
+	payload := jobs.GenerateInventoryItemImageTaskPayload{
+		InventoryItemID: inventoryItemID,
+		Name:            name,
+		Description:     description,
+		RarityTier:      rarityTier,
+	}
+	return json.Marshal(payload)
+}
+
+func (s *server) enqueueInventoryItemImageGeneration(
+	ctx context.Context,
+	inventoryItemID int,
+	name string,
+	description string,
+	rarityTier string,
+) error {
+	payloadBytes, err := enqueueInventoryItemImageTaskPayload(inventoryItemID, name, description, rarityTier)
+	if err != nil {
+		return err
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateInventoryItemImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		_ = s.dbClient.InventoryItem().UpdateInventoryItem(ctx, inventoryItemID, map[string]interface{}{
+			"image_generation_status": models.InventoryImageGenerationStatusFailed,
+			"image_generation_error":  errMsg,
+		})
+		return err
+	}
+	return nil
+}
+
+func inventorySetTargetSlots(sourceSlot string) []string {
+	allSlots := []string{
+		string(models.EquipmentSlotHat),
+		string(models.EquipmentSlotNecklace),
+		string(models.EquipmentSlotChest),
+		string(models.EquipmentSlotLegs),
+		string(models.EquipmentSlotShoes),
+		string(models.EquipmentSlotGloves),
+		string(models.EquipmentSlotDominantHand),
+		string(models.EquipmentSlotOffHand),
+		string(models.EquipmentSlotRing),
+	}
+	targets := make([]string, 0, len(allSlots))
+	for _, slot := range allSlots {
+		if slot == sourceSlot {
+			continue
+		}
+		targets = append(targets, slot)
+	}
+	return targets
+}
+
+func normalizeInventorySetSlot(slot string) string {
+	normalized := strings.ToLower(strings.TrimSpace(slot))
+	switch normalized {
+	case string(models.EquipmentSlotRingLeft), string(models.EquipmentSlotRingRight):
+		return string(models.EquipmentSlotRing)
+	default:
+		return normalized
+	}
+}
+
+func inventorySetItemKey(slot string, name string) string {
+	return strings.ToLower(strings.TrimSpace(slot)) + "|" + strings.ToLower(strings.TrimSpace(name))
+}
+
+func inventorySetThemeFromName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "Forged"
+	}
+
+	parts := strings.Fields(trimmed)
+	if len(parts) <= 1 {
+		return trimmed
+	}
+
+	descriptors := map[string]struct{}{
+		"sword": {}, "blade": {}, "axe": {}, "mace": {}, "hammer": {}, "staff": {}, "wand": {}, "spear": {}, "dagger": {},
+		"shield": {}, "orb": {}, "helm": {}, "hat": {}, "cowl": {}, "necklace": {}, "amulet": {}, "pendant": {},
+		"chestplate": {}, "armor": {}, "plate": {}, "mail": {}, "tunic": {}, "vest": {}, "greaves": {}, "leggings": {},
+		"boots": {}, "shoes": {}, "gauntlets": {}, "gloves": {}, "ring": {},
+	}
+
+	last := strings.ToLower(parts[len(parts)-1])
+	if _, ok := descriptors[last]; ok {
+		candidate := strings.TrimSpace(strings.Join(parts[:len(parts)-1], " "))
+		if candidate != "" {
+			return candidate
+		}
+	}
+
+	candidate := strings.TrimSpace(strings.Join(parts[:len(parts)-1], " "))
+	if candidate == "" {
+		return trimmed
+	}
+	return candidate
+}
+
+func deriveInventorySetProfile(sourceItem *models.InventoryItem) string {
+	if sourceItem == nil {
+		return "martial"
+	}
+
+	if sourceItem.HandItemCategory != nil {
+		switch strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory)) {
+		case string(models.HandItemCategoryStaff), string(models.HandItemCategoryOrb):
+			return "caster"
+		case string(models.HandItemCategoryShield):
+			return "tank"
+		case string(models.HandItemCategoryWeapon):
+			return "martial"
+		}
+	}
+
+	casterScore := sourceItem.IntelligenceMod + sourceItem.WisdomMod
+	if sourceItem.SpellDamageBonusPercent != nil {
+		casterScore += *sourceItem.SpellDamageBonusPercent / 8
+	}
+
+	martialScore := sourceItem.StrengthMod + sourceItem.DexterityMod
+	if sourceItem.DamageMin != nil {
+		martialScore += *sourceItem.DamageMin / 2
+	}
+	if sourceItem.DamageMax != nil {
+		martialScore += *sourceItem.DamageMax / 3
+	}
+
+	tankScore := sourceItem.ConstitutionMod
+	if sourceItem.BlockPercentage != nil {
+		tankScore += *sourceItem.BlockPercentage / 12
+	}
+	if sourceItem.DamageBlocked != nil {
+		tankScore += *sourceItem.DamageBlocked / 3
+	}
+
+	if casterScore >= martialScore && casterScore >= tankScore {
+		return "caster"
+	}
+	if tankScore >= martialScore && tankScore >= casterScore {
+		return "tank"
+	}
+	return "martial"
+}
+
+func inventorySetItemName(sourceItem *models.InventoryItem, theme string, slot string, profile string) (string, string) {
+	switch slot {
+	case string(models.EquipmentSlotHat):
+		return fmt.Sprintf("%s Helm", theme), ""
+	case string(models.EquipmentSlotNecklace):
+		return fmt.Sprintf("%s Amulet", theme), ""
+	case string(models.EquipmentSlotChest):
+		return fmt.Sprintf("%s Chestplate", theme), ""
+	case string(models.EquipmentSlotLegs):
+		return fmt.Sprintf("%s Greaves", theme), ""
+	case string(models.EquipmentSlotShoes):
+		return fmt.Sprintf("%s Boots", theme), ""
+	case string(models.EquipmentSlotGloves):
+		return fmt.Sprintf("%s Gauntlets", theme), ""
+	case string(models.EquipmentSlotRing):
+		return fmt.Sprintf("%s Ring", theme), ""
+	case string(models.EquipmentSlotDominantHand):
+		dominantCategory := inventorySetDominantCategory(sourceItem, profile)
+		if dominantCategory == string(models.HandItemCategoryStaff) {
+			return fmt.Sprintf("%s Staff", theme), dominantCategory
+		}
+		weaponNoun := inventorySetDominantWeaponNoun(sourceItem)
+		return fmt.Sprintf("%s %s", theme, weaponNoun), dominantCategory
+	case string(models.EquipmentSlotOffHand):
+		offHandCategory := inventorySetOffHandCategory(sourceItem, profile)
+		if offHandCategory == string(models.HandItemCategoryOrb) {
+			return fmt.Sprintf("%s Orb", theme), offHandCategory
+		}
+		return fmt.Sprintf("%s Shield", theme), offHandCategory
+	default:
+		return fmt.Sprintf("%s Gear", theme), ""
+	}
+}
+
+func inventorySetDominantWeaponNoun(sourceItem *models.InventoryItem) string {
+	if sourceItem == nil || strings.TrimSpace(sourceItem.Name) == "" {
+		return "Blade"
+	}
+	if sourceItem.EquipSlot != nil &&
+		normalizeInventorySetSlot(*sourceItem.EquipSlot) == string(models.EquipmentSlotDominantHand) &&
+		sourceItem.HandItemCategory != nil &&
+		strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory)) == string(models.HandItemCategoryWeapon) {
+		parts := strings.Fields(strings.TrimSpace(sourceItem.Name))
+		if len(parts) > 1 {
+			return parts[len(parts)-1]
+		}
+	}
+	return "Blade"
+}
+
+func inventorySetDominantCategory(sourceItem *models.InventoryItem, profile string) string {
+	if sourceItem != nil && sourceItem.HandItemCategory != nil {
+		switch strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory)) {
+		case string(models.HandItemCategoryWeapon), string(models.HandItemCategoryStaff):
+			return strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory))
+		case string(models.HandItemCategoryOrb):
+			return string(models.HandItemCategoryStaff)
+		case string(models.HandItemCategoryShield):
+			return string(models.HandItemCategoryWeapon)
+		}
+	}
+	if profile == "caster" {
+		return string(models.HandItemCategoryStaff)
+	}
+	return string(models.HandItemCategoryWeapon)
+}
+
+func inventorySetOffHandCategory(sourceItem *models.InventoryItem, profile string) string {
+	if sourceItem != nil && sourceItem.HandItemCategory != nil {
+		switch strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory)) {
+		case string(models.HandItemCategoryShield), string(models.HandItemCategoryOrb):
+			return strings.ToLower(strings.TrimSpace(*sourceItem.HandItemCategory))
+		case string(models.HandItemCategoryStaff):
+			return string(models.HandItemCategoryOrb)
+		case string(models.HandItemCategoryWeapon):
+			return string(models.HandItemCategoryShield)
+		}
+	}
+	if profile == "caster" {
+		return string(models.HandItemCategoryOrb)
+	}
+	return string(models.HandItemCategoryShield)
+}
+
+func inventorySetHandAttributesForSlot(sourceItem *models.InventoryItem, targetSlot string, profile string) (models.HandEquipmentAttributes, error) {
+	slotPtr := stringPtr(targetSlot)
+	if targetSlot == string(models.EquipmentSlotDominantHand) {
+		category := inventorySetDominantCategory(sourceItem, profile)
+		handedness := string(models.HandednessOneHanded)
+		if category == string(models.HandItemCategoryStaff) {
+			handedness = string(models.HandednessTwoHanded)
+		} else if sourceItem != nil && sourceItem.Handedness != nil && strings.TrimSpace(*sourceItem.Handedness) != "" {
+			handedness = strings.ToLower(strings.TrimSpace(*sourceItem.Handedness))
+		}
+		attrs := generateInventoryItemHandAttributes(sourceItem.RarityTier, category, handedness)
+		return models.NormalizeAndValidateHandEquipment(slotPtr, attrs)
+	}
+
+	category := inventorySetOffHandCategory(sourceItem, profile)
+	attrs := generateInventoryItemHandAttributes(sourceItem.RarityTier, category, string(models.HandednessOneHanded))
+	return models.NormalizeAndValidateHandEquipment(slotPtr, attrs)
+}
+
+func inventorySetFlavorText(theme string, slot string, handCategory string) string {
+	normalizedTheme := strings.TrimSpace(theme)
+	if normalizedTheme == "" {
+		normalizedTheme = "Nameless"
+	}
+
+	switch slot {
+	case string(models.EquipmentSlotDominantHand):
+		if handCategory == string(models.HandItemCategoryStaff) {
+			return fmt.Sprintf("An old %s stave etched with spiraling sigils that answer to steady hands.", normalizedTheme)
+		}
+		return fmt.Sprintf("A battle-forged %s weapon tempered to sing the moment steel meets intent.", normalizedTheme)
+	case string(models.EquipmentSlotOffHand):
+		if handCategory == string(models.HandItemCategoryOrb) {
+			return fmt.Sprintf("A polished %s orb that hums with restrained power between each breath.", normalizedTheme)
+		}
+		return fmt.Sprintf("A weighted %s shield built to turn chaos into rhythm.", normalizedTheme)
+	case string(models.EquipmentSlotHat):
+		return fmt.Sprintf("A crested %s helm worn by scouts who prefer foresight over luck.", normalizedTheme)
+	case string(models.EquipmentSlotNecklace):
+		return fmt.Sprintf("A %s amulet threaded with a quiet ward and a long memory.", normalizedTheme)
+	case string(models.EquipmentSlotChest):
+		return fmt.Sprintf("Layered %s plating shaped to carry impact without losing momentum.", normalizedTheme)
+	case string(models.EquipmentSlotLegs):
+		return fmt.Sprintf("%s greaves articulated for long marches and sudden reversals.", normalizedTheme)
+	case string(models.EquipmentSlotShoes):
+		return fmt.Sprintf("%s boots that favor silent footing and stubborn endurance.", normalizedTheme)
+	case string(models.EquipmentSlotGloves):
+		return fmt.Sprintf("%s gauntlets cut for precision grip when the fight gets messy.", normalizedTheme)
+	case string(models.EquipmentSlotRing):
+		return fmt.Sprintf("A %s ring whose inner rune flickers when resolve is tested.", normalizedTheme)
+	default:
+		return fmt.Sprintf("A %s relic carried by those who finish what they start.", normalizedTheme)
+	}
+}
+
+func inventorySetEffectText(item *models.InventoryItem, handCategory string) string {
+	slot := ""
+	if item != nil && item.EquipSlot != nil {
+		slot = normalizeInventorySetSlot(*item.EquipSlot)
+	}
+
+	parts := []string{inventorySetEffectLead(slot, strings.ToLower(strings.TrimSpace(handCategory)))}
+	if statLean := inventorySetStatLeanText(item); statLean != "" {
+		parts = append(parts, statLean)
+	}
+	return strings.Join(parts, " ")
+}
+
+func inventorySetEffectLead(slot string, handCategory string) string {
+	switch slot {
+	case string(models.EquipmentSlotDominantHand):
+		if handCategory == string(models.HandItemCategoryStaff) {
+			return "Arcane channels converge through its core, turning patient casting into sharper bursts."
+		}
+		return "Its edge favors committed timing, rewarding pressure and clean follow-through."
+	case string(models.EquipmentSlotOffHand):
+		if handCategory == string(models.HandItemCategoryOrb) {
+			return "Ambient mana gathers at its surface, then releases in disciplined surges."
+		}
+		return "Its guard geometry catches incoming force and keeps your stance anchored."
+	case string(models.EquipmentSlotHat):
+		return "Keeps your head clear when the field turns noisy."
+	case string(models.EquipmentSlotNecklace):
+		return "A steady ward that smooths the rough edges of drawn-out encounters."
+	case string(models.EquipmentSlotChest):
+		return "Built to absorb punishment while preserving your forward tempo."
+	case string(models.EquipmentSlotLegs):
+		return "Encourages balanced footwork through pivots, rushes, and recoveries."
+	case string(models.EquipmentSlotShoes):
+		return "Shortens hesitation between decisions and movement."
+	case string(models.EquipmentSlotGloves):
+		return "Improves control at the moment intent becomes action."
+	case string(models.EquipmentSlotRing):
+		return "Subtle runes reinforce whatever fighting style you already trust."
+	default:
+		return "Its craftsmanship favors consistency over spectacle."
+	}
+}
+
+func inventorySetStatLeanText(item *models.InventoryItem) string {
+	if item == nil {
+		return ""
+	}
+
+	type statLean struct {
+		label string
+		value int
+	}
+
+	leans := []statLean{
+		{label: "strength", value: item.StrengthMod},
+		{label: "dexterity", value: item.DexterityMod},
+		{label: "constitution", value: item.ConstitutionMod},
+		{label: "intelligence", value: item.IntelligenceMod},
+		{label: "wisdom", value: item.WisdomMod},
+		{label: "charisma", value: item.CharismaMod},
+	}
+
+	filtered := make([]statLean, 0, len(leans))
+	for _, lean := range leans {
+		if lean.value > 0 {
+			filtered = append(filtered, lean)
+		}
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].value == filtered[j].value {
+			return filtered[i].label < filtered[j].label
+		}
+		return filtered[i].value > filtered[j].value
+	})
+
+	if len(filtered) == 1 {
+		return fmt.Sprintf("Its enchantment leans into %s.", filtered[0].label)
+	}
+
+	return fmt.Sprintf(
+		"Its enchantment leans into %s and %s.",
+		filtered[0].label,
+		filtered[1].label,
+	)
+}
+
+func inventorySetSlotDisplayName(slot string) string {
+	switch slot {
+	case string(models.EquipmentSlotHat):
+		return "the head"
+	case string(models.EquipmentSlotNecklace):
+		return "the neck"
+	case string(models.EquipmentSlotChest):
+		return "the chest"
+	case string(models.EquipmentSlotLegs):
+		return "the legs"
+	case string(models.EquipmentSlotShoes):
+		return "the feet"
+	case string(models.EquipmentSlotGloves):
+		return "the hands"
+	case string(models.EquipmentSlotRing):
+		return "the ring slot"
+	default:
+		return "its slot"
+	}
+}
+
+func inventorySetScaledStats(sourceItem *models.InventoryItem, targetSlot string, profile string) (int, int, int, int, int, int) {
+	sourceStats := []int{
+		sourceItem.StrengthMod,
+		sourceItem.DexterityMod,
+		sourceItem.ConstitutionMod,
+		sourceItem.IntelligenceMod,
+		sourceItem.WisdomMod,
+		sourceItem.CharismaMod,
+	}
+	sourceTotal := 0
+	for _, value := range sourceStats {
+		if value < 0 {
+			sourceTotal += -value
+		} else {
+			sourceTotal += value
+		}
+	}
+
+	scale := inventorySetSlotStatScale(targetSlot)
+	if sourceTotal > 0 {
+		scaled := make([]int, len(sourceStats))
+		for idx, value := range sourceStats {
+			scaled[idx] = int(math.Round(float64(value) * scale))
+		}
+		nonZero := false
+		for _, value := range scaled {
+			if value != 0 {
+				nonZero = true
+				break
+			}
+		}
+		if !nonZero {
+			largestIdx := 0
+			largestAbs := 0
+			for idx, value := range sourceStats {
+				absValue := value
+				if absValue < 0 {
+					absValue = -absValue
+				}
+				if absValue > largestAbs {
+					largestAbs = absValue
+					largestIdx = idx
+				}
+			}
+			if sourceStats[largestIdx] < 0 {
+				scaled[largestIdx] = -1
+			} else {
+				scaled[largestIdx] = 1
+			}
+		}
+		return scaled[0], scaled[1], scaled[2], scaled[3], scaled[4], scaled[5]
+	}
+
+	points := inventorySetDefaultStatPoints(sourceItem.RarityTier, targetSlot)
+	if points <= 0 {
+		return 0, 0, 0, 0, 0, 0
+	}
+
+	switch profile {
+	case "caster":
+		intelligence := maxInt(1, int(math.Ceil(float64(points)*0.55)))
+		wisdom := maxInt(0, points-intelligence)
+		return 0, 0, 0, intelligence, wisdom, 0
+	case "tank":
+		constitution := maxInt(1, int(math.Ceil(float64(points)*0.55)))
+		strength := maxInt(0, points-constitution)
+		return strength, 0, constitution, 0, 0, 0
+	default:
+		strength := maxInt(1, int(math.Ceil(float64(points)*0.55)))
+		dexterity := maxInt(0, points-strength)
+		return strength, dexterity, 0, 0, 0, 0
+	}
+}
+
+func inventorySetSlotStatScale(slot string) float64 {
+	switch slot {
+	case string(models.EquipmentSlotChest):
+		return 1.25
+	case string(models.EquipmentSlotLegs):
+		return 1.05
+	case string(models.EquipmentSlotHat), string(models.EquipmentSlotGloves), string(models.EquipmentSlotShoes):
+		return 0.85
+	case string(models.EquipmentSlotNecklace):
+		return 0.8
+	case string(models.EquipmentSlotRing):
+		return 0.72
+	case string(models.EquipmentSlotDominantHand):
+		return 0.95
+	case string(models.EquipmentSlotOffHand):
+		return 0.88
+	default:
+		return 1.0
+	}
+}
+
+func inventorySetDefaultStatPoints(rarity string, slot string) int {
+	base := 2
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "common":
+		base = 2
+	case "uncommon":
+		base = 4
+	case "epic":
+		base = 7
+	case "mythic":
+		base = 10
+	}
+	return maxInt(1, int(math.Round(float64(base)*inventorySetSlotStatScale(slot))))
+}
+
+func cloneIntPtr(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	v := *value
+	return &v
+}
+
 func generateInventoryItemHandAttributes(rarity string, category string, handedness string) models.HandEquipmentAttributes {
 	normalizedCategory := strings.ToLower(strings.TrimSpace(category))
 	normalizedHandedness := strings.ToLower(strings.TrimSpace(handedness))
@@ -7298,6 +8529,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	// Check if item exists
 	existingItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
 	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -7450,6 +8685,10 @@ func (s *server) deleteInventoryItem(ctx *gin.Context) {
 	// Check if item exists
 	existingItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
 	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "inventory item not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -7464,6 +8703,73 @@ func (s *server) deleteInventoryItem(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "inventory item deleted successfully"})
+}
+
+func (s *server) bulkDeleteInventoryItems(ctx *gin.Context) {
+	var requestBody struct {
+		IDs []int `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	seen := make(map[int]struct{}, len(requestBody.IDs))
+	uniqueIDs := make([]int, 0, len(requestBody.IDs))
+	for _, id := range requestBody.IDs {
+		if id <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid inventory item ID: %d", id),
+			})
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	for _, id := range uniqueIDs {
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, id)
+		if err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusNotFound, gin.H{
+					"error": fmt.Sprintf("inventory item not found: %d", id),
+				})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if item == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{
+				"error": fmt.Sprintf("inventory item not found: %d", id),
+			})
+			return
+		}
+	}
+
+	for _, id := range uniqueIDs {
+		if err := s.dbClient.InventoryItem().DeleteInventoryItem(ctx, id); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to delete inventory item %d: %s", id, err.Error()),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("deleted %d inventory item(s)", len(uniqueIDs)),
+		"deleted": len(uniqueIDs),
+		"ids":     uniqueIDs,
+	})
 }
 
 func (s *server) editTeamName(ctx *gin.Context) {

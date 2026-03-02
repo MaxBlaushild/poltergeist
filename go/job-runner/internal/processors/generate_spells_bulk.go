@@ -30,125 +30,6 @@ func NewGenerateSpellsBulkProcessor(dbClient db.DbClient, redisClient *redis.Cli
 	}
 }
 
-func containsAnyKeyword(haystack string, keywords []string) bool {
-	normalizedHaystack := strings.ToLower(haystack)
-	tokenSet := map[string]struct{}{}
-	for _, token := range strings.FieldsFunc(normalizedHaystack, func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
-	}) {
-		if token == "" {
-			continue
-		}
-		tokenSet[token] = struct{}{}
-	}
-
-	for _, keyword := range keywords {
-		if keyword == "" {
-			continue
-		}
-		normalizedKeyword := strings.ToLower(strings.TrimSpace(keyword))
-		if normalizedKeyword == "" {
-			continue
-		}
-		if strings.Contains(normalizedKeyword, " ") {
-			if strings.Contains(normalizedHaystack, normalizedKeyword) {
-				return true
-			}
-			continue
-		}
-		if _, exists := tokenSet[normalizedKeyword]; exists {
-			return true
-		}
-	}
-	return false
-}
-
-func inferGeneratedAbilityEffects(
-	spec jobs.SpellCreationSpec,
-	abilityType models.SpellAbilityType,
-	manaCost int,
-) models.SpellEffects {
-	text := strings.ToLower(strings.TrimSpace(strings.Join([]string{
-		spec.Name,
-		spec.Description,
-		spec.EffectText,
-		spec.SchoolOfMagic,
-	}, " ")))
-
-	if abilityType == models.SpellAbilityTypeTechnique {
-		damage := 10
-		if containsAnyKeyword(text, []string{"heavy", "crush", "breaker", "slam", "assault"}) {
-			damage = 14
-		}
-		return models.SpellEffects{
-			{
-				Type:   models.SpellEffectTypeDealDamage,
-				Amount: damage,
-			},
-		}
-	}
-
-	if containsAnyKeyword(text, []string{"heal", "renew", "restore", "revive", "recovery", "vital"}) {
-		amount := 12 + (manaCost / 2)
-		if containsAnyKeyword(text, []string{"all", "party", "group", "aura"}) {
-			return models.SpellEffects{
-				{
-					Type:   models.SpellEffectTypeRestoreLifeAllParty,
-					Amount: amount,
-				},
-			}
-		}
-		return models.SpellEffects{
-			{
-				Type:   models.SpellEffectTypeRestoreLifePartyMember,
-				Amount: amount,
-			},
-		}
-	}
-
-	if containsAnyKeyword(text, []string{"ward", "barrier", "guard", "shield", "stance", "fortify"}) {
-		return models.SpellEffects{
-			{
-				Type: models.SpellEffectTypeApplyBeneficialStatus,
-				StatusesToApply: models.ScenarioFailureStatusTemplates{
-					{
-						Name:            "Fortified",
-						Description:     "Hardened guard improves survivability.",
-						Effect:          "Increased constitution and resilience.",
-						Positive:        true,
-						DurationSeconds: 45,
-						ConstitutionMod: 2,
-					},
-				},
-			},
-		}
-	}
-
-	if containsAnyKeyword(text, []string{"cleanse", "purge", "dispel"}) {
-		return models.SpellEffects{
-			{
-				Type: models.SpellEffectTypeRemoveDetrimental,
-				StatusesToRemove: models.StringArray{
-					"poisoned",
-					"burning",
-					"bleeding",
-				},
-			},
-		}
-	}
-
-	damage := 14 + (manaCost / 3)
-	if damage < 10 {
-		damage = 10
-	}
-	return models.SpellEffects{
-		{
-			Type:   models.SpellEffectTypeDealDamage,
-			Amount: damage,
-		},
-	}
-}
-
 func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asynq.Task) error {
 	log.Printf("Processing generate spells bulk task: %v", task.Type())
 
@@ -162,6 +43,10 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 	}
 
 	abilityType := string(models.NormalizeSpellAbilityType(payload.AbilityType))
+	configuredCounts := payload.EffectCounts
+	if configuredCounts == nil {
+		configuredCounts = payload.EffectMix
+	}
 	statusKey := jobs.SpellBulkStatusKey(payload.JobID)
 	now := time.Now().UTC()
 	status := jobs.SpellBulkStatus{
@@ -171,6 +56,9 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		AbilityType:  abilityType,
 		TotalCount:   payload.TotalCount,
 		CreatedCount: 0,
+		TargetLevel:  payload.TargetLevel,
+		EffectCounts: configuredCounts,
+		EffectMix:    configuredCounts,
 		StartedAt:    &now,
 		UpdatedAt:    now,
 	}
@@ -187,6 +75,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		p.markFailed(ctx, statusKey, status, err)
 		return err
 	}
+	configuredEffectPlan := buildConfiguredAbilityEffectPlan(len(payload.Spells), configuredCounts)
 
 	for index, spec := range payload.Spells {
 		name := strings.TrimSpace(spec.Name)
@@ -198,10 +87,6 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 			}
 		}
 		description := strings.TrimSpace(spec.Description)
-		effectText := strings.TrimSpace(spec.EffectText)
-		if effectText == "" {
-			effectText = description
-		}
 		schoolOfMagic := strings.TrimSpace(spec.SchoolOfMagic)
 		if schoolOfMagic == "" {
 			schoolOfMagic = "Arcane"
@@ -214,6 +99,21 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		if abilityType == string(models.SpellAbilityTypeTechnique) {
 			manaCost = 0
 		}
+		preferredEffect := models.SpellEffectType("")
+		if index < len(configuredEffectPlan) {
+			preferredEffect = configuredEffectPlan[index]
+		}
+		effects := inferGeneratedAbilityEffectsWithPreference(
+			spec,
+			models.SpellAbilityType(abilityType),
+			manaCost,
+			preferredEffect,
+			payload.TargetLevel,
+		)
+		effectText := buildGeneratedAbilityEffectText(effects, models.SpellAbilityType(abilityType))
+		if strings.TrimSpace(effectText) == "" {
+			effectText = description
+		}
 		emptyError := ""
 		spell := &models.Spell{
 			Name:                  name,
@@ -222,7 +122,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 			EffectText:            effectText,
 			SchoolOfMagic:         schoolOfMagic,
 			ManaCost:              manaCost,
-			Effects:               inferGeneratedAbilityEffects(spec, models.SpellAbilityType(abilityType), manaCost),
+			Effects:               effects,
 			ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 			ImageGenerationError:  &emptyError,
 		}
