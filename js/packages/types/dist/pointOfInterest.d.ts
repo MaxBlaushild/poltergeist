@@ -11,10 +11,13 @@ export interface PointOfInterest {
     lng: string;
     imageURL: string;
     thumbnailUrl?: string;
+    imageGenerationStatus?: string;
+    imageGenerationError?: string | null;
     description: string;
     pointOfInterestChallenges: PointOfInterestChallenge[];
     tags: Tag[];
     googleMapsPlaceId: string;
+    googleMapsPlaceName?: string | null;
     originalName: string;
     geometry: string;
     unlockTier?: number | null;

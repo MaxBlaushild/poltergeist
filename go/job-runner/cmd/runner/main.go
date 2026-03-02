@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/texter"
 
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -67,6 +69,8 @@ func main() {
 	redisConnOpt := asynq.RedisClientOpt{Addr: cfg.Public.RedisUrl}
 	client := asynq.NewClient(redisConnOpt)
 	defer client.Close()
+	redisClient := newRedisClient(cfg.Public.RedisUrl)
+	defer redisClient.Close()
 
 	awsClient := aws.NewAWSClient("us-east-1")
 
@@ -85,6 +89,7 @@ func main() {
 	generateSpellIconProcessor := processors.NewGenerateSpellIconProcessor(dbClient, deepPriestClient, awsClient)
 	generateMonsterImageProcessor := processors.NewGenerateMonsterImageProcessor(dbClient, deepPriestClient, awsClient)
 	generateMonsterTemplateImageProcessor := processors.NewGenerateMonsterTemplateImageProcessor(dbClient, deepPriestClient, awsClient)
+	generateMonsterTemplatesBulkProcessor := processors.NewGenerateMonsterTemplatesBulkProcessor(dbClient, redisClient)
 	generateCharacterImageProcessor := processors.NewGenerateCharacterImageProcessor(dbClient, deepPriestClient, awsClient, client)
 	generatePointOfInterestImageProcessor := processors.NewGeneratePointOfInterestImageProcessor(dbClient, locationSeederClient, client)
 	generateScenarioImageProcessor := processors.NewGenerateScenarioImageProcessor(dbClient, deepPriestClient, awsClient)
@@ -162,6 +167,7 @@ func main() {
 	mux.Handle(jobs.GenerateSpellIconTaskType, &generateSpellIconProcessor)
 	mux.Handle(jobs.GenerateMonsterImageTaskType, &generateMonsterImageProcessor)
 	mux.Handle(jobs.GenerateMonsterTemplateImageTaskType, &generateMonsterTemplateImageProcessor)
+	mux.Handle(jobs.GenerateMonsterTemplatesBulkTaskType, &generateMonsterTemplatesBulkProcessor)
 	mux.Handle(jobs.GenerateCharacterImageTaskType, &generateCharacterImageProcessor)
 	mux.Handle(jobs.GeneratePointOfInterestImageTaskType, &generatePointOfInterestImageProcessor)
 	mux.Handle(jobs.GenerateScenarioImageTaskType, &generateScenarioImageProcessor)
@@ -293,6 +299,28 @@ func logPolymarketConfiguration(cfg *config.Config) {
 	if len(missingL2) > 0 {
 		log.Printf("Polymarket L2 credentials incomplete; missing=%v", missingL2)
 	}
+}
+
+func newRedisClient(redisURL string) *redis.Client {
+	trimmed := strings.TrimSpace(redisURL)
+	if trimmed == "" {
+		log.Fatal("redis URL is required")
+	}
+
+	var (
+		opt *redis.Options
+		err error
+	)
+	if strings.HasPrefix(trimmed, "redis://") || strings.HasPrefix(trimmed, "rediss://") {
+		opt, err = redis.ParseURL(trimmed)
+		if err != nil {
+			log.Fatalf("could not parse redis url: %v", err)
+		}
+	} else {
+		opt = &redis.Options{Addr: trimmed}
+	}
+
+	return redis.NewClient(opt)
 }
 
 func buildPolymarketConfigHint(cfg *config.Config) string {

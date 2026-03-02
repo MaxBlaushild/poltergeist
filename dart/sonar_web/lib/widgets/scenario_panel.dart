@@ -11,6 +11,8 @@ import '../services/poi_service.dart';
 import 'paper_texture.dart';
 
 const _scenarioMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
+const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 
 class ScenarioPanel extends StatefulWidget {
@@ -162,10 +164,23 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
                                     ? widget.scenario.thumbnailUrl
                                     : widget.scenario.imageUrl),
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            color: theme.colorScheme.surfaceVariant,
-                            child: const Icon(Icons.auto_awesome_outlined),
-                          ),
+                          errorBuilder: (_, __, ___) => mysteryState
+                              ? Image.network(
+                                  _legacyMysteryImageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: theme.colorScheme.surfaceVariant,
+                                    child: const Icon(
+                                      Icons.auto_awesome_outlined,
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  color: theme.colorScheme.surfaceVariant,
+                                  child: const Icon(
+                                    Icons.auto_awesome_outlined,
+                                  ),
+                                ),
                         ),
                       ),
                     ),

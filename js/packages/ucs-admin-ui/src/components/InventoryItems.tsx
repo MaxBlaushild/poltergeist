@@ -1135,7 +1135,23 @@ export const InventoryItems = () => {
 
   return (
     <div className="m-10">
-      <h1 className="text-2xl font-bold mb-4">Inventory Items</h1>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl font-bold">Inventory Items</h1>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="bg-blue-500 text-white px-4 py-2 rounded-md"
+            onClick={() => setShowCreateItem(true)}
+          >
+            Create Inventory Item
+          </button>
+          <button
+            className="bg-green-600 text-white px-4 py-2 rounded-md"
+            onClick={() => setShowGenerateItem(true)}
+          >
+            Generate Inventory Item
+          </button>
+        </div>
+      </div>
       
       {/* Search + Sort */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center">
@@ -1547,22 +1563,6 @@ export const InventoryItems = () => {
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Create Item Buttons */}
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button
-          className="bg-blue-500 text-white px-4 py-2 rounded-md"
-          onClick={() => setShowCreateItem(true)}
-        >
-          Create Inventory Item
-        </button>
-        <button
-          className="bg-green-600 text-white px-4 py-2 rounded-md"
-          onClick={() => setShowGenerateItem(true)}
-        >
-          Generate Inventory Item
-        </button>
       </div>
 
       {/* Create/Edit Item Modal */}

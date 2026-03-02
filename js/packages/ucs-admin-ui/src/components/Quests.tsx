@@ -20,6 +20,24 @@ type PointOfInterestImport = {
   updatedAt: string;
 };
 
+type QuestNodeType = 'poi' | 'polygon' | 'scenario' | 'monster';
+
+type ScenarioNodeOption = {
+  id: string;
+  zoneId: string;
+  latitude: number;
+  longitude: number;
+  prompt: string;
+};
+
+type MonsterNodeOption = {
+  id: string;
+  zoneId: string;
+  latitude: number;
+  longitude: number;
+  name: string;
+};
+
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 const emptyQuestForm = {
@@ -47,9 +65,11 @@ const questStatOptions = [
 
 const emptyNodeForm = {
   orderIndex: 1,
-  nodeType: 'poi' as 'poi' | 'polygon',
+  nodeType: 'poi' as QuestNodeType,
   submissionType: 'photo' as QuestNodeSubmissionType,
   pointOfInterestId: '',
+  scenarioId: '',
+  monsterId: '',
   polygonPoints: '',
 };
 
@@ -139,6 +159,12 @@ const parsePolygonWkt = (raw: string): number[][][] | null => {
   }
 };
 
+const summarizeScenarioPrompt = (prompt: string) => {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '(Untitled scenario)';
+  return normalized.length > 80 ? `${normalized.slice(0, 80)}...` : normalized;
+};
+
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
 const normalizeAcceptanceDialogue = (lines: string[]) =>
@@ -214,6 +240,8 @@ export const Quests = () => {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [scenarios, setScenarios] = useState<ScenarioNodeOption[]>([]);
+  const [monsters, setMonsters] = useState<MonsterNodeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,11 +301,13 @@ export const Quests = () => {
         apiClient.get<Character[]>('/sonar/characters'),
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
+        apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
+        apiClient.get<MonsterNodeOption[]>('/sonar/monsters'),
       ]);
 
       if (!isMounted) return;
 
-      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult] = results;
+      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult, scenariosResult, monstersResult] = results;
       if (questsResult.status === 'fulfilled') {
         setQuests(questsResult.value);
       } else {
@@ -307,6 +337,18 @@ export const Quests = () => {
         setSpells(spellsResult.value);
       } else {
         console.error('Failed to load spells', spellsResult.reason);
+      }
+
+      if (scenariosResult.status === 'fulfilled') {
+        setScenarios(Array.isArray(scenariosResult.value) ? scenariosResult.value : []);
+      } else {
+        console.error('Failed to load scenarios', scenariosResult.reason);
+      }
+
+      if (monstersResult.status === 'fulfilled') {
+        setMonsters(Array.isArray(monstersResult.value) ? monstersResult.value : []);
+      } else {
+        console.error('Failed to load monsters', monstersResult.reason);
       }
 
       setLoading(false);
@@ -755,6 +797,22 @@ export const Quests = () => {
     return filtered;
   }, [pointsOfInterest, poiSearch, poiZoneFilterId, zonePoiMap, poiTagFilterIds]);
 
+  const filteredScenarios = useMemo(() => {
+    let filtered = scenarios;
+    if (questForm.zoneId) {
+      filtered = filtered.filter((scenario) => scenario.zoneId === questForm.zoneId);
+    }
+    return filtered;
+  }, [questForm.zoneId, scenarios]);
+
+  const filteredMonsters = useMemo(() => {
+    let filtered = monsters;
+    if (questForm.zoneId) {
+      filtered = filtered.filter((monster) => monster.zoneId === questForm.zoneId);
+    }
+    return filtered;
+  }, [monsters, questForm.zoneId]);
+
   const archetypeByPoiId = useMemo(() => {
     const result: Record<string, LocationArchetype> = {};
     if (!pointsOfInterest.length || !locationArchetypes.length) return result;
@@ -794,23 +852,56 @@ export const Quests = () => {
   const questNodePoints = useMemo(() => {
     if (!selectedQuest?.nodes?.length) return [];
     return selectedQuest.nodes
-      .filter((node) => node.pointOfInterestId)
       .map((node) => {
-        const poi = pointsOfInterest.find((item) => item.id === node.pointOfInterestId);
-        if (!poi) return null;
-        const lng = Number(poi.lng);
-        const lat = Number(poi.lat);
-        if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
-        return {
-          id: node.id,
-          name: poi.name,
-          orderIndex: node.orderIndex,
-          lng,
-          lat,
-        };
+        if (node.pointOfInterestId) {
+          const poi = pointsOfInterest.find((item) => item.id === node.pointOfInterestId);
+          if (!poi) return null;
+          const lng = Number(poi.lng);
+          const lat = Number(poi.lat);
+          if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          return {
+            id: node.id,
+            name: poi.name,
+            orderIndex: node.orderIndex,
+            lng,
+            lat,
+            nodeType: 'poi' as QuestNodeType,
+          };
+        }
+        if (node.scenarioId) {
+          const scenario = scenarios.find((item) => item.id === node.scenarioId);
+          if (!scenario) return null;
+          const lng = Number(scenario.longitude);
+          const lat = Number(scenario.latitude);
+          if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          return {
+            id: node.id,
+            name: summarizeScenarioPrompt(scenario.prompt),
+            orderIndex: node.orderIndex,
+            lng,
+            lat,
+            nodeType: 'scenario' as QuestNodeType,
+          };
+        }
+        if (node.monsterId) {
+          const monster = monsters.find((item) => item.id === node.monsterId);
+          if (!monster) return null;
+          const lng = Number(monster.longitude);
+          const lat = Number(monster.latitude);
+          if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          return {
+            id: node.id,
+            name: monster.name || monster.id,
+            orderIndex: node.orderIndex,
+            lng,
+            lat,
+            nodeType: 'monster' as QuestNodeType,
+          };
+        }
+        return null;
       })
-      .filter((entry): entry is { id: string; name: string; orderIndex: number; lng: number; lat: number } => Boolean(entry));
-  }, [pointsOfInterest, selectedQuest?.nodes]);
+      .filter((entry): entry is { id: string; name: string; orderIndex: number; lng: number; lat: number; nodeType: QuestNodeType } => Boolean(entry));
+  }, [monsters, pointsOfInterest, scenarios, selectedQuest?.nodes]);
 
   const questNodePoiIdSet = useMemo(() => {
     if (!selectedQuest?.nodes?.length) return new Set<string>();
@@ -862,11 +953,25 @@ export const Quests = () => {
       el.style.width = '12px';
       el.style.height = '12px';
       el.style.borderRadius = '9999px';
-      el.style.background = '#f59e0b';
-      el.style.border = '2px solid #92400e';
+      if (point.nodeType === 'scenario') {
+        el.style.background = '#14b8a6';
+        el.style.border = '2px solid #115e59';
+      } else if (point.nodeType === 'monster') {
+        el.style.background = '#ef4444';
+        el.style.border = '2px solid #7f1d1d';
+      } else {
+        el.style.background = '#f59e0b';
+        el.style.border = '2px solid #92400e';
+      }
+      const labelPrefix =
+        point.nodeType === 'scenario'
+          ? 'Scenario'
+          : point.nodeType === 'monster'
+            ? 'Monster'
+            : 'POI';
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat([point.lng, point.lat])
-        .setPopup(new mapboxgl.Popup({ offset: 12 }).setText(`Node ${point.orderIndex}: ${point.name}`))
+        .setPopup(new mapboxgl.Popup({ offset: 12 }).setText(`Node ${point.orderIndex} (${labelPrefix}): ${point.name}`))
         .addTo(questMap.current!);
       questNodeMarkers.current.push(marker);
       bounds.extend([point.lng, point.lat]);
@@ -1143,7 +1248,13 @@ export const Quests = () => {
     const locationArchetypeIds: string[] = [];
     nodes.forEach((node) => {
       if (!node.pointOfInterestId) {
-        missing.push(`Node ${node.orderIndex}: polygon node`);
+        if (node.scenarioId) {
+          missing.push(`Node ${node.orderIndex}: scenario node`);
+        } else if (node.monsterId) {
+          missing.push(`Node ${node.orderIndex}: monster node`);
+        } else {
+          missing.push(`Node ${node.orderIndex}: polygon node`);
+        }
         return;
       }
       const match = archetypeByPoiId[node.pointOfInterestId];
@@ -1377,6 +1488,8 @@ const handleRemoveQuestReward = (index: number) => {
       const payload = {
         orderIndex: Number(nodeForm.orderIndex) || 1,
         pointOfInterestId: nodeForm.nodeType === 'poi' ? nodeForm.pointOfInterestId || null : null,
+        scenarioId: nodeForm.nodeType === 'scenario' ? nodeForm.scenarioId || null : null,
+        monsterId: nodeForm.nodeType === 'monster' ? nodeForm.monsterId || null : null,
         polygonPoints: nodeForm.nodeType === 'polygon' ? polygonPoints : undefined,
         submissionType: nodeForm.submissionType,
       };
@@ -1632,6 +1745,8 @@ const handleRemoveQuestReward = (index: number) => {
             ...form,
             nodeType: 'poi',
             pointOfInterestId: job.pointOfInterestId || form.pointOfInterestId,
+            scenarioId: '',
+            monsterId: '',
           }));
         }
       });
@@ -2262,9 +2377,21 @@ const handleRemoveQuestReward = (index: number) => {
                       <select
                         className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                         value={nodeForm.nodeType}
-                        onChange={(e) => setNodeForm((prev) => ({ ...prev, nodeType: e.target.value as 'poi' | 'polygon' }))}
+                        onChange={(e) => {
+                          const nextNodeType = e.target.value as QuestNodeType;
+                          setNodeForm((prev) => ({
+                            ...prev,
+                            nodeType: nextNodeType,
+                            pointOfInterestId: nextNodeType === 'poi' ? prev.pointOfInterestId : '',
+                            scenarioId: nextNodeType === 'scenario' ? prev.scenarioId : '',
+                            monsterId: nextNodeType === 'monster' ? prev.monsterId : '',
+                            polygonPoints: nextNodeType === 'polygon' ? prev.polygonPoints : '',
+                          }));
+                        }}
                       >
                         <option value="poi">Point of Interest</option>
+                        <option value="scenario">Scenario</option>
+                        <option value="monster">Monster</option>
                         <option value="polygon">Polygon</option>
                       </select>
                     </div>
@@ -2388,6 +2515,38 @@ const handleRemoveQuestReward = (index: number) => {
                           ))}
                         </select>
                       </div>
+                    ) : nodeForm.nodeType === 'scenario' ? (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Scenario</label>
+                        <select
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          value={nodeForm.scenarioId}
+                          onChange={(e) => setNodeForm((prev) => ({ ...prev, scenarioId: e.target.value }))}
+                        >
+                          <option value="">Select a scenario</option>
+                          {filteredScenarios.map((scenario) => (
+                            <option key={scenario.id} value={scenario.id}>
+                              {summarizeScenarioPrompt(scenario.prompt)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : nodeForm.nodeType === 'monster' ? (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Monster</label>
+                        <select
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          value={nodeForm.monsterId}
+                          onChange={(e) => setNodeForm((prev) => ({ ...prev, monsterId: e.target.value }))}
+                        >
+                          <option value="">Select a monster</option>
+                          {filteredMonsters.map((monster) => (
+                            <option key={monster.id} value={monster.id}>
+                              {monster.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     ) : (
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Polygon Points</label>
@@ -2443,7 +2602,11 @@ const handleRemoveQuestReward = (index: number) => {
                   <button
                     className="mt-4 bg-green-600 text-white px-4 py-2 rounded-md"
                     onClick={handleCreateNode}
-                    disabled={nodeForm.nodeType === 'poi' && !nodeForm.pointOfInterestId}
+                    disabled={
+                      (nodeForm.nodeType === 'poi' && !nodeForm.pointOfInterestId) ||
+                      (nodeForm.nodeType === 'scenario' && !nodeForm.scenarioId) ||
+                      (nodeForm.nodeType === 'monster' && !nodeForm.monsterId)
+                    }
                   >
                     Add Node
                   </button>
@@ -2471,7 +2634,15 @@ const handleRemoveQuestReward = (index: number) => {
                     <div className="flex items-center gap-3 text-xs text-gray-600">
                       <span className="flex items-center gap-1">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 border border-amber-800" />
-                        Quest nodes
+                        POI nodes
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-teal-500 border border-teal-800" />
+                        Scenario nodes
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 border border-red-900" />
+                        Monster nodes
                       </span>
                       <span className="flex items-center gap-1">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500 border border-blue-800" />
@@ -2543,6 +2714,8 @@ const handleRemoveQuestReward = (index: number) => {
                               ...prev,
                               nodeType: 'poi',
                               pointOfInterestId: selectedPoiForModal.id,
+                              scenarioId: '',
+                              monsterId: '',
                             }));
                             setSelectedPoiForModal(null);
                           }}
@@ -2759,7 +2932,13 @@ const handleRemoveQuestReward = (index: number) => {
                             <div className="text-sm text-gray-600">
                               {node.pointOfInterestId
                                 ? `POI: ${pointsOfInterest.find((poi) => poi.id === node.pointOfInterestId)?.name ?? node.pointOfInterestId}`
-                                : 'Polygon'}
+                                : node.scenarioId
+                                  ? `Scenario: ${summarizeScenarioPrompt(
+                                      scenarios.find((scenario) => scenario.id === node.scenarioId)?.prompt ?? ''
+                                    )}`
+                                  : node.monsterId
+                                    ? `Monster: ${monsters.find((monster) => monster.id === node.monsterId)?.name ?? node.monsterId}`
+                                    : 'Polygon'}
                             </div>
                           </div>
                           <button

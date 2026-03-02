@@ -14,17 +14,19 @@ import (
 )
 
 type QuestNode struct {
-	ID                uuid.UUID            `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
-	CreatedAt         time.Time            `json:"createdAt"`
-	UpdatedAt         time.Time            `json:"updatedAt"`
-	QuestID           uuid.UUID            `json:"questId" gorm:"type:uuid"`
-	OrderIndex        int                  `json:"orderIndex"`
-	PointOfInterestID *uuid.UUID           `json:"pointOfInterestId" gorm:"type:uuid"`
-	Polygon           string               `json:"polygon" gorm:"type:geometry(Polygon,4326)"`
-	PolygonPoints     [][2]float64         `json:"polygonPoints" gorm:"-"`
+	ID                uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4()"`
+	CreatedAt         time.Time               `json:"createdAt"`
+	UpdatedAt         time.Time               `json:"updatedAt"`
+	QuestID           uuid.UUID               `json:"questId" gorm:"type:uuid"`
+	OrderIndex        int                     `json:"orderIndex"`
+	PointOfInterestID *uuid.UUID              `json:"pointOfInterestId" gorm:"type:uuid"`
+	ScenarioID        *uuid.UUID              `json:"scenarioId" gorm:"type:uuid"`
+	MonsterID         *uuid.UUID              `json:"monsterId" gorm:"type:uuid"`
+	Polygon           string                  `json:"polygon" gorm:"type:geometry(Polygon,4326)"`
+	PolygonPoints     [][2]float64            `json:"polygonPoints" gorm:"-"`
 	SubmissionType    QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
-	Challenges        []QuestNodeChallenge `json:"challenges" gorm:"foreignKey:QuestNodeID"`
-	Children          []QuestNodeChild     `json:"children" gorm:"foreignKey:QuestNodeID"`
+	Challenges        []QuestNodeChallenge    `json:"challenges" gorm:"foreignKey:QuestNodeID"`
+	Children          []QuestNodeChild        `json:"children" gorm:"foreignKey:QuestNodeID"`
 }
 
 type QuestNodeSubmissionType string

@@ -3,15 +3,27 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../constants/gameplay_constants.dart';
 import '../models/monster.dart';
 import '../providers/location_provider.dart';
 import 'paper_texture.dart';
 
+const _monsterMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const _legacyMysteryImageUrl =
+    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+
 class MonsterPanel extends StatelessWidget {
-  const MonsterPanel({super.key, required this.monster, required this.onClose});
+  const MonsterPanel({
+    super.key,
+    required this.monster,
+    required this.onClose,
+    this.onFight,
+  });
 
   final Monster monster;
   final VoidCallback onClose;
+  final VoidCallback? onFight;
 
   double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
     const earthRadiusMeters = 6371e3;
@@ -41,6 +53,10 @@ class MonsterPanel extends StatelessWidget {
             monster.latitude,
             monster.longitude,
           );
+    final withinRange =
+        distance != null && distance <= kProximityUnlockRadiusMeters;
+    final mysteryState = !withinRange;
+    final canFight = !mysteryState && onFight != null;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -55,7 +71,7 @@ class MonsterPanel extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    monster.name,
+                    mysteryState ? 'Mysterious Presence' : monster.name,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -76,14 +92,27 @@ class MonsterPanel extends StatelessWidget {
                       child: AspectRatio(
                         aspectRatio: 1,
                         child: Image.network(
-                          monster.thumbnailUrl.isNotEmpty
-                              ? monster.thumbnailUrl
-                              : monster.imageUrl,
+                          mysteryState
+                              ? _monsterMysteryImageUrl
+                              : (monster.thumbnailUrl.isNotEmpty
+                                    ? monster.thumbnailUrl
+                                    : monster.imageUrl),
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            color: theme.colorScheme.surfaceVariant,
-                            child: const Icon(Icons.pets, size: 42),
-                          ),
+                          errorBuilder: (context, error, stackTrace) =>
+                              mysteryState
+                              ? Image.network(
+                                  _legacyMysteryImageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      Container(
+                                        color: theme.colorScheme.surfaceVariant,
+                                        child: const Icon(Icons.pets, size: 42),
+                                      ),
+                                )
+                              : Container(
+                                  color: theme.colorScheme.surfaceVariant,
+                                  child: const Icon(Icons.pets, size: 42),
+                                ),
                         ),
                       ),
                     ),
@@ -98,124 +127,36 @@ class MonsterPanel extends StatelessWidget {
                             label: '${distance.round()} m away',
                           ),
                         _InfoChip(
-                          icon: Icons.stars,
-                          label: 'Level ${monster.level}',
-                        ),
-                        _InfoChip(
-                          icon: Icons.gavel,
+                          icon: Icons.shield_outlined,
                           label:
-                              'Damage ${monster.attackDamageMin}-${monster.attackDamageMax}',
+                              'Need ${kProximityUnlockRadiusMeters.round()} m',
                         ),
-                        _InfoChip(
-                          icon: Icons.swipe,
-                          label: 'Swipes ${monster.attackSwipesPerAttack}',
-                        ),
-                        _InfoChip(
-                          icon: Icons.favorite,
-                          label: 'HP ${monster.health}/${monster.maxHealth}',
-                        ),
-                        _InfoChip(
-                          icon: Icons.auto_fix_high,
-                          label: 'Mana ${monster.mana}/${monster.maxMana}',
-                        ),
+                        if (!mysteryState)
+                          _InfoChip(
+                            icon: Icons.stars,
+                            label: 'Level ${monster.level}',
+                          ),
                       ],
                     ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: canFight ? onFight : null,
+                      icon: const Icon(Icons.sports_martial_arts),
+                      label: Text(canFight ? 'Fight!' : 'Get closer to fight'),
+                    ),
                     const SizedBox(height: 12),
-                    if (monster.weaponInventoryItemName.isNotEmpty)
+                    if (!mysteryState && monster.description.trim().isNotEmpty)
                       Text(
-                        'Weapon: ${monster.weaponInventoryItemName}',
+                        monster.description,
                         style: theme.textTheme.bodyMedium,
                       ),
-                    if (monster.template?.name.isNotEmpty == true)
+                    if (!mysteryState && monster.description.trim().isNotEmpty)
+                      const SizedBox(height: 12),
+                    if (mysteryState)
                       Text(
-                        'Template: ${monster.template!.name}',
+                        'The details of this monster are obscured until you are close enough to inspect it.',
                         style: theme.textTheme.bodyMedium,
                       ),
-                    Text(
-                      'STR ${monster.strength} · DEX ${monster.dexterity} · CON ${monster.constitution} · INT ${monster.intelligence} · WIS ${monster.wisdom} · CHA ${monster.charisma}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    if (monster.description.trim().isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        monster.description.trim(),
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    _SectionCard(
-                      title: 'Rewards',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Experience: ${monster.rewardExperience}',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          Text(
-                            'Gold: ${monster.rewardGold}',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                          if (monster.itemRewards.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              'Items',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            for (final reward in monster.itemRewards)
-                              Text(
-                                '• ${reward.inventoryItemName.isNotEmpty ? reward.inventoryItemName : 'Item #${reward.inventoryItemId}'} x${reward.quantity}',
-                                style: theme.textTheme.bodySmall,
-                              ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _SectionCard(
-                      title: 'Spells',
-                      child: monster.spells.isEmpty
-                          ? Text(
-                              'No spells',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                for (final spell in monster.spells)
-                                  Text(
-                                    '• ${spell.name}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                              ],
-                            ),
-                    ),
-                    const SizedBox(height: 10),
-                    _SectionCard(
-                      title: 'Techniques',
-                      child: monster.techniques.isEmpty
-                          ? Text(
-                              'No techniques',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                for (final technique in monster.techniques)
-                                  Text(
-                                    '• ${technique.name}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                              ],
-                            ),
-                    ),
                   ],
                 ),
               ),
@@ -248,41 +189,6 @@ class _InfoChip extends StatelessWidget {
           Icon(icon, size: 14),
           const SizedBox(width: 6),
           Text(label, style: theme.textTheme.labelMedium),
-        ],
-      ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          child,
         ],
       ),
     );

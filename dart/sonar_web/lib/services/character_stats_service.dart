@@ -60,4 +60,23 @@ class CharacterStatsService {
     );
     return data;
   }
+
+  Future<CharacterStats?> adjustUserResources(
+    String userId, {
+    int healthDelta = 0,
+    int manaDelta = 0,
+  }) async {
+    if (healthDelta == 0 && manaDelta == 0) {
+      return getStats();
+    }
+    try {
+      final data = await _api.post<Map<String, dynamic>>(
+        '/sonar/admin/users/$userId/resources',
+        data: {'healthDelta': healthDelta, 'manaDelta': manaDelta},
+      );
+      return CharacterStats.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
 }

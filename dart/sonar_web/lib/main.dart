@@ -15,7 +15,6 @@ import 'services/friend_service.dart';
 import 'services/location_service.dart';
 import 'services/media_service.dart';
 import 'services/activity_service.dart';
-import 'services/admin_service.dart';
 import 'services/chat_service.dart';
 import 'services/character_stats_service.dart';
 import 'services/inventory_service.dart';
@@ -60,7 +59,6 @@ class SonarApp extends StatelessWidget {
     final locationProvider = LocationProvider(locationService);
     final mediaService = MediaService(apiClient);
     final poiService = PoiService(apiClient);
-    final adminService = AdminService(apiClient);
     final partyService = PartyService(apiClient);
     final friendService = FriendService(apiClient);
     final activityService = ActivityService(apiClient);
@@ -99,14 +97,18 @@ class SonarApp extends StatelessWidget {
         ChangeNotifierProvider<LocationProvider>.value(value: locationProvider),
         Provider<MediaService>.value(value: mediaService),
         Provider<PoiService>.value(value: poiService),
-        Provider<AdminService>.value(value: adminService),
         Provider<InventoryService>.value(value: inventoryService),
         Provider<UserCharacterService>.value(value: userCharacterService),
         ChangeNotifierProvider<PartyProvider>.value(value: partyProvider),
         ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
-        ChangeNotifierProvider<ActivityFeedProvider>.value(value: activityFeedProvider),
-        ChangeNotifierProxyProvider2<AuthProvider, ActivityFeedProvider,
-            CharacterStatsProvider>(
+        ChangeNotifierProvider<ActivityFeedProvider>.value(
+          value: activityFeedProvider,
+        ),
+        ChangeNotifierProxyProvider2<
+          AuthProvider,
+          ActivityFeedProvider,
+          CharacterStatsProvider
+        >(
           create: (_) => CharacterStatsProvider(characterStatsService),
           update: (_, auth, feed, stats) {
             stats ??= CharacterStatsProvider(characterStatsService);
@@ -117,13 +119,23 @@ class SonarApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<LogProvider>.value(value: logProvider),
         ChangeNotifierProvider<TagsProvider>.value(value: tagsProvider),
-        ChangeNotifierProvider<QuestFilterProvider>.value(value: questFilterProvider),
-        ChangeNotifierProvider<InventoryModalProvider>.value(value: inventoryModalProvider),
-        ChangeNotifierProvider<CompletedTaskProvider>.value(value: completedTaskProvider),
+        ChangeNotifierProvider<QuestFilterProvider>.value(
+          value: questFilterProvider,
+        ),
+        ChangeNotifierProvider<InventoryModalProvider>.value(
+          value: inventoryModalProvider,
+        ),
+        ChangeNotifierProvider<CompletedTaskProvider>.value(
+          value: completedTaskProvider,
+        ),
         ChangeNotifierProvider<ZoneProvider>.value(value: zoneProvider),
-        ChangeNotifierProvider<DiscoveriesProvider>.value(value: discoveriesProvider),
+        ChangeNotifierProvider<DiscoveriesProvider>.value(
+          value: discoveriesProvider,
+        ),
         ChangeNotifierProvider<MapFocusProvider>.value(value: mapFocusProvider),
-        ChangeNotifierProvider<UserLevelProvider>.value(value: userLevelProvider),
+        ChangeNotifierProvider<UserLevelProvider>.value(
+          value: userLevelProvider,
+        ),
         ChangeNotifierProvider<QuestLogProvider>.value(
           value: QuestLogProvider(
             questLogService,
@@ -187,10 +199,7 @@ class SonarApp extends StatelessWidget {
               color: Color(0xFF2D2416),
             ),
             shape: Border(
-              bottom: BorderSide(
-                color: Color(0xFFD7C39F),
-                width: 1,
-              ),
+              bottom: BorderSide(color: Color(0xFFD7C39F), width: 1),
             ),
           ),
           bottomSheetTheme: const BottomSheetThemeData(
@@ -207,9 +216,7 @@ class SonarApp extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
           ),
-          iconTheme: const IconThemeData(
-            color: Color(0xFF3B2F1C),
-          ),
+          iconTheme: const IconThemeData(color: Color(0xFF3B2F1C)),
           iconButtonTheme: IconButtonThemeData(
             style: IconButton.styleFrom(
               foregroundColor: const Color(0xFF3B2F1C),
@@ -276,7 +283,10 @@ class SonarApp extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF355C7D), width: 1.5),
+              borderSide: const BorderSide(
+                color: Color(0xFF355C7D),
+                width: 1.5,
+              ),
             ),
             hintStyle: const TextStyle(color: Color(0xFF6E5B3B)),
           ),

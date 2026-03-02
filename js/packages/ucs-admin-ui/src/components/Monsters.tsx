@@ -94,6 +94,31 @@ type ImagePreviewState = {
   alt: string;
 };
 
+type StaticThumbnailResponse = {
+  thumbnailUrl?: string;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
+  prompt?: string;
+};
+
+type BulkMonsterTemplateStatus = {
+  jobId: string;
+  status: string;
+  source?: string;
+  totalCount: number;
+  createdCount: number;
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
+const defaultMonsterUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
 type MonsterTemplateFormState = {
   name: string;
   description: string;
@@ -163,7 +188,9 @@ const emptyTemplateForm = (): MonsterTemplateFormState => ({
   techniqueIds: [],
 });
 
-const templateFormFromRecord = (template: MonsterTemplateRecord): MonsterTemplateFormState => ({
+const templateFormFromRecord = (
+  template: MonsterTemplateRecord
+): MonsterTemplateFormState => ({
   name: template.name ?? '',
   description: template.description ?? '',
   imageUrl: template.imageUrl ?? '',
@@ -223,13 +250,16 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
   longitude: String(monster.longitude ?? ''),
   templateId: monster.templateId ?? monster.template?.id ?? '',
   dominantHandInventoryItemId:
-    monster.dominantHandInventoryItemId !== undefined && monster.dominantHandInventoryItemId !== null
+    monster.dominantHandInventoryItemId !== undefined &&
+    monster.dominantHandInventoryItemId !== null
       ? String(monster.dominantHandInventoryItemId)
-      : monster.weaponInventoryItemId !== undefined && monster.weaponInventoryItemId !== null
+      : monster.weaponInventoryItemId !== undefined &&
+          monster.weaponInventoryItemId !== null
         ? String(monster.weaponInventoryItemId)
         : '',
   offHandInventoryItemId:
-    monster.offHandInventoryItemId !== undefined && monster.offHandInventoryItemId !== null
+    monster.offHandInventoryItemId !== undefined &&
+    monster.offHandInventoryItemId !== null
       ? String(monster.offHandInventoryItemId)
       : '',
   level: String(monster.level ?? 1),
@@ -250,7 +280,10 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
   templateId: form.templateId.trim(),
-  dominantHandInventoryItemId: parseIntSafe(form.dominantHandInventoryItemId, 0),
+  dominantHandInventoryItemId: parseIntSafe(
+    form.dominantHandInventoryItemId,
+    0
+  ),
   offHandInventoryItemId: parseOptionalInt(form.offHandInventoryItemId),
   weaponInventoryItemId: parseIntSafe(form.dominantHandInventoryItemId, 0),
   level: parseIntSafe(form.level, 1),
@@ -279,6 +312,45 @@ const formatGenerationStatus = (status?: string) => {
   }
 };
 
+const formatBulkTemplateStatus = (status?: string): string => {
+  switch ((status || '').trim()) {
+    case 'queued':
+      return 'Queued';
+    case 'in_progress':
+      return 'In Progress';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    default:
+      return 'Unknown';
+  }
+};
+
+const staticStatusClassName = (status: string): string => {
+  switch ((status || '').trim()) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'missing':
+      return 'bg-gray-500';
+    default:
+      return 'bg-gray-400';
+  }
+};
+
+const formatDate = (value?: string): string => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 export const Monsters = () => {
@@ -294,48 +366,100 @@ export const Monsters = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<MonsterTemplateRecord | null>(null);
-  const [templateForm, setTemplateForm] = useState<MonsterTemplateFormState>(emptyTemplateForm());
+  const [editingTemplate, setEditingTemplate] =
+    useState<MonsterTemplateRecord | null>(null);
+  const [templateForm, setTemplateForm] =
+    useState<MonsterTemplateFormState>(emptyTemplateForm());
 
   const [showMonsterModal, setShowMonsterModal] = useState(false);
-  const [editingMonster, setEditingMonster] = useState<MonsterRecord | null>(null);
-  const [monsterForm, setMonsterForm] = useState<MonsterFormState>(emptyMonsterForm());
-  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
+  const [editingMonster, setEditingMonster] = useState<MonsterRecord | null>(
+    null
+  );
+  const [monsterForm, setMonsterForm] =
+    useState<MonsterFormState>(emptyMonsterForm());
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
+    null
+  );
   const [geoLoading, setGeoLoading] = useState(false);
+  const [monsterUndiscoveredBusy, setMonsterUndiscoveredBusy] = useState(false);
+  const [
+    monsterUndiscoveredStatusLoading,
+    setMonsterUndiscoveredStatusLoading,
+  ] = useState(false);
+  const [monsterUndiscoveredError, setMonsterUndiscoveredError] = useState<
+    string | null
+  >(null);
+  const [monsterUndiscoveredMessage, setMonsterUndiscoveredMessage] = useState<
+    string | null
+  >(null);
+  const [monsterUndiscoveredUrl, setMonsterUndiscoveredUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png'
+  );
+  const [monsterUndiscoveredStatus, setMonsterUndiscoveredStatus] =
+    useState('unknown');
+  const [monsterUndiscoveredExists, setMonsterUndiscoveredExists] =
+    useState(false);
+  const [monsterUndiscoveredRequestedAt, setMonsterUndiscoveredRequestedAt] =
+    useState<string | null>(null);
+  const [monsterUndiscoveredLastModified, setMonsterUndiscoveredLastModified] =
+    useState<string | null>(null);
+  const [monsterUndiscoveredPreviewNonce, setMonsterUndiscoveredPreviewNonce] =
+    useState<number>(Date.now());
+  const [monsterUndiscoveredPrompt, setMonsterUndiscoveredPrompt] = useState(
+    defaultMonsterUndiscoveredIconPrompt
+  );
 
-  const [generatingMonsterId, setGeneratingMonsterId] = useState<string | null>(null);
-  const [generatingTemplateId, setGeneratingTemplateId] = useState<string | null>(null);
+  const [generatingMonsterId, setGeneratingMonsterId] = useState<string | null>(
+    null
+  );
+  const [generatingTemplateId, setGeneratingTemplateId] = useState<
+    string | null
+  >(null);
+  const [bulkTemplateCount, setBulkTemplateCount] = useState('8');
+  const [bulkTemplateBusy, setBulkTemplateBusy] = useState(false);
+  const [bulkTemplateJob, setBulkTemplateJob] =
+    useState<BulkMonsterTemplateStatus | null>(null);
+  const [bulkTemplateError, setBulkTemplateError] = useState<string | null>(
+    null
+  );
+  const [bulkTemplateMessage, setBulkTemplateMessage] = useState<string | null>(
+    null
+  );
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
   const formLatitudeRef = React.useRef(monsterForm.latitude);
   const formLongitudeRef = React.useRef(monsterForm.longitude);
 
-  const load = useCallback(async (suppressLoading = false) => {
-    try {
-      if (!suppressLoading) {
-        setLoading(true);
+  const load = useCallback(
+    async (suppressLoading = false) => {
+      try {
+        if (!suppressLoading) {
+          setLoading(true);
+        }
+        setError(null);
+        const [templateResp, monsterResp, spellResp, inventoryResp] =
+          await Promise.all([
+            apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
+            apiClient.get<MonsterRecord[]>('/sonar/monsters'),
+            apiClient.get<Spell[]>('/sonar/spells'),
+            apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
+          ]);
+        setTemplates(Array.isArray(templateResp) ? templateResp : []);
+        setRecords(Array.isArray(monsterResp) ? monsterResp : []);
+        setSpells(Array.isArray(spellResp) ? spellResp : []);
+        setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
+      } catch (err) {
+        console.error('Failed to load monsters/templates', err);
+        setError('Failed to load monsters/templates.');
+      } finally {
+        if (!suppressLoading) {
+          setLoading(false);
+        }
       }
-      setError(null);
-      const [templateResp, monsterResp, spellResp, inventoryResp] = await Promise.all([
-        apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
-        apiClient.get<MonsterRecord[]>('/sonar/monsters'),
-        apiClient.get<Spell[]>('/sonar/spells'),
-        apiClient.get<InventoryItemLite[]>('/sonar/admin/inventoryItems'),
-      ]);
-      setTemplates(Array.isArray(templateResp) ? templateResp : []);
-      setRecords(Array.isArray(monsterResp) ? monsterResp : []);
-      setSpells(Array.isArray(spellResp) ? spellResp : []);
-      setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
-    } catch (err) {
-      console.error('Failed to load monsters/templates', err);
-      setError('Failed to load monsters/templates.');
-    } finally {
-      if (!suppressLoading) {
-        setLoading(false);
-      }
-    }
-  }, [apiClient]);
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     void load();
@@ -348,7 +472,8 @@ export const Monsters = () => {
     const hasPendingTemplateGeneration = templates.some((template) =>
       ['queued', 'in_progress'].includes(template.imageGenerationStatus || '')
     );
-    const hasPendingGeneration = hasPendingMonsterGeneration || hasPendingTemplateGeneration;
+    const hasPendingGeneration =
+      hasPendingMonsterGeneration || hasPendingTemplateGeneration;
     if (!hasPendingGeneration) return;
 
     const interval = window.setInterval(() => {
@@ -428,23 +553,28 @@ export const Monsters = () => {
     return selectedID > 0 ? dominantHandItemById.get(selectedID) : undefined;
   }, [monsterForm.dominantHandInventoryItemId, dominantHandItemById]);
 
-  const dominantIsTwoHanded = (selectedDominantHandItem?.handedness ?? '').trim().toLowerCase() === 'two_handed';
+  const dominantIsTwoHanded =
+    (selectedDominantHandItem?.handedness ?? '').trim().toLowerCase() ===
+    'two_handed';
 
   const spellAbilities = useMemo(
-    () => spells.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique'),
+    () =>
+      spells.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique'),
     [spells]
   );
   const techniqueAbilities = useMemo(
-    () => spells.filter((spell) => (spell.abilityType ?? 'spell') === 'technique'),
+    () =>
+      spells.filter((spell) => (spell.abilityType ?? 'spell') === 'technique'),
     [spells]
   );
 
   const filteredTemplates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return templates;
-    return templates.filter((template) =>
-      template.name.toLowerCase().includes(normalized) ||
-      template.description.toLowerCase().includes(normalized)
+    return templates.filter(
+      (template) =>
+        template.name.toLowerCase().includes(normalized) ||
+        template.description.toLowerCase().includes(normalized)
     );
   }, [query, templates]);
 
@@ -453,7 +583,11 @@ export const Monsters = () => {
     if (!normalized) return records;
     return records.filter((record) => {
       const zoneName = zoneNameById.get(record.zoneId) ?? '';
-      const templateName = record.template?.name || (record.templateId ? templateNameById.get(record.templateId) ?? '' : '');
+      const templateName =
+        record.template?.name ||
+        (record.templateId
+          ? templateNameById.get(record.templateId) ?? ''
+          : '');
       return (
         record.name.toLowerCase().includes(normalized) ||
         record.description.toLowerCase().includes(normalized) ||
@@ -505,15 +639,23 @@ export const Monsters = () => {
           `/sonar/monster-templates/${editingTemplate.id}`,
           payload
         );
-        setTemplates((prev) => prev.map((template) => (template.id === updated.id ? updated : template)));
+        setTemplates((prev) =>
+          prev.map((template) =>
+            template.id === updated.id ? updated : template
+          )
+        );
       } else {
-        const created = await apiClient.post<MonsterTemplateRecord>('/sonar/monster-templates', payload);
+        const created = await apiClient.post<MonsterTemplateRecord>(
+          '/sonar/monster-templates',
+          payload
+        );
         setTemplates((prev) => [created, ...prev]);
       }
       closeTemplateModal();
     } catch (err) {
       console.error('Failed to save template', err);
-      const message = err instanceof Error ? err.message : 'Failed to save template.';
+      const message =
+        err instanceof Error ? err.message : 'Failed to save template.';
       alert(message);
     }
   };
@@ -525,8 +667,82 @@ export const Monsters = () => {
       setTemplates((prev) => prev.filter((entry) => entry.id !== template.id));
     } catch (err) {
       console.error('Failed to delete template', err);
-      const message = err instanceof Error ? err.message : 'Failed to delete template.';
+      const message =
+        err instanceof Error ? err.message : 'Failed to delete template.';
       alert(message);
+    }
+  };
+
+  const refreshBulkTemplateJobStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status = await apiClient.get<BulkMonsterTemplateStatus>(
+          `/sonar/monster-templates/bulk-generate/${jobId}/status`
+        );
+        setBulkTemplateJob(status);
+        if (status.status === 'completed') {
+          setBulkTemplateBusy(false);
+          setBulkTemplateError(null);
+          setBulkTemplateMessage(
+            `Created ${status.createdCount} DnD-inspired monster template(s).`
+          );
+          await load(true);
+        } else if (status.status === 'failed') {
+          setBulkTemplateBusy(false);
+          setBulkTemplateMessage(null);
+          setBulkTemplateError(
+            status.error || 'Bulk template generation failed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh bulk monster template status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to refresh bulk template generation status.';
+        setBulkTemplateError(message);
+        setBulkTemplateBusy(false);
+      }
+    },
+    [apiClient, load]
+  );
+
+  const handleBulkGenerateTemplates = async () => {
+    const count = Number.parseInt(bulkTemplateCount, 10);
+    if (!Number.isFinite(count) || count < 1 || count > 100) {
+      alert('Bulk template count must be between 1 and 100.');
+      return;
+    }
+    try {
+      setBulkTemplateBusy(true);
+      setBulkTemplateError(null);
+      setBulkTemplateMessage(null);
+      setBulkTemplateJob(null);
+      const response = await apiClient.post<BulkMonsterTemplateStatus>(
+        '/sonar/monster-templates/bulk-generate',
+        { count }
+      );
+      setBulkTemplateJob(response);
+      if (response.status === 'completed') {
+        setBulkTemplateBusy(false);
+        setBulkTemplateMessage(
+          `Created ${response.createdCount} DnD-inspired monster template(s).`
+        );
+        await load(true);
+      } else if (response.status === 'failed') {
+        setBulkTemplateBusy(false);
+        setBulkTemplateError(
+          response.error || 'Bulk template generation failed.'
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk generate monster templates', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to bulk generate monster templates.';
+      setBulkTemplateError(message);
+      setBulkTemplateBusy(false);
     }
   };
 
@@ -536,7 +752,9 @@ export const Monsters = () => {
       ...emptyMonsterForm(),
       zoneId: zones[0]?.id ?? '',
       templateId: templates[0]?.id ?? '',
-      dominantHandInventoryItemId: dominantHandItems[0] ? String(dominantHandItems[0].id) : '',
+      dominantHandInventoryItemId: dominantHandItems[0]
+        ? String(dominantHandItems[0].id)
+        : '',
     });
     setShowMonsterModal(true);
   };
@@ -560,7 +778,10 @@ export const Monsters = () => {
         alert('Zone and template are required.');
         return;
       }
-      if (!payload.dominantHandInventoryItemId || payload.dominantHandInventoryItemId <= 0) {
+      if (
+        !payload.dominantHandInventoryItemId ||
+        payload.dominantHandInventoryItemId <= 0
+      ) {
         alert('A dominant hand weapon is required.');
         return;
       }
@@ -569,21 +790,32 @@ export const Monsters = () => {
         return;
       }
       if (dominantIsTwoHanded && payload.offHandInventoryItemId) {
-        alert('Two-handed dominant weapons cannot be combined with an off-hand item.');
+        alert(
+          'Two-handed dominant weapons cannot be combined with an off-hand item.'
+        );
         return;
       }
 
       if (editingMonster) {
-        const updated = await apiClient.put<MonsterRecord>(`/sonar/monsters/${editingMonster.id}`, payload);
-        setRecords((prev) => prev.map((record) => (record.id === updated.id ? updated : record)));
+        const updated = await apiClient.put<MonsterRecord>(
+          `/sonar/monsters/${editingMonster.id}`,
+          payload
+        );
+        setRecords((prev) =>
+          prev.map((record) => (record.id === updated.id ? updated : record))
+        );
       } else {
-        const created = await apiClient.post<MonsterRecord>('/sonar/monsters', payload);
+        const created = await apiClient.post<MonsterRecord>(
+          '/sonar/monsters',
+          payload
+        );
         setRecords((prev) => [created, ...prev]);
       }
       closeMonsterModal();
     } catch (err) {
       console.error('Failed to save monster', err);
-      const message = err instanceof Error ? err.message : 'Failed to save monster.';
+      const message =
+        err instanceof Error ? err.message : 'Failed to save monster.';
       alert(message);
     }
   };
@@ -602,8 +834,13 @@ export const Monsters = () => {
   const handleGenerateImage = async (monster: MonsterRecord) => {
     try {
       setGeneratingMonsterId(monster.id);
-      const updated = await apiClient.post<MonsterRecord>(`/sonar/monsters/${monster.id}/generate-image`, {});
-      setRecords((prev) => prev.map((record) => (record.id === monster.id ? updated : record)));
+      const updated = await apiClient.post<MonsterRecord>(
+        `/sonar/monsters/${monster.id}/generate-image`,
+        {}
+      );
+      setRecords((prev) =>
+        prev.map((record) => (record.id === monster.id ? updated : record))
+      );
     } catch (err) {
       console.error('Failed to queue monster image generation', err);
       alert('Failed to queue monster image generation.');
@@ -612,14 +849,18 @@ export const Monsters = () => {
     }
   };
 
-  const handleGenerateTemplateImage = async (template: MonsterTemplateRecord) => {
+  const handleGenerateTemplateImage = async (
+    template: MonsterTemplateRecord
+  ) => {
     try {
       setGeneratingTemplateId(template.id);
       const updated = await apiClient.post<MonsterTemplateRecord>(
         `/sonar/monster-templates/${template.id}/generate-image`,
         {}
       );
-      setTemplates((prev) => prev.map((record) => (record.id === template.id ? updated : record)));
+      setTemplates((prev) =>
+        prev.map((record) => (record.id === template.id ? updated : record))
+      );
     } catch (err) {
       console.error('Failed to queue monster template image generation', err);
       alert('Failed to queue monster template image generation.');
@@ -628,7 +869,10 @@ export const Monsters = () => {
     }
   };
 
-  const updateMonsterItemReward = (index: number, nextReward: Partial<MonsterFormItem>) => {
+  const updateMonsterItemReward = (
+    index: number,
+    nextReward: Partial<MonsterFormItem>
+  ) => {
     setMonsterForm((prev) => {
       const next = [...prev.itemRewards];
       next[index] = { ...next[index], ...nextReward };
@@ -637,35 +881,44 @@ export const Monsters = () => {
   };
 
   const updateTemplateSpellIds = (selected: HTMLSelectElement) => {
-    const spellIds = Array.from(selected.selectedOptions).map((option) => option.value);
+    const spellIds = Array.from(selected.selectedOptions).map(
+      (option) => option.value
+    );
     setTemplateForm((prev) => ({ ...prev, spellIds }));
   };
 
   const updateTemplateTechniqueIds = (selected: HTMLSelectElement) => {
-    const techniqueIds = Array.from(selected.selectedOptions).map((option) => option.value);
+    const techniqueIds = Array.from(selected.selectedOptions).map(
+      (option) => option.value
+    );
     setTemplateForm((prev) => ({ ...prev, techniqueIds }));
   };
 
   const updateDominantHandSelection = (value: string) => {
     setMonsterForm((prev) => {
       const selectedID = parseIntSafe(value, 0);
-      const selected = selectedID > 0 ? dominantHandItemById.get(selectedID) : undefined;
+      const selected =
+        selectedID > 0 ? dominantHandItemById.get(selectedID) : undefined;
       const handedness = (selected?.handedness ?? '').trim().toLowerCase();
       return {
         ...prev,
         dominantHandInventoryItemId: value,
-        offHandInventoryItemId: handedness === 'two_handed' ? '' : prev.offHandInventoryItemId,
+        offHandInventoryItemId:
+          handedness === 'two_handed' ? '' : prev.offHandInventoryItemId,
       };
     });
   };
 
-  const setMonsterLocation = useCallback((latitude: number, longitude: number) => {
-    setMonsterForm((prev) => ({
-      ...prev,
-      latitude: latitude.toFixed(6),
-      longitude: longitude.toFixed(6),
-    }));
-  }, []);
+  const setMonsterLocation = useCallback(
+    (latitude: number, longitude: number) => {
+      setMonsterForm((prev) => ({
+        ...prev,
+        latitude: latitude.toFixed(6),
+        longitude: longitude.toFixed(6),
+      }));
+    },
+    []
+  );
 
   const handleUseCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -695,8 +948,12 @@ export const Monsters = () => {
     const parsedLat = Number.parseFloat(formLatitudeRef.current);
     const parsedLng = Number.parseFloat(formLongitudeRef.current);
     const selectedZone = zones.find((zone) => zone.id === monsterForm.zoneId);
-    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
-    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+    const zoneLat = selectedZone
+      ? Number.parseFloat(String(selectedZone.latitude ?? ''))
+      : Number.NaN;
+    const zoneLng = selectedZone
+      ? Number.parseFloat(String(selectedZone.longitude ?? ''))
+      : Number.NaN;
 
     const center: [number, number] =
       Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
@@ -739,7 +996,9 @@ export const Monsters = () => {
     }
 
     if (!markerRef.current) {
-      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' }).setLngLat([lng, lat]).addTo(mapRef.current);
+      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' })
+        .setLngLat([lng, lat])
+        .addTo(mapRef.current);
     } else {
       markerRef.current.setLngLat([lng, lat]);
     }
@@ -760,6 +1019,133 @@ export const Monsters = () => {
     setImagePreview(null);
   };
 
+  const refreshUndiscoveredMonsterIconStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setMonsterUndiscoveredStatusLoading(true);
+        setMonsterUndiscoveredError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/monster-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setMonsterUndiscoveredUrl(url);
+        }
+        setMonsterUndiscoveredStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setMonsterUndiscoveredExists(Boolean(response?.exists));
+        setMonsterUndiscoveredRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setMonsterUndiscoveredLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setMonsterUndiscoveredPreviewNonce(Date.now());
+        if (showMessage) {
+          setMonsterUndiscoveredMessage(
+            'Undiscovered monster icon status refreshed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load undiscovered monster icon status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load undiscovered monster icon status.';
+        setMonsterUndiscoveredError(message);
+      } finally {
+        setMonsterUndiscoveredStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const handleGenerateUndiscoveredMonsterIcon = useCallback(async () => {
+    const prompt = monsterUndiscoveredPrompt.trim();
+    if (!prompt) {
+      setMonsterUndiscoveredError('Prompt is required.');
+      return;
+    }
+    try {
+      setMonsterUndiscoveredBusy(true);
+      setMonsterUndiscoveredError(null);
+      setMonsterUndiscoveredMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/monster-undiscovered',
+        { prompt }
+      );
+      setMonsterUndiscoveredMessage(
+        'Undiscovered monster icon queued for generation.'
+      );
+      await refreshUndiscoveredMonsterIconStatus();
+    } catch (err) {
+      console.error('Failed to generate undiscovered monster icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate undiscovered monster icon.';
+      setMonsterUndiscoveredError(message);
+    } finally {
+      setMonsterUndiscoveredBusy(false);
+    }
+  }, [apiClient, monsterUndiscoveredPrompt, refreshUndiscoveredMonsterIconStatus]);
+
+  const handleDeleteUndiscoveredMonsterIcon = useCallback(async () => {
+    try {
+      setMonsterUndiscoveredBusy(true);
+      setMonsterUndiscoveredError(null);
+      setMonsterUndiscoveredMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/monster-undiscovered'
+      );
+      setMonsterUndiscoveredMessage('Undiscovered monster icon deleted.');
+      await refreshUndiscoveredMonsterIconStatus();
+    } catch (err) {
+      console.error('Failed to delete undiscovered monster icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete undiscovered monster icon.';
+      setMonsterUndiscoveredError(message);
+    } finally {
+      setMonsterUndiscoveredBusy(false);
+    }
+  }, [apiClient, refreshUndiscoveredMonsterIconStatus]);
+
+  useEffect(() => {
+    void refreshUndiscoveredMonsterIconStatus();
+  }, [refreshUndiscoveredMonsterIconStatus]);
+
+  useEffect(() => {
+    if (
+      monsterUndiscoveredStatus !== 'queued' &&
+      monsterUndiscoveredStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshUndiscoveredMonsterIconStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [monsterUndiscoveredStatus, refreshUndiscoveredMonsterIconStatus]);
+
+  useEffect(() => {
+    if (!bulkTemplateJob?.jobId) {
+      return;
+    }
+    if (
+      bulkTemplateJob.status !== 'queued' &&
+      bulkTemplateJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshBulkTemplateJobStatus(bulkTemplateJob.jobId);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [bulkTemplateJob, refreshBulkTemplateJobStatus]);
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -768,14 +1154,155 @@ export const Monsters = () => {
             <div>
               <h1 className="qa-card-title">Monsters</h1>
               <p className="text-sm text-gray-600">
-                Configure monster templates (base stats + abilities), then place monsters with level and weapon loadouts.
+                Configure monster templates (base stats + abilities), then place
+                monsters with level and weapon loadouts.
               </p>
             </div>
             <div className="flex gap-2">
-              <button className="qa-btn qa-btn-secondary" onClick={openCreateTemplate}>Create Template</button>
-              <button className="qa-btn qa-btn-primary" onClick={openCreateMonster}>Create Monster</button>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={bulkTemplateCount}
+                onChange={(event) => setBulkTemplateCount(event.target.value)}
+                className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk template count"
+              />
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={handleBulkGenerateTemplates}
+                disabled={bulkTemplateBusy}
+              >
+                {bulkTemplateBusy ? 'Generating...' : 'Generate DnD Templates'}
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={openCreateTemplate}
+              >
+                Create Template
+              </button>
+              <button
+                className="qa-btn qa-btn-primary"
+                onClick={openCreateMonster}
+              >
+                Create Monster
+              </button>
             </div>
           </div>
+          {bulkTemplateJob && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold text-white ${staticStatusClassName(
+                  bulkTemplateJob.status
+                )}`}
+              >
+                {formatBulkTemplateStatus(bulkTemplateJob.status)}
+              </span>
+              <span>
+                Progress: {bulkTemplateJob.createdCount}/{bulkTemplateJob.totalCount}
+              </span>
+              <span>Job: {bulkTemplateJob.jobId}</span>
+              <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
+            </div>
+          )}
+          {bulkTemplateMessage && (
+            <p className="mt-2 text-sm text-emerald-700">{bulkTemplateMessage}</p>
+          )}
+          {bulkTemplateError && (
+            <p className="mt-2 text-sm text-red-700">{bulkTemplateError}</p>
+          )}
+        </div>
+
+        <div className="qa-card">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">
+                Undiscovered Monster Icon
+              </h2>
+              <p className="text-xs text-gray-600 break-all">
+                URL: {monsterUndiscoveredUrl}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                Requested:{' '}
+                {formatDate(monsterUndiscoveredRequestedAt ?? undefined)}
+                {' · '}
+                Last updated:{' '}
+                {formatDate(monsterUndiscoveredLastModified ?? undefined)}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={() => void refreshUndiscoveredMonsterIconStatus(true)}
+                disabled={monsterUndiscoveredStatusLoading}
+              >
+                {monsterUndiscoveredStatusLoading
+                  ? 'Refreshing...'
+                  : 'Refresh Status'}
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={handleGenerateUndiscoveredMonsterIcon}
+                disabled={
+                  monsterUndiscoveredBusy || monsterUndiscoveredStatusLoading
+                }
+              >
+                {monsterUndiscoveredBusy ? 'Working...' : 'Generate Icon'}
+              </button>
+              <button
+                className="qa-btn qa-btn-danger"
+                onClick={handleDeleteUndiscoveredMonsterIcon}
+                disabled={
+                  monsterUndiscoveredBusy || monsterUndiscoveredStatusLoading
+                }
+              >
+                {monsterUndiscoveredBusy ? 'Working...' : 'Delete Icon'}
+              </button>
+            </div>
+          </div>
+          <div className="mt-2">
+            <span
+              className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
+                monsterUndiscoveredStatus
+              )}`}
+            >
+              {monsterUndiscoveredStatus || 'unknown'}
+            </span>
+          </div>
+          <label className="block text-sm mt-3">
+            Generation Prompt
+            <textarea
+              className="block w-full border border-gray-300 rounded-md p-2 mt-1 min-h-[88px]"
+              value={monsterUndiscoveredPrompt}
+              onChange={(event) =>
+                setMonsterUndiscoveredPrompt(event.target.value)
+              }
+              placeholder="Prompt used to generate the undiscovered monster icon."
+            />
+          </label>
+          {monsterUndiscoveredExists ? (
+            <div className="mt-3">
+              <img
+                src={`${monsterUndiscoveredUrl}?v=${monsterUndiscoveredPreviewNonce}`}
+                alt="Undiscovered monster icon preview"
+                className="w-24 h-24 object-cover border rounded-md bg-gray-50"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500 mt-2">
+              No icon currently found at this URL.
+            </p>
+          )}
+          {monsterUndiscoveredMessage ? (
+            <p className="text-sm text-emerald-700 mt-2">
+              {monsterUndiscoveredMessage}
+            </p>
+          ) : null}
+          {monsterUndiscoveredError ? (
+            <p className="text-sm text-red-600 mt-2">
+              {monsterUndiscoveredError}
+            </p>
+          ) : null}
         </div>
 
         <div className="qa-card">
@@ -800,7 +1327,10 @@ export const Monsters = () => {
               ) : (
                 <div className="grid gap-3">
                   {filteredTemplates.map((template) => (
-                    <div key={template.id} className="border border-gray-200 rounded-md p-3 bg-white">
+                    <div
+                      key={template.id}
+                      className="border border-gray-200 rounded-md p-3 bg-white"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex gap-3 min-w-0">
                           {template.thumbnailUrl || template.imageUrl ? (
@@ -810,42 +1340,82 @@ export const Monsters = () => {
                               className="w-14 h-14 rounded object-cover border border-gray-200"
                             />
                           ) : (
-                            <div className="w-14 h-14 rounded bg-gray-200 flex items-center justify-center text-gray-500">?</div>
+                            <div className="w-14 h-14 rounded bg-gray-200 flex items-center justify-center text-gray-500">
+                              ?
+                            </div>
                           )}
                           <div>
-                            <div className="font-semibold text-base">{template.name}</div>
-                          {template.description ? (
-                            <p className="text-sm text-gray-600 mt-1">{template.description}</p>
-                          ) : null}
-                          <p className="text-sm text-gray-600 mt-1">
-                            STR {template.baseStrength} · DEX {template.baseDexterity} · CON {template.baseConstitution} · INT {template.baseIntelligence} · WIS {template.baseWisdom} · CHA {template.baseCharisma}
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Spells: {template.spells?.filter((spell) => (spell.abilityType ?? 'spell') !== 'technique').length ?? 0}
-                            {' · '}
-                            Techniques: {template.spells?.filter((spell) => (spell.abilityType ?? 'spell') === 'technique').length ?? 0}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Image generation: {formatGenerationStatus(template.imageGenerationStatus)}
-                          </p>
-                          {template.imageGenerationError ? (
-                            <p className="text-xs text-red-600 mt-1">{template.imageGenerationError}</p>
-                          ) : null}
+                            <div className="font-semibold text-base">
+                              {template.name}
+                            </div>
+                            {template.description ? (
+                              <p className="text-sm text-gray-600 mt-1">
+                                {template.description}
+                              </p>
+                            ) : null}
+                            <p className="text-sm text-gray-600 mt-1">
+                              STR {template.baseStrength} · DEX{' '}
+                              {template.baseDexterity} · CON{' '}
+                              {template.baseConstitution} · INT{' '}
+                              {template.baseIntelligence} · WIS{' '}
+                              {template.baseWisdom} · CHA{' '}
+                              {template.baseCharisma}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Spells:{' '}
+                              {template.spells?.filter(
+                                (spell) =>
+                                  (spell.abilityType ?? 'spell') !== 'technique'
+                              ).length ?? 0}
+                              {' · '}
+                              Techniques:{' '}
+                              {template.spells?.filter(
+                                (spell) =>
+                                  (spell.abilityType ?? 'spell') === 'technique'
+                              ).length ?? 0}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              Image generation:{' '}
+                              {formatGenerationStatus(
+                                template.imageGenerationStatus
+                              )}
+                            </p>
+                            {template.imageGenerationError ? (
+                              <p className="text-xs text-red-600 mt-1">
+                                {template.imageGenerationError}
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                         <div className="flex gap-2">
                           <button
                             className="qa-btn qa-btn-secondary"
-                            onClick={() => handleGenerateTemplateImage(template)}
+                            onClick={() =>
+                              handleGenerateTemplateImage(template)
+                            }
                             disabled={
                               generatingTemplateId === template.id ||
-                              ['queued', 'in_progress'].includes(template.imageGenerationStatus || '')
+                              ['queued', 'in_progress'].includes(
+                                template.imageGenerationStatus || ''
+                              )
                             }
                           >
-                            {generatingTemplateId === template.id ? 'Queueing...' : 'Generate Image'}
+                            {generatingTemplateId === template.id
+                              ? 'Queueing...'
+                              : 'Generate Image'}
                           </button>
-                          <button className="qa-btn qa-btn-secondary" onClick={() => openEditTemplate(template)}>Edit</button>
-                          <button className="qa-btn qa-btn-danger" onClick={() => deleteTemplate(template)}>Delete</button>
+                          <button
+                            className="qa-btn qa-btn-secondary"
+                            onClick={() => openEditTemplate(template)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="qa-btn qa-btn-danger"
+                            onClick={() => deleteTemplate(template)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -861,7 +1431,10 @@ export const Monsters = () => {
               ) : (
                 <div className="grid gap-4">
                   {filteredMonsters.map((monster) => (
-                    <div key={monster.id} className="border border-gray-200 rounded-md p-3 bg-white">
+                    <div
+                      key={monster.id}
+                      className="border border-gray-200 rounded-md p-3 bg-white"
+                    >
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <div className="flex gap-3 min-w-0">
                           {monster.thumbnailUrl || monster.imageUrl ? (
@@ -878,42 +1451,73 @@ export const Monsters = () => {
                               />
                             </button>
                           ) : (
-                            <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">?</div>
+                            <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
+                              ?
+                            </div>
                           )}
                           <div className="min-w-0">
-                            <h3 className="font-semibold text-lg truncate">{monster.name}</h3>
+                            <h3 className="font-semibold text-lg truncate">
+                              {monster.name}
+                            </h3>
                             <p className="text-sm text-gray-600">
-                              Zone: {zoneNameById.get(monster.zoneId) ?? monster.zoneId} · Level {monster.level}
+                              Zone:{' '}
+                              {zoneNameById.get(monster.zoneId) ??
+                                monster.zoneId}{' '}
+                              · Level {monster.level}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Template: {monster.template?.name ?? (monster.templateId ? templateNameById.get(monster.templateId) : 'N/A')}
+                              Template:{' '}
+                              {monster.template?.name ??
+                                (monster.templateId
+                                  ? templateNameById.get(monster.templateId)
+                                  : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Dominant Hand: {monster.dominantHandInventoryItem?.name ??
+                              Dominant Hand:{' '}
+                              {monster.dominantHandInventoryItem?.name ??
                                 monster.weaponInventoryItem?.name ??
-                                (monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId
+                                (monster.dominantHandInventoryItemId ??
+                                monster.weaponInventoryItemId
                                   ? `#${monster.dominantHandInventoryItemId ?? monster.weaponInventoryItemId}`
                                   : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Off Hand: {monster.offHandInventoryItem?.name ??
-                                (monster.offHandInventoryItemId ? `#${monster.offHandInventoryItemId}` : 'N/A')}
+                              Off Hand:{' '}
+                              {monster.offHandInventoryItem?.name ??
+                                (monster.offHandInventoryItemId
+                                  ? `#${monster.offHandInventoryItemId}`
+                                  : 'N/A')}
                             </p>
                             <p className="text-sm text-gray-600">
-                              Damage {monster.attackDamageMin}-{monster.attackDamageMax} · Swipes {monster.attackSwipesPerAttack}
-                            </p>
-                            <p className="text-sm text-gray-600">Health {monster.health}/{monster.maxHealth} · Mana {monster.mana}/{monster.maxMana}</p>
-                            <p className="text-sm text-gray-600">
-                              STR {monster.strength} · DEX {monster.dexterity} · CON {monster.constitution} · INT {monster.intelligence} · WIS {monster.wisdom} · CHA {monster.charisma}
+                              Damage {monster.attackDamageMin}-
+                              {monster.attackDamageMax} · Swipes{' '}
+                              {monster.attackSwipesPerAttack}
                             </p>
                             <p className="text-sm text-gray-600">
-                              XP {monster.rewardExperience} · Gold {monster.rewardGold} · Item rewards {monster.itemRewards?.length ?? 0}
+                              Health {monster.health}/{monster.maxHealth} · Mana{' '}
+                              {monster.mana}/{monster.maxMana}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              STR {monster.strength} · DEX {monster.dexterity} ·
+                              CON {monster.constitution} · INT{' '}
+                              {monster.intelligence} · WIS {monster.wisdom} ·
+                              CHA {monster.charisma}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              XP {monster.rewardExperience} · Gold{' '}
+                              {monster.rewardGold} · Item rewards{' '}
+                              {monster.itemRewards?.length ?? 0}
                             </p>
                             <p className="text-xs text-gray-500 mt-1">
-                              Image generation: {formatGenerationStatus(monster.imageGenerationStatus)}
+                              Image generation:{' '}
+                              {formatGenerationStatus(
+                                monster.imageGenerationStatus
+                              )}
                             </p>
                             {monster.imageGenerationError ? (
-                              <p className="text-xs text-red-600 mt-1">{monster.imageGenerationError}</p>
+                              <p className="text-xs text-red-600 mt-1">
+                                {monster.imageGenerationError}
+                              </p>
                             ) : null}
                           </div>
                         </div>
@@ -923,10 +1527,22 @@ export const Monsters = () => {
                             onClick={() => handleGenerateImage(monster)}
                             disabled={generatingMonsterId === monster.id}
                           >
-                            {generatingMonsterId === monster.id ? 'Queueing...' : 'Generate Image'}
+                            {generatingMonsterId === monster.id
+                              ? 'Queueing...'
+                              : 'Generate Image'}
                           </button>
-                          <button className="qa-btn qa-btn-secondary" onClick={() => openEditMonster(monster)}>Edit</button>
-                          <button className="qa-btn qa-btn-danger" onClick={() => deleteMonster(monster)}>Delete</button>
+                          <button
+                            className="qa-btn qa-btn-secondary"
+                            onClick={() => openEditMonster(monster)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="qa-btn qa-btn-danger"
+                            onClick={() => deleteMonster(monster)}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -942,8 +1558,15 @@ export const Monsters = () => {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[92vh] overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{editingTemplate ? 'Edit Template' : 'Create Template'}</h2>
-              <button className="qa-btn qa-btn-secondary" onClick={closeTemplateModal}>Close</button>
+              <h2 className="text-lg font-semibold">
+                {editingTemplate ? 'Edit Template' : 'Create Template'}
+              </h2>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={closeTemplateModal}
+              >
+                Close
+              </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
@@ -952,7 +1575,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.name}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, name: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -960,7 +1588,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.description}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, description: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        description: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -971,7 +1604,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.imageUrl}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        imageUrl: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -979,7 +1617,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.thumbnailUrl}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, thumbnailUrl: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        thumbnailUrl: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -992,7 +1635,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseStrength}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseStrength: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseStrength: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1002,7 +1650,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseDexterity}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseDexterity: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseDexterity: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1012,7 +1665,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseConstitution}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseConstitution: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseConstitution: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1022,7 +1680,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseIntelligence}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseIntelligence: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseIntelligence: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1032,7 +1695,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseWisdom}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseWisdom: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseWisdom: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1042,7 +1710,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={templateForm.baseCharisma}
-                    onChange={(event) => setTemplateForm((prev) => ({ ...prev, baseCharisma: event.target.value }))}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        baseCharisma: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -1056,7 +1729,9 @@ export const Monsters = () => {
                   onChange={(event) => updateTemplateSpellIds(event.target)}
                 >
                   {spellAbilities.map((spell) => (
-                    <option key={spell.id} value={spell.id}>{spell.name}</option>
+                    <option key={spell.id} value={spell.id}>
+                      {spell.name}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -1070,14 +1745,26 @@ export const Monsters = () => {
                   onChange={(event) => updateTemplateTechniqueIds(event.target)}
                 >
                   {techniqueAbilities.map((technique) => (
-                    <option key={technique.id} value={technique.id}>{technique.name}</option>
+                    <option key={technique.id} value={technique.id}>
+                      {technique.name}
+                    </option>
                   ))}
                 </select>
               </label>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button className="qa-btn qa-btn-secondary" onClick={closeTemplateModal}>Cancel</button>
-                <button className="qa-btn qa-btn-primary" onClick={saveTemplate}>Save Template</button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  onClick={closeTemplateModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="qa-btn qa-btn-primary"
+                  onClick={saveTemplate}
+                >
+                  Save Template
+                </button>
               </div>
             </div>
           </div>
@@ -1088,8 +1775,15 @@ export const Monsters = () => {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[92vh] overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{editingMonster ? 'Edit Monster' : 'Create Monster'}</h2>
-              <button className="qa-btn qa-btn-secondary" onClick={closeMonsterModal}>Close</button>
+              <h2 className="text-lg font-semibold">
+                {editingMonster ? 'Edit Monster' : 'Create Monster'}
+              </h2>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={closeMonsterModal}
+              >
+                Close
+              </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
@@ -1098,7 +1792,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.name}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, name: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1106,23 +1805,37 @@ export const Monsters = () => {
                   <select
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.templateId}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, templateId: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        templateId: event.target.value,
+                      }))
+                    }
                   >
                     <option value="">Select template</option>
                     {templates.map((template) => (
-                      <option key={template.id} value={template.id}>{template.name}</option>
+                      <option key={template.id} value={template.id}>
+                        {template.name}
+                      </option>
                     ))}
                   </select>
                 </label>
               </div>
 
               <label className="block">
-                <span className="block text-sm mb-1">Description (optional)</span>
+                <span className="block text-sm mb-1">
+                  Description (optional)
+                </span>
                 <textarea
                   className="w-full border border-gray-300 rounded-md p-2"
                   rows={3}
                   value={monsterForm.description}
-                  onChange={(event) => setMonsterForm((prev) => ({ ...prev, description: event.target.value }))}
+                  onChange={(event) =>
+                    setMonsterForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
+                  }
                 />
               </label>
 
@@ -1132,11 +1845,18 @@ export const Monsters = () => {
                   <select
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.zoneId}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, zoneId: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        zoneId: event.target.value,
+                      }))
+                    }
                   >
                     <option value="">Select zone</option>
                     {zones.map((zone) => (
-                      <option key={zone.id} value={zone.id}>{zone.name}</option>
+                      <option key={zone.id} value={zone.id}>
+                        {zone.name}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -1145,12 +1865,15 @@ export const Monsters = () => {
                   <select
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.dominantHandInventoryItemId}
-                    onChange={(event) => updateDominantHandSelection(event.target.value)}
+                    onChange={(event) =>
+                      updateDominantHandSelection(event.target.value)
+                    }
                   >
                     <option value="">Select dominant hand item</option>
                     {dominantHandItems.map((item) => (
                       <option key={item.id} value={String(item.id)}>
-                        {item.name} ({item.damageMin}-{item.damageMax} · {item.swipesPerAttack ?? 1} swipes)
+                        {item.name} ({item.damageMin}-{item.damageMax} ·{' '}
+                        {item.swipesPerAttack ?? 1} swipes)
                       </option>
                     ))}
                   </select>
@@ -1160,7 +1883,12 @@ export const Monsters = () => {
                   <select
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.offHandInventoryItemId}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, offHandInventoryItemId: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        offHandInventoryItemId: event.target.value,
+                      }))
+                    }
                     disabled={dominantIsTwoHanded}
                   >
                     <option value="">None</option>
@@ -1179,7 +1907,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.latitude}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, latitude: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        latitude: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1187,7 +1920,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.longitude}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, longitude: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        longitude: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1197,7 +1935,12 @@ export const Monsters = () => {
                     min={1}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.level}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, level: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        level: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -1216,13 +1959,19 @@ export const Monsters = () => {
               <div className="text-sm">
                 <div className="flex items-center justify-between mb-1">
                   <span>Map Location Picker</span>
-                  <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+                  <span className="text-xs text-gray-500">
+                    Click map to set latitude/longitude
+                  </span>
                 </div>
                 {mapboxgl.accessToken ? (
-                  <div ref={mapContainerRef} className="w-full h-64 border border-gray-300 rounded-md" />
+                  <div
+                    ref={mapContainerRef}
+                    className="w-full h-64 border border-gray-300 rounded-md"
+                  />
                 ) : (
                   <div className="w-full border border-gray-300 rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                    unavailable.
                   </div>
                 )}
               </div>
@@ -1233,7 +1982,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.imageUrl}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        imageUrl: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1241,7 +1995,12 @@ export const Monsters = () => {
                   <input
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.thumbnailUrl}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, thumbnailUrl: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        thumbnailUrl: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -1254,7 +2013,12 @@ export const Monsters = () => {
                     min={0}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.rewardExperience}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, rewardExperience: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        rewardExperience: event.target.value,
+                      }))
+                    }
                   />
                 </label>
                 <label className="block">
@@ -1264,7 +2028,12 @@ export const Monsters = () => {
                     min={0}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.rewardGold}
-                    onChange={(event) => setMonsterForm((prev) => ({ ...prev, rewardGold: event.target.value }))}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        rewardGold: event.target.value,
+                      }))
+                    }
                   />
                 </label>
               </div>
@@ -1278,7 +2047,10 @@ export const Monsters = () => {
                     onClick={() =>
                       setMonsterForm((prev) => ({
                         ...prev,
-                        itemRewards: [...prev.itemRewards, { inventoryItemId: '', quantity: '1' }],
+                        itemRewards: [
+                          ...prev.itemRewards,
+                          { inventoryItemId: '', quantity: '1' },
+                        ],
                       }))
                     }
                   >
@@ -1286,18 +2058,29 @@ export const Monsters = () => {
                   </button>
                 </div>
                 {monsterForm.itemRewards.length === 0 ? (
-                  <p className="text-sm text-gray-500">No item rewards configured.</p>
+                  <p className="text-sm text-gray-500">
+                    No item rewards configured.
+                  </p>
                 ) : (
                   monsterForm.itemRewards.map((reward, index) => (
-                    <div key={`${reward.inventoryItemId}-${index}`} className="grid grid-cols-[1fr_120px_auto] gap-2">
+                    <div
+                      key={`${reward.inventoryItemId}-${index}`}
+                      className="grid grid-cols-[1fr_120px_auto] gap-2"
+                    >
                       <select
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.inventoryItemId}
-                        onChange={(event) => updateMonsterItemReward(index, { inventoryItemId: event.target.value })}
+                        onChange={(event) =>
+                          updateMonsterItemReward(index, {
+                            inventoryItemId: event.target.value,
+                          })
+                        }
                       >
                         <option value="">Select item</option>
                         {inventoryItems.map((item) => (
-                          <option key={item.id} value={String(item.id)}>{item.name}</option>
+                          <option key={item.id} value={String(item.id)}>
+                            {item.name}
+                          </option>
                         ))}
                       </select>
                       <input
@@ -1305,7 +2088,11 @@ export const Monsters = () => {
                         min={1}
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.quantity}
-                        onChange={(event) => updateMonsterItemReward(index, { quantity: event.target.value })}
+                        onChange={(event) =>
+                          updateMonsterItemReward(index, {
+                            quantity: event.target.value,
+                          })
+                        }
                       />
                       <button
                         type="button"
@@ -1313,7 +2100,9 @@ export const Monsters = () => {
                         onClick={() =>
                           setMonsterForm((prev) => ({
                             ...prev,
-                            itemRewards: prev.itemRewards.filter((_, i) => i !== index),
+                            itemRewards: prev.itemRewards.filter(
+                              (_, i) => i !== index
+                            ),
                           }))
                         }
                       >
@@ -1325,8 +2114,15 @@ export const Monsters = () => {
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button className="qa-btn qa-btn-secondary" onClick={closeMonsterModal}>Cancel</button>
-                <button className="qa-btn qa-btn-primary" onClick={saveMonster}>Save Monster</button>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  onClick={closeMonsterModal}
+                >
+                  Cancel
+                </button>
+                <button className="qa-btn qa-btn-primary" onClick={saveMonster}>
+                  Save Monster
+                </button>
               </div>
             </div>
           </div>

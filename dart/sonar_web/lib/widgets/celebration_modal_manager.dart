@@ -18,8 +18,11 @@ class CelebrationModalManager extends StatelessWidget {
         final scenarioSuccess = type == 'scenarioOutcome'
             ? data['successful'] == true
             : true;
-        final titleColor = type == 'scenarioOutcome'
-            ? (scenarioSuccess ? Colors.amber.shade700 : Colors.red.shade400)
+        final showFailureColor =
+            (type == 'scenarioOutcome' && !scenarioSuccess) ||
+            type == 'monsterBattleDefeat';
+        final titleColor = showFailureColor
+            ? Colors.red.shade400
             : Colors.amber.shade700;
 
         return Dialog(
@@ -65,6 +68,10 @@ class CelebrationModalManager extends StatelessWidget {
       case 'scenarioOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Scenario Success!' : 'Scenario Failed';
+      case 'monsterBattleVictory':
+        return 'Victory!';
+      case 'monsterBattleDefeat':
+        return 'Defeat!';
       default:
         return 'Congratulations!';
     }
@@ -531,6 +538,54 @@ class CelebrationModalManager extends StatelessWidget {
               for (final spell in spellsAwarded)
                 Text('+Spell: ${spell['name'] as String? ?? 'Spell'}'),
             ],
+          ],
+        );
+      case 'monsterBattleVictory':
+        final monsterName =
+            (data['monsterName'] as String?)?.trim() ?? 'Monster';
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((entry) => Map<String, dynamic>.from(entry))
+                .toList() ??
+            const [];
+        final rewards = <Widget>[
+          Text('You defeated $monsterName!'),
+          const SizedBox(height: 10),
+        ];
+        if (rewardExperience > 0) {
+          rewards.add(Text('+$rewardExperience XP'));
+        }
+        if (rewardGold > 0) {
+          rewards.add(Text('+$rewardGold Gold'));
+        }
+        for (final item in itemsAwarded) {
+          final name = item['name'] as String? ?? 'Item';
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+          rewards.add(Text('+$quantity $name'));
+        }
+        if (rewardExperience <= 0 && rewardGold <= 0 && itemsAwarded.isEmpty) {
+          rewards.add(const Text('No loot this time.'));
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: rewards,
+        );
+      case 'monsterBattleDefeat':
+        final monsterName =
+            (data['monsterName'] as String?)?.trim() ?? 'The monster';
+        final healthSetTo = (data['healthSetTo'] as num?)?.toInt() ?? 1;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('$monsterName defeated you.'),
+            const SizedBox(height: 8),
+            Text('Your life has been set to $healthSetTo.'),
           ],
         );
       default:

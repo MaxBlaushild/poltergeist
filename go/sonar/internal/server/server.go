@@ -51,12 +51,20 @@ import (
 )
 
 const (
-	poiPlaceholderImageURL       = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
-	poiPlaceholderThumbnailKey   = "thumbnails/placeholders/poi-undiscovered.png"
-	questAcceptRadiusMeters      = 50.0
-	scenarioInteractRadiusMeters = 50.0
-	scenarioDefaultDifficulty    = 24
-	scenarioRollSides            = 20
+	poiPlaceholderImageURL        = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderThumbnailKey    = "thumbnails/placeholders/poi-undiscovered.png"
+	scenarioUndiscoveredIconKey   = "thumbnails/placeholders/scenario-undiscovered.png"
+	monsterUndiscoveredIconKey    = "thumbnails/placeholders/monster-undiscovered.png"
+	scenarioUndiscoveredStatusKey = "admin:thumbnails:scenario-undiscovered:requested-at"
+	monsterUndiscoveredStatusKey  = "admin:thumbnails:monster-undiscovered:requested-at"
+	scenarioUndiscoveredIconText  = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	monsterUndiscoveredIconText   = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	staticThumbnailJobTimeout     = 10 * time.Minute
+	staticThumbnailStatusTTL      = 2 * time.Hour
+	questAcceptRadiusMeters       = 50.0
+	scenarioInteractRadiusMeters  = 50.0
+	scenarioDefaultDifficulty     = 24
+	scenarioRollSides             = 20
 )
 
 var (
@@ -279,6 +287,12 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/scenario-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJobs))
 	r.GET("/sonar/admin/scenario-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioGenerationJob))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
+	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
+	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
+	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -393,6 +407,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
 	r.POST("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterTemplate))
+	r.POST("/sonar/monster-templates/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateMonsterTemplates))
+	r.GET("/sonar/monster-templates/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateMonsterTemplatesStatus))
 	r.PUT("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterTemplate))
 	r.POST("/sonar/monster-templates/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterTemplateImage))
 	r.DELETE("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterTemplate))
@@ -3418,6 +3434,8 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		QuestID           uuid.UUID    `json:"questId"`
 		OrderIndex        int          `json:"orderIndex"`
 		PointOfInterestID *uuid.UUID   `json:"pointOfInterestId"`
+		ScenarioID        *uuid.UUID   `json:"scenarioId"`
+		MonsterID         *uuid.UUID   `json:"monsterId"`
 		Polygon           string       `json:"polygon"`
 		PolygonPoints     [][2]float64 `json:"polygonPoints"`
 		SubmissionType    string       `json:"submissionType"`
@@ -3433,8 +3451,26 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		return
 	}
 
-	if requestBody.PointOfInterestID == nil && strings.TrimSpace(requestBody.Polygon) == "" && len(requestBody.PolygonPoints) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId or polygon"})
+	hasPolygon := strings.TrimSpace(requestBody.Polygon) != "" || len(requestBody.PolygonPoints) > 0
+	targetCount := 0
+	if requestBody.PointOfInterestID != nil {
+		targetCount++
+	}
+	if requestBody.ScenarioID != nil {
+		targetCount++
+	}
+	if requestBody.MonsterID != nil {
+		targetCount++
+	}
+	if hasPolygon {
+		targetCount++
+	}
+	if targetCount == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId, scenarioId, monsterId, or polygon"})
+		return
+	}
+	if targetCount > 1 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have exactly one target: pointOfInterestId, scenarioId, monsterId, or polygon"})
 		return
 	}
 
@@ -3445,6 +3481,8 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		QuestID:           requestBody.QuestID,
 		OrderIndex:        requestBody.OrderIndex,
 		PointOfInterestID: requestBody.PointOfInterestID,
+		ScenarioID:        requestBody.ScenarioID,
+		MonsterID:         requestBody.MonsterID,
 	}
 	if strings.TrimSpace(requestBody.SubmissionType) == "" {
 		node.SubmissionType = models.DefaultQuestNodeSubmissionType()
@@ -5969,6 +6007,195 @@ func (s *server) enqueueThumbnailTask(entityType string, entityID uuid.UUID, sou
 	}
 }
 
+func staticThumbnailURL(destinationKey string) string {
+	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", jobs.ThumbnailBucket, destinationKey)
+}
+
+func (s *server) setStaticThumbnailRequestedAt(ctx *gin.Context, statusKey string, requestedAt time.Time) {
+	if s.redisClient == nil || strings.TrimSpace(statusKey) == "" {
+		return
+	}
+	_ = s.redisClient.Set(
+		ctx.Request.Context(),
+		statusKey,
+		requestedAt.UTC().Format(time.RFC3339Nano),
+		staticThumbnailStatusTTL,
+	).Err()
+}
+
+func (s *server) clearStaticThumbnailRequestedAt(ctx *gin.Context, statusKey string) {
+	if s.redisClient == nil || strings.TrimSpace(statusKey) == "" {
+		return
+	}
+	_ = s.redisClient.Del(ctx.Request.Context(), statusKey).Err()
+}
+
+func (s *server) getStaticThumbnailRequestedAt(ctx *gin.Context, statusKey string) (*time.Time, error) {
+	if s.redisClient == nil || strings.TrimSpace(statusKey) == "" {
+		return nil, nil
+	}
+	value, err := s.redisClient.Get(ctx.Request.Context(), statusKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	parsed, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	return &parsed, nil
+}
+
+func (s *server) queueGeneratedStaticThumbnail(ctx *gin.Context, defaultPrompt string, destinationKey string, statusKey string) {
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+
+	var requestBody struct {
+		Prompt *string `json:"prompt"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	prompt := strings.TrimSpace(defaultPrompt)
+	if requestBody.Prompt != nil {
+		prompt = strings.TrimSpace(*requestBody.Prompt)
+		if prompt == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "prompt cannot be blank"})
+			return
+		}
+	}
+
+	request := deep_priest.GenerateImageRequest{
+		Prompt: prompt,
+	}
+	deep_priest.ApplyGenerateImageDefaults(&request)
+
+	sourceImageURL, err := s.deepPriest.GenerateImage(request)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateImageThumbnailTaskPayload{
+		EntityType:     jobs.ThumbnailEntityStatic,
+		SourceUrl:      sourceImageURL,
+		DestinationKey: destinationKey,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateImageThumbnailTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	requestedAt := time.Now().UTC()
+	s.setStaticThumbnailRequestedAt(ctx, statusKey, requestedAt)
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":       "queued",
+		"prompt":       prompt,
+		"sourceImage":  sourceImageURL,
+		"thumbnailUrl": staticThumbnailURL(destinationKey),
+		"requestedAt":  requestedAt.Format(time.RFC3339Nano),
+	})
+}
+
+func (s *server) generateScenarioUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, scenarioUndiscoveredIconText, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+}
+
+func (s *server) generateMonsterUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, monsterUndiscoveredIconText, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
+func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
+	if strings.TrimSpace(destinationKey) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing thumbnail destination key"})
+		return
+	}
+	lastModified, err := s.awsClient.GetObjectLastModified(jobs.ThumbnailBucket, destinationKey)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	requestedAt, requestedAtErr := s.getStaticThumbnailRequestedAt(ctx, statusKey)
+	if requestedAtErr != nil {
+		log.Printf("Failed to read static thumbnail status key %s: %v", statusKey, requestedAtErr)
+	}
+
+	status := "missing"
+	exists := lastModified != nil
+	if requestedAt != nil {
+		if exists && !lastModified.Before(*requestedAt) {
+			status = "completed"
+			s.clearStaticThumbnailRequestedAt(ctx, statusKey)
+		} else if time.Since(*requestedAt) > staticThumbnailJobTimeout {
+			status = "failed"
+		} else if exists {
+			status = "in_progress"
+		} else {
+			status = "queued"
+		}
+	} else if exists {
+		status = "completed"
+	}
+
+	response := gin.H{
+		"status":       status,
+		"exists":       exists,
+		"thumbnailUrl": staticThumbnailURL(destinationKey),
+	}
+	if lastModified != nil {
+		response["lastModified"] = lastModified.UTC().Format(time.RFC3339Nano)
+	}
+	if requestedAt != nil {
+		response["requestedAt"] = requestedAt.UTC().Format(time.RFC3339Nano)
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getScenarioUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+}
+
+func (s *server) getMonsterUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
+func (s *server) deleteStaticThumbnail(ctx *gin.Context, destinationKey string, statusKey string) {
+	if strings.TrimSpace(destinationKey) == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing thumbnail destination key"})
+		return
+	}
+	if err := s.awsClient.DeleteObjectFromS3(jobs.ThumbnailBucket, destinationKey); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.clearStaticThumbnailRequestedAt(ctx, statusKey)
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":       "deleted",
+		"thumbnailUrl": staticThumbnailURL(destinationKey),
+	})
+}
+
+func (s *server) deleteScenarioUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
+}
+
+func (s *server) deleteMonsterUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
@@ -5991,9 +6218,8 @@ func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
 		return
 	}
 
-	thumbnailURL := fmt.Sprintf("https://%s.s3.amazonaws.com/%s", jobs.ThumbnailBucket, poiPlaceholderThumbnailKey)
 	ctx.JSON(http.StatusOK, gin.H{
-		"thumbnailUrl": thumbnailURL,
+		"thumbnailUrl": staticThumbnailURL(poiPlaceholderThumbnailKey),
 		"status":       "queued",
 	})
 }
@@ -7468,6 +7694,28 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			return
 		}
 		distance := util.HaversineDistance(userLat, userLng, poiLat, poiLng)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
+	} else if node.ScenarioID != nil {
+		scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
+		if err != nil || scenario == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load scenario"})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
+	} else if node.MonsterID != nil {
+		monster, err := s.dbClient.Monster().FindByID(ctx, *node.MonsterID)
+		if err != nil || monster == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster"})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, monster.Latitude, monster.Longitude)
 		if distance > 100 {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
 			return

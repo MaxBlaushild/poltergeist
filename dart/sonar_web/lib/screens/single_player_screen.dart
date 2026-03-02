@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
@@ -43,6 +44,7 @@ import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
 import '../widgets/inventory_panel.dart';
 import '../widgets/log_panel.dart';
+import '../widgets/monster_battle_dialog.dart';
 import '../widgets/monster_panel.dart';
 import '../widgets/new_item_modal.dart';
 import '../widgets/point_of_interest_panel.dart';
@@ -60,7 +62,12 @@ import '../widgets/paper_texture.dart';
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
 const _scenarioMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
+const _monsterMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
 const _mapThumbnailVersion = 'v4';
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
@@ -116,11 +123,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Set<String> _resolvedScenarioIds = <String>{};
   final Set<String> _resolvedScenarioSignatures = <String>{};
   final Set<String> _openedTreasureChestIds = <String>{};
+  final Set<String> _defeatedMonsterIds = <String>{};
+  String? _defeatedMonsterIdsUserId;
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
   Uint8List? _scenarioMysteryThumbnailBytes;
   bool _scenarioMysteryThumbnailAdded = false;
+  Uint8List? _monsterMysteryThumbnailBytes;
+  bool _monsterMysteryThumbnailAdded = false;
   bool _styleLoaded = false;
   bool _markersAdded = false;
   bool _addedMarkersWithEmptyDiscoveries = false;
@@ -142,6 +153,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _questLogNeedsOverlayApply = false;
   bool _scenarioVisibilityRefreshPending = false;
   Future<void> _scenarioRefreshSequence = Future<void>.value();
+  Future<void> _monsterRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
@@ -238,7 +250,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _refreshScenarioVisibilityForLocationChange() {
     if (_styleLoaded && _mapController != null && _markersAdded) {
       _scenarioVisibilityRefreshPending = false;
-      unawaited(_refreshScenarioSymbols());
+      unawaited(
+        (() async {
+          await _refreshScenarioSymbols();
+          await _refreshMonsterSymbols();
+        })(),
+      );
       return;
     }
     _scenarioVisibilityRefreshPending = true;
@@ -247,6 +264,51 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _onAuthChanged() {
     if (!mounted) return;
     _requestQuestLogIfReady(force: true);
+    unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
+  }
+
+  String _defeatedMonstersPrefsKey(String userId) {
+    return '$_defeatedMonstersPrefsKeyPrefix:$userId';
+  }
+
+  Future<void> _restoreDefeatedMonsterIds({bool refreshMap = false}) async {
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    final userId = auth.user?.id;
+    if (_defeatedMonsterIdsUserId == userId) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedIds = userId == null || userId.isEmpty
+        ? const <String>[]
+        : (prefs.getStringList(_defeatedMonstersPrefsKey(userId)) ??
+              const <String>[]);
+    if (!mounted) return;
+
+    setState(() {
+      _defeatedMonsterIdsUserId = userId;
+      _defeatedMonsterIds
+        ..clear()
+        ..addAll(storedIds.where((id) => id.trim().isNotEmpty));
+      if (_monsters.isNotEmpty) {
+        _monsters = _monsters
+            .where((monster) => !_defeatedMonsterIds.contains(monster.id))
+            .toList();
+      }
+    });
+
+    if (refreshMap && _styleLoaded && _mapController != null && _markersAdded) {
+      await _refreshMonsterSymbols();
+    }
+  }
+
+  Future<void> _persistDefeatedMonsterIds() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _defeatedMonstersPrefsKey(userId),
+      _defeatedMonsterIds.toList(growable: false),
+    );
   }
 
   void _onFilterChanged() {
@@ -469,6 +531,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _monsterCircleById.clear();
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
+      _monsterMysteryThumbnailBytes = null;
+      _monsterMysteryThumbnailAdded = false;
       _questLines = [];
       _characterSymbolsById.clear();
     });
@@ -488,6 +552,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (_scenarioVisibilityRefreshPending) {
           _scenarioVisibilityRefreshPending = false;
           await _refreshScenarioSymbols();
+          await _refreshMonsterSymbols();
         }
       })(),
     );
@@ -748,8 +813,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _loadAll() async {
     debugPrint('SinglePlayer: _loadAll start');
     final svc = context.read<PoiService>();
+    final discoveriesProvider = context.read<DiscoveriesProvider>();
+    final zoneProvider = context.read<ZoneProvider>();
     try {
-      await context.read<DiscoveriesProvider>().refresh();
+      await _restoreDefeatedMonsterIds();
+      await discoveriesProvider.refresh();
       final zones = await svc.getZones();
       final pois = await svc.getPointsOfInterest();
       final characters = await svc.getCharacters();
@@ -757,7 +825,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       debugPrint(
         'SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}',
       );
-      final zoneProvider = context.read<ZoneProvider>();
       zoneProvider.setZones(zones);
       setState(() {
         _zones = zones;
@@ -815,7 +882,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   ),
             )
             .toList();
-        _monsters = monsters;
+        _monsters = monsters
+            .where((monster) => !_defeatedMonsterIds.contains(monster.id))
+            .toList();
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
@@ -847,6 +916,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       location.longitude,
       scenario.latitude,
       scenario.longitude,
+    );
+    return distance > kProximityUnlockRadiusMeters;
+  }
+
+  bool _isMonsterMystery(Monster monster) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return true;
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      monster.latitude,
+      monster.longitude,
     );
     return distance > kProximityUnlockRadiusMeters;
   }
@@ -888,6 +969,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _scenarioMysteryImageUrl,
         );
       } catch (_) {}
+      _scenarioMysteryThumbnailBytes ??= await loadPoiThumbnail(
+        _legacyMysteryImageUrl,
+      );
     }
     if (_scenarioMysteryThumbnailBytes != null &&
         !_scenarioMysteryThumbnailAdded) {
@@ -1093,9 +1177,89 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  Future<void> _refreshMonsterSymbols() async {
+  Future<void> _loadMonsterMysteryThumbnail(MapLibreMapController c) async {
+    if (_monsterMysteryThumbnailBytes == null) {
+      try {
+        _monsterMysteryThumbnailBytes = await loadPoiThumbnail(
+          _monsterMysteryImageUrl,
+        );
+      } catch (_) {}
+      _monsterMysteryThumbnailBytes ??= await loadPoiThumbnail(
+        _legacyMysteryImageUrl,
+      );
+    }
+    if (_monsterMysteryThumbnailBytes != null &&
+        !_monsterMysteryThumbnailAdded) {
+      try {
+        await c.addImage(
+          'monster_mystery_thumbnail_$_mapThumbnailVersion',
+          _monsterMysteryThumbnailBytes!,
+        );
+        _monsterMysteryThumbnailAdded = true;
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _refreshMonsterSymbols() {
+    _monsterRefreshSequence = _monsterRefreshSequence.then((_) async {
+      try {
+        await _refreshMonsterSymbolsNow();
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshMonsterSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshMonsterSymbols stack: $st');
+      }
+    });
+    return _monsterRefreshSequence;
+  }
+
+  Future<void> _refreshMonsterSymbolsNow() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
+    await _loadMonsterMysteryThumbnail(c);
+
+    // Remove untracked/duplicate monster symbols that can appear due to
+    // overlapping async refresh calls.
+    final duplicateOrOrphanSymbols = <Symbol>[];
+    for (final symbol in _monsterSymbols.toList()) {
+      final id = _monsterIdFromData(symbol.data);
+      if (id == null) {
+        duplicateOrOrphanSymbols.add(symbol);
+        continue;
+      }
+      final tracked = _monsterSymbolById[id];
+      if (tracked == null || !identical(tracked, symbol)) {
+        duplicateOrOrphanSymbols.add(symbol);
+      }
+    }
+    if (duplicateOrOrphanSymbols.isNotEmpty) {
+      try {
+        await c.removeSymbols(duplicateOrOrphanSymbols);
+      } catch (_) {}
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _monsterSymbols.remove(symbol);
+      }
+    }
+
+    final duplicateOrOrphanCircles = <Circle>[];
+    for (final circle in _monsterCircles.toList()) {
+      final id = _monsterIdFromData(circle.data);
+      if (id == null) {
+        duplicateOrOrphanCircles.add(circle);
+        continue;
+      }
+      final tracked = _monsterCircleById[id];
+      if (tracked == null || !identical(tracked, circle)) {
+        duplicateOrOrphanCircles.add(circle);
+      }
+    }
+    if (duplicateOrOrphanCircles.isNotEmpty) {
+      for (final circle in duplicateOrOrphanCircles) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+        _monsterCircles.remove(circle);
+      }
+    }
 
     final desiredIds = _monsters.map((monster) => monster.id).toSet();
     for (final entry in _monsterSymbolById.entries.toList()) {
@@ -1118,58 +1282,68 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     for (final monster in _monsters) {
-      final sourceUrl = monster.thumbnailUrl.isNotEmpty
-          ? monster.thumbnailUrl
-          : monster.imageUrl;
-
-      if (sourceUrl.isNotEmpty) {
-        try {
-          final imageBytes = await loadPoiThumbnail(sourceUrl);
-          if (imageBytes != null) {
-            final imageId = 'monster_${monster.id}_$_mapThumbnailVersion';
-            try {
-              await c.addImage(imageId, imageBytes);
-            } catch (_) {}
-
-            final existingCircle = _monsterCircleById[monster.id];
-            if (existingCircle != null) {
+      final mystery = _isMonsterMystery(monster);
+      String? symbolImageId;
+      if (mystery) {
+        if (_monsterMysteryThumbnailBytes != null &&
+            _monsterMysteryThumbnailAdded) {
+          symbolImageId = 'monster_mystery_thumbnail_$_mapThumbnailVersion';
+        }
+      } else {
+        final sourceUrl = monster.thumbnailUrl.isNotEmpty
+            ? monster.thumbnailUrl
+            : monster.imageUrl;
+        if (sourceUrl.isNotEmpty) {
+          try {
+            final imageBytes = await loadPoiThumbnail(sourceUrl);
+            if (imageBytes != null) {
+              symbolImageId = 'monster_${monster.id}_$_mapThumbnailVersion';
               try {
-                await c.removeCircle(existingCircle);
-              } catch (_) {}
-              _monsterCircles.remove(existingCircle);
-              _monsterCircleById.remove(monster.id);
-            }
-
-            final existingSymbol = _monsterSymbolById[monster.id];
-            if (existingSymbol == null) {
-              final symbol = await c.addSymbol(
-                SymbolOptions(
-                  geometry: LatLng(monster.latitude, monster.longitude),
-                  iconImage: imageId,
-                  iconSize: 0.78,
-                  iconHaloColor: '#000000',
-                  iconHaloWidth: 0.75,
-                  iconAnchor: 'center',
-                ),
-                {'type': 'monster', 'id': monster.id},
-              );
-              if (!mounted) return;
-              _monsterSymbols.add(symbol);
-              _monsterSymbolById[monster.id] = symbol;
-            } else {
-              try {
-                await c.updateSymbol(
-                  existingSymbol,
-                  SymbolOptions(
-                    geometry: LatLng(monster.latitude, monster.longitude),
-                    iconImage: imageId,
-                  ),
-                );
+                await c.addImage(symbolImageId, imageBytes);
               } catch (_) {}
             }
-            continue;
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
+      }
+
+      if (symbolImageId != null) {
+        final existingCircle = _monsterCircleById[monster.id];
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _monsterCircles.remove(existingCircle);
+          _monsterCircleById.remove(monster.id);
+        }
+
+        final existingSymbol = _monsterSymbolById[monster.id];
+        if (existingSymbol == null) {
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(monster.latitude, monster.longitude),
+              iconImage: symbolImageId,
+              iconSize: 0.78,
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.75,
+              iconAnchor: 'center',
+            ),
+            {'type': 'monster', 'id': monster.id},
+          );
+          if (!mounted) return;
+          _monsterSymbols.add(symbol);
+          _monsterSymbolById[monster.id] = symbol;
+        } else {
+          try {
+            await c.updateSymbol(
+              existingSymbol,
+              SymbolOptions(
+                geometry: LatLng(monster.latitude, monster.longitude),
+                iconImage: symbolImageId,
+              ),
+            );
+          } catch (_) {}
+        }
+        continue;
       }
 
       final existingSymbol = _monsterSymbolById[monster.id];
@@ -1193,7 +1367,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         CircleOptions(
           geometry: LatLng(monster.latitude, monster.longitude),
           circleRadius: 24,
-          circleColor: '#b63f3f',
+          circleColor: mystery ? '#5a5560' : '#b63f3f',
           circleStrokeWidth: 2,
           circleStrokeColor: '#ffffff',
         ),
@@ -1209,6 +1383,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (raw == null || raw is! Map) return null;
     final data = Map<String, dynamic>.from(raw);
     if (data['type']?.toString() != 'scenario') return null;
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
+  String? _monsterIdFromData(dynamic raw) {
+    if (raw == null || raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    if (data['type']?.toString() != 'monster') return null;
     final id = data['id']?.toString();
     if (id == null || id.isEmpty) return null;
     return id;
@@ -2015,6 +2198,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (_scenarioVisibilityRefreshPending) {
         _scenarioVisibilityRefreshPending = false;
         await _refreshScenarioSymbols();
+        await _refreshMonsterSymbols();
       }
       _ensureQuestPoiPulseTimer();
       if (mounted && hadEmptyDiscoveries) {
@@ -4294,6 +4478,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _showMonsterPanel(Monster monster) {
+    final parentContext = context;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4302,10 +4487,73 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => MonsterPanel(
+      builder: (sheetContext) => MonsterPanel(
         monster: monster,
-        onClose: () => Navigator.of(context).pop(),
+        onClose: () => Navigator.of(sheetContext).pop(),
+        onFight: () {
+          Navigator.of(sheetContext).pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            unawaited(_startMonsterBattle(monster, parentContext));
+          });
+        },
       ),
+    );
+  }
+
+  Future<void> _startMonsterBattle(
+    Monster monster,
+    BuildContext parentContext,
+  ) async {
+    final result = await showDialog<MonsterBattleResult>(
+      context: parentContext,
+      useRootNavigator: true,
+      barrierDismissible: false,
+      builder: (_) => MonsterBattleDialog(monster: monster),
+    );
+    if (!mounted || result == null) return;
+    final statsProvider = context.read<CharacterStatsProvider>();
+
+    if (result.outcome == MonsterBattleOutcome.victory) {
+      await statsProvider.setHealthTo(result.playerHealthRemaining);
+    }
+
+    if (result.outcome == MonsterBattleOutcome.victory) {
+      setState(() {
+        _defeatedMonsterIds.add(monster.id);
+        _monsters.removeWhere((item) => item.id == monster.id);
+      });
+      await _persistDefeatedMonsterIds();
+      await _refreshMonsterSymbols();
+      if (!mounted || !parentContext.mounted) return;
+
+      final itemsAwarded = monster.itemRewards
+          .map(
+            (reward) => <String, dynamic>{
+              'name': reward.inventoryItemName.isNotEmpty
+                  ? reward.inventoryItemName
+                  : 'Item #${reward.inventoryItemId}',
+              'quantity': reward.quantity > 0 ? reward.quantity : 1,
+            },
+          )
+          .toList();
+      parentContext.read<CompletedTaskProvider>().showModal(
+        'monsterBattleVictory',
+        data: {
+          'monsterName': monster.name,
+          'rewardExperience': monster.rewardExperience,
+          'rewardGold': monster.rewardGold,
+          'itemsAwarded': itemsAwarded,
+        },
+      );
+      return;
+    }
+
+    await statsProvider.setHealthToOne();
+    if (!mounted || !parentContext.mounted) return;
+    parentContext.read<CompletedTaskProvider>().showModal(
+      'monsterBattleDefeat',
+      data: {'monsterName': monster.name, 'healthSetTo': 1},
     );
   }
 

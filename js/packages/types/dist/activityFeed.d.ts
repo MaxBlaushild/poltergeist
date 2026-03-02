@@ -13,6 +13,7 @@ export interface ChallengeCompletedActivityData {
         id: number;
         name: string;
         imageUrl: string;
+        quantity: number;
     }>;
     goldAwarded: number;
     questId: string;
@@ -34,11 +35,12 @@ export interface ChallengeCompletedActivityData {
 export interface QuestCompletedActivityData {
     questId: string;
     goldAwarded: number;
-    itemAwarded?: {
+    itemsAwarded: Array<{
         id: number;
         name: string;
         imageUrl: string;
-    };
+        quantity: number;
+    }>;
 }
 export interface ItemReceivedActivityData {
     itemId: number;

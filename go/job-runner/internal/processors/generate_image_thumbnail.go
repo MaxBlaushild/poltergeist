@@ -3,6 +3,7 @@ package processors
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image/png"
@@ -136,7 +137,54 @@ func (p *GenerateImageThumbnailProcessor) ProcessTask(ctx context.Context, task 
 	return nil
 }
 
-func downloadThumbnailSource(url string) ([]byte, error) {
+func downloadThumbnailSource(source string) ([]byte, error) {
+	trimmed := strings.TrimSpace(source)
+	if trimmed == "" {
+		return nil, fmt.Errorf("missing source image url")
+	}
+
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return downloadThumbnailSourceURL(trimmed)
+	}
+
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []string
+		if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+			for _, entry := range arr {
+				entry = strings.TrimSpace(entry)
+				if entry == "" {
+					continue
+				}
+				return downloadThumbnailSource(entry)
+			}
+			return nil, fmt.Errorf("image payload array contained no data")
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "{") {
+		var payload struct {
+			Data []struct {
+				B64JSON string `json:"b64_json"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &payload); err == nil {
+			if len(payload.Data) == 0 || strings.TrimSpace(payload.Data[0].B64JSON) == "" {
+				return nil, fmt.Errorf("image payload object contained no data")
+			}
+			return downloadThumbnailSource(payload.Data[0].B64JSON)
+		}
+	}
+
+	if strings.HasPrefix(trimmed, "data:") {
+		if comma := strings.Index(trimmed, ","); comma != -1 {
+			trimmed = trimmed[comma+1:]
+		}
+	}
+
+	return decodeBase64ThumbnailSource(trimmed)
+}
+
+func downloadThumbnailSourceURL(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -153,6 +201,25 @@ func downloadThumbnailSource(url string) ([]byte, error) {
 		return nil, fmt.Errorf("downloaded image was empty")
 	}
 	return body, nil
+}
+
+func decodeBase64ThumbnailSource(raw string) ([]byte, error) {
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		decoded, err := encoding.DecodeString(raw)
+		if err != nil {
+			continue
+		}
+		if len(decoded) == 0 {
+			return nil, fmt.Errorf("decoded image was empty")
+		}
+		return decoded, nil
+	}
+	return nil, fmt.Errorf("failed to decode image payload as base64")
 }
 
 func thumbnailKey(entityType string, entityID uuid.UUID) string {

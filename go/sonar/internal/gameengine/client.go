@@ -1019,12 +1019,39 @@ func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, 
 		if err != nil {
 			return err
 		}
+		if poi == nil {
+			return fmt.Errorf("point of interest not found")
+		}
 		currentPOI = poi
 		zoneInfo, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, poi.ID)
 		if err != nil {
 			return err
 		}
 		zone, err = c.db.Zone().FindByID(ctx, zoneInfo.ZoneID)
+		if err != nil {
+			return err
+		}
+	} else if node.ScenarioID != nil {
+		scenario, err := c.db.Scenario().FindByID(ctx, *node.ScenarioID)
+		if err != nil {
+			return err
+		}
+		if scenario == nil {
+			return fmt.Errorf("scenario not found")
+		}
+		zone, err = c.db.Zone().FindByID(ctx, scenario.ZoneID)
+		if err != nil {
+			return err
+		}
+	} else if node.MonsterID != nil {
+		monster, err := c.db.Monster().FindByID(ctx, *node.MonsterID)
+		if err != nil {
+			return err
+		}
+		if monster == nil {
+			return fmt.Errorf("monster not found")
+		}
+		zone, err = c.db.Zone().FindByID(ctx, monster.ZoneID)
 		if err != nil {
 			return err
 		}

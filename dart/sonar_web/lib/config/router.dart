@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../screens/admin_screen.dart';
 import '../screens/create_poi_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/layout_shell.dart';
@@ -52,19 +51,11 @@ GoRouter createRouter({Listenable? refreshListenable}) {
         navigatorKey: shellNavigatorKey,
         builder: (context, state, child) => LayoutShell(child: child),
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => const HomeScreen(),
-          ),
+          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
           GoRoute(
             path: '/single-player',
             pageBuilder: (_, state) =>
                 const NoTransitionPage(child: SinglePlayerScreen()),
-          ),
-          GoRoute(
-            path: '/adminfuckoff',
-            pageBuilder: (_, state) =>
-                const NoTransitionPage(child: AdminScreen()),
           ),
           GoRoute(
             path: '/create-point-of-interest',

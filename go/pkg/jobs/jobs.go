@@ -1,6 +1,9 @@
 package jobs
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 )
 
@@ -13,6 +16,7 @@ const (
 	GenerateSpellIconTaskType             = "generate_spell_icon"
 	GenerateMonsterImageTaskType          = "generate_monster_image"
 	GenerateMonsterTemplateImageTaskType  = "generate_monster_template_image"
+	GenerateMonsterTemplatesBulkTaskType  = "generate_monster_templates_bulk"
 	GenerateCharacterImageTaskType        = "generate_character_image"
 	GeneratePointOfInterestImageTaskType  = "generate_point_of_interest_image"
 	GenerateScenarioImageTaskType         = "generate_scenario_image"
@@ -31,6 +35,15 @@ const (
 	ApplyZoneSeedDraftTaskType            = "apply_zone_seed_draft"
 	ShuffleZoneSeedChallengeTaskType      = "shuffle_zone_seed_challenge"
 	ShuffleQuestNodeChallengeTaskType     = "shuffle_quest_node_challenge"
+)
+
+const (
+	MonsterTemplateBulkStatusQueued     = "queued"
+	MonsterTemplateBulkStatusInProgress = "in_progress"
+	MonsterTemplateBulkStatusCompleted  = "completed"
+	MonsterTemplateBulkStatusFailed     = "failed"
+
+	MonsterTemplateBulkStatusTTL = 24 * time.Hour
 )
 
 const (
@@ -83,6 +96,37 @@ type GenerateMonsterTemplateImageTaskPayload struct {
 	MonsterTemplateID uuid.UUID `json:"monsterTemplateId"`
 }
 
+type MonsterTemplateCreationSpec struct {
+	Name             string `json:"name"`
+	Description      string `json:"description"`
+	BaseStrength     int    `json:"baseStrength"`
+	BaseDexterity    int    `json:"baseDexterity"`
+	BaseConstitution int    `json:"baseConstitution"`
+	BaseIntelligence int    `json:"baseIntelligence"`
+	BaseWisdom       int    `json:"baseWisdom"`
+	BaseCharisma     int    `json:"baseCharisma"`
+}
+
+type GenerateMonsterTemplatesBulkTaskPayload struct {
+	JobID      uuid.UUID                     `json:"jobId"`
+	Source     string                        `json:"source"`
+	TotalCount int                           `json:"totalCount"`
+	Templates  []MonsterTemplateCreationSpec `json:"templates"`
+}
+
+type MonsterTemplateBulkStatus struct {
+	JobID        uuid.UUID  `json:"jobId"`
+	Status       string     `json:"status"`
+	Source       string     `json:"source"`
+	TotalCount   int        `json:"totalCount"`
+	CreatedCount int        `json:"createdCount"`
+	Error        string     `json:"error,omitempty"`
+	QueuedAt     *time.Time `json:"queuedAt,omitempty"`
+	StartedAt    *time.Time `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+}
+
 type GenerateCharacterImageTaskPayload struct {
 	CharacterID uuid.UUID `json:"characterId"`
 	Name        string    `json:"name"`
@@ -132,4 +176,8 @@ type ShuffleZoneSeedChallengeTaskPayload struct {
 
 type ShuffleQuestNodeChallengeTaskPayload struct {
 	QuestNodeChallengeID uuid.UUID `json:"questNodeChallengeId"`
+}
+
+func MonsterTemplateBulkStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:monster-templates:bulk:%s", jobID.String())
 }

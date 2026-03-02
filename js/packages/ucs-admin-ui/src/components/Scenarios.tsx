@@ -134,6 +134,18 @@ type ScenarioGenerationFormState = {
   longitude: string;
 };
 
+type StaticThumbnailResponse = {
+  thumbnailUrl?: string;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
+  prompt?: string;
+};
+
+const defaultScenarioUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
 const statTags = [
   'strength',
   'dexterity',
@@ -143,7 +155,11 @@ const statTags = [
   'charisma',
 ] as const;
 
-const failureDrainTypes: ScenarioFailureDrainType[] = ['none', 'flat', 'percent'];
+const failureDrainTypes: ScenarioFailureDrainType[] = [
+  'none',
+  'flat',
+  'percent',
+];
 
 const emptyFailureStatus = (): ScenarioFailureStatus => ({
   name: '',
@@ -235,17 +251,23 @@ const parseCsv = (value: string): string[] => {
     .filter(Boolean);
 };
 
-const normalizeFailureDrainType = (value?: string | null): ScenarioFailureDrainType => {
+const normalizeFailureDrainType = (
+  value?: string | null
+): ScenarioFailureDrainType => {
   if (value === 'flat' || value === 'percent') return value;
   return 'none';
 };
 
-const normalizeFailurePenaltyMode = (value?: string | null): ScenarioFailurePenaltyMode => {
+const normalizeFailurePenaltyMode = (
+  value?: string | null
+): ScenarioFailurePenaltyMode => {
   if (value === 'individual') return 'individual';
   return 'shared';
 };
 
-const normalizeSuccessRewardMode = (value?: string | null): ScenarioSuccessRewardMode => {
+const normalizeSuccessRewardMode = (
+  value?: string | null
+): ScenarioSuccessRewardMode => {
   if (value === 'individual') return 'individual';
   return 'shared';
 };
@@ -264,12 +286,22 @@ const normalizeFailureStatus = (
     durationSeconds: Number.isFinite(status.durationSeconds)
       ? Number(status.durationSeconds)
       : base.durationSeconds,
-    strengthMod: Number.isFinite(status.strengthMod) ? Number(status.strengthMod) : 0,
-    dexterityMod: Number.isFinite(status.dexterityMod) ? Number(status.dexterityMod) : 0,
-    constitutionMod: Number.isFinite(status.constitutionMod) ? Number(status.constitutionMod) : 0,
-    intelligenceMod: Number.isFinite(status.intelligenceMod) ? Number(status.intelligenceMod) : 0,
+    strengthMod: Number.isFinite(status.strengthMod)
+      ? Number(status.strengthMod)
+      : 0,
+    dexterityMod: Number.isFinite(status.dexterityMod)
+      ? Number(status.dexterityMod)
+      : 0,
+    constitutionMod: Number.isFinite(status.constitutionMod)
+      ? Number(status.constitutionMod)
+      : 0,
+    intelligenceMod: Number.isFinite(status.intelligenceMod)
+      ? Number(status.intelligenceMod)
+      : 0,
     wisdomMod: Number.isFinite(status.wisdomMod) ? Number(status.wisdomMod) : 0,
-    charismaMod: Number.isFinite(status.charismaMod) ? Number(status.charismaMod) : 0,
+    charismaMod: Number.isFinite(status.charismaMod)
+      ? Number(status.charismaMod)
+      : 0,
     positive: status.positive ?? true,
   };
 };
@@ -296,6 +328,23 @@ const formatDate = (value?: string): string => {
   return parsed.toLocaleString();
 };
 
+const staticStatusClassName = (status: string): string => {
+  switch ((status || '').trim()) {
+    case 'queued':
+      return 'bg-slate-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'missing':
+      return 'bg-gray-500';
+    default:
+      return 'bg-gray-400';
+  }
+};
+
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 export const Scenarios = () => {
@@ -308,19 +357,59 @@ export const Scenarios = () => {
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [generationForm, setGenerationForm] = useState<ScenarioGenerationFormState>(emptyGenerationFormState);
-  const [generationJobs, setGenerationJobs] = useState<ScenarioGenerationJob[]>([]);
+  const [generationForm, setGenerationForm] =
+    useState<ScenarioGenerationFormState>(emptyGenerationFormState);
+  const [generationJobs, setGenerationJobs] = useState<ScenarioGenerationJob[]>(
+    []
+  );
   const [generationJobsLoading, setGenerationJobsLoading] = useState(false);
   const [generationSubmitting, setGenerationSubmitting] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationGeoLoading, setGenerationGeoLoading] = useState(false);
+  const [scenarioUndiscoveredBusy, setScenarioUndiscoveredBusy] =
+    useState(false);
+  const [
+    scenarioUndiscoveredStatusLoading,
+    setScenarioUndiscoveredStatusLoading,
+  ] = useState(false);
+  const [scenarioUndiscoveredError, setScenarioUndiscoveredError] = useState<
+    string | null
+  >(null);
+  const [scenarioUndiscoveredMessage, setScenarioUndiscoveredMessage] =
+    useState<string | null>(null);
+  const [scenarioUndiscoveredUrl, setScenarioUndiscoveredUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png'
+  );
+  const [scenarioUndiscoveredStatus, setScenarioUndiscoveredStatus] =
+    useState('unknown');
+  const [scenarioUndiscoveredExists, setScenarioUndiscoveredExists] =
+    useState(false);
+  const [scenarioUndiscoveredRequestedAt, setScenarioUndiscoveredRequestedAt] =
+    useState<string | null>(null);
+  const [
+    scenarioUndiscoveredLastModified,
+    setScenarioUndiscoveredLastModified,
+  ] = useState<string | null>(null);
+  const [
+    scenarioUndiscoveredPreviewNonce,
+    setScenarioUndiscoveredPreviewNonce,
+  ] = useState<number>(Date.now());
+  const [
+    scenarioUndiscoveredPrompt,
+    setScenarioUndiscoveredPrompt,
+  ] = useState(defaultScenarioUndiscoveredIconPrompt);
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ScenarioFormState>(emptyFormState);
-  const [generatingScenarioId, setGeneratingScenarioId] = useState<string | null>(null);
+  const [generatingScenarioId, setGeneratingScenarioId] = useState<
+    string | null
+  >(null);
   const [geoLoading, setGeoLoading] = useState(false);
-  const [expandedScenarioImage, setExpandedScenarioImage] = useState<{ url: string; title: string } | null>(null);
+  const [expandedScenarioImage, setExpandedScenarioImage] = useState<{
+    url: string;
+    title: string;
+  } | null>(null);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -339,7 +428,8 @@ export const Scenarios = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient.get<ScenarioRecord[]>('/sonar/scenarios');
+      const response =
+        await apiClient.get<ScenarioRecord[]>('/sonar/scenarios');
       setRecords(response);
     } catch (err) {
       console.error('Error loading scenarios:', err);
@@ -349,11 +439,18 @@ export const Scenarios = () => {
     }
   }, [apiClient]);
 
-  const refreshScenarioById = useCallback(async (scenarioId: string) => {
-    const latest = await apiClient.get<ScenarioRecord>(`/sonar/scenarios/${scenarioId}`);
-    setRecords((prev) => prev.map((record) => (record.id === scenarioId ? latest : record)));
-    return latest;
-  }, [apiClient]);
+  const refreshScenarioById = useCallback(
+    async (scenarioId: string) => {
+      const latest = await apiClient.get<ScenarioRecord>(
+        `/sonar/scenarios/${scenarioId}`
+      );
+      setRecords((prev) =>
+        prev.map((record) => (record.id === scenarioId ? latest : record))
+      );
+      return latest;
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     void load();
@@ -380,9 +477,12 @@ export const Scenarios = () => {
   const loadGenerationJobs = useCallback(async () => {
     try {
       setGenerationJobsLoading(true);
-      const response = await apiClient.get<ScenarioGenerationJob[]>('/sonar/admin/scenario-generation-jobs', {
-        limit: 25,
-      });
+      const response = await apiClient.get<ScenarioGenerationJob[]>(
+        '/sonar/admin/scenario-generation-jobs',
+        {
+          limit: 25,
+        }
+      );
       setGenerationJobs(response);
       setGenerationError(null);
     } catch (err) {
@@ -409,7 +509,10 @@ export const Scenarios = () => {
   }, [generationForm.latitude, generationForm.longitude]);
 
   const hasActiveGenerationJobs = useMemo(
-    () => generationJobs.some((job) => job.status === 'queued' || job.status === 'in_progress'),
+    () =>
+      generationJobs.some(
+        (job) => job.status === 'queued' || job.status === 'in_progress'
+      ),
     [generationJobs]
   );
 
@@ -439,14 +542,17 @@ export const Scenarios = () => {
     }
   }, [generationJobs, load]);
 
-  const setGenerationLocation = useCallback((latitude: number, longitude: number) => {
-    setGenerationForm((prev) => ({
-      ...prev,
-      includeLocation: true,
-      latitude: latitude.toFixed(6),
-      longitude: longitude.toFixed(6),
-    }));
-  }, []);
+  const setGenerationLocation = useCallback(
+    (latitude: number, longitude: number) => {
+      setGenerationForm((prev) => ({
+        ...prev,
+        includeLocation: true,
+        latitude: latitude.toFixed(6),
+        longitude: longitude.toFixed(6),
+      }));
+    },
+    []
+  );
 
   const handleQueueScenarioGeneration = async () => {
     if (!generationForm.zoneId) {
@@ -467,7 +573,9 @@ export const Scenarios = () => {
       const latitude = parseFloatValue(generationForm.latitude, Number.NaN);
       const longitude = parseFloatValue(generationForm.longitude, Number.NaN);
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-        setGenerationError('Location is enabled, so latitude and longitude are required.');
+        setGenerationError(
+          'Location is enabled, so latitude and longitude are required.'
+        );
         return;
       }
       payload.latitude = latitude;
@@ -477,7 +585,10 @@ export const Scenarios = () => {
     try {
       setGenerationSubmitting(true);
       setGenerationError(null);
-      const created = await apiClient.post<ScenarioGenerationJob>('/sonar/admin/scenario-generation-jobs', payload);
+      const created = await apiClient.post<ScenarioGenerationJob>(
+        '/sonar/admin/scenario-generation-jobs',
+        payload
+      );
       setGenerationJobs((prev) => [created, ...prev]);
       setGenerationForm((prev) => ({
         ...prev,
@@ -503,15 +614,135 @@ export const Scenarios = () => {
       (position) => {
         setGenerationGeoLoading(false);
         setGenerationError(null);
-        setGenerationLocation(position.coords.latitude, position.coords.longitude);
+        setGenerationLocation(
+          position.coords.latitude,
+          position.coords.longitude
+        );
       },
       (geoError) => {
         setGenerationGeoLoading(false);
-        setGenerationError(`Unable to get current location: ${geoError.message}`);
+        setGenerationError(
+          `Unable to get current location: ${geoError.message}`
+        );
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   }, [setGenerationLocation]);
+
+  const refreshUndiscoveredScenarioIconStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setScenarioUndiscoveredStatusLoading(true);
+        setScenarioUndiscoveredError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/scenario-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setScenarioUndiscoveredUrl(url);
+        }
+        setScenarioUndiscoveredStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setScenarioUndiscoveredExists(Boolean(response?.exists));
+        setScenarioUndiscoveredRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setScenarioUndiscoveredLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setScenarioUndiscoveredPreviewNonce(Date.now());
+        if (showMessage) {
+          setScenarioUndiscoveredMessage(
+            'Undiscovered scenario icon status refreshed.'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to load undiscovered scenario icon status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load undiscovered scenario icon status.';
+        setScenarioUndiscoveredError(message);
+      } finally {
+        setScenarioUndiscoveredStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const handleGenerateUndiscoveredScenarioIcon = useCallback(async () => {
+    const prompt = scenarioUndiscoveredPrompt.trim();
+    if (!prompt) {
+      setScenarioUndiscoveredError('Prompt is required.');
+      return;
+    }
+    try {
+      setScenarioUndiscoveredBusy(true);
+      setScenarioUndiscoveredError(null);
+      setScenarioUndiscoveredMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/scenario-undiscovered',
+        { prompt }
+      );
+      setScenarioUndiscoveredMessage(
+        'Undiscovered scenario icon queued for generation.'
+      );
+      await refreshUndiscoveredScenarioIconStatus();
+    } catch (err) {
+      console.error('Failed to generate undiscovered scenario icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate undiscovered scenario icon.';
+      setScenarioUndiscoveredError(message);
+    } finally {
+      setScenarioUndiscoveredBusy(false);
+    }
+  }, [
+    apiClient,
+    refreshUndiscoveredScenarioIconStatus,
+    scenarioUndiscoveredPrompt,
+  ]);
+
+  const handleDeleteUndiscoveredScenarioIcon = useCallback(async () => {
+    try {
+      setScenarioUndiscoveredBusy(true);
+      setScenarioUndiscoveredError(null);
+      setScenarioUndiscoveredMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/scenario-undiscovered'
+      );
+      setScenarioUndiscoveredMessage('Undiscovered scenario icon deleted.');
+      await refreshUndiscoveredScenarioIconStatus();
+    } catch (err) {
+      console.error('Failed to delete undiscovered scenario icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete undiscovered scenario icon.';
+      setScenarioUndiscoveredError(message);
+    } finally {
+      setScenarioUndiscoveredBusy(false);
+    }
+  }, [apiClient, refreshUndiscoveredScenarioIconStatus]);
+
+  useEffect(() => {
+    void refreshUndiscoveredScenarioIconStatus();
+  }, [refreshUndiscoveredScenarioIconStatus]);
+
+  useEffect(() => {
+    if (
+      scenarioUndiscoveredStatus !== 'queued' &&
+      scenarioUndiscoveredStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshUndiscoveredScenarioIconStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [scenarioUndiscoveredStatus, refreshUndiscoveredScenarioIconStatus]);
 
   useEffect(() => {
     if (!generationForm.includeLocation) {
@@ -527,9 +758,15 @@ export const Scenarios = () => {
 
     const parsedLat = Number.parseFloat(generationLatitudeRef.current);
     const parsedLng = Number.parseFloat(generationLongitudeRef.current);
-    const selectedZone = zones.find((zone) => zone.id === generationForm.zoneId);
-    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
-    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+    const selectedZone = zones.find(
+      (zone) => zone.id === generationForm.zoneId
+    );
+    const zoneLat = selectedZone
+      ? Number.parseFloat(String(selectedZone.latitude ?? ''))
+      : Number.NaN;
+    const zoneLng = selectedZone
+      ? Number.parseFloat(String(selectedZone.longitude ?? ''))
+      : Number.NaN;
 
     const center: [number, number] =
       Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
@@ -557,7 +794,12 @@ export const Scenarios = () => {
       map.remove();
       generationMapRef.current = null;
     };
-  }, [generationForm.includeLocation, generationForm.zoneId, setGenerationLocation, zones]);
+  }, [
+    generationForm.includeLocation,
+    generationForm.zoneId,
+    setGenerationLocation,
+    zones,
+  ]);
 
   useEffect(() => {
     if (!generationForm.includeLocation) return;
@@ -579,14 +821,22 @@ export const Scenarios = () => {
       generationMarkerRef.current.setLngLat([longitude, latitude]);
     }
 
-    generationMapRef.current.easeTo({ center: [longitude, latitude], duration: 350 });
-  }, [generationForm.includeLocation, generationForm.latitude, generationForm.longitude]);
+    generationMapRef.current.easeTo({
+      center: [longitude, latitude],
+      duration: 350,
+    });
+  }, [
+    generationForm.includeLocation,
+    generationForm.latitude,
+    generationForm.longitude,
+  ]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return records;
     return records.filter((record) => {
-      const zoneName = zones.find((zone) => zone.id === record.zoneId)?.name ?? '';
+      const zoneName =
+        zones.find((zone) => zone.id === record.zoneId)?.name ?? '';
       return (
         record.prompt.toLowerCase().includes(q) ||
         zoneName.toLowerCase().includes(q) ||
@@ -614,18 +864,28 @@ export const Scenarios = () => {
       openEnded: record.openEnded,
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
-      failurePenaltyMode: normalizeFailurePenaltyMode(record.failurePenaltyMode),
-      failureHealthDrainType: normalizeFailureDrainType(record.failureHealthDrainType),
+      failurePenaltyMode: normalizeFailurePenaltyMode(
+        record.failurePenaltyMode
+      ),
+      failureHealthDrainType: normalizeFailureDrainType(
+        record.failureHealthDrainType
+      ),
       failureHealthDrainValue: String(record.failureHealthDrainValue ?? 0),
-      failureManaDrainType: normalizeFailureDrainType(record.failureManaDrainType),
+      failureManaDrainType: normalizeFailureDrainType(
+        record.failureManaDrainType
+      ),
       failureManaDrainValue: String(record.failureManaDrainValue ?? 0),
       failureStatuses: (record.failureStatuses ?? []).map((status) =>
         normalizeFailureStatus(status)
       ),
       successRewardMode: normalizeSuccessRewardMode(record.successRewardMode),
-      successHealthRestoreType: normalizeFailureDrainType(record.successHealthRestoreType),
+      successHealthRestoreType: normalizeFailureDrainType(
+        record.successHealthRestoreType
+      ),
       successHealthRestoreValue: String(record.successHealthRestoreValue ?? 0),
-      successManaRestoreType: normalizeFailureDrainType(record.successManaRestoreType),
+      successManaRestoreType: normalizeFailureDrainType(
+        record.successManaRestoreType
+      ),
       successManaRestoreValue: String(record.successManaRestoreValue ?? 0),
       successStatuses: (record.successStatuses ?? []).map((status) =>
         normalizeFailureStatus(status)
@@ -640,16 +900,24 @@ export const Scenarios = () => {
               failureText:
                 option.failureText?.trim() ||
                 'The attempt falls short, and the moment slips away.',
-              failureHealthDrainType: normalizeFailureDrainType(option.failureHealthDrainType),
+              failureHealthDrainType: normalizeFailureDrainType(
+                option.failureHealthDrainType
+              ),
               failureHealthDrainValue: option.failureHealthDrainValue ?? 0,
-              failureManaDrainType: normalizeFailureDrainType(option.failureManaDrainType),
+              failureManaDrainType: normalizeFailureDrainType(
+                option.failureManaDrainType
+              ),
               failureManaDrainValue: option.failureManaDrainValue ?? 0,
               failureStatuses: (option.failureStatuses ?? []).map((status) =>
                 normalizeFailureStatus(status)
               ),
-              successHealthRestoreType: normalizeFailureDrainType(option.successHealthRestoreType),
+              successHealthRestoreType: normalizeFailureDrainType(
+                option.successHealthRestoreType
+              ),
               successHealthRestoreValue: option.successHealthRestoreValue ?? 0,
-              successManaRestoreType: normalizeFailureDrainType(option.successManaRestoreType),
+              successManaRestoreType: normalizeFailureDrainType(
+                option.successManaRestoreType
+              ),
               successManaRestoreValue: option.successManaRestoreValue ?? 0,
               successStatuses: (option.successStatuses ?? []).map((status) =>
                 normalizeFailureStatus(status)
@@ -660,7 +928,9 @@ export const Scenarios = () => {
             }))
           : [emptyOption()],
       itemRewards: record.itemRewards,
-      spellRewards: (record.spellRewards ?? []).map((reward) => ({ spellId: reward.spellId })),
+      spellRewards: (record.spellRewards ?? []).map((reward) => ({
+        spellId: reward.spellId,
+      })),
     });
     setShowModal(true);
   };
@@ -699,11 +969,13 @@ export const Scenarios = () => {
     const scenarioPenaltyMode: ScenarioFailurePenaltyMode = form.openEnded
       ? 'shared'
       : form.failurePenaltyMode;
-    const useOptionPenalties = !form.openEnded && scenarioPenaltyMode === 'individual';
+    const useOptionPenalties =
+      !form.openEnded && scenarioPenaltyMode === 'individual';
     const successRewardMode: ScenarioSuccessRewardMode = form.openEnded
       ? 'shared'
       : form.successRewardMode;
-    const useOptionSuccessRewards = !form.openEnded && successRewardMode === 'individual';
+    const useOptionSuccessRewards =
+      !form.openEnded && successRewardMode === 'individual';
 
     return {
       zoneId: form.zoneId,
@@ -714,7 +986,9 @@ export const Scenarios = () => {
       thumbnailUrl: form.thumbnailUrl.trim(),
       difficulty: parseIntValue(form.difficulty, 24),
       openEnded: form.openEnded,
-      rewardExperience: form.openEnded ? parseIntValue(form.rewardExperience) : 0,
+      rewardExperience: form.openEnded
+        ? parseIntValue(form.rewardExperience)
+        : 0,
       rewardGold: form.openEnded ? parseIntValue(form.rewardGold) : 0,
       failurePenaltyMode: scenarioPenaltyMode,
       successRewardMode,
@@ -772,14 +1046,16 @@ export const Scenarios = () => {
               ? option.successHealthRestoreType
               : 'none',
             successHealthRestoreValue:
-              useOptionSuccessRewards && option.successHealthRestoreType !== 'none'
+              useOptionSuccessRewards &&
+              option.successHealthRestoreType !== 'none'
                 ? option.successHealthRestoreValue
                 : 0,
             successManaRestoreType: useOptionSuccessRewards
               ? option.successManaRestoreType
               : 'none',
             successManaRestoreValue:
-              useOptionSuccessRewards && option.successManaRestoreType !== 'none'
+              useOptionSuccessRewards &&
+              option.successManaRestoreType !== 'none'
                 ? option.successManaRestoreValue
                 : 0,
             successStatuses: useOptionSuccessRewards
@@ -802,7 +1078,12 @@ export const Scenarios = () => {
   const save = async () => {
     try {
       const payload = formPayload();
-      if (!payload.zoneId || !payload.prompt || !payload.imageUrl || !payload.thumbnailUrl) {
+      if (
+        !payload.zoneId ||
+        !payload.prompt ||
+        !payload.imageUrl ||
+        !payload.thumbnailUrl
+      ) {
         alert('Zone, prompt, image URL, and thumbnail URL are required.');
         return;
       }
@@ -812,10 +1093,18 @@ export const Scenarios = () => {
       }
 
       if (editingId) {
-        const updated = await apiClient.put<ScenarioRecord>(`/sonar/scenarios/${editingId}`, payload);
-        setRecords((prev) => prev.map((record) => (record.id === updated.id ? updated : record)));
+        const updated = await apiClient.put<ScenarioRecord>(
+          `/sonar/scenarios/${editingId}`,
+          payload
+        );
+        setRecords((prev) =>
+          prev.map((record) => (record.id === updated.id ? updated : record))
+        );
       } else {
-        const created = await apiClient.post<ScenarioRecord>('/sonar/scenarios', payload);
+        const created = await apiClient.post<ScenarioRecord>(
+          '/sonar/scenarios',
+          payload
+        );
         setRecords((prev) => [created, ...prev]);
       }
       closeModal();
@@ -888,8 +1177,12 @@ export const Scenarios = () => {
     const parsedLat = Number.parseFloat(formLatitudeRef.current);
     const parsedLng = Number.parseFloat(formLongitudeRef.current);
     const selectedZone = zones.find((zone) => zone.id === form.zoneId);
-    const zoneLat = selectedZone ? Number.parseFloat(String(selectedZone.latitude ?? '')) : Number.NaN;
-    const zoneLng = selectedZone ? Number.parseFloat(String(selectedZone.longitude ?? '')) : Number.NaN;
+    const zoneLat = selectedZone
+      ? Number.parseFloat(String(selectedZone.latitude ?? ''))
+      : Number.NaN;
+    const zoneLng = selectedZone
+      ? Number.parseFloat(String(selectedZone.longitude ?? ''))
+      : Number.NaN;
 
     const center: [number, number] =
       Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
@@ -932,7 +1225,9 @@ export const Scenarios = () => {
     }
 
     if (!markerRef.current) {
-      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' }).setLngLat([lng, lat]).addTo(mapRef.current);
+      markerRef.current = new mapboxgl.Marker({ color: '#dc2626' })
+        .setLngLat([lng, lat])
+        .addTo(mapRef.current);
     } else {
       markerRef.current.setLngLat([lng, lat]);
     }
@@ -963,7 +1258,10 @@ export const Scenarios = () => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.itemRewards = [...option.itemRewards, { inventoryItemId: 0, quantity: 1 }];
+      option.itemRewards = [
+        ...option.itemRewards,
+        { inventoryItemId: 0, quantity: 1 },
+      ];
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -989,7 +1287,9 @@ export const Scenarios = () => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.itemRewards = option.itemRewards.filter((_, i) => i !== rewardIndex);
+      option.itemRewards = option.itemRewards.filter(
+        (_, i) => i !== rewardIndex
+      );
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1021,11 +1321,16 @@ export const Scenarios = () => {
     });
   };
 
-  const removeOptionSpellReward = (optionIndex: number, rewardIndex: number) => {
+  const removeOptionSpellReward = (
+    optionIndex: number,
+    rewardIndex: number
+  ) => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.spellRewards = option.spellRewards.filter((_, i) => i !== rewardIndex);
+      option.spellRewards = option.spellRewards.filter(
+        (_, i) => i !== rewardIndex
+      );
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1038,7 +1343,10 @@ export const Scenarios = () => {
     }));
   };
 
-  const updateScenarioItemReward = (index: number, next: Partial<ScenarioRewardItem>) => {
+  const updateScenarioItemReward = (
+    index: number,
+    next: Partial<ScenarioRewardItem>
+  ) => {
     setForm((prev) => {
       const rewards = [...prev.itemRewards];
       rewards[index] = { ...rewards[index], ...next };
@@ -1107,7 +1415,10 @@ export const Scenarios = () => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.failureStatuses = [...option.failureStatuses, emptyFailureStatus()];
+      option.failureStatuses = [
+        ...option.failureStatuses,
+        emptyFailureStatus(),
+      ];
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1129,11 +1440,16 @@ export const Scenarios = () => {
     });
   };
 
-  const removeOptionFailureStatus = (optionIndex: number, statusIndex: number) => {
+  const removeOptionFailureStatus = (
+    optionIndex: number,
+    statusIndex: number
+  ) => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.failureStatuses = option.failureStatuses.filter((_, i) => i !== statusIndex);
+      option.failureStatuses = option.failureStatuses.filter(
+        (_, i) => i !== statusIndex
+      );
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1168,7 +1484,10 @@ export const Scenarios = () => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.successStatuses = [...option.successStatuses, emptyFailureStatus()];
+      option.successStatuses = [
+        ...option.successStatuses,
+        emptyFailureStatus(),
+      ];
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1190,11 +1509,16 @@ export const Scenarios = () => {
     });
   };
 
-  const removeOptionSuccessStatus = (optionIndex: number, statusIndex: number) => {
+  const removeOptionSuccessStatus = (
+    optionIndex: number,
+    statusIndex: number
+  ) => {
     setForm((prev) => {
       const options = [...prev.options];
       const option = options[optionIndex];
-      option.successStatuses = option.successStatuses.filter((_, i) => i !== statusIndex);
+      option.successStatuses = option.successStatuses.filter(
+        (_, i) => i !== statusIndex
+      );
       options[optionIndex] = option;
       return { ...prev, options };
     });
@@ -1212,7 +1536,10 @@ export const Scenarios = () => {
     onManaDrainTypeChange: (value: ScenarioFailureDrainType) => void;
     onManaDrainValueChange: (value: number) => void;
     onAddStatus: () => void;
-    onUpdateStatus: (index: number, next: Partial<ScenarioFailureStatus>) => void;
+    onUpdateStatus: (
+      index: number,
+      next: Partial<ScenarioFailureStatus>
+    ) => void;
     onRemoveStatus: (index: number) => void;
   }) => (
     <div className="border rounded-md p-3 mt-3">
@@ -1224,7 +1551,9 @@ export const Scenarios = () => {
           <select
             value={config.healthDrainType}
             onChange={(e) =>
-              config.onHealthDrainTypeChange(e.target.value as ScenarioFailureDrainType)
+              config.onHealthDrainTypeChange(
+                e.target.value as ScenarioFailureDrainType
+              )
             }
             className="w-full border rounded-md p-2"
           >
@@ -1254,7 +1583,9 @@ export const Scenarios = () => {
           <select
             value={config.manaDrainType}
             onChange={(e) =>
-              config.onManaDrainTypeChange(e.target.value as ScenarioFailureDrainType)
+              config.onManaDrainTypeChange(
+                e.target.value as ScenarioFailureDrainType
+              )
             }
             className="w-full border rounded-md p-2"
           >
@@ -1293,7 +1624,9 @@ export const Scenarios = () => {
       </div>
 
       {config.statuses.length === 0 && (
-        <div className="text-sm text-gray-600">No failure statuses configured.</div>
+        <div className="text-sm text-gray-600">
+          No failure statuses configured.
+        </div>
       )}
 
       {config.statuses.map((status, statusIndex) => (
@@ -1303,7 +1636,9 @@ export const Scenarios = () => {
               Name
               <input
                 value={status.name}
-                onChange={(e) => config.onUpdateStatus(statusIndex, { name: e.target.value })}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { name: e.target.value })
+                }
                 className="w-full border rounded-md p-2"
               />
             </label>
@@ -1326,7 +1661,9 @@ export const Scenarios = () => {
               <input
                 value={status.description}
                 onChange={(e) =>
-                  config.onUpdateStatus(statusIndex, { description: e.target.value })
+                  config.onUpdateStatus(statusIndex, {
+                    description: e.target.value,
+                  })
                 }
                 className="w-full border rounded-md p-2"
               />
@@ -1335,7 +1672,9 @@ export const Scenarios = () => {
               Effect
               <input
                 value={status.effect}
-                onChange={(e) => config.onUpdateStatus(statusIndex, { effect: e.target.value })}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { effect: e.target.value })
+                }
                 className="w-full border rounded-md p-2"
               />
             </label>
@@ -1345,7 +1684,11 @@ export const Scenarios = () => {
             <input
               type="checkbox"
               checked={status.positive}
-              onChange={(e) => config.onUpdateStatus(statusIndex, { positive: e.target.checked })}
+              onChange={(e) =>
+                config.onUpdateStatus(statusIndex, {
+                  positive: e.target.checked,
+                })
+              }
             />
             Positive status
           </label>
@@ -1455,7 +1798,10 @@ export const Scenarios = () => {
     onManaRestoreTypeChange: (value: ScenarioFailureDrainType) => void;
     onManaRestoreValueChange: (value: number) => void;
     onAddStatus: () => void;
-    onUpdateStatus: (index: number, next: Partial<ScenarioFailureStatus>) => void;
+    onUpdateStatus: (
+      index: number,
+      next: Partial<ScenarioFailureStatus>
+    ) => void;
     onRemoveStatus: (index: number) => void;
   }) => (
     <div className="border rounded-md p-3 mt-3">
@@ -1467,7 +1813,9 @@ export const Scenarios = () => {
           <select
             value={config.healthRestoreType}
             onChange={(e) =>
-              config.onHealthRestoreTypeChange(e.target.value as ScenarioFailureDrainType)
+              config.onHealthRestoreTypeChange(
+                e.target.value as ScenarioFailureDrainType
+              )
             }
             className="w-full border rounded-md p-2"
           >
@@ -1483,7 +1831,9 @@ export const Scenarios = () => {
           <input
             value={config.healthRestoreValue}
             onChange={(e) =>
-              config.onHealthRestoreValueChange(parseIntValue(e.target.value, 0))
+              config.onHealthRestoreValueChange(
+                parseIntValue(e.target.value, 0)
+              )
             }
             className="w-full border rounded-md p-2"
             type="number"
@@ -1497,7 +1847,9 @@ export const Scenarios = () => {
           <select
             value={config.manaRestoreType}
             onChange={(e) =>
-              config.onManaRestoreTypeChange(e.target.value as ScenarioFailureDrainType)
+              config.onManaRestoreTypeChange(
+                e.target.value as ScenarioFailureDrainType
+              )
             }
             className="w-full border rounded-md p-2"
           >
@@ -1536,7 +1888,9 @@ export const Scenarios = () => {
       </div>
 
       {config.statuses.length === 0 && (
-        <div className="text-sm text-gray-600">No success statuses configured.</div>
+        <div className="text-sm text-gray-600">
+          No success statuses configured.
+        </div>
       )}
 
       {config.statuses.map((status, statusIndex) => (
@@ -1546,7 +1900,9 @@ export const Scenarios = () => {
               Name
               <input
                 value={status.name}
-                onChange={(e) => config.onUpdateStatus(statusIndex, { name: e.target.value })}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { name: e.target.value })
+                }
                 className="w-full border rounded-md p-2"
               />
             </label>
@@ -1569,7 +1925,9 @@ export const Scenarios = () => {
               <input
                 value={status.description}
                 onChange={(e) =>
-                  config.onUpdateStatus(statusIndex, { description: e.target.value })
+                  config.onUpdateStatus(statusIndex, {
+                    description: e.target.value,
+                  })
                 }
                 className="w-full border rounded-md p-2"
               />
@@ -1578,7 +1936,9 @@ export const Scenarios = () => {
               Effect
               <input
                 value={status.effect}
-                onChange={(e) => config.onUpdateStatus(statusIndex, { effect: e.target.value })}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, { effect: e.target.value })
+                }
                 className="w-full border rounded-md p-2"
               />
             </label>
@@ -1588,7 +1948,11 @@ export const Scenarios = () => {
             <input
               type="checkbox"
               checked={status.positive}
-              onChange={(e) => config.onUpdateStatus(statusIndex, { positive: e.target.checked })}
+              onChange={(e) =>
+                config.onUpdateStatus(statusIndex, {
+                  positive: e.target.checked,
+                })
+              }
             />
             Positive status
           </label>
@@ -1694,9 +2058,102 @@ export const Scenarios = () => {
     <div className="m-10">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Scenarios</h1>
-        <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={openCreate}>
+        <button
+          className="bg-blue-500 text-white px-4 py-2 rounded-md"
+          onClick={openCreate}
+        >
           Create Scenario
         </button>
+      </div>
+
+      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg font-semibold">Undiscovered Scenario Icon</h2>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={() => void refreshUndiscoveredScenarioIconStatus(true)}
+              disabled={scenarioUndiscoveredStatusLoading}
+            >
+              {scenarioUndiscoveredStatusLoading
+                ? 'Refreshing…'
+                : 'Refresh Status'}
+            </button>
+            <button
+              type="button"
+              className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleGenerateUndiscoveredScenarioIcon}
+              disabled={
+                scenarioUndiscoveredBusy || scenarioUndiscoveredStatusLoading
+              }
+            >
+              {scenarioUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
+            </button>
+            <button
+              type="button"
+              className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleDeleteUndiscoveredScenarioIcon}
+              disabled={
+                scenarioUndiscoveredBusy || scenarioUndiscoveredStatusLoading
+              }
+            >
+              {scenarioUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
+            </button>
+          </div>
+        </div>
+        <div className="mb-2">
+          <span
+            className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
+              scenarioUndiscoveredStatus
+            )}`}
+          >
+            {scenarioUndiscoveredStatus || 'unknown'}
+          </span>
+        </div>
+        <div className="text-xs text-gray-600 break-all">
+          URL: {scenarioUndiscoveredUrl}
+        </div>
+        <div className="text-xs text-gray-600 mt-1">
+          Requested: {formatDate(scenarioUndiscoveredRequestedAt ?? undefined)}
+          {' · '}
+          Last updated:{' '}
+          {formatDate(scenarioUndiscoveredLastModified ?? undefined)}
+        </div>
+        <label className="block text-sm mt-3">
+          Generation Prompt
+          <textarea
+            className="w-full border rounded-md p-2 mt-1 min-h-[88px]"
+            value={scenarioUndiscoveredPrompt}
+            onChange={(event) =>
+              setScenarioUndiscoveredPrompt(event.target.value)
+            }
+            placeholder="Prompt used to generate the undiscovered scenario icon."
+          />
+        </label>
+        {scenarioUndiscoveredExists ? (
+          <div className="mt-3">
+            <img
+              src={`${scenarioUndiscoveredUrl}?v=${scenarioUndiscoveredPreviewNonce}`}
+              alt="Undiscovered scenario icon preview"
+              className="w-24 h-24 object-cover border rounded-md bg-gray-50"
+            />
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 mt-2">
+            No icon currently found at this URL.
+          </div>
+        )}
+        {scenarioUndiscoveredMessage ? (
+          <div className="text-sm text-emerald-700 mt-2">
+            {scenarioUndiscoveredMessage}
+          </div>
+        ) : null}
+        {scenarioUndiscoveredError ? (
+          <div className="text-sm text-red-600 mt-2">
+            {scenarioUndiscoveredError}
+          </div>
+        ) : null}
       </div>
 
       <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
@@ -1717,7 +2174,12 @@ export const Scenarios = () => {
             Zone
             <select
               value={generationForm.zoneId}
-              onChange={(e) => setGenerationForm((prev) => ({ ...prev, zoneId: e.target.value }))}
+              onChange={(e) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  zoneId: e.target.value,
+                }))
+              }
               className="w-full border rounded-md p-2"
             >
               <option value="">Select zone</option>
@@ -1769,7 +2231,12 @@ export const Scenarios = () => {
                 Latitude
                 <input
                   value={generationForm.latitude}
-                  onChange={(e) => setGenerationForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  onChange={(e) =>
+                    setGenerationForm((prev) => ({
+                      ...prev,
+                      latitude: e.target.value,
+                    }))
+                  }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
@@ -1779,7 +2246,12 @@ export const Scenarios = () => {
                 Longitude
                 <input
                   value={generationForm.longitude}
-                  onChange={(e) => setGenerationForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  onChange={(e) =>
+                    setGenerationForm((prev) => ({
+                      ...prev,
+                      longitude: e.target.value,
+                    }))
+                  }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
@@ -1793,19 +2265,27 @@ export const Scenarios = () => {
                 onClick={handleUseCurrentGenerationLocation}
                 disabled={generationGeoLoading}
               >
-                {generationGeoLoading ? 'Locating…' : 'Use Current Browser Location'}
+                {generationGeoLoading
+                  ? 'Locating…'
+                  : 'Use Current Browser Location'}
               </button>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm">Map Location Picker</span>
-                <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+                <span className="text-xs text-gray-500">
+                  Click map to set latitude/longitude
+                </span>
               </div>
               {mapboxgl.accessToken ? (
-                <div ref={generationMapContainerRef} className="w-full h-56 border rounded-md" />
+                <div
+                  ref={generationMapContainerRef}
+                  className="w-full h-56 border rounded-md"
+                />
               ) : (
                 <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                  Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                  Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                  unavailable.
                 </div>
               )}
             </div>
@@ -1823,7 +2303,9 @@ export const Scenarios = () => {
           </button>
         </div>
 
-        {generationError && <div className="mb-3 text-red-600 text-sm">{generationError}</div>}
+        {generationError && (
+          <div className="mb-3 text-red-600 text-sm">{generationError}</div>
+        )}
 
         <div className="font-medium mb-2">Recent Generation Jobs</div>
         {generationJobsLoading && generationJobs.length === 0 ? (
@@ -1833,12 +2315,19 @@ export const Scenarios = () => {
         ) : (
           <div className="grid gap-2">
             {generationJobs.map((job) => {
-              const zoneName = zones.find((zone) => zone.id === job.zoneId)?.name ?? job.zoneId;
+              const zoneName =
+                zones.find((zone) => zone.id === job.zoneId)?.name ??
+                job.zoneId;
               const record = job.generatedScenarioId
-                ? records.find((scenario) => scenario.id === job.generatedScenarioId)
+                ? records.find(
+                    (scenario) => scenario.id === job.generatedScenarioId
+                  )
                 : undefined;
               return (
-                <div key={job.id} className="border rounded-md p-2 text-sm bg-gray-50">
+                <div
+                  key={job.id}
+                  className="border rounded-md p-2 text-sm bg-gray-50"
+                >
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className="font-mono text-xs">{job.id}</span>
                     <span
@@ -1851,17 +2340,27 @@ export const Scenarios = () => {
                   <div className="text-gray-700">Zone: {zoneName}</div>
                   <div className="text-gray-700">
                     Location:{' '}
-                    {typeof job.latitude === 'number' && typeof job.longitude === 'number'
+                    {typeof job.latitude === 'number' &&
+                    typeof job.longitude === 'number'
                       ? `${job.latitude.toFixed(5)}, ${job.longitude.toFixed(5)}`
                       : 'Auto-selected'}
                   </div>
-                  <div className="text-gray-600 text-xs">Created: {formatDate(job.createdAt)}</div>
+                  <div className="text-gray-600 text-xs">
+                    Created: {formatDate(job.createdAt)}
+                  </div>
                   {job.generatedScenarioId && (
                     <div className="text-gray-700">
-                      Scenario ID: <span className="font-mono text-xs">{job.generatedScenarioId}</span>
+                      Scenario ID:{' '}
+                      <span className="font-mono text-xs">
+                        {job.generatedScenarioId}
+                      </span>
                     </div>
                   )}
-                  {job.errorMessage && <div className="text-red-600 text-xs mt-1">{job.errorMessage}</div>}
+                  {job.errorMessage && (
+                    <div className="text-red-600 text-xs mt-1">
+                      {job.errorMessage}
+                    </div>
+                  )}
                   {record && (
                     <div className="mt-2">
                       <button
@@ -1892,19 +2391,34 @@ export const Scenarios = () => {
         />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}
+      >
         {filtered.map((record) => {
-          const zoneName = zones.find((zone) => zone.id === record.zoneId)?.name ?? record.zoneId;
+          const zoneName =
+            zones.find((zone) => zone.id === record.zoneId)?.name ??
+            record.zoneId;
           return (
-            <div key={record.id} className="border rounded-md p-4 bg-white shadow-sm">
+            <div
+              key={record.id}
+              className="border rounded-md p-4 bg-white shadow-sm"
+            >
               <div className="text-xs text-gray-500 mb-1">{record.id}</div>
-              <div className="font-semibold mb-2">{record.openEnded ? 'Open-Ended' : 'Choice'} Scenario</div>
+              <div className="font-semibold mb-2">
+                {record.openEnded ? 'Open-Ended' : 'Choice'} Scenario
+              </div>
               <div className="text-sm text-gray-700 mb-1">Zone: {zoneName}</div>
               <div className="text-sm text-gray-700 mb-1">
-                Location: {record.latitude.toFixed(5)}, {record.longitude.toFixed(5)}
+                Location: {record.latitude.toFixed(5)},{' '}
+                {record.longitude.toFixed(5)}
               </div>
-              <div className="text-sm text-gray-700 mb-2">Difficulty: {record.difficulty}</div>
-              <div className="text-sm text-gray-800 mb-3 line-clamp-3">{record.prompt}</div>
+              <div className="text-sm text-gray-700 mb-2">
+                Difficulty: {record.difficulty}
+              </div>
+              <div className="text-sm text-gray-800 mb-3 line-clamp-3">
+                {record.prompt}
+              </div>
               {(record.thumbnailUrl || record.imageUrl) && (
                 <button
                   type="button"
@@ -1924,7 +2438,10 @@ export const Scenarios = () => {
                 </button>
               )}
               <div className="flex gap-2">
-                <button className="bg-blue-500 text-white px-3 py-1 rounded-md" onClick={() => openEdit(record)}>
+                <button
+                  className="bg-blue-500 text-white px-3 py-1 rounded-md"
+                  onClick={() => openEdit(record)}
+                >
                   Edit
                 </button>
                 <button
@@ -1932,9 +2449,14 @@ export const Scenarios = () => {
                   onClick={() => handleGenerateScenarioImage(record)}
                   disabled={generatingScenarioId === record.id}
                 >
-                  {generatingScenarioId === record.id ? 'Generating…' : 'Generate Image'}
+                  {generatingScenarioId === record.id
+                    ? 'Generating…'
+                    : 'Generate Image'}
                 </button>
-                <button className="bg-red-500 text-white px-3 py-1 rounded-md" onClick={() => setDeleteId(record.id)}>
+                <button
+                  className="bg-red-500 text-white px-3 py-1 rounded-md"
+                  onClick={() => setDeleteId(record.id)}
+                >
                   Delete
                 </button>
               </div>
@@ -1946,14 +2468,18 @@ export const Scenarios = () => {
       {showModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-md p-6 w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-semibold mb-4">{editingId ? 'Edit Scenario' : 'Create Scenario'}</h2>
+            <h2 className="text-xl font-semibold mb-4">
+              {editingId ? 'Edit Scenario' : 'Create Scenario'}
+            </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
               <label className="text-sm">
                 Zone
                 <select
                   value={form.zoneId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, zoneId: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, zoneId: e.target.value }))
+                  }
                   className="w-full border rounded-md p-2"
                 >
                   <option value="">Select zone</option>
@@ -1968,7 +2494,9 @@ export const Scenarios = () => {
                 Difficulty
                 <input
                   value={form.difficulty}
-                  onChange={(e) => setForm((prev) => ({ ...prev, difficulty: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, difficulty: e.target.value }))
+                  }
                   className="w-full border rounded-md p-2"
                   type="number"
                   min={0}
@@ -1978,7 +2506,9 @@ export const Scenarios = () => {
                 Latitude
                 <input
                   value={form.latitude}
-                  onChange={(e) => setForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, latitude: e.target.value }))
+                  }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
@@ -1988,7 +2518,9 @@ export const Scenarios = () => {
                 Longitude
                 <input
                   value={form.longitude}
-                  onChange={(e) => setForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, longitude: e.target.value }))
+                  }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
@@ -2007,13 +2539,19 @@ export const Scenarios = () => {
               <div className="text-sm md:col-span-2">
                 <div className="flex items-center justify-between mb-1">
                   <span>Map Location Picker</span>
-                  <span className="text-xs text-gray-500">Click map to set latitude/longitude</span>
+                  <span className="text-xs text-gray-500">
+                    Click map to set latitude/longitude
+                  </span>
                 </div>
                 {mapboxgl.accessToken ? (
-                  <div ref={mapContainerRef} className="w-full h-64 border rounded-md" />
+                  <div
+                    ref={mapContainerRef}
+                    className="w-full h-64 border rounded-md"
+                  />
                 ) : (
                   <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is unavailable.
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                    unavailable.
                   </div>
                 )}
               </div>
@@ -2021,7 +2559,9 @@ export const Scenarios = () => {
                 Image URL
                 <input
                   value={form.imageUrl}
-                  onChange={(e) => setForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, imageUrl: e.target.value }))
+                  }
                   className="w-full border rounded-md p-2"
                 />
               </label>
@@ -2029,7 +2569,12 @@ export const Scenarios = () => {
                 Thumbnail URL
                 <input
                   value={form.thumbnailUrl}
-                  onChange={(e) => setForm((prev) => ({ ...prev, thumbnailUrl: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      thumbnailUrl: e.target.value,
+                    }))
+                  }
                   className="w-full border rounded-md p-2"
                 />
               </label>
@@ -2039,7 +2584,9 @@ export const Scenarios = () => {
               Prompt
               <textarea
                 value={form.prompt}
-                onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, prompt: e.target.value }))
+                }
                 className="w-full border rounded-md p-2 min-h-[90px]"
               />
             </label>
@@ -2052,8 +2599,12 @@ export const Scenarios = () => {
                   setForm((prev) => ({
                     ...prev,
                     openEnded: e.target.checked,
-                    failurePenaltyMode: e.target.checked ? 'shared' : prev.failurePenaltyMode,
-                    successRewardMode: e.target.checked ? 'shared' : prev.successRewardMode,
+                    failurePenaltyMode: e.target.checked
+                      ? 'shared'
+                      : prev.failurePenaltyMode,
+                    successRewardMode: e.target.checked
+                      ? 'shared'
+                      : prev.successRewardMode,
                     options: e.target.checked
                       ? prev.options
                       : prev.options.length > 0
@@ -2073,7 +2624,12 @@ export const Scenarios = () => {
                     Reward Experience
                     <input
                       value={form.rewardExperience}
-                      onChange={(e) => setForm((prev) => ({ ...prev, rewardExperience: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          rewardExperience: e.target.value,
+                        }))
+                      }
                       className="w-full border rounded-md p-2"
                       type="number"
                       min={0}
@@ -2083,7 +2639,12 @@ export const Scenarios = () => {
                     Reward Gold
                     <input
                       value={form.rewardGold}
-                      onChange={(e) => setForm((prev) => ({ ...prev, rewardGold: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          rewardGold: e.target.value,
+                        }))
+                      }
                       className="w-full border rounded-md p-2"
                       type="number"
                       min={0}
@@ -2092,12 +2653,19 @@ export const Scenarios = () => {
                 </div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-medium">Item Rewards</div>
-                  <button className="bg-green-600 text-white px-3 py-1 rounded-md" type="button" onClick={addScenarioItemReward}>
+                  <button
+                    className="bg-green-600 text-white px-3 py-1 rounded-md"
+                    type="button"
+                    onClick={addScenarioItemReward}
+                  >
                     Add Item
                   </button>
                 </div>
                 {form.itemRewards.map((reward, index) => (
-                  <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                  <div
+                    key={index}
+                    className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2"
+                  >
                     <select
                       value={reward.inventoryItemId}
                       onChange={(e) =>
@@ -2137,12 +2705,19 @@ export const Scenarios = () => {
 
                 <div className="flex items-center justify-between mb-2 mt-4">
                   <div className="font-medium">Spell Rewards</div>
-                  <button className="bg-green-600 text-white px-3 py-1 rounded-md" type="button" onClick={addScenarioSpellReward}>
+                  <button
+                    className="bg-green-600 text-white px-3 py-1 rounded-md"
+                    type="button"
+                    onClick={addScenarioSpellReward}
+                  >
                     Add Spell
                   </button>
                 </div>
                 {form.spellRewards.map((reward, index) => (
-                  <div key={`scenario-spell-${index}`} className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                  <div
+                    key={`scenario-spell-${index}`}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2"
+                  >
                     <select
                       value={reward.spellId}
                       onChange={(e) =>
@@ -2172,17 +2747,32 @@ export const Scenarios = () => {
                 {renderFailurePenaltyEditor({
                   title: 'Failure Penalty (Open-Ended)',
                   healthDrainType: form.failureHealthDrainType,
-                  healthDrainValue: parseIntValue(form.failureHealthDrainValue, 0),
+                  healthDrainValue: parseIntValue(
+                    form.failureHealthDrainValue,
+                    0
+                  ),
                   manaDrainType: form.failureManaDrainType,
                   manaDrainValue: parseIntValue(form.failureManaDrainValue, 0),
                   onHealthDrainTypeChange: (value) =>
-                    setForm((prev) => ({ ...prev, failureHealthDrainType: value })),
+                    setForm((prev) => ({
+                      ...prev,
+                      failureHealthDrainType: value,
+                    })),
                   onHealthDrainValueChange: (value) =>
-                    setForm((prev) => ({ ...prev, failureHealthDrainValue: String(value) })),
+                    setForm((prev) => ({
+                      ...prev,
+                      failureHealthDrainValue: String(value),
+                    })),
                   onManaDrainTypeChange: (value) =>
-                    setForm((prev) => ({ ...prev, failureManaDrainType: value })),
+                    setForm((prev) => ({
+                      ...prev,
+                      failureManaDrainType: value,
+                    })),
                   onManaDrainValueChange: (value) =>
-                    setForm((prev) => ({ ...prev, failureManaDrainValue: String(value) })),
+                    setForm((prev) => ({
+                      ...prev,
+                      failureManaDrainValue: String(value),
+                    })),
                   statuses: form.failureStatuses,
                   onAddStatus: addScenarioFailureStatus,
                   onUpdateStatus: updateScenarioFailureStatus,
@@ -2192,17 +2782,35 @@ export const Scenarios = () => {
                 {renderSuccessRewardEditor({
                   title: 'Success Rewards (Open-Ended)',
                   healthRestoreType: form.successHealthRestoreType,
-                  healthRestoreValue: parseIntValue(form.successHealthRestoreValue, 0),
+                  healthRestoreValue: parseIntValue(
+                    form.successHealthRestoreValue,
+                    0
+                  ),
                   manaRestoreType: form.successManaRestoreType,
-                  manaRestoreValue: parseIntValue(form.successManaRestoreValue, 0),
+                  manaRestoreValue: parseIntValue(
+                    form.successManaRestoreValue,
+                    0
+                  ),
                   onHealthRestoreTypeChange: (value) =>
-                    setForm((prev) => ({ ...prev, successHealthRestoreType: value })),
+                    setForm((prev) => ({
+                      ...prev,
+                      successHealthRestoreType: value,
+                    })),
                   onHealthRestoreValueChange: (value) =>
-                    setForm((prev) => ({ ...prev, successHealthRestoreValue: String(value) })),
+                    setForm((prev) => ({
+                      ...prev,
+                      successHealthRestoreValue: String(value),
+                    })),
                   onManaRestoreTypeChange: (value) =>
-                    setForm((prev) => ({ ...prev, successManaRestoreType: value })),
+                    setForm((prev) => ({
+                      ...prev,
+                      successManaRestoreType: value,
+                    })),
                   onManaRestoreValueChange: (value) =>
-                    setForm((prev) => ({ ...prev, successManaRestoreValue: String(value) })),
+                    setForm((prev) => ({
+                      ...prev,
+                      successManaRestoreValue: String(value),
+                    })),
                   statuses: form.successStatuses,
                   onAddStatus: addScenarioSuccessStatus,
                   onUpdateStatus: updateScenarioSuccessStatus,
@@ -2213,7 +2821,11 @@ export const Scenarios = () => {
               <div className="border rounded-md p-3 mb-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="font-medium">Response Options</div>
-                  <button className="bg-green-600 text-white px-3 py-1 rounded-md" type="button" onClick={addOption}>
+                  <button
+                    className="bg-green-600 text-white px-3 py-1 rounded-md"
+                    type="button"
+                    onClick={addOption}
+                  >
                     Add Option
                   </button>
                 </div>
@@ -2225,7 +2837,8 @@ export const Scenarios = () => {
                     onChange={(e) =>
                       setForm((prev) => ({
                         ...prev,
-                        failurePenaltyMode: e.target.value as ScenarioFailurePenaltyMode,
+                        failurePenaltyMode: e.target
+                          .value as ScenarioFailurePenaltyMode,
                       }))
                     }
                     className="w-full border rounded-md p-2"
@@ -2239,17 +2852,35 @@ export const Scenarios = () => {
                   renderFailurePenaltyEditor({
                     title: 'Shared Failure Penalty',
                     healthDrainType: form.failureHealthDrainType,
-                    healthDrainValue: parseIntValue(form.failureHealthDrainValue, 0),
+                    healthDrainValue: parseIntValue(
+                      form.failureHealthDrainValue,
+                      0
+                    ),
                     manaDrainType: form.failureManaDrainType,
-                    manaDrainValue: parseIntValue(form.failureManaDrainValue, 0),
+                    manaDrainValue: parseIntValue(
+                      form.failureManaDrainValue,
+                      0
+                    ),
                     onHealthDrainTypeChange: (value) =>
-                      setForm((prev) => ({ ...prev, failureHealthDrainType: value })),
+                      setForm((prev) => ({
+                        ...prev,
+                        failureHealthDrainType: value,
+                      })),
                     onHealthDrainValueChange: (value) =>
-                      setForm((prev) => ({ ...prev, failureHealthDrainValue: String(value) })),
+                      setForm((prev) => ({
+                        ...prev,
+                        failureHealthDrainValue: String(value),
+                      })),
                     onManaDrainTypeChange: (value) =>
-                      setForm((prev) => ({ ...prev, failureManaDrainType: value })),
+                      setForm((prev) => ({
+                        ...prev,
+                        failureManaDrainType: value,
+                      })),
                     onManaDrainValueChange: (value) =>
-                      setForm((prev) => ({ ...prev, failureManaDrainValue: String(value) })),
+                      setForm((prev) => ({
+                        ...prev,
+                        failureManaDrainValue: String(value),
+                      })),
                     statuses: form.failureStatuses,
                     onAddStatus: addScenarioFailureStatus,
                     onUpdateStatus: updateScenarioFailureStatus,
@@ -2263,7 +2894,8 @@ export const Scenarios = () => {
                     onChange={(e) =>
                       setForm((prev) => ({
                         ...prev,
-                        successRewardMode: e.target.value as ScenarioSuccessRewardMode,
+                        successRewardMode: e.target
+                          .value as ScenarioSuccessRewardMode,
                       }))
                     }
                     className="w-full border rounded-md p-2"
@@ -2277,17 +2909,35 @@ export const Scenarios = () => {
                   renderSuccessRewardEditor({
                     title: 'Shared Success Rewards',
                     healthRestoreType: form.successHealthRestoreType,
-                    healthRestoreValue: parseIntValue(form.successHealthRestoreValue, 0),
+                    healthRestoreValue: parseIntValue(
+                      form.successHealthRestoreValue,
+                      0
+                    ),
                     manaRestoreType: form.successManaRestoreType,
-                    manaRestoreValue: parseIntValue(form.successManaRestoreValue, 0),
+                    manaRestoreValue: parseIntValue(
+                      form.successManaRestoreValue,
+                      0
+                    ),
                     onHealthRestoreTypeChange: (value) =>
-                      setForm((prev) => ({ ...prev, successHealthRestoreType: value })),
+                      setForm((prev) => ({
+                        ...prev,
+                        successHealthRestoreType: value,
+                      })),
                     onHealthRestoreValueChange: (value) =>
-                      setForm((prev) => ({ ...prev, successHealthRestoreValue: String(value) })),
+                      setForm((prev) => ({
+                        ...prev,
+                        successHealthRestoreValue: String(value),
+                      })),
                     onManaRestoreTypeChange: (value) =>
-                      setForm((prev) => ({ ...prev, successManaRestoreType: value })),
+                      setForm((prev) => ({
+                        ...prev,
+                        successManaRestoreType: value,
+                      })),
                     onManaRestoreValueChange: (value) =>
-                      setForm((prev) => ({ ...prev, successManaRestoreValue: String(value) })),
+                      setForm((prev) => ({
+                        ...prev,
+                        successManaRestoreValue: String(value),
+                      })),
                     statuses: form.successStatuses,
                     onAddStatus: addScenarioSuccessStatus,
                     onUpdateStatus: updateScenarioSuccessStatus,
@@ -2301,7 +2951,11 @@ export const Scenarios = () => {
                         Option Text
                         <input
                           value={option.optionText}
-                          onChange={(e) => updateOption(optionIndex, { optionText: e.target.value })}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              optionText: e.target.value,
+                            })
+                          }
                           className="w-full border rounded-md p-2"
                         />
                       </label>
@@ -2309,7 +2963,11 @@ export const Scenarios = () => {
                         Success Text
                         <textarea
                           value={option.successText}
-                          onChange={(e) => updateOption(optionIndex, { successText: e.target.value })}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              successText: e.target.value,
+                            })
+                          }
                           className="w-full border rounded-md p-2 min-h-[64px]"
                         />
                       </label>
@@ -2317,7 +2975,11 @@ export const Scenarios = () => {
                         Failure Text
                         <textarea
                           value={option.failureText}
-                          onChange={(e) => updateOption(optionIndex, { failureText: e.target.value })}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              failureText: e.target.value,
+                            })
+                          }
                           className="w-full border rounded-md p-2 min-h-[64px]"
                         />
                       </label>
@@ -2325,7 +2987,11 @@ export const Scenarios = () => {
                         Stat Tag
                         <select
                           value={option.statTag}
-                          onChange={(e) => updateOption(optionIndex, { statTag: e.target.value })}
+                          onChange={(e) =>
+                            updateOption(optionIndex, {
+                              statTag: e.target.value,
+                            })
+                          }
                           className="w-full border rounded-md p-2"
                         >
                           {statTags.map((tag) => (
@@ -2341,7 +3007,10 @@ export const Scenarios = () => {
                           value={option.difficulty ?? ''}
                           onChange={(e) =>
                             updateOption(optionIndex, {
-                              difficulty: e.target.value === '' ? null : parseIntValue(e.target.value, 0),
+                              difficulty:
+                                e.target.value === ''
+                                  ? null
+                                  : parseIntValue(e.target.value, 0),
                             })
                           }
                           className="w-full border rounded-md p-2"
@@ -2354,7 +3023,9 @@ export const Scenarios = () => {
                         <input
                           value={option.proficiencies.join(', ')}
                           onChange={(e) =>
-                            updateOption(optionIndex, { proficiencies: parseCsv(e.target.value) })
+                            updateOption(optionIndex, {
+                              proficiencies: parseCsv(e.target.value),
+                            })
                           }
                           className="w-full border rounded-md p-2"
                         />
@@ -2365,7 +3036,10 @@ export const Scenarios = () => {
                           value={option.rewardExperience}
                           onChange={(e) =>
                             updateOption(optionIndex, {
-                              rewardExperience: parseIntValue(e.target.value, 0),
+                              rewardExperience: parseIntValue(
+                                e.target.value,
+                                0
+                              ),
                             })
                           }
                           className="w-full border rounded-md p-2"
@@ -2391,7 +3065,9 @@ export const Scenarios = () => {
 
                     <div className="mt-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="font-medium text-sm">Option Item Rewards</div>
+                        <div className="font-medium text-sm">
+                          Option Item Rewards
+                        </div>
                         <button
                           type="button"
                           className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
@@ -2401,12 +3077,18 @@ export const Scenarios = () => {
                         </button>
                       </div>
                       {option.itemRewards.map((reward, rewardIndex) => (
-                        <div key={rewardIndex} className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                        <div
+                          key={rewardIndex}
+                          className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2"
+                        >
                           <select
                             value={reward.inventoryItemId}
                             onChange={(e) =>
                               updateOptionItemReward(optionIndex, rewardIndex, {
-                                inventoryItemId: parseIntValue(e.target.value, 0),
+                                inventoryItemId: parseIntValue(
+                                  e.target.value,
+                                  0
+                                ),
                               })
                             }
                             className="border rounded-md p-2"
@@ -2432,7 +3114,9 @@ export const Scenarios = () => {
                           <button
                             type="button"
                             className="bg-red-500 text-white px-3 py-1 rounded-md"
-                            onClick={() => removeOptionItemReward(optionIndex, rewardIndex)}
+                            onClick={() =>
+                              removeOptionItemReward(optionIndex, rewardIndex)
+                            }
                           >
                             Remove
                           </button>
@@ -2442,7 +3126,9 @@ export const Scenarios = () => {
 
                     <div className="mt-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="font-medium text-sm">Option Spell Rewards</div>
+                        <div className="font-medium text-sm">
+                          Option Spell Rewards
+                        </div>
                         <button
                           type="button"
                           className="bg-green-600 text-white px-2 py-1 rounded-md text-xs"
@@ -2452,13 +3138,20 @@ export const Scenarios = () => {
                         </button>
                       </div>
                       {option.spellRewards.map((reward, rewardIndex) => (
-                        <div key={rewardIndex} className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                        <div
+                          key={rewardIndex}
+                          className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2"
+                        >
                           <select
                             value={reward.spellId}
                             onChange={(e) =>
-                              updateOptionSpellReward(optionIndex, rewardIndex, {
-                                spellId: e.target.value,
-                              })
+                              updateOptionSpellReward(
+                                optionIndex,
+                                rewardIndex,
+                                {
+                                  spellId: e.target.value,
+                                }
+                              )
                             }
                             className="border rounded-md p-2"
                           >
@@ -2472,7 +3165,9 @@ export const Scenarios = () => {
                           <button
                             type="button"
                             className="bg-red-500 text-white px-3 py-1 rounded-md"
-                            onClick={() => removeOptionSpellReward(optionIndex, rewardIndex)}
+                            onClick={() =>
+                              removeOptionSpellReward(optionIndex, rewardIndex)
+                            }
                           >
                             Remove
                           </button>
@@ -2488,17 +3183,29 @@ export const Scenarios = () => {
                         manaDrainType: option.failureManaDrainType,
                         manaDrainValue: option.failureManaDrainValue,
                         onHealthDrainTypeChange: (value) =>
-                          updateOption(optionIndex, { failureHealthDrainType: value }),
+                          updateOption(optionIndex, {
+                            failureHealthDrainType: value,
+                          }),
                         onHealthDrainValueChange: (value) =>
-                          updateOption(optionIndex, { failureHealthDrainValue: value }),
+                          updateOption(optionIndex, {
+                            failureHealthDrainValue: value,
+                          }),
                         onManaDrainTypeChange: (value) =>
-                          updateOption(optionIndex, { failureManaDrainType: value }),
+                          updateOption(optionIndex, {
+                            failureManaDrainType: value,
+                          }),
                         onManaDrainValueChange: (value) =>
-                          updateOption(optionIndex, { failureManaDrainValue: value }),
+                          updateOption(optionIndex, {
+                            failureManaDrainValue: value,
+                          }),
                         statuses: option.failureStatuses,
                         onAddStatus: () => addOptionFailureStatus(optionIndex),
                         onUpdateStatus: (statusIndex, next) =>
-                          updateOptionFailureStatus(optionIndex, statusIndex, next),
+                          updateOptionFailureStatus(
+                            optionIndex,
+                            statusIndex,
+                            next
+                          ),
                         onRemoveStatus: (statusIndex) =>
                           removeOptionFailureStatus(optionIndex, statusIndex),
                       })}
@@ -2511,17 +3218,29 @@ export const Scenarios = () => {
                         manaRestoreType: option.successManaRestoreType,
                         manaRestoreValue: option.successManaRestoreValue,
                         onHealthRestoreTypeChange: (value) =>
-                          updateOption(optionIndex, { successHealthRestoreType: value }),
+                          updateOption(optionIndex, {
+                            successHealthRestoreType: value,
+                          }),
                         onHealthRestoreValueChange: (value) =>
-                          updateOption(optionIndex, { successHealthRestoreValue: value }),
+                          updateOption(optionIndex, {
+                            successHealthRestoreValue: value,
+                          }),
                         onManaRestoreTypeChange: (value) =>
-                          updateOption(optionIndex, { successManaRestoreType: value }),
+                          updateOption(optionIndex, {
+                            successManaRestoreType: value,
+                          }),
                         onManaRestoreValueChange: (value) =>
-                          updateOption(optionIndex, { successManaRestoreValue: value }),
+                          updateOption(optionIndex, {
+                            successManaRestoreValue: value,
+                          }),
                         statuses: option.successStatuses,
                         onAddStatus: () => addOptionSuccessStatus(optionIndex),
                         onUpdateStatus: (statusIndex, next) =>
-                          updateOptionSuccessStatus(optionIndex, statusIndex, next),
+                          updateOptionSuccessStatus(
+                            optionIndex,
+                            statusIndex,
+                            next
+                          ),
                         onRemoveStatus: (statusIndex) =>
                           removeOptionSuccessStatus(optionIndex, statusIndex),
                       })}
@@ -2541,10 +3260,16 @@ export const Scenarios = () => {
             )}
 
             <div className="flex gap-2">
-              <button className="bg-blue-500 text-white px-4 py-2 rounded-md" onClick={save}>
+              <button
+                className="bg-blue-500 text-white px-4 py-2 rounded-md"
+                onClick={save}
+              >
                 {editingId ? 'Update Scenario' : 'Create Scenario'}
               </button>
-              <button className="bg-gray-500 text-white px-4 py-2 rounded-md" onClick={closeModal}>
+              <button
+                className="bg-gray-500 text-white px-4 py-2 rounded-md"
+                onClick={closeModal}
+              >
                 Cancel
               </button>
             </div>
@@ -2556,12 +3281,20 @@ export const Scenarios = () => {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-md p-6 max-w-sm w-full">
             <h3 className="text-lg font-semibold mb-2">Delete Scenario</h3>
-            <p className="text-sm text-gray-700 mb-4">This action cannot be undone.</p>
+            <p className="text-sm text-gray-700 mb-4">
+              This action cannot be undone.
+            </p>
             <div className="flex gap-2">
-              <button className="bg-red-500 text-white px-4 py-2 rounded-md" onClick={confirmDelete}>
+              <button
+                className="bg-red-500 text-white px-4 py-2 rounded-md"
+                onClick={confirmDelete}
+              >
                 Delete
               </button>
-              <button className="bg-gray-500 text-white px-4 py-2 rounded-md" onClick={() => setDeleteId(null)}>
+              <button
+                className="bg-gray-500 text-white px-4 py-2 rounded-md"
+                onClick={() => setDeleteId(null)}
+              >
                 Cancel
               </button>
             </div>
@@ -2574,7 +3307,10 @@ export const Scenarios = () => {
           className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4"
           onClick={() => setExpandedScenarioImage(null)}
         >
-          <div className="max-w-6xl max-h-[90vh] w-full" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="max-w-6xl max-h-[90vh] w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-end mb-2">
               <button
                 type="button"

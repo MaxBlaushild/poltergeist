@@ -180,6 +180,54 @@ class CharacterStatsProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> setHealthToOne() => setHealthTo(1);
+
+  Future<bool> setHealthTo(int value) async {
+    if (_userId == null) return false;
+    if (_stats == null) {
+      await refresh(silent: true);
+    }
+
+    final targetHealth = value < 1 ? 1 : value;
+    final currentHealth = health;
+    if (currentHealth == targetHealth) return true;
+
+    final updated = await _service.adjustUserResources(
+      _userId!,
+      healthDelta: targetHealth - currentHealth,
+    );
+    if (updated != null) {
+      _stats = updated;
+      notifyListeners();
+      return true;
+    }
+
+    final current = _stats;
+    if (current == null) return false;
+    final clampedHealth = targetHealth.clamp(0, current.maxHealth).toInt();
+    _stats = CharacterStats(
+      strength: current.strength,
+      dexterity: current.dexterity,
+      constitution: current.constitution,
+      intelligence: current.intelligence,
+      wisdom: current.wisdom,
+      charisma: current.charisma,
+      health: clampedHealth,
+      maxHealth: current.maxHealth,
+      mana: current.mana,
+      maxMana: current.maxMana,
+      equipmentBonuses: current.equipmentBonuses,
+      statusBonuses: current.statusBonuses,
+      unspentPoints: current.unspentPoints,
+      level: current.level,
+      proficiencies: current.proficiencies,
+      statuses: current.statuses,
+      spells: current.spells,
+    );
+    notifyListeners();
+    return true;
+  }
+
   @override
   void dispose() {
     _feed?.removeListener(_onFeedChanged);

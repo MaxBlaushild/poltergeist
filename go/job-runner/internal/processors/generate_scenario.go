@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	scenarioPlaceholderImageURL = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	scenarioPlaceholderImageURL = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png"
 )
 
 var scenarioGenerationValidStatTags = map[string]struct{}{

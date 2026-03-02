@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +30,174 @@ type monsterTemplateUpsertRequest struct {
 	BaseWisdom       int      `json:"baseWisdom"`
 	BaseCharisma     int      `json:"baseCharisma"`
 	SpellIDs         []string `json:"spellIds"`
+}
+
+type bulkGenerateMonsterTemplatesRequest struct {
+	Count int `json:"count"`
+}
+
+type dndMonsterTemplateSeed struct {
+	Name             string
+	Description      string
+	BaseStrength     int
+	BaseDexterity    int
+	BaseConstitution int
+	BaseIntelligence int
+	BaseWisdom       int
+	BaseCharisma     int
+}
+
+var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
+	{
+		Name:             "Goblin Skirmisher",
+		Description:      "A nimble ambusher inspired by classic DnD goblins, favoring hit-and-run tactics.",
+		BaseStrength:     8,
+		BaseDexterity:    14,
+		BaseConstitution: 10,
+		BaseIntelligence: 10,
+		BaseWisdom:       8,
+		BaseCharisma:     8,
+	},
+	{
+		Name:             "Orc Berserker",
+		Description:      "A brutal frontline raider inspired by DnD orcs, built for relentless melee pressure.",
+		BaseStrength:     16,
+		BaseDexterity:    10,
+		BaseConstitution: 14,
+		BaseIntelligence: 8,
+		BaseWisdom:       10,
+		BaseCharisma:     10,
+	},
+	{
+		Name:             "Kobold Trapmaster",
+		Description:      "A crafty tunnel fighter inspired by DnD kobolds, relying on tricks and terrain control.",
+		BaseStrength:     7,
+		BaseDexterity:    15,
+		BaseConstitution: 10,
+		BaseIntelligence: 11,
+		BaseWisdom:       10,
+		BaseCharisma:     8,
+	},
+	{
+		Name:             "Bugbear Enforcer",
+		Description:      "A heavy ambush predator inspired by DnD bugbears, combining reach and sudden violence.",
+		BaseStrength:     15,
+		BaseDexterity:    12,
+		BaseConstitution: 13,
+		BaseIntelligence: 8,
+		BaseWisdom:       11,
+		BaseCharisma:     9,
+	},
+	{
+		Name:             "Hobgoblin Captain",
+		Description:      "A disciplined war leader inspired by DnD hobgoblins, excelling in organized combat.",
+		BaseStrength:     14,
+		BaseDexterity:    12,
+		BaseConstitution: 13,
+		BaseIntelligence: 12,
+		BaseWisdom:       11,
+		BaseCharisma:     12,
+	},
+	{
+		Name:             "Gnoll Fang",
+		Description:      "A savage pack hunter inspired by DnD gnolls, driven by bloodlust and momentum.",
+		BaseStrength:     14,
+		BaseDexterity:    12,
+		BaseConstitution: 12,
+		BaseIntelligence: 8,
+		BaseWisdom:       10,
+		BaseCharisma:     8,
+	},
+	{
+		Name:             "Skeleton Legionary",
+		Description:      "An undead soldier inspired by DnD skeletons, tireless and unnervingly precise.",
+		BaseStrength:     10,
+		BaseDexterity:    12,
+		BaseConstitution: 12,
+		BaseIntelligence: 6,
+		BaseWisdom:       8,
+		BaseCharisma:     5,
+	},
+	{
+		Name:             "Zombie Brute",
+		Description:      "A shambling terror inspired by DnD zombies, slow but difficult to put down.",
+		BaseStrength:     14,
+		BaseDexterity:    6,
+		BaseConstitution: 16,
+		BaseIntelligence: 3,
+		BaseWisdom:       6,
+		BaseCharisma:     5,
+	},
+	{
+		Name:             "Owlbear Ravager",
+		Description:      "A feral apex beast inspired by DnD owlbears, overwhelming prey with sheer force.",
+		BaseStrength:     18,
+		BaseDexterity:    12,
+		BaseConstitution: 16,
+		BaseIntelligence: 3,
+		BaseWisdom:       12,
+		BaseCharisma:     7,
+	},
+	{
+		Name:             "Displacer Beast Stalker",
+		Description:      "A predatory illusion-weaver inspired by DnD displacer beasts, hard to pin down.",
+		BaseStrength:     13,
+		BaseDexterity:    15,
+		BaseConstitution: 13,
+		BaseIntelligence: 6,
+		BaseWisdom:       12,
+		BaseCharisma:     8,
+	},
+	{
+		Name:             "Mimic Lurker",
+		Description:      "A shape-shifting ambusher inspired by DnD mimics, hiding in plain sight.",
+		BaseStrength:     15,
+		BaseDexterity:    12,
+		BaseConstitution: 14,
+		BaseIntelligence: 5,
+		BaseWisdom:       10,
+		BaseCharisma:     8,
+	},
+	{
+		Name:             "Gelatinous Cube",
+		Description:      "A dungeon ooze inspired by DnD gelatinous cubes, corrosive and inexorable.",
+		BaseStrength:     14,
+		BaseDexterity:    4,
+		BaseConstitution: 16,
+		BaseIntelligence: 1,
+		BaseWisdom:       6,
+		BaseCharisma:     1,
+	},
+	{
+		Name:             "Mind Flayer Arcanist",
+		Description:      "A psionic manipulator inspired by DnD mind flayers, dangerous at range and in control.",
+		BaseStrength:     11,
+		BaseDexterity:    12,
+		BaseConstitution: 12,
+		BaseIntelligence: 17,
+		BaseWisdom:       15,
+		BaseCharisma:     16,
+	},
+	{
+		Name:             "Beholder Tyrant",
+		Description:      "An aberrant overseer inspired by DnD beholders, dominating space with magical pressure.",
+		BaseStrength:     10,
+		BaseDexterity:    14,
+		BaseConstitution: 16,
+		BaseIntelligence: 17,
+		BaseWisdom:       15,
+		BaseCharisma:     17,
+	},
+	{
+		Name:             "Young Red Dragon",
+		Description:      "A proud draconic terror inspired by DnD dragons, blending mobility and overwhelming damage.",
+		BaseStrength:     19,
+		BaseDexterity:    12,
+		BaseConstitution: 17,
+		BaseIntelligence: 14,
+		BaseWisdom:       11,
+		BaseCharisma:     15,
+	},
 }
 
 type monsterRewardItemPayload struct {
@@ -553,6 +722,199 @@ func (s *server) createMonsterTemplate(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusCreated, monsterTemplateResponseFrom(created))
+}
+
+func nextUniqueMonsterTemplateName(base string, used map[string]struct{}) string {
+	trimmed := strings.TrimSpace(base)
+	if trimmed == "" {
+		trimmed = "Monster Template"
+	}
+	candidate := trimmed
+	suffix := 2
+	for {
+		key := strings.ToLower(strings.TrimSpace(candidate))
+		if _, exists := used[key]; !exists {
+			used[key] = struct{}{}
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s %d", trimmed, suffix)
+		suffix++
+	}
+}
+
+func buildBulkMonsterTemplateSpecs(count int, usedNames map[string]struct{}) []jobs.MonsterTemplateCreationSpec {
+	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
+	for i := 0; i < count; i++ {
+		seed := dndMonsterTemplateSeeds[i%len(dndMonsterTemplateSeeds)]
+		specs = append(specs, jobs.MonsterTemplateCreationSpec{
+			Name:             nextUniqueMonsterTemplateName(seed.Name, usedNames),
+			Description:      strings.TrimSpace(seed.Description),
+			BaseStrength:     seed.BaseStrength,
+			BaseDexterity:    seed.BaseDexterity,
+			BaseConstitution: seed.BaseConstitution,
+			BaseIntelligence: seed.BaseIntelligence,
+			BaseWisdom:       seed.BaseWisdom,
+			BaseCharisma:     seed.BaseCharisma,
+		})
+	}
+	return specs
+}
+
+func (s *server) setMonsterTemplateBulkStatus(ctx context.Context, status jobs.MonsterTemplateBulkStatus) error {
+	if s.redisClient == nil {
+		return fmt.Errorf("redis client unavailable")
+	}
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return s.redisClient.Set(
+		ctx,
+		jobs.MonsterTemplateBulkStatusKey(status.JobID),
+		payload,
+		jobs.MonsterTemplateBulkStatusTTL,
+	).Err()
+}
+
+func (s *server) getMonsterTemplateBulkStatus(ctx context.Context, jobID uuid.UUID) (*jobs.MonsterTemplateBulkStatus, error) {
+	if s.redisClient == nil {
+		return nil, fmt.Errorf("redis client unavailable")
+	}
+	value, err := s.redisClient.Get(ctx, jobs.MonsterTemplateBulkStatusKey(jobID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var status jobs.MonsterTemplateBulkStatus
+	if err := json.Unmarshal([]byte(value), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
+func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody bulkGenerateMonsterTemplatesRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Count < 1 || requestBody.Count > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
+		return
+	}
+	if len(dndMonsterTemplateSeeds) == 0 {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no DnD-inspired template seeds configured"})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+	if s.redisClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
+		return
+	}
+
+	existingTemplates, err := s.dbClient.MonsterTemplate().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	usedNames := make(map[string]struct{}, len(existingTemplates)+requestBody.Count)
+	for _, template := range existingTemplates {
+		normalized := strings.ToLower(strings.TrimSpace(template.Name))
+		if normalized == "" {
+			continue
+		}
+		usedNames[normalized] = struct{}{}
+	}
+
+	templateSpecs := buildBulkMonsterTemplateSpecs(requestBody.Count, usedNames)
+	if len(templateSpecs) == 0 {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no templates prepared for generation"})
+		return
+	}
+
+	jobID := uuid.New()
+	queuedAt := time.Now().UTC()
+	status := jobs.MonsterTemplateBulkStatus{
+		JobID:        jobID,
+		Status:       jobs.MonsterTemplateBulkStatusQueued,
+		Source:       "dnd_inspired",
+		TotalCount:   len(templateSpecs),
+		CreatedCount: 0,
+		QueuedAt:     &queuedAt,
+		UpdatedAt:    queuedAt,
+	}
+	if err := s.setMonsterTemplateBulkStatus(ctx.Request.Context(), status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload := jobs.GenerateMonsterTemplatesBulkTaskPayload{
+		JobID:      jobID,
+		Source:     "dnd_inspired",
+		TotalCount: len(templateSpecs),
+		Templates:  templateSpecs,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateMonsterTemplatesBulkTaskType, payloadBytes)); err != nil {
+		failedAt := time.Now().UTC()
+		status.Status = jobs.MonsterTemplateBulkStatusFailed
+		status.Error = err.Error()
+		status.CompletedAt = &failedAt
+		status.UpdatedAt = failedAt
+		_ = s.setMonsterTemplateBulkStatus(ctx.Request.Context(), status)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"jobId":        status.JobID,
+		"status":       status.Status,
+		"source":       status.Source,
+		"totalCount":   status.TotalCount,
+		"createdCount": status.CreatedCount,
+		"queuedAt":     status.QueuedAt,
+		"updatedAt":    status.UpdatedAt,
+	})
+}
+
+func (s *server) getBulkGenerateMonsterTemplatesStatus(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	jobID, err := uuid.Parse(ctx.Param("jobId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
+		return
+	}
+
+	status, err := s.getMonsterTemplateBulkStatus(ctx.Request.Context(), jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if status == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "bulk generation job not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status)
 }
 
 func (s *server) updateMonsterTemplate(ctx *gin.Context) {

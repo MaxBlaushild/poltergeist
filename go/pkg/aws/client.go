@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
@@ -15,6 +16,8 @@ type client struct {
 
 type AWSClient interface {
 	UploadImageToS3(bucket, key string, image []byte) (string, error)
+	DeleteObjectFromS3(bucket, key string) error
+	GetObjectLastModified(bucket, key string) (*time.Time, error)
 	GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURL(bucket, key string, expiry time.Duration) (string, error)
 	GeneratePresignedUploadURLWithContentType(bucket, key string, contentType string, expiry time.Duration) (string, error)
@@ -39,6 +42,31 @@ func (client *client) UploadImageToS3(bucket, key string, image []byte) (string,
 		return "", err
 	}
 	return "https://" + bucket + ".s3.amazonaws.com/" + key, nil
+}
+
+func (client *client) DeleteObjectFromS3(bucket, key string) error {
+	_, err := client.s3.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	return err
+}
+
+func (client *client) GetObjectLastModified(bucket, key string) (*time.Time, error) {
+	resp, err := client.s3.HeadObject(&s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			switch awsErr.Code() {
+			case "NotFound", "NoSuchKey":
+				return nil, nil
+			}
+		}
+		return nil, err
+	}
+	return resp.LastModified, nil
 }
 
 func (client *client) GeneratePresignedURL(bucket, key string, expiry time.Duration) (string, error) {

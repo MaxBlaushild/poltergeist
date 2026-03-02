@@ -35,6 +35,8 @@ type QuestNode struct {
 	ID              uuid.UUID                      `json:"id"`
 	OrderIndex      int                            `json:"orderIndex"`
 	PointOfInterest *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
+	ScenarioID      *uuid.UUID                     `json:"scenarioId,omitempty"`
+	MonsterID       *uuid.UUID                     `json:"monsterId,omitempty"`
 	Polygon         []LatLng                       `json:"polygon,omitempty"`
 	Challenges      []QuestNodeChallenge           `json:"challenges"`
 	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
@@ -337,6 +339,8 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 		ID:              node.ID,
 		OrderIndex:      node.OrderIndex,
 		PointOfInterest: poi,
+		ScenarioID:      node.ScenarioID,
+		MonsterID:       node.MonsterID,
 		Polygon:         parsePolygon(node.Polygon),
 		Challenges:      challenges,
 		SubmissionType:  submissionType,

@@ -4,6 +4,7 @@ class User {
   final String name;
   final String username;
   final String profilePictureUrl;
+  final String backProfilePictureUrl;
   final String? partyId;
   final bool? isActive;
   final int gold;
@@ -14,6 +15,7 @@ class User {
     required this.name,
     required this.username,
     required this.profilePictureUrl,
+    this.backProfilePictureUrl = '',
     this.partyId,
     this.isActive,
     this.gold = 0,
@@ -29,6 +31,10 @@ class User {
       name: _str('name', 'Name'),
       username: json['username'] as String? ?? '',
       profilePictureUrl: json['profilePictureUrl'] as String? ?? '',
+      backProfilePictureUrl:
+          (json['backProfilePictureUrl'] ?? json['back_profile_picture_url'])
+              as String? ??
+          '',
       partyId: json['partyId'] as String?,
       isActive: json['isActive'] as bool?,
       gold: (json['gold'] as num?)?.toInt() ?? 0,
@@ -36,13 +42,14 @@ class User {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'phoneNumber': phoneNumber,
-        'name': name,
-        'username': username,
-        'profilePictureUrl': profilePictureUrl,
-        'partyId': partyId,
-        'isActive': isActive,
-        'gold': gold,
-      };
+    'id': id,
+    'phoneNumber': phoneNumber,
+    'name': name,
+    'username': username,
+    'profilePictureUrl': profilePictureUrl,
+    'backProfilePictureUrl': backProfilePictureUrl,
+    'partyId': partyId,
+    'isActive': isActive,
+    'gold': gold,
+  };
 }
