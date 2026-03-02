@@ -173,6 +173,10 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		}
 	}
 
+	if err := p.seedMonstersForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed monsters: %w", err))
+	}
+
 	scenarioLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
 	inputQueued, inputFailed := p.enqueueScenarioGenerationJobs(
 		ctx,
@@ -282,6 +286,74 @@ func zoneSeedScenarioLocations(pois []models.ZoneSeedPointOfInterestDraft) []zon
 		})
 	}
 	return locations
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedMonstersForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	monsterCount := job.MonsterCount
+	if monsterCount <= 0 {
+		monsterCount = 6
+	}
+
+	templates, err := p.dbClient.MonsterTemplate().FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load monster templates: %w", err)
+	}
+	if len(templates) == 0 {
+		return fmt.Errorf("no monster templates available")
+	}
+
+	locations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	if len(locations) == 0 {
+		locations = append(locations, zoneSeedScenarioLocation{
+			Latitude:  zone.Latitude,
+			Longitude: zone.Longitude,
+		})
+	}
+
+	for i := 0; i < monsterCount; i++ {
+		template := templates[rand.Intn(len(templates))]
+		location := locations[rand.Intn(len(locations))]
+		templateID := template.ID
+		level := 1 + rand.Intn(10)
+
+		imageURL := strings.TrimSpace(template.ImageURL)
+		thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
+		if thumbnailURL == "" && imageURL != "" {
+			thumbnailURL = imageURL
+		}
+
+		monster := &models.Monster{
+			ID:           uuid.New(),
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+			Name:         template.Name,
+			Description:  template.Description,
+			ImageURL:     imageURL,
+			ThumbnailURL: thumbnailURL,
+			ZoneID:       zone.ID,
+			Latitude:     location.Latitude,
+			Longitude:    location.Longitude,
+			TemplateID:   &templateID,
+			Level:        level,
+		}
+		if imageURL != "" {
+			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusComplete
+			emptyError := ""
+			monster.ImageGenerationError = &emptyError
+		} else {
+			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
+		}
+
+		if err := p.dbClient.Monster().Create(ctx, monster); err != nil {
+			return fmt.Errorf("failed to create monster %d/%d: %w", i+1, monsterCount, err)
+		}
+	}
+
+	return nil
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(

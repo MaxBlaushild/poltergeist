@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -47,10 +49,45 @@ type dndMonsterTemplateSeed struct {
 	BaseCharisma     int
 }
 
+type generatedMonsterTemplatePayload struct {
+	Templates []jobs.MonsterTemplateCreationSpec `json:"templates"`
+}
+
+const generateMonsterTemplatesPromptTemplate = `
+You are designing %d original monster templates for a fantasy action RPG.
+
+Avoid these existing monster template names:
+%s
+
+Hard constraints:
+- Output exactly %d templates.
+- Use unique names (2-4 words) that are NOT in the existing names list.
+- Keep descriptions concise and practical (8-18 words), focused on monster behavior/combat role.
+- Do not reference DnD, tabletop, or copyrighted franchises.
+- All base stats must be integers from 1 to 20.
+- Return JSON only.
+
+Respond as:
+{
+  "templates": [
+    {
+      "name": "string",
+      "description": "string",
+      "baseStrength": 10,
+      "baseDexterity": 10,
+      "baseConstitution": 10,
+      "baseIntelligence": 10,
+      "baseWisdom": 10,
+      "baseCharisma": 10
+    }
+  ]
+}
+`
+
 var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	{
 		Name:             "Goblin Skirmisher",
-		Description:      "A nimble ambusher inspired by classic DnD goblins, favoring hit-and-run tactics.",
+		Description:      "A nimble ambusher that favors hit-and-run tactics.",
 		BaseStrength:     8,
 		BaseDexterity:    14,
 		BaseConstitution: 10,
@@ -60,7 +97,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Orc Berserker",
-		Description:      "A brutal frontline raider inspired by DnD orcs, built for relentless melee pressure.",
+		Description:      "A brutal frontline raider built for relentless melee pressure.",
 		BaseStrength:     16,
 		BaseDexterity:    10,
 		BaseConstitution: 14,
@@ -70,7 +107,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Kobold Trapmaster",
-		Description:      "A crafty tunnel fighter inspired by DnD kobolds, relying on tricks and terrain control.",
+		Description:      "A crafty tunnel fighter that relies on tricks and terrain control.",
 		BaseStrength:     7,
 		BaseDexterity:    15,
 		BaseConstitution: 10,
@@ -80,7 +117,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Bugbear Enforcer",
-		Description:      "A heavy ambush predator inspired by DnD bugbears, combining reach and sudden violence.",
+		Description:      "A heavy ambush predator that combines reach and sudden violence.",
 		BaseStrength:     15,
 		BaseDexterity:    12,
 		BaseConstitution: 13,
@@ -90,7 +127,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Hobgoblin Captain",
-		Description:      "A disciplined war leader inspired by DnD hobgoblins, excelling in organized combat.",
+		Description:      "A disciplined war leader who excels in organized combat.",
 		BaseStrength:     14,
 		BaseDexterity:    12,
 		BaseConstitution: 13,
@@ -100,7 +137,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Gnoll Fang",
-		Description:      "A savage pack hunter inspired by DnD gnolls, driven by bloodlust and momentum.",
+		Description:      "A savage pack hunter driven by bloodlust and momentum.",
 		BaseStrength:     14,
 		BaseDexterity:    12,
 		BaseConstitution: 12,
@@ -110,7 +147,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Skeleton Legionary",
-		Description:      "An undead soldier inspired by DnD skeletons, tireless and unnervingly precise.",
+		Description:      "An undead soldier, tireless and unnervingly precise.",
 		BaseStrength:     10,
 		BaseDexterity:    12,
 		BaseConstitution: 12,
@@ -120,7 +157,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Zombie Brute",
-		Description:      "A shambling terror inspired by DnD zombies, slow but difficult to put down.",
+		Description:      "A shambling terror, slow but difficult to put down.",
 		BaseStrength:     14,
 		BaseDexterity:    6,
 		BaseConstitution: 16,
@@ -130,7 +167,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Owlbear Ravager",
-		Description:      "A feral apex beast inspired by DnD owlbears, overwhelming prey with sheer force.",
+		Description:      "A feral apex beast that overwhelms prey with sheer force.",
 		BaseStrength:     18,
 		BaseDexterity:    12,
 		BaseConstitution: 16,
@@ -140,7 +177,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Displacer Beast Stalker",
-		Description:      "A predatory illusion-weaver inspired by DnD displacer beasts, hard to pin down.",
+		Description:      "A predatory illusion-weaver that is hard to pin down.",
 		BaseStrength:     13,
 		BaseDexterity:    15,
 		BaseConstitution: 13,
@@ -150,7 +187,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Mimic Lurker",
-		Description:      "A shape-shifting ambusher inspired by DnD mimics, hiding in plain sight.",
+		Description:      "A shape-shifting ambusher that hides in plain sight.",
 		BaseStrength:     15,
 		BaseDexterity:    12,
 		BaseConstitution: 14,
@@ -160,7 +197,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Gelatinous Cube",
-		Description:      "A dungeon ooze inspired by DnD gelatinous cubes, corrosive and inexorable.",
+		Description:      "A dungeon ooze, corrosive and inexorable.",
 		BaseStrength:     14,
 		BaseDexterity:    4,
 		BaseConstitution: 16,
@@ -170,7 +207,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Mind Flayer Arcanist",
-		Description:      "A psionic manipulator inspired by DnD mind flayers, dangerous at range and in control.",
+		Description:      "A psionic manipulator, dangerous at range and in control.",
 		BaseStrength:     11,
 		BaseDexterity:    12,
 		BaseConstitution: 12,
@@ -180,7 +217,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Beholder Tyrant",
-		Description:      "An aberrant overseer inspired by DnD beholders, dominating space with magical pressure.",
+		Description:      "An aberrant overseer that dominates space with magical pressure.",
 		BaseStrength:     10,
 		BaseDexterity:    14,
 		BaseConstitution: 16,
@@ -190,7 +227,7 @@ var dndMonsterTemplateSeeds = []dndMonsterTemplateSeed{
 	},
 	{
 		Name:             "Young Red Dragon",
-		Description:      "A proud draconic terror inspired by DnD dragons, blending mobility and overwhelming damage.",
+		Description:      "A proud draconic terror that blends mobility and overwhelming damage.",
 		BaseStrength:     19,
 		BaseDexterity:    12,
 		BaseConstitution: 17,
@@ -277,11 +314,36 @@ type monsterResponse struct {
 	AttackDamageMax             int                        `json:"attackDamageMax"`
 	AttackSwipesPerAttack       int                        `json:"attackSwipesPerAttack"`
 	Spells                      []models.Spell             `json:"spells"`
+	Statuses                    []models.MonsterStatus     `json:"statuses"`
+	ActiveBattleID              *uuid.UUID                 `json:"activeBattleId,omitempty"`
 	RewardExperience            int                        `json:"rewardExperience"`
 	RewardGold                  int                        `json:"rewardGold"`
 	ItemRewards                 []models.MonsterItemReward `json:"itemRewards"`
 	ImageGenerationStatus       string                     `json:"imageGenerationStatus"`
 	ImageGenerationError        *string                    `json:"imageGenerationError,omitempty"`
+}
+
+type monsterBattleResponse struct {
+	ID             uuid.UUID  `json:"id"`
+	UserID         uuid.UUID  `json:"userId"`
+	MonsterID      uuid.UUID  `json:"monsterId"`
+	StartedAt      time.Time  `json:"startedAt"`
+	LastActivityAt time.Time  `json:"lastActivityAt"`
+	EndedAt        *time.Time `json:"endedAt,omitempty"`
+}
+
+func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
+	if battle == nil {
+		return nil
+	}
+	return &monsterBattleResponse{
+		ID:             battle.ID,
+		UserID:         battle.UserID,
+		MonsterID:      battle.MonsterID,
+		StartedAt:      battle.StartedAt,
+		LastActivityAt: battle.LastActivityAt,
+		EndedAt:        battle.EndedAt,
+	}
 }
 
 func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTemplateResponse {
@@ -315,11 +377,16 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 	}
 }
 
-func monsterResponseFrom(monster *models.Monster) monsterResponse {
-	stats := monster.EffectiveStats()
-	maxHealth := monster.DerivedMaxHealth()
-	maxMana := monster.DerivedMaxMana()
-	damageMin, damageMax, swipes := monster.DerivedAttackProfile()
+func monsterResponseFrom(
+	monster *models.Monster,
+	statusBonuses models.CharacterStatBonuses,
+	activeStatuses []models.MonsterStatus,
+	activeBattleID *uuid.UUID,
+) monsterResponse {
+	stats := monster.EffectiveStatsWithBonuses(statusBonuses)
+	maxHealth := monster.DerivedMaxHealthWithBonuses(statusBonuses)
+	maxMana := monster.DerivedMaxManaWithBonuses(statusBonuses)
+	damageMin, damageMax, swipes := monster.DerivedAttackProfileWithBonuses(statusBonuses)
 	spells := []models.Spell{}
 	if monster.Template != nil {
 		for _, templateSpell := range monster.Template.Spells {
@@ -385,12 +452,64 @@ func monsterResponseFrom(monster *models.Monster) monsterResponse {
 		AttackDamageMax:             damageMax,
 		AttackSwipesPerAttack:       swipes,
 		Spells:                      spells,
+		Statuses:                    activeStatuses,
+		ActiveBattleID:              activeBattleID,
 		RewardExperience:            monster.RewardExperience,
 		RewardGold:                  monster.RewardGold,
 		ItemRewards:                 monster.ItemRewards,
 		ImageGenerationStatus:       monster.ImageGenerationStatus,
 		ImageGenerationError:        monster.ImageGenerationError,
 	}
+}
+
+func (s *server) getOrCreateActiveMonsterBattle(
+	ctx context.Context,
+	userID uuid.UUID,
+	monsterID uuid.UUID,
+) (*models.MonsterBattle, error) {
+	activeBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monsterID)
+	if err != nil {
+		return nil, err
+	}
+	if activeBattle != nil {
+		return activeBattle, nil
+	}
+
+	now := time.Now()
+	battle := &models.MonsterBattle{
+		UserID:         userID,
+		MonsterID:      monsterID,
+		StartedAt:      now,
+		LastActivityAt: now,
+	}
+	if err := s.dbClient.MonsterBattle().Create(ctx, battle); err != nil {
+		return nil, err
+	}
+	return battle, nil
+}
+
+func (s *server) buildMonsterResponse(
+	ctx context.Context,
+	userID uuid.UUID,
+	monster *models.Monster,
+) (monsterResponse, error) {
+	activeBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monster.ID)
+	if err != nil {
+		return monsterResponse{}, err
+	}
+	if activeBattle == nil {
+		return monsterResponseFrom(monster, models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil), nil
+	}
+
+	activeStatuses, err := s.dbClient.MonsterStatus().FindActiveByBattleID(ctx, activeBattle.ID)
+	if err != nil {
+		return monsterResponse{}, err
+	}
+	totalStatusBonuses := models.CharacterStatBonuses{}
+	for _, status := range activeStatuses {
+		totalStatusBonuses = totalStatusBonuses.Add(status.StatModifiers())
+	}
+	return monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, &activeBattle.ID), nil
 }
 
 func (s *server) parseMonsterTemplateUpsertRequest(
@@ -742,8 +861,11 @@ func nextUniqueMonsterTemplateName(base string, used map[string]struct{}) string
 	}
 }
 
-func buildBulkMonsterTemplateSpecs(count int, usedNames map[string]struct{}) []jobs.MonsterTemplateCreationSpec {
+func buildBulkMonsterTemplateSpecsFromSeeds(count int, usedNames map[string]struct{}) []jobs.MonsterTemplateCreationSpec {
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
+	if count <= 0 || len(dndMonsterTemplateSeeds) == 0 {
+		return specs
+	}
 	for i := 0; i < count; i++ {
 		seed := dndMonsterTemplateSeeds[i%len(dndMonsterTemplateSeeds)]
 		specs = append(specs, jobs.MonsterTemplateCreationSpec{
@@ -758,6 +880,221 @@ func buildBulkMonsterTemplateSpecs(count int, usedNames map[string]struct{}) []j
 		})
 	}
 	return specs
+}
+
+func sanitizeMonsterTemplateSpec(spec jobs.MonsterTemplateCreationSpec) jobs.MonsterTemplateCreationSpec {
+	spec.Name = strings.TrimSpace(spec.Name)
+	spec.Description = strings.TrimSpace(spec.Description)
+	if spec.Description == "" {
+		spec.Description = "A dangerous creature with a specialized combat role."
+	}
+	spec.BaseStrength = clampMonsterTemplateStat(spec.BaseStrength)
+	spec.BaseDexterity = clampMonsterTemplateStat(spec.BaseDexterity)
+	spec.BaseConstitution = clampMonsterTemplateStat(spec.BaseConstitution)
+	spec.BaseIntelligence = clampMonsterTemplateStat(spec.BaseIntelligence)
+	spec.BaseWisdom = clampMonsterTemplateStat(spec.BaseWisdom)
+	spec.BaseCharisma = clampMonsterTemplateStat(spec.BaseCharisma)
+	return spec
+}
+
+func clampMonsterTemplateStat(value int) int {
+	if value < 1 {
+		return 10
+	}
+	if value > 20 {
+		return 20
+	}
+	return value
+}
+
+func formatMonsterTemplateNamesForPrompt(names []string) string {
+	if len(names) == 0 {
+		return "(none)"
+	}
+
+	sorted := make([]string, 0, len(names))
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		normalized := strings.ToLower(trimmed)
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		sorted = append(sorted, trimmed)
+	}
+	sort.Strings(sorted)
+	if len(sorted) == 0 {
+		return "(none)"
+	}
+
+	const maxNames = 200
+	limited := sorted
+	remaining := 0
+	if len(sorted) > maxNames {
+		limited = sorted[:maxNames]
+		remaining = len(sorted) - maxNames
+	}
+
+	var builder strings.Builder
+	for _, name := range limited {
+		builder.WriteString("- ")
+		builder.WriteString(name)
+		builder.WriteByte('\n')
+	}
+	if remaining > 0 {
+		builder.WriteString(fmt.Sprintf("- ... and %d more\n", remaining))
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func extractJSONPayload(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, "```") {
+		trimmed = strings.TrimPrefix(trimmed, "```json")
+		trimmed = strings.TrimPrefix(trimmed, "```")
+		trimmed = strings.TrimSuffix(trimmed, "```")
+		trimmed = strings.TrimSpace(trimmed)
+	}
+
+	objectStart := strings.Index(trimmed, "{")
+	arrayStart := strings.Index(trimmed, "[")
+	start := -1
+	end := -1
+
+	if objectStart >= 0 && (arrayStart < 0 || objectStart < arrayStart) {
+		start = objectStart
+		end = strings.LastIndex(trimmed, "}")
+	} else if arrayStart >= 0 {
+		start = arrayStart
+		end = strings.LastIndex(trimmed, "]")
+	}
+
+	if start >= 0 && end >= start {
+		return strings.TrimSpace(trimmed[start : end+1])
+	}
+	return trimmed
+}
+
+func parseGeneratedMonsterTemplates(raw string) ([]jobs.MonsterTemplateCreationSpec, error) {
+	payload := extractJSONPayload(raw)
+	if payload == "" {
+		return nil, fmt.Errorf("empty generation payload")
+	}
+
+	var wrapped generatedMonsterTemplatePayload
+	if err := json.Unmarshal([]byte(payload), &wrapped); err == nil && len(wrapped.Templates) > 0 {
+		return wrapped.Templates, nil
+	}
+
+	var list []jobs.MonsterTemplateCreationSpec
+	if err := json.Unmarshal([]byte(payload), &list); err == nil && len(list) > 0 {
+		return list, nil
+	}
+
+	return nil, fmt.Errorf("invalid monster template generation payload")
+}
+
+func (s *server) buildBulkMonsterTemplateSpecs(
+	count int,
+	usedNames map[string]struct{},
+	existingNames []string,
+) ([]jobs.MonsterTemplateCreationSpec, string, error) {
+	if count <= 0 {
+		return []jobs.MonsterTemplateCreationSpec{}, "none", nil
+	}
+
+	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
+	source := "seed_generated"
+
+	if s.deepPriest != nil {
+		aiSpecs, err := s.generateMonsterTemplateSpecsWithLLM(count, usedNames, existingNames)
+		if err == nil && len(aiSpecs) > 0 {
+			specs = append(specs, aiSpecs...)
+			source = "ai_generated"
+		}
+	}
+
+	if remaining := count - len(specs); remaining > 0 {
+		fallback := buildBulkMonsterTemplateSpecsFromSeeds(remaining, usedNames)
+		specs = append(specs, fallback...)
+		if source == "ai_generated" {
+			source = "ai_generated_with_seed_fallback"
+		}
+	}
+
+	if len(specs) == 0 {
+		return nil, "none", fmt.Errorf("no templates prepared for generation")
+	}
+
+	if len(specs) > count {
+		specs = specs[:count]
+	}
+	return specs, source, nil
+}
+
+func (s *server) generateMonsterTemplateSpecsWithLLM(
+	count int,
+	usedNames map[string]struct{},
+	existingNames []string,
+) ([]jobs.MonsterTemplateCreationSpec, error) {
+	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
+	if count <= 0 {
+		return specs, nil
+	}
+
+	denyList := make([]string, 0, len(existingNames)+len(usedNames))
+	denyList = append(denyList, existingNames...)
+	for used := range usedNames {
+		denyList = append(denyList, used)
+	}
+
+	const maxAttempts = 3
+	for attempt := 0; attempt < maxAttempts && len(specs) < count; attempt++ {
+		remaining := count - len(specs)
+		prompt := fmt.Sprintf(
+			generateMonsterTemplatesPromptTemplate,
+			remaining,
+			formatMonsterTemplateNamesForPrompt(denyList),
+			remaining,
+		)
+		answer, err := s.deepPriest.PetitionTheFount(&deep_priest.Question{
+			Question: prompt,
+		})
+		if err != nil {
+			continue
+		}
+
+		candidates, err := parseGeneratedMonsterTemplates(answer.Answer)
+		if err != nil {
+			continue
+		}
+
+		for _, candidate := range candidates {
+			if len(specs) >= count {
+				break
+			}
+			candidate = sanitizeMonsterTemplateSpec(candidate)
+			if candidate.Name == "" {
+				continue
+			}
+			normalized := strings.ToLower(candidate.Name)
+			if _, exists := usedNames[normalized]; exists {
+				continue
+			}
+			usedNames[normalized] = struct{}{}
+			denyList = append(denyList, candidate.Name)
+			specs = append(specs, candidate)
+		}
+	}
+
+	if len(specs) == 0 {
+		return nil, fmt.Errorf("failed to generate monster templates with llm")
+	}
+	return specs, nil
 }
 
 func (s *server) setMonsterTemplateBulkStatus(ctx context.Context, status jobs.MonsterTemplateBulkStatus) error {
@@ -810,10 +1147,6 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
 		return
 	}
-	if len(dndMonsterTemplateSeeds) == 0 {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no DnD-inspired template seeds configured"})
-		return
-	}
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
 		return
@@ -837,9 +1170,18 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		usedNames[normalized] = struct{}{}
 	}
 
-	templateSpecs := buildBulkMonsterTemplateSpecs(requestBody.Count, usedNames)
-	if len(templateSpecs) == 0 {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "no templates prepared for generation"})
+	existingNames := make([]string, 0, len(existingTemplates))
+	for _, template := range existingTemplates {
+		name := strings.TrimSpace(template.Name)
+		if name == "" {
+			continue
+		}
+		existingNames = append(existingNames, name)
+	}
+
+	templateSpecs, source, err := s.buildBulkMonsterTemplateSpecs(requestBody.Count, usedNames, existingNames)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -848,7 +1190,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 	status := jobs.MonsterTemplateBulkStatus{
 		JobID:        jobID,
 		Status:       jobs.MonsterTemplateBulkStatusQueued,
-		Source:       "dnd_inspired",
+		Source:       source,
 		TotalCount:   len(templateSpecs),
 		CreatedCount: 0,
 		QueuedAt:     &queuedAt,
@@ -861,7 +1203,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 
 	payload := jobs.GenerateMonsterTemplatesBulkTaskPayload{
 		JobID:      jobID,
-		Source:     "dnd_inspired",
+		Source:     source,
 		TotalCount: len(templateSpecs),
 		Templates:  templateSpecs,
 	}
@@ -1072,7 +1414,8 @@ func (s *server) generateMonsterTemplateImage(ctx *gin.Context) {
 }
 
 func (s *server) getMonsters(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1084,13 +1427,19 @@ func (s *server) getMonsters(ctx *gin.Context) {
 	}
 	response := make([]monsterResponse, 0, len(monsters))
 	for i := range monsters {
-		response = append(response, monsterResponseFrom(&monsters[i]))
+		entry, err := s.buildMonsterResponse(ctx, user.ID, &monsters[i])
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = append(response, entry)
 	}
 	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) getMonster(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1110,11 +1459,17 @@ func (s *server) getMonster(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, monsterResponseFrom(monster))
+	response, err := s.buildMonsterResponse(ctx, user.ID, monster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) getMonstersForZone(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1132,13 +1487,93 @@ func (s *server) getMonstersForZone(ctx *gin.Context) {
 	}
 	response := make([]monsterResponse, 0, len(monsters))
 	for i := range monsters {
-		response = append(response, monsterResponseFrom(&monsters[i]))
+		entry, err := s.buildMonsterResponse(ctx, user.ID, &monsters[i])
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = append(response, entry)
 	}
 	ctx.JSON(http.StatusOK, response)
 }
 
+func (s *server) startMonsterBattle(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	monsterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+	if _, err := s.dbClient.Monster().FindByID(ctx, monsterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	battle, err := s.getOrCreateActiveMonsterBattle(ctx, user.ID, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	now := time.Now()
+	if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle.LastActivityAt = now
+
+	ctx.JSON(http.StatusOK, monsterBattleResponseFrom(battle))
+}
+
+func (s *server) endMonsterBattle(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	monsterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	battle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, user.ID, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
+		return
+	}
+
+	if err := s.dbClient.MonsterStatus().DeleteAllForBattleID(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	endedAt := time.Now()
+	if err := s.dbClient.MonsterBattle().End(ctx, battle.ID, endedAt); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle.EndedAt = &endedAt
+	battle.LastActivityAt = endedAt
+
+	ctx.JSON(http.StatusOK, monsterBattleResponseFrom(battle))
+}
+
 func (s *server) createMonster(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1171,14 +1606,25 @@ func (s *server) createMonster(ctx *gin.Context) {
 
 	created, err := s.dbClient.Monster().FindByID(ctx, monster.ID)
 	if err != nil {
-		ctx.JSON(http.StatusCreated, monsterResponseFrom(monster))
+		response, responseErr := s.buildMonsterResponse(ctx, user.ID, monster)
+		if responseErr != nil {
+			ctx.JSON(http.StatusCreated, monster)
+			return
+		}
+		ctx.JSON(http.StatusCreated, response)
 		return
 	}
-	ctx.JSON(http.StatusCreated, monsterResponseFrom(created))
+	response, err := s.buildMonsterResponse(ctx, user.ID, created)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusCreated, response)
 }
 
 func (s *server) updateMonster(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1239,7 +1685,12 @@ func (s *server) updateMonster(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"id": monsterID})
 		return
 	}
-	ctx.JSON(http.StatusOK, monsterResponseFrom(updated))
+	response, err := s.buildMonsterResponse(ctx, user.ID, updated)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) deleteMonster(ctx *gin.Context) {
@@ -1271,7 +1722,8 @@ func (s *server) deleteMonster(ctx *gin.Context) {
 }
 
 func (s *server) generateMonsterImage(ctx *gin.Context) {
-	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
@@ -1317,8 +1769,18 @@ func (s *server) generateMonsterImage(ctx *gin.Context) {
 
 	updatedMonster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
 	if err != nil {
-		ctx.JSON(http.StatusOK, monsterResponseFrom(monster))
+		response, responseErr := s.buildMonsterResponse(ctx, user.ID, monster)
+		if responseErr != nil {
+			ctx.JSON(http.StatusOK, monster)
+			return
+		}
+		ctx.JSON(http.StatusOK, response)
 		return
 	}
-	ctx.JSON(http.StatusOK, monsterResponseFrom(updatedMonster))
+	response, err := s.buildMonsterResponse(ctx, user.ID, updatedMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
 }

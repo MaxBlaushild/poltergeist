@@ -111,6 +111,10 @@ func (m *Monster) EffectiveLevel() int {
 }
 
 func (m *Monster) EffectiveStats() CharacterStatBonuses {
+	return m.EffectiveStatsWithBonuses(CharacterStatBonuses{})
+}
+
+func (m *Monster) EffectiveStatsWithBonuses(bonuses CharacterStatBonuses) CharacterStatBonuses {
 	levelBonus := m.EffectiveLevel() - 1
 	baseStrength := 10
 	baseDexterity := 10
@@ -133,22 +137,36 @@ func (m *Monster) EffectiveStats() CharacterStatBonuses {
 		Intelligence: baseIntelligence + levelBonus,
 		Wisdom:       baseWisdom + levelBonus,
 		Charisma:     baseCharisma + levelBonus,
-	}
+	}.Add(bonuses)
 }
 
 func (m *Monster) DerivedMaxHealth() int {
-	stats := m.EffectiveStats()
+	return m.DerivedMaxHealthWithBonuses(CharacterStatBonuses{})
+}
+
+func (m *Monster) DerivedMaxHealthWithBonuses(bonuses CharacterStatBonuses) int {
+	stats := m.EffectiveStatsWithBonuses(bonuses)
 	return maxInt(1, stats.Constitution) * 10
 }
 
 func (m *Monster) DerivedMaxMana() int {
-	stats := m.EffectiveStats()
+	return m.DerivedMaxManaWithBonuses(CharacterStatBonuses{})
+}
+
+func (m *Monster) DerivedMaxManaWithBonuses(bonuses CharacterStatBonuses) int {
+	stats := m.EffectiveStatsWithBonuses(bonuses)
 	mental := maxInt(1, stats.Intelligence+stats.Wisdom)
 	return mental * 5
 }
 
 func (m *Monster) DerivedAttackProfile() (damageMin int, damageMax int, swipesPerAttack int) {
-	stats := m.EffectiveStats()
+	return m.DerivedAttackProfileWithBonuses(CharacterStatBonuses{})
+}
+
+func (m *Monster) DerivedAttackProfileWithBonuses(
+	bonuses CharacterStatBonuses,
+) (damageMin int, damageMax int, swipesPerAttack int) {
+	stats := m.EffectiveStatsWithBonuses(bonuses)
 	strengthBonus := maxInt(0, (stats.Strength-10)/2)
 	dexterityBonus := maxInt(0, (stats.Dexterity-10)/4)
 	totalBonus := strengthBonus + dexterityBonus

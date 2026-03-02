@@ -188,6 +188,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateInventoryItem))
 	r.DELETE("/sonar/inventory-items/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteInventoryItem))
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
+	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
+	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.GET("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpell))
 	r.POST("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createSpell))
 	r.POST("/sonar/spells/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellIcon))
@@ -195,6 +197,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateSpell))
 	r.DELETE("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteSpell))
 	r.GET("/sonar/techniques", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTechniques))
+	r.POST("/sonar/techniques/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateTechniques))
+	r.GET("/sonar/techniques/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.GET("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTechnique))
 	r.POST("/sonar/techniques", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTechnique))
 	r.POST("/sonar/techniques/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTechniqueIcon))
@@ -415,6 +419,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsters))
 	r.GET("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonster))
 	r.GET("/sonar/zones/:id/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonstersForZone))
+	r.POST("/sonar/monsters/:id/battle/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMonsterBattle))
+	r.POST("/sonar/monsters/:id/battle/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMonsterBattle))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
@@ -4391,6 +4397,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		CharacterCount       *int     `json:"characterCount"`
 		QuestCount           *int     `json:"questCount"`
 		MainQuestCount       *int     `json:"mainQuestCount"`
+		MonsterCount         *int     `json:"monsterCount"`
 		InputEncounterCount  *int     `json:"inputEncounterCount"`
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
 		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
@@ -4416,6 +4423,10 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 	if requestBody.MainQuestCount != nil {
 		mainQuestCount = *requestBody.MainQuestCount
 	}
+	monsterCount := 6
+	if requestBody.MonsterCount != nil {
+		monsterCount = *requestBody.MonsterCount
+	}
 	inputEncounterCount := 0
 	if requestBody.InputEncounterCount != nil {
 		inputEncounterCount = *requestBody.InputEncounterCount
@@ -4440,8 +4451,8 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		}
 	}
 
-	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 || mainQuestCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, and questCount must be greater than zero; mainQuestCount, inputEncounterCount, and optionEncounterCount must be zero or greater"})
+	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 || mainQuestCount < 0 || monsterCount <= 0 || inputEncounterCount < 0 || optionEncounterCount < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, questCount, and monsterCount must be greater than zero; mainQuestCount, inputEncounterCount, and optionEncounterCount must be zero or greater"})
 		return
 	}
 	if len(requiredPlaceTags) > placeCount {
@@ -4459,6 +4470,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		CharacterCount:       characterCount,
 		QuestCount:           questCount,
 		MainQuestCount:       mainQuestCount,
+		MonsterCount:         monsterCount,
 		InputEncounterCount:  inputEncounterCount,
 		OptionEncounterCount: optionEncounterCount,
 		RequiredPlaceTags:    models.StringArray(requiredPlaceTags),

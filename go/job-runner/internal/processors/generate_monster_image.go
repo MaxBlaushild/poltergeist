@@ -19,7 +19,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-const monsterImagePromptTemplate = "A retro 16-bit RPG monster portrait of %s. %s. Zone context: %s. Aggressive fantasy creature, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette."
+const monsterImagePromptTemplate = "A retro 16-bit RPG monster portrait of %s. %s. Zone context: %s. Aggressive fantasy creature, centered composition, no text, no logos, no frame, readable silhouette, crisp outlines, limited palette. Keep the background transparent when possible; otherwise use a very light, plain background (off-white or parchment), never dark."
 
 // GenerateMonsterImageProcessor generates monster art in the background.
 type GenerateMonsterImageProcessor struct {

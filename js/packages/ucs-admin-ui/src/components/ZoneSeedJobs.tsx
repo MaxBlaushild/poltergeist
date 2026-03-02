@@ -86,6 +86,7 @@ type ZoneSeedJob = {
   characterCount: number;
   questCount: number;
   mainQuestCount: number;
+  monsterCount: number;
   inputEncounterCount: number;
   optionEncounterCount: number;
   requiredPlaceTags?: string[];
@@ -155,6 +156,7 @@ export const ZoneSeedJobs = () => {
   const [characterCount, setCharacterCount] = useState('4');
   const [questCount, setQuestCount] = useState('4');
   const [mainQuestCount, setMainQuestCount] = useState('1');
+  const [monsterCount, setMonsterCount] = useState('6');
   const [inputEncounterCount, setInputEncounterCount] = useState('0');
   const [optionEncounterCount, setOptionEncounterCount] = useState('0');
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
@@ -256,6 +258,7 @@ export const ZoneSeedJobs = () => {
     const characters = Number.parseInt(characterCount, 10);
     const quests = Number.parseInt(questCount, 10);
     const mainQuests = Number.parseInt(mainQuestCount, 10);
+    const monsters = Number.parseInt(monsterCount, 10);
     const inputEncounters = Number.parseInt(inputEncounterCount, 10);
     const optionEncounters = Number.parseInt(optionEncounterCount, 10);
     if (
@@ -263,6 +266,7 @@ export const ZoneSeedJobs = () => {
       Number.isNaN(characters) ||
       Number.isNaN(quests) ||
       Number.isNaN(mainQuests) ||
+      Number.isNaN(monsters) ||
       Number.isNaN(inputEncounters) ||
       Number.isNaN(optionEncounters)
     ) {
@@ -280,6 +284,7 @@ export const ZoneSeedJobs = () => {
           characterCount: characters,
           questCount: quests,
           mainQuestCount: mainQuests,
+          monsterCount: monsters,
           inputEncounterCount: inputEncounters,
           optionEncounterCount: optionEncounters,
           requiredPlaceTags,
@@ -499,7 +504,7 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-7">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Places
@@ -538,6 +543,16 @@ export const ZoneSeedJobs = () => {
                 className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
                 value={mainQuestCount}
                 onChange={(e) => setMainQuestCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Monsters
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={monsterCount}
+                onChange={(e) => setMonsterCount(e.target.value)}
               />
             </div>
             <div>
@@ -731,7 +746,7 @@ export const ZoneSeedJobs = () => {
                       </p>
                       <p className="text-xs text-gray-500">
                         Counts: {job.placeCount} places, {job.characterCount} characters, {job.questCount} quests,{' '}
-                        {job.mainQuestCount ?? 0} main quests, {job.inputEncounterCount ?? 0} input encounters,{' '}
+                        {job.mainQuestCount ?? 0} main quests, {job.monsterCount ?? 0} monsters, {job.inputEncounterCount ?? 0} input encounters,{' '}
                         {job.optionEncounterCount ?? 0} option encounters
                       </p>
                       {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (

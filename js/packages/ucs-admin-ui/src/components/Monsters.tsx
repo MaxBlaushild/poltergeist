@@ -684,7 +684,7 @@ export const Monsters = () => {
           setBulkTemplateBusy(false);
           setBulkTemplateError(null);
           setBulkTemplateMessage(
-            `Created ${status.createdCount} DnD-inspired monster template(s).`
+            `Created ${status.createdCount} monster template(s).`
           );
           await load(true);
         } else if (status.status === 'failed') {
@@ -726,7 +726,7 @@ export const Monsters = () => {
       if (response.status === 'completed') {
         setBulkTemplateBusy(false);
         setBulkTemplateMessage(
-          `Created ${response.createdCount} DnD-inspired monster template(s).`
+          `Created ${response.createdCount} monster template(s).`
         );
         await load(true);
       } else if (response.status === 'failed') {
@@ -1015,6 +1015,15 @@ export const Monsters = () => {
     });
   };
 
+  const openTemplateImagePreview = (template: MonsterTemplateRecord) => {
+    const url = template.imageUrl || template.thumbnailUrl;
+    if (!url) return;
+    setImagePreview({
+      url,
+      alt: `${template.name || 'Monster template'} image`,
+    });
+  };
+
   const closeImagePreview = () => {
     setImagePreview(null);
   };
@@ -1173,7 +1182,7 @@ export const Monsters = () => {
                 onClick={handleBulkGenerateTemplates}
                 disabled={bulkTemplateBusy}
               >
-                {bulkTemplateBusy ? 'Generating...' : 'Generate DnD Templates'}
+                {bulkTemplateBusy ? 'Generating...' : 'Generate Templates'}
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
@@ -1334,11 +1343,18 @@ export const Monsters = () => {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex gap-3 min-w-0">
                           {template.thumbnailUrl || template.imageUrl ? (
-                            <img
-                              src={template.thumbnailUrl || template.imageUrl}
-                              alt={template.name}
-                              className="w-14 h-14 rounded object-cover border border-gray-200"
-                            />
+                            <button
+                              type="button"
+                              className="block"
+                              onClick={() => openTemplateImagePreview(template)}
+                              title="Open image preview"
+                            >
+                              <img
+                                src={template.thumbnailUrl || template.imageUrl}
+                                alt={template.name}
+                                className="w-14 h-14 rounded object-cover border border-gray-200 cursor-zoom-in"
+                              />
+                            </button>
                           ) : (
                             <div className="w-14 h-14 rounded bg-gray-200 flex items-center justify-center text-gray-500">
                               ?

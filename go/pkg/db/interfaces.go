@@ -60,6 +60,7 @@ type DbClient interface {
 	UserCharacterStats() UserCharacterStatsHandle
 	UserEquipment() UserEquipmentHandle
 	UserStatus() UserStatusHandle
+	MonsterStatus() MonsterStatusHandle
 	UserProficiency() UserProficiencyHandle
 	UserZoneReputation() UserZoneReputationHandle
 	Friend() FriendHandle
@@ -97,6 +98,7 @@ type DbClient interface {
 	TreasureChest() TreasureChestHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
+	MonsterBattle() MonsterBattleHandle
 	Scenario() ScenarioHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
@@ -595,6 +597,21 @@ type UserStatusHandle interface {
 	GetActiveStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
 	DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
+}
+
+type MonsterStatusHandle interface {
+	Create(ctx context.Context, status *models.MonsterStatus) error
+	FindActiveByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterStatus, error)
+	GetActiveStatBonuses(ctx context.Context, battleID uuid.UUID) (models.CharacterStatBonuses, error)
+	DeleteActiveByBattleIDAndNames(ctx context.Context, battleID uuid.UUID, names []string) error
+	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
+}
+
+type MonsterBattleHandle interface {
+	Create(ctx context.Context, battle *models.MonsterBattle) error
+	FindActiveByUserAndMonster(ctx context.Context, userID uuid.UUID, monsterID uuid.UUID) (*models.MonsterBattle, error)
+	Touch(ctx context.Context, battleID uuid.UUID, at time.Time) error
+	End(ctx context.Context, battleID uuid.UUID, endedAt time.Time) error
 }
 
 type UserZoneReputationHandle interface {

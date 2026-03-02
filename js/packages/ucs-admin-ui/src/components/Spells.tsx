@@ -36,6 +36,20 @@ type SpellFormState = {
   effects: SpellEffectForm[];
 };
 
+type BulkAbilityStatus = {
+  jobId: string;
+  status: string;
+  source?: string;
+  abilityType?: string;
+  totalCount: number;
+  createdCount: number;
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
 const knownEffectTypes = [
   'deal_damage',
   'restore_life_party_member',
@@ -218,6 +232,12 @@ export const Spells = () => {
   const [form, setForm] = useState<SpellFormState>(emptyForm());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkAbilityCount, setBulkAbilityCount] = useState('8');
+  const [bulkAbilityType, setBulkAbilityType] = useState<'spell' | 'technique'>('spell');
+  const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
+  const [bulkAbilityJob, setBulkAbilityJob] = useState<BulkAbilityStatus | null>(null);
+  const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
+  const [bulkAbilityMessage, setBulkAbilityMessage] = useState<string | null>(null);
 
   const load = useCallback(async (suppressLoading = false) => {
     try {
@@ -388,6 +408,79 @@ export const Spells = () => {
     }
   };
 
+  const refreshBulkAbilityJobStatus = useCallback(
+    async (jobId: string) => {
+      try {
+        const status = await apiClient.get<BulkAbilityStatus>(
+          `/sonar/spells/bulk-generate/${jobId}/status`
+        );
+        setBulkAbilityJob(status);
+        if (status.status === 'completed') {
+          setBulkAbilityBusy(false);
+          setBulkAbilityError(null);
+          setBulkAbilityMessage(
+            `Created ${status.createdCount} ${status.abilityType === 'technique' ? 'technique' : 'spell'}(s).`
+          );
+          await load(true);
+        } else if (status.status === 'failed') {
+          setBulkAbilityBusy(false);
+          setBulkAbilityError(
+            status.error || `Failed to generate ${status.abilityType === 'technique' ? 'techniques' : 'spells'}.`
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh bulk ability status', err);
+      }
+    },
+    [apiClient, load]
+  );
+
+  const handleBulkGenerateAbilities = async () => {
+    const count = Number.parseInt(bulkAbilityCount, 10);
+    if (!Number.isFinite(count) || count < 1 || count > 100) {
+      setBulkAbilityError('Count must be between 1 and 100.');
+      return;
+    }
+
+    try {
+      setBulkAbilityBusy(true);
+      setBulkAbilityError(null);
+      setBulkAbilityMessage(null);
+      setBulkAbilityJob(null);
+
+      const path =
+        bulkAbilityType === 'technique'
+          ? '/sonar/techniques/bulk-generate'
+          : '/sonar/spells/bulk-generate';
+      const response = await apiClient.post<BulkAbilityStatus>(path, {
+        count,
+        abilityType: bulkAbilityType,
+      });
+      setBulkAbilityJob(response);
+      if (response.status === 'completed') {
+        setBulkAbilityBusy(false);
+        setBulkAbilityMessage(
+          `Created ${response.createdCount} ${bulkAbilityType === 'technique' ? 'technique' : 'spell'}(s).`
+        );
+        await load(true);
+      } else if (response.status === 'failed') {
+        setBulkAbilityBusy(false);
+        setBulkAbilityError(
+          response.error ||
+            `Failed to generate ${bulkAbilityType === 'technique' ? 'techniques' : 'spells'}.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk generate abilities', err);
+      setBulkAbilityBusy(false);
+      setBulkAbilityError(
+        err instanceof Error
+          ? err.message
+          : `Failed to generate ${bulkAbilityType === 'technique' ? 'techniques' : 'spells'}.`
+      );
+    }
+  };
+
   const formatGenerationStatus = (status?: string) => {
     switch ((status || '').trim()) {
       case 'queued':
@@ -403,6 +496,22 @@ export const Spells = () => {
     }
   };
 
+  useEffect(() => {
+    if (!bulkAbilityJob?.jobId) {
+      return;
+    }
+    if (
+      bulkAbilityJob.status !== 'queued' &&
+      bulkAbilityJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshBulkAbilityJobStatus(bulkAbilityJob.jobId);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [bulkAbilityJob, refreshBulkAbilityJobStatus]);
+
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto">
@@ -412,10 +521,59 @@ export const Spells = () => {
               <h1 className="qa-card-title">Spells & Techniques</h1>
               <p className="text-sm text-gray-600">Manage ability definitions and effect payloads.</p>
             </div>
-            <button className="qa-btn qa-btn-primary" onClick={openCreate}>
-              Create Ability
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={bulkAbilityCount}
+                onChange={(e) => setBulkAbilityCount(e.target.value)}
+                className="w-24 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk ability count"
+              />
+              <select
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                value={bulkAbilityType}
+                onChange={(e) =>
+                  setBulkAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
+                }
+              >
+                <option value="spell">Spells</option>
+                <option value="technique">Techniques</option>
+              </select>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={handleBulkGenerateAbilities}
+                disabled={bulkAbilityBusy}
+              >
+                {bulkAbilityBusy ? 'Generating...' : 'Generate Bulk'}
+              </button>
+              <button className="qa-btn qa-btn-primary" onClick={openCreate}>
+                Create Ability
+              </button>
+            </div>
           </div>
+          {bulkAbilityJob && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
+              <span className="font-semibold uppercase tracking-wide">
+                {bulkAbilityJob.status.replace('_', ' ')}
+              </span>
+              <span>
+                Type: {bulkAbilityJob.abilityType === 'technique' ? 'Technique' : 'Spell'}
+              </span>
+              <span>
+                Progress: {bulkAbilityJob.createdCount}/{bulkAbilityJob.totalCount}
+              </span>
+              <span>Job: {bulkAbilityJob.jobId}</span>
+              {bulkAbilityJob.updatedAt ? <span>Updated: {bulkAbilityJob.updatedAt}</span> : null}
+            </div>
+          )}
+          {bulkAbilityMessage ? (
+            <p className="mt-2 text-sm text-emerald-700">{bulkAbilityMessage}</p>
+          ) : null}
+          {bulkAbilityError ? (
+            <p className="mt-2 text-sm text-red-700">{bulkAbilityError}</p>
+          ) : null}
         </div>
 
         <div className="qa-card mb-6">

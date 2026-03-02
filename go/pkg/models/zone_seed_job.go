@@ -37,6 +37,7 @@ type ZoneSeedJob struct {
 	CharacterCount       int           `json:"characterCount"`
 	QuestCount           int           `json:"questCount"`
 	MainQuestCount       int           `json:"mainQuestCount"`
+	MonsterCount         int           `json:"monsterCount"`
 	InputEncounterCount  int           `json:"inputEncounterCount"`
 	OptionEncounterCount int           `json:"optionEncounterCount"`
 	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`

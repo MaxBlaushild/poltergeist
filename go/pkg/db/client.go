@@ -63,6 +63,7 @@ type client struct {
 	userCharacterStatsHandle          *userCharacterStatsHandler
 	userEquipmentHandle               *userEquipmentHandler
 	userStatusHandle                  *userStatusHandler
+	monsterStatusHandle               *monsterStatusHandler
 	userProficiencyHandle             *userProficiencyHandle
 	userZoneReputationHandle          *userZoneReputationHandler
 	partyHandle                       *partyHandle
@@ -92,6 +93,7 @@ type client struct {
 	treasureChestHandle               *treasureChestHandle
 	monsterTemplateHandle             *monsterTemplateHandle
 	monsterHandle                     *monsterHandle
+	monsterBattleHandle               *monsterBattleHandler
 	scenarioHandle                    *scenarioHandle
 	documentHandle                    *documentHandler
 	documentTagHandle                 *documentTagHandler
@@ -199,6 +201,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		userCharacterStatsHandle:          &userCharacterStatsHandler{db: db},
 		userEquipmentHandle:               &userEquipmentHandler{db: db},
 		userStatusHandle:                  &userStatusHandler{db: db},
+		monsterStatusHandle:               &monsterStatusHandler{db: db},
 		userProficiencyHandle:             &userProficiencyHandle{db: db},
 		userZoneReputationHandle:          &userZoneReputationHandler{db: db},
 		partyHandle:                       &partyHandle{db: db},
@@ -236,6 +239,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		treasureChestHandle:               &treasureChestHandle{db: db},
 		monsterTemplateHandle:             &monsterTemplateHandle{db: db},
 		monsterHandle:                     &monsterHandle{db: db},
+		monsterBattleHandle:               &monsterBattleHandler{db: db},
 		scenarioHandle:                    &scenarioHandle{db: db},
 		documentHandle:                    &documentHandler{db: db},
 		documentTagHandle:                 &documentTagHandler{db: db},
@@ -352,6 +356,10 @@ func (c *client) UserEquipment() UserEquipmentHandle {
 
 func (c *client) UserStatus() UserStatusHandle {
 	return c.userStatusHandle
+}
+
+func (c *client) MonsterStatus() MonsterStatusHandle {
+	return c.monsterStatusHandle
 }
 
 func (c *client) UserProficiency() UserProficiencyHandle {
@@ -612,6 +620,10 @@ func (c *client) MonsterTemplate() MonsterTemplateHandle {
 
 func (c *client) Monster() MonsterHandle {
 	return c.monsterHandle
+}
+
+func (c *client) MonsterBattle() MonsterBattleHandle {
+	return c.monsterBattleHandle
 }
 
 func (c *client) Scenario() ScenarioHandle {

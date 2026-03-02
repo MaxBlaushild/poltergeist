@@ -14,6 +14,7 @@ const (
 	GenerateOutfitProfilePictureTaskType  = "generate_outfit_profile_picture"
 	GenerateInventoryItemImageTaskType    = "generate_inventory_item_image"
 	GenerateSpellIconTaskType             = "generate_spell_icon"
+	GenerateSpellsBulkTaskType            = "generate_spells_bulk"
 	GenerateMonsterImageTaskType          = "generate_monster_image"
 	GenerateMonsterTemplateImageTaskType  = "generate_monster_template_image"
 	GenerateMonsterTemplatesBulkTaskType  = "generate_monster_templates_bulk"
@@ -44,6 +45,15 @@ const (
 	MonsterTemplateBulkStatusFailed     = "failed"
 
 	MonsterTemplateBulkStatusTTL = 24 * time.Hour
+)
+
+const (
+	SpellBulkStatusQueued     = "queued"
+	SpellBulkStatusInProgress = "in_progress"
+	SpellBulkStatusCompleted  = "completed"
+	SpellBulkStatusFailed     = "failed"
+
+	SpellBulkStatusTTL = 24 * time.Hour
 )
 
 const (
@@ -86,6 +96,37 @@ type GenerateSpellIconTaskPayload struct {
 	Description   string    `json:"description"`
 	SchoolOfMagic string    `json:"schoolOfMagic"`
 	EffectText    string    `json:"effectText"`
+}
+
+type SpellCreationSpec struct {
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	AbilityType   string `json:"abilityType"`
+	EffectText    string `json:"effectText"`
+	SchoolOfMagic string `json:"schoolOfMagic"`
+	ManaCost      int    `json:"manaCost"`
+}
+
+type GenerateSpellsBulkTaskPayload struct {
+	JobID       uuid.UUID           `json:"jobId"`
+	Source      string              `json:"source"`
+	AbilityType string              `json:"abilityType"`
+	TotalCount  int                 `json:"totalCount"`
+	Spells      []SpellCreationSpec `json:"spells"`
+}
+
+type SpellBulkStatus struct {
+	JobID        uuid.UUID  `json:"jobId"`
+	Status       string     `json:"status"`
+	Source       string     `json:"source"`
+	AbilityType  string     `json:"abilityType"`
+	TotalCount   int        `json:"totalCount"`
+	CreatedCount int        `json:"createdCount"`
+	Error        string     `json:"error,omitempty"`
+	QueuedAt     *time.Time `json:"queuedAt,omitempty"`
+	StartedAt    *time.Time `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 type GenerateMonsterImageTaskPayload struct {
@@ -180,4 +221,8 @@ type ShuffleQuestNodeChallengeTaskPayload struct {
 
 func MonsterTemplateBulkStatusKey(jobID uuid.UUID) string {
 	return fmt.Sprintf("admin:monster-templates:bulk:%s", jobID.String())
+}
+
+func SpellBulkStatusKey(jobID uuid.UUID) string {
+	return fmt.Sprintf("admin:spells:bulk:%s", jobID.String())
 }
