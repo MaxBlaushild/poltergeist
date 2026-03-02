@@ -6,6 +6,7 @@ CREATE TABLE monster_battles (
     monster_id UUID NOT NULL,
     started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    monster_health_deficit INTEGER NOT NULL DEFAULT 0,
     ended_at TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (monster_id) REFERENCES monsters(id) ON DELETE CASCADE

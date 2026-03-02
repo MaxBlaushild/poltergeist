@@ -38,14 +38,16 @@ type characterProficiencyResponse struct {
 }
 
 type characterStatusResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Effect      string    `json:"effect"`
-	Positive    bool      `json:"positive"`
-	EffectType  string    `json:"effectType"`
-	StartedAt   time.Time `json:"startedAt"`
-	ExpiresAt   time.Time `json:"expiresAt"`
+	ID            uuid.UUID  `json:"id"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	Effect        string     `json:"effect"`
+	Positive      bool       `json:"positive"`
+	EffectType    string     `json:"effectType"`
+	DamagePerTick int        `json:"damagePerTick"`
+	StartedAt     time.Time  `json:"startedAt"`
+	LastTickAt    *time.Time `json:"lastTickAt,omitempty"`
+	ExpiresAt     time.Time  `json:"expiresAt"`
 }
 
 type characterSpellResponse struct {
@@ -276,14 +278,16 @@ func characterStatusResponsesFrom(statuses []models.UserStatus) []characterStatu
 			effectType = string(models.UserStatusEffectTypeStatModifier)
 		}
 		response = append(response, characterStatusResponse{
-			ID:          status.ID,
-			Name:        status.Name,
-			Description: status.Description,
-			Effect:      status.Effect,
-			Positive:    status.Positive,
-			EffectType:  effectType,
-			StartedAt:   status.StartedAt,
-			ExpiresAt:   status.ExpiresAt,
+			ID:            status.ID,
+			Name:          status.Name,
+			Description:   status.Description,
+			Effect:        status.Effect,
+			Positive:      status.Positive,
+			EffectType:    effectType,
+			DamagePerTick: status.DamagePerTick,
+			StartedAt:     status.StartedAt,
+			LastTickAt:    status.LastTickAt,
+			ExpiresAt:     status.ExpiresAt,
 		})
 	}
 	return response
@@ -315,6 +319,9 @@ func (s *server) getActiveStatusBonusesAndStatuses(
 	ctx context.Context,
 	userID uuid.UUID,
 ) (models.CharacterStatBonuses, []models.UserStatus, error) {
+	if err := s.applyOutOfBattleUserDamageOverTime(ctx, userID); err != nil {
+		return models.CharacterStatBonuses{}, nil, err
+	}
 	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
 	if err != nil {
 		return models.CharacterStatBonuses{}, nil, err

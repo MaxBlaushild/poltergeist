@@ -31,7 +31,9 @@ type ScenarioFailureStatusTemplate struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	Effect          string `json:"effect"`
+	EffectType      string `json:"effectType"`
 	Positive        bool   `json:"positive"`
+	DamagePerTick   int    `json:"damagePerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 	StrengthMod     int    `json:"strengthMod"`
 	DexterityMod    int    `json:"dexterityMod"`

@@ -182,7 +182,12 @@ func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, 
 }
 
 func (h *inventoryItemHandler) DeleteInventoryItem(ctx context.Context, id int) error {
-	return h.db.WithContext(ctx).Delete(&models.InventoryItem{}, id).Error
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := h.clearInventoryItemReferences(tx, id); err != nil {
+			return err
+		}
+		return tx.Delete(&models.InventoryItem{}, id).Error
+	})
 }
 
 func (h *inventoryItemHandler) DecrementUserInventoryItem(ctx context.Context, userID uuid.UUID, inventoryItemID int, quantity int) error {
@@ -205,4 +210,103 @@ func (h *inventoryItemHandler) DecrementUserInventoryItem(ctx context.Context, u
 		return h.db.WithContext(ctx).Delete(&item).Error
 	}
 	return h.db.WithContext(ctx).Save(&item).Error
+}
+
+func (h *inventoryItemHandler) clearInventoryItemReferences(tx *gorm.DB, inventoryItemID int) error {
+	rewardAndJoinTables := []string{
+		"monster_item_rewards",
+		"quest_item_rewards",
+		"quest_archetype_item_rewards",
+		"scenario_item_rewards",
+		"scenario_option_item_rewards",
+		"treasure_chest_items",
+		"owned_inventory_items",
+		"match_inventory_item_effects",
+		"team_inventory_items",
+		"outfit_profile_generations",
+	}
+	for _, table := range rewardAndJoinTables {
+		if err := deleteByInventoryItemIDIfTableExists(tx, table, inventoryItemID); err != nil {
+			return err
+		}
+	}
+
+	nullableItemColumns := []struct {
+		table  string
+		column string
+	}{
+		{table: "point_of_interest_groups", column: "inventory_item_id"},
+		{table: "quest_node_challenges", column: "inventory_item_id"},
+		{table: "quest_archetype_challenges", column: "inventory_item_id"},
+		{table: "monsters", column: "dominant_hand_inventory_item_id"},
+		{table: "monsters", column: "off_hand_inventory_item_id"},
+		{table: "monsters", column: "weapon_inventory_item_id"},
+	}
+	for _, entry := range nullableItemColumns {
+		if err := nullifyColumnByInventoryItemIDIfTableExists(tx, entry.table, entry.column, inventoryItemID); err != nil {
+			return err
+		}
+	}
+
+	// This column is historically non-nullable and uses 0 as "no reward item".
+	if tx.Migrator().HasTable("point_of_interest_challenges") {
+		if err := tx.Exec(
+			"UPDATE point_of_interest_challenges SET inventory_item_id = 0 WHERE inventory_item_id = ?",
+			inventoryItemID,
+		).Error; err != nil {
+			return err
+		}
+	}
+
+	return removeInventoryItemFromStarterConfigsIfPresent(tx, inventoryItemID)
+}
+
+func deleteByInventoryItemIDIfTableExists(tx *gorm.DB, tableName string, inventoryItemID int) error {
+	if !tx.Migrator().HasTable(tableName) {
+		return nil
+	}
+	return tx.Exec("DELETE FROM "+tableName+" WHERE inventory_item_id = ?", inventoryItemID).Error
+}
+
+func nullifyColumnByInventoryItemIDIfTableExists(tx *gorm.DB, tableName string, columnName string, inventoryItemID int) error {
+	if !tx.Migrator().HasTable(tableName) {
+		return nil
+	}
+	return tx.Exec(
+		"UPDATE "+tableName+" SET "+columnName+" = NULL WHERE "+columnName+" = ?",
+		inventoryItemID,
+	).Error
+}
+
+func removeInventoryItemFromStarterConfigsIfPresent(tx *gorm.DB, inventoryItemID int) error {
+	if !tx.Migrator().HasTable("new_user_starter_configs") {
+		return nil
+	}
+
+	var configs []models.NewUserStarterConfig
+	if err := tx.Find(&configs).Error; err != nil {
+		return err
+	}
+
+	for i := range configs {
+		filtered := make([]models.NewUserStarterItem, 0, len(configs[i].Items))
+		changed := false
+		for _, item := range configs[i].Items {
+			if item.InventoryItemID == inventoryItemID {
+				changed = true
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		if !changed {
+			continue
+		}
+		configs[i].Items = filtered
+		configs[i].UpdatedAt = time.Now()
+		if err := tx.Save(&configs[i]).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

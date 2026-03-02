@@ -420,6 +420,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonster))
 	r.GET("/sonar/zones/:id/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonstersForZone))
 	r.POST("/sonar/monsters/:id/battle/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMonsterBattle))
+	r.POST("/sonar/monsters/:id/battle/turn", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceMonsterBattleTurn))
 	r.POST("/sonar/monsters/:id/battle/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMonsterBattle))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
@@ -9329,7 +9330,9 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		Name            string `json:"name" binding:"required"`
 		Description     string `json:"description"`
 		Effect          string `json:"effect"`
+		EffectType      string `json:"effectType"`
 		Positive        *bool  `json:"positive"`
+		DamagePerTick   int    `json:"damagePerTick"`
 		DurationSeconds int    `json:"durationSeconds" binding:"required"`
 		StrengthMod     int    `json:"strengthMod"`
 		DexterityMod    int    `json:"dexterityMod"`
@@ -9351,6 +9354,11 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 	}
 	if requestBody.DurationSeconds <= 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "durationSeconds must be > 0"})
+		return
+	}
+	effectType := normalizeUserStatusEffectType(requestBody.EffectType)
+	if effectType == models.UserStatusEffectTypeDamageOverTime && requestBody.DamagePerTick <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damagePerTick must be > 0 for damage_over_time statuses"})
 		return
 	}
 
@@ -9376,7 +9384,8 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		Description:     strings.TrimSpace(requestBody.Description),
 		Effect:          strings.TrimSpace(requestBody.Effect),
 		Positive:        isPositive,
-		EffectType:      models.UserStatusEffectTypeStatModifier,
+		EffectType:      effectType,
+		DamagePerTick:   requestBody.DamagePerTick,
 		StrengthMod:     requestBody.StrengthMod,
 		DexterityMod:    requestBody.DexterityMod,
 		ConstitutionMod: requestBody.ConstitutionMod,
@@ -11133,7 +11142,9 @@ type scenarioFailureStatusPayload struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	Effect          string `json:"effect"`
+	EffectType      string `json:"effectType"`
 	Positive        *bool  `json:"positive"`
+	DamagePerTick   int    `json:"damagePerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 	StrengthMod     int    `json:"strengthMod"`
 	DexterityMod    int    `json:"dexterityMod"`
@@ -11285,7 +11296,9 @@ type scenarioAppliedFailureStatus struct {
 	Name            string `json:"name"`
 	Description     string `json:"description"`
 	Effect          string `json:"effect"`
+	EffectType      string `json:"effectType"`
 	Positive        bool   `json:"positive"`
+	DamagePerTick   int    `json:"damagePerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 }
 
@@ -11378,6 +11391,10 @@ func parseScenarioFailureStatusTemplates(
 		if status.DurationSeconds <= 0 {
 			return nil, fmt.Errorf("%s[%d].durationSeconds must be > 0", fieldName, idx)
 		}
+		effectType := normalizeUserStatusEffectType(status.EffectType)
+		if effectType == models.UserStatusEffectTypeDamageOverTime && status.DamagePerTick <= 0 {
+			return nil, fmt.Errorf("%s[%d].damagePerTick must be > 0 for damage_over_time statuses", fieldName, idx)
+		}
 		positive := true
 		if status.Positive != nil {
 			positive = *status.Positive
@@ -11386,7 +11403,9 @@ func parseScenarioFailureStatusTemplates(
 			Name:            name,
 			Description:     strings.TrimSpace(status.Description),
 			Effect:          strings.TrimSpace(status.Effect),
+			EffectType:      string(effectType),
 			Positive:        positive,
+			DamagePerTick:   status.DamagePerTick,
 			DurationSeconds: status.DurationSeconds,
 			StrengthMod:     status.StrengthMod,
 			DexterityMod:    status.DexterityMod,
@@ -11738,6 +11757,9 @@ func (s *server) getScenarioResourceState(
 	ctx context.Context,
 	userID uuid.UUID,
 ) (*models.UserCharacterStats, int, int, int, int, error) {
+	if err := s.applyOutOfBattleUserDamageOverTime(ctx, userID); err != nil {
+		return nil, 0, 0, 0, 0, err
+	}
 	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, 0, 0, err
@@ -11809,7 +11831,8 @@ func (s *server) applyScenarioFailurePenalty(
 			Description:     strings.TrimSpace(statusTemplate.Description),
 			Effect:          strings.TrimSpace(statusTemplate.Effect),
 			Positive:        statusTemplate.Positive,
-			EffectType:      models.UserStatusEffectTypeStatModifier,
+			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:   statusTemplate.DamagePerTick,
 			StrengthMod:     statusTemplate.StrengthMod,
 			DexterityMod:    statusTemplate.DexterityMod,
 			ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -11826,7 +11849,9 @@ func (s *server) applyScenarioFailurePenalty(
 			Name:            name,
 			Description:     strings.TrimSpace(statusTemplate.Description),
 			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			EffectType:      string(normalizeUserStatusEffectType(statusTemplate.EffectType)),
 			Positive:        statusTemplate.Positive,
+			DamagePerTick:   statusTemplate.DamagePerTick,
 			DurationSeconds: statusTemplate.DurationSeconds,
 		})
 	}
@@ -11884,7 +11909,8 @@ func (s *server) applyScenarioSuccessReward(
 			Description:     strings.TrimSpace(statusTemplate.Description),
 			Effect:          strings.TrimSpace(statusTemplate.Effect),
 			Positive:        statusTemplate.Positive,
-			EffectType:      models.UserStatusEffectTypeStatModifier,
+			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:   statusTemplate.DamagePerTick,
 			StrengthMod:     statusTemplate.StrengthMod,
 			DexterityMod:    statusTemplate.DexterityMod,
 			ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -11901,7 +11927,9 @@ func (s *server) applyScenarioSuccessReward(
 			Name:            name,
 			Description:     strings.TrimSpace(statusTemplate.Description),
 			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			EffectType:      string(normalizeUserStatusEffectType(statusTemplate.EffectType)),
 			Positive:        statusTemplate.Positive,
+			DamagePerTick:   statusTemplate.DamagePerTick,
 			DurationSeconds: statusTemplate.DurationSeconds,
 		})
 	}

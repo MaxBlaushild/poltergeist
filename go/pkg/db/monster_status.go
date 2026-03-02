@@ -29,6 +29,9 @@ func (h *monsterStatusHandler) Create(ctx context.Context, status *models.Monste
 	if status.EffectType == "" {
 		status.EffectType = models.MonsterStatusEffectTypeStatModifier
 	}
+	if status.DamagePerTick < 0 {
+		status.DamagePerTick = 0
+	}
 	return h.db.WithContext(ctx).Create(status).Error
 }
 
@@ -75,6 +78,21 @@ func (h *monsterStatusHandler) GetActiveStatBonuses(
 		return models.CharacterStatBonuses{}, result.Error
 	}
 	return bonuses, nil
+}
+
+func (h *monsterStatusHandler) UpdateLastTickAt(
+	ctx context.Context,
+	statusID uuid.UUID,
+	lastTickAt time.Time,
+) error {
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterStatus{}).
+		Where("id = ?", statusID).
+		Updates(map[string]interface{}{
+			"last_tick_at": lastTickAt,
+			"updated_at":   time.Now(),
+		}).
+		Error
 }
 
 func (h *monsterStatusHandler) DeleteActiveByBattleIDAndNames(

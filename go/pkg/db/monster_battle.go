@@ -61,6 +61,21 @@ func (h *monsterBattleHandler) FindActiveByUserAndMonster(
 	return &battle, nil
 }
 
+func (h *monsterBattleHandler) HasAnyActiveForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+) (bool, error) {
+	var count int64
+	now := time.Now()
+	if err := h.db.WithContext(ctx).
+		Model(&models.MonsterBattle{}).
+		Where("user_id = ? AND ended_at IS NULL AND last_activity_at >= ?", userID, now.Add(-monsterBattleInactivityTimeout)).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (h *monsterBattleHandler) Touch(ctx context.Context, battleID uuid.UUID, at time.Time) error {
 	return h.db.WithContext(ctx).
 		Model(&models.MonsterBattle{}).
@@ -68,6 +83,25 @@ func (h *monsterBattleHandler) Touch(ctx context.Context, battleID uuid.UUID, at
 		Updates(map[string]interface{}{
 			"last_activity_at": at,
 			"updated_at":       at,
+		}).Error
+}
+
+func (h *monsterBattleHandler) AdjustMonsterHealthDeficit(
+	ctx context.Context,
+	battleID uuid.UUID,
+	delta int,
+) error {
+	if delta == 0 {
+		return nil
+	}
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterBattle{}).
+		Where("id = ? AND ended_at IS NULL", battleID).
+		Updates(map[string]interface{}{
+			"monster_health_deficit": gorm.Expr("GREATEST(0, monster_health_deficit + ?)", delta),
+			"last_activity_at":       now,
+			"updated_at":             now,
 		}).Error
 }
 

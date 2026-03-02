@@ -595,6 +595,7 @@ type UserStatusHandle interface {
 	Create(ctx context.Context, status *models.UserStatus) error
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserStatus, error)
 	GetActiveStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
+	UpdateLastTickAt(ctx context.Context, statusID uuid.UUID, lastTickAt time.Time) error
 	DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
@@ -603,6 +604,7 @@ type MonsterStatusHandle interface {
 	Create(ctx context.Context, status *models.MonsterStatus) error
 	FindActiveByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterStatus, error)
 	GetActiveStatBonuses(ctx context.Context, battleID uuid.UUID) (models.CharacterStatBonuses, error)
+	UpdateLastTickAt(ctx context.Context, statusID uuid.UUID, lastTickAt time.Time) error
 	DeleteActiveByBattleIDAndNames(ctx context.Context, battleID uuid.UUID, names []string) error
 	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
 }
@@ -610,7 +612,9 @@ type MonsterStatusHandle interface {
 type MonsterBattleHandle interface {
 	Create(ctx context.Context, battle *models.MonsterBattle) error
 	FindActiveByUserAndMonster(ctx context.Context, userID uuid.UUID, monsterID uuid.UUID) (*models.MonsterBattle, error)
+	HasAnyActiveForUser(ctx context.Context, userID uuid.UUID) (bool, error)
 	Touch(ctx context.Context, battleID uuid.UUID, at time.Time) error
+	AdjustMonsterHealthDeficit(ctx context.Context, battleID uuid.UUID, delta int) error
 	End(ctx context.Context, battleID uuid.UUID, endedAt time.Time) error
 }
 

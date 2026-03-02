@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -31,12 +32,42 @@ class ScenarioPanel extends StatefulWidget {
   State<ScenarioPanel> createState() => _ScenarioPanelState();
 }
 
-class _ScenarioPanelState extends State<ScenarioPanel> {
+class _ScenarioPanelState extends State<ScenarioPanel>
+    with SingleTickerProviderStateMixin {
   bool _loading = false;
+  bool _rolling = false;
   String? _error;
   String _responseText = '';
   bool _attemptedLocally = false;
   ScenarioPerformResult? _result;
+  late final AnimationController _diceController;
+  late final Animation<double> _diceTilt;
+  late final Animation<double> _dicePulse;
+  Timer? _rollTicker;
+  int _rollingValue = 1;
+  final math.Random _rng = math.Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _diceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 520),
+    );
+    final curved = CurvedAnimation(
+      parent: _diceController,
+      curve: Curves.easeInOut,
+    );
+    _diceTilt = Tween<double>(begin: -0.09, end: 0.09).animate(curved);
+    _dicePulse = Tween<double>(begin: 0.96, end: 1.06).animate(curved);
+  }
+
+  @override
+  void dispose() {
+    _rollTicker?.cancel();
+    _diceController.dispose();
+    super.dispose();
+  }
 
   bool get _attempted => widget.scenario.attemptedByUser || _attemptedLocally;
 
@@ -67,6 +98,35 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
     return 'Failed to perform scenario.';
   }
 
+  void _startRollAnimation() {
+    _rollTicker?.cancel();
+    _diceController.repeat(reverse: true);
+    setState(() {
+      _rolling = true;
+      _rollingValue = (_rng.nextInt(20) + 1);
+    });
+    _rollTicker = Timer.periodic(const Duration(milliseconds: 90), (_) {
+      if (!mounted) return;
+      setState(() {
+        _rollingValue = (_rng.nextInt(20) + 1);
+      });
+    });
+  }
+
+  void _stopRollAnimation({int? finalRoll}) {
+    _rollTicker?.cancel();
+    _rollTicker = null;
+    _diceController.stop();
+    _diceController.value = 0;
+    if (!mounted) return;
+    setState(() {
+      _rolling = false;
+      if (finalRoll != null && finalRoll > 0) {
+        _rollingValue = finalRoll;
+      }
+    });
+  }
+
   Future<void> _perform({String? optionId}) async {
     if (_loading || _attempted) return;
 
@@ -79,14 +139,18 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
       _loading = true;
       _error = null;
     });
+    _startRollAnimation();
 
     try {
+      await Future<void>.delayed(const Duration(milliseconds: 850));
+      if (!mounted) return;
       final result = await context.read<PoiService>().performScenario(
         widget.scenario.id,
         scenarioOptionId: optionId,
         responseText: widget.scenario.openEnded ? _responseText : null,
       );
       if (!mounted) return;
+      _stopRollAnimation(finalRoll: result.roll);
       setState(() {
         _result = result;
         _attemptedLocally = true;
@@ -98,6 +162,7 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
       widget.onPerformed?.call(result);
     } catch (error) {
       if (!mounted) return;
+      _stopRollAnimation();
       setState(() {
         _loading = false;
         _error = _errorMessage(error);
@@ -164,11 +229,11 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
                                     ? widget.scenario.thumbnailUrl
                                     : widget.scenario.imageUrl),
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => mysteryState
+                          errorBuilder: (_, _, _) => mysteryState
                               ? Image.network(
                                   _legacyMysteryImageUrl,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                                  errorBuilder: (_, _, _) => Container(
                                     color: theme.colorScheme.surfaceVariant,
                                     child: const Icon(
                                       Icons.auto_awesome_outlined,
@@ -213,6 +278,62 @@ class _ScenarioPanelState extends State<ScenarioPanel> {
                         style: theme.textTheme.bodyLarge,
                       ),
                       const SizedBox(height: 16),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        child: _rolling
+                            ? Container(
+                                key: const ValueKey('scenario-roll-animation'),
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceVariant
+                                      .withOpacity(0.45),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: theme.colorScheme.outline
+                                        .withOpacity(0.24),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    AnimatedBuilder(
+                                      animation: _diceController,
+                                      builder: (context, child) {
+                                        return Transform.rotate(
+                                          angle: _diceTilt.value,
+                                          child: Transform.scale(
+                                            scale: _dicePulse.value,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      child: Icon(
+                                        Icons.casino_rounded,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Rolling fate… d20: $_rollingValue',
+                                        style: theme.textTheme.bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : const SizedBox.shrink(
+                                key: ValueKey('scenario-roll-animation-hidden'),
+                              ),
+                      ),
                       if (_attempted)
                         Container(
                           padding: const EdgeInsets.all(12),

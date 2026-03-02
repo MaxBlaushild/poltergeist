@@ -9,7 +9,8 @@ import (
 type UserStatusEffectType string
 
 const (
-	UserStatusEffectTypeStatModifier UserStatusEffectType = "stat_modifier"
+	UserStatusEffectTypeStatModifier   UserStatusEffectType = "stat_modifier"
+	UserStatusEffectTypeDamageOverTime UserStatusEffectType = "damage_over_time"
 )
 
 type UserStatus struct {
@@ -22,6 +23,7 @@ type UserStatus struct {
 	Effect          string               `json:"effect"`
 	Positive        bool                 `json:"positive" gorm:"column:positive"`
 	EffectType      UserStatusEffectType `json:"effectType" gorm:"column:effect_type"`
+	DamagePerTick   int                  `json:"damagePerTick" gorm:"column:damage_per_tick"`
 	StrengthMod     int                  `json:"strengthMod" gorm:"column:strength_mod"`
 	DexterityMod    int                  `json:"dexterityMod" gorm:"column:dexterity_mod"`
 	ConstitutionMod int                  `json:"constitutionMod" gorm:"column:constitution_mod"`
@@ -29,6 +31,7 @@ type UserStatus struct {
 	WisdomMod       int                  `json:"wisdomMod" gorm:"column:wisdom_mod"`
 	CharismaMod     int                  `json:"charismaMod" gorm:"column:charisma_mod"`
 	StartedAt       time.Time            `json:"startedAt" gorm:"column:started_at"`
+	LastTickAt      *time.Time           `json:"lastTickAt,omitempty" gorm:"column:last_tick_at"`
 	ExpiresAt       time.Time            `json:"expiresAt" gorm:"column:expires_at"`
 }
 

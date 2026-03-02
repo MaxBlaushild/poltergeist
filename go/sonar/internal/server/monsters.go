@@ -324,12 +324,13 @@ type monsterResponse struct {
 }
 
 type monsterBattleResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	UserID         uuid.UUID  `json:"userId"`
-	MonsterID      uuid.UUID  `json:"monsterId"`
-	StartedAt      time.Time  `json:"startedAt"`
-	LastActivityAt time.Time  `json:"lastActivityAt"`
-	EndedAt        *time.Time `json:"endedAt,omitempty"`
+	ID                   uuid.UUID  `json:"id"`
+	UserID               uuid.UUID  `json:"userId"`
+	MonsterID            uuid.UUID  `json:"monsterId"`
+	StartedAt            time.Time  `json:"startedAt"`
+	LastActivityAt       time.Time  `json:"lastActivityAt"`
+	MonsterHealthDeficit int        `json:"monsterHealthDeficit"`
+	EndedAt              *time.Time `json:"endedAt,omitempty"`
 }
 
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
@@ -337,12 +338,13 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		return nil
 	}
 	return &monsterBattleResponse{
-		ID:             battle.ID,
-		UserID:         battle.UserID,
-		MonsterID:      battle.MonsterID,
-		StartedAt:      battle.StartedAt,
-		LastActivityAt: battle.LastActivityAt,
-		EndedAt:        battle.EndedAt,
+		ID:                   battle.ID,
+		UserID:               battle.UserID,
+		MonsterID:            battle.MonsterID,
+		StartedAt:            battle.StartedAt,
+		LastActivityAt:       battle.LastActivityAt,
+		MonsterHealthDeficit: battle.MonsterHealthDeficit,
+		EndedAt:              battle.EndedAt,
 	}
 }
 
@@ -381,12 +383,19 @@ func monsterResponseFrom(
 	monster *models.Monster,
 	statusBonuses models.CharacterStatBonuses,
 	activeStatuses []models.MonsterStatus,
-	activeBattleID *uuid.UUID,
+	activeBattle *models.MonsterBattle,
 ) monsterResponse {
 	stats := monster.EffectiveStatsWithBonuses(statusBonuses)
 	maxHealth := monster.DerivedMaxHealthWithBonuses(statusBonuses)
 	maxMana := monster.DerivedMaxManaWithBonuses(statusBonuses)
 	damageMin, damageMax, swipes := monster.DerivedAttackProfileWithBonuses(statusBonuses)
+	currentHealth := maxHealth
+	if activeBattle != nil {
+		currentHealth = maxHealth - activeBattle.MonsterHealthDeficit
+		if currentHealth < 0 {
+			currentHealth = 0
+		}
+	}
 	spells := []models.Spell{}
 	if monster.Template != nil {
 		for _, templateSpell := range monster.Template.Spells {
@@ -444,7 +453,7 @@ func monsterResponseFrom(
 		Intelligence:                stats.Intelligence,
 		Wisdom:                      stats.Wisdom,
 		Charisma:                    stats.Charisma,
-		Health:                      maxHealth,
+		Health:                      currentHealth,
 		MaxHealth:                   maxHealth,
 		Mana:                        maxMana,
 		MaxMana:                     maxMana,
@@ -453,12 +462,17 @@ func monsterResponseFrom(
 		AttackSwipesPerAttack:       swipes,
 		Spells:                      spells,
 		Statuses:                    activeStatuses,
-		ActiveBattleID:              activeBattleID,
-		RewardExperience:            monster.RewardExperience,
-		RewardGold:                  monster.RewardGold,
-		ItemRewards:                 monster.ItemRewards,
-		ImageGenerationStatus:       monster.ImageGenerationStatus,
-		ImageGenerationError:        monster.ImageGenerationError,
+		ActiveBattleID: func() *uuid.UUID {
+			if activeBattle == nil {
+				return nil
+			}
+			return &activeBattle.ID
+		}(),
+		RewardExperience:      monster.RewardExperience,
+		RewardGold:            monster.RewardGold,
+		ItemRewards:           monster.ItemRewards,
+		ImageGenerationStatus: monster.ImageGenerationStatus,
+		ImageGenerationError:  monster.ImageGenerationError,
 	}
 }
 
@@ -509,7 +523,7 @@ func (s *server) buildMonsterResponse(
 	for _, status := range activeStatuses {
 		totalStatusBonuses = totalStatusBonuses.Add(status.StatModifiers())
 	}
-	return monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, &activeBattle.ID), nil
+	return monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, activeBattle), nil
 }
 
 func (s *server) parseMonsterTemplateUpsertRequest(
@@ -1569,6 +1583,80 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 	battle.LastActivityAt = endedAt
 
 	ctx.JSON(http.StatusOK, monsterBattleResponseFrom(battle))
+}
+
+func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	monsterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+	if _, err := s.dbClient.Monster().FindByID(ctx, monsterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	battle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, user.ID, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
+		return
+	}
+
+	now := time.Now()
+	if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle.LastActivityAt = now
+
+	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if monsterDotDamage > 0 {
+		battle.MonsterHealthDeficit += monsterDotDamage
+	}
+
+	updatedMonster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	monsterResponse, err := s.buildMonsterResponse(ctx, user.ID, updatedMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	_, userMaxHealth, _, userHealth, _, err := s.getScenarioResourceState(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"battle":           monsterBattleResponseFrom(battle),
+		"monster":          monsterResponse,
+		"userDotDamage":    userDotDamage,
+		"monsterDotDamage": monsterDotDamage,
+		"userHealth":       userHealth,
+		"userMaxHealth":    userMaxHealth,
+	})
 }
 
 func (s *server) createMonster(ctx *gin.Context) {

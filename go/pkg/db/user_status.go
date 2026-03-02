@@ -29,6 +29,9 @@ func (h *userStatusHandler) Create(ctx context.Context, status *models.UserStatu
 	if status.EffectType == "" {
 		status.EffectType = models.UserStatusEffectTypeStatModifier
 	}
+	if status.DamagePerTick < 0 {
+		status.DamagePerTick = 0
+	}
 	return h.db.WithContext(ctx).Create(status).Error
 }
 
@@ -63,6 +66,21 @@ func (h *userStatusHandler) GetActiveStatBonuses(ctx context.Context, userID uui
 		return models.CharacterStatBonuses{}, result.Error
 	}
 	return bonuses, nil
+}
+
+func (h *userStatusHandler) UpdateLastTickAt(
+	ctx context.Context,
+	statusID uuid.UUID,
+	lastTickAt time.Time,
+) error {
+	return h.db.WithContext(ctx).
+		Model(&models.UserStatus{}).
+		Where("id = ?", statusID).
+		Updates(map[string]interface{}{
+			"last_tick_at": lastTickAt,
+			"updated_at":   time.Now(),
+		}).
+		Error
 }
 
 func (h *userStatusHandler) DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error {

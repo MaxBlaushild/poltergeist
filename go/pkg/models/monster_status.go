@@ -9,7 +9,8 @@ import (
 type MonsterStatusEffectType string
 
 const (
-	MonsterStatusEffectTypeStatModifier MonsterStatusEffectType = "stat_modifier"
+	MonsterStatusEffectTypeStatModifier   MonsterStatusEffectType = "stat_modifier"
+	MonsterStatusEffectTypeDamageOverTime MonsterStatusEffectType = "damage_over_time"
 )
 
 type MonsterStatus struct {
@@ -24,6 +25,7 @@ type MonsterStatus struct {
 	Effect          string                  `json:"effect"`
 	Positive        bool                    `json:"positive" gorm:"column:positive"`
 	EffectType      MonsterStatusEffectType `json:"effectType" gorm:"column:effect_type"`
+	DamagePerTick   int                     `json:"damagePerTick" gorm:"column:damage_per_tick"`
 	StrengthMod     int                     `json:"strengthMod" gorm:"column:strength_mod"`
 	DexterityMod    int                     `json:"dexterityMod" gorm:"column:dexterity_mod"`
 	ConstitutionMod int                     `json:"constitutionMod" gorm:"column:constitution_mod"`
@@ -31,6 +33,7 @@ type MonsterStatus struct {
 	WisdomMod       int                     `json:"wisdomMod" gorm:"column:wisdom_mod"`
 	CharismaMod     int                     `json:"charismaMod" gorm:"column:charisma_mod"`
 	StartedAt       time.Time               `json:"startedAt" gorm:"column:started_at"`
+	LastTickAt      *time.Time              `json:"lastTickAt,omitempty" gorm:"column:last_tick_at"`
 	ExpiresAt       time.Time               `json:"expiresAt" gorm:"column:expires_at"`
 }
 

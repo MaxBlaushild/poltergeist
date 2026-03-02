@@ -1246,6 +1246,14 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		}
 		targetMonsterID = &parsedMonsterID
 	}
+	var monsterBattle *models.MonsterBattle
+	if targetMonsterID != nil {
+		monsterBattle, err = s.getOrCreateActiveMonsterBattle(ctx, user.ID, *targetMonsterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	allowedTargets := map[uuid.UUID]bool{
 		user.ID: true,
@@ -1323,13 +1331,14 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	appliedMonsterStatuses := []scenarioAppliedFailureStatus{}
 	removedMonsterStatuses := []string{}
 	var monsterBattleID *uuid.UUID
+	battleTurnUserDotDamage := 0
+	battleTurnMonsterDotDamage := 0
 
 	if hasStatusEffects {
 		now := time.Now()
 		if targetMonsterID != nil {
-			monsterBattle, err := s.getOrCreateActiveMonsterBattle(ctx, user.ID, *targetMonsterID)
-			if err != nil {
-				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			if monsterBattle == nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "monster battle unavailable"})
 				return
 			}
 			monsterBattleID = &monsterBattle.ID
@@ -1351,7 +1360,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Description:     strings.TrimSpace(statusTemplate.Description),
 					Effect:          strings.TrimSpace(statusTemplate.Effect),
 					Positive:        statusTemplate.Positive,
-					EffectType:      models.MonsterStatusEffectTypeStatModifier,
+					EffectType:      normalizeMonsterStatusEffectType(statusTemplate.EffectType),
+					DamagePerTick:   statusTemplate.DamagePerTick,
 					StrengthMod:     statusTemplate.StrengthMod,
 					DexterityMod:    statusTemplate.DexterityMod,
 					ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -1369,7 +1379,9 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Name:            status.Name,
 					Description:     status.Description,
 					Effect:          status.Effect,
+					EffectType:      string(status.EffectType),
 					Positive:        status.Positive,
+					DamagePerTick:   status.DamagePerTick,
 					DurationSeconds: statusTemplate.DurationSeconds,
 				})
 			}
@@ -1397,7 +1409,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Description:     strings.TrimSpace(statusTemplate.Description),
 					Effect:          strings.TrimSpace(statusTemplate.Effect),
 					Positive:        statusTemplate.Positive,
-					EffectType:      models.UserStatusEffectTypeStatModifier,
+					EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
+					DamagePerTick:   statusTemplate.DamagePerTick,
 					StrengthMod:     statusTemplate.StrengthMod,
 					DexterityMod:    statusTemplate.DexterityMod,
 					ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -1415,7 +1428,9 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Name:            status.Name,
 					Description:     status.Description,
 					Effect:          status.Effect,
+					EffectType:      string(status.EffectType),
 					Positive:        status.Positive,
+					DamagePerTick:   status.DamagePerTick,
 					DurationSeconds: statusTemplate.DurationSeconds,
 				})
 			}
@@ -1428,6 +1443,20 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 				removedUserStatuses = append(removedUserStatuses, []string(statusesToRemove)...)
 			}
 		}
+	}
+	if monsterBattle != nil {
+		if err := s.dbClient.MonsterBattle().Touch(ctx, monsterBattle.ID, time.Now()); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		monsterBattleID = &monsterBattle.ID
+		userDotDamage, monsterDotDamage, dotErr := s.applyBattleTurnDamageOverTime(ctx, user.ID, monsterBattle.ID)
+		if dotErr != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": dotErr.Error()})
+			return
+		}
+		battleTurnUserDotDamage = userDotDamage
+		battleTurnMonsterDotDamage = monsterDotDamage
 	}
 
 	_, _, maxMana, _, manaAfter, err := s.getScenarioResourceState(ctx, user.ID)
@@ -1470,6 +1499,12 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 	if len(removedMonsterStatuses) > 0 {
 		response["monsterStatusesRemoved"] = removedMonsterStatuses
+	}
+	if battleTurnUserDotDamage > 0 {
+		response["battleTurnUserDotDamage"] = battleTurnUserDotDamage
+	}
+	if battleTurnMonsterDotDamage > 0 {
+		response["battleTurnMonsterDotDamage"] = battleTurnMonsterDotDamage
 	}
 
 	ctx.JSON(http.StatusOK, response)
