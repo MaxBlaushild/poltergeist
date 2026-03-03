@@ -20,7 +20,7 @@ type PointOfInterestImport = {
   updatedAt: string;
 };
 
-type QuestNodeType = 'poi' | 'polygon' | 'scenario' | 'monster';
+type QuestNodeType = 'poi' | 'polygon' | 'scenario' | 'monster' | 'challenge';
 
 type ScenarioNodeOption = {
   id: string;
@@ -36,6 +36,14 @@ type MonsterNodeOption = {
   latitude: number;
   longitude: number;
   name: string;
+};
+
+type ChallengeNodeOption = {
+  id: string;
+  zoneId: string;
+  latitude: number;
+  longitude: number;
+  question: string;
 };
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
@@ -70,6 +78,7 @@ const emptyNodeForm = {
   pointOfInterestId: '',
   scenarioId: '',
   monsterId: '',
+  challengeId: '',
   polygonPoints: '',
 };
 
@@ -242,6 +251,7 @@ export const Quests = () => {
   const [spells, setSpells] = useState<Spell[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioNodeOption[]>([]);
   const [monsters, setMonsters] = useState<MonsterNodeOption[]>([]);
+  const [challenges, setChallenges] = useState<ChallengeNodeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -303,11 +313,12 @@ export const Quests = () => {
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
         apiClient.get<MonsterNodeOption[]>('/sonar/monsters'),
+        apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
       ]);
 
       if (!isMounted) return;
 
-      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult, scenariosResult, monstersResult] = results;
+      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult, scenariosResult, monstersResult, challengesResult] = results;
       if (questsResult.status === 'fulfilled') {
         setQuests(questsResult.value);
       } else {
@@ -349,6 +360,12 @@ export const Quests = () => {
         setMonsters(Array.isArray(monstersResult.value) ? monstersResult.value : []);
       } else {
         console.error('Failed to load monsters', monstersResult.reason);
+      }
+
+      if (challengesResult.status === 'fulfilled') {
+        setChallenges(Array.isArray(challengesResult.value) ? challengesResult.value : []);
+      } else {
+        console.error('Failed to load challenges', challengesResult.reason);
       }
 
       setLoading(false);
@@ -813,6 +830,14 @@ export const Quests = () => {
     return filtered;
   }, [monsters, questForm.zoneId]);
 
+  const filteredChallenges = useMemo(() => {
+    let filtered = challenges;
+    if (questForm.zoneId) {
+      filtered = filtered.filter((challenge) => challenge.zoneId === questForm.zoneId);
+    }
+    return filtered;
+  }, [challenges, questForm.zoneId]);
+
   const archetypeByPoiId = useMemo(() => {
     const result: Record<string, LocationArchetype> = {};
     if (!pointsOfInterest.length || !locationArchetypes.length) return result;
@@ -898,10 +923,25 @@ export const Quests = () => {
             nodeType: 'monster' as QuestNodeType,
           };
         }
+        if (node.challengeId) {
+          const challenge = challenges.find((item) => item.id === node.challengeId);
+          if (!challenge) return null;
+          const lng = Number(challenge.longitude);
+          const lat = Number(challenge.latitude);
+          if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
+          return {
+            id: node.id,
+            name: challenge.question || challenge.id,
+            orderIndex: node.orderIndex,
+            lng,
+            lat,
+            nodeType: 'challenge' as QuestNodeType,
+          };
+        }
         return null;
       })
       .filter((entry): entry is { id: string; name: string; orderIndex: number; lng: number; lat: number; nodeType: QuestNodeType } => Boolean(entry));
-  }, [monsters, pointsOfInterest, scenarios, selectedQuest?.nodes]);
+  }, [challenges, monsters, pointsOfInterest, scenarios, selectedQuest?.nodes]);
 
   const questNodePoiIdSet = useMemo(() => {
     if (!selectedQuest?.nodes?.length) return new Set<string>();
@@ -1252,6 +1292,8 @@ export const Quests = () => {
           missing.push(`Node ${node.orderIndex}: scenario node`);
         } else if (node.monsterId) {
           missing.push(`Node ${node.orderIndex}: monster node`);
+        } else if (node.challengeId) {
+          missing.push(`Node ${node.orderIndex}: challenge node`);
         } else {
           missing.push(`Node ${node.orderIndex}: polygon node`);
         }
@@ -1490,6 +1532,7 @@ const handleRemoveQuestReward = (index: number) => {
         pointOfInterestId: nodeForm.nodeType === 'poi' ? nodeForm.pointOfInterestId || null : null,
         scenarioId: nodeForm.nodeType === 'scenario' ? nodeForm.scenarioId || null : null,
         monsterId: nodeForm.nodeType === 'monster' ? nodeForm.monsterId || null : null,
+        challengeId: nodeForm.nodeType === 'challenge' ? nodeForm.challengeId || null : null,
         polygonPoints: nodeForm.nodeType === 'polygon' ? polygonPoints : undefined,
         submissionType: nodeForm.submissionType,
       };
@@ -1747,6 +1790,7 @@ const handleRemoveQuestReward = (index: number) => {
             pointOfInterestId: job.pointOfInterestId || form.pointOfInterestId,
             scenarioId: '',
             monsterId: '',
+            challengeId: '',
           }));
         }
       });
@@ -2385,6 +2429,7 @@ const handleRemoveQuestReward = (index: number) => {
                             pointOfInterestId: nextNodeType === 'poi' ? prev.pointOfInterestId : '',
                             scenarioId: nextNodeType === 'scenario' ? prev.scenarioId : '',
                             monsterId: nextNodeType === 'monster' ? prev.monsterId : '',
+                            challengeId: nextNodeType === 'challenge' ? prev.challengeId : '',
                             polygonPoints: nextNodeType === 'polygon' ? prev.polygonPoints : '',
                           }));
                         }}
@@ -2392,6 +2437,7 @@ const handleRemoveQuestReward = (index: number) => {
                         <option value="poi">Point of Interest</option>
                         <option value="scenario">Scenario</option>
                         <option value="monster">Monster</option>
+                        <option value="challenge">Challenge</option>
                         <option value="polygon">Polygon</option>
                       </select>
                     </div>
@@ -2547,6 +2593,22 @@ const handleRemoveQuestReward = (index: number) => {
                           ))}
                         </select>
                       </div>
+                    ) : nodeForm.nodeType === 'challenge' ? (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Challenge</label>
+                        <select
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          value={nodeForm.challengeId}
+                          onChange={(e) => setNodeForm((prev) => ({ ...prev, challengeId: e.target.value }))}
+                        >
+                          <option value="">Select a challenge</option>
+                          {filteredChallenges.map((challenge) => (
+                            <option key={challenge.id} value={challenge.id}>
+                              {challenge.question}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     ) : (
                       <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-gray-700">Polygon Points</label>
@@ -2605,7 +2667,8 @@ const handleRemoveQuestReward = (index: number) => {
                     disabled={
                       (nodeForm.nodeType === 'poi' && !nodeForm.pointOfInterestId) ||
                       (nodeForm.nodeType === 'scenario' && !nodeForm.scenarioId) ||
-                      (nodeForm.nodeType === 'monster' && !nodeForm.monsterId)
+                      (nodeForm.nodeType === 'monster' && !nodeForm.monsterId) ||
+                      (nodeForm.nodeType === 'challenge' && !nodeForm.challengeId)
                     }
                   >
                     Add Node
@@ -2716,6 +2779,7 @@ const handleRemoveQuestReward = (index: number) => {
                               pointOfInterestId: selectedPoiForModal.id,
                               scenarioId: '',
                               monsterId: '',
+                              challengeId: '',
                             }));
                             setSelectedPoiForModal(null);
                           }}
@@ -2936,8 +3000,10 @@ const handleRemoveQuestReward = (index: number) => {
                                   ? `Scenario: ${summarizeScenarioPrompt(
                                       scenarios.find((scenario) => scenario.id === node.scenarioId)?.prompt ?? ''
                                     )}`
-                                  : node.monsterId
+                                : node.monsterId
                                     ? `Monster: ${monsters.find((monster) => monster.id === node.monsterId)?.name ?? node.monsterId}`
+                                    : node.challengeId
+                                      ? `Challenge: ${challenges.find((challenge) => challenge.id === node.challengeId)?.question ?? node.challengeId}`
                                     : 'Polygon'}
                             </div>
                           </div>

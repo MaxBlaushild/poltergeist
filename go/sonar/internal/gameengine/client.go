@@ -1055,6 +1055,18 @@ func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, 
 		if err != nil {
 			return err
 		}
+	} else if node.ChallengeID != nil {
+		challenge, err := c.db.Challenge().FindByID(ctx, *node.ChallengeID)
+		if err != nil {
+			return err
+		}
+		if challenge == nil {
+			return fmt.Errorf("challenge not found")
+		}
+		zone, err = c.db.Zone().FindByID(ctx, challenge.ZoneID)
+		if err != nil {
+			return err
+		}
 	} else if quest.ZoneID != nil {
 		z, err := c.db.Zone().FindByID(ctx, *quest.ZoneID)
 		if err != nil {

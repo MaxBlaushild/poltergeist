@@ -121,6 +121,95 @@ func TestInferGeneratedAbilityEffectsScalesWithTargetLevel(t *testing.T) {
 	}
 }
 
+func TestEstimateMonsterCurveForTargetLevelIncreasesWithLevel(t *testing.T) {
+	low := 5
+	high := 70
+	lowCurve := estimateMonsterCurveForTargetLevel(&low)
+	highCurve := estimateMonsterCurveForTargetLevel(&high)
+	if lowCurve == nil || highCurve == nil {
+		t.Fatalf("expected curve estimates for both levels")
+	}
+	if highCurve.EstimatedHealth <= lowCurve.EstimatedHealth {
+		t.Fatalf(
+			"expected higher-level estimated health > lower-level health, low=%d high=%d",
+			lowCurve.EstimatedHealth,
+			highCurve.EstimatedHealth,
+		)
+	}
+	if highCurve.EstimatedDamagePerTurn <= lowCurve.EstimatedDamagePerTurn {
+		t.Fatalf(
+			"expected higher-level estimated dpt > lower-level dpt, low=%d high=%d",
+			lowCurve.EstimatedDamagePerTurn,
+			highCurve.EstimatedDamagePerTurn,
+		)
+	}
+}
+
+func TestInferGeneratedAbilityEffectsDamageIsCurveAppropriate(t *testing.T) {
+	level := 50
+	spec := jobs.SpellCreationSpec{
+		Name:          "Storm Bolt",
+		Description:   "A focused lightning blast.",
+		SchoolOfMagic: "Tempest",
+	}
+
+	effects := inferGeneratedAbilityEffectsWithPreference(
+		spec,
+		models.SpellAbilityTypeSpell,
+		18,
+		models.SpellEffectTypeDealDamage,
+		&level,
+	)
+	if len(effects) == 0 || effects[0].Type != models.SpellEffectTypeDealDamage {
+		t.Fatalf("expected damage effect")
+	}
+	curve := estimateMonsterCurveForTargetLevel(&level)
+	if curve == nil || curve.EstimatedHealth <= 0 {
+		t.Fatalf("expected valid monster curve for level %d", level)
+	}
+	damageRatio := float64(effects[0].Amount) / float64(curve.EstimatedHealth)
+	if damageRatio < 0.06 || damageRatio > 0.30 {
+		t.Fatalf(
+			"expected damage ratio to be level-appropriate, got ratio=%.3f damage=%d health=%d",
+			damageRatio,
+			effects[0].Amount,
+			curve.EstimatedHealth,
+		)
+	}
+}
+
+func TestInferGeneratedAbilityEffectsHealingTracksMonsterThreatCurve(t *testing.T) {
+	level := 50
+	spec := jobs.SpellCreationSpec{
+		Name:        "Renewing Cadence",
+		Description: "A practiced restoration burst.",
+	}
+
+	effects := inferGeneratedAbilityEffectsWithPreference(
+		spec,
+		models.SpellAbilityTypeSpell,
+		20,
+		models.SpellEffectTypeRestoreLifePartyMember,
+		&level,
+	)
+	if len(effects) == 0 || effects[0].Type != models.SpellEffectTypeRestoreLifePartyMember {
+		t.Fatalf("expected single-target healing effect")
+	}
+	curve := estimateMonsterCurveForTargetLevel(&level)
+	if curve == nil || curve.EstimatedDamagePerTurn <= 0 {
+		t.Fatalf("expected valid monster curve dpt for level %d", level)
+	}
+	minExpected := int(float64(curve.EstimatedDamagePerTurn) * 0.5)
+	if effects[0].Amount < minExpected {
+		t.Fatalf(
+			"expected heal amount to recover a meaningful share of threat curve: heal=%d min_expected=%d dpt=%d",
+			effects[0].Amount,
+			minExpected,
+			curve.EstimatedDamagePerTurn,
+		)
+	}
+}
+
 func TestInferGeneratedAbilityEffectsInfersElementalAffinity(t *testing.T) {
 	spec := jobs.SpellCreationSpec{
 		Name:        "Inferno Spear",
@@ -202,7 +291,10 @@ func TestHarmonizeGeneratedAbilityNameWithEffectsRenamesForEffectAndAffinity(t *
 		}},
 	)
 	lower := strings.ToLower(name)
-	if !strings.Contains(lower, "storm") || !strings.Contains(lower, "bolt") {
+	if !containsAnyKeyword(lower, affinityKeywordsForName(string(models.DamageAffinityLightning))) {
+		t.Fatalf("expected lightning affinity keyword in name, got %q", name)
+	}
+	if !containsAnyKeyword(lower, effectKeywordsForName(models.SpellEffectTypeDealDamage)) {
 		t.Fatalf("expected lightning damage name alignment, got %q", name)
 	}
 }
@@ -216,8 +308,24 @@ func TestHarmonizeGeneratedAbilityNameWithEffectsRenamesForHealing(t *testing.T)
 			Amount: 14,
 		}},
 	)
-	if name != "Mending Touch" {
+	lower := strings.ToLower(name)
+	if !containsAnyKeyword(lower, effectKeywordsForName(models.SpellEffectTypeRestoreLifePartyMember)) {
 		t.Fatalf("expected healing-aligned name, got %q", name)
+	}
+}
+
+func TestReserveGeneratedAbilityNameAvoidsExistingAndInRunDupes(t *testing.T) {
+	seen := map[string]struct{}{
+		"ember lance": {},
+	}
+	first := reserveGeneratedAbilityName("Ember Lance", string(models.SpellAbilityTypeSpell), 1, seen)
+	second := reserveGeneratedAbilityName("Ember Lance", string(models.SpellAbilityTypeSpell), 2, seen)
+
+	if first != "Ember Lance 2" {
+		t.Fatalf("expected first duplicate to be suffixed, got %q", first)
+	}
+	if second != "Ember Lance 3" {
+		t.Fatalf("expected second duplicate to be suffixed, got %q", second)
 	}
 }
 

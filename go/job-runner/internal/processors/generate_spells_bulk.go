@@ -76,7 +76,22 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		return err
 	}
 	configuredEffectPlan := buildConfiguredAbilityEffectPlan(len(payload.Spells), configuredCounts)
-	usedNames := map[string]int{}
+	existingSpells, err := p.dbClient.Spell().FindAll(ctx)
+	if err != nil {
+		p.markFailed(ctx, statusKey, status, err)
+		return fmt.Errorf("failed to load existing spells: %w", err)
+	}
+	usedNames := map[string]struct{}{}
+	for _, existing := range existingSpells {
+		if models.NormalizeSpellAbilityType(string(existing.AbilityType)) != models.SpellAbilityType(abilityType) {
+			continue
+		}
+		key := normalizeAbilityName(existing.Name)
+		if key == "" {
+			continue
+		}
+		usedNames[key] = struct{}{}
+	}
 
 	for index, spec := range payload.Spells {
 		name := strings.TrimSpace(spec.Name)
@@ -164,7 +179,7 @@ func (p *GenerateSpellsBulkProcessor) markFailed(ctx context.Context, statusKey 
 	p.setStatus(ctx, statusKey, status)
 }
 
-func reserveGeneratedAbilityName(candidate string, abilityType string, ordinal int, seen map[string]int) string {
+func reserveGeneratedAbilityName(candidate string, abilityType string, ordinal int, seen map[string]struct{}) string {
 	name := strings.TrimSpace(candidate)
 	if name == "" {
 		if abilityType == string(models.SpellAbilityTypeTechnique) {
@@ -173,15 +188,17 @@ func reserveGeneratedAbilityName(candidate string, abilityType string, ordinal i
 			name = fmt.Sprintf("Spell %d", ordinal)
 		}
 	}
-	key := strings.ToLower(name)
-	count := seen[key]
-	if count == 0 {
-		seen[key] = 1
-		return name
+	base := name
+	suffix := 2
+	for {
+		key := normalizeAbilityName(name)
+		if _, exists := seen[key]; !exists {
+			seen[key] = struct{}{}
+			return name
+		}
+		name = fmt.Sprintf("%s %d", base, suffix)
+		suffix++
 	}
-	nextCount := count + 1
-	seen[key] = nextCount
-	return fmt.Sprintf("%s %d", name, nextCount)
 }
 
 func (p *GenerateSpellsBulkProcessor) setStatus(ctx context.Context, statusKey string, status jobs.SpellBulkStatus) {

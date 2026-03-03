@@ -2,6 +2,7 @@ package processors
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math"
 	"sort"
 	"strings"
@@ -21,6 +22,11 @@ var supportedBulkEffectTypes = []models.SpellEffectType{
 type bulkEffectDistributionEntry struct {
 	effectType models.SpellEffectType
 	count      int
+}
+
+type generatedMonsterCurveProfile struct {
+	EstimatedHealth        int
+	EstimatedDamagePerTurn int
 }
 
 func containsAnyKeyword(haystack string, keywords []string) bool {
@@ -108,15 +114,18 @@ func affinityKeywordsForName(affinity string) []string {
 func effectKeywordsForName(effectType models.SpellEffectType) []string {
 	switch effectType {
 	case models.SpellEffectTypeRestoreLifePartyMember:
-		return []string{"heal", "mend", "renew", "restore", "recovery", "vital"}
+		return []string{"heal", "mend", "renew", "restore", "restoration", "recovery", "vital"}
 	case models.SpellEffectTypeRestoreLifeAllParty:
-		return []string{"heal", "renew", "restore", "chorus", "rally", "aura", "all"}
+		return []string{"heal", "renew", "restore", "restoration", "chorus", "rally", "aura", "all"}
 	case models.SpellEffectTypeApplyBeneficialStatus:
 		return []string{"aegis", "ward", "guard", "boon", "fortify", "stance", "focus"}
 	case models.SpellEffectTypeRemoveDetrimental:
 		return []string{"cleanse", "purge", "dispel", "purify", "clear"}
 	case models.SpellEffectTypeDealDamage:
-		return []string{"strike", "lance", "bolt", "blast", "slash", "rend", "burst", "volley", "spear", "javelin", "assault", "pounce", "riposte"}
+		return []string{
+			"strike", "lance", "bolt", "blast", "slash", "rend", "burst", "volley",
+			"spear", "javelin", "assault", "pounce", "riposte", "ray", "thrust", "smite", "cut", "barrage",
+		}
 	default:
 		return nil
 	}
@@ -161,96 +170,219 @@ func generatedAbilityNameMatchesEffect(
 	return containsAnyKeyword(trimmed, affinityKeywordsForName(string(normalizedAffinity)))
 }
 
+func stableNameVariantIndex(seed string, size int) int {
+	if size <= 1 {
+		return 0
+	}
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.TrimSpace(seed)))
+	return int(hasher.Sum32() % uint32(size))
+}
+
+func pickGeneratedAbilityNameVariant(seed string, options []string) string {
+	if len(options) == 0 {
+		return ""
+	}
+	idx := stableNameVariantIndex(seed, len(options))
+	return options[idx]
+}
+
 func generatedAbilityNameForEffect(
-	effectType models.SpellEffectType,
-	damageAffinity string,
+	effect models.SpellEffect,
 	abilityType models.SpellAbilityType,
+	seed string,
 ) string {
-	switch effectType {
+	seedBase := strings.TrimSpace(seed)
+	if seedBase == "" {
+		seedBase = "generated ability"
+	}
+
+	switch effect.Type {
 	case models.SpellEffectTypeRestoreLifePartyMember:
 		if abilityType == models.SpellAbilityTypeTechnique {
-			return "Second Wind"
+			return pickGeneratedAbilityNameVariant(seedBase, []string{
+				"Mending Riposte",
+				"Recovery Stance",
+				"Renewing Step",
+				"Healing Cadence",
+			})
 		}
-		return "Mending Touch"
+		return pickGeneratedAbilityNameVariant(seedBase, []string{
+			"Mending Touch",
+			"Renewal Weave",
+			"Healing Pulse",
+			"Restoration Sigil",
+		})
 	case models.SpellEffectTypeRestoreLifeAllParty:
 		if abilityType == models.SpellAbilityTypeTechnique {
-			return "Warband Rally"
+			return pickGeneratedAbilityNameVariant(seedBase, []string{
+				"Healing Rally",
+				"Renewal Formation",
+				"Recovery Rally",
+				"Mending Phalanx",
+			})
 		}
-		return "Renewal Chorus"
+		return pickGeneratedAbilityNameVariant(seedBase, []string{
+			"Renewal Chorus",
+			"Healing Aura",
+			"Restoring Chorus",
+			"Group Mend",
+		})
 	case models.SpellEffectTypeApplyBeneficialStatus:
 		if abilityType == models.SpellAbilityTypeTechnique {
-			return "Guarded Stance"
+			return pickGeneratedAbilityNameVariant(seedBase, []string{
+				"Guarded Stance",
+				"Fortify Form",
+				"Warden Focus",
+				"Steadfast Guard",
+			})
 		}
-		return "Aegis Boon"
+		return pickGeneratedAbilityNameVariant(seedBase, []string{
+			"Aegis Boon",
+			"Fortifying Ward",
+			"Guarding Sigil",
+			"Warden Blessing",
+		})
 	case models.SpellEffectTypeRemoveDetrimental:
 		if abilityType == models.SpellAbilityTypeTechnique {
-			return "Cleansing Form"
+			return pickGeneratedAbilityNameVariant(seedBase, []string{
+				"Cleansing Form",
+				"Purging Step",
+				"Dispel Stance",
+				"Purify Rhythm",
+			})
 		}
-		return "Purging Rite"
+		return pickGeneratedAbilityNameVariant(seedBase, []string{
+			"Purging Rite",
+			"Cleansing Weave",
+			"Dispel Invocation",
+			"Purify Glyph",
+		})
 	case models.SpellEffectTypeDealDamage:
-		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
-		prefix := "Iron"
-		suffix := "Strike"
-		if abilityType == models.SpellAbilityTypeSpell {
-			suffix = "Burst"
-		}
+		normalizedAffinity := models.NormalizeDamageAffinity(stringValue(effect.DamageAffinity))
+		damageSeed := fmt.Sprintf("%s|%s|%s|%d", seedBase, effect.Type, normalizedAffinity, effect.Amount)
 		switch normalizedAffinity {
 		case models.DamageAffinityFire:
-			prefix = "Ember"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Lance"
-			} else {
-				suffix = "Slash"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Ember Lance",
+					"Cinder Bolt",
+					"Inferno Burst",
+					"Flame Spear",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Ember Slash",
+				"Cinder Strike",
+				"Flame Rend",
+				"Pyre Cut",
+			})
 		case models.DamageAffinityIce:
-			prefix = "Frost"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Shards"
-			} else {
-				suffix = "Cut"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Frost Shards",
+					"Glacial Lance",
+					"Rime Burst",
+					"Chill Bolt",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Frost Cut",
+				"Glacial Strike",
+				"Rime Rend",
+				"Chill Slash",
+			})
 		case models.DamageAffinityLightning:
-			prefix = "Storm"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Bolt"
-			} else {
-				suffix = "Thrust"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Storm Bolt",
+					"Thunder Lance",
+					"Volt Burst",
+					"Spark Javelin",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Storm Thrust",
+				"Thunder Strike",
+				"Volt Rend",
+				"Spark Slash",
+			})
 		case models.DamageAffinityPoison:
-			prefix = "Venom"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Hex"
-			} else {
-				suffix = "Sting"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Venom Bolt",
+					"Toxin Burst",
+					"Blight Lance",
+					"Virulent Spear",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Venom Sting",
+				"Toxin Strike",
+				"Blight Rend",
+				"Virulent Cut",
+			})
 		case models.DamageAffinityArcane:
-			prefix = "Arcane"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Burst"
-			} else {
-				suffix = "Kata"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Arcane Burst",
+					"Rune Volley",
+					"Astral Lance",
+					"Mana Barrage",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Arcane Strike",
+				"Rune Thrust",
+				"Astral Rend",
+				"Mana Cut",
+			})
 		case models.DamageAffinityHoly:
-			prefix = "Radiant"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Ray"
-			} else {
-				suffix = "Smite"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Radiant Ray",
+					"Dawn Lance",
+					"Sanctified Burst",
+					"Sunfire Bolt",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Radiant Smite",
+				"Dawn Strike",
+				"Sanctified Rend",
+				"Sunfire Cut",
+			})
 		case models.DamageAffinityShadow:
-			prefix = "Umbral"
 			if abilityType == models.SpellAbilityTypeSpell {
-				suffix = "Volley"
-			} else {
-				suffix = "Rend"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Umbral Volley",
+					"Night Bolt",
+					"Void Lance",
+					"Hexfire Burst",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Umbral Rend",
+				"Night Strike",
+				"Void Slash",
+				"Hexfire Cut",
+			})
 		default:
 			if abilityType == models.SpellAbilityTypeSpell {
-				prefix = "Force"
-				suffix = "Barrage"
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Force Barrage",
+					"Iron Bolt",
+					"Battle Lance",
+					"Impact Burst",
+				})
 			}
+			return pickGeneratedAbilityNameVariant(damageSeed, []string{
+				"Iron Strike",
+				"Battle Rend",
+				"Impact Slash",
+				"Steel Thrust",
+			})
 		}
-		return fmt.Sprintf("%s %s", prefix, suffix)
 	default:
 		return ""
 	}
@@ -273,7 +405,7 @@ func harmonizeGeneratedAbilityNameWithEffects(
 	if generatedAbilityNameMatchesEffect(trimmed, primary.Type, damageAffinity) {
 		return trimmed
 	}
-	return generatedAbilityNameForEffect(primary.Type, damageAffinity, abilityType)
+	return generatedAbilityNameForEffect(primary, abilityType, trimmed)
 }
 
 func generatedAbilityDescriptionMatchesEffect(
@@ -416,6 +548,7 @@ func inferGeneratedAbilityEffectsWithPreference(
 		spec.EffectText,
 		spec.SchoolOfMagic,
 	}, " ")))
+	curve := estimateMonsterCurveForTargetLevel(targetLevel)
 
 	switch effectType {
 	case models.SpellEffectTypeRestoreLifePartyMember:
@@ -427,6 +560,21 @@ func inferGeneratedAbilityEffectsWithPreference(
 			amount = 6
 		}
 		amount = scaleAbilityAmountForLevel(amount, targetLevel)
+		if curve != nil {
+			curveRatio := 0.08
+			if abilityType == models.SpellAbilityTypeTechnique {
+				curveRatio = 0.07
+			}
+			manaFactor := math.Min(1, float64(maxInt(0, manaCost))/60.0)
+			curveRatio += (0.06 * manaFactor)
+			curveAmount := int(math.Round(float64(curve.EstimatedHealth) * curveRatio))
+			if curve.EstimatedDamagePerTurn > 0 {
+				// Single-target healing should recover most of one expected incoming hit.
+				curveAmount = maxInt(curveAmount, int(math.Round(float64(curve.EstimatedDamagePerTurn)*0.75)))
+			}
+			amount = blendGeneratedAbilityAmount(amount, curveAmount, 0.6)
+		}
+		amount = varyGeneratedAbilityAmount(amount, text+"|restore_life_party_member|"+string(abilityType), effectType)
 		return models.SpellEffects{{
 			Type:   models.SpellEffectTypeRestoreLifePartyMember,
 			Amount: amount,
@@ -440,6 +588,21 @@ func inferGeneratedAbilityEffectsWithPreference(
 			amount = 4
 		}
 		amount = scaleAbilityAmountForLevel(amount, targetLevel)
+		if curve != nil {
+			curveRatio := 0.05
+			if abilityType == models.SpellAbilityTypeTechnique {
+				curveRatio = 0.045
+			}
+			manaFactor := math.Min(1, float64(maxInt(0, manaCost))/60.0)
+			curveRatio += (0.05 * manaFactor)
+			curveAmount := int(math.Round(float64(curve.EstimatedHealth) * curveRatio))
+			if curve.EstimatedDamagePerTurn > 0 {
+				// Group healing is intentionally smaller per target than single-target healing.
+				curveAmount = maxInt(curveAmount, int(math.Round(float64(curve.EstimatedDamagePerTurn)*0.45)))
+			}
+			amount = blendGeneratedAbilityAmount(amount, curveAmount, 0.6)
+		}
+		amount = varyGeneratedAbilityAmount(amount, text+"|restore_life_all_party_members|"+string(abilityType), effectType)
 		return models.SpellEffects{{
 			Type:   models.SpellEffectTypeRestoreLifeAllParty,
 			Amount: amount,
@@ -506,6 +669,20 @@ func inferGeneratedAbilityEffectsWithPreference(
 			damage = 10
 		}
 		damage = scaleAbilityAmountForLevel(damage, targetLevel)
+		if curve != nil {
+			curveRatio := 0.10
+			if abilityType == models.SpellAbilityTypeTechnique {
+				curveRatio = 0.085
+				if containsAnyKeyword(text, []string{"heavy", "crush", "breaker", "slam", "assault"}) {
+					curveRatio += 0.02
+				}
+			}
+			manaFactor := math.Min(1, float64(maxInt(0, manaCost))/60.0)
+			curveRatio += (0.08 * manaFactor)
+			curveAmount := int(math.Round(float64(curve.EstimatedHealth) * curveRatio))
+			damage = blendGeneratedAbilityAmount(damage, curveAmount, 0.65)
+		}
+		damage = varyGeneratedAbilityAmount(damage, text+"|deal_damage|"+string(abilityType), effectType)
 		damageAffinity := inferGeneratedDamageAffinity(text, abilityType)
 		return models.SpellEffects{{
 			Type:           models.SpellEffectTypeDealDamage,
@@ -513,6 +690,87 @@ func inferGeneratedAbilityEffectsWithPreference(
 			DamageAffinity: &damageAffinity,
 		}}
 	}
+}
+
+func estimateMonsterCurveForTargetLevel(targetLevel *int) *generatedMonsterCurveProfile {
+	level, ok := normalizeAbilityTargetLevel(targetLevel)
+	if !ok {
+		return nil
+	}
+	// Mirror monster progression formulas in pkg/models/monster.go with midline template baselines.
+	// Effective constitution drives max health: max_health = constitution * 10.
+	baseConstitution := 12
+	baseStrength := 11
+	baseDexterity := 11
+	effectiveConstitution := maxInt(1, baseConstitution+level-1)
+	effectiveStrength := maxInt(1, baseStrength+level-1)
+	effectiveDexterity := maxInt(1, baseDexterity+level-1)
+	estimatedHealth := effectiveConstitution * 10
+
+	// Fallback monster attack profile:
+	// damage_min = strength/3 + level/2
+	// damage_max = damage_min + 2 + dexterity/5
+	damageMin := maxInt(1, (effectiveStrength/3)+(level/2))
+	damageMax := maxInt(damageMin, damageMin+2+(effectiveDexterity/5))
+	estimatedDamagePerTurn := int(math.Round(float64(damageMin+damageMax) / 2.0))
+	if estimatedDamagePerTurn < 1 {
+		estimatedDamagePerTurn = 1
+	}
+	return &generatedMonsterCurveProfile{
+		EstimatedHealth:        estimatedHealth,
+		EstimatedDamagePerTurn: estimatedDamagePerTurn,
+	}
+}
+
+func blendGeneratedAbilityAmount(legacyAmount int, curveAmount int, curveWeight float64) int {
+	if curveAmount <= 0 {
+		if legacyAmount < 1 {
+			return 1
+		}
+		return legacyAmount
+	}
+	if legacyAmount <= 0 {
+		return maxInt(1, curveAmount)
+	}
+	if curveWeight < 0 {
+		curveWeight = 0
+	}
+	if curveWeight > 1 {
+		curveWeight = 1
+	}
+	legacyWeight := 1.0 - curveWeight
+	blended := int(math.Round((float64(legacyAmount) * legacyWeight) + (float64(curveAmount) * curveWeight)))
+	if blended < 1 {
+		return 1
+	}
+	return blended
+}
+
+func generatedAmountVarianceRatio(seed string) float64 {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.TrimSpace(seed)))
+	// Map to [-1.0, 1.0] deterministically.
+	bucket := float64(hasher.Sum32()%1001) / 1000.0
+	return (bucket * 2.0) - 1.0
+}
+
+func varyGeneratedAbilityAmount(base int, seed string, effectType models.SpellEffectType) int {
+	if base <= 1 {
+		return base
+	}
+	spread := 0.08
+	switch effectType {
+	case models.SpellEffectTypeDealDamage:
+		spread = 0.14
+	case models.SpellEffectTypeRestoreLifePartyMember, models.SpellEffectTypeRestoreLifeAllParty:
+		spread = 0.10
+	}
+	delta := int(math.Round(float64(base) * spread * generatedAmountVarianceRatio(seed)))
+	value := base + delta
+	if value < 1 {
+		return 1
+	}
+	return value
 }
 
 func normalizeAbilityTargetLevel(raw *int) (int, bool) {

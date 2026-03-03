@@ -26,6 +26,9 @@ class QuestNode {
   final String id;
   final int orderIndex;
   final PointOfInterest? pointOfInterest;
+  final String? scenarioId;
+  final String? monsterId;
+  final String? challengeId;
   final List<QuestNodePolygonPoint> polygon;
   final List<QuestNodeChallenge> challenges;
   final String submissionType;
@@ -35,13 +38,19 @@ class QuestNode {
     required this.orderIndex,
     this.submissionType = submissionTypePhoto,
     this.pointOfInterest,
+    this.scenarioId,
+    this.monsterId,
+    this.challengeId,
     this.polygon = const [],
     this.challenges = const [],
   });
 
   factory QuestNode.fromJson(Map<String, dynamic> json) {
-    final rawSubmissionType = (json['submissionType'] as String?)?.trim().toLowerCase();
-    final submissionType = (rawSubmissionType == submissionTypeText ||
+    final rawSubmissionType = (json['submissionType'] as String?)
+        ?.trim()
+        .toLowerCase();
+    final submissionType =
+        (rawSubmissionType == submissionTypeText ||
             rawSubmissionType == submissionTypePhoto ||
             rawSubmissionType == submissionTypeVideo)
         ? rawSubmissionType!
@@ -51,14 +60,26 @@ class QuestNode {
       orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
       submissionType: submissionType,
       pointOfInterest: json['pointOfInterest'] is Map<String, dynamic>
-          ? PointOfInterest.fromJson(json['pointOfInterest'] as Map<String, dynamic>)
+          ? PointOfInterest.fromJson(
+              json['pointOfInterest'] as Map<String, dynamic>,
+            )
           : null,
-      polygon: (json['polygon'] as List<dynamic>?)
-              ?.map((e) => QuestNodePolygonPoint.fromJson(e as Map<String, dynamic>))
+      scenarioId: json['scenarioId']?.toString(),
+      monsterId: json['monsterId']?.toString(),
+      challengeId: json['challengeId']?.toString(),
+      polygon:
+          (json['polygon'] as List<dynamic>?)
+              ?.map(
+                (e) =>
+                    QuestNodePolygonPoint.fromJson(e as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
-      challenges: (json['challenges'] as List<dynamic>?)
-              ?.map((e) => QuestNodeChallenge.fromJson(e as Map<String, dynamic>))
+      challenges:
+          (json['challenges'] as List<dynamic>?)
+              ?.map(
+                (e) => QuestNodeChallenge.fromJson(e as Map<String, dynamic>),
+              )
               .toList() ??
           const [],
     );

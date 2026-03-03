@@ -1,5 +1,6 @@
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../models/challenge.dart';
 import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
@@ -55,6 +56,15 @@ class PoiService {
     final list = await _api.get<List<dynamic>>('/sonar/zones/$zoneId/monsters');
     return list
         .map((e) => Monster.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<Challenge>> getChallengesForZone(String zoneId) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/challenges',
+    );
+    return list
+        .map((e) => Challenge.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

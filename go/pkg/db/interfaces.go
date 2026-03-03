@@ -96,6 +96,7 @@ type DbClient interface {
 	QuestNodeChild() QuestNodeChildHandle
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
+	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
 	MonsterBattle() MonsterBattleHandle
@@ -916,6 +917,15 @@ type TreasureChestHandle interface {
 	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error)
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
+}
+
+type ChallengeHandle interface {
+	Create(ctx context.Context, challenge *models.Challenge) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.Challenge, error)
+	FindAll(ctx context.Context) ([]models.Challenge, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
+	Delete(ctx context.Context, id uuid.UUID) error
 }
 
 type ScenarioHandle interface {

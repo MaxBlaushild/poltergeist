@@ -22,6 +22,7 @@ type QuestNode struct {
 	PointOfInterestID *uuid.UUID              `json:"pointOfInterestId" gorm:"type:uuid"`
 	ScenarioID        *uuid.UUID              `json:"scenarioId" gorm:"type:uuid"`
 	MonsterID         *uuid.UUID              `json:"monsterId" gorm:"type:uuid"`
+	ChallengeID       *uuid.UUID              `json:"challengeId" gorm:"type:uuid"`
 	Polygon           string                  `json:"polygon" gorm:"type:geometry(Polygon,4326)"`
 	PolygonPoints     [][2]float64            `json:"polygonPoints" gorm:"-"`
 	SubmissionType    QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`

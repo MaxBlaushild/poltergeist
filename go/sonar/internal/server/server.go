@@ -438,6 +438,12 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/scenarios/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioImage))
 	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
 	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
+	r.GET("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallenges))
+	r.GET("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallenge))
+	r.GET("/sonar/zones/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengesForZone))
+	r.POST("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallenge))
+	r.PUT("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallenge))
+	r.DELETE("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallenge))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 }
 
@@ -1643,22 +1649,44 @@ func parseQuestNodePolygon(raw string) (orb.Polygon, error) {
 	return polygon, nil
 }
 
-func selectQuestNodeChallenge(node *models.QuestNode, challengeID *uuid.UUID) (*models.QuestNodeChallenge, error) {
-	if node == nil || len(node.Challenges) == 0 {
+func selectQuestNodeChallenge(
+	node *models.QuestNode,
+	standaloneChallenge *models.Challenge,
+	challengeID *uuid.UUID,
+) (*models.QuestNodeChallenge, error) {
+	if node == nil {
+		return nil, fmt.Errorf("quest node not found")
+	}
+	if len(node.Challenges) > 0 {
+		if challengeID != nil && *challengeID != uuid.Nil {
+			for _, ch := range node.Challenges {
+				if ch.ID == *challengeID {
+					return &ch, nil
+				}
+			}
+			return nil, fmt.Errorf("quest node challenge not found")
+		}
+		if len(node.Challenges) == 1 {
+			return &node.Challenges[0], nil
+		}
+		return nil, fmt.Errorf("questNodeChallengeId is required")
+	}
+	if standaloneChallenge == nil {
 		return nil, fmt.Errorf("quest node has no challenges")
 	}
-	if challengeID != nil && *challengeID != uuid.Nil {
-		for _, ch := range node.Challenges {
-			if ch.ID == *challengeID {
-				return &ch, nil
-			}
-		}
+	if challengeID != nil && *challengeID != uuid.Nil && *challengeID != standaloneChallenge.ID {
 		return nil, fmt.Errorf("quest node challenge not found")
 	}
-	if len(node.Challenges) == 1 {
-		return &node.Challenges[0], nil
-	}
-	return nil, fmt.Errorf("questNodeChallengeId is required")
+	return &models.QuestNodeChallenge{
+		ID:              standaloneChallenge.ID,
+		Question:        standaloneChallenge.Question,
+		Reward:          standaloneChallenge.Reward,
+		InventoryItemID: standaloneChallenge.InventoryItemID,
+		SubmissionType:  standaloneChallenge.SubmissionType,
+		Difficulty:      standaloneChallenge.Difficulty,
+		StatTags:        standaloneChallenge.StatTags,
+		Proficiency:     standaloneChallenge.Proficiency,
+	}, nil
 }
 
 func (s *server) createTrackedPointOfInterestGroup(ctx *gin.Context) {
@@ -3447,6 +3475,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		PointOfInterestID *uuid.UUID   `json:"pointOfInterestId"`
 		ScenarioID        *uuid.UUID   `json:"scenarioId"`
 		MonsterID         *uuid.UUID   `json:"monsterId"`
+		ChallengeID       *uuid.UUID   `json:"challengeId"`
 		Polygon           string       `json:"polygon"`
 		PolygonPoints     [][2]float64 `json:"polygonPoints"`
 		SubmissionType    string       `json:"submissionType"`
@@ -3473,15 +3502,18 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 	if requestBody.MonsterID != nil {
 		targetCount++
 	}
+	if requestBody.ChallengeID != nil {
+		targetCount++
+	}
 	if hasPolygon {
 		targetCount++
 	}
 	if targetCount == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId, scenarioId, monsterId, or polygon"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId, scenarioId, monsterId, challengeId, or polygon"})
 		return
 	}
 	if targetCount > 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have exactly one target: pointOfInterestId, scenarioId, monsterId, or polygon"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have exactly one target: pointOfInterestId, scenarioId, monsterId, challengeId, or polygon"})
 		return
 	}
 
@@ -3494,6 +3526,7 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		PointOfInterestID: requestBody.PointOfInterestID,
 		ScenarioID:        requestBody.ScenarioID,
 		MonsterID:         requestBody.MonsterID,
+		ChallengeID:       requestBody.ChallengeID,
 	}
 	if strings.TrimSpace(requestBody.SubmissionType) == "" {
 		node.SubmissionType = models.DefaultQuestNodeSubmissionType()
@@ -9073,7 +9106,20 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	challenge, err := selectQuestNodeChallenge(node, requestBody.QuestNodeChallengeID)
+	var standaloneChallenge *models.Challenge
+	if node.ChallengeID != nil && *node.ChallengeID != uuid.Nil {
+		standaloneChallenge, err = s.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
+			return
+		}
+		if standaloneChallenge == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node challenge not found"})
+			return
+		}
+	}
+
+	challenge, err := selectQuestNodeChallenge(node, standaloneChallenge, requestBody.QuestNodeChallengeID)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -9149,6 +9195,21 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			return
 		}
 		distance := util.HaversineDistance(userLat, userLng, monster.Latitude, monster.Longitude)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
+	} else if node.ChallengeID != nil {
+		if standaloneChallenge == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
+			return
+		}
+		distance := util.HaversineDistance(
+			userLat,
+			userLng,
+			standaloneChallenge.Latitude,
+			standaloneChallenge.Longitude,
+		)
 		if distance > 100 {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
 			return

@@ -14,10 +14,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/character.dart';
 import '../models/character_action.dart';
+import '../models/challenge.dart';
 import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
+import '../models/quest_node_challenge.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/zone.dart';
@@ -96,6 +98,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<TreasureChest> _treasureChests = [];
   List<Scenario> _scenarios = [];
   List<Monster> _monsters = [];
+  List<Challenge> _challenges = [];
   List<Line> _zoneLines = [];
   List<Fill> _zoneFills = [];
   List<Line> _questLines = [];
@@ -120,6 +123,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Circle> _monsterCircles = [];
   final Map<String, Symbol> _monsterSymbolById = {};
   final Map<String, Circle> _monsterCircleById = {};
+  List<Circle> _challengeCircles = [];
+  final Map<String, Circle> _challengeCircleById = {};
   final Set<String> _resolvedScenarioIds = <String>{};
   final Set<String> _resolvedScenarioSignatures = <String>{};
   final Set<String> _openedTreasureChestIds = <String>{};
@@ -254,6 +259,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         (() async {
           await _refreshScenarioSymbols();
           await _refreshMonsterSymbols();
+          await _refreshChallengeSymbols();
         })(),
       );
       return;
@@ -361,6 +367,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     if (questLog.loading) return;
     _applyQuestLogOverlaysIfChanged();
+    unawaited(_refreshChallengeSymbols());
     unawaited(_refreshQuestAvailabilityMarkers());
   }
 
@@ -529,6 +536,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _monsterCircles = [];
       _monsterSymbolById.clear();
       _monsterCircleById.clear();
+      _challengeCircles = [];
+      _challengeCircleById.clear();
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
       _monsterMysteryThumbnailBytes = null;
@@ -553,6 +562,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _scenarioVisibilityRefreshPending = false;
           await _refreshScenarioSymbols();
           await _refreshMonsterSymbols();
+          await _refreshChallengeSymbols();
         }
       })(),
     );
@@ -855,6 +865,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _treasureChests = [];
           _scenarios = [];
           _monsters = [];
+          _challenges = [];
         });
       }
       return;
@@ -864,9 +875,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final chestsFuture = svc.getTreasureChestsForZone(zoneId);
       final scenariosFuture = svc.getScenariosForZone(zoneId);
       final monstersFuture = svc.getMonstersForZone(zoneId);
+      final challengesFuture = svc.getChallengesForZone(zoneId);
       final chests = await chestsFuture;
       final scenarios = await scenariosFuture;
       final monsters = await monstersFuture;
+      final challenges = await challengesFuture;
       if (!mounted) return;
       setState(() {
         _treasureChests = chests
@@ -885,11 +898,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _monsters = monsters
             .where((monster) => !_defeatedMonsterIds.contains(monster.id))
             .toList();
+        _challenges = challenges;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
         await _refreshScenarioSymbols();
         await _refreshMonsterSymbols();
+        await _refreshChallengeSymbols();
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
@@ -898,11 +913,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _treasureChests = [];
           _scenarios = [];
           _monsters = [];
+          _challenges = [];
         });
         if (_styleLoaded && _mapController != null && _markersAdded) {
           await _refreshTreasureChestSymbols();
           await _refreshScenarioSymbols();
           await _refreshMonsterSymbols();
+          await _refreshChallengeSymbols();
         }
       }
     }
@@ -942,6 +959,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Monster? _monsterById(String id) {
     for (final monster in _monsters) {
       if (monster.id == id) return monster;
+    }
+    return null;
+  }
+
+  Challenge? _challengeById(String id) {
+    for (final challenge in _challenges) {
+      if (challenge.id == id) return challenge;
     }
     return null;
   }
@@ -1379,6 +1403,86 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  bool _isCurrentQuestChallenge(String challengeId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node?.challengeId == challengeId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _refreshChallengeSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    final duplicateOrOrphanCircles = <Circle>[];
+    for (final circle in _challengeCircles.toList()) {
+      final id = _challengeIdFromData(circle.data);
+      if (id == null) {
+        duplicateOrOrphanCircles.add(circle);
+        continue;
+      }
+      final tracked = _challengeCircleById[id];
+      if (tracked == null || !identical(tracked, circle)) {
+        duplicateOrOrphanCircles.add(circle);
+      }
+    }
+    if (duplicateOrOrphanCircles.isNotEmpty) {
+      for (final circle in duplicateOrOrphanCircles) {
+        try {
+          await c.removeCircle(circle);
+        } catch (_) {}
+        _challengeCircles.remove(circle);
+      }
+    }
+
+    final desiredIds = _challenges.map((challenge) => challenge.id).toSet();
+    for (final entry in _challengeCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _challengeCircles.remove(entry.value);
+        _challengeCircleById.remove(entry.key);
+      }
+    }
+
+    for (final challenge in _challenges) {
+      final isCurrentQuestChallenge = _isCurrentQuestChallenge(challenge.id);
+      final circleColor = isCurrentQuestChallenge ? '#e1b12c' : '#2a9d8f';
+      final existingCircle = _challengeCircleById[challenge.id];
+      if (existingCircle == null) {
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(challenge.latitude, challenge.longitude),
+            circleRadius: 20,
+            circleColor: circleColor,
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#ffffff',
+          ),
+          {'type': 'challenge', 'id': challenge.id},
+        );
+        if (!mounted) return;
+        _challengeCircles.add(circle);
+        _challengeCircleById[challenge.id] = circle;
+      } else {
+        try {
+          await c.updateCircle(
+            existingCircle,
+            CircleOptions(
+              geometry: LatLng(challenge.latitude, challenge.longitude),
+              circleColor: circleColor,
+            ),
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
   String? _scenarioIdFromData(dynamic raw) {
     if (raw == null || raw is! Map) return null;
     final data = Map<String, dynamic>.from(raw);
@@ -1392,6 +1496,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (raw == null || raw is! Map) return null;
     final data = Map<String, dynamic>.from(raw);
     if (data['type']?.toString() != 'monster') return null;
+    final id = data['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
+  String? _challengeIdFromData(dynamic raw) {
+    if (raw == null || raw is! Map) return null;
+    final data = Map<String, dynamic>.from(raw);
+    if (data['type']?.toString() != 'challenge') return null;
     final id = data['id']?.toString();
     if (id == null || id.isEmpty) return null;
     return id;
@@ -1557,6 +1670,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
         return;
       }
+      if (type == 'challenge') {
+        final challenge = _challengeById(idStr);
+        if (challenge != null) {
+          _showChallengePanel(challenge);
+        }
+        return;
+      }
       if (type == 'poi') {
         final pois = _pois.where((p) => p.id == idStr).toList();
         if (pois.isNotEmpty && mounted) {
@@ -1601,6 +1721,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final monster = _monsterById(idStr);
           if (monster != null && mounted) {
             _showMonsterPanel(monster);
+          }
+          return;
+        }
+        if (type == 'challenge') {
+          final challenge = _challengeById(idStr);
+          if (challenge != null && mounted) {
+            _showChallengePanel(challenge);
           }
           return;
         }
@@ -1842,7 +1969,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
     debugPrint(
-      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length} monsters=${_monsters.length})',
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
     );
 
     try {
@@ -1944,6 +2071,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _monsterCircles.clear();
       }
       _monsterCircleById.clear();
+      if (_challengeCircles.isNotEmpty) {
+        for (final circle in _challengeCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _challengeCircles.clear();
+      }
+      _challengeCircleById.clear();
       try {
         await c.clearCircles();
       } catch (_) {}
@@ -2089,6 +2226,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       await _refreshScenarioSymbols();
       await _refreshMonsterSymbols();
+      await _refreshChallengeSymbols();
 
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
@@ -2199,6 +2337,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioVisibilityRefreshPending = false;
         await _refreshScenarioSymbols();
         await _refreshMonsterSymbols();
+        await _refreshChallengeSymbols();
       }
       _ensureQuestPoiPulseTimer();
       if (mounted && hadEmptyDiscoveries) {
@@ -4475,6 +4614,136 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         },
       ),
     );
+  }
+
+  MapEntry<Quest, QuestNode>? _activeQuestNodeForChallenge(String challengeId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node == null) continue;
+      if (node.challengeId == challengeId) {
+        return MapEntry(quest, node);
+      }
+    }
+    return null;
+  }
+
+  void _showChallengePanel(Challenge challenge) {
+    final activeQuestEntry = _activeQuestNodeForChallenge(challenge.id);
+    final questName = activeQuestEntry?.key.name;
+    final location = context.read<LocationProvider>().location;
+    final distance = location == null
+        ? null
+        : _distanceMeters(
+            location.latitude,
+            location.longitude,
+            challenge.latitude,
+            challenge.longitude,
+          );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Challenge',
+                    style: Theme.of(sheetContext).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                challenge.question,
+                style: Theme.of(sheetContext).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Difficulty: ${challenge.difficulty}',
+                style: Theme.of(sheetContext).textTheme.bodySmall,
+              ),
+              if (distance != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${distance.round()} m away',
+                  style: Theme.of(sheetContext).textTheme.bodySmall,
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: activeQuestEntry == null
+                    ? null
+                    : () {
+                        Navigator.of(sheetContext).pop();
+                        _showStandaloneQuestChallengeSubmissionModal(
+                          activeQuestEntry.key,
+                          activeQuestEntry.value,
+                          challenge,
+                        );
+                      },
+                child: Text(
+                  activeQuestEntry == null
+                      ? 'No active quest objective here'
+                      : 'Submit for quest: $questName',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showStandaloneQuestChallengeSubmissionModal(
+    Quest quest,
+    QuestNode node,
+    Challenge challenge,
+  ) {
+    final submissionType = challenge.submissionType.trim().isNotEmpty
+        ? challenge.submissionType
+        : node.submissionType;
+    final syntheticNode = QuestNode(
+      id: node.id,
+      orderIndex: node.orderIndex,
+      submissionType: submissionType,
+      pointOfInterest: node.pointOfInterest,
+      scenarioId: node.scenarioId,
+      monsterId: node.monsterId,
+      challengeId: node.challengeId,
+      polygon: node.polygon,
+      challenges: [
+        QuestNodeChallenge(
+          id: challenge.id,
+          tier: 0,
+          question: challenge.question,
+          reward: challenge.reward,
+          inventoryItemId: challenge.inventoryItemId,
+          difficulty: challenge.difficulty,
+          statTags: challenge.statTags,
+          proficiency: challenge.proficiency,
+        ),
+      ],
+    );
+    return _showQuestNodeSubmissionModal(quest, syntheticNode);
   }
 
   void _showMonsterPanel(Monster monster) {
