@@ -3233,6 +3233,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       node.challenges.first.question,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                  if (selectedChallenge != null &&
+                      (selectedChallenge.imageUrl.isNotEmpty ||
+                          selectedChallenge.thumbnailUrl.isNotEmpty)) ...[
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        selectedChallenge.thumbnailUrl.isNotEmpty
+                            ? selectedChallenge.thumbnailUrl
+                            : selectedChallenge.imageUrl,
+                        fit: BoxFit.cover,
+                        height: 140,
+                        width: double.infinity,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
                   if (selectedChallenge != null) ...[
                     const SizedBox(height: 6),
                     Text(

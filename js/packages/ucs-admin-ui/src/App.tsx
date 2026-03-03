@@ -41,6 +41,7 @@ import { Quests } from './components/Quests.tsx';
 import { InsiderTrades } from './components/InsiderTrades.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
+import { Challenges } from './components/Challenges.tsx';
 import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 
@@ -97,6 +98,7 @@ const Navigation = () => {
         <Link to="/insider-trades" className="text-white hover:text-gray-300">Insider Trades</Link>
         <Link to="/zone-seeding" className="text-white hover:text-gray-300">Zone Seeding</Link>
         <Link to="/scenarios" className="text-white hover:text-gray-300">Scenarios</Link>
+        <Link to="/challenges" className="text-white hover:text-gray-300">Challenges</Link>
       </div>
     </nav>
   );
@@ -270,6 +272,11 @@ const router = createBrowserRouter([
       {
         path: "/scenarios",
         element: <Scenarios />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/challenges",
+        element: <Challenges />,
         loader: onlyAuthenticated,
       },
       {

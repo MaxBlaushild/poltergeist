@@ -443,6 +443,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengesForZone))
 	r.POST("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallenge))
 	r.PUT("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallenge))
+	r.POST("/sonar/challenges/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeImage))
 	r.DELETE("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallenge))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
 }

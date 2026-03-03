@@ -1,15 +1,18 @@
 package server
 
 import (
+	"encoding/json"
 	stdErrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +30,8 @@ type challengeUpsertRequest struct {
 	Latitude        float64  `json:"latitude"`
 	Longitude       float64  `json:"longitude"`
 	Question        string   `json:"question"`
+	ImageURL        string   `json:"imageUrl"`
+	ThumbnailURL    string   `json:"thumbnailUrl"`
 	Reward          int      `json:"reward"`
 	InventoryItemID *int     `json:"inventoryItemId"`
 	SubmissionType  string   `json:"submissionType"`
@@ -85,12 +90,19 @@ func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge
 	if proficiency != "" {
 		proficiencyPtr = &proficiency
 	}
+	imageURL := strings.TrimSpace(body.ImageURL)
+	thumbnailURL := strings.TrimSpace(body.ThumbnailURL)
+	if thumbnailURL == "" && imageURL != "" {
+		thumbnailURL = imageURL
+	}
 
 	challenge := &models.Challenge{
 		ZoneID:          zoneID,
 		Latitude:        body.Latitude,
 		Longitude:       body.Longitude,
 		Question:        question,
+		ImageURL:        imageURL,
+		ThumbnailURL:    thumbnailURL,
 		Reward:          body.Reward,
 		InventoryItemID: body.InventoryItemID,
 		SubmissionType:  submissionType,
@@ -249,4 +261,46 @@ func (s *server) deleteChallenge(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "challenge deleted successfully"})
+}
+
+func (s *server) generateChallengeImage(ctx *gin.Context) {
+	id := ctx.Param("id")
+	challengeID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge ID"})
+		return
+	}
+
+	challenge, err := s.dbClient.Challenge().FindByID(ctx, challengeID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if challenge == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
+		return
+	}
+
+	payload := jobs.GenerateChallengeImageTaskPayload{
+		ChallengeID: challengeID,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateChallengeImageTaskType, payloadBytes)); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"status":    "queued",
+		"challenge": challenge,
+	})
 }

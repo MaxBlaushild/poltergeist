@@ -4,6 +4,8 @@ class Challenge {
   final double latitude;
   final double longitude;
   final String question;
+  final String imageUrl;
+  final String thumbnailUrl;
   final int reward;
   final int? inventoryItemId;
   final String submissionType;
@@ -17,6 +19,8 @@ class Challenge {
     required this.latitude,
     required this.longitude,
     required this.question,
+    this.imageUrl = '',
+    this.thumbnailUrl = '',
     required this.reward,
     this.inventoryItemId,
     this.submissionType = 'photo',
@@ -32,6 +36,8 @@ class Challenge {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       question: json['question']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       reward: (json['reward'] as num?)?.toInt() ?? 0,
       inventoryItemId: (json['inventoryItemId'] as num?)?.toInt(),
       submissionType:
