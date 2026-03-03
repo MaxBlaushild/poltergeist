@@ -18,6 +18,7 @@ type Challenge struct {
 	Longitude       float64                 `json:"longitude"`
 	Geometry        string                  `json:"geometry" gorm:"type:geometry(Point,4326)"`
 	Question        string                  `json:"question"`
+	Description     string                  `json:"description"`
 	ImageURL        string                  `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL    string                  `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
 	Reward          int                     `json:"reward"`

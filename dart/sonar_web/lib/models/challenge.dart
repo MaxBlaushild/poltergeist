@@ -4,6 +4,7 @@ class Challenge {
   final double latitude;
   final double longitude;
   final String question;
+  final String description;
   final String imageUrl;
   final String thumbnailUrl;
   final int reward;
@@ -19,6 +20,7 @@ class Challenge {
     required this.latitude,
     required this.longitude,
     required this.question,
+    this.description = '',
     this.imageUrl = '',
     this.thumbnailUrl = '',
     required this.reward,
@@ -36,6 +38,7 @@ class Challenge {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       question: json['question']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
       imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       reward: (json['reward'] as num?)?.toInt() ?? 0,

@@ -22,7 +22,10 @@ Apply 2-3 shading tones per area, with crisp, blocky edges.
 Keep the result clean, simple, and non-photorealistic.
 Avoid gradients, text, logos, and UI overlays.
 
-Render a fantasy scene illustrating this challenge prompt:
+Primary visual direction (highest priority; use this heavily):
+%s
+
+Challenge objective (secondary context):
 %s
 
 Zone context: %s.
@@ -72,10 +75,15 @@ func (p *GenerateChallengeImageProcessor) ProcessTask(ctx context.Context, task 
 	if strings.TrimSpace(challenge.Zone.Name) != "" {
 		zoneName = strings.TrimSpace(challenge.Zone.Name)
 	}
+	description := strings.TrimSpace(challenge.Description)
+	if description == "" {
+		description = strings.TrimSpace(challenge.Question)
+	}
 
 	prompt := fmt.Sprintf(
 		challengeImagePromptTemplate,
-		truncate(strings.TrimSpace(challenge.Question), 650),
+		truncate(description, 650),
+		truncate(strings.TrimSpace(challenge.Question), 350),
 		truncate(zoneName, 120),
 	)
 	request := deep_priest.GenerateImageRequest{

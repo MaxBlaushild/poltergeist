@@ -9,6 +9,7 @@ type ChallengeRecord = {
   latitude: number;
   longitude: number;
   question: string;
+  description: string;
   imageUrl: string;
   thumbnailUrl: string;
   reward: number;
@@ -24,6 +25,7 @@ type ChallengeFormState = {
   latitude: string;
   longitude: string;
   question: string;
+  description: string;
   imageUrl: string;
   thumbnailUrl: string;
   reward: string;
@@ -76,6 +78,7 @@ const emptyForm = (): ChallengeFormState => ({
   latitude: '',
   longitude: '',
   question: '',
+  description: '',
   imageUrl: '',
   thumbnailUrl: '',
   reward: '0',
@@ -91,6 +94,7 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   latitude: String(record.latitude ?? ''),
   longitude: String(record.longitude ?? ''),
   question: record.question ?? '',
+  description: record.description ?? '',
   imageUrl: record.imageUrl ?? '',
   thumbnailUrl: record.thumbnailUrl ?? '',
   reward: String(record.reward ?? 0),
@@ -179,6 +183,7 @@ export const Challenges = () => {
       const zoneName = zoneNameById.get(record.zoneId) ?? '';
       return (
         record.question.toLowerCase().includes(normalized) ||
+        (record.description ?? '').toLowerCase().includes(normalized) ||
         zoneName.toLowerCase().includes(normalized) ||
         record.id.toLowerCase().includes(normalized)
       );
@@ -312,6 +317,7 @@ export const Challenges = () => {
         latitude: parseFloatSafe(form.latitude, 0),
         longitude: parseFloatSafe(form.longitude, 0),
         question: form.question.trim(),
+        description: form.description.trim(),
         imageUrl: form.imageUrl.trim(),
         thumbnailUrl: form.thumbnailUrl.trim(),
         reward: parseIntSafe(form.reward, 0),
@@ -455,6 +461,11 @@ export const Challenges = () => {
                 <tr key={record.id} className="odd:bg-white even:bg-gray-50">
                   <td className="p-2 border-b align-top max-w-md">
                     <div className="font-medium">{record.question}</div>
+                    {record.description ? (
+                      <div className="text-xs text-gray-700 mt-1 max-w-md whitespace-pre-wrap">
+                        {record.description}
+                      </div>
+                    ) : null}
                     <div className="text-xs text-gray-500 font-mono mt-1">
                       {record.id}
                     </div>
@@ -599,6 +610,21 @@ export const Challenges = () => {
                   value={form.question}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, question: event.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="text-sm md:col-span-2">
+                Description (Flavor)
+                <textarea
+                  className="w-full border rounded-md p-2 min-h-[120px]"
+                  placeholder="Atmosphere, subject details, setting notes, tone, visual motifs."
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
                   }
                 />
               </label>

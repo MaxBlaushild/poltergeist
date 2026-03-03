@@ -30,6 +30,7 @@ type challengeUpsertRequest struct {
 	Latitude        float64  `json:"latitude"`
 	Longitude       float64  `json:"longitude"`
 	Question        string   `json:"question"`
+	Description     string   `json:"description"`
 	ImageURL        string   `json:"imageUrl"`
 	ThumbnailURL    string   `json:"thumbnailUrl"`
 	Reward          int      `json:"reward"`
@@ -72,6 +73,7 @@ func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge
 	if question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
+	description := strings.TrimSpace(body.Description)
 	if body.Difficulty < 0 {
 		return nil, fmt.Errorf("difficulty must be zero or greater")
 	}
@@ -101,6 +103,7 @@ func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge
 		Latitude:        body.Latitude,
 		Longitude:       body.Longitude,
 		Question:        question,
+		Description:     description,
 		ImageURL:        imageURL,
 		ThumbnailURL:    thumbnailURL,
 		Reward:          body.Reward,

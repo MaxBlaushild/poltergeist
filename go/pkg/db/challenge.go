@@ -59,6 +59,7 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		"longitude":         updates.Longitude,
 		"geometry":          updates.Geometry,
 		"question":          updates.Question,
+		"description":       updates.Description,
 		"image_url":         updates.ImageURL,
 		"thumbnail_url":     updates.ThumbnailURL,
 		"reward":            updates.Reward,
