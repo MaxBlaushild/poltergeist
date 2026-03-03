@@ -1,4 +1,28 @@
-CREATE TABLE challenges (
+DO $$
+BEGIN
+  -- Legacy schema from 000014 had user_id/challenge columns.
+  -- Preserve it under a backup name before creating the new map challenge table.
+  IF to_regclass('public.challenges') IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'challenges'
+        AND column_name = 'user_id'
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'challenges'
+        AND column_name = 'zone_id'
+    )
+    AND to_regclass('public.challenges_legacy_000228') IS NULL THEN
+    ALTER TABLE challenges RENAME TO challenges_legacy_000228;
+  END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS challenges (
   id UUID PRIMARY KEY,
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL,
@@ -15,10 +39,10 @@ CREATE TABLE challenges (
   proficiency TEXT
 );
 
-CREATE INDEX idx_challenges_zone_id ON challenges(zone_id);
-CREATE INDEX idx_challenges_geometry ON challenges USING GIST(geometry);
+CREATE INDEX IF NOT EXISTS idx_challenges_zone_id ON challenges(zone_id);
+CREATE INDEX IF NOT EXISTS idx_challenges_geometry ON challenges USING GIST(geometry);
 
 ALTER TABLE quest_nodes
-  ADD COLUMN challenge_id UUID REFERENCES challenges(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS challenge_id UUID REFERENCES challenges(id) ON DELETE SET NULL;
 
-CREATE INDEX quest_nodes_challenge_idx ON quest_nodes(challenge_id);
+CREATE INDEX IF NOT EXISTS quest_nodes_challenge_idx ON quest_nodes(challenge_id);
