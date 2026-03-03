@@ -269,6 +269,9 @@ func (p *GenerateMonsterTemplatesBulkProcessor) findOrCreateAbilityForTemplate(
 		AbilityType:   string(abilityType),
 	}
 	effects := inferGeneratedAbilityEffects(spec, abilityType, manaCost)
+	name = harmonizeGeneratedAbilityNameWithEffects(name, abilityType, effects)
+	name = nextUniqueGeneratedAbilityName(name, pool.byName)
+	description = harmonizeGeneratedAbilityDescriptionWithEffects(description, abilityType, effects)
 	effectText := buildGeneratedAbilityEffectText(effects, abilityType)
 	emptyError := ""
 	spell := &models.Spell{

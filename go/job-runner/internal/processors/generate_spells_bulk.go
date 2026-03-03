@@ -76,6 +76,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		return err
 	}
 	configuredEffectPlan := buildConfiguredAbilityEffectPlan(len(payload.Spells), configuredCounts)
+	usedNames := map[string]int{}
 
 	for index, spec := range payload.Spells {
 		name := strings.TrimSpace(spec.Name)
@@ -109,6 +110,13 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 			manaCost,
 			preferredEffect,
 			payload.TargetLevel,
+		)
+		name = harmonizeGeneratedAbilityNameWithEffects(name, models.SpellAbilityType(abilityType), effects)
+		name = reserveGeneratedAbilityName(name, abilityType, index+1, usedNames)
+		description = harmonizeGeneratedAbilityDescriptionWithEffects(
+			description,
+			models.SpellAbilityType(abilityType),
+			effects,
 		)
 		effectText := buildGeneratedAbilityEffectText(effects, models.SpellAbilityType(abilityType))
 		if strings.TrimSpace(effectText) == "" {
@@ -154,6 +162,26 @@ func (p *GenerateSpellsBulkProcessor) markFailed(ctx context.Context, statusKey 
 	status.CompletedAt = &completedAt
 	status.UpdatedAt = completedAt
 	p.setStatus(ctx, statusKey, status)
+}
+
+func reserveGeneratedAbilityName(candidate string, abilityType string, ordinal int, seen map[string]int) string {
+	name := strings.TrimSpace(candidate)
+	if name == "" {
+		if abilityType == string(models.SpellAbilityTypeTechnique) {
+			name = fmt.Sprintf("Technique %d", ordinal)
+		} else {
+			name = fmt.Sprintf("Spell %d", ordinal)
+		}
+	}
+	key := strings.ToLower(name)
+	count := seen[key]
+	if count == 0 {
+		seen[key] = 1
+		return name
+	}
+	nextCount := count + 1
+	seen[key] = nextCount
+	return fmt.Sprintf("%s %d", name, nextCount)
 }
 
 func (p *GenerateSpellsBulkProcessor) setStatus(ctx context.Context, statusKey string, status jobs.SpellBulkStatus) {

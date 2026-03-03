@@ -7330,7 +7330,22 @@ func inventorySetRarityForTargetLevel(targetLevel int) string {
 	}
 }
 
-func inventorySetPrimaryStatPointsForTargetLevel(targetLevel int) int {
+func normalizeInventorySetRarityTier(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "common":
+		return "Common"
+	case "uncommon":
+		return "Uncommon"
+	case "epic":
+		return "Epic"
+	case "mythic":
+		return "Mythic"
+	default:
+		return ""
+	}
+}
+
+func inventorySetPrimaryStatPointsForTargetLevel(targetLevel int, rarity string) int {
 	level := targetLevel
 	if level < 1 {
 		level = 1
@@ -7338,7 +7353,25 @@ func inventorySetPrimaryStatPointsForTargetLevel(targetLevel int) int {
 	if level > 100 {
 		level = 100
 	}
-	points := int(math.Round(2 + (float64(level) * 0.18)))
+
+	basePoints := int(math.Round(2 + (float64(level) * 0.17)))
+	rarityRank := 1
+	switch strings.ToLower(strings.TrimSpace(rarity)) {
+	case "uncommon":
+		rarityRank = 2
+	case "epic":
+		rarityRank = 3
+	case "mythic":
+		rarityRank = 4
+	}
+
+	rarityBonus := int(math.Round(float64(rarityRank-1) * (0.5 + (float64(level) * 0.015))))
+	points := basePoints + maxInt(0, rarityBonus)
+
+	levelCap := int(math.Round(3 + (float64(level) * 0.27)))
+	if points > levelCap {
+		points = levelCap
+	}
 	return maxInt(2, points)
 }
 
@@ -7381,6 +7414,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 		TargetLevel int    `json:"targetLevel" binding:"required"`
 		MajorStat   string `json:"majorStat" binding:"required"`
 		MinorStat   string `json:"minorStat" binding:"required"`
+		RarityTier  string `json:"rarityTier"`
 		SetTheme    string `json:"setTheme"`
 	}
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
@@ -7406,12 +7440,22 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 		return
 	}
 
+	rarity := normalizeInventorySetRarityTier(requestBody.RarityTier)
+	if strings.TrimSpace(requestBody.RarityTier) != "" && rarity == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "rarityTier must be one of: Common, Uncommon, Epic, Mythic",
+		})
+		return
+	}
+	if rarity == "" {
+		rarity = inventorySetRarityForTargetLevel(requestBody.TargetLevel)
+	}
+
 	setTheme := strings.TrimSpace(requestBody.SetTheme)
 	if setTheme == "" {
 		setTheme = inventorySetThemeFromStats(majorStat, minorStat, requestBody.TargetLevel)
 	}
-	rarity := inventorySetRarityForTargetLevel(requestBody.TargetLevel)
-	majorPoints := inventorySetPrimaryStatPointsForTargetLevel(requestBody.TargetLevel)
+	majorPoints := inventorySetPrimaryStatPointsForTargetLevel(requestBody.TargetLevel, rarity)
 	minorPoints := maxInt(1, int(math.Round(float64(majorPoints)*0.6)))
 
 	sourceItem := &models.InventoryItem{
@@ -7517,6 +7561,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 		"targetLevel":     requestBody.TargetLevel,
 		"majorStat":       majorStat,
 		"minorStat":       minorStat,
+		"rarityTier":      rarity,
 		"createdItems":    createdItems,
 		"skippedSlots":    skippedSlots,
 		"enqueueWarnings": enqueueWarnings,

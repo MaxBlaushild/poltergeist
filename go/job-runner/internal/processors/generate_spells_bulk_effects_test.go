@@ -175,3 +175,101 @@ func TestBuildConfiguredAbilityEffectPlanRespectsCounts(t *testing.T) {
 		t.Fatalf("expected 2 heal slots, got %d", healCount)
 	}
 }
+
+func TestHarmonizeGeneratedAbilityNameWithEffectsKeepsMatchingName(t *testing.T) {
+	name := harmonizeGeneratedAbilityNameWithEffects(
+		"Ember Lance",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:           models.SpellEffectTypeDealDamage,
+			Amount:         18,
+			DamageAffinity: testStringPtr(string(models.DamageAffinityFire)),
+		}},
+	)
+	if name != "Ember Lance" {
+		t.Fatalf("expected matching name to remain unchanged, got %q", name)
+	}
+}
+
+func TestHarmonizeGeneratedAbilityNameWithEffectsRenamesForEffectAndAffinity(t *testing.T) {
+	name := harmonizeGeneratedAbilityNameWithEffects(
+		"Verdant Renewal",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:           models.SpellEffectTypeDealDamage,
+			Amount:         18,
+			DamageAffinity: testStringPtr(string(models.DamageAffinityLightning)),
+		}},
+	)
+	lower := strings.ToLower(name)
+	if !strings.Contains(lower, "storm") || !strings.Contains(lower, "bolt") {
+		t.Fatalf("expected lightning damage name alignment, got %q", name)
+	}
+}
+
+func TestHarmonizeGeneratedAbilityNameWithEffectsRenamesForHealing(t *testing.T) {
+	name := harmonizeGeneratedAbilityNameWithEffects(
+		"Nightfall Rend",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:   models.SpellEffectTypeRestoreLifePartyMember,
+			Amount: 14,
+		}},
+	)
+	if name != "Mending Touch" {
+		t.Fatalf("expected healing-aligned name, got %q", name)
+	}
+}
+
+func TestHarmonizeGeneratedAbilityDescriptionWithEffectsKeepsMatchingDescription(t *testing.T) {
+	description := harmonizeGeneratedAbilityDescriptionWithEffects(
+		"Unleashes fire energy to damage a single enemy.",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:           models.SpellEffectTypeDealDamage,
+			Amount:         18,
+			DamageAffinity: testStringPtr(string(models.DamageAffinityFire)),
+		}},
+	)
+	if description != "Unleashes fire energy to damage a single enemy." {
+		t.Fatalf("expected matching description to remain unchanged, got %q", description)
+	}
+}
+
+func TestHarmonizeGeneratedAbilityDescriptionWithEffectsRenamesForHealing(t *testing.T) {
+	description := harmonizeGeneratedAbilityDescriptionWithEffects(
+		"A thunderous blast that shatters armor.",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:   models.SpellEffectTypeRestoreLifePartyMember,
+			Amount: 14,
+		}},
+	)
+	lower := strings.ToLower(description)
+	if !strings.Contains(lower, "heal") && !strings.Contains(lower, "restor") {
+		t.Fatalf("expected healing-aligned description, got %q", description)
+	}
+}
+
+func TestHarmonizeGeneratedAbilityDescriptionWithEffectsRenamesForAffinity(t *testing.T) {
+	description := harmonizeGeneratedAbilityDescriptionWithEffects(
+		"A gentle restorative pulse.",
+		models.SpellAbilityTypeSpell,
+		models.SpellEffects{{
+			Type:           models.SpellEffectTypeDealDamage,
+			Amount:         18,
+			DamageAffinity: testStringPtr(string(models.DamageAffinityLightning)),
+		}},
+	)
+	lower := strings.ToLower(description)
+	if !strings.Contains(lower, "lightning") {
+		t.Fatalf("expected affinity-aligned description, got %q", description)
+	}
+	if !strings.Contains(lower, "damage") {
+		t.Fatalf("expected damage-aligned description, got %q", description)
+	}
+}
+
+func testStringPtr(value string) *string {
+	return &value
+}

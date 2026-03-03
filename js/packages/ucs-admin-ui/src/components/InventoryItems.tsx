@@ -37,6 +37,7 @@ type InventorySetGenerationResponse = {
   targetLevel?: number;
   majorStat?: string;
   minorStat?: string;
+  rarityTier?: string;
   createdItems: InventoryItemRecord[];
   skippedSlots: string[];
   enqueueWarnings?: string[];
@@ -188,6 +189,14 @@ const itemSetStatOptions: SelectOption[] = [
   { value: 'intelligence', label: 'Intelligence' },
   { value: 'wisdom', label: 'Wisdom' },
   { value: 'charisma', label: 'Charisma' },
+];
+
+const itemSetRarityOptions: SelectOption[] = [
+  { value: 'auto', label: 'Auto (Level-Based)' },
+  { value: Rarity.Common, label: 'Common' },
+  { value: Rarity.Uncommon, label: 'Uncommon' },
+  { value: Rarity.Epic, label: 'Epic' },
+  { value: Rarity.Mythic, label: 'Mythic' },
 ];
 
 const damageAffinityOptions: SelectOption[] = [
@@ -378,6 +387,7 @@ export const InventoryItems = () => {
   const [bulkSetTargetLevel, setBulkSetTargetLevel] = useState('25');
   const [bulkSetMajorStat, setBulkSetMajorStat] = useState('strength');
   const [bulkSetMinorStat, setBulkSetMinorStat] = useState('constitution');
+  const [bulkSetRarityTier, setBulkSetRarityTier] = useState('auto');
   const [bulkSetGenerationBusy, setBulkSetGenerationBusy] = useState(false);
   const [consumableGenerationBusyIds, setConsumableGenerationBusyIds] = useState<Set<number>>(new Set());
   const [sortField, setSortField] = useState('name');
@@ -1109,6 +1119,7 @@ export const InventoryItems = () => {
           targetLevel,
           majorStat: bulkSetMajorStat,
           minorStat: bulkSetMinorStat,
+          rarityTier: bulkSetRarityTier !== 'auto' ? bulkSetRarityTier : undefined,
         }
       );
       const createdItems = Array.isArray(response.createdItems) ? response.createdItems : [];
@@ -1122,8 +1133,9 @@ export const InventoryItems = () => {
 
       const skippedCount = Array.isArray(response.skippedSlots) ? response.skippedSlots.length : 0;
       const warningCount = Array.isArray(response.enqueueWarnings) ? response.enqueueWarnings.length : 0;
+      const resolvedRarity = response.rarityTier ?? 'Unknown';
       alert(
-        `Generated set "${response.setTheme}". Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
+        `Generated ${resolvedRarity} set "${response.setTheme}". Created ${createdItems.length} item(s), skipped ${skippedCount} slot(s)` +
           (warningCount > 0 ? `, with ${warningCount} image queue warning(s).` : '.')
       );
     } catch (error) {
@@ -1457,7 +1469,7 @@ export const InventoryItems = () => {
 
       <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
         <div className="mb-2 text-sm font-semibold text-gray-800">Generate Full Equippable Set</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <div>
             <label className="mb-1 block text-xs text-gray-600">Target Level</label>
             <input
@@ -1492,6 +1504,20 @@ export const InventoryItems = () => {
             >
               {itemSetStatOptions.map((option) => (
                 <option key={`minor-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Rarity</label>
+            <select
+              value={bulkSetRarityTier}
+              onChange={(e) => setBulkSetRarityTier(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm"
+            >
+              {itemSetRarityOptions.map((option) => (
+                <option key={`bulk-set-rarity-${option.value}`} value={option.value}>
                   {option.label}
                 </option>
               ))}

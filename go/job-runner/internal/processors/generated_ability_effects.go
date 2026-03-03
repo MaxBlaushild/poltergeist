@@ -84,6 +84,313 @@ func inferGeneratedDamageAffinity(text string, abilityType models.SpellAbilityTy
 	return string(models.DamageAffinityPhysical)
 }
 
+func affinityKeywordsForName(affinity string) []string {
+	switch models.NormalizeDamageAffinity(affinity) {
+	case models.DamageAffinityFire:
+		return []string{"fire", "flame", "ember", "inferno", "burn"}
+	case models.DamageAffinityIce:
+		return []string{"ice", "frost", "glacier", "chill", "rime"}
+	case models.DamageAffinityLightning:
+		return []string{"lightning", "storm", "thunder", "volt", "spark"}
+	case models.DamageAffinityPoison:
+		return []string{"poison", "venom", "toxin", "blight"}
+	case models.DamageAffinityArcane:
+		return []string{"arcane", "rune", "mana", "astral"}
+	case models.DamageAffinityHoly:
+		return []string{"holy", "radiant", "sanct", "dawn", "sun"}
+	case models.DamageAffinityShadow:
+		return []string{"shadow", "void", "umbral", "night", "hex"}
+	default:
+		return []string{"physical", "blade", "strike", "slam", "crush", "rend"}
+	}
+}
+
+func effectKeywordsForName(effectType models.SpellEffectType) []string {
+	switch effectType {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return []string{"heal", "mend", "renew", "restore", "recovery", "vital"}
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return []string{"heal", "renew", "restore", "chorus", "rally", "aura", "all"}
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		return []string{"aegis", "ward", "guard", "boon", "fortify", "stance", "focus"}
+	case models.SpellEffectTypeRemoveDetrimental:
+		return []string{"cleanse", "purge", "dispel", "purify", "clear"}
+	case models.SpellEffectTypeDealDamage:
+		return []string{"strike", "lance", "bolt", "blast", "slash", "rend", "burst", "volley", "spear", "javelin", "assault", "pounce", "riposte"}
+	default:
+		return nil
+	}
+}
+
+func effectKeywordsForDescription(effectType models.SpellEffectType) []string {
+	switch effectType {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return []string{"heal", "restore", "mend", "renew", "recover", "vitalize"}
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return []string{"heal", "restore", "mend", "renew", "allies", "party", "group", "team"}
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		return []string{"boon", "ward", "fortify", "empower", "enhance", "status", "stance", "focus"}
+	case models.SpellEffectTypeRemoveDetrimental:
+		return []string{"cleanse", "purge", "remove", "dispel", "clear", "ailment", "debuff", "detrimental"}
+	case models.SpellEffectTypeDealDamage:
+		return []string{"damage", "harm", "attack", "strike", "blast", "hit", "wound", "burst"}
+	default:
+		return nil
+	}
+}
+
+func generatedAbilityNameMatchesEffect(
+	name string,
+	effectType models.SpellEffectType,
+	damageAffinity string,
+) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	if !containsAnyKeyword(trimmed, effectKeywordsForName(effectType)) {
+		return false
+	}
+	if effectType != models.SpellEffectTypeDealDamage {
+		return true
+	}
+	normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
+	if normalizedAffinity == models.DamageAffinityPhysical {
+		return true
+	}
+	return containsAnyKeyword(trimmed, affinityKeywordsForName(string(normalizedAffinity)))
+}
+
+func generatedAbilityNameForEffect(
+	effectType models.SpellEffectType,
+	damageAffinity string,
+	abilityType models.SpellAbilityType,
+) string {
+	switch effectType {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "Second Wind"
+		}
+		return "Mending Touch"
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "Warband Rally"
+		}
+		return "Renewal Chorus"
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "Guarded Stance"
+		}
+		return "Aegis Boon"
+	case models.SpellEffectTypeRemoveDetrimental:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "Cleansing Form"
+		}
+		return "Purging Rite"
+	case models.SpellEffectTypeDealDamage:
+		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
+		prefix := "Iron"
+		suffix := "Strike"
+		if abilityType == models.SpellAbilityTypeSpell {
+			suffix = "Burst"
+		}
+		switch normalizedAffinity {
+		case models.DamageAffinityFire:
+			prefix = "Ember"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Lance"
+			} else {
+				suffix = "Slash"
+			}
+		case models.DamageAffinityIce:
+			prefix = "Frost"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Shards"
+			} else {
+				suffix = "Cut"
+			}
+		case models.DamageAffinityLightning:
+			prefix = "Storm"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Bolt"
+			} else {
+				suffix = "Thrust"
+			}
+		case models.DamageAffinityPoison:
+			prefix = "Venom"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Hex"
+			} else {
+				suffix = "Sting"
+			}
+		case models.DamageAffinityArcane:
+			prefix = "Arcane"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Burst"
+			} else {
+				suffix = "Kata"
+			}
+		case models.DamageAffinityHoly:
+			prefix = "Radiant"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Ray"
+			} else {
+				suffix = "Smite"
+			}
+		case models.DamageAffinityShadow:
+			prefix = "Umbral"
+			if abilityType == models.SpellAbilityTypeSpell {
+				suffix = "Volley"
+			} else {
+				suffix = "Rend"
+			}
+		default:
+			if abilityType == models.SpellAbilityTypeSpell {
+				prefix = "Force"
+				suffix = "Barrage"
+			}
+		}
+		return fmt.Sprintf("%s %s", prefix, suffix)
+	default:
+		return ""
+	}
+}
+
+func harmonizeGeneratedAbilityNameWithEffects(
+	currentName string,
+	abilityType models.SpellAbilityType,
+	effects models.SpellEffects,
+) string {
+	trimmed := strings.TrimSpace(currentName)
+	if len(effects) == 0 {
+		return trimmed
+	}
+	primary := effects[0]
+	damageAffinity := ""
+	if primary.DamageAffinity != nil {
+		damageAffinity = strings.TrimSpace(*primary.DamageAffinity)
+	}
+	if generatedAbilityNameMatchesEffect(trimmed, primary.Type, damageAffinity) {
+		return trimmed
+	}
+	return generatedAbilityNameForEffect(primary.Type, damageAffinity, abilityType)
+}
+
+func generatedAbilityDescriptionMatchesEffect(
+	description string,
+	effectType models.SpellEffectType,
+	damageAffinity string,
+) bool {
+	trimmed := strings.TrimSpace(description)
+	if trimmed == "" {
+		return false
+	}
+	if !containsAnyKeyword(trimmed, effectKeywordsForDescription(effectType)) {
+		return false
+	}
+	if effectType == models.SpellEffectTypeDealDamage {
+		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
+		if normalizedAffinity == models.DamageAffinityPhysical {
+			return true
+		}
+		return containsAnyKeyword(trimmed, affinityKeywordsForName(string(normalizedAffinity)))
+	}
+	return true
+}
+
+func generatedAbilityDescriptionForEffect(effect models.SpellEffect, abilityType models.SpellAbilityType) string {
+	switch effect.Type {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "A practiced combat rhythm that restores health to one ally."
+		}
+		return "Channels restorative magic to heal one ally."
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return "A commanding rally that restores health across your whole party."
+		}
+		return "Radiates restorative magic that heals all allies."
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		statusName := "a beneficial status"
+		if len(effect.StatusesToApply) > 0 && strings.TrimSpace(effect.StatusesToApply[0].Name) != "" {
+			statusName = effect.StatusesToApply[0].Name
+		}
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return fmt.Sprintf("Adopts a disciplined form that grants %s.", statusName)
+		}
+		return fmt.Sprintf("Weaves a protective enchantment that grants %s.", statusName)
+	case models.SpellEffectTypeRemoveDetrimental:
+		statusTarget := "detrimental conditions"
+		if len(effect.StatusesToRemove) > 0 {
+			statusTarget = strings.Join(effect.StatusesToRemove, ", ")
+		}
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return fmt.Sprintf("Resets footing and clears %s from allies.", statusTarget)
+		}
+		return fmt.Sprintf("Purges %s from allies.", statusTarget)
+	case models.SpellEffectTypeDealDamage:
+		affinity := "force"
+		switch models.NormalizeDamageAffinity(stringValue(effect.DamageAffinity)) {
+		case models.DamageAffinityFire:
+			affinity = "fire"
+		case models.DamageAffinityIce:
+			affinity = "ice"
+		case models.DamageAffinityLightning:
+			affinity = "lightning"
+		case models.DamageAffinityPoison:
+			affinity = "poison"
+		case models.DamageAffinityArcane:
+			affinity = "arcane"
+		case models.DamageAffinityHoly:
+			affinity = "holy"
+		case models.DamageAffinityShadow:
+			affinity = "shadow"
+		case models.DamageAffinityPhysical:
+			affinity = "physical"
+		}
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return fmt.Sprintf("A focused %s strike that damages a single enemy.", affinity)
+		}
+		return fmt.Sprintf("Unleashes %s energy to damage a single enemy.", affinity)
+	default:
+		return ""
+	}
+}
+
+func harmonizeGeneratedAbilityDescriptionWithEffects(
+	currentDescription string,
+	abilityType models.SpellAbilityType,
+	effects models.SpellEffects,
+) string {
+	trimmed := strings.TrimSpace(currentDescription)
+	if len(effects) == 0 {
+		return trimmed
+	}
+	primary := effects[0]
+	damageAffinity := ""
+	if primary.DamageAffinity != nil {
+		damageAffinity = strings.TrimSpace(*primary.DamageAffinity)
+	}
+	if generatedAbilityDescriptionMatchesEffect(trimmed, primary.Type, damageAffinity) {
+		return trimmed
+	}
+	replacement := strings.TrimSpace(generatedAbilityDescriptionForEffect(primary, abilityType))
+	if replacement != "" {
+		return replacement
+	}
+	if trimmed != "" {
+		return trimmed
+	}
+	return buildGeneratedAbilityEffectText(effects, abilityType)
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
 func inferGeneratedAbilityEffects(
 	spec jobs.SpellCreationSpec,
 	abilityType models.SpellAbilityType,
