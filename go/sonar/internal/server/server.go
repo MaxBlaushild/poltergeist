@@ -191,6 +191,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpells))
 	r.POST("/sonar/spells/bulk-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkGenerateSpells))
 	r.GET("/sonar/spells/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
+	r.POST("/sonar/spells/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueSpellProgressionFromPrompt))
+	r.GET("/sonar/spells/progression-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellProgressionFromPromptStatus))
 	r.GET("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpell))
 	r.POST("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createSpell))
 	r.POST("/sonar/spells/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellIcon))
@@ -203,6 +205,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/techniques/bulk-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getBulkGenerateSpellsStatus))
 	r.GET("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTechnique))
 	r.POST("/sonar/techniques", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTechnique))
+	r.POST("/sonar/techniques/progression-generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queueTechniqueProgressionFromPrompt))
+	r.GET("/sonar/techniques/progression-generate/:jobId/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpellProgressionFromPromptStatus))
 	r.POST("/sonar/techniques/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTechniqueIcon))
 	r.POST("/sonar/techniques/:id/cast", middleware.WithAuthentication(s.authClient, s.livenessClient, s.castTechnique))
 	r.PUT("/sonar/techniques/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTechnique))
@@ -424,6 +428,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsters))
 	r.GET("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonster))
 	r.GET("/sonar/zones/:id/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonstersForZone))
+	r.GET("/sonar/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterEncounters))
+	r.GET("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterEncounter))
+	r.GET("/sonar/zones/:id/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterEncountersForZone))
 	r.POST("/sonar/monsters/:id/battle/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMonsterBattle))
 	r.POST("/sonar/monsters/:id/battle/turn", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceMonsterBattleTurn))
 	r.POST("/sonar/monsters/:id/battle/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMonsterBattle))
@@ -431,6 +438,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
 	r.DELETE("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonster))
+	r.POST("/sonar/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterEncounter))
+	r.PUT("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterEncounter))
+	r.DELETE("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterEncounter))
 	r.GET("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarios))
 	r.GET("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenario))
 	r.GET("/sonar/zones/:id/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenariosForZone))
@@ -3454,15 +3464,16 @@ func (s *server) removeQuestActionForCharacter(ctx *gin.Context, questID uuid.UU
 
 func (s *server) createQuestNode(ctx *gin.Context) {
 	var requestBody struct {
-		QuestID           uuid.UUID    `json:"questId"`
-		OrderIndex        int          `json:"orderIndex"`
-		PointOfInterestID *uuid.UUID   `json:"pointOfInterestId"`
-		ScenarioID        *uuid.UUID   `json:"scenarioId"`
-		MonsterID         *uuid.UUID   `json:"monsterId"`
-		ChallengeID       *uuid.UUID   `json:"challengeId"`
-		Polygon           string       `json:"polygon"`
-		PolygonPoints     [][2]float64 `json:"polygonPoints"`
-		SubmissionType    string       `json:"submissionType"`
+		QuestID            uuid.UUID    `json:"questId"`
+		OrderIndex         int          `json:"orderIndex"`
+		PointOfInterestID  *uuid.UUID   `json:"pointOfInterestId"`
+		ScenarioID         *uuid.UUID   `json:"scenarioId"`
+		MonsterID          *uuid.UUID   `json:"monsterId"`
+		MonsterEncounterID *uuid.UUID   `json:"monsterEncounterId"`
+		ChallengeID        *uuid.UUID   `json:"challengeId"`
+		Polygon            string       `json:"polygon"`
+		PolygonPoints      [][2]float64 `json:"polygonPoints"`
+		SubmissionType     string       `json:"submissionType"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -3485,31 +3496,46 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 	if requestBody.MonsterID != nil {
 		targetCount++
 	}
+	if requestBody.MonsterEncounterID != nil {
+		targetCount++
+	}
 	if requestBody.ChallengeID != nil {
 		targetCount++
 	}
 	if hasLegacyLocation {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest nodes now derive location from scenarioId, monsterId, or challengeId; pointOfInterestId and polygon are not supported"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest nodes now derive location from scenarioId, monsterEncounterId, monsterId, or challengeId; pointOfInterestId and polygon are not supported"})
 		return
 	}
 	if targetCount == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterId, or challengeId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterEncounterId, monsterId, or challengeId"})
 		return
 	}
 	if targetCount > 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterId, or challengeId"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterEncounterId, monsterId, or challengeId"})
 		return
+	}
+	if requestBody.MonsterEncounterID == nil && requestBody.MonsterID != nil {
+		encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, *requestBody.MonsterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if encounter != nil {
+			requestBody.MonsterEncounterID = &encounter.ID
+			requestBody.MonsterID = nil
+		}
 	}
 
 	node := &models.QuestNode{
-		ID:          uuid.New(),
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-		QuestID:     requestBody.QuestID,
-		OrderIndex:  requestBody.OrderIndex,
-		ScenarioID:  requestBody.ScenarioID,
-		MonsterID:   requestBody.MonsterID,
-		ChallengeID: requestBody.ChallengeID,
+		ID:                 uuid.New(),
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
+		QuestID:            requestBody.QuestID,
+		OrderIndex:         requestBody.OrderIndex,
+		ScenarioID:         requestBody.ScenarioID,
+		MonsterID:          requestBody.MonsterID,
+		MonsterEncounterID: requestBody.MonsterEncounterID,
+		ChallengeID:        requestBody.ChallengeID,
 	}
 	if strings.TrimSpace(requestBody.SubmissionType) == "" {
 		node.SubmissionType = models.DefaultQuestNodeSubmissionType()
@@ -9140,6 +9166,17 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			return
 		}
 		distance := util.HaversineDistance(userLat, userLng, scenario.Latitude, scenario.Longitude)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
+	} else if node.MonsterEncounterID != nil {
+		encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, *node.MonsterEncounterID)
+		if err != nil || encounter == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load monster encounter"})
+			return
+		}
+		distance := util.HaversineDistance(userLat, userLng, encounter.Latitude, encounter.Longitude)
 		if distance > 100 {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
 			return

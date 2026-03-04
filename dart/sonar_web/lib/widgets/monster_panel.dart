@@ -16,12 +16,12 @@ const _legacyMysteryImageUrl =
 class MonsterPanel extends StatelessWidget {
   const MonsterPanel({
     super.key,
-    required this.monster,
+    required this.encounter,
     required this.onClose,
     this.onFight,
   });
 
-  final Monster monster;
+  final MonsterEncounter encounter;
   final VoidCallback onClose;
   final VoidCallback? onFight;
 
@@ -50,8 +50,8 @@ class MonsterPanel extends StatelessWidget {
         : _distanceMeters(
             location.latitude,
             location.longitude,
-            monster.latitude,
-            monster.longitude,
+            encounter.latitude,
+            encounter.longitude,
           );
     final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
@@ -71,7 +71,9 @@ class MonsterPanel extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    mysteryState ? 'Mysterious Monster' : monster.name,
+                    mysteryState
+                        ? 'Mysterious Monster Encounter'
+                        : encounter.name,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -94,9 +96,7 @@ class MonsterPanel extends StatelessWidget {
                         child: Image.network(
                           mysteryState
                               ? _monsterMysteryImageUrl
-                              : (monster.thumbnailUrl.isNotEmpty
-                                    ? monster.thumbnailUrl
-                                    : monster.imageUrl),
+                              : _encounterImageUrl,
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               mysteryState
@@ -134,7 +134,8 @@ class MonsterPanel extends StatelessWidget {
                         if (!mysteryState)
                           _InfoChip(
                             icon: Icons.stars,
-                            label: 'Level ${monster.level}',
+                            label:
+                                '${encounter.monsters.length.clamp(1, 9)} monster${encounter.monsters.length == 1 ? '' : 's'}',
                           ),
                       ],
                     ),
@@ -144,14 +145,32 @@ class MonsterPanel extends StatelessWidget {
                         'This encounter remains a mystery until you are close enough to investigate.',
                         style: theme.textTheme.bodyMedium,
                       ),
-                    if (!mysteryState && monster.description.trim().isNotEmpty)
+                    if (!mysteryState &&
+                        encounter.description.trim().isNotEmpty)
                       Text(
-                        monster.description,
+                        encounter.description,
                         style: theme.textTheme.bodyMedium,
                       ),
                     if (!mysteryState) ...[
-                      if (monster.description.trim().isNotEmpty)
+                      if (encounter.description.trim().isNotEmpty)
                         const SizedBox(height: 12),
+                      if (encounter.monsters.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: encounter.monsters
+                                .map(
+                                  (monster) => _InfoChip(
+                                    icon: Icons.pets,
+                                    label:
+                                        '${monster.name} (Lv ${monster.level})',
+                                  ),
+                                )
+                                .toList(growable: false),
+                          ),
+                        ),
                       FilledButton.icon(
                         onPressed: canFight ? onFight : null,
                         icon: const Icon(Icons.sports_martial_arts),
@@ -166,6 +185,20 @@ class MonsterPanel extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String get _encounterImageUrl {
+    final thumb = encounter.thumbnailUrl.trim();
+    if (thumb.isNotEmpty) return thumb;
+    final image = encounter.imageUrl.trim();
+    if (image.isNotEmpty) return image;
+    if (encounter.monsters.isNotEmpty) {
+      final monsterThumb = encounter.monsters.first.thumbnailUrl.trim();
+      if (monsterThumb.isNotEmpty) return monsterThumb;
+      final monsterImage = encounter.monsters.first.imageUrl.trim();
+      if (monsterImage.isNotEmpty) return monsterImage;
+    }
+    return '';
   }
 }
 

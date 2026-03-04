@@ -74,6 +74,27 @@ type MonsterRecord = {
   itemRewards: MonsterRewardItem[];
 };
 
+type MonsterEncounterMemberRecord = {
+  slot: number;
+  monster: MonsterRecord;
+};
+
+type MonsterEncounterRecord = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  zoneId: string;
+  latitude: number;
+  longitude: number;
+  monsterCount: number;
+  members: MonsterEncounterMemberRecord[];
+  monsters: MonsterRecord[];
+};
+
 type InventoryItemLite = {
   id: number;
   name: string;
@@ -154,6 +175,17 @@ type MonsterFormState = {
   rewardExperience: string;
   rewardGold: string;
   itemRewards: MonsterFormItem[];
+};
+
+type MonsterEncounterFormState = {
+  name: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  zoneId: string;
+  latitude: string;
+  longitude: string;
+  monsterIds: string[];
 };
 
 const parseIntSafe = (value: string, fallback = 0): number => {
@@ -297,6 +329,49 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
     .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
 });
 
+const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
+  name: '',
+  description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  zoneId: '',
+  latitude: '',
+  longitude: '',
+  monsterIds: [],
+});
+
+const monsterEncounterFormFromRecord = (
+  encounter: MonsterEncounterRecord
+): MonsterEncounterFormState => ({
+  name: encounter.name ?? '',
+  description: encounter.description ?? '',
+  imageUrl: encounter.imageUrl ?? '',
+  thumbnailUrl: encounter.thumbnailUrl ?? '',
+  zoneId: encounter.zoneId ?? '',
+  latitude: String(encounter.latitude ?? ''),
+  longitude: String(encounter.longitude ?? ''),
+  monsterIds: (encounter.members ?? [])
+    .slice()
+    .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+    .map((member) => member.monster?.id)
+    .filter((id): id is string => Boolean(id)),
+});
+
+const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
+  name: form.name.trim(),
+  description: form.description.trim(),
+  imageUrl: form.imageUrl.trim(),
+  thumbnailUrl: form.thumbnailUrl.trim(),
+  zoneId: form.zoneId.trim(),
+  latitude: parseFloatSafe(form.latitude, 0),
+  longitude: parseFloatSafe(form.longitude, 0),
+  monsterIds: Array.from(
+    new Set(
+      form.monsterIds.map((id) => id.trim()).filter((id) => id.length > 0)
+    )
+  ).slice(0, 9),
+});
+
 const formatGenerationStatus = (status?: string) => {
   switch ((status || '').trim()) {
     case 'queued':
@@ -360,6 +435,7 @@ export const Monsters = () => {
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MonsterTemplateRecord[]>([]);
   const [records, setRecords] = useState<MonsterRecord[]>([]);
+  const [encounters, setEncounters] = useState<MonsterEncounterRecord[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [query, setQuery] = useState('');
@@ -377,6 +453,12 @@ export const Monsters = () => {
   );
   const [monsterForm, setMonsterForm] =
     useState<MonsterFormState>(emptyMonsterForm());
+  const [showEncounterModal, setShowEncounterModal] = useState(false);
+  const [editingEncounter, setEditingEncounter] =
+    useState<MonsterEncounterRecord | null>(null);
+  const [encounterForm, setEncounterForm] = useState<MonsterEncounterFormState>(
+    emptyMonsterEncounterForm()
+  );
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
     null
   );
@@ -430,6 +512,11 @@ export const Monsters = () => {
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
   const formLatitudeRef = React.useRef(monsterForm.latitude);
   const formLongitudeRef = React.useRef(monsterForm.longitude);
+  const encounterMapContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const encounterMapRef = React.useRef<mapboxgl.Map | null>(null);
+  const encounterMarkerRef = React.useRef<mapboxgl.Marker | null>(null);
+  const encounterLatitudeRef = React.useRef(encounterForm.latitude);
+  const encounterLongitudeRef = React.useRef(encounterForm.longitude);
 
   const load = useCallback(
     async (suppressLoading = false) => {
@@ -438,20 +525,27 @@ export const Monsters = () => {
           setLoading(true);
         }
         setError(null);
-        const [templateResp, monsterResp, spellResp, inventoryResp] =
-          await Promise.all([
-            apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
-            apiClient.get<MonsterRecord[]>('/sonar/monsters'),
-            apiClient.get<Spell[]>('/sonar/spells'),
-            apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
-          ]);
+        const [
+          templateResp,
+          monsterResp,
+          encounterResp,
+          spellResp,
+          inventoryResp,
+        ] = await Promise.all([
+          apiClient.get<MonsterTemplateRecord[]>('/sonar/monster-templates'),
+          apiClient.get<MonsterRecord[]>('/sonar/monsters'),
+          apiClient.get<MonsterEncounterRecord[]>('/sonar/monster-encounters'),
+          apiClient.get<Spell[]>('/sonar/spells'),
+          apiClient.get<InventoryItemLite[]>('/sonar/inventory-items'),
+        ]);
         setTemplates(Array.isArray(templateResp) ? templateResp : []);
         setRecords(Array.isArray(monsterResp) ? monsterResp : []);
+        setEncounters(Array.isArray(encounterResp) ? encounterResp : []);
         setSpells(Array.isArray(spellResp) ? spellResp : []);
         setInventoryItems(Array.isArray(inventoryResp) ? inventoryResp : []);
       } catch (err) {
-        console.error('Failed to load monsters/templates', err);
-        setError('Failed to load monsters/templates.');
+        console.error('Failed to load monsters/templates/encounters', err);
+        setError('Failed to load monsters/templates/encounters.');
       } finally {
         if (!suppressLoading) {
           setLoading(false);
@@ -487,6 +581,11 @@ export const Monsters = () => {
     formLatitudeRef.current = monsterForm.latitude;
     formLongitudeRef.current = monsterForm.longitude;
   }, [monsterForm.latitude, monsterForm.longitude]);
+
+  useEffect(() => {
+    encounterLatitudeRef.current = encounterForm.latitude;
+    encounterLongitudeRef.current = encounterForm.longitude;
+  }, [encounterForm.latitude, encounterForm.longitude]);
 
   const zoneNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -596,6 +695,30 @@ export const Monsters = () => {
       );
     });
   }, [query, records, zoneNameById, templateNameById]);
+
+  const filteredEncounters = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return encounters;
+    return encounters.filter((encounter) => {
+      const zoneName = zoneNameById.get(encounter.zoneId) ?? '';
+      const memberNames = (encounter.members ?? [])
+        .map((member) => member.monster?.name ?? '')
+        .join(' ');
+      return (
+        encounter.name.toLowerCase().includes(normalized) ||
+        encounter.description.toLowerCase().includes(normalized) ||
+        zoneName.toLowerCase().includes(normalized) ||
+        memberNames.toLowerCase().includes(normalized)
+      );
+    });
+  }, [encounters, query, zoneNameById]);
+
+  const encounterMonsterOptions = useMemo(() => {
+    if (!encounterForm.zoneId) {
+      return records;
+    }
+    return records.filter((monster) => monster.zoneId === encounterForm.zoneId);
+  }, [encounterForm.zoneId, records]);
 
   const openCreateTemplate = () => {
     setEditingTemplate(null);
@@ -771,6 +894,90 @@ export const Monsters = () => {
     setMonsterForm(emptyMonsterForm());
   };
 
+  const openCreateEncounter = () => {
+    const defaultZoneId = zones[0]?.id ?? '';
+    const defaultMonsters = records
+      .filter((monster) =>
+        defaultZoneId ? monster.zoneId === defaultZoneId : true
+      )
+      .slice(0, 3)
+      .map((monster) => monster.id);
+    setEditingEncounter(null);
+    setEncounterForm({
+      ...emptyMonsterEncounterForm(),
+      zoneId: defaultZoneId,
+      monsterIds: defaultMonsters,
+    });
+    setShowEncounterModal(true);
+  };
+
+  const openEditEncounter = (encounter: MonsterEncounterRecord) => {
+    setEditingEncounter(encounter);
+    setEncounterForm(monsterEncounterFormFromRecord(encounter));
+    setShowEncounterModal(true);
+  };
+
+  const closeEncounterModal = () => {
+    setShowEncounterModal(false);
+    setEditingEncounter(null);
+    setEncounterForm(emptyMonsterEncounterForm());
+  };
+
+  const saveEncounter = async () => {
+    try {
+      const payload = monsterEncounterPayloadFromForm(encounterForm);
+      if (!payload.zoneId) {
+        alert('Zone is required.');
+        return;
+      }
+      if (payload.monsterIds.length < 1 || payload.monsterIds.length > 9) {
+        alert('Encounter must include between 1 and 9 monsters.');
+        return;
+      }
+
+      if (editingEncounter) {
+        const updated = await apiClient.put<MonsterEncounterRecord>(
+          `/sonar/monster-encounters/${editingEncounter.id}`,
+          payload
+        );
+        setEncounters((prev) =>
+          prev.map((entry) => (entry.id === updated.id ? updated : entry))
+        );
+      } else {
+        const created = await apiClient.post<MonsterEncounterRecord>(
+          '/sonar/monster-encounters',
+          payload
+        );
+        setEncounters((prev) => [created, ...prev]);
+      }
+      closeEncounterModal();
+    } catch (err) {
+      console.error('Failed to save monster encounter', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to save monster encounter.';
+      alert(message);
+    }
+  };
+
+  const deleteEncounter = async (encounter: MonsterEncounterRecord) => {
+    if (!window.confirm(`Delete encounter "${encounter.name}"?`)) return;
+    try {
+      await apiClient.delete(`/sonar/monster-encounters/${encounter.id}`);
+      setEncounters((prev) =>
+        prev.filter((entry) => entry.id !== encounter.id)
+      );
+    } catch (err) {
+      console.error('Failed to delete monster encounter', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete monster encounter.';
+      alert(message);
+    }
+  };
+
   const saveMonster = async () => {
     try {
       const payload = monsterPayloadFromForm(monsterForm);
@@ -920,6 +1127,17 @@ export const Monsters = () => {
     []
   );
 
+  const setEncounterLocation = useCallback(
+    (latitude: number, longitude: number) => {
+      setEncounterForm((prev) => ({
+        ...prev,
+        latitude: latitude.toFixed(6),
+        longitude: longitude.toFixed(6),
+      }));
+    },
+    []
+  );
+
   const handleUseCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported in this browser.');
@@ -938,6 +1156,28 @@ export const Monsters = () => {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   }, [setMonsterLocation]);
+
+  const handleUseCurrentEncounterLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported in this browser.');
+      return;
+    }
+    setGeoLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setGeoLoading(false);
+        setEncounterLocation(
+          position.coords.latitude,
+          position.coords.longitude
+        );
+      },
+      (error) => {
+        setGeoLoading(false);
+        alert(`Unable to get current location: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, [setEncounterLocation]);
 
   useEffect(() => {
     if (!showMonsterModal) return;
@@ -1005,6 +1245,73 @@ export const Monsters = () => {
 
     mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
   }, [monsterForm.latitude, monsterForm.longitude, showMonsterModal]);
+
+  useEffect(() => {
+    if (!showEncounterModal) return;
+    if (!encounterMapContainerRef.current) return;
+    if (!mapboxgl.accessToken) return;
+    if (encounterMapRef.current) return;
+
+    const parsedLat = Number.parseFloat(encounterLatitudeRef.current);
+    const parsedLng = Number.parseFloat(encounterLongitudeRef.current);
+    const selectedZone = zones.find((zone) => zone.id === encounterForm.zoneId);
+    const zoneLat = selectedZone
+      ? Number.parseFloat(String(selectedZone.latitude ?? ''))
+      : Number.NaN;
+    const zoneLng = selectedZone
+      ? Number.parseFloat(String(selectedZone.longitude ?? ''))
+      : Number.NaN;
+
+    const center: [number, number] =
+      Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+        ? [parsedLng, parsedLat]
+        : Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
+          ? [zoneLng, zoneLat]
+          : [-73.98513, 40.7589];
+
+    const map = new mapboxgl.Map({
+      container: encounterMapContainerRef.current,
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center,
+      zoom: 13,
+    });
+
+    map.on('click', (event) => {
+      setEncounterLocation(event.lngLat.lat, event.lngLat.lng);
+    });
+
+    encounterMapRef.current = map;
+
+    return () => {
+      encounterMarkerRef.current?.remove();
+      encounterMarkerRef.current = null;
+      map.remove();
+      encounterMapRef.current = null;
+    };
+  }, [encounterForm.zoneId, setEncounterLocation, showEncounterModal, zones]);
+
+  useEffect(() => {
+    if (!showEncounterModal) return;
+    if (!encounterMapRef.current) return;
+
+    const lat = Number.parseFloat(encounterForm.latitude);
+    const lng = Number.parseFloat(encounterForm.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      encounterMarkerRef.current?.remove();
+      encounterMarkerRef.current = null;
+      return;
+    }
+
+    if (!encounterMarkerRef.current) {
+      encounterMarkerRef.current = new mapboxgl.Marker({ color: '#b91c1c' })
+        .setLngLat([lng, lat])
+        .addTo(encounterMapRef.current);
+    } else {
+      encounterMarkerRef.current.setLngLat([lng, lat]);
+    }
+
+    encounterMapRef.current.easeTo({ center: [lng, lat], duration: 350 });
+  }, [encounterForm.latitude, encounterForm.longitude, showEncounterModal]);
 
   const openMonsterImagePreview = (monster: MonsterRecord) => {
     const url = monster.imageUrl || monster.thumbnailUrl;
@@ -1098,7 +1405,11 @@ export const Monsters = () => {
     } finally {
       setMonsterUndiscoveredBusy(false);
     }
-  }, [apiClient, monsterUndiscoveredPrompt, refreshUndiscoveredMonsterIconStatus]);
+  }, [
+    apiClient,
+    monsterUndiscoveredPrompt,
+    refreshUndiscoveredMonsterIconStatus,
+  ]);
 
   const handleDeleteUndiscoveredMonsterIcon = useCallback(async () => {
     try {
@@ -1191,6 +1502,12 @@ export const Monsters = () => {
                 Create Template
               </button>
               <button
+                className="qa-btn qa-btn-secondary"
+                onClick={openCreateEncounter}
+              >
+                Create Encounter
+              </button>
+              <button
                 className="qa-btn qa-btn-primary"
                 onClick={openCreateMonster}
               >
@@ -1208,14 +1525,17 @@ export const Monsters = () => {
                 {formatBulkTemplateStatus(bulkTemplateJob.status)}
               </span>
               <span>
-                Progress: {bulkTemplateJob.createdCount}/{bulkTemplateJob.totalCount}
+                Progress: {bulkTemplateJob.createdCount}/
+                {bulkTemplateJob.totalCount}
               </span>
               <span>Job: {bulkTemplateJob.jobId}</span>
               <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
             </div>
           )}
           {bulkTemplateMessage && (
-            <p className="mt-2 text-sm text-emerald-700">{bulkTemplateMessage}</p>
+            <p className="mt-2 text-sm text-emerald-700">
+              {bulkTemplateMessage}
+            </p>
           )}
           {bulkTemplateError && (
             <p className="mt-2 text-sm text-red-700">{bulkTemplateError}</p>
@@ -1556,6 +1876,102 @@ export const Monsters = () => {
                           <button
                             className="qa-btn qa-btn-danger"
                             onClick={() => deleteMonster(monster)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="qa-card">
+              <h2 className="text-lg font-semibold mb-3">Monster Encounters</h2>
+              {filteredEncounters.length === 0 ? (
+                <p className="text-sm text-gray-600">No encounters found.</p>
+              ) : (
+                <div className="grid gap-4">
+                  {filteredEncounters.map((encounter) => (
+                    <div
+                      key={encounter.id}
+                      className="border border-gray-200 rounded-md p-3 bg-white"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                        <div className="flex gap-3 min-w-0">
+                          {encounter.thumbnailUrl || encounter.imageUrl ? (
+                            <button
+                              type="button"
+                              className="block"
+                              onClick={() =>
+                                setImagePreview({
+                                  url:
+                                    encounter.thumbnailUrl ||
+                                    encounter.imageUrl,
+                                  alt: `${encounter.name || 'Encounter'} image`,
+                                })
+                              }
+                              title="Open image preview"
+                            >
+                              <img
+                                src={
+                                  encounter.thumbnailUrl || encounter.imageUrl
+                                }
+                                alt={encounter.name}
+                                className="w-16 h-16 rounded object-cover border border-gray-200 cursor-zoom-in"
+                              />
+                            </button>
+                          ) : (
+                            <div className="w-16 h-16 rounded bg-gray-200 flex items-center justify-center text-gray-500">
+                              ?
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-lg truncate">
+                              {encounter.name}
+                            </h3>
+                            <p className="text-sm text-gray-600">
+                              Zone:{' '}
+                              {zoneNameById.get(encounter.zoneId) ??
+                                encounter.zoneId}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Monsters:{' '}
+                              {encounter.monsterCount ||
+                                encounter.members?.length ||
+                                0}
+                            </p>
+                            {encounter.description ? (
+                              <p className="text-sm text-gray-600 mt-1">
+                                {encounter.description}
+                              </p>
+                            ) : null}
+                            <p className="text-xs text-gray-500 mt-1">
+                              Members:{' '}
+                              {(encounter.members ?? [])
+                                .slice()
+                                .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+                                .map(
+                                  (member) =>
+                                    member.monster?.name ||
+                                    member.monster?.id ||
+                                    'Unknown'
+                                )
+                                .join(', ') || 'None'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="qa-btn qa-btn-secondary"
+                            onClick={() => openEditEncounter(encounter)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="qa-btn qa-btn-danger"
+                            onClick={() => deleteEncounter(encounter)}
                           >
                             Delete
                           </button>
@@ -2138,6 +2554,269 @@ export const Monsters = () => {
                 </button>
                 <button className="qa-btn qa-btn-primary" onClick={saveMonster}>
                   Save Monster
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showEncounterModal ? (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[92vh] overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">
+                {editingEncounter
+                  ? 'Edit Monster Encounter'
+                  : 'Create Monster Encounter'}
+              </h2>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={closeEncounterModal}
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Name (optional)</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.name}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        name: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Zone</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.zoneId}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => {
+                        const zoneId = event.target.value;
+                        const zoneMonsters = records
+                          .filter((monster) => monster.zoneId === zoneId)
+                          .slice(0, 9)
+                          .map((monster) => monster.id);
+                        const selectedInZone = prev.monsterIds.filter((id) =>
+                          records.some(
+                            (monster) =>
+                              monster.id === id && monster.zoneId === zoneId
+                          )
+                        );
+                        return {
+                          ...prev,
+                          zoneId,
+                          monsterIds:
+                            selectedInZone.length > 0
+                              ? selectedInZone
+                              : zoneMonsters.slice(0, 3),
+                        };
+                      })
+                    }
+                  >
+                    <option value="">Select zone</option>
+                    {zones.map((zone) => (
+                      <option key={zone.id} value={zone.id}>
+                        {zone.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="block text-sm mb-1">Description</span>
+                <textarea
+                  className="w-full border border-gray-300 rounded-md p-2"
+                  rows={3}
+                  value={encounterForm.description}
+                  onChange={(event) =>
+                    setEncounterForm((prev) => ({
+                      ...prev,
+                      description: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <div className="grid md:grid-cols-3 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Latitude</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.latitude}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        latitude: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Longitude</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.longitude}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        longitude: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="block">
+                  <span className="block text-sm mb-1">Tools</span>
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-secondary"
+                    onClick={handleUseCurrentEncounterLocation}
+                    disabled={geoLoading}
+                  >
+                    {geoLoading
+                      ? 'Locating...'
+                      : 'Use Current Browser Location'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-sm">
+                <div className="flex items-center justify-between mb-1">
+                  <span>Map Location Picker</span>
+                  <span className="text-xs text-gray-500">
+                    Click map to set latitude/longitude
+                  </span>
+                </div>
+                {mapboxgl.accessToken ? (
+                  <div
+                    ref={encounterMapContainerRef}
+                    className="w-full h-64 border border-gray-300 rounded-md"
+                  />
+                ) : (
+                  <div className="w-full border border-gray-300 rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                    unavailable.
+                  </div>
+                )}
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Image URL</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.imageUrl}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        imageUrl: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Thumbnail URL</span>
+                  <input
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={encounterForm.thumbnailUrl}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        thumbnailUrl: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="border border-gray-200 rounded-md p-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium">Encounter Monsters (1-9)</h3>
+                  <span className="text-xs text-gray-500">
+                    Selected: {encounterForm.monsterIds.length}
+                  </span>
+                </div>
+                {encounterForm.zoneId ? null : (
+                  <p className="mt-2 text-sm text-amber-700">
+                    Select a zone first.
+                  </p>
+                )}
+                {encounterForm.zoneId &&
+                encounterMonsterOptions.length === 0 ? (
+                  <p className="mt-2 text-sm text-gray-500">
+                    No monsters available for this zone.
+                  </p>
+                ) : null}
+                {encounterForm.zoneId && encounterMonsterOptions.length > 0 ? (
+                  <div className="mt-2 max-h-56 overflow-y-auto space-y-2">
+                    {encounterMonsterOptions.map((monster) => {
+                      const checked = encounterForm.monsterIds.includes(
+                        monster.id
+                      );
+                      return (
+                        <label
+                          key={monster.id}
+                          className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm"
+                        >
+                          <span>
+                            {monster.name} (Lv {monster.level})
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              setEncounterForm((prev) => {
+                                if (event.target.checked) {
+                                  if (prev.monsterIds.length >= 9) {
+                                    alert(
+                                      'An encounter can include at most 9 monsters.'
+                                    );
+                                    return prev;
+                                  }
+                                  return {
+                                    ...prev,
+                                    monsterIds: [
+                                      ...prev.monsterIds,
+                                      monster.id,
+                                    ],
+                                  };
+                                }
+                                return {
+                                  ...prev,
+                                  monsterIds: prev.monsterIds.filter(
+                                    (id) => id !== monster.id
+                                  ),
+                                };
+                              })
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  onClick={closeEncounterModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="qa-btn qa-btn-primary"
+                  onClick={saveEncounter}
+                >
+                  Save Encounter
                 </button>
               </div>
             </div>

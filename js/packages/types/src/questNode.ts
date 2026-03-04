@@ -14,6 +14,7 @@ export interface QuestNode {
   pointOfInterestId?: string | null;
   scenarioId?: string | null;
   monsterId?: string | null;
+  monsterEncounterId?: string | null;
   challengeId?: string | null;
   polygon?: string | null;
   polygonPoints?: [number, number][];

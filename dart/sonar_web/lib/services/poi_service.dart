@@ -70,12 +70,34 @@ class PoiService {
         .toList();
   }
 
+  Future<List<MonsterEncounter>> getMonsterEncountersForZone(
+    String zoneId,
+  ) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/monster-encounters',
+    );
+    return list
+        .map((e) => MonsterEncounter.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Monster?> getMonsterById(String monsterId) async {
     try {
       final data = await _api.get<Map<String, dynamic>>(
         '/sonar/monsters/$monsterId',
       );
       return Monster.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<MonsterEncounter?> getMonsterEncounterById(String encounterId) async {
+    try {
+      final data = await _api.get<Map<String, dynamic>>(
+        '/sonar/monster-encounters/$encounterId',
+      );
+      return MonsterEncounter.fromJson(data);
     } catch (_) {
       return null;
     }

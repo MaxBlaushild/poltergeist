@@ -50,10 +50,20 @@ class _BattleItemChoice {
   );
 }
 
-class MonsterBattleDialog extends StatefulWidget {
-  const MonsterBattleDialog({super.key, required this.monster});
+class _EncounterEnemyState {
+  _EncounterEnemyState({required this.monster, required this.currentHealth});
 
   final Monster monster;
+  int currentHealth;
+
+  int get maxHealth => math.max(1, monster.maxHealth);
+  bool get isDefeated => currentHealth <= 0;
+}
+
+class MonsterBattleDialog extends StatefulWidget {
+  const MonsterBattleDialog({super.key, required this.encounter});
+
+  final MonsterEncounter encounter;
 
   @override
   State<MonsterBattleDialog> createState() => _MonsterBattleDialogState();
@@ -72,8 +82,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late final int _playerMaxMana;
   late int _playerHealth;
   late int _playerMana;
-  late final int _monsterMaxHealth;
-  late int _monsterHealth;
+  late final List<_EncounterEnemyState> _enemies;
+  int _activeEnemyIndex = 0;
   late final String _playerFrontSpriteUrl;
   late final String _playerBackSpriteUrl;
   late final bool _hasTrueBackSprite;
@@ -113,22 +123,76 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     _playerMaxMana = math.max(0, statsProvider.maxMana);
     _playerHealth = math.max(1, statsProvider.health);
     _playerMana = math.max(0, statsProvider.mana);
-    _monsterMaxHealth = math.max(1, widget.monster.maxHealth);
-    _monsterHealth = _monsterMaxHealth;
+    final encounterMonsters = widget.encounter.monsters.isNotEmpty
+        ? widget.encounter.monsters
+        : widget.encounter.members
+              .map((member) => member.monster)
+              .where((monster) => monster.id.isNotEmpty)
+              .toList(growable: false);
+    _enemies = encounterMonsters
+        .take(9)
+        .map(
+          (monster) => _EncounterEnemyState(
+            monster: monster,
+            currentHealth: math.max(1, monster.maxHealth),
+          ),
+        )
+        .toList(growable: false);
+    if (_enemies.isEmpty) {
+      _enemies.add(
+        _EncounterEnemyState(
+          monster: const Monster(
+            id: '',
+            name: 'Unknown Monster',
+            zoneId: '',
+            latitude: 0,
+            longitude: 0,
+          ),
+          currentHealth: 1,
+        ),
+      );
+    }
+    _activeEnemyIndex = 0;
     _playerFrontSpriteUrl = (user?.profilePictureUrl ?? '').trim();
     _playerBackSpriteUrl = (user?.backProfilePictureUrl ?? '').trim();
     _hasTrueBackSprite = _playerBackSpriteUrl.isNotEmpty;
     _selectedCommandKey = 'root:Attack';
-    _battleLog.add('A wild ${widget.monster.name} appears!');
+    if (_enemies.length == 1) {
+      _battleLog.add('A wild ${_enemies.first.monster.name} appears!');
+    } else {
+      _battleLog.add('A hostile group of ${_enemies.length} monsters appears!');
+    }
     _battleLog.add('Choose a command.');
     unawaited(_loadItemChoices());
   }
 
   bool get _canAct => _playerTurn && !_busy && !_battleOver;
 
-  String get _monsterSpriteUrl => widget.monster.thumbnailUrl.isNotEmpty
-      ? widget.monster.thumbnailUrl
-      : widget.monster.imageUrl;
+  List<_EncounterEnemyState> get _aliveEnemies =>
+      _enemies.where((enemy) => !enemy.isDefeated).toList(growable: false);
+
+  _EncounterEnemyState? get _activeEnemy {
+    if (_activeEnemyIndex >= 0 &&
+        _activeEnemyIndex < _enemies.length &&
+        !_enemies[_activeEnemyIndex].isDefeated) {
+      return _enemies[_activeEnemyIndex];
+    }
+    for (var i = 0; i < _enemies.length; i++) {
+      if (!_enemies[i].isDefeated) {
+        _activeEnemyIndex = i;
+        return _enemies[i];
+      }
+    }
+    return null;
+  }
+
+  String get _monsterSpriteUrl {
+    final enemy = _activeEnemy;
+    if (enemy == null) return '';
+    return enemy.monster.thumbnailUrl.isNotEmpty
+        ? enemy.monster.thumbnailUrl
+        : enemy.monster.imageUrl;
+  }
 
   String get _playerSpriteUrl =>
       _hasTrueBackSprite ? _playerBackSpriteUrl : _playerFrontSpriteUrl;
@@ -168,13 +232,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return _rollDamage(minDamage, maxDamage);
   }
 
-  int _monsterAttackDamage() {
-    final swipes = math.max(1, widget.monster.attackSwipesPerAttack);
+  int _monsterAttackDamage(Monster monster) {
+    final swipes = math.max(1, monster.attackSwipesPerAttack);
     var totalDamage = 0;
     for (var i = 0; i < swipes; i++) {
       totalDamage += _rollDamage(
-        widget.monster.attackDamageMin,
-        widget.monster.attackDamageMax,
+        monster.attackDamageMin,
+        monster.attackDamageMax,
       );
     }
     return math.max(1, totalDamage);
@@ -355,18 +419,33 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   }) async {
     if (!_canAct) return;
 
+    final targetEnemy = _activeEnemy;
+    var targetName = 'the enemy';
+    if (targetEnemy != null) {
+      targetName = targetEnemy.monster.name;
+      if (damageToMonster > 0) {
+        targetEnemy.currentHealth = math.max(
+          0,
+          targetEnemy.currentHealth - damageToMonster,
+        );
+      }
+    }
+
     setState(() {
       _busy = true;
       _menuView = _BattleMenuView.root;
       _selectedCommandKey = 'root:Attack';
-      _monsterHealth = math.max(0, _monsterHealth - damageToMonster);
       _playerHealth = (_playerHealth + playerHealthDelta)
           .clamp(0, _playerMaxHealth)
           .toInt();
       _playerMana = (_playerMana + playerManaDelta)
           .clamp(0, _playerMaxMana)
           .toInt();
-      _battleLog.add(message);
+      if (damageToMonster > 0) {
+        _battleLog.add('$message (Target: $targetName)');
+      } else {
+        _battleLog.add(message);
+      }
     });
     if (damageToMonster > 0) {
       unawaited(
@@ -387,10 +466,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       );
     }
 
-    if (_monsterHealth <= 0) {
+    if (_aliveEnemies.isEmpty) {
       await _finishBattle(
         MonsterBattleOutcome.victory,
-        'You defeated ${widget.monster.name}!',
+        _enemies.length == 1
+            ? 'You defeated ${_enemies.first.monster.name}!'
+            : 'You defeated the entire encounter!',
       );
       return;
     }
@@ -404,28 +485,36 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   Future<void> _monsterTurn() async {
     await Future<void>.delayed(const Duration(milliseconds: 420));
     if (!mounted || _battleOver) return;
+    for (var i = 0; i < _enemies.length; i++) {
+      final enemy = _enemies[i];
+      if (enemy.isDefeated) continue;
 
-    final damage = _monsterAttackDamage();
-    final weaponName = widget.monster.weaponInventoryItemName.trim().isNotEmpty
-        ? widget.monster.weaponInventoryItemName.trim()
-        : 'its weapon';
+      final damage = _monsterAttackDamage(enemy.monster);
+      final weaponName = enemy.monster.weaponInventoryItemName.trim().isNotEmpty
+          ? enemy.monster.weaponInventoryItemName.trim()
+          : 'its weapon';
 
-    setState(() {
-      _playerHealth = math.max(0, _playerHealth - damage);
-      _battleLog.add(
-        '${widget.monster.name} attacks with $weaponName for $damage damage.',
+      setState(() {
+        _activeEnemyIndex = i;
+        _playerHealth = math.max(0, _playerHealth - damage);
+        _battleLog.add(
+          '${enemy.monster.name} attacks with $weaponName for $damage damage.',
+        );
+      });
+      unawaited(
+        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
       );
-    });
-    unawaited(
-      _playSpriteFx(targetMonster: false, amount: damage, healing: false),
-    );
 
-    if (_playerHealth <= 0) {
-      await _finishBattle(
-        MonsterBattleOutcome.defeat,
-        'You were defeated by ${widget.monster.name}.',
-      );
-      return;
+      if (_playerHealth <= 0) {
+        await _finishBattle(
+          MonsterBattleOutcome.defeat,
+          'You were defeated by ${enemy.monster.name}.',
+        );
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted || _battleOver) return;
     }
 
     setState(() {
@@ -459,8 +548,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   Future<void> _attack() async {
     if (!_canAct) return;
     final damage = _playerAttackDamage();
+    final target = _activeEnemy;
     await _resolvePlayerAction(
-      message: '$_playerName attacks for $damage damage.',
+      message: target == null
+          ? '$_playerName attacks for $damage damage.'
+          : '$_playerName attacks ${target.monster.name} for $damage damage.',
       damageToMonster: damage,
     );
   }
@@ -644,6 +736,52 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
+  Widget _buildEnemyRoster(ThemeData theme) {
+    if (_enemies.length <= 1) {
+      return const SizedBox.shrink();
+    }
+    final aliveCount = _aliveEnemies.length;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Enemies Remaining: $aliveCount/${_enemies.length}',
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ..._enemies.map((enemy) {
+            final isActive = identical(enemy, _activeEnemy);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${enemy.isDefeated ? 'X' : '-'} ${enemy.monster.name} (${enemy.currentHealth}/${enemy.maxHealth} HP)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
+                  color: enemy.isDefeated
+                      ? theme.colorScheme.onSurface.withValues(alpha: 0.55)
+                      : null,
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSpriteBox({
     required ThemeData theme,
     required String imageUrl,
@@ -792,6 +930,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   }
 
   Widget _buildBattlefield(ThemeData theme) {
+    final activeEnemy = _activeEnemy;
+    final activeEnemyName = activeEnemy?.monster.name ?? widget.encounter.name;
+    final activeEnemyLevel = activeEnemy?.monster.level ?? 1;
+    final activeEnemyHp = activeEnemy?.currentHealth ?? 0;
+    final activeEnemyMaxHp = activeEnemy?.maxHealth ?? 1;
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -823,12 +966,18 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                   children: [
                     SizedBox(
                       width: statusWidth,
-                      child: _buildStatusPanel(
-                        theme: theme,
-                        name: widget.monster.name,
-                        level: widget.monster.level,
-                        currentHp: _monsterHealth,
-                        maxHp: _monsterMaxHealth,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildStatusPanel(
+                            theme: theme,
+                            name: activeEnemyName,
+                            level: activeEnemyLevel,
+                            currentHp: activeEnemyHp,
+                            maxHp: activeEnemyMaxHp,
+                          ),
+                          _buildEnemyRoster(theme),
+                        ],
                       ),
                     ),
                     const Spacer(),

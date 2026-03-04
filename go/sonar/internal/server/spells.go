@@ -64,6 +64,11 @@ type bulkGenerateSpellsRequest struct {
 	EffectMix *jobs.SpellBulkEffectCounts `json:"effectMix"`
 }
 
+type spellProgressionFromPromptRequest struct {
+	Prompt      string `json:"prompt"`
+	AbilityType string `json:"abilityType"`
+}
+
 type generatedAbilityPayload struct {
 	Abilities  []jobs.SpellCreationSpec `json:"abilities"`
 	Spells     []jobs.SpellCreationSpec `json:"spells"`
@@ -122,6 +127,11 @@ var techniqueBulkSeeds = []jobs.SpellCreationSpec{
 }
 
 var spellProgressionLevelBands = []int{10, 25, 50, 70}
+
+const (
+	spellProgressionPromptMinLength = 12
+	spellProgressionPromptMaxLength = 2000
+)
 
 func normalizeSpellAbilityType(value string) models.SpellAbilityType {
 	return models.NormalizeSpellAbilityType(strings.TrimSpace(strings.ToLower(value)))
@@ -508,6 +518,44 @@ func (s *server) getSpellBulkStatus(ctx context.Context, jobID uuid.UUID) (*jobs
 	return &status, nil
 }
 
+func (s *server) setSpellProgressionPromptStatus(ctx context.Context, status jobs.SpellProgressionPromptStatus) error {
+	if s.redisClient == nil {
+		return fmt.Errorf("redis client unavailable")
+	}
+	payload, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	return s.redisClient.Set(
+		ctx,
+		jobs.SpellProgressionPromptStatusKey(status.JobID),
+		payload,
+		jobs.SpellProgressionPromptStatusTTL,
+	).Err()
+}
+
+func (s *server) getSpellProgressionPromptStatus(
+	ctx context.Context,
+	jobID uuid.UUID,
+) (*jobs.SpellProgressionPromptStatus, error) {
+	if s.redisClient == nil {
+		return nil, fmt.Errorf("redis client unavailable")
+	}
+	value, err := s.redisClient.Get(ctx, jobs.SpellProgressionPromptStatusKey(jobID)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var status jobs.SpellProgressionPromptStatus
+	if err := json.Unmarshal([]byte(value), &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
 func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.SpellAbilityType) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -670,6 +718,132 @@ func (s *server) getBulkGenerateSpellsStatus(ctx *gin.Context) {
 	}
 	if status == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "bulk generation job not found"})
+		return
+	}
+	ctx.JSON(http.StatusOK, status)
+}
+
+func (s *server) queueSpellProgressionFromPromptWithType(
+	ctx *gin.Context,
+	forcedType *models.SpellAbilityType,
+) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
+		return
+	}
+	if s.redisClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "redis client unavailable"})
+		return
+	}
+
+	var requestBody spellProgressionFromPromptRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	prompt := strings.TrimSpace(requestBody.Prompt)
+	if len(prompt) < spellProgressionPromptMinLength {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"prompt must be at least %d characters",
+				spellProgressionPromptMinLength,
+			),
+		})
+		return
+	}
+	if len(prompt) > spellProgressionPromptMaxLength {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"prompt must be at most %d characters",
+				spellProgressionPromptMaxLength,
+			),
+		})
+		return
+	}
+
+	abilityType := models.SpellAbilityTypeSpell
+	if forcedType != nil {
+		abilityType = *forcedType
+	} else if strings.TrimSpace(requestBody.AbilityType) != "" {
+		if !models.IsValidSpellAbilityType(requestBody.AbilityType) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "abilityType must be spell or technique"})
+			return
+		}
+		abilityType = models.NormalizeSpellAbilityType(requestBody.AbilityType)
+	}
+
+	jobID := uuid.New()
+	queuedAt := time.Now().UTC()
+	status := jobs.SpellProgressionPromptStatus{
+		JobID:        jobID,
+		Status:       jobs.SpellProgressionPromptStatusQueued,
+		Prompt:       prompt,
+		AbilityType:  string(abilityType),
+		CreatedCount: 0,
+		QueuedAt:     &queuedAt,
+		UpdatedAt:    queuedAt,
+	}
+	if err := s.setSpellProgressionPromptStatus(ctx.Request.Context(), status); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateSpellProgressionFromPromptTaskPayload{
+		JobID:       jobID,
+		Prompt:      prompt,
+		AbilityType: string(abilityType),
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateSpellProgressionFromPromptTaskType, payloadBytes)); err != nil {
+		failedAt := time.Now().UTC()
+		status.Status = jobs.SpellProgressionPromptStatusFailed
+		status.Error = err.Error()
+		status.CompletedAt = &failedAt
+		status.UpdatedAt = failedAt
+		_ = s.setSpellProgressionPromptStatus(ctx.Request.Context(), status)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, status)
+}
+
+func (s *server) queueSpellProgressionFromPrompt(ctx *gin.Context) {
+	abilityType := models.SpellAbilityTypeSpell
+	s.queueSpellProgressionFromPromptWithType(ctx, &abilityType)
+}
+
+func (s *server) queueTechniqueProgressionFromPrompt(ctx *gin.Context) {
+	abilityType := models.SpellAbilityTypeTechnique
+	s.queueSpellProgressionFromPromptWithType(ctx, &abilityType)
+}
+
+func (s *server) getSpellProgressionFromPromptStatus(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	jobID, err := uuid.Parse(ctx.Param("jobId"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
+		return
+	}
+
+	status, err := s.getSpellProgressionPromptStatus(ctx.Request.Context(), jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if status == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "spell progression generation job not found"})
 		return
 	}
 	ctx.JSON(http.StatusOK, status)
@@ -1003,6 +1177,234 @@ func scaleSpellProgressionValue(base int, seedBand int, targetBand int, exponent
 	return scaled
 }
 
+func estimateSpellProgressionMonsterHealth(levelBand int) int {
+	level := normalizeSpellProgressionBand(levelBand)
+	baseConstitution := 12
+	effectiveConstitution := spellMaxInt(1, baseConstitution+level-1)
+	return effectiveConstitution * 10
+}
+
+func spellProgressionBandRatio(levelBand int, ratios map[int]float64) float64 {
+	normalized := normalizeSpellProgressionBand(levelBand)
+	if ratio, ok := ratios[normalized]; ok {
+		return ratio
+	}
+	return ratios[25]
+}
+
+func spellProgressionTargetAmount(effectType models.SpellEffectType, levelBand int) int {
+	normalizedBand := normalizeSpellProgressionBand(levelBand)
+	if effectType == models.SpellEffectTypeDealDamage {
+		return spellMaxInt(1, normalizedBand*5)
+	}
+
+	health := estimateSpellProgressionMonsterHealth(levelBand)
+	if health <= 0 {
+		return 0
+	}
+
+	var ratio float64
+	switch effectType {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		ratio = spellProgressionBandRatio(levelBand, map[int]float64{
+			10: 0.12,
+			25: 0.18,
+			50: 0.28,
+			70: 0.40,
+		})
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		ratio = spellProgressionBandRatio(levelBand, map[int]float64{
+			10: 0.07,
+			25: 0.11,
+			50: 0.17,
+			70: 0.24,
+		})
+	default:
+		return 0
+	}
+	target := int(math.Round(float64(health) * ratio))
+	return spellMaxInt(1, target)
+}
+
+func spellProgressionTargetDamagePerTick(levelBand int) int {
+	directDamageTarget := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, levelBand)
+	return spellMaxInt(1, int(math.Round(float64(directDamageTarget)*0.2)))
+}
+
+func scaleSpellProgressionCombatAmount(
+	base int,
+	effectType models.SpellEffectType,
+	seedBand int,
+	targetBand int,
+) int {
+	if base == 0 {
+		return 0
+	}
+	legacy := scaleSpellProgressionValue(base, seedBand, targetBand, 1.15)
+	target := spellProgressionTargetAmount(effectType, targetBand)
+	if target <= 0 {
+		return legacy
+	}
+	if targetBand > seedBand {
+		return spellMaxInt(legacy, target)
+	}
+	if targetBand < seedBand {
+		if legacy < target {
+			return legacy
+		}
+		return target
+	}
+	return legacy
+}
+
+func scaleSpellProgressionDamagePerTick(base int, seedBand int, targetBand int) int {
+	if base == 0 {
+		return 0
+	}
+	legacy := scaleSpellProgressionValue(base, seedBand, targetBand, 1.05)
+	target := spellProgressionTargetDamagePerTick(targetBand)
+	if target <= 0 {
+		return legacy
+	}
+	if targetBand > seedBand {
+		return spellMaxInt(legacy, target)
+	}
+	if targetBand < seedBand {
+		if legacy < target {
+			return legacy
+		}
+		return target
+	}
+	return legacy
+}
+
+func spellProgressionBandFloor(levelBand int, floors map[int]int) int {
+	normalized := normalizeSpellProgressionBand(levelBand)
+	if floor, ok := floors[normalized]; ok {
+		return floor
+	}
+	return floors[25]
+}
+
+func estimateSpellProgressionPlayerMaxMana(levelBand int) int {
+	level := normalizeSpellProgressionBand(levelBand)
+	if level < 1 {
+		level = 1
+	}
+	levelsGained := level - 1
+	pointsGained := levelsGained * models.CharacterStatPointsPerLevel
+	baseMental := models.CharacterStatBaseValue * 2
+
+	// Assume caster builds allocate a growing share of stat points into INT/WIS.
+	casterShare := 0.42
+	if level > 10 {
+		progress := float64(level-10) / 60.0
+		if progress > 1 {
+			progress = 1
+		}
+		casterShare += progress * 0.13
+	}
+	estimatedMental := float64(baseMental) + (float64(pointsGained) * casterShare)
+	estimatedMana := int(math.Round(estimatedMental * 5.0))
+	return spellMaxInt(20, estimatedMana)
+}
+
+func spellProgressionTargetManaCost(effectType models.SpellEffectType, targetBand int) int {
+	playerMana := estimateSpellProgressionPlayerMaxMana(targetBand)
+
+	switch effectType {
+	case models.SpellEffectTypeDealDamage:
+		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
+			10: 16,
+			25: 36,
+			50: 90,
+			70: 180,
+		})
+		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
+			10: 0.09,
+			25: 0.12,
+			50: 0.17,
+			70: 0.22,
+		})
+		target := int(math.Round(float64(playerMana) * ratio))
+		return spellMaxInt(bandFloor, target)
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
+			10: 14,
+			25: 30,
+			50: 76,
+			70: 155,
+		})
+		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
+			10: 0.08,
+			25: 0.11,
+			50: 0.15,
+			70: 0.19,
+		})
+		target := int(math.Round(float64(playerMana) * ratio))
+		return spellMaxInt(bandFloor, target)
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
+			10: 18,
+			25: 42,
+			50: 105,
+			70: 210,
+		})
+		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
+			10: 0.10,
+			25: 0.14,
+			50: 0.20,
+			70: 0.27,
+		})
+		target := int(math.Round(float64(playerMana) * ratio))
+		return spellMaxInt(bandFloor, target)
+	case models.SpellEffectTypeApplyBeneficialStatus, models.SpellEffectTypeRemoveDetrimental:
+		return spellProgressionBandFloor(targetBand, map[int]int{
+			10: 12,
+			25: 26,
+			50: 64,
+			70: 130,
+		})
+	default:
+		return spellProgressionBandFloor(targetBand, map[int]int{
+			10: 10,
+			25: 22,
+			50: 56,
+			70: 112,
+		})
+	}
+}
+
+func scaleSpellProgressionManaCost(
+	baseMana int,
+	effectType models.SpellEffectType,
+	seedBand int,
+	targetBand int,
+) int {
+	if baseMana <= 0 {
+		return 0
+	}
+	legacy := scaleSpellProgressionValue(baseMana, seedBand, targetBand, 1.25)
+	target := spellProgressionTargetManaCost(effectType, targetBand)
+	if target < 1 {
+		target = 1
+	}
+
+	scaled := legacy
+	if targetBand > seedBand {
+		scaled = spellMaxInt(legacy, target)
+	} else if targetBand < seedBand {
+		scaled = spellMinInt(legacy, target)
+	}
+	if scaled < 1 {
+		return 1
+	}
+	if scaled > 300 {
+		return 300
+	}
+	return scaled
+}
+
 func cloneSpellEffectData(effectData map[string]interface{}) map[string]interface{} {
 	if effectData == nil {
 		return nil
@@ -1027,7 +1429,7 @@ func buildScaledSpellProgressionEffects(
 	for _, effect := range seedEffects {
 		next := models.SpellEffect{
 			Type:             effect.Type,
-			Amount:           scaleSpellProgressionValue(effect.Amount, seedBand, targetBand, 0.9),
+			Amount:           scaleSpellProgressionCombatAmount(effect.Amount, effect.Type, seedBand, targetBand),
 			StatusesToRemove: append(models.StringArray(nil), effect.StatusesToRemove...),
 			EffectData:       cloneSpellEffectData(effect.EffectData),
 		}
@@ -1040,7 +1442,7 @@ func buildScaledSpellProgressionEffects(
 			for _, status := range effect.StatusesToApply {
 				scaledStatus := status
 				scaledStatus.DurationSeconds = spellMaxInt(1, scaleSpellProgressionValue(status.DurationSeconds, seedBand, targetBand, 0.35))
-				scaledStatus.DamagePerTick = scaleSpellProgressionValue(status.DamagePerTick, seedBand, targetBand, 0.8)
+				scaledStatus.DamagePerTick = scaleSpellProgressionDamagePerTick(status.DamagePerTick, seedBand, targetBand)
 				scaledStatus.StrengthMod = scaleSpellProgressionValue(status.StrengthMod, seedBand, targetBand, 0.4)
 				scaledStatus.DexterityMod = scaleSpellProgressionValue(status.DexterityMod, seedBand, targetBand, 0.4)
 				scaledStatus.ConstitutionMod = scaleSpellProgressionValue(status.ConstitutionMod, seedBand, targetBand, 0.4)
@@ -1098,10 +1500,7 @@ func buildSpellProgressionVariant(
 		models.SpellAbilityTypeSpell,
 	)
 	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetBand)
-	manaCost := scaleSpellProgressionValue(spellMaxInt(seed.ManaCost, 1), seedBand, targetBand, 0.85)
-	if manaCost > 100 {
-		manaCost = 100
-	}
+	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetBand)
 	description := fmt.Sprintf("Level %d evolution of %s.", targetBand, strings.TrimSpace(seed.Name))
 	if trimmed := strings.TrimSpace(seed.Description); trimmed != "" {
 		description = fmt.Sprintf("%s %s", description, trimmed)
@@ -1153,6 +1552,13 @@ func absInt(value int) int {
 
 func spellMaxInt(left int, right int) int {
 	if left > right {
+		return left
+	}
+	return right
+}
+
+func spellMinInt(left int, right int) int {
+	if left < right {
 		return left
 	}
 	return right

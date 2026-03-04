@@ -279,3 +279,114 @@ class Monster {
     );
   }
 }
+
+class MonsterEncounterMember {
+  final int slot;
+  final Monster monster;
+
+  const MonsterEncounterMember({required this.slot, required this.monster});
+
+  factory MonsterEncounterMember.fromJson(Map<String, dynamic> json) {
+    final rawMonster = json['monster'];
+    Monster monster;
+    if (rawMonster is Map<String, dynamic>) {
+      monster = Monster.fromJson(rawMonster);
+    } else if (rawMonster is Map) {
+      monster = Monster.fromJson(Map<String, dynamic>.from(rawMonster));
+    } else {
+      monster = const Monster(
+        id: '',
+        name: '',
+        zoneId: '',
+        latitude: 0,
+        longitude: 0,
+      );
+    }
+    return MonsterEncounterMember(
+      slot: (json['slot'] as num?)?.toInt() ?? 0,
+      monster: monster,
+    );
+  }
+}
+
+class MonsterEncounter {
+  final String id;
+  final String name;
+  final String description;
+  final String imageUrl;
+  final String thumbnailUrl;
+  final String zoneId;
+  final double latitude;
+  final double longitude;
+  final int monsterCount;
+  final List<MonsterEncounterMember> members;
+  final List<Monster> monsters;
+
+  const MonsterEncounter({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.imageUrl = '',
+    this.thumbnailUrl = '',
+    required this.zoneId,
+    required this.latitude,
+    required this.longitude,
+    this.monsterCount = 0,
+    this.members = const [],
+    this.monsters = const [],
+  });
+
+  factory MonsterEncounter.fromJson(Map<String, dynamic> json) {
+    final members = <MonsterEncounterMember>[];
+    final rawMembers = json['members'];
+    if (rawMembers is List) {
+      for (final member in rawMembers) {
+        if (member is Map<String, dynamic>) {
+          members.add(MonsterEncounterMember.fromJson(member));
+        } else if (member is Map) {
+          members.add(
+            MonsterEncounterMember.fromJson(Map<String, dynamic>.from(member)),
+          );
+        }
+      }
+    }
+
+    final monsters = <Monster>[];
+    final rawMonsters = json['monsters'];
+    if (rawMonsters is List) {
+      for (final monster in rawMonsters) {
+        if (monster is Map<String, dynamic>) {
+          monsters.add(Monster.fromJson(monster));
+        } else if (monster is Map) {
+          monsters.add(Monster.fromJson(Map<String, dynamic>.from(monster)));
+        }
+      }
+    } else {
+      for (final member in members) {
+        monsters.add(member.monster);
+      }
+    }
+
+    return MonsterEncounter(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      zoneId: json['zoneId']?.toString() ?? '',
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+      monsterCount:
+          (json['monsterCount'] as num?)?.toInt() ??
+          (monsters.isNotEmpty ? monsters.length : members.length),
+      members: members,
+      monsters: monsters,
+    );
+  }
+
+  int get totalRewardExperience =>
+      monsters.fold<int>(0, (sum, monster) => sum + monster.rewardExperience);
+
+  int get totalRewardGold =>
+      monsters.fold<int>(0, (sum, monster) => sum + monster.rewardGold);
+}

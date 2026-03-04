@@ -95,6 +95,7 @@ type client struct {
 	challengeHandle                   *challengeHandle
 	monsterTemplateHandle             *monsterTemplateHandle
 	monsterHandle                     *monsterHandle
+	monsterEncounterHandle            *monsterEncounterHandle
 	monsterBattleHandle               *monsterBattleHandler
 	scenarioHandle                    *scenarioHandle
 	documentHandle                    *documentHandler
@@ -243,6 +244,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		challengeHandle:                   &challengeHandle{db: db},
 		monsterTemplateHandle:             &monsterTemplateHandle{db: db},
 		monsterHandle:                     &monsterHandle{db: db},
+		monsterEncounterHandle:            &monsterEncounterHandle{db: db},
 		monsterBattleHandle:               &monsterBattleHandler{db: db},
 		scenarioHandle:                    &scenarioHandle{db: db},
 		documentHandle:                    &documentHandler{db: db},
@@ -632,6 +634,10 @@ func (c *client) MonsterTemplate() MonsterTemplateHandle {
 
 func (c *client) Monster() MonsterHandle {
 	return c.monsterHandle
+}
+
+func (c *client) MonsterEncounter() MonsterEncounterHandle {
+	return c.monsterEncounterHandle
 }
 
 func (c *client) MonsterBattle() MonsterBattleHandle {

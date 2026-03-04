@@ -260,6 +260,17 @@ type monsterUpsertRequest struct {
 	ItemRewards                 []monsterRewardItemPayload `json:"itemRewards"`
 }
 
+type monsterEncounterUpsertRequest struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	ImageURL     string   `json:"imageUrl"`
+	ThumbnailURL string   `json:"thumbnailUrl"`
+	ZoneID       string   `json:"zoneId"`
+	Latitude     float64  `json:"latitude"`
+	Longitude    float64  `json:"longitude"`
+	MonsterIDs   []string `json:"monsterIds"`
+}
+
 type monsterTemplateResponse struct {
 	ID                    uuid.UUID      `json:"id"`
 	CreatedAt             time.Time      `json:"createdAt"`
@@ -333,6 +344,28 @@ type monsterBattleResponse struct {
 	EndedAt              *time.Time `json:"endedAt,omitempty"`
 }
 
+type monsterEncounterMemberResponse struct {
+	Slot    int             `json:"slot"`
+	Monster monsterResponse `json:"monster"`
+}
+
+type monsterEncounterResponse struct {
+	ID           uuid.UUID                        `json:"id"`
+	CreatedAt    time.Time                        `json:"createdAt"`
+	UpdatedAt    time.Time                        `json:"updatedAt"`
+	Name         string                           `json:"name"`
+	Description  string                           `json:"description"`
+	ImageURL     string                           `json:"imageUrl"`
+	ThumbnailURL string                           `json:"thumbnailUrl"`
+	ZoneID       uuid.UUID                        `json:"zoneId"`
+	Zone         models.Zone                      `json:"zone"`
+	Latitude     float64                          `json:"latitude"`
+	Longitude    float64                          `json:"longitude"`
+	MonsterCount int                              `json:"monsterCount"`
+	Members      []monsterEncounterMemberResponse `json:"members"`
+	Monsters     []monsterResponse                `json:"monsters"`
+}
+
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
 	if battle == nil {
 		return nil
@@ -346,6 +379,56 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		MonsterHealthDeficit: battle.MonsterHealthDeficit,
 		EndedAt:              battle.EndedAt,
 	}
+}
+
+func (s *server) monsterEncounterResponseFrom(
+	ctx context.Context,
+	userID uuid.UUID,
+	encounter *models.MonsterEncounter,
+) (monsterEncounterResponse, error) {
+	members := make([]monsterEncounterMemberResponse, 0, len(encounter.Members))
+	monsters := make([]monsterResponse, 0, len(encounter.Members))
+	for i := range encounter.Members {
+		member := encounter.Members[i]
+		entry, err := s.buildMonsterResponse(ctx, userID, &member.Monster)
+		if err != nil {
+			return monsterEncounterResponse{}, err
+		}
+		members = append(members, monsterEncounterMemberResponse{
+			Slot:    member.Slot,
+			Monster: entry,
+		})
+		monsters = append(monsters, entry)
+	}
+
+	imageURL := strings.TrimSpace(encounter.ImageURL)
+	thumbnailURL := strings.TrimSpace(encounter.ThumbnailURL)
+	if thumbnailURL == "" {
+		thumbnailURL = imageURL
+	}
+	if imageURL == "" && len(monsters) > 0 {
+		imageURL = strings.TrimSpace(monsters[0].ImageURL)
+	}
+	if thumbnailURL == "" && len(monsters) > 0 {
+		thumbnailURL = strings.TrimSpace(monsters[0].ThumbnailURL)
+	}
+
+	return monsterEncounterResponse{
+		ID:           encounter.ID,
+		CreatedAt:    encounter.CreatedAt,
+		UpdatedAt:    encounter.UpdatedAt,
+		Name:         encounter.Name,
+		Description:  encounter.Description,
+		ImageURL:     imageURL,
+		ThumbnailURL: thumbnailURL,
+		ZoneID:       encounter.ZoneID,
+		Zone:         encounter.Zone,
+		Latitude:     encounter.Latitude,
+		Longitude:    encounter.Longitude,
+		MonsterCount: len(monsters),
+		Members:      members,
+		Monsters:     monsters,
+	}, nil
 }
 
 func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTemplateResponse {
@@ -723,6 +806,102 @@ func (s *server) parseMonsterUpsertRequest(
 		ImageGenerationStatus:       models.MonsterImageGenerationStatusNone,
 	}
 	return monster, itemRewards, nil
+}
+
+func (s *server) parseMonsterEncounterUpsertRequest(
+	ctx context.Context,
+	body monsterEncounterUpsertRequest,
+) (*models.MonsterEncounter, []models.MonsterEncounterMember, error) {
+	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
+	if err != nil {
+		return nil, nil, fmt.Errorf("zoneId must be a valid UUID")
+	}
+	if _, err := s.dbClient.Zone().FindByID(ctx, zoneID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, fmt.Errorf("zone not found")
+		}
+		return nil, nil, err
+	}
+
+	if len(body.MonsterIDs) < 1 || len(body.MonsterIDs) > 9 {
+		return nil, nil, fmt.Errorf("monsterIds must include between 1 and 9 monsters")
+	}
+
+	seenMonsterIDs := map[uuid.UUID]struct{}{}
+	members := make([]models.MonsterEncounterMember, 0, len(body.MonsterIDs))
+	resolvedMonsters := make([]*models.Monster, 0, len(body.MonsterIDs))
+	for index, raw := range body.MonsterIDs {
+		monsterID, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, nil, fmt.Errorf("monsterIds[%d] must be a valid UUID", index)
+		}
+		if _, exists := seenMonsterIDs[monsterID]; exists {
+			continue
+		}
+		seenMonsterIDs[monsterID] = struct{}{}
+		monster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, fmt.Errorf("monsterIds[%d] not found", index)
+			}
+			return nil, nil, err
+		}
+		if monster.ZoneID != zoneID {
+			return nil, nil, fmt.Errorf("monsterIds[%d] belongs to a different zone", index)
+		}
+		resolvedMonsters = append(resolvedMonsters, monster)
+		members = append(members, models.MonsterEncounterMember{
+			MonsterID: monsterID,
+			Slot:      len(members) + 1,
+		})
+	}
+
+	if len(members) < 1 || len(members) > 9 {
+		return nil, nil, fmt.Errorf("monsterIds must include between 1 and 9 unique monsters")
+	}
+
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		if len(resolvedMonsters) == 1 {
+			name = fmt.Sprintf("%s Encounter", strings.TrimSpace(resolvedMonsters[0].Name))
+		} else {
+			name = fmt.Sprintf("%d-Monster Encounter", len(resolvedMonsters))
+		}
+	}
+
+	description := strings.TrimSpace(body.Description)
+	if description == "" && len(resolvedMonsters) > 0 {
+		description = strings.TrimSpace(resolvedMonsters[0].Description)
+	}
+
+	imageURL := strings.TrimSpace(body.ImageURL)
+	thumbnailURL := strings.TrimSpace(body.ThumbnailURL)
+	if imageURL == "" && len(resolvedMonsters) > 0 {
+		imageURL = strings.TrimSpace(resolvedMonsters[0].ImageURL)
+		if imageURL == "" {
+			imageURL = strings.TrimSpace(resolvedMonsters[0].ThumbnailURL)
+		}
+	}
+	if thumbnailURL == "" && len(resolvedMonsters) > 0 {
+		thumbnailURL = strings.TrimSpace(resolvedMonsters[0].ThumbnailURL)
+		if thumbnailURL == "" {
+			thumbnailURL = strings.TrimSpace(resolvedMonsters[0].ImageURL)
+		}
+	}
+	if thumbnailURL == "" && imageURL != "" {
+		thumbnailURL = imageURL
+	}
+
+	encounter := &models.MonsterEncounter{
+		Name:         name,
+		Description:  description,
+		ImageURL:     imageURL,
+		ThumbnailURL: thumbnailURL,
+		ZoneID:       zoneID,
+		Latitude:     body.Latitude,
+		Longitude:    body.Longitude,
+	}
+	return encounter, members, nil
 }
 
 func isEligibleMonsterDominantHandItem(item *models.InventoryItem) bool {
@@ -1449,6 +1628,216 @@ func (s *server) getMonsters(ctx *gin.Context) {
 		response = append(response, entry)
 	}
 	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getMonsterEncounters(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounters, err := s.dbClient.MonsterEncounter().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response := make([]monsterEncounterResponse, 0, len(encounters))
+	for i := range encounters {
+		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i])
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = append(response, entry)
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getMonsterEncounter(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster encounter ID"})
+		return
+	}
+
+	encounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, encounter)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
+		return
+	}
+
+	encounters, err := s.dbClient.MonsterEncounter().FindByZoneIDExcludingQuestNodes(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := make([]monsterEncounterResponse, 0, len(encounters))
+	for i := range encounters {
+		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i])
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		response = append(response, entry)
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) createMonsterEncounter(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody monsterEncounterUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounter, members, err := s.parseMonsterEncounterUpsertRequest(ctx, requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.MonsterEncounter().ReplaceMembers(ctx, encounter.ID, members); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	created, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounter.ID)
+	if err != nil {
+		ctx.JSON(http.StatusCreated, encounter)
+		return
+	}
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, created)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusCreated, response)
+}
+
+func (s *server) updateMonsterEncounter(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster encounter ID"})
+		return
+	}
+
+	if _, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody monsterEncounterUpsertRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounter, members, err := s.parseMonsterEncounterUpsertRequest(ctx, requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.MonsterEncounter().Update(ctx, encounterID, encounter); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.MonsterEncounter().ReplaceMembers(ctx, encounterID, members); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"id": encounterID})
+		return
+	}
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, updated)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) deleteMonsterEncounter(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	encounterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster encounter ID"})
+		return
+	}
+
+	if _, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := s.dbClient.MonsterEncounter().Delete(ctx, encounterID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "monster encounter deleted successfully"})
 }
 
 func (s *server) getMonster(ctx *gin.Context) {

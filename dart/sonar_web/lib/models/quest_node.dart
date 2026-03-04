@@ -28,6 +28,7 @@ class QuestNode {
   final PointOfInterest? pointOfInterest;
   final String? scenarioId;
   final String? monsterId;
+  final String? monsterEncounterId;
   final String? challengeId;
   final List<QuestNodePolygonPoint> polygon;
   final List<QuestNodeChallenge> challenges;
@@ -40,6 +41,7 @@ class QuestNode {
     this.pointOfInterest,
     this.scenarioId,
     this.monsterId,
+    this.monsterEncounterId,
     this.challengeId,
     this.polygon = const [],
     this.challenges = const [],
@@ -66,6 +68,7 @@ class QuestNode {
           : null,
       scenarioId: json['scenarioId']?.toString(),
       monsterId: json['monsterId']?.toString(),
+      monsterEncounterId: json['monsterEncounterId']?.toString(),
       challengeId: json['challengeId']?.toString(),
       polygon:
           (json['polygon'] as List<dynamic>?)

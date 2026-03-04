@@ -36,6 +36,8 @@ type MonsterNodeOption = {
   latitude: number;
   longitude: number;
   name: string;
+  monsterCount?: number;
+  members?: { slot: number; monster: { id: string; name: string } }[];
 };
 
 type ChallengeNodeOption = {
@@ -77,7 +79,7 @@ const emptyNodeForm = {
   submissionType: 'photo' as QuestNodeSubmissionType,
   pointOfInterestId: '',
   scenarioId: '',
-  monsterId: '',
+  monsterEncounterId: '',
   challengeId: '',
   polygonPoints: '',
 };
@@ -250,7 +252,7 @@ export const Quests = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioNodeOption[]>([]);
-  const [monsters, setMonsters] = useState<MonsterNodeOption[]>([]);
+  const [monsterEncounters, setMonsterEncounters] = useState<MonsterNodeOption[]>([]);
   const [challenges, setChallenges] = useState<ChallengeNodeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -312,7 +314,7 @@ export const Quests = () => {
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
-        apiClient.get<MonsterNodeOption[]>('/sonar/monsters'),
+        apiClient.get<MonsterNodeOption[]>('/sonar/monster-encounters'),
         apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
       ]);
 
@@ -357,9 +359,9 @@ export const Quests = () => {
       }
 
       if (monstersResult.status === 'fulfilled') {
-        setMonsters(Array.isArray(monstersResult.value) ? monstersResult.value : []);
+        setMonsterEncounters(Array.isArray(monstersResult.value) ? monstersResult.value : []);
       } else {
-        console.error('Failed to load monsters', monstersResult.reason);
+        console.error('Failed to load monster encounters', monstersResult.reason);
       }
 
       if (challengesResult.status === 'fulfilled') {
@@ -823,12 +825,12 @@ export const Quests = () => {
   }, [questForm.zoneId, scenarios]);
 
   const filteredMonsters = useMemo(() => {
-    let filtered = monsters;
+    let filtered = monsterEncounters;
     if (questForm.zoneId) {
       filtered = filtered.filter((monster) => monster.zoneId === questForm.zoneId);
     }
     return filtered;
-  }, [monsters, questForm.zoneId]);
+  }, [monsterEncounters, questForm.zoneId]);
 
   const filteredChallenges = useMemo(() => {
     let filtered = challenges;
@@ -908,15 +910,20 @@ export const Quests = () => {
             nodeType: 'scenario' as QuestNodeType,
           };
         }
-        if (node.monsterId) {
-          const monster = monsters.find((item) => item.id === node.monsterId);
-          if (!monster) return null;
-          const lng = Number(monster.longitude);
-          const lat = Number(monster.latitude);
+        if (node.monsterEncounterId || node.monsterId) {
+          const encounterId = node.monsterEncounterId ?? node.monsterId ?? '';
+          const encounter = monsterEncounters.find((item) => item.id === encounterId);
+          const fallbackEncounter = monsterEncounters.find((item) =>
+            (item.members ?? []).some((member) => member.monster.id === node.monsterId)
+          );
+          const resolved = encounter ?? fallbackEncounter;
+          if (!resolved) return null;
+          const lng = Number(resolved.longitude);
+          const lat = Number(resolved.latitude);
           if (Number.isNaN(lng) || Number.isNaN(lat)) return null;
           return {
             id: node.id,
-            name: monster.name || monster.id,
+            name: resolved.name || resolved.id,
             orderIndex: node.orderIndex,
             lng,
             lat,
@@ -941,7 +948,7 @@ export const Quests = () => {
         return null;
       })
       .filter((entry): entry is { id: string; name: string; orderIndex: number; lng: number; lat: number; nodeType: QuestNodeType } => Boolean(entry));
-  }, [challenges, monsters, pointsOfInterest, scenarios, selectedQuest?.nodes]);
+  }, [challenges, monsterEncounters, pointsOfInterest, scenarios, selectedQuest?.nodes]);
 
   const questNodePoiIdSet = useMemo(() => {
     if (!selectedQuest?.nodes?.length) return new Set<string>();
@@ -1290,7 +1297,7 @@ export const Quests = () => {
       if (!node.pointOfInterestId) {
         if (node.scenarioId) {
           missing.push(`Node ${node.orderIndex}: scenario node`);
-        } else if (node.monsterId) {
+        } else if (node.monsterEncounterId || node.monsterId) {
           missing.push(`Node ${node.orderIndex}: monster node`);
         } else if (node.challengeId) {
           missing.push(`Node ${node.orderIndex}: challenge node`);
@@ -1535,7 +1542,8 @@ const handleRemoveQuestReward = (index: number) => {
         orderIndex: Number(nodeForm.orderIndex) || 1,
         pointOfInterestId: nodeForm.nodeType === 'poi' ? nodeForm.pointOfInterestId || null : null,
         scenarioId: nodeForm.nodeType === 'scenario' ? nodeForm.scenarioId || null : null,
-        monsterId: nodeForm.nodeType === 'monster' ? nodeForm.monsterId || null : null,
+        monsterId: null,
+        monsterEncounterId: nodeForm.nodeType === 'monster' ? nodeForm.monsterEncounterId || null : null,
         challengeId: nodeForm.nodeType === 'challenge' ? nodeForm.challengeId || null : null,
         polygonPoints: nodeForm.nodeType === 'polygon' ? polygonPoints : undefined,
         submissionType: nodeForm.submissionType,
@@ -2424,7 +2432,7 @@ const handleRemoveQuestReward = (index: number) => {
                             nodeType: nextNodeType,
                             pointOfInterestId: nextNodeType === 'poi' ? prev.pointOfInterestId : '',
                             scenarioId: nextNodeType === 'scenario' ? prev.scenarioId : '',
-                            monsterId: nextNodeType === 'monster' ? prev.monsterId : '',
+                            monsterEncounterId: nextNodeType === 'monster' ? prev.monsterEncounterId : '',
                             challengeId: nextNodeType === 'challenge' ? prev.challengeId : '',
                             polygonPoints: nextNodeType === 'polygon' ? prev.polygonPoints : '',
                           }));
@@ -2573,16 +2581,21 @@ const handleRemoveQuestReward = (index: number) => {
                       </div>
                     ) : nodeForm.nodeType === 'monster' ? (
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Monster</label>
+                        <label className="block text-sm font-medium text-gray-700">Monster Encounter</label>
                         <select
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                          value={nodeForm.monsterId}
-                          onChange={(e) => setNodeForm((prev) => ({ ...prev, monsterId: e.target.value }))}
+                          value={nodeForm.monsterEncounterId}
+                          onChange={(e) =>
+                            setNodeForm((prev) => ({ ...prev, monsterEncounterId: e.target.value }))
+                          }
                         >
-                          <option value="">Select a monster</option>
+                          <option value="">Select a monster encounter</option>
                           {filteredMonsters.map((monster) => (
                             <option key={monster.id} value={monster.id}>
                               {monster.name}
+                              {monster.monsterCount && monster.monsterCount > 1
+                                ? ` (${monster.monsterCount} monsters)`
+                                : ''}
                             </option>
                           ))}
                         </select>
@@ -2663,7 +2676,7 @@ const handleRemoveQuestReward = (index: number) => {
                       nodeForm.nodeType === 'polygon' ||
                       (nodeForm.nodeType === 'poi' && !nodeForm.pointOfInterestId) ||
                       (nodeForm.nodeType === 'scenario' && !nodeForm.scenarioId) ||
-                      (nodeForm.nodeType === 'monster' && !nodeForm.monsterId) ||
+                      (nodeForm.nodeType === 'monster' && !nodeForm.monsterEncounterId) ||
                       (nodeForm.nodeType === 'challenge' && !nodeForm.challengeId)
                     }
                   >
@@ -2991,8 +3004,12 @@ const handleRemoveQuestReward = (index: number) => {
                                   ? `Scenario: ${summarizeScenarioPrompt(
                                       scenarios.find((scenario) => scenario.id === node.scenarioId)?.prompt ?? ''
                                     )}`
-                                : node.monsterId
-                                    ? `Monster: ${monsters.find((monster) => monster.id === node.monsterId)?.name ?? node.monsterId}`
+                                : node.monsterEncounterId || node.monsterId
+                                    ? `Monster Encounter: ${
+                                        monsterEncounters.find((monster) => monster.id === (node.monsterEncounterId ?? node.monsterId))?.name ??
+                                        node.monsterEncounterId ??
+                                        node.monsterId
+                                      }`
                                     : node.challengeId
                                       ? `Challenge: ${challenges.find((challenge) => challenge.id === node.challengeId)?.question ?? node.challengeId}`
                                     : 'Polygon'}

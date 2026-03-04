@@ -98,7 +98,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
   List<Scenario> _scenarios = [];
-  List<Monster> _monsters = [];
+  List<MonsterEncounter> _monsters = [];
   List<Challenge> _challenges = [];
   List<Line> _zoneLines = [];
   List<Fill> _zoneFills = [];
@@ -520,7 +520,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     return questLog.quests
         .where((q) => q.isAccepted)
-        .map((q) => q.currentNode?.monsterId?.trim() ?? '')
+        .map((q) {
+          final node = q.currentNode;
+          final encounterID = node?.monsterEncounterId?.trim() ?? '';
+          if (encounterID.isNotEmpty) return encounterID;
+          return node?.monsterId?.trim() ?? '';
+        })
         .where((id) => id.isNotEmpty)
         .toSet();
   }
@@ -745,12 +750,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         return;
       }
     }
+    final encounterId = node.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isNotEmpty) {
+      final encounter = _monsterById(encounterId);
+      if (encounter != null) {
+        _flyToLocation(encounter.latitude, encounter.longitude);
+        _pulsePoi(encounter.latitude, encounter.longitude);
+        return;
+      }
+    }
     final monsterId = node.monsterId?.trim() ?? '';
     if (monsterId.isNotEmpty) {
-      final monster = _monsterById(monsterId);
-      if (monster != null) {
-        _flyToLocation(monster.latitude, monster.longitude);
-        _pulsePoi(monster.latitude, monster.longitude);
+      final encounter = _monsterEncounterByMemberMonsterId(monsterId);
+      if (encounter != null) {
+        _flyToLocation(encounter.latitude, encounter.longitude);
+        _pulsePoi(encounter.latitude, encounter.longitude);
         return;
       }
     }
@@ -943,7 +957,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final svc = context.read<PoiService>();
       final chestsFuture = svc.getTreasureChestsForZone(zoneId);
       final scenariosFuture = svc.getScenariosForZone(zoneId);
-      final monstersFuture = svc.getMonstersForZone(zoneId);
+      final monstersFuture = svc.getMonsterEncountersForZone(zoneId);
       final challengesFuture = svc.getChallengesForZone(zoneId);
       final chests = await chestsFuture;
       final baseScenarios = await scenariosFuture;
@@ -957,9 +971,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final scenarioById = <String, Scenario>{
         for (final scenario in baseScenarios) scenario.id: scenario,
       };
-      final monsterById = <String, Monster>{
+      final monsterById = <String, MonsterEncounter>{
         for (final monster in baseMonsters) monster.id: monster,
       };
+      final monsterByMemberID = <String, MonsterEncounter>{};
+      for (final encounter in baseMonsters) {
+        for (final member in encounter.members) {
+          if (member.monster.id.isNotEmpty) {
+            monsterByMemberID[member.monster.id] = encounter;
+          }
+        }
+        for (final monster in encounter.monsters) {
+          if (monster.id.isNotEmpty) {
+            monsterByMemberID[monster.id] = encounter;
+          }
+        }
+      }
       final challengeById = <String, Challenge>{
         for (final challenge in baseChallenges) challenge.id: challenge,
       };
@@ -973,10 +1000,37 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       for (final monsterId in currentQuestMonsterIds) {
         if (monsterById.containsKey(monsterId)) continue;
-        final monster = await svc.getMonsterById(monsterId);
-        if (monster == null) continue;
-        if (monster.zoneId != zoneId) continue;
-        monsterById[monster.id] = monster;
+        if (monsterByMemberID.containsKey(monsterId)) {
+          final encounter = monsterByMemberID[monsterId];
+          if (encounter != null) {
+            monsterById[encounter.id] = encounter;
+          }
+          continue;
+        }
+        final encounter = await svc.getMonsterEncounterById(monsterId);
+        if (encounter != null && encounter.zoneId == zoneId) {
+          monsterById[encounter.id] = encounter;
+          continue;
+        }
+
+        // Backward compatibility: if a quest node still carries a legacy
+        // monsterId, synthesize a single-member encounter.
+        final legacyMonster = await svc.getMonsterById(monsterId);
+        if (legacyMonster == null) continue;
+        if (legacyMonster.zoneId != zoneId) continue;
+        monsterById[legacyMonster.id] = MonsterEncounter(
+          id: legacyMonster.id,
+          name: '${legacyMonster.name} Encounter',
+          description: legacyMonster.description,
+          imageUrl: legacyMonster.imageUrl,
+          thumbnailUrl: legacyMonster.thumbnailUrl,
+          zoneId: legacyMonster.zoneId,
+          latitude: legacyMonster.latitude,
+          longitude: legacyMonster.longitude,
+          monsterCount: 1,
+          members: [MonsterEncounterMember(slot: 1, monster: legacyMonster)],
+          monsters: [legacyMonster],
+        );
       }
       for (final challengeId in currentQuestChallengeIds) {
         if (challengeById.containsKey(challengeId)) continue;
@@ -1051,7 +1105,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return distance > kProximityUnlockRadiusMeters;
   }
 
-  bool _isMonsterMystery(Monster monster) {
+  bool _isMonsterMystery(MonsterEncounter monster) {
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
     final distance = _distanceMeters(
@@ -1082,9 +1136,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
-  Monster? _monsterById(String id) {
+  MonsterEncounter? _monsterById(String id) {
     for (final monster in _monsters) {
       if (monster.id == id) return monster;
+    }
+    return null;
+  }
+
+  MonsterEncounter? _monsterEncounterByMemberMonsterId(String monsterId) {
+    for (final encounter in _monsters) {
+      for (final member in encounter.members) {
+        if (member.monster.id == monsterId) {
+          return encounter;
+        }
+      }
+      for (final monster in encounter.monsters) {
+        if (monster.id == monsterId) {
+          return encounter;
+        }
+      }
     }
     return null;
   }
@@ -1560,7 +1630,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     for (final quest in questLog.quests) {
       if (!quest.isAccepted) continue;
       final node = quest.currentNode;
+      if (node?.monsterEncounterId == monsterId) {
+        return true;
+      }
       if (node?.monsterId == monsterId) {
+        return true;
+      }
+      if ((node?.monsterId ?? '').isNotEmpty) {
+        final encounter = _monsterEncounterByMemberMonsterId(node!.monsterId!);
+        if (encounter != null && encounter.id == monsterId) {
+          return true;
+        }
+      }
+      if ((node?.monsterEncounterId ?? '').isNotEmpty) {
+        final encounterId = node!.monsterEncounterId!;
+        final encounter = _monsterById(encounterId);
+        if (encounter != null) {
+          final hasMemberMatch =
+              encounter.monsters.any((m) => m.id == monsterId) ||
+              encounter.members.any((m) => m.monster.id == monsterId);
+          if (hasMemberMatch) {
+            return true;
+          }
+        }
+      }
+      if ((node?.monsterId ?? '').isNotEmpty && monsterId == node!.monsterId) {
         return true;
       }
     }
@@ -5134,6 +5228,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       pointOfInterest: node.pointOfInterest,
       scenarioId: node.scenarioId,
       monsterId: node.monsterId,
+      monsterEncounterId: node.monsterEncounterId,
       challengeId: node.challengeId,
       polygon: node.polygon,
       challenges: [
@@ -5152,7 +5247,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return _showQuestNodeSubmissionModal(quest, syntheticNode);
   }
 
-  void _showMonsterPanel(Monster monster) {
+  void _showMonsterPanel(MonsterEncounter monster) {
     final parentContext = context;
     showModalBottomSheet(
       context: context,
@@ -5163,7 +5258,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) => MonsterPanel(
-        monster: monster,
+        encounter: monster,
         onClose: () => Navigator.of(sheetContext).pop(),
         onFight: () {
           Navigator.of(sheetContext).pop();
@@ -5177,14 +5272,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _startMonsterBattle(
-    Monster monster,
+    MonsterEncounter monster,
     BuildContext parentContext,
   ) async {
     final result = await showDialog<MonsterBattleResult>(
       context: parentContext,
       useRootNavigator: true,
       barrierDismissible: false,
-      builder: (_) => MonsterBattleDialog(monster: monster),
+      builder: (_) => MonsterBattleDialog(encounter: monster),
     );
     if (!mounted || result == null) return;
     final statsProvider = context.read<CharacterStatsProvider>();
@@ -5202,13 +5297,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _refreshMonsterSymbols();
       if (!mounted || !parentContext.mounted) return;
 
-      final itemsAwarded = monster.itemRewards
+      final itemTotals = <String, int>{};
+      for (final enemy in monster.monsters) {
+        for (final reward in enemy.itemRewards) {
+          final key = reward.inventoryItemName.isNotEmpty
+              ? reward.inventoryItemName
+              : 'Item #${reward.inventoryItemId}';
+          itemTotals[key] =
+              (itemTotals[key] ?? 0) +
+              (reward.quantity > 0 ? reward.quantity : 1);
+        }
+      }
+      final itemsAwarded = itemTotals.entries
           .map(
-            (reward) => <String, dynamic>{
-              'name': reward.inventoryItemName.isNotEmpty
-                  ? reward.inventoryItemName
-                  : 'Item #${reward.inventoryItemId}',
-              'quantity': reward.quantity > 0 ? reward.quantity : 1,
+            (entry) => <String, dynamic>{
+              'name': entry.key,
+              'quantity': entry.value,
             },
           )
           .toList();
@@ -5216,8 +5320,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         'monsterBattleVictory',
         data: {
           'monsterName': monster.name,
-          'rewardExperience': monster.rewardExperience,
-          'rewardGold': monster.rewardGold,
+          'rewardExperience': monster.totalRewardExperience,
+          'rewardGold': monster.totalRewardGold,
           'itemsAwarded': itemsAwarded,
         },
       );

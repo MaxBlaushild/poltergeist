@@ -100,6 +100,7 @@ type DbClient interface {
 	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
+	MonsterEncounter() MonsterEncounterHandle
 	MonsterBattle() MonsterBattleHandle
 	Scenario() ScenarioHandle
 	Document() DocumentHandle
@@ -970,6 +971,18 @@ type MonsterHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.Monster) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceItemRewards(ctx context.Context, monsterID uuid.UUID, rewards []models.MonsterItemReward) error
+}
+
+type MonsterEncounterHandle interface {
+	Create(ctx context.Context, encounter *models.MonsterEncounter) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.MonsterEncounter, error)
+	FindAll(ctx context.Context) ([]models.MonsterEncounter, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
+	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
+	FindFirstByMonsterID(ctx context.Context, monsterID uuid.UUID) (*models.MonsterEncounter, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterEncounter) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	ReplaceMembers(ctx context.Context, encounterID uuid.UUID, members []models.MonsterEncounterMember) error
 }
 
 type MonsterTemplateHandle interface {

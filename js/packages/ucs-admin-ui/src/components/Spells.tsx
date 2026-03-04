@@ -53,6 +53,22 @@ type BulkAbilityStatus = {
   updatedAt?: string;
 };
 
+type PromptSpellProgressionStatus = {
+  jobId: string;
+  status: string;
+  prompt: string;
+  abilityType?: string;
+  createdCount: number;
+  progressionId?: string;
+  seedSpellId?: string;
+  createdSpellIds?: string[];
+  error?: string;
+  queuedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+
 type BulkEffectCountsPayload = {
   dealDamage: number;
   restoreLifePartyMember: number;
@@ -330,6 +346,14 @@ export const Spells = () => {
   const [bulkEffectCounts, setBulkEffectCounts] = useState<BulkEffectCountsForm>(
     buildSuggestedBulkEffectCounts(parseIntSafe(DEFAULT_BULK_ABILITY_COUNT, 8))
   );
+  const [progressionPrompt, setProgressionPrompt] = useState('');
+  const [progressionPromptAbilityType, setProgressionPromptAbilityType] =
+    useState<'spell' | 'technique'>('spell');
+  const [progressionPromptBusy, setProgressionPromptBusy] = useState(false);
+  const [progressionPromptError, setProgressionPromptError] = useState<string | null>(null);
+  const [progressionPromptMessage, setProgressionPromptMessage] = useState<string | null>(null);
+  const [progressionPromptJob, setProgressionPromptJob] =
+    useState<PromptSpellProgressionStatus | null>(null);
 
   const load = useCallback(async (suppressLoading = false) => {
     try {
@@ -552,6 +576,97 @@ export const Spells = () => {
     [apiClient, load]
   );
 
+  const refreshProgressionPromptJobStatus = useCallback(
+    async (jobId: string, abilityType: 'spell' | 'technique') => {
+      try {
+        const path =
+          abilityType === 'technique'
+            ? `/sonar/techniques/progression-generate/${jobId}/status`
+            : `/sonar/spells/progression-generate/${jobId}/status`;
+        const status = await apiClient.get<PromptSpellProgressionStatus>(
+          path
+        );
+        setProgressionPromptJob(status);
+        const resolvedType =
+          (status.abilityType === 'technique' ? 'technique' : 'spell') as
+            | 'spell'
+            | 'technique';
+        if (status.status === 'completed') {
+          setProgressionPromptBusy(false);
+          setProgressionPromptError(null);
+          setProgressionPromptMessage(
+            `Created ${status.createdCount} ${resolvedType === 'technique' ? 'technique' : 'spell'}(s) across a progression.`
+          );
+          await load(true);
+        } else if (status.status === 'failed') {
+          setProgressionPromptBusy(false);
+          setProgressionPromptError(
+            status.error ||
+              `Failed to generate ${resolvedType === 'technique' ? 'technique' : 'spell'} progression.`
+          );
+        }
+      } catch (err) {
+        console.error('Failed to refresh spell progression prompt job status', err);
+      }
+    },
+    [apiClient, load]
+  );
+
+  const handleGenerateProgressionFromPrompt = async () => {
+    const trimmedPrompt = progressionPrompt.trim();
+    if (trimmedPrompt.length < 12) {
+      setProgressionPromptError('Prompt must be at least 12 characters.');
+      return;
+    }
+    if (trimmedPrompt.length > 2000) {
+      setProgressionPromptError('Prompt must be at most 2000 characters.');
+      return;
+    }
+
+    try {
+      setProgressionPromptBusy(true);
+      setProgressionPromptError(null);
+      setProgressionPromptMessage(null);
+      setProgressionPromptJob(null);
+
+      const abilityType = progressionPromptAbilityType;
+      const path =
+        abilityType === 'technique'
+          ? '/sonar/techniques/progression-generate'
+          : '/sonar/spells/progression-generate';
+      const response = await apiClient.post<PromptSpellProgressionStatus>(
+        path,
+        { prompt: trimmedPrompt, abilityType }
+      );
+      const resolvedType =
+        (response.abilityType === 'technique' ? 'technique' : abilityType) as
+          | 'spell'
+          | 'technique';
+      setProgressionPromptJob({ ...response, abilityType: resolvedType });
+      if (response.status === 'completed') {
+        setProgressionPromptBusy(false);
+        setProgressionPromptMessage(
+          `Created ${response.createdCount} ${resolvedType === 'technique' ? 'technique' : 'spell'}(s) across a progression.`
+        );
+        await load(true);
+      } else if (response.status === 'failed') {
+        setProgressionPromptBusy(false);
+        setProgressionPromptError(
+          response.error ||
+            `Failed to generate ${resolvedType === 'technique' ? 'technique' : 'spell'} progression.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to queue spell progression prompt generation', err);
+      setProgressionPromptBusy(false);
+      setProgressionPromptError(
+        err instanceof Error
+          ? err.message
+          : `Failed to queue ${progressionPromptAbilityType === 'technique' ? 'technique' : 'spell'} progression generation.`
+      );
+    }
+  };
+
   const handleBulkGenerateAbilities = async () => {
     const count = Number.parseInt(bulkAbilityCount, 10);
     if (!Number.isFinite(count) || count < 1 || count > 100) {
@@ -650,6 +765,24 @@ export const Spells = () => {
     }, 3000);
     return () => window.clearInterval(interval);
   }, [bulkAbilityJob, refreshBulkAbilityJobStatus]);
+
+  useEffect(() => {
+    if (!progressionPromptJob?.jobId) {
+      return;
+    }
+    if (
+      progressionPromptJob.status !== 'queued' &&
+      progressionPromptJob.status !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      const abilityType =
+        progressionPromptJob.abilityType === 'technique' ? 'technique' : 'spell';
+      void refreshProgressionPromptJobStatus(progressionPromptJob.jobId, abilityType);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [progressionPromptJob, refreshProgressionPromptJobStatus]);
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
@@ -827,6 +960,66 @@ export const Spells = () => {
               {bulkAbilityJob.updatedAt ? <span>Updated: {bulkAbilityJob.updatedAt}</span> : null}
             </div>
           )}
+          <div className="mt-4 border-t border-gray-200 pt-4">
+            <div className="text-sm font-semibold text-gray-800">
+              Generate Full Progression From Prompt
+            </div>
+            <p className="mt-1 text-xs text-gray-600">
+              Describe one idea and generate linked level bands (10/25/50/70) for spells or techniques.
+            </p>
+            <div className="mt-2">
+              <label className="text-xs text-gray-600">
+                Ability Type
+                <select
+                  className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
+                  value={progressionPromptAbilityType}
+                  onChange={(e) =>
+                    setProgressionPromptAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
+                  }
+                  disabled={progressionPromptBusy}
+                >
+                  <option value="spell">Spell</option>
+                  <option value="technique">Technique</option>
+                </select>
+              </label>
+            </div>
+            <textarea
+              className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              rows={3}
+              placeholder={
+                progressionPromptAbilityType === 'technique'
+                  ? 'Example: A precise spear style that grows from quick thrusts into a battlefield-cleaving master form.'
+                  : 'Example: A fire spell that starts as a tiny ember and evolves into an explosive inferno.'
+              }
+              value={progressionPrompt}
+              onChange={(e) => setProgressionPrompt(e.target.value)}
+              disabled={progressionPromptBusy}
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={handleGenerateProgressionFromPrompt}
+                disabled={progressionPromptBusy}
+              >
+                {progressionPromptBusy
+                  ? 'Generating...'
+                  : `Generate ${progressionPromptAbilityType === 'technique' ? 'Technique' : 'Spell'} Progression`}
+              </button>
+              {progressionPromptJob ? (
+                <span className="text-xs text-gray-600">
+                  Job {progressionPromptJob.jobId} ·{' '}
+                  {(progressionPromptJob.abilityType === 'technique' ? 'Technique' : 'Spell')} ·{' '}
+                  {progressionPromptJob.status.replace('_', ' ')}
+                </span>
+              ) : null}
+            </div>
+            {progressionPromptMessage ? (
+              <p className="mt-2 text-sm text-emerald-700">{progressionPromptMessage}</p>
+            ) : null}
+            {progressionPromptError ? (
+              <p className="mt-2 text-sm text-red-700">{progressionPromptError}</p>
+            ) : null}
+          </div>
           {bulkAbilityMessage ? (
             <p className="mt-2 text-sm text-emerald-700">{bulkAbilityMessage}</p>
           ) : null}

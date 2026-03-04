@@ -81,7 +81,18 @@ func (h *monsterHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zon
 	var monsters []models.Monster
 	if err := h.preloadBase(ctx).
 		Where("zone_id = ?", zoneID).
-		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.monster_id = monsters.id)").
+		Where(
+			`NOT EXISTS (
+				SELECT 1
+				FROM quest_nodes qn
+				WHERE qn.monster_id = monsters.id
+					OR qn.monster_encounter_id IN (
+						SELECT mem.monster_encounter_id
+						FROM monster_encounter_members mem
+						WHERE mem.monster_id = monsters.id
+					)
+			)`,
+		).
 		Order("name ASC").
 		Find(&monsters).Error; err != nil {
 		return nil, err
