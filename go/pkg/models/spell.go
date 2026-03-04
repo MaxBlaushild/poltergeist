@@ -83,19 +83,20 @@ func (s *SpellEffects) Scan(value interface{}) error {
 }
 
 type Spell struct {
-	ID                    uuid.UUID        `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt             time.Time        `json:"createdAt"`
-	UpdatedAt             time.Time        `json:"updatedAt"`
-	Name                  string           `json:"name"`
-	Description           string           `json:"description"`
-	IconURL               string           `json:"iconUrl" gorm:"column:icon_url"`
-	ImageGenerationStatus string           `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
-	ImageGenerationError  *string          `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
-	AbilityType           SpellAbilityType `json:"abilityType" gorm:"column:ability_type"`
-	EffectText            string           `json:"effectText" gorm:"column:effect_text"`
-	SchoolOfMagic         string           `json:"schoolOfMagic" gorm:"column:school_of_magic"`
-	ManaCost              int              `json:"manaCost" gorm:"column:mana_cost"`
-	Effects               SpellEffects     `json:"effects" gorm:"column:effects;type:jsonb"`
+	ID                    uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt             time.Time               `json:"createdAt"`
+	UpdatedAt             time.Time               `json:"updatedAt"`
+	Name                  string                  `json:"name"`
+	Description           string                  `json:"description"`
+	IconURL               string                  `json:"iconUrl" gorm:"column:icon_url"`
+	ImageGenerationStatus string                  `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
+	ImageGenerationError  *string                 `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
+	AbilityType           SpellAbilityType        `json:"abilityType" gorm:"column:ability_type"`
+	EffectText            string                  `json:"effectText" gorm:"column:effect_text"`
+	SchoolOfMagic         string                  `json:"schoolOfMagic" gorm:"column:school_of_magic"`
+	ManaCost              int                     `json:"manaCost" gorm:"column:mana_cost"`
+	Effects               SpellEffects            `json:"effects" gorm:"column:effects;type:jsonb"`
+	ProgressionLinks      []SpellProgressionSpell `json:"progressionLinks,omitempty" gorm:"foreignKey:SpellID"`
 }
 
 func (s *Spell) TableName() string {

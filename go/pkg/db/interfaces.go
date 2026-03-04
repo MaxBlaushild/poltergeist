@@ -372,6 +372,10 @@ type SpellHandle interface {
 	FindAll(ctx context.Context) ([]models.Spell, error)
 	Update(ctx context.Context, spellID uuid.UUID, updates map[string]interface{}) error
 	Delete(ctx context.Context, spellID uuid.UUID) error
+	CreateProgression(ctx context.Context, progression *models.SpellProgression) error
+	FindProgressionBySpellID(ctx context.Context, spellID uuid.UUID) (*models.SpellProgression, error)
+	FindProgressionMembers(ctx context.Context, progressionID uuid.UUID) ([]models.SpellProgressionSpell, error)
+	UpsertProgressionMember(ctx context.Context, progressionID uuid.UUID, spellID uuid.UUID, levelBand int) error
 }
 
 type UserSpellHandle interface {

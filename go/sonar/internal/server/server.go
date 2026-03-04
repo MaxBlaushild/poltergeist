@@ -194,6 +194,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getSpell))
 	r.POST("/sonar/spells", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createSpell))
 	r.POST("/sonar/spells/:id/generate-icon", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellIcon))
+	r.POST("/sonar/spells/:id/generate-progression", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateSpellProgression))
 	r.POST("/sonar/spells/:id/cast", middleware.WithAuthentication(s.authClient, s.livenessClient, s.castSpell))
 	r.PUT("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateSpell))
 	r.DELETE("/sonar/spells/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteSpell))

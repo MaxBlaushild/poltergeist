@@ -21,6 +21,22 @@ export interface SpellEffect {
     statusesToRemove?: string[];
     effectData?: Record<string, unknown>;
 }
+export interface SpellProgression {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    name: string;
+    abilityType?: 'spell' | 'technique' | string;
+}
+export interface SpellProgressionLink {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    progressionId: string;
+    spellId: string;
+    levelBand: number;
+    progression?: SpellProgression;
+}
 export interface Spell {
     id: string;
     createdAt: string;
@@ -35,4 +51,5 @@ export interface Spell {
     schoolOfMagic: string;
     manaCost: number;
     effects: SpellEffect[];
+    progressionLinks?: SpellProgressionLink[];
 }

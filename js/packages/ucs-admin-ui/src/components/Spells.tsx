@@ -311,6 +311,7 @@ export const Spells = () => {
   const [loading, setLoading] = useState(true);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [generatingIconSpellId, setGeneratingIconSpellId] = useState<string | null>(null);
+  const [generatingProgressionSpellId, setGeneratingProgressionSpellId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -496,6 +497,31 @@ export const Spells = () => {
       alert('Failed to queue spell icon generation.');
     } finally {
       setGeneratingIconSpellId(null);
+    }
+  };
+
+  const handleGenerateProgression = async (spell: Spell) => {
+    try {
+      setGeneratingProgressionSpellId(spell.id);
+      const result = await apiClient.post<{ createdCount?: number }>(
+        `/sonar/spells/${spell.id}/generate-progression`,
+        {}
+      );
+      const createdCount = typeof result?.createdCount === 'number' ? result.createdCount : 0;
+      if (createdCount > 0) {
+        setBulkAbilityMessage(`Generated ${createdCount} progression spell(s) from ${spell.name}.`);
+      } else {
+        setBulkAbilityMessage(`No missing progression bands for ${spell.name}.`);
+      }
+      setBulkAbilityError(null);
+      await load(true);
+    } catch (err) {
+      console.error('Failed to generate spell progression', err);
+      setBulkAbilityError(
+        err instanceof Error ? err.message : 'Failed to generate spell progression.'
+      );
+    } finally {
+      setGeneratingProgressionSpellId(null);
     }
   };
 
@@ -826,50 +852,69 @@ export const Spells = () => {
           <div className="qa-card text-gray-600">No abilities found.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map((spell) => (
-              <div key={spell.id} className="qa-card">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-lg font-semibold">{spell.name}</div>
-                    <div className="text-sm text-gray-600">
-                      {(spell.abilityType ?? 'spell') === 'technique'
-                        ? `${spell.schoolOfMagic} · Technique`
-                        : `${spell.schoolOfMagic} · Mana ${spell.manaCost}`}
+            {filtered.map((spell) => {
+              const progressionLink = spell.progressionLinks?.[0];
+              return (
+                <div key={spell.id} className="qa-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-lg font-semibold">{spell.name}</div>
+                      <div className="text-sm text-gray-600">
+                        {(spell.abilityType ?? 'spell') === 'technique'
+                          ? `${spell.schoolOfMagic} · Technique`
+                          : `${spell.schoolOfMagic} · Mana ${spell.manaCost}`}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
+                      </div>
+                      {progressionLink ? (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Spell Progression: {progressionLink.progression?.name ?? progressionLink.progressionId} ·
+                          {' '}Level Band {progressionLink.levelBand}
+                        </div>
+                      ) : null}
+                      {spell.imageGenerationStatus === 'failed' && spell.imageGenerationError ? (
+                        <div className="text-xs text-red-600 mt-1">Error: {spell.imageGenerationError}</div>
+                      ) : null}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
-                    </div>
-                    {spell.imageGenerationStatus === 'failed' && spell.imageGenerationError ? (
-                      <div className="text-xs text-red-600 mt-1">Error: {spell.imageGenerationError}</div>
+                    {spell.iconUrl ? (
+                      <img src={spell.iconUrl} alt={spell.name} className="w-12 h-12 rounded-md object-cover border" />
                     ) : null}
                   </div>
-                  {spell.iconUrl ? (
-                    <img src={spell.iconUrl} alt={spell.name} className="w-12 h-12 rounded-md object-cover border" />
-                  ) : null}
+                  {spell.description ? <p className="text-sm text-gray-700 mt-3">{spell.description}</p> : null}
+                  {spell.effectText ? <p className="text-sm text-gray-700 mt-2">{spell.effectText}</p> : null}
+                  <div className="text-xs text-gray-500 mt-2">Effects: {spell.effects?.length ?? 0}</div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <button className="qa-btn qa-btn-secondary" onClick={() => openEdit(spell)}>
+                      Edit
+                    </button>
+                    <button
+                      className="qa-btn qa-btn-secondary"
+                      onClick={() => handleGenerateIcon(spell)}
+                      disabled={
+                        generatingIconSpellId === spell.id ||
+                        ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
+                      }
+                    >
+                      {generatingIconSpellId === spell.id ? 'Queueing...' : 'Generate Icon'}
+                    </button>
+                    <button
+                      className="qa-btn qa-btn-secondary"
+                      onClick={() => handleGenerateProgression(spell)}
+                      disabled={
+                        generatingProgressionSpellId === spell.id ||
+                        (spell.abilityType ?? 'spell') === 'technique'
+                      }
+                    >
+                      {generatingProgressionSpellId === spell.id ? 'Generating...' : 'Generate Level Bands'}
+                    </button>
+                    <button className="qa-btn qa-btn-danger" onClick={() => setDeleteId(spell.id)}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                {spell.description ? <p className="text-sm text-gray-700 mt-3">{spell.description}</p> : null}
-                {spell.effectText ? <p className="text-sm text-gray-700 mt-2">{spell.effectText}</p> : null}
-                <div className="text-xs text-gray-500 mt-2">Effects: {spell.effects?.length ?? 0}</div>
-                <div className="flex items-center gap-2 mt-4">
-                  <button className="qa-btn qa-btn-secondary" onClick={() => openEdit(spell)}>
-                    Edit
-                  </button>
-                  <button
-                    className="qa-btn qa-btn-secondary"
-                    onClick={() => handleGenerateIcon(spell)}
-                    disabled={
-                      generatingIconSpellId === spell.id ||
-                      ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
-                    }
-                  >
-                    {generatingIconSpellId === spell.id ? 'Queueing...' : 'Generate Icon'}
-                  </button>
-                  <button className="qa-btn qa-btn-danger" onClick={() => setDeleteId(spell.id)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

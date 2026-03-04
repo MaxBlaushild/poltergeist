@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
@@ -118,6 +120,8 @@ var techniqueBulkSeeds = []jobs.SpellCreationSpec{
 	{Name: "Falcon Rush", Description: "Explode forward with a burst of momentum into melee range.", EffectText: "A swift gap-closer catches ranged enemies off balance.", SchoolOfMagic: "Martial", ManaCost: 0, AbilityType: "technique"},
 	{Name: "Stone Stance", Description: "Anchor your footing to resist displacement and stagger effects.", EffectText: "Grounded posture improves stability under pressure.", SchoolOfMagic: "Martial", ManaCost: 0, AbilityType: "technique"},
 }
+
+var spellProgressionLevelBands = []int{10, 25, 50, 70}
 
 func normalizeSpellAbilityType(value string) models.SpellAbilityType {
 	return models.NormalizeSpellAbilityType(strings.TrimSpace(strings.ToLower(value)))
@@ -780,6 +784,380 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 	}, nil
 }
 
+func normalizeSpellProgressionBand(levelBand int) int {
+	if levelBand <= spellProgressionLevelBands[0] {
+		return spellProgressionLevelBands[0]
+	}
+	if levelBand >= spellProgressionLevelBands[len(spellProgressionLevelBands)-1] {
+		return spellProgressionLevelBands[len(spellProgressionLevelBands)-1]
+	}
+
+	best := spellProgressionLevelBands[0]
+	bestDistance := absInt(levelBand - best)
+	for _, candidate := range spellProgressionLevelBands[1:] {
+		distance := absInt(levelBand - candidate)
+		if distance < bestDistance {
+			best = candidate
+			bestDistance = distance
+		}
+	}
+	return best
+}
+
+func inferSpellProgressionBand(spell *models.Spell) int {
+	if spell == nil {
+		return 25
+	}
+	powerScore := float64(spellMaxInt(spell.ManaCost, 0))
+	for _, effect := range spell.Effects {
+		powerScore += float64(spellMaxInt(effect.Amount, 0))
+		powerScore += float64(len(effect.StatusesToApply) * 8)
+		if len(effect.StatusesToRemove) > 0 {
+			powerScore += 6
+		}
+	}
+
+	type bandProfile struct {
+		band  int
+		score float64
+	}
+	profiles := []bandProfile{
+		{band: 10, score: 24},
+		{band: 25, score: 52},
+		{band: 50, score: 88},
+		{band: 70, score: 120},
+	}
+
+	bestBand := profiles[0].band
+	bestDistance := math.Abs(powerScore - profiles[0].score)
+	for _, profile := range profiles[1:] {
+		distance := math.Abs(powerScore - profile.score)
+		if distance < bestDistance {
+			bestBand = profile.band
+			bestDistance = distance
+		}
+	}
+	return bestBand
+}
+
+func selectSeedBandForProgression(inferredBand int, occupied map[int]uuid.UUID) int {
+	normalized := normalizeSpellProgressionBand(inferredBand)
+	if _, taken := occupied[normalized]; !taken {
+		return normalized
+	}
+
+	available := make([]int, 0, len(spellProgressionLevelBands))
+	for _, band := range spellProgressionLevelBands {
+		if _, taken := occupied[band]; !taken {
+			available = append(available, band)
+		}
+	}
+	if len(available) == 0 {
+		return normalized
+	}
+
+	sort.Slice(available, func(i, j int) bool {
+		left := absInt(available[i] - normalized)
+		right := absInt(available[j] - normalized)
+		if left == right {
+			return available[i] < available[j]
+		}
+		return left < right
+	})
+	return available[0]
+}
+
+func spellProgressionPrimaryEffectType(spell *models.Spell) models.SpellEffectType {
+	if spell == nil || len(spell.Effects) == 0 {
+		return models.SpellEffectTypeDealDamage
+	}
+	return spell.Effects[0].Type
+}
+
+func spellProgressionTheme(spell *models.Spell) string {
+	if spell != nil && len(spell.Effects) > 0 {
+		if affinity := firstSpellDamageAffinity(spell); affinity != "" {
+			switch models.NormalizeDamageAffinity(affinity) {
+			case models.DamageAffinityFire:
+				return "Fire"
+			case models.DamageAffinityIce:
+				return "Frost"
+			case models.DamageAffinityLightning:
+				return "Storm"
+			case models.DamageAffinityPoison:
+				return "Venom"
+			case models.DamageAffinityArcane:
+				return "Arcane"
+			case models.DamageAffinityHoly:
+				return "Radiant"
+			case models.DamageAffinityShadow:
+				return "Umbral"
+			default:
+				return "Force"
+			}
+		}
+	}
+	if spell != nil {
+		if word := firstWord(spell.SchoolOfMagic); word != "" {
+			return titleWord(word)
+		}
+		if word := firstWord(spell.Name); word != "" {
+			return titleWord(word)
+		}
+	}
+	return "Arcane"
+}
+
+func firstSpellDamageAffinity(spell *models.Spell) string {
+	if spell == nil {
+		return ""
+	}
+	for _, effect := range spell.Effects {
+		if effect.DamageAffinity == nil {
+			continue
+		}
+		value := strings.TrimSpace(*effect.DamageAffinity)
+		if value == "" {
+			continue
+		}
+		return value
+	}
+	return ""
+}
+
+func spellProgressionBandTerm(effectType models.SpellEffectType, levelBand int) string {
+	switch effectType {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		switch levelBand {
+		case 10:
+			return "Mend"
+		case 25:
+			return "Renewal"
+		case 50:
+			return "Revitalize"
+		default:
+			return "Transcendence"
+		}
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		switch levelBand {
+		case 10:
+			return "Chorus"
+		case 25:
+			return "Hymn"
+		case 50:
+			return "Anthem"
+		default:
+			return "Apotheosis"
+		}
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		switch levelBand {
+		case 10:
+			return "Ward"
+		case 25:
+			return "Aegis"
+		case 50:
+			return "Bastion"
+		default:
+			return "Citadel"
+		}
+	case models.SpellEffectTypeRemoveDetrimental:
+		switch levelBand {
+		case 10:
+			return "Cleanse"
+		case 25:
+			return "Purge"
+		case 50:
+			return "Sanctify"
+		default:
+			return "Absolution"
+		}
+	default:
+		switch levelBand {
+		case 10:
+			return "Wisp"
+		case 25:
+			return "Bolt"
+		case 50:
+			return "Sphere"
+		default:
+			return "Nova"
+		}
+	}
+}
+
+func scaleSpellProgressionValue(base int, seedBand int, targetBand int, exponent float64) int {
+	if base == 0 {
+		return 0
+	}
+	if seedBand <= 0 {
+		seedBand = 25
+	}
+	ratio := float64(targetBand) / float64(seedBand)
+	scaled := int(math.Round(float64(base) * math.Pow(ratio, exponent)))
+	if base > 0 && scaled < 1 {
+		return 1
+	}
+	if base < 0 && scaled > -1 {
+		return -1
+	}
+	return scaled
+}
+
+func cloneSpellEffectData(effectData map[string]interface{}) map[string]interface{} {
+	if effectData == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(effectData))
+	for key, value := range effectData {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func buildScaledSpellProgressionEffects(
+	seedEffects models.SpellEffects,
+	seedBand int,
+	targetBand int,
+) models.SpellEffects {
+	if len(seedEffects) == 0 {
+		return models.SpellEffects{}
+	}
+
+	scaled := make(models.SpellEffects, 0, len(seedEffects))
+	for _, effect := range seedEffects {
+		next := models.SpellEffect{
+			Type:             effect.Type,
+			Amount:           scaleSpellProgressionValue(effect.Amount, seedBand, targetBand, 0.9),
+			StatusesToRemove: append(models.StringArray(nil), effect.StatusesToRemove...),
+			EffectData:       cloneSpellEffectData(effect.EffectData),
+		}
+		if effect.DamageAffinity != nil {
+			affinity := strings.TrimSpace(*effect.DamageAffinity)
+			next.DamageAffinity = &affinity
+		}
+		if len(effect.StatusesToApply) > 0 {
+			statuses := make(models.ScenarioFailureStatusTemplates, 0, len(effect.StatusesToApply))
+			for _, status := range effect.StatusesToApply {
+				scaledStatus := status
+				scaledStatus.DurationSeconds = spellMaxInt(1, scaleSpellProgressionValue(status.DurationSeconds, seedBand, targetBand, 0.35))
+				scaledStatus.DamagePerTick = scaleSpellProgressionValue(status.DamagePerTick, seedBand, targetBand, 0.8)
+				scaledStatus.StrengthMod = scaleSpellProgressionValue(status.StrengthMod, seedBand, targetBand, 0.4)
+				scaledStatus.DexterityMod = scaleSpellProgressionValue(status.DexterityMod, seedBand, targetBand, 0.4)
+				scaledStatus.ConstitutionMod = scaleSpellProgressionValue(status.ConstitutionMod, seedBand, targetBand, 0.4)
+				scaledStatus.IntelligenceMod = scaleSpellProgressionValue(status.IntelligenceMod, seedBand, targetBand, 0.4)
+				scaledStatus.WisdomMod = scaleSpellProgressionValue(status.WisdomMod, seedBand, targetBand, 0.4)
+				scaledStatus.CharismaMod = scaleSpellProgressionValue(status.CharismaMod, seedBand, targetBand, 0.4)
+				statuses = append(statuses, scaledStatus)
+			}
+			next.StatusesToApply = statuses
+		}
+		scaled = append(scaled, next)
+	}
+	return scaled
+}
+
+func buildSpellProgressionEffectText(effects models.SpellEffects) string {
+	if len(effects) == 0 {
+		return "A refined magical technique."
+	}
+
+	effect := effects[0]
+	switch effect.Type {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return fmt.Sprintf("Restore %d health to one ally.", spellMaxInt(effect.Amount, 1))
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return fmt.Sprintf("Restore %d health to all allies.", spellMaxInt(effect.Amount, 1))
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		if len(effect.StatusesToApply) > 0 && strings.TrimSpace(effect.StatusesToApply[0].Name) != "" {
+			return fmt.Sprintf("Applies %s to allies.", strings.TrimSpace(effect.StatusesToApply[0].Name))
+		}
+		return "Applies beneficial statuses to allies."
+	case models.SpellEffectTypeRemoveDetrimental:
+		return "Removes detrimental statuses from allies."
+	default:
+		affinity := "magical"
+		if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
+			affinity = strings.TrimSpace(*effect.DamageAffinity)
+		}
+		return fmt.Sprintf("Deals %d %s damage to a target.", spellMaxInt(effect.Amount, 1), affinity)
+	}
+}
+
+func buildSpellProgressionVariant(
+	seed *models.Spell,
+	seedBand int,
+	targetBand int,
+	usedNames map[string]struct{},
+) *models.Spell {
+	primaryEffect := spellProgressionPrimaryEffectType(seed)
+	theme := spellProgressionTheme(seed)
+	bandTerm := spellProgressionBandTerm(primaryEffect, targetBand)
+	name := nextUniqueAbilityName(
+		fmt.Sprintf("%s %s", theme, bandTerm),
+		usedNames,
+		models.SpellAbilityTypeSpell,
+	)
+	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetBand)
+	manaCost := scaleSpellProgressionValue(spellMaxInt(seed.ManaCost, 1), seedBand, targetBand, 0.85)
+	if manaCost > 100 {
+		manaCost = 100
+	}
+	description := fmt.Sprintf("Level %d evolution of %s.", targetBand, strings.TrimSpace(seed.Name))
+	if trimmed := strings.TrimSpace(seed.Description); trimmed != "" {
+		description = fmt.Sprintf("%s %s", description, trimmed)
+	}
+	emptyError := ""
+	now := time.Now()
+	return &models.Spell{
+		ID:                    uuid.New(),
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		Name:                  name,
+		Description:           description,
+		IconURL:               "",
+		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
+		ImageGenerationError:  &emptyError,
+		AbilityType:           models.SpellAbilityTypeSpell,
+		EffectText:            buildSpellProgressionEffectText(effects),
+		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
+		ManaCost:              spellMaxInt(manaCost, 1),
+		Effects:               effects,
+	}
+}
+
+func firstWord(value string) string {
+	for _, part := range strings.Fields(strings.TrimSpace(value)) {
+		if part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+func titleWord(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	lowered := []rune(strings.ToLower(trimmed))
+	lowered[0] = unicode.ToUpper(lowered[0])
+	return string(lowered)
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func spellMaxInt(left int, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func (s *server) getSpells(ctx *gin.Context) {
 	if _, err := s.getAuthenticatedUser(ctx); err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -1182,6 +1560,122 @@ func (s *server) generateSpellIcon(ctx *gin.Context) {
 func (s *server) generateTechniqueIcon(ctx *gin.Context) {
 	abilityType := models.SpellAbilityTypeTechnique
 	s.generateSpellIconForType(ctx, "technique", &abilityType)
+}
+
+func (s *server) generateSpellProgression(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	spellID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid spell ID"})
+		return
+	}
+
+	seedSpell, err := s.dbClient.Spell().FindByID(ctx, spellID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "spell not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if normalizeSpellAbilityType(string(seedSpell.AbilityType)) != models.SpellAbilityTypeSpell {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "progressions are only supported for spells"})
+		return
+	}
+
+	progression, err := s.dbClient.Spell().FindProgressionBySpellID(ctx, seedSpell.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if progression == nil {
+		progression = &models.SpellProgression{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Name:        fmt.Sprintf("%s Progression", strings.TrimSpace(seedSpell.Name)),
+			AbilityType: models.SpellAbilityTypeSpell,
+		}
+		if strings.TrimSpace(progression.Name) == "Progression" {
+			progression.Name = fmt.Sprintf("%s Progression", spellProgressionTheme(seedSpell))
+		}
+		if err := s.dbClient.Spell().CreateProgression(ctx, progression); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	members, err := s.dbClient.Spell().FindProgressionMembers(ctx, progression.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	occupiedBands := map[int]uuid.UUID{}
+	seedBand := 0
+	for _, member := range members {
+		occupiedBands[member.LevelBand] = member.SpellID
+		if member.SpellID == seedSpell.ID {
+			seedBand = member.LevelBand
+		}
+	}
+	if seedBand == 0 {
+		inferredSeedBand := inferSpellProgressionBand(seedSpell)
+		seedBand = selectSeedBandForProgression(inferredSeedBand, occupiedBands)
+		if err := s.dbClient.Spell().UpsertProgressionMember(ctx, progression.ID, seedSpell.ID, seedBand); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		occupiedBands[seedBand] = seedSpell.ID
+	}
+
+	existingSpells, err := s.dbClient.Spell().FindAll(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	usedNames := map[string]struct{}{}
+	for _, spell := range existingSpells {
+		normalized := strings.ToLower(strings.TrimSpace(spell.Name))
+		if normalized == "" {
+			continue
+		}
+		usedNames[normalized] = struct{}{}
+	}
+
+	createdSpells := make([]models.Spell, 0)
+	for _, targetBand := range spellProgressionLevelBands {
+		if _, occupied := occupiedBands[targetBand]; occupied {
+			continue
+		}
+		variant := buildSpellProgressionVariant(seedSpell, seedBand, targetBand, usedNames)
+		if err := s.dbClient.Spell().Create(ctx, variant); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.dbClient.Spell().UpsertProgressionMember(ctx, progression.ID, variant.ID, targetBand); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		occupiedBands[targetBand] = variant.ID
+		createdSpells = append(createdSpells, *variant)
+	}
+
+	updatedProgression, err := s.dbClient.Spell().FindProgressionBySpellID(ctx, seedSpell.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"progression":   updatedProgression,
+		"createdCount":  len(createdSpells),
+		"createdSpells": createdSpells,
+	})
 }
 
 func (s *server) applySpellHealToUser(
