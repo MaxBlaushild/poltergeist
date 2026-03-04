@@ -65,21 +65,22 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		return err
 	}
 	payload := map[string]interface{}{
-		"zone_id":           updates.ZoneID,
-		"latitude":          updates.Latitude,
-		"longitude":         updates.Longitude,
-		"geometry":          updates.Geometry,
-		"question":          updates.Question,
-		"description":       updates.Description,
-		"image_url":         updates.ImageURL,
-		"thumbnail_url":     updates.ThumbnailURL,
-		"reward":            updates.Reward,
-		"inventory_item_id": updates.InventoryItemID,
-		"submission_type":   updates.SubmissionType,
-		"difficulty":        updates.Difficulty,
-		"stat_tags":         updates.StatTags,
-		"proficiency":       updates.Proficiency,
-		"updated_at":        updates.UpdatedAt,
+		"zone_id":               updates.ZoneID,
+		"latitude":              updates.Latitude,
+		"longitude":             updates.Longitude,
+		"geometry":              updates.Geometry,
+		"question":              updates.Question,
+		"description":           updates.Description,
+		"image_url":             updates.ImageURL,
+		"thumbnail_url":         updates.ThumbnailURL,
+		"scale_with_user_level": updates.ScaleWithUserLevel,
+		"reward":                updates.Reward,
+		"inventory_item_id":     updates.InventoryItemID,
+		"submission_type":       updates.SubmissionType,
+		"difficulty":            updates.Difficulty,
+		"stat_tags":             updates.StatTags,
+		"proficiency":           updates.Proficiency,
+		"updated_at":            updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.Challenge{}).Where("id = ?", id).Updates(payload).Error
 }

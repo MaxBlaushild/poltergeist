@@ -195,6 +195,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"geometry":                     updates.Geometry,
 		"prompt":                       updates.Prompt,
 		"image_url":                    updates.ImageURL,
+		"scale_with_user_level":        updates.ScaleWithUserLevel,
 		"difficulty":                   updates.Difficulty,
 		"reward_experience":            updates.RewardExperience,
 		"reward_gold":                  updates.RewardGold,

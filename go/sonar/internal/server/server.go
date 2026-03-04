@@ -454,6 +454,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengesForZone))
 	r.POST("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallenge))
 	r.PUT("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallenge))
+	r.POST("/sonar/challenges/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitStandaloneChallenge))
 	r.POST("/sonar/challenges/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeImage))
 	r.DELETE("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteChallenge))
 	r.POST("/sonar/admin/treasure-chests/seed", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedTreasureChests))
@@ -9035,6 +9036,220 @@ func (s *server) submitAnswerPointOfInterestChallenge(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, submissionResult)
 }
 
+func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	challengeIDStr := strings.TrimSpace(ctx.Param("id"))
+	if challengeIDStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "challenge id is required"})
+		return
+	}
+	challengeID, err := uuid.Parse(challengeIDStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge id"})
+		return
+	}
+
+	var requestBody struct {
+		TextSubmission     string     `json:"textSubmission"`
+		ImageSubmissionUrl string     `json:"imageSubmissionUrl"`
+		VideoSubmissionUrl string     `json:"videoSubmissionUrl"`
+		TeamID             *uuid.UUID `json:"teamID"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	challenge, err := s.dbClient.Challenge().FindByID(ctx, challengeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
+		return
+	}
+	if challenge == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
+		return
+	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	submissionType := challenge.SubmissionType
+	if strings.TrimSpace(string(submissionType)) == "" {
+		submissionType = models.DefaultQuestNodeSubmissionType()
+	}
+	switch submissionType {
+	case models.QuestNodeSubmissionTypeText:
+		if strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "text submission is required"})
+			return
+		}
+	case models.QuestNodeSubmissionTypePhoto:
+		if strings.TrimSpace(requestBody.ImageSubmissionUrl) == "" && strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "photo submission is required"})
+			return
+		}
+	case models.QuestNodeSubmissionTypeVideo:
+		if strings.TrimSpace(requestBody.VideoSubmissionUrl) == "" && strings.TrimSpace(requestBody.TextSubmission) == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "video submission is required"})
+			return
+		}
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	distance := util.HaversineDistance(
+		userLat,
+		userLng,
+		challenge.Latitude,
+		challenge.Longitude,
+	)
+	if distance > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+		return
+	}
+
+	textSubmission := requestBody.TextSubmission
+	if strings.TrimSpace(textSubmission) == "" && strings.TrimSpace(requestBody.VideoSubmissionUrl) != "" {
+		textSubmission = fmt.Sprintf("Video submission URL: %s", requestBody.VideoSubmissionUrl)
+	}
+
+	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
+		Question:           challenge.Question,
+		ImageSubmissionUrl: requestBody.ImageSubmissionUrl,
+		TextSubmission:     textSubmission,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	score := int(math.Round(judgement.Judgement.Score))
+	if score < 0 {
+		score = 0
+	} else if score > 50 {
+		score = 50
+	}
+
+	validStats := map[string]struct{}{
+		"strength":     {},
+		"dexterity":    {},
+		"constitution": {},
+		"intelligence": {},
+		"wisdom":       {},
+		"charisma":     {},
+	}
+	statTags := []string{}
+	seenTags := map[string]struct{}{}
+	for _, tag := range []string(challenge.StatTags) {
+		normalized := strings.ToLower(strings.TrimSpace(tag))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := validStats[normalized]; !ok {
+			continue
+		}
+		if _, ok := seenTags[normalized]; ok {
+			continue
+		}
+		seenTags[normalized] = struct{}{}
+		statTags = append(statTags, normalized)
+	}
+
+	combinedScore := score
+	var statValues map[string]int
+	if len(statTags) > 0 {
+		stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		totalBonuses := equipmentBonuses.Add(statusBonuses)
+		statValues = map[string]int{}
+		statValueSum := 0
+		for _, tag := range statTags {
+			value := 0
+			switch tag {
+			case "strength":
+				value = stats.Strength + totalBonuses.Strength
+			case "dexterity":
+				value = stats.Dexterity + totalBonuses.Dexterity
+			case "constitution":
+				value = stats.Constitution + totalBonuses.Constitution
+			case "intelligence":
+				value = stats.Intelligence + totalBonuses.Intelligence
+			case "wisdom":
+				value = stats.Wisdom + totalBonuses.Wisdom
+			case "charisma":
+				value = stats.Charisma + totalBonuses.Charisma
+			}
+			statValues[tag] = value
+			statValueSum += value
+		}
+		combinedScore = score + statValueSum
+	}
+
+	difficulty := challengeDifficultyForUserLevel(challenge, userLevel)
+	if combinedScore < difficulty {
+		reason := strings.TrimSpace(judgement.Judgement.Reason)
+		if reason == "" {
+			reason = "Submission did not meet the difficulty threshold."
+		}
+		scoreValue := score
+		difficultyValue := difficulty
+		combinedValue := combinedScore
+		ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
+			Successful:     false,
+			Reason:         reason,
+			QuestCompleted: false,
+			Score:          &scoreValue,
+			Difficulty:     &difficultyValue,
+			CombinedScore:  &combinedValue,
+			StatTags:       statTags,
+			StatValues:     statValues,
+		})
+		return
+	}
+
+	scoreValue := score
+	difficultyValue := difficulty
+	combinedValue := combinedScore
+	successReason := strings.TrimSpace(judgement.Judgement.Reason)
+	if successReason == "" {
+		successReason = "Challenge completed successfully!"
+	}
+	ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
+		Successful:     true,
+		Reason:         successReason,
+		QuestCompleted: false,
+		Score:          &scoreValue,
+		Difficulty:     &difficultyValue,
+		CombinedScore:  &combinedValue,
+		StatTags:       statTags,
+		StatValues:     statValues,
+	})
+}
+
 func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -9121,6 +9336,12 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			return
 		}
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	challengeScaleWithUserLevel := standaloneChallenge != nil && standaloneChallenge.ScaleWithUserLevel
 
 	challenge, err := selectQuestNodeChallenge(node, standaloneChallenge, requestBody.QuestNodeChallengeID)
 	if err != nil {
@@ -9303,6 +9524,9 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 	}
 
 	difficulty := challenge.Difficulty
+	if challengeScaleWithUserLevel {
+		difficulty = scaledChallengeDifficultyForUserLevel(userLevel)
+	}
 	if combinedScore < difficulty {
 		reason := strings.TrimSpace(judgement.Judgement.Reason)
 		if reason == "" {
@@ -12629,6 +12853,7 @@ type scenarioUpsertRequest struct {
 	RewardExperience          int                            `json:"rewardExperience"`
 	RewardGold                int                            `json:"rewardGold"`
 	OpenEnded                 bool                           `json:"openEnded"`
+	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel"`
 	FailurePenaltyMode        string                         `json:"failurePenaltyMode"`
 	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
 	FailureHealthDrainValue   int                            `json:"failureHealthDrainValue"`
@@ -13503,6 +13728,7 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 		Prompt:                    strings.TrimSpace(body.Prompt),
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
+		ScaleWithUserLevel:        body.ScaleWithUserLevel,
 		Difficulty:                difficulty,
 		RewardExperience:          body.RewardExperience,
 		RewardGold:                body.RewardGold,
@@ -13913,9 +14139,14 @@ func (s *server) getScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, scenarioWithUserStatus{
-		Scenario:        *scenario,
+		Scenario:        scenarioWithScaledDifficulty(*scenario, userLevel),
 		AttemptedByUser: attempt != nil,
 	})
 }
@@ -13938,6 +14169,11 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	response := make([]scenarioWithUserStatus, 0, len(scenarios))
 	for _, scenario := range scenarios {
@@ -13946,7 +14182,7 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 			continue
 		}
 		response = append(response, scenarioWithUserStatus{
-			Scenario:        scenario,
+			Scenario:        scenarioWithScaledDifficulty(scenario, userLevel),
 			AttemptedByUser: false,
 		})
 	}
@@ -14106,6 +14342,11 @@ func (s *server) performScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	existingAttempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
 	if err != nil {
@@ -14149,7 +14390,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 	rewardGold := 0
 	rewardItems := []scenarioRewardItem{}
 	rewardSpells := []scenarioRewardSpell{}
-	threshold := scenario.Difficulty
+	threshold := scenarioDifficultyForUserLevel(scenario, userLevel)
 	reason := "The outcome was uncertain."
 	outcomeText := ""
 	openEndedSuccessText := ""
@@ -14199,7 +14440,7 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 		statTag = normalizedStatTag
 		proficiencies = normalizeScenarioProficiencies([]string(option.Proficiencies))
-		if option.Difficulty != nil {
+		if !scenario.ScaleWithUserLevel && option.Difficulty != nil {
 			threshold = *option.Difficulty
 		}
 		rewardExperience = option.RewardExperience

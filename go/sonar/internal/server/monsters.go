@@ -261,14 +261,15 @@ type monsterUpsertRequest struct {
 }
 
 type monsterEncounterUpsertRequest struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	ImageURL     string   `json:"imageUrl"`
-	ThumbnailURL string   `json:"thumbnailUrl"`
-	ZoneID       string   `json:"zoneId"`
-	Latitude     float64  `json:"latitude"`
-	Longitude    float64  `json:"longitude"`
-	MonsterIDs   []string `json:"monsterIds"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	ImageURL           string   `json:"imageUrl"`
+	ThumbnailURL       string   `json:"thumbnailUrl"`
+	ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
+	ZoneID             string   `json:"zoneId"`
+	Latitude           float64  `json:"latitude"`
+	Longitude          float64  `json:"longitude"`
+	MonsterIDs         []string `json:"monsterIds"`
 }
 
 type monsterTemplateResponse struct {
@@ -350,20 +351,21 @@ type monsterEncounterMemberResponse struct {
 }
 
 type monsterEncounterResponse struct {
-	ID           uuid.UUID                        `json:"id"`
-	CreatedAt    time.Time                        `json:"createdAt"`
-	UpdatedAt    time.Time                        `json:"updatedAt"`
-	Name         string                           `json:"name"`
-	Description  string                           `json:"description"`
-	ImageURL     string                           `json:"imageUrl"`
-	ThumbnailURL string                           `json:"thumbnailUrl"`
-	ZoneID       uuid.UUID                        `json:"zoneId"`
-	Zone         models.Zone                      `json:"zone"`
-	Latitude     float64                          `json:"latitude"`
-	Longitude    float64                          `json:"longitude"`
-	MonsterCount int                              `json:"monsterCount"`
-	Members      []monsterEncounterMemberResponse `json:"members"`
-	Monsters     []monsterResponse                `json:"monsters"`
+	ID                 uuid.UUID                        `json:"id"`
+	CreatedAt          time.Time                        `json:"createdAt"`
+	UpdatedAt          time.Time                        `json:"updatedAt"`
+	Name               string                           `json:"name"`
+	Description        string                           `json:"description"`
+	ImageURL           string                           `json:"imageUrl"`
+	ThumbnailURL       string                           `json:"thumbnailUrl"`
+	ScaleWithUserLevel bool                             `json:"scaleWithUserLevel"`
+	ZoneID             uuid.UUID                        `json:"zoneId"`
+	Zone               models.Zone                      `json:"zone"`
+	Latitude           float64                          `json:"latitude"`
+	Longitude          float64                          `json:"longitude"`
+	MonsterCount       int                              `json:"monsterCount"`
+	Members            []monsterEncounterMemberResponse `json:"members"`
+	Monsters           []monsterResponse                `json:"monsters"`
 }
 
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
@@ -385,12 +387,18 @@ func (s *server) monsterEncounterResponseFrom(
 	ctx context.Context,
 	userID uuid.UUID,
 	encounter *models.MonsterEncounter,
+	userLevel int,
+	applyLevelScaling bool,
 ) (monsterEncounterResponse, error) {
 	members := make([]monsterEncounterMemberResponse, 0, len(encounter.Members))
 	monsters := make([]monsterResponse, 0, len(encounter.Members))
 	for i := range encounter.Members {
 		member := encounter.Members[i]
-		entry, err := s.buildMonsterResponse(ctx, userID, &member.Monster)
+		monster := member.Monster
+		if applyLevelScaling && encounter.ScaleWithUserLevel {
+			monster.Level = normalizeScaledLevel(userLevel)
+		}
+		entry, err := s.buildMonsterResponse(ctx, userID, &monster)
 		if err != nil {
 			return monsterEncounterResponse{}, err
 		}
@@ -414,20 +422,21 @@ func (s *server) monsterEncounterResponseFrom(
 	}
 
 	return monsterEncounterResponse{
-		ID:           encounter.ID,
-		CreatedAt:    encounter.CreatedAt,
-		UpdatedAt:    encounter.UpdatedAt,
-		Name:         encounter.Name,
-		Description:  encounter.Description,
-		ImageURL:     imageURL,
-		ThumbnailURL: thumbnailURL,
-		ZoneID:       encounter.ZoneID,
-		Zone:         encounter.Zone,
-		Latitude:     encounter.Latitude,
-		Longitude:    encounter.Longitude,
-		MonsterCount: len(monsters),
-		Members:      members,
-		Monsters:     monsters,
+		ID:                 encounter.ID,
+		CreatedAt:          encounter.CreatedAt,
+		UpdatedAt:          encounter.UpdatedAt,
+		Name:               encounter.Name,
+		Description:        encounter.Description,
+		ImageURL:           imageURL,
+		ThumbnailURL:       thumbnailURL,
+		ScaleWithUserLevel: encounter.ScaleWithUserLevel,
+		ZoneID:             encounter.ZoneID,
+		Zone:               encounter.Zone,
+		Latitude:           encounter.Latitude,
+		Longitude:          encounter.Longitude,
+		MonsterCount:       len(monsters),
+		Members:            members,
+		Monsters:           monsters,
 	}, nil
 }
 
@@ -893,13 +902,14 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 	}
 
 	encounter := &models.MonsterEncounter{
-		Name:         name,
-		Description:  description,
-		ImageURL:     imageURL,
-		ThumbnailURL: thumbnailURL,
-		ZoneID:       zoneID,
-		Latitude:     body.Latitude,
-		Longitude:    body.Longitude,
+		Name:               name,
+		Description:        description,
+		ImageURL:           imageURL,
+		ThumbnailURL:       thumbnailURL,
+		ScaleWithUserLevel: body.ScaleWithUserLevel,
+		ZoneID:             zoneID,
+		Latitude:           body.Latitude,
+		Longitude:          body.Longitude,
 	}
 	return encounter, members, nil
 }
@@ -1644,7 +1654,7 @@ func (s *server) getMonsterEncounters(ctx *gin.Context) {
 	}
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
-		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i])
+		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i], 1, false)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1676,8 +1686,13 @@ func (s *server) getMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, encounter)
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, encounter, userLevel, true)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1703,10 +1718,15 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
-		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i])
+		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i], userLevel, true)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -1749,7 +1769,7 @@ func (s *server) createMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusCreated, encounter)
 		return
 	}
-	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, created)
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, created, 1, false)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1804,7 +1824,7 @@ func (s *server) updateMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusOK, gin.H{"id": encounterID})
 		return
 	}
-	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, updated)
+	response, err := s.monsterEncounterResponseFrom(ctx, user.ID, updated, 1, false)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

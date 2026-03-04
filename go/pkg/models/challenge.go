@@ -9,24 +9,25 @@ import (
 )
 
 type Challenge struct {
-	ID              uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-	CreatedAt       time.Time               `json:"createdAt"`
-	UpdatedAt       time.Time               `json:"updatedAt"`
-	ZoneID          uuid.UUID               `json:"zoneId" gorm:"column:zone_id"`
-	Zone            Zone                    `json:"zone"`
-	Latitude        float64                 `json:"latitude"`
-	Longitude       float64                 `json:"longitude"`
-	Geometry        string                  `json:"geometry" gorm:"type:geometry(Point,4326)"`
-	Question        string                  `json:"question"`
-	Description     string                  `json:"description"`
-	ImageURL        string                  `json:"imageUrl" gorm:"column:image_url"`
-	ThumbnailURL    string                  `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
-	Reward          int                     `json:"reward"`
-	InventoryItemID *int                    `json:"inventoryItemId" gorm:"column:inventory_item_id"`
-	SubmissionType  QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
-	Difficulty      int                     `json:"difficulty" gorm:"default:0"`
-	StatTags        StringArray             `json:"statTags,omitempty" gorm:"type:jsonb"`
-	Proficiency     *string                 `json:"proficiency,omitempty"`
+	ID                 uuid.UUID               `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
+	CreatedAt          time.Time               `json:"createdAt"`
+	UpdatedAt          time.Time               `json:"updatedAt"`
+	ZoneID             uuid.UUID               `json:"zoneId" gorm:"column:zone_id"`
+	Zone               Zone                    `json:"zone"`
+	Latitude           float64                 `json:"latitude"`
+	Longitude          float64                 `json:"longitude"`
+	Geometry           string                  `json:"geometry" gorm:"type:geometry(Point,4326)"`
+	Question           string                  `json:"question"`
+	Description        string                  `json:"description"`
+	ImageURL           string                  `json:"imageUrl" gorm:"column:image_url"`
+	ThumbnailURL       string                  `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ScaleWithUserLevel bool                    `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
+	Reward             int                     `json:"reward"`
+	InventoryItemID    *int                    `json:"inventoryItemId" gorm:"column:inventory_item_id"`
+	SubmissionType     QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`
+	Difficulty         int                     `json:"difficulty" gorm:"default:0"`
+	StatTags           StringArray             `json:"statTags,omitempty" gorm:"type:jsonb"`
+	Proficiency        *string                 `json:"proficiency,omitempty"`
 }
 
 func (c *Challenge) TableName() string {

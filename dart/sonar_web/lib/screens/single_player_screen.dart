@@ -3557,9 +3557,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _showQuestNodeSubmissionModal(
-    Quest quest,
-    QuestNode node,
-  ) async {
+    String title,
+    QuestNode node, {
+    String? standaloneChallengeId,
+  }) async {
     final textController = TextEditingController();
     CapturedImage? capturedImage;
     PlatformFile? capturedVideo;
@@ -3568,6 +3569,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         ? node.challenges.first.id
         : null;
     final questLogProvider = context.read<QuestLogProvider>();
+    final poiService = context.read<PoiService>();
     final mediaService = context.read<MediaService>();
     final userId = context.read<AuthProvider>().user?.id ?? 'anonymous';
 
@@ -3623,7 +3625,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    quest.name,
+                    title,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -4015,16 +4017,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               }
                               videoSubmissionUrl = url.split('?').first;
                             }
-                            final resp = await questLogProvider
-                                .submitQuestNodeChallenge(
-                                  node.id,
-                                  questNodeChallengeId: selectedChallengeId,
-                                  textSubmission: isTextSubmission
-                                      ? trimmedText
-                                      : null,
-                                  imageSubmissionUrl: imageSubmissionUrl,
-                                  videoSubmissionUrl: videoSubmissionUrl,
-                                );
+                            final resp = standaloneChallengeId == null
+                                ? await questLogProvider
+                                      .submitQuestNodeChallenge(
+                                        node.id,
+                                        questNodeChallengeId:
+                                            selectedChallengeId,
+                                        textSubmission: isTextSubmission
+                                            ? trimmedText
+                                            : null,
+                                        imageSubmissionUrl: imageSubmissionUrl,
+                                        videoSubmissionUrl: videoSubmissionUrl,
+                                      )
+                                : await poiService.submitChallenge(
+                                    standaloneChallengeId,
+                                    textSubmission: isTextSubmission
+                                        ? trimmedText
+                                        : null,
+                                    imageSubmissionUrl: imageSubmissionUrl,
+                                    videoSubmissionUrl: videoSubmissionUrl,
+                                  );
                             final elapsed = DateTime.now().difference(
                               startedAt,
                             );
@@ -4069,7 +4081,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               statValues: statValues,
                             );
                           },
-                    child: Text('Quest: ${quest.name}'),
+                    child: const Text('Submit'),
                   ),
                 ],
               );
@@ -4473,7 +4485,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 bottom: 92,
                 child: FilledButton(
                   onPressed: () => _showQuestNodeSubmissionModal(
-                    polygonQuest!,
+                    polygonQuest!.name,
                     polygonNode!,
                   ),
                   child: Text('Quest: ${polygonQuest!.name}'),
@@ -5081,7 +5093,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
     final mysteryState = !withinRange;
-    final canSubmit = !mysteryState && activeQuestEntry != null;
+    final canSubmit = !mysteryState;
 
     showModalBottomSheet(
       context: context,
@@ -5191,16 +5203,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                     onPressed: canSubmit
                         ? () {
                             Navigator.of(sheetContext).pop();
-                            _showStandaloneQuestChallengeSubmissionModal(
-                              activeQuestEntry.key,
-                              activeQuestEntry.value,
-                              challenge,
-                            );
+                            if (activeQuestEntry != null) {
+                              _showStandaloneQuestChallengeSubmissionModal(
+                                activeQuestEntry.key,
+                                activeQuestEntry.value,
+                                challenge,
+                              );
+                            } else {
+                              _showStandaloneChallengeSubmissionModal(
+                                challenge,
+                              );
+                            }
                           }
                         : null,
                     child: Text(
                       activeQuestEntry == null
-                          ? 'No active quest objective here'
+                          ? 'Submit Challenge'
                           : 'Submit for quest: $questName',
                     ),
                   ),
@@ -5244,7 +5262,38 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         ),
       ],
     );
-    return _showQuestNodeSubmissionModal(quest, syntheticNode);
+    return _showQuestNodeSubmissionModal(quest.name, syntheticNode);
+  }
+
+  Future<void> _showStandaloneChallengeSubmissionModal(Challenge challenge) {
+    final submissionType = challenge.submissionType.trim().isNotEmpty
+        ? challenge.submissionType
+        : QuestNode.submissionTypePhoto;
+    final syntheticNode = QuestNode(
+      id: challenge.id,
+      orderIndex: 0,
+      submissionType: submissionType,
+      challengeId: challenge.id,
+      challenges: [
+        QuestNodeChallenge(
+          id: challenge.id,
+          tier: 0,
+          question: challenge.question,
+          imageUrl: challenge.imageUrl,
+          thumbnailUrl: challenge.thumbnailUrl,
+          reward: challenge.reward,
+          inventoryItemId: challenge.inventoryItemId,
+          difficulty: challenge.difficulty,
+          statTags: challenge.statTags,
+          proficiency: challenge.proficiency,
+        ),
+      ],
+    );
+    return _showQuestNodeSubmissionModal(
+      'Challenge',
+      syntheticNode,
+      standaloneChallengeId: challenge.id,
+    );
   }
 
   void _showMonsterPanel(MonsterEncounter monster) {

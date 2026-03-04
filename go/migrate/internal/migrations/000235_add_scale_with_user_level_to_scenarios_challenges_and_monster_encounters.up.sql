@@ -1,0 +1,8 @@
+ALTER TABLE scenarios
+  ADD COLUMN IF NOT EXISTS scale_with_user_level BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE challenges
+  ADD COLUMN IF NOT EXISTS scale_with_user_level BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE monster_encounters
+  ADD COLUMN IF NOT EXISTS scale_with_user_level BOOLEAN NOT NULL DEFAULT FALSE;

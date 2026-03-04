@@ -27,19 +27,20 @@ var challengeValidStatTags = map[string]struct{}{
 }
 
 type challengeUpsertRequest struct {
-	ZoneID          string   `json:"zoneId"`
-	Latitude        float64  `json:"latitude"`
-	Longitude       float64  `json:"longitude"`
-	Question        string   `json:"question"`
-	Description     string   `json:"description"`
-	ImageURL        string   `json:"imageUrl"`
-	ThumbnailURL    string   `json:"thumbnailUrl"`
-	Reward          int      `json:"reward"`
-	InventoryItemID *int     `json:"inventoryItemId"`
-	SubmissionType  string   `json:"submissionType"`
-	Difficulty      int      `json:"difficulty"`
-	StatTags        []string `json:"statTags"`
-	Proficiency     string   `json:"proficiency"`
+	ZoneID             string   `json:"zoneId"`
+	Latitude           float64  `json:"latitude"`
+	Longitude          float64  `json:"longitude"`
+	Question           string   `json:"question"`
+	Description        string   `json:"description"`
+	ImageURL           string   `json:"imageUrl"`
+	ThumbnailURL       string   `json:"thumbnailUrl"`
+	ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
+	Reward             int      `json:"reward"`
+	InventoryItemID    *int     `json:"inventoryItemId"`
+	SubmissionType     string   `json:"submissionType"`
+	Difficulty         int      `json:"difficulty"`
+	StatTags           []string `json:"statTags"`
+	Proficiency        string   `json:"proficiency"`
 }
 
 type challengeGenerationJobRequest struct {
@@ -105,19 +106,20 @@ func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge
 	}
 
 	challenge := &models.Challenge{
-		ZoneID:          zoneID,
-		Latitude:        body.Latitude,
-		Longitude:       body.Longitude,
-		Question:        question,
-		Description:     description,
-		ImageURL:        imageURL,
-		ThumbnailURL:    thumbnailURL,
-		Reward:          body.Reward,
-		InventoryItemID: body.InventoryItemID,
-		SubmissionType:  submissionType,
-		Difficulty:      body.Difficulty,
-		StatTags:        parseChallengeStatTags(body.StatTags),
-		Proficiency:     proficiencyPtr,
+		ZoneID:             zoneID,
+		Latitude:           body.Latitude,
+		Longitude:          body.Longitude,
+		Question:           question,
+		Description:        description,
+		ImageURL:           imageURL,
+		ThumbnailURL:       thumbnailURL,
+		ScaleWithUserLevel: body.ScaleWithUserLevel,
+		Reward:             body.Reward,
+		InventoryItemID:    body.InventoryItemID,
+		SubmissionType:     submissionType,
+		Difficulty:         body.Difficulty,
+		StatTags:           parseChallengeStatTags(body.StatTags),
+		Proficiency:        proficiencyPtr,
 	}
 	return challenge, nil
 }
@@ -132,6 +134,12 @@ func (s *server) getChallenges(ctx *gin.Context) {
 }
 
 func (s *server) getChallenge(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	challengeID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge ID"})
@@ -150,10 +158,22 @@ func (s *server) getChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
 		return
 	}
-	ctx.JSON(http.StatusOK, challenge)
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	scaled := challengeWithScaledDifficulty(*challenge, userLevel)
+	ctx.JSON(http.StatusOK, scaled)
 }
 
 func (s *server) getChallengesForZone(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	zoneID, err := uuid.Parse(ctx.Param("id"))
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
@@ -164,7 +184,16 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, challenges)
+	userLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response := make([]models.Challenge, 0, len(challenges))
+	for i := range challenges {
+		response = append(response, challengeWithScaledDifficulty(challenges[i], userLevel))
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) createChallenge(ctx *gin.Context) {

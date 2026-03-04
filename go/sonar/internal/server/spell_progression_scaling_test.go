@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -38,6 +39,25 @@ func TestSpellProgressionDamageFollowsLevelBaseline(t *testing.T) {
 		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamage, tc.level)
 		if actual != tc.expected {
 			t.Fatalf("expected damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
+		}
+	}
+}
+
+func TestSpellProgressionAllEnemiesDamageFollowsLevelBaseline(t *testing.T) {
+	cases := []struct {
+		level    int
+		expected int
+	}{
+		{level: 10, expected: 40},
+		{level: 25, expected: 100},
+		{level: 50, expected: 200},
+		{level: 70, expected: 280},
+	}
+
+	for _, tc := range cases {
+		actual := spellProgressionTargetAmount(models.SpellEffectTypeDealDamageAllEnemies, tc.level)
+		if actual != tc.expected {
+			t.Fatalf("expected all-enemies damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
 		}
 	}
 }
@@ -105,5 +125,34 @@ func TestSpellProgressionManaCostScalesByBand(t *testing.T) {
 	}
 	if level70 < 170 {
 		t.Fatalf("expected high-tier spell mana cost to be substantial, got %d", level70)
+	}
+}
+
+func TestSpellProgressionAllEnemiesManaCostExceedsSingleTarget(t *testing.T) {
+	singleTarget := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamage, 25, 70)
+	allEnemies := scaleSpellProgressionManaCost(12, models.SpellEffectTypeDealDamageAllEnemies, 25, 70)
+	if allEnemies <= singleTarget {
+		t.Fatalf(
+			"expected all-enemies mana to exceed single-target mana at level 70, got aoe=%d single=%d",
+			allEnemies,
+			singleTarget,
+		)
+	}
+}
+
+func TestSpellProgressionFlavorDescriptionStripsMetaReferences(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		Description:   "Level 50 evolution of Fire Wisp. Level 10 evolution of Inferno Blast. Unleash a searing wave of fire that engulfs your enemy.",
+	}
+
+	description := buildSpellProgressionFlavorDescription(seed, models.SpellEffectTypeDealDamage)
+	lower := strings.ToLower(description)
+	if strings.Contains(lower, "level ") || strings.Contains(lower, "evolution") || strings.Contains(lower, "progression") {
+		t.Fatalf("expected progression meta references to be removed, got %q", description)
+	}
+	if description != "Unleash a searing wave of fire that engulfs your enemy." {
+		t.Fatalf("expected only flavorful description to remain, got %q", description)
 	}
 }

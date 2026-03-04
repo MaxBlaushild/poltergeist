@@ -60,6 +60,25 @@ class _EncounterEnemyState {
   bool get isDefeated => currentHealth <= 0;
 }
 
+class _TurnOrderEntry {
+  const _TurnOrderEntry({
+    required this.iconUrl,
+    required this.currentHealth,
+    required this.maxHealth,
+    required this.fallbackIcon,
+    this.enemyIndex,
+  });
+
+  final String iconUrl;
+  final int currentHealth;
+  final int maxHealth;
+  final IconData fallbackIcon;
+  final int? enemyIndex;
+
+  bool get isPlayer => enemyIndex == null;
+  bool get isDefeated => !isPlayer && currentHealth <= 0;
+}
+
 class MonsterBattleDialog extends StatefulWidget {
   const MonsterBattleDialog({super.key, required this.encounter});
 
@@ -84,6 +103,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late int _playerMana;
   late final List<_EncounterEnemyState> _enemies;
   int _activeEnemyIndex = 0;
+  int? _actingEnemyIndex;
   late final String _playerFrontSpriteUrl;
   late final String _playerBackSpriteUrl;
   late final bool _hasTrueBackSprite;
@@ -153,6 +173,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       );
     }
     _activeEnemyIndex = 0;
+    _ensureSelectedEnemyIsAlive();
+    _actingEnemyIndex = null;
     _playerFrontSpriteUrl = (user?.profilePictureUrl ?? '').trim();
     _playerBackSpriteUrl = (user?.backProfilePictureUrl ?? '').trim();
     _hasTrueBackSprite = _playerBackSpriteUrl.isNotEmpty;
@@ -171,19 +193,34 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   List<_EncounterEnemyState> get _aliveEnemies =>
       _enemies.where((enemy) => !enemy.isDefeated).toList(growable: false);
 
-  _EncounterEnemyState? get _activeEnemy {
-    if (_activeEnemyIndex >= 0 &&
-        _activeEnemyIndex < _enemies.length &&
-        !_enemies[_activeEnemyIndex].isDefeated) {
-      return _enemies[_activeEnemyIndex];
-    }
+  int? _firstAliveEnemyIndex() {
     for (var i = 0; i < _enemies.length; i++) {
-      if (!_enemies[i].isDefeated) {
-        _activeEnemyIndex = i;
-        return _enemies[i];
-      }
+      if (!_enemies[i].isDefeated) return i;
     }
     return null;
+  }
+
+  int? _resolveTargetEnemyIndex([int? preferredIndex]) {
+    if (preferredIndex != null &&
+        preferredIndex >= 0 &&
+        preferredIndex < _enemies.length &&
+        !_enemies[preferredIndex].isDefeated) {
+      return preferredIndex;
+    }
+    return _firstAliveEnemyIndex();
+  }
+
+  void _ensureSelectedEnemyIsAlive() {
+    final resolved = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    if (resolved != null) {
+      _activeEnemyIndex = resolved;
+    }
+  }
+
+  _EncounterEnemyState? get _activeEnemy {
+    final resolved = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    if (resolved == null) return null;
+    return _enemies[resolved];
   }
 
   String get _monsterSpriteUrl {
@@ -196,6 +233,74 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   String get _playerSpriteUrl =>
       _hasTrueBackSprite ? _playerBackSpriteUrl : _playerFrontSpriteUrl;
+
+  List<_TurnOrderEntry> _currentTurnOrder() {
+    final entries = <_TurnOrderEntry>[
+      _TurnOrderEntry(
+        iconUrl: _playerFrontSpriteUrl,
+        currentHealth: _playerHealth,
+        maxHealth: _playerMaxHealth,
+        fallbackIcon: Icons.person,
+      ),
+    ];
+    for (var i = 0; i < _enemies.length; i++) {
+      final enemy = _enemies[i];
+      if (enemy.isDefeated) continue;
+      entries.add(
+        _TurnOrderEntry(
+          iconUrl: enemy.monster.thumbnailUrl.isNotEmpty
+              ? enemy.monster.thumbnailUrl
+              : enemy.monster.imageUrl,
+          currentHealth: enemy.currentHealth,
+          maxHealth: enemy.maxHealth,
+          fallbackIcon: Icons.pets,
+          enemyIndex: i,
+        ),
+      );
+    }
+    if (entries.length <= 1) return entries;
+
+    var currentIndex = 0;
+    if (!_playerTurn && _actingEnemyIndex != null) {
+      currentIndex = entries.indexWhere(
+        (entry) => entry.enemyIndex == _actingEnemyIndex,
+      );
+      if (currentIndex < 0) currentIndex = 0;
+    }
+    if (currentIndex <= 0) return entries;
+    return <_TurnOrderEntry>[
+      ...entries.sublist(currentIndex),
+      ...entries.sublist(0, currentIndex),
+    ];
+  }
+
+  bool _isCurrentTurnEntry(_TurnOrderEntry entry) {
+    if (_playerTurn) return entry.isPlayer;
+    if (entry.isPlayer) return false;
+    return entry.enemyIndex != null && entry.enemyIndex == _actingEnemyIndex;
+  }
+
+  void _shiftActiveEnemy(int direction) {
+    final aliveIndexes = <int>[];
+    for (var i = 0; i < _enemies.length; i++) {
+      if (!_enemies[i].isDefeated) {
+        aliveIndexes.add(i);
+      }
+    }
+    if (aliveIndexes.length <= 1) {
+      _ensureSelectedEnemyIsAlive();
+      return;
+    }
+
+    final currentIndex =
+        _resolveTargetEnemyIndex(_activeEnemyIndex) ?? aliveIndexes.first;
+    final currentPosition = aliveIndexes.indexOf(currentIndex);
+    final safePosition = currentPosition < 0 ? 0 : currentPosition;
+    final shiftedPosition = (safePosition + direction) % aliveIndexes.length;
+    setState(() {
+      _activeEnemyIndex = aliveIndexes[shiftedPosition];
+    });
+  }
 
   int _rollDamage(int minDamage, int maxDamage) {
     final minValue = math.max(1, minDamage);
@@ -212,6 +317,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return normalized.contains('damage') ||
         normalized.contains('harm') ||
         normalized.contains('attack');
+  }
+
+  bool _isAllEnemiesDamageEffect(String effectType) {
+    final normalized = effectType.trim().toLowerCase();
+    return normalized == 'deal_damage_all_enemies' ||
+        normalized.contains('all_enemies') ||
+        normalized.contains('all enemies') ||
+        normalized.contains('aoe') ||
+        normalized.contains('area_damage');
   }
 
   bool _isHealingEffect(String effectType) {
@@ -276,6 +390,26 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       minDamage + math.max<int>(2, ability.manaCost),
     );
     return _rollDamage(minDamage, maxDamage);
+  }
+
+  int _explicitAbilityDamageByTargeting(
+    Spell ability, {
+    required bool allEnemies,
+  }) {
+    final damageEffects = ability.effects
+        .where((effect) {
+          if (!_isDamageEffect(effect.type)) return false;
+          final isAllEnemiesEffect = _isAllEnemiesDamageEffect(effect.type);
+          return allEnemies ? isAllEnemiesEffect : !isAllEnemiesEffect;
+        })
+        .toList(growable: false);
+    if (damageEffects.isEmpty) return 0;
+
+    final explicitDamage = damageEffects.fold<int>(
+      0,
+      (sum, effect) => sum + math.max(0, effect.amount),
+    );
+    return explicitDamage + math.max(0, _playerLevel ~/ 3);
   }
 
   int _abilityHealing(Spell ability) {
@@ -414,14 +548,28 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   Future<void> _resolvePlayerAction({
     required String message,
     required int damageToMonster,
+    int damageToAllEnemies = 0,
+    int? targetEnemyIndex,
     int playerHealthDelta = 0,
     int playerManaDelta = 0,
   }) async {
     if (!_canAct) return;
 
-    final targetEnemy = _activeEnemy;
+    final resolvedTargetIndex = _resolveTargetEnemyIndex(targetEnemyIndex);
+    final targetEnemy = resolvedTargetIndex == null
+        ? null
+        : _enemies[resolvedTargetIndex];
     var targetName = 'the enemy';
-    if (targetEnemy != null) {
+    if (damageToAllEnemies > 0) {
+      for (final enemy in _enemies) {
+        if (enemy.isDefeated) continue;
+        enemy.currentHealth = math.max(
+          0,
+          enemy.currentHealth - damageToAllEnemies,
+        );
+      }
+    }
+    if (targetEnemy != null && !targetEnemy.isDefeated) {
       targetName = targetEnemy.monster.name;
       if (damageToMonster > 0) {
         targetEnemy.currentHealth = math.max(
@@ -430,6 +578,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         );
       }
     }
+    _ensureSelectedEnemyIsAlive();
 
     setState(() {
       _busy = true;
@@ -441,17 +590,18 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _playerMana = (_playerMana + playerManaDelta)
           .clamp(0, _playerMaxMana)
           .toInt();
-      if (damageToMonster > 0) {
-        _battleLog.add('$message (Target: $targetName)');
+      if (damageToMonster > 0 && damageToAllEnemies <= 0) {
+        _battleLog.add('$message (Target: $targetName).');
       } else {
         _battleLog.add(message);
       }
     });
-    if (damageToMonster > 0) {
+    final monsterFxAmount = math.max(damageToMonster, damageToAllEnemies);
+    if (monsterFxAmount > 0) {
       unawaited(
         _playSpriteFx(
           targetMonster: true,
-          amount: damageToMonster,
+          amount: monsterFxAmount,
           healing: false,
         ),
       );
@@ -478,6 +628,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
     setState(() {
       _playerTurn = false;
+      _actingEnemyIndex = _firstAliveEnemyIndex();
     });
     await _monsterTurn();
   }
@@ -485,6 +636,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   Future<void> _monsterTurn() async {
     await Future<void>.delayed(const Duration(milliseconds: 420));
     if (!mounted || _battleOver) return;
+    setState(() {
+      _actingEnemyIndex = _firstAliveEnemyIndex();
+    });
     for (var i = 0; i < _enemies.length; i++) {
       final enemy = _enemies[i];
       if (enemy.isDefeated) continue;
@@ -495,7 +649,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           : 'its weapon';
 
       setState(() {
-        _activeEnemyIndex = i;
+        _actingEnemyIndex = i;
         _playerHealth = math.max(0, _playerHealth - damage);
         _battleLog.add(
           '${enemy.monster.name} attacks with $weaponName for $damage damage.',
@@ -518,8 +672,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
 
     setState(() {
+      _actingEnemyIndex = null;
       _busy = false;
       _playerTurn = true;
+      _ensureSelectedEnemyIsAlive();
       _selectedCommandKey = 'root:Attack';
       _battleLog.add('Your turn. Choose a command.');
     });
@@ -545,15 +701,145 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
+  Future<int?> _pickSingleTargetEnemyIndex({
+    required String actionLabel,
+  }) async {
+    final aliveEntries = _enemies
+        .asMap()
+        .entries
+        .where((entry) => !entry.value.isDefeated)
+        .toList(growable: false);
+    if (aliveEntries.isEmpty) return null;
+    if (aliveEntries.length == 1) return aliveEntries.first.key;
+
+    final initialTarget = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text('Choose target for $actionLabel'),
+          content: SizedBox(
+            width: 360,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: aliveEntries.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final entry = aliveEntries[index];
+                  final enemyIndex = entry.key;
+                  final enemy = entry.value;
+                  final isSelected = enemyIndex == initialTarget;
+                  final imageUrl = enemy.monster.thumbnailUrl.isNotEmpty
+                      ? enemy.monster.thumbnailUrl
+                      : enemy.monster.imageUrl;
+                  return InkWell(
+                    onTap: () => Navigator.of(dialogContext).pop(enemyIndex),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFB5872F).withValues(alpha: 0.14)
+                            : theme.colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFB5872F)
+                              : theme.colorScheme.outline.withValues(
+                                  alpha: 0.55,
+                                ),
+                          width: isSelected ? 1.8 : 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: imageUrl.isNotEmpty
+                                  ? Image.network(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) => Icon(
+                                            Icons.pets,
+                                            size: 22,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    )
+                                  : Icon(
+                                      Icons.pets,
+                                      size: 22,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              enemy.monster.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${enemy.currentHealth}/${enemy.maxHealth}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || selected == null) return selected;
+    setState(() {
+      _activeEnemyIndex = selected;
+    });
+    return selected;
+  }
+
   Future<void> _attack() async {
     if (!_canAct) return;
+    int? targetIndex;
+    if (_aliveEnemies.length > 1) {
+      targetIndex = await _pickSingleTargetEnemyIndex(actionLabel: 'Attack');
+      if (!mounted || !_canAct || targetIndex == null) return;
+    } else {
+      targetIndex = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    }
+    if (targetIndex == null) return;
+    final target = _enemies[targetIndex];
     final damage = _playerAttackDamage();
-    final target = _activeEnemy;
     await _resolvePlayerAction(
-      message: target == null
-          ? '$_playerName attacks for $damage damage.'
-          : '$_playerName attacks ${target.monster.name} for $damage damage.',
+      message: '$_playerName attacks ${target.monster.name} for $damage damage',
       damageToMonster: damage,
+      targetEnemyIndex: targetIndex,
     );
   }
 
@@ -568,14 +854,41 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       return;
     }
 
-    final damage = _abilityDamage(ability);
+    final singleTargetDamage = _explicitAbilityDamageByTargeting(
+      ability,
+      allEnemies: false,
+    );
+    final allEnemiesDamage = _explicitAbilityDamageByTargeting(
+      ability,
+      allEnemies: true,
+    );
+    final fallbackDamage = singleTargetDamage == 0 && allEnemiesDamage == 0
+        ? _abilityDamage(ability)
+        : 0;
+    final damage = singleTargetDamage > 0 ? singleTargetDamage : fallbackDamage;
     final healing = _abilityHealing(ability);
     final parts = <String>['$_playerName uses ${ability.name}'];
     if (damage > 0) parts.add('dealing $damage damage');
+    if (allEnemiesDamage > 0) {
+      parts.add('dealing $allEnemiesDamage damage to all enemies');
+    }
     if (healing > 0) parts.add('restoring $healing HP');
+    int? targetIndex;
+    if (damage > 0) {
+      if (allEnemiesDamage == 0 && _aliveEnemies.length > 1) {
+        targetIndex = await _pickSingleTargetEnemyIndex(
+          actionLabel: ability.name,
+        );
+        if (!mounted || !_canAct || targetIndex == null) return;
+      } else {
+        targetIndex = _resolveTargetEnemyIndex(_activeEnemyIndex);
+      }
+    }
     await _resolvePlayerAction(
-      message: '${parts.join(', ')}.',
+      message: parts.join(', '),
       damageToMonster: damage,
+      damageToAllEnemies: allEnemiesDamage,
+      targetEnemyIndex: targetIndex,
       playerHealthDelta: healing,
       playerManaDelta: -manaCost,
     );
@@ -736,47 +1049,108 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
-  Widget _buildEnemyRoster(ThemeData theme) {
-    if (_enemies.length <= 1) {
-      return const SizedBox.shrink();
-    }
-    final aliveCount = _aliveEnemies.length;
+  Widget _buildTurnOrderStrip(ThemeData theme) {
+    final entries = _currentTurnOrder();
     return Container(
-      margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.9),
+        color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: theme.colorScheme.outline.withValues(alpha: 0.5),
-          width: 1.2,
-        ),
+        border: Border.all(color: theme.colorScheme.outline, width: 2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Enemies Remaining: $aliveCount/${_enemies.length}',
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w700,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: entries
+                  .map((entry) {
+                    final isCurrent = _isCurrentTurnEntry(entry);
+                    final isSelectedEnemy =
+                        entry.enemyIndex != null &&
+                        entry.enemyIndex == _activeEnemyIndex &&
+                        !entry.isDefeated;
+                    final onTap =
+                        entry.enemyIndex == null ||
+                            entry.isDefeated ||
+                            _battleOver
+                        ? null
+                        : () {
+                            setState(() {
+                              _activeEnemyIndex = entry.enemyIndex!;
+                            });
+                          };
+                    return InkWell(
+                      onTap: onTap,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 64,
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? const Color(0xFFB5872F).withValues(alpha: 0.16)
+                              : isSelectedEnemy
+                              ? const Color(0xFFB5872F).withValues(alpha: 0.1)
+                              : theme.colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isCurrent || isSelectedEnemy
+                                ? const Color(0xFFB5872F)
+                                : theme.colorScheme.outline.withValues(
+                                    alpha: 0.55,
+                                  ),
+                            width: isCurrent
+                                ? 2
+                                : (isSelectedEnemy ? 1.8 : 1.1),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: 38,
+                              height: 38,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: entry.iconUrl.isNotEmpty
+                                    ? Image.network(
+                                        entry.iconUrl,
+                                        fit: BoxFit.cover,
+                                        color: entry.isDefeated
+                                            ? theme.colorScheme.onSurface
+                                                  .withValues(alpha: 0.55)
+                                            : null,
+                                        colorBlendMode: entry.isDefeated
+                                            ? BlendMode.saturation
+                                            : null,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Icon(
+                                                  entry.fallbackIcon,
+                                                  size: 24,
+                                                ),
+                                      )
+                                    : Icon(entry.fallbackIcon, size: 24),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${entry.currentHealth}/${entry.maxHealth}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
             ),
           ),
-          const SizedBox(height: 6),
-          ..._enemies.map((enemy) {
-            final isActive = identical(enemy, _activeEnemy);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                '${enemy.isDefeated ? 'X' : '-'} ${enemy.monster.name} (${enemy.currentHealth}/${enemy.maxHealth} HP)',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-                  color: enemy.isDefeated
-                      ? theme.colorScheme.onSurface.withValues(alpha: 0.55)
-                      : null,
-                ),
-              ),
-            );
-          }),
         ],
       ),
     );
@@ -929,6 +1303,97 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
+  Widget _buildEnemyCycleChevron({
+    required ThemeData theme,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    final enabled = onPressed != null;
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: enabled
+            ? theme.colorScheme.surface.withValues(alpha: 0.9)
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: enabled
+              ? const Color(0xFFB5872F).withValues(alpha: 0.8)
+              : theme.colorScheme.outline.withValues(alpha: 0.55),
+          width: enabled ? 1.6 : 1.2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 5,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 18,
+          color: enabled
+              ? theme.colorScheme.onSurface
+              : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+        ),
+        padding: EdgeInsets.zero,
+        splashRadius: 16,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+
+  Widget _buildEnemyStageWithChevrons({
+    required ThemeData theme,
+    required double spriteSize,
+  }) {
+    final canCycle = !_battleOver && _aliveEnemies.length > 1;
+    final stageWidth = spriteSize + 28;
+    final stageHeight = spriteSize + 34;
+    return SizedBox(
+      width: stageWidth,
+      height: stageHeight,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          _buildSpriteStage(
+            theme: theme,
+            imageUrl: _monsterSpriteUrl,
+            fallbackIcon: Icons.pets,
+            size: spriteSize,
+            shakeDx: _monsterShakeDx,
+            flashTint: _monsterFlashTint,
+            floatingText: _monsterFloatText,
+            floatingTextColor: _monsterFloatColor,
+            fxNonce: _monsterFxNonce,
+            flipHorizontally: true,
+          ),
+          Positioned(
+            left: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_left,
+              onPressed: canCycle ? () => _shiftActiveEnemy(-1) : null,
+            ),
+          ),
+          Positioned(
+            right: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_right,
+              onPressed: canCycle ? () => _shiftActiveEnemy(1) : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBattlefield(ThemeData theme) {
     final activeEnemy = _activeEnemy;
     final activeEnemyName = activeEnemy?.monster.name ?? widget.encounter.name;
@@ -966,32 +1431,18 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                   children: [
                     SizedBox(
                       width: statusWidth,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildStatusPanel(
-                            theme: theme,
-                            name: activeEnemyName,
-                            level: activeEnemyLevel,
-                            currentHp: activeEnemyHp,
-                            maxHp: activeEnemyMaxHp,
-                          ),
-                          _buildEnemyRoster(theme),
-                        ],
+                      child: _buildStatusPanel(
+                        theme: theme,
+                        name: activeEnemyName,
+                        level: activeEnemyLevel,
+                        currentHp: activeEnemyHp,
+                        maxHp: activeEnemyMaxHp,
                       ),
                     ),
                     const Spacer(),
-                    _buildSpriteStage(
+                    _buildEnemyStageWithChevrons(
                       theme: theme,
-                      imageUrl: _monsterSpriteUrl,
-                      fallbackIcon: Icons.pets,
-                      size: spriteSize,
-                      shakeDx: _monsterShakeDx,
-                      flashTint: _monsterFlashTint,
-                      floatingText: _monsterFloatText,
-                      floatingTextColor: _monsterFloatColor,
-                      fxNonce: _monsterFxNonce,
-                      flipHorizontally: true,
+                      spriteSize: spriteSize,
                     ),
                   ],
                 ),
@@ -1290,37 +1741,41 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         backgroundColor: Colors.transparent,
         child: PaperSheet(
           child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Battle',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildTurnOrderStrip(theme),
+                        const SizedBox(height: 8),
+                        _buildBattlefield(theme),
+                        const SizedBox(height: 8),
+                        _buildLogPanel(theme),
+                        const SizedBox(height: 8),
+                        Container(
+                          height: 158,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: theme.colorScheme.outline,
+                              width: 2,
+                            ),
+                          ),
+                          child: _buildCommandMenu(theme),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  _buildBattlefield(theme),
-                  const SizedBox(height: 8),
-                  _buildLogPanel(theme),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 158,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: theme.colorScheme.outline,
-                        width: 2,
-                      ),
-                    ),
-                    child: _buildCommandMenu(theme),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ),

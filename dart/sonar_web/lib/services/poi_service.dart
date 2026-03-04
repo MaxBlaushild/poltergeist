@@ -123,6 +123,28 @@ class PoiService {
     }
   }
 
+  Future<Map<String, dynamic>> submitChallenge(
+    String challengeId, {
+    String? textSubmission,
+    String? imageSubmissionUrl,
+    String? videoSubmissionUrl,
+  }) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/challenges/$challengeId/submit',
+      data: {
+        if (textSubmission != null) 'textSubmission': textSubmission,
+        if (imageSubmissionUrl != null)
+          'imageSubmissionUrl': imageSubmissionUrl,
+        if (videoSubmissionUrl != null)
+          'videoSubmissionUrl': videoSubmissionUrl,
+      },
+    );
+    final map = raw is Map
+        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        : <String, dynamic>{};
+    return map;
+  }
+
   Future<List<Zone>> getZones() async {
     final list = await _api.get<List<dynamic>>('/sonar/zones');
     final zones = <Zone>[];

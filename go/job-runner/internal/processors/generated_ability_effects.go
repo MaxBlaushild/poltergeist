@@ -13,6 +13,7 @@ import (
 
 var supportedBulkEffectTypes = []models.SpellEffectType{
 	models.SpellEffectTypeDealDamage,
+	models.SpellEffectTypeDealDamageAllEnemies,
 	models.SpellEffectTypeRestoreLifePartyMember,
 	models.SpellEffectTypeRestoreLifeAllParty,
 	models.SpellEffectTypeApplyBeneficialStatus,
@@ -121,6 +122,11 @@ func effectKeywordsForName(effectType models.SpellEffectType) []string {
 		return []string{"aegis", "ward", "guard", "boon", "fortify", "stance", "focus"}
 	case models.SpellEffectTypeRemoveDetrimental:
 		return []string{"cleanse", "purge", "dispel", "purify", "clear"}
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		return []string{
+			"nova", "wave", "burst", "storm", "tempest", "cataclysm", "maelstrom", "shockwave",
+			"barrage", "volley", "sweep", "cleave", "whirl", "eruption", "blast",
+		}
 	case models.SpellEffectTypeDealDamage:
 		return []string{
 			"strike", "lance", "bolt", "blast", "slash", "rend", "burst", "volley",
@@ -141,6 +147,11 @@ func effectKeywordsForDescription(effectType models.SpellEffectType) []string {
 		return []string{"boon", "ward", "fortify", "empower", "enhance", "status", "stance", "focus"}
 	case models.SpellEffectTypeRemoveDetrimental:
 		return []string{"cleanse", "purge", "remove", "dispel", "clear", "ailment", "debuff", "detrimental"}
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		return []string{
+			"damage", "harm", "attack", "blast", "burst", "nova", "wave",
+			"all enemies", "area", "aoe", "group", "crowd", "multiple",
+		}
 	case models.SpellEffectTypeDealDamage:
 		return []string{"damage", "harm", "attack", "strike", "blast", "hit", "wound", "burst"}
 	default:
@@ -160,7 +171,8 @@ func generatedAbilityNameMatchesEffect(
 	if !containsAnyKeyword(trimmed, effectKeywordsForName(effectType)) {
 		return false
 	}
-	if effectType != models.SpellEffectTypeDealDamage {
+	if effectType != models.SpellEffectTypeDealDamage &&
+		effectType != models.SpellEffectTypeDealDamageAllEnemies {
 		return true
 	}
 	normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
@@ -258,17 +270,34 @@ func generatedAbilityNameForEffect(
 			"Dispel Invocation",
 			"Purify Glyph",
 		})
-	case models.SpellEffectTypeDealDamage:
+	case models.SpellEffectTypeDealDamage, models.SpellEffectTypeDealDamageAllEnemies:
 		normalizedAffinity := models.NormalizeDamageAffinity(stringValue(effect.DamageAffinity))
 		damageSeed := fmt.Sprintf("%s|%s|%s|%d", seedBase, effect.Type, normalizedAffinity, effect.Amount)
+		isAllEnemies := effect.Type == models.SpellEffectTypeDealDamageAllEnemies
 		switch normalizedAffinity {
 		case models.DamageAffinityFire:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Inferno Wave",
+						"Cinder Tempest",
+						"Pyre Nova",
+						"Wildfire Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Ember Lance",
 					"Cinder Bolt",
 					"Inferno Burst",
 					"Flame Spear",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Blazing Sweep",
+					"Pyre Cyclone",
+					"Cinder Whirl",
+					"Flame Maelstrom",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -279,11 +308,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityIce:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Glacial Wave",
+						"Rime Tempest",
+						"Frost Nova",
+						"Winter Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Frost Shards",
 					"Glacial Lance",
 					"Rime Burst",
 					"Chill Bolt",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Rime Sweep",
+					"Glacial Cyclone",
+					"Frost Whirl",
+					"Winter Cleave",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -294,11 +339,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityLightning:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Storm Tempest",
+						"Thunder Wave",
+						"Volt Nova",
+						"Chainstorm Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Storm Bolt",
 					"Thunder Lance",
 					"Volt Burst",
 					"Spark Javelin",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Storm Sweep",
+					"Thunder Cyclone",
+					"Volt Whirl",
+					"Spark Barrage",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -309,11 +370,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityPoison:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Venom Wave",
+						"Toxin Tempest",
+						"Blight Nova",
+						"Virulent Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Venom Bolt",
 					"Toxin Burst",
 					"Blight Lance",
 					"Virulent Spear",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Toxin Sweep",
+					"Virulent Cyclone",
+					"Blight Whirl",
+					"Poison Barrage",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -324,11 +401,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityArcane:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Arcane Tempest",
+						"Rune Wave",
+						"Astral Nova",
+						"Mana Maelstrom",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Arcane Burst",
 					"Rune Volley",
 					"Astral Lance",
 					"Mana Barrage",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Arcane Sweep",
+					"Rune Cyclone",
+					"Astral Whirl",
+					"Mana Onslaught",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -339,11 +432,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityHoly:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Radiant Wave",
+						"Dawn Tempest",
+						"Sanctified Nova",
+						"Sunfire Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Radiant Ray",
 					"Dawn Lance",
 					"Sanctified Burst",
 					"Sunfire Bolt",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Radiant Sweep",
+					"Dawn Cyclone",
+					"Sanctified Whirl",
+					"Sunfire Onslaught",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -354,11 +463,27 @@ func generatedAbilityNameForEffect(
 			})
 		case models.DamageAffinityShadow:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Umbral Wave",
+						"Night Tempest",
+						"Void Nova",
+						"Hexfire Surge",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Umbral Volley",
 					"Night Bolt",
 					"Void Lance",
 					"Hexfire Burst",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Umbral Sweep",
+					"Night Cyclone",
+					"Void Whirl",
+					"Hexfire Barrage",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -369,11 +494,27 @@ func generatedAbilityNameForEffect(
 			})
 		default:
 			if abilityType == models.SpellAbilityTypeSpell {
+				if isAllEnemies {
+					return pickGeneratedAbilityNameVariant(damageSeed, []string{
+						"Force Tempest",
+						"Impact Wave",
+						"Battle Nova",
+						"Iron Maelstrom",
+					})
+				}
 				return pickGeneratedAbilityNameVariant(damageSeed, []string{
 					"Force Barrage",
 					"Iron Bolt",
 					"Battle Lance",
 					"Impact Burst",
+				})
+			}
+			if isAllEnemies {
+				return pickGeneratedAbilityNameVariant(damageSeed, []string{
+					"Iron Sweep",
+					"Battle Cyclone",
+					"Impact Whirl",
+					"Steel Onslaught",
 				})
 			}
 			return pickGeneratedAbilityNameVariant(damageSeed, []string{
@@ -420,7 +561,8 @@ func generatedAbilityDescriptionMatchesEffect(
 	if !containsAnyKeyword(trimmed, effectKeywordsForDescription(effectType)) {
 		return false
 	}
-	if effectType == models.SpellEffectTypeDealDamage {
+	if effectType == models.SpellEffectTypeDealDamage ||
+		effectType == models.SpellEffectTypeDealDamageAllEnemies {
 		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
 		if normalizedAffinity == models.DamageAffinityPhysical {
 			return true
@@ -460,7 +602,7 @@ func generatedAbilityDescriptionForEffect(effect models.SpellEffect, abilityType
 			return fmt.Sprintf("Resets footing and clears %s from allies.", statusTarget)
 		}
 		return fmt.Sprintf("Purges %s from allies.", statusTarget)
-	case models.SpellEffectTypeDealDamage:
+	case models.SpellEffectTypeDealDamage, models.SpellEffectTypeDealDamageAllEnemies:
 		affinity := "force"
 		switch models.NormalizeDamageAffinity(stringValue(effect.DamageAffinity)) {
 		case models.DamageAffinityFire:
@@ -480,10 +622,14 @@ func generatedAbilityDescriptionForEffect(effect models.SpellEffect, abilityType
 		case models.DamageAffinityPhysical:
 			affinity = "physical"
 		}
-		if abilityType == models.SpellAbilityTypeTechnique {
-			return fmt.Sprintf("A focused %s strike that damages a single enemy.", affinity)
+		targetLabel := "a single enemy"
+		if effect.Type == models.SpellEffectTypeDealDamageAllEnemies {
+			targetLabel = "all enemies"
 		}
-		return fmt.Sprintf("Unleashes %s energy to damage a single enemy.", affinity)
+		if abilityType == models.SpellAbilityTypeTechnique {
+			return fmt.Sprintf("A focused %s strike that damages %s.", affinity, targetLabel)
+		}
+		return fmt.Sprintf("Unleashes %s energy to damage %s.", affinity, targetLabel)
 	default:
 		return ""
 	}
@@ -655,6 +801,38 @@ func inferGeneratedAbilityEffectsWithPreference(
 				"bleeding",
 			},
 		}}
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		damage := 11 + (manaCost / 4)
+		if abilityType == models.SpellAbilityTypeTechnique {
+			damage = 8
+			if containsAnyKeyword(text, []string{"heavy", "crush", "breaker", "slam", "assault"}) {
+				damage = 10
+			}
+		}
+		if damage < 7 {
+			damage = 7
+		}
+		damage = scaleAbilityAmountForLevel(damage, targetLevel)
+		if curve != nil {
+			curveRatio := 0.07
+			if abilityType == models.SpellAbilityTypeTechnique {
+				curveRatio = 0.06
+				if containsAnyKeyword(text, []string{"heavy", "crush", "breaker", "slam", "assault"}) {
+					curveRatio += 0.015
+				}
+			}
+			manaFactor := math.Min(1, float64(maxInt(0, manaCost))/70.0)
+			curveRatio += (0.06 * manaFactor)
+			curveAmount := int(math.Round(float64(curve.EstimatedHealth) * curveRatio))
+			damage = blendGeneratedAbilityAmount(damage, curveAmount, 0.65)
+		}
+		damage = varyGeneratedAbilityAmount(damage, text+"|deal_damage_all_enemies|"+string(abilityType), effectType)
+		damageAffinity := inferGeneratedDamageAffinity(text, abilityType)
+		return models.SpellEffects{{
+			Type:           models.SpellEffectTypeDealDamageAllEnemies,
+			Amount:         damage,
+			DamageAffinity: &damageAffinity,
+		}}
 	case models.SpellEffectTypeDealDamage:
 		fallthrough
 	default:
@@ -762,6 +940,8 @@ func varyGeneratedAbilityAmount(base int, seed string, effectType models.SpellEf
 	switch effectType {
 	case models.SpellEffectTypeDealDamage:
 		spread = 0.14
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		spread = 0.12
 	case models.SpellEffectTypeRestoreLifePartyMember, models.SpellEffectTypeRestoreLifeAllParty:
 		spread = 0.10
 	}
@@ -859,6 +1039,13 @@ func inferGeneratedAbilityPrimaryEffectType(
 		if containsAnyKeyword(text, []string{"ward", "barrier", "guard", "shield", "stance", "fortify"}) {
 			return models.SpellEffectTypeApplyBeneficialStatus
 		}
+		if containsAnyKeyword(text, []string{
+			"all enemies", "all foes", "all targets", "nearby enemies", "nearby foes",
+			"aoe", "area", "wave", "nova", "tempest", "maelstrom", "shockwave",
+			"sweep", "whirl", "cleave", "barrage", "volley", "crowd",
+		}) {
+			return models.SpellEffectTypeDealDamageAllEnemies
+		}
 		return models.SpellEffectTypeDealDamage
 	}
 
@@ -873,6 +1060,13 @@ func inferGeneratedAbilityPrimaryEffectType(
 	}
 	if containsAnyKeyword(text, []string{"cleanse", "purge", "dispel"}) {
 		return models.SpellEffectTypeRemoveDetrimental
+	}
+	if containsAnyKeyword(text, []string{
+		"all enemies", "all foes", "all targets", "nearby enemies", "nearby foes",
+		"aoe", "area", "wave", "nova", "tempest", "maelstrom", "shockwave",
+		"barrage", "volley", "eruption", "blast all",
+	}) {
+		return models.SpellEffectTypeDealDamageAllEnemies
 	}
 	return models.SpellEffectTypeDealDamage
 }
@@ -896,6 +1090,16 @@ func buildGeneratedAbilityEffectText(effects models.SpellEffects, abilityType mo
 				parts = append(parts, fmt.Sprintf("Deals %d %s.", effect.Amount, damageLabel))
 			} else {
 				parts = append(parts, fmt.Sprintf("Deals direct %s.", damageLabel))
+			}
+		case models.SpellEffectTypeDealDamageAllEnemies:
+			damageLabel := "damage"
+			if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
+				damageLabel = fmt.Sprintf("%s damage", strings.TrimSpace(*effect.DamageAffinity))
+			}
+			if effect.Amount > 0 {
+				parts = append(parts, fmt.Sprintf("Deals %d %s to all enemies.", effect.Amount, damageLabel))
+			} else {
+				parts = append(parts, fmt.Sprintf("Deals area %s to all enemies.", damageLabel))
 			}
 		case models.SpellEffectTypeRestoreLifePartyMember:
 			if effect.Amount > 0 {
@@ -950,6 +1154,7 @@ func buildConfiguredAbilityEffectPlan(
 
 	configuredCounts := map[models.SpellEffectType]int{
 		models.SpellEffectTypeDealDamage:             counts.DealDamage,
+		models.SpellEffectTypeDealDamageAllEnemies:   counts.DealDamageAllEnemies,
 		models.SpellEffectTypeRestoreLifePartyMember: counts.RestoreLifePartyMember,
 		models.SpellEffectTypeRestoreLifeAllParty:    counts.RestoreLifeAllParty,
 		models.SpellEffectTypeApplyBeneficialStatus:  counts.ApplyBeneficialStatuses,

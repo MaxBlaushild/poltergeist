@@ -121,6 +121,7 @@ type SpellCreationSpec struct {
 
 type SpellBulkEffectCounts struct {
 	DealDamage               int `json:"dealDamage"`
+	DealDamageAllEnemies     int `json:"dealDamageAllEnemies"`
 	RestoreLifePartyMember   int `json:"restoreLifePartyMember"`
 	RestoreLifeAllParty      int `json:"restoreLifeAllPartyMembers"`
 	ApplyBeneficialStatuses  int `json:"applyBeneficialStatuses"`

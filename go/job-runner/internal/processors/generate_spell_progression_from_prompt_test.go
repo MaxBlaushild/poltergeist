@@ -1,6 +1,7 @@
 package processors
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -61,6 +62,48 @@ func TestPromptSpellProgressionDamageFollowsLevelBaselines(t *testing.T) {
 		)
 		if actual != tc.expected {
 			t.Fatalf("expected technique damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
+		}
+	}
+}
+
+func TestPromptSpellProgressionAllEnemiesDamageFollowsLevelBaselines(t *testing.T) {
+	spellCases := []struct {
+		level    int
+		expected int
+	}{
+		{level: 10, expected: 40},
+		{level: 25, expected: 100},
+		{level: 50, expected: 200},
+		{level: 70, expected: 280},
+	}
+	for _, tc := range spellCases {
+		actual := promptSpellProgressionTargetAmount(
+			models.SpellEffectTypeDealDamageAllEnemies,
+			tc.level,
+			models.SpellAbilityTypeSpell,
+		)
+		if actual != tc.expected {
+			t.Fatalf("expected AoE spell damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
+		}
+	}
+
+	techniqueCases := []struct {
+		level    int
+		expected int
+	}{
+		{level: 10, expected: 30},
+		{level: 25, expected: 75},
+		{level: 50, expected: 150},
+		{level: 70, expected: 210},
+	}
+	for _, tc := range techniqueCases {
+		actual := promptSpellProgressionTargetAmount(
+			models.SpellEffectTypeDealDamageAllEnemies,
+			tc.level,
+			models.SpellAbilityTypeTechnique,
+		)
+		if actual != tc.expected {
+			t.Fatalf("expected AoE technique damage target at level %d to be %d, got %d", tc.level, tc.expected, actual)
 		}
 	}
 }
@@ -133,6 +176,30 @@ func TestPromptSpellProgressionManaCostScalesByBand(t *testing.T) {
 	}
 }
 
+func TestPromptSpellProgressionAllEnemiesManaCostScalesHigherThanSingleTarget(t *testing.T) {
+	singleTarget := promptScaleSpellProgressionManaCost(
+		12,
+		models.SpellEffectTypeDealDamage,
+		25,
+		70,
+		models.SpellAbilityTypeSpell,
+	)
+	allEnemies := promptScaleSpellProgressionManaCost(
+		12,
+		models.SpellEffectTypeDealDamageAllEnemies,
+		25,
+		70,
+		models.SpellAbilityTypeSpell,
+	)
+	if allEnemies <= singleTarget {
+		t.Fatalf(
+			"expected all-enemies mana to exceed single-target mana at level 70, got aoe=%d single=%d",
+			allEnemies,
+			singleTarget,
+		)
+	}
+}
+
 func TestPromptSpellProgressionTechniqueScalingIsLowerAndManaFree(t *testing.T) {
 	spellDamage := promptScaleSpellProgressionCombatAmount(
 		55,
@@ -165,5 +232,26 @@ func TestPromptSpellProgressionTechniqueScalingIsLowerAndManaFree(t *testing.T) 
 	)
 	if techniqueMana != 0 {
 		t.Fatalf("expected technique mana cost to stay at 0, got %d", techniqueMana)
+	}
+}
+
+func TestPromptSpellProgressionFlavorDescriptionStripsMetaReferences(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		Description:   "Level 50 evolution of Fire Wisp. Level 10 evolution of Inferno Blast. Unleash a searing wave of fire that engulfs your enemy.",
+	}
+
+	description := buildPromptSpellProgressionFlavorDescription(
+		seed,
+		models.SpellEffectTypeDealDamage,
+		models.SpellAbilityTypeSpell,
+	)
+	lower := strings.ToLower(description)
+	if strings.Contains(lower, "level ") || strings.Contains(lower, "evolution") || strings.Contains(lower, "progression") {
+		t.Fatalf("expected progression meta references to be removed, got %q", description)
+	}
+	if description != "Unleash a searing wave of fire that engulfs your enemy." {
+		t.Fatalf("expected only flavorful description to remain, got %q", description)
 	}
 }

@@ -378,6 +378,69 @@ func TestHarmonizeGeneratedAbilityDescriptionWithEffectsRenamesForAffinity(t *te
 	}
 }
 
+func TestInferGeneratedAbilityEffectsAllEnemiesDamage(t *testing.T) {
+	level := 50
+	spec := jobs.SpellCreationSpec{
+		Name:          "Inferno Tempest",
+		Description:   "A blazing wave that scorches all enemies at once.",
+		SchoolOfMagic: "Pyromancy",
+	}
+
+	effects := inferGeneratedAbilityEffectsWithPreference(
+		spec,
+		models.SpellAbilityTypeSpell,
+		28,
+		models.SpellEffectTypeDealDamageAllEnemies,
+		&level,
+	)
+	if len(effects) != 1 {
+		t.Fatalf("expected one effect, got %d", len(effects))
+	}
+	if effects[0].Type != models.SpellEffectTypeDealDamageAllEnemies {
+		t.Fatalf("expected deal_damage_all_enemies, got %s", effects[0].Type)
+	}
+	if effects[0].Amount <= 0 {
+		t.Fatalf("expected positive AoE damage amount, got %d", effects[0].Amount)
+	}
+	if effects[0].DamageAffinity == nil || strings.TrimSpace(*effects[0].DamageAffinity) == "" {
+		t.Fatalf("expected damage affinity for AoE damage")
+	}
+
+	text := strings.ToLower(buildGeneratedAbilityEffectText(effects, models.SpellAbilityTypeSpell))
+	if !strings.Contains(text, "all enemies") {
+		t.Fatalf("expected all-enemies effect text, got %q", text)
+	}
+}
+
+func TestBuildConfiguredAbilityEffectPlanIncludesAllEnemyDamage(t *testing.T) {
+	plan := buildConfiguredAbilityEffectPlan(4, &jobs.SpellBulkEffectCounts{
+		DealDamage:           2,
+		DealDamageAllEnemies: 2,
+	})
+	if len(plan) != 4 {
+		t.Fatalf("expected 4 planned effect types, got %d", len(plan))
+	}
+
+	singleTargetCount := 0
+	allEnemiesCount := 0
+	for _, effectType := range plan {
+		switch effectType {
+		case models.SpellEffectTypeDealDamage:
+			singleTargetCount++
+		case models.SpellEffectTypeDealDamageAllEnemies:
+			allEnemiesCount++
+		default:
+			t.Fatalf("unexpected effect type in plan: %s", effectType)
+		}
+	}
+	if singleTargetCount != 2 {
+		t.Fatalf("expected 2 single-target damage slots, got %d", singleTargetCount)
+	}
+	if allEnemiesCount != 2 {
+		t.Fatalf("expected 2 all-enemies damage slots, got %d", allEnemiesCount)
+	}
+}
+
 func testStringPtr(value string) *string {
 	return &value
 }

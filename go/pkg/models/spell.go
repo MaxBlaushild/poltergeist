@@ -13,6 +13,7 @@ type SpellEffectType string
 
 const (
 	SpellEffectTypeDealDamage             SpellEffectType = "deal_damage"
+	SpellEffectTypeDealDamageAllEnemies   SpellEffectType = "deal_damage_all_enemies"
 	SpellEffectTypeRestoreLifePartyMember SpellEffectType = "restore_life_party_member"
 	SpellEffectTypeRestoreLifeAllParty    SpellEffectType = "restore_life_all_party_members"
 	SpellEffectTypeApplyBeneficialStatus  SpellEffectType = "apply_beneficial_statuses"

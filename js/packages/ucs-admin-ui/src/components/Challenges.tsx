@@ -16,6 +16,7 @@ type ChallengeRecord = {
   inventoryItemId?: number | null;
   submissionType: 'photo' | 'text' | 'video';
   difficulty: number;
+  scaleWithUserLevel: boolean;
   statTags: string[];
   proficiency?: string | null;
 };
@@ -32,6 +33,7 @@ type ChallengeFormState = {
   inventoryItemId: string;
   submissionType: 'photo' | 'text' | 'video';
   difficulty: string;
+  scaleWithUserLevel: boolean;
   statTags: string;
   proficiency: string;
 };
@@ -108,6 +110,7 @@ const emptyForm = (): ChallengeFormState => ({
   inventoryItemId: '',
   submissionType: 'photo',
   difficulty: '0',
+  scaleWithUserLevel: false,
   statTags: '',
   proficiency: '',
 });
@@ -148,6 +151,7 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
       ? record.submissionType
       : 'photo',
   difficulty: String(record.difficulty ?? 0),
+  scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
   statTags: (record.statTags ?? []).join(', '),
   proficiency: record.proficiency ?? '',
 });
@@ -465,6 +469,7 @@ export const Challenges = () => {
         inventoryItemId: parseOptionalInt(form.inventoryItemId),
         submissionType: form.submissionType,
         difficulty: parseIntSafe(form.difficulty, 0),
+        scaleWithUserLevel: form.scaleWithUserLevel,
         statTags: parseCsv(form.statTags),
         proficiency: form.proficiency.trim(),
       };
@@ -724,7 +729,14 @@ export const Challenges = () => {
                     {zoneNameById.get(record.zoneId) ?? record.zoneId}
                   </td>
                   <td className="p-2 border-b align-top">{record.submissionType}</td>
-                  <td className="p-2 border-b align-top">{record.difficulty}</td>
+                  <td className="p-2 border-b align-top">
+                    {record.difficulty}
+                    {record.scaleWithUserLevel ? (
+                      <div className="text-xs text-indigo-700">
+                        scales with level
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="p-2 border-b align-top">
                     {record.reward}
                     {record.inventoryItemId ? (
@@ -885,6 +897,20 @@ export const Challenges = () => {
                     setForm((prev) => ({ ...prev, difficulty: event.target.value }))
                   }
                 />
+              </label>
+
+              <label className="text-sm flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.scaleWithUserLevel}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      scaleWithUserLevel: event.target.checked,
+                    }))
+                  }
+                />
+                Scale difficulty with user level
               </label>
 
               <label className="text-sm">

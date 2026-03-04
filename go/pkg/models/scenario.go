@@ -20,6 +20,7 @@ type Scenario struct {
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL              string                         `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
 	Difficulty                int                            `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                int                            `json:"rewardGold" gorm:"column:reward_gold"`

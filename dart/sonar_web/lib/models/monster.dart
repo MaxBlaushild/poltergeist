@@ -113,6 +113,7 @@ class Monster {
   final String description;
   final String imageUrl;
   final String thumbnailUrl;
+  final bool scaleWithUserLevel;
   final String zoneId;
   final double latitude;
   final double longitude;
@@ -148,6 +149,7 @@ class Monster {
     this.description = '',
     this.imageUrl = '',
     this.thumbnailUrl = '',
+    this.scaleWithUserLevel = false,
     required this.zoneId,
     required this.latitude,
     required this.longitude,
@@ -246,6 +248,7 @@ class Monster {
       description: json['description']?.toString() ?? '',
       imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      scaleWithUserLevel: json['scaleWithUserLevel'] as bool? ?? false,
       zoneId: json['zoneId']?.toString() ?? '',
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,

@@ -234,6 +234,7 @@ func sanitizeBulkAbilityEffectCounts(
 
 	sanitized := &jobs.SpellBulkEffectCounts{
 		DealDamage:               raw.DealDamage,
+		DealDamageAllEnemies:     raw.DealDamageAllEnemies,
 		RestoreLifePartyMember:   raw.RestoreLifePartyMember,
 		RestoreLifeAllParty:      raw.RestoreLifeAllParty,
 		ApplyBeneficialStatuses:  raw.ApplyBeneficialStatuses,
@@ -245,6 +246,7 @@ func sanitizeBulkAbilityEffectCounts(
 		value int
 	}{
 		{label: "effectCounts.dealDamage", value: sanitized.DealDamage},
+		{label: "effectCounts.dealDamageAllEnemies", value: sanitized.DealDamageAllEnemies},
 		{label: "effectCounts.restoreLifePartyMember", value: sanitized.RestoreLifePartyMember},
 		{label: "effectCounts.restoreLifeAllPartyMembers", value: sanitized.RestoreLifeAllParty},
 		{label: "effectCounts.applyBeneficialStatuses", value: sanitized.ApplyBeneficialStatuses},
@@ -874,12 +876,13 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 
 		switch effectType {
 		case models.SpellEffectTypeDealDamage,
+			models.SpellEffectTypeDealDamageAllEnemies,
 			models.SpellEffectTypeRestoreLifePartyMember,
 			models.SpellEffectTypeRestoreLifeAllParty:
 			if amount <= 0 {
 				return nil, fmt.Errorf("effects[%d].amount must be greater than 0", index)
 			}
-			if effectType == models.SpellEffectTypeDealDamage {
+			if effectType == models.SpellEffectTypeDealDamage || effectType == models.SpellEffectTypeDealDamageAllEnemies {
 				rawAffinity := ""
 				if effectPayload.DamageAffinity != nil {
 					rawAffinity = strings.TrimSpace(*effectPayload.DamageAffinity)
@@ -1145,6 +1148,17 @@ func spellProgressionBandTerm(effectType models.SpellEffectType, levelBand int) 
 		default:
 			return "Absolution"
 		}
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		switch levelBand {
+		case 10:
+			return "Pulse"
+		case 25:
+			return "Wave"
+		case 50:
+			return "Tempest"
+		default:
+			return "Cataclysm"
+		}
 	default:
 		switch levelBand {
 		case 10:
@@ -1196,6 +1210,9 @@ func spellProgressionTargetAmount(effectType models.SpellEffectType, levelBand i
 	normalizedBand := normalizeSpellProgressionBand(levelBand)
 	if effectType == models.SpellEffectTypeDealDamage {
 		return spellMaxInt(1, normalizedBand*5)
+	}
+	if effectType == models.SpellEffectTypeDealDamageAllEnemies {
+		return spellMaxInt(1, normalizedBand*4)
 	}
 
 	health := estimateSpellProgressionMonsterHealth(levelBand)
@@ -1325,6 +1342,21 @@ func spellProgressionTargetManaCost(effectType models.SpellEffectType, targetBan
 			25: 0.12,
 			50: 0.17,
 			70: 0.22,
+		})
+		target := int(math.Round(float64(playerMana) * ratio))
+		return spellMaxInt(bandFloor, target)
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		bandFloor := spellProgressionBandFloor(targetBand, map[int]int{
+			10: 20,
+			25: 48,
+			50: 120,
+			70: 240,
+		})
+		ratio := spellProgressionBandRatio(targetBand, map[int]float64{
+			10: 0.11,
+			25: 0.16,
+			50: 0.23,
+			70: 0.30,
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
@@ -1476,12 +1508,82 @@ func buildSpellProgressionEffectText(effects models.SpellEffects) string {
 		return "Applies beneficial statuses to allies."
 	case models.SpellEffectTypeRemoveDetrimental:
 		return "Removes detrimental statuses from allies."
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		affinity := "magical"
+		if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
+			affinity = strings.TrimSpace(*effect.DamageAffinity)
+		}
+		return fmt.Sprintf("Deals %d %s damage to all enemies.", spellMaxInt(effect.Amount, 1), affinity)
 	default:
 		affinity := "magical"
 		if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
 			affinity = strings.TrimSpace(*effect.DamageAffinity)
 		}
 		return fmt.Sprintf("Deals %d %s damage to a target.", spellMaxInt(effect.Amount, 1), affinity)
+	}
+}
+
+func stripSpellProgressionMetaSentences(description string) string {
+	trimmed := strings.TrimSpace(description)
+	if trimmed == "" {
+		return ""
+	}
+
+	sentences := strings.FieldsFunc(trimmed, func(r rune) bool {
+		return r == '.' || r == '!' || r == '?'
+	})
+	kept := make([]string, 0, len(sentences))
+	for _, sentence := range sentences {
+		candidate := strings.TrimSpace(sentence)
+		if candidate == "" {
+			continue
+		}
+		lower := strings.ToLower(candidate)
+		if strings.Contains(lower, "evolution") ||
+			strings.Contains(lower, "progression") ||
+			strings.Contains(lower, "level ") ||
+			strings.Contains(lower, "level-") ||
+			strings.Contains(lower, "level band") ||
+			strings.Contains(lower, "tier ") {
+			continue
+		}
+		kept = append(kept, candidate)
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	return strings.Join(kept, ". ") + "."
+}
+
+func buildSpellProgressionFlavorDescription(
+	seed *models.Spell,
+	primaryEffect models.SpellEffectType,
+) string {
+	if seed != nil {
+		cleaned := stripSpellProgressionMetaSentences(seed.Description)
+		if cleaned != "" {
+			return cleaned
+		}
+	}
+
+	school := "arcane"
+	if seed != nil && strings.TrimSpace(seed.SchoolOfMagic) != "" {
+		school = strings.ToLower(strings.TrimSpace(seed.SchoolOfMagic))
+	}
+
+	switch primaryEffect {
+	case models.SpellEffectTypeRestoreLifePartyMember:
+		return "A soothing surge of mystic energy mends wounds and steadies one ally."
+	case models.SpellEffectTypeRestoreLifeAllParty:
+		return "A radiant wave of restorative power washes across the party, renewing battered allies."
+	case models.SpellEffectTypeApplyBeneficialStatus:
+		return "A focused invocation fortifies allies, sharpening their edge for the clash ahead."
+	case models.SpellEffectTypeRemoveDetrimental:
+		return "A cleansing pulse strips away harmful effects and restores clarity in the heat of battle."
+	case models.SpellEffectTypeDealDamageAllEnemies:
+		return fmt.Sprintf("A sweeping burst of %s force erupts outward, overwhelming every foe in reach.", school)
+	default:
+		return fmt.Sprintf("A concentrated strike of %s power crashes into a single foe with ruthless force.", school)
 	}
 }
 
@@ -1501,10 +1603,7 @@ func buildSpellProgressionVariant(
 	)
 	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetBand)
 	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetBand)
-	description := fmt.Sprintf("Level %d evolution of %s.", targetBand, strings.TrimSpace(seed.Name))
-	if trimmed := strings.TrimSpace(seed.Description); trimmed != "" {
-		description = fmt.Sprintf("%s %s", description, trimmed)
-	}
+	description := buildSpellProgressionFlavorDescription(seed, primaryEffect)
 	emptyError := ""
 	now := time.Now()
 	return &models.Spell{

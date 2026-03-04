@@ -87,6 +87,7 @@ type MonsterEncounterRecord = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  scaleWithUserLevel: boolean;
   zoneId: string;
   latitude: number;
   longitude: number;
@@ -182,6 +183,7 @@ type MonsterEncounterFormState = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  scaleWithUserLevel: boolean;
   zoneId: string;
   latitude: string;
   longitude: string;
@@ -334,6 +336,7 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   description: '',
   imageUrl: '',
   thumbnailUrl: '',
+  scaleWithUserLevel: false,
   zoneId: '',
   latitude: '',
   longitude: '',
@@ -347,6 +350,7 @@ const monsterEncounterFormFromRecord = (
   description: encounter.description ?? '',
   imageUrl: encounter.imageUrl ?? '',
   thumbnailUrl: encounter.thumbnailUrl ?? '',
+  scaleWithUserLevel: Boolean(encounter.scaleWithUserLevel),
   zoneId: encounter.zoneId ?? '',
   latitude: String(encounter.latitude ?? ''),
   longitude: String(encounter.longitude ?? ''),
@@ -362,6 +366,7 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   description: form.description.trim(),
   imageUrl: form.imageUrl.trim(),
   thumbnailUrl: form.thumbnailUrl.trim(),
+  scaleWithUserLevel: form.scaleWithUserLevel,
   zoneId: form.zoneId.trim(),
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
@@ -1942,6 +1947,12 @@ export const Monsters = () => {
                                 encounter.members?.length ||
                                 0}
                             </p>
+                            <p className="text-sm text-gray-600">
+                              Scaling:{' '}
+                              {encounter.scaleWithUserLevel
+                                ? 'Scales with user level'
+                                : 'Fixed monster levels'}
+                            </p>
                             {encounter.description ? (
                               <p className="text-sm text-gray-600 mt-1">
                                 {encounter.description}
@@ -2644,6 +2655,22 @@ export const Monsters = () => {
                     }))
                   }
                 />
+              </label>
+
+              <label className="block text-sm">
+                <span className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={encounterForm.scaleWithUserLevel}
+                    onChange={(event) =>
+                      setEncounterForm((prev) => ({
+                        ...prev,
+                        scaleWithUserLevel: event.target.checked,
+                      }))
+                    }
+                  />
+                  Scale included monster levels with user level
+                </span>
               </label>
 
               <div className="grid md:grid-cols-3 gap-4">

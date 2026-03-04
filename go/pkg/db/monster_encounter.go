@@ -125,15 +125,16 @@ func (h *monsterEncounterHandle) Update(
 	}
 
 	payload := map[string]interface{}{
-		"name":          updates.Name,
-		"description":   updates.Description,
-		"image_url":     updates.ImageURL,
-		"thumbnail_url": updates.ThumbnailURL,
-		"zone_id":       updates.ZoneID,
-		"latitude":      updates.Latitude,
-		"longitude":     updates.Longitude,
-		"geometry":      updates.Geometry,
-		"updated_at":    updates.UpdatedAt,
+		"name":                  updates.Name,
+		"description":           updates.Description,
+		"image_url":             updates.ImageURL,
+		"thumbnail_url":         updates.ThumbnailURL,
+		"scale_with_user_level": updates.ScaleWithUserLevel,
+		"zone_id":               updates.ZoneID,
+		"latitude":              updates.Latitude,
+		"longitude":             updates.Longitude,
+		"geometry":              updates.Geometry,
+		"updated_at":            updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).
 		Model(&models.MonsterEncounter{}).

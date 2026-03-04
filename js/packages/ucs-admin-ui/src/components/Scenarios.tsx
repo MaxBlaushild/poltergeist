@@ -64,6 +64,7 @@ type ScenarioRecord = {
   imageUrl: string;
   thumbnailUrl: string;
   difficulty: number;
+  scaleWithUserLevel: boolean;
   rewardExperience: number;
   rewardGold: number;
   openEnded: boolean;
@@ -93,6 +94,7 @@ type ScenarioFormState = {
   imageUrl: string;
   thumbnailUrl: string;
   difficulty: string;
+  scaleWithUserLevel: boolean;
   openEnded: boolean;
   rewardExperience: string;
   rewardGold: string;
@@ -206,6 +208,7 @@ const emptyFormState = (): ScenarioFormState => ({
   imageUrl: '',
   thumbnailUrl: '',
   difficulty: '24',
+  scaleWithUserLevel: false,
   openEnded: false,
   rewardExperience: '0',
   rewardGold: '0',
@@ -861,6 +864,7 @@ export const Scenarios = () => {
       imageUrl: record.imageUrl,
       thumbnailUrl: record.thumbnailUrl ?? '',
       difficulty: record.difficulty.toString(),
+      scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
       openEnded: record.openEnded,
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
@@ -985,6 +989,7 @@ export const Scenarios = () => {
       imageUrl: form.imageUrl.trim(),
       thumbnailUrl: form.thumbnailUrl.trim(),
       difficulty: parseIntValue(form.difficulty, 24),
+      scaleWithUserLevel: form.scaleWithUserLevel,
       openEnded: form.openEnded,
       rewardExperience: form.openEnded
         ? parseIntValue(form.rewardExperience)
@@ -2415,6 +2420,7 @@ export const Scenarios = () => {
               </div>
               <div className="text-sm text-gray-700 mb-2">
                 Difficulty: {record.difficulty}
+                {record.scaleWithUserLevel ? ' (scales with user level)' : ''}
               </div>
               <div className="text-sm text-gray-800 mb-3 line-clamp-3">
                 {record.prompt}
@@ -2501,6 +2507,19 @@ export const Scenarios = () => {
                   type="number"
                   min={0}
                 />
+              </label>
+              <label className="text-sm flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.scaleWithUserLevel}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      scaleWithUserLevel: e.target.checked,
+                    }))
+                  }
+                />
+                Scale difficulty with user level
               </label>
               <label className="text-sm">
                 Latitude

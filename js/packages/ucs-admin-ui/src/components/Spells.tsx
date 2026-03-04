@@ -71,6 +71,7 @@ type PromptSpellProgressionStatus = {
 
 type BulkEffectCountsPayload = {
   dealDamage: number;
+  dealDamageAllEnemies: number;
   restoreLifePartyMember: number;
   restoreLifeAllPartyMembers: number;
   applyBeneficialStatuses: number;
@@ -79,6 +80,7 @@ type BulkEffectCountsPayload = {
 
 type BulkEffectCountsForm = {
   dealDamage: string;
+  dealDamageAllEnemies: string;
   restoreLifePartyMember: string;
   restoreLifeAllPartyMembers: string;
   applyBeneficialStatuses: string;
@@ -87,6 +89,7 @@ type BulkEffectCountsForm = {
 
 const knownEffectTypes = [
   'deal_damage',
+  'deal_damage_all_enemies',
   'restore_life_party_member',
   'restore_life_all_party_members',
   'apply_beneficial_statuses',
@@ -149,10 +152,11 @@ const DEFAULT_BULK_ABILITY_COUNT = '8';
 const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => {
   const clamped = Math.max(1, total);
   const weightedTypes: Array<{ key: keyof BulkEffectCountsPayload; weight: number }> = [
-    { key: 'dealDamage', weight: 45 },
-    { key: 'restoreLifePartyMember', weight: 20 },
+    { key: 'dealDamage', weight: 35 },
+    { key: 'dealDamageAllEnemies', weight: 15 },
+    { key: 'restoreLifePartyMember', weight: 18 },
     { key: 'restoreLifeAllPartyMembers', weight: 10 },
-    { key: 'applyBeneficialStatuses', weight: 15 },
+    { key: 'applyBeneficialStatuses', weight: 12 },
     { key: 'removeDetrimentalStatuses', weight: 10 },
   ];
   const totalWeight = weightedTypes.reduce((sum, entry) => sum + entry.weight, 0);
@@ -171,6 +175,7 @@ const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => 
     (acc, entry) => ({ ...acc, [entry.key]: entry.count }),
     {
       dealDamage: 0,
+      dealDamageAllEnemies: 0,
       restoreLifePartyMember: 0,
       restoreLifeAllPartyMembers: 0,
       applyBeneficialStatuses: 0,
@@ -180,6 +185,7 @@ const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => 
 
   return {
     dealDamage: String(counts.dealDamage),
+    dealDamageAllEnemies: String(counts.dealDamageAllEnemies),
     restoreLifePartyMember: String(counts.restoreLifePartyMember),
     restoreLifeAllPartyMembers: String(counts.restoreLifeAllPartyMembers),
     applyBeneficialStatuses: String(counts.applyBeneficialStatuses),
@@ -189,6 +195,7 @@ const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => 
 
 const parseBulkEffectCounts = (counts: BulkEffectCountsForm): BulkEffectCountsPayload => ({
   dealDamage: Math.max(0, parseIntSafe(counts.dealDamage, 0)),
+  dealDamageAllEnemies: Math.max(0, parseIntSafe(counts.dealDamageAllEnemies, 0)),
   restoreLifePartyMember: Math.max(0, parseIntSafe(counts.restoreLifePartyMember, 0)),
   restoreLifeAllPartyMembers: Math.max(0, parseIntSafe(counts.restoreLifeAllPartyMembers, 0)),
   applyBeneficialStatuses: Math.max(0, parseIntSafe(counts.applyBeneficialStatuses, 0)),
@@ -300,7 +307,7 @@ const payloadFromForm = (form: SpellFormState) => {
       type: effectType,
       amount: parseIntSafe(effect.amount, 0),
       damageAffinity:
-        effectType === 'deal_damage'
+        effectType === 'deal_damage' || effectType === 'deal_damage_all_enemies'
           ? (effect.damageAffinity?.trim().toLowerCase() || 'physical')
           : undefined,
       statusesToApply,
@@ -844,7 +851,7 @@ export const Spells = () => {
               </button>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-6 gap-2">
             <label className="text-xs text-gray-600">
               Deal Damage Count
               <input
@@ -854,6 +861,22 @@ export const Spells = () => {
                 value={bulkEffectCounts.dealDamage}
                 onChange={(e) =>
                   setBulkEffectCounts((prev) => ({ ...prev, dealDamage: e.target.value }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="text-xs text-gray-600">
+              AoE Damage Count
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={bulkEffectCounts.dealDamageAllEnemies}
+                onChange={(e) =>
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    dealDamageAllEnemies: e.target.value,
+                  }))
                 }
                 className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
@@ -1261,7 +1284,8 @@ export const Spells = () => {
                               }
                             />
                           </label>
-                          {normalizeEffectType(effect) === 'deal_damage' ? (
+                          {normalizeEffectType(effect) === 'deal_damage' ||
+                          normalizeEffectType(effect) === 'deal_damage_all_enemies' ? (
                             <label className="text-sm">
                               Damage Affinity
                               <select

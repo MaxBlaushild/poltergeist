@@ -4,6 +4,7 @@ class InventoryItem {
   final String imageUrl;
   final String flavorText;
   final String effectText;
+  final String rarityTier;
   final int? sellValue;
   final int? unlockTier;
   final String? equipSlot;
@@ -33,6 +34,7 @@ class InventoryItem {
     required this.imageUrl,
     required this.flavorText,
     required this.effectText,
+    this.rarityTier = '',
     this.sellValue,
     this.unlockTier,
     this.equipSlot,
@@ -64,6 +66,7 @@ class InventoryItem {
       imageUrl: json['imageUrl'] as String? ?? '',
       flavorText: json['flavorText'] as String? ?? '',
       effectText: json['effectText'] as String? ?? '',
+      rarityTier: json['rarityTier'] as String? ?? '',
       sellValue: (json['sellValue'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
       equipSlot: json['equipSlot'] as String?,

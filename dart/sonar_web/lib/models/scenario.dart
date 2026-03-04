@@ -124,6 +124,7 @@ class Scenario {
   final String imageUrl;
   final String thumbnailUrl;
   final int difficulty;
+  final bool scaleWithUserLevel;
   final int rewardExperience;
   final int rewardGold;
   final bool openEnded;
@@ -141,6 +142,7 @@ class Scenario {
     required this.imageUrl,
     required this.thumbnailUrl,
     required this.difficulty,
+    this.scaleWithUserLevel = false,
     required this.rewardExperience,
     required this.rewardGold,
     required this.openEnded,
@@ -194,6 +196,7 @@ class Scenario {
       imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       difficulty: (json['difficulty'] as num?)?.toInt() ?? 24,
+      scaleWithUserLevel: json['scaleWithUserLevel'] as bool? ?? false,
       rewardExperience: (json['rewardExperience'] as num?)?.toInt() ?? 0,
       rewardGold: (json['rewardGold'] as num?)?.toInt() ?? 0,
       openEnded: json['openEnded'] as bool? ?? false,

@@ -241,6 +241,22 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return _equipmentSlotLabels[slot] ?? slot;
   }
 
+  Color? _rarityAccentColor(String rarityTier) {
+    final normalized = rarityTier.trim().toLowerCase();
+    switch (normalized) {
+      case 'uncommon':
+        return const Color(0xFF43A047);
+      case 'rare':
+        return const Color(0xFF3A78D8);
+      case 'epic':
+        return const Color(0xFF7E57C2);
+      case 'mythic':
+        return const Color(0xFFBF6B2A);
+      default:
+        return null;
+    }
+  }
+
   Future<void> _loadOutfitStatus(
     String ownedInventoryItemId, {
     bool silent = false,
@@ -733,8 +749,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
             Container(
               padding: const EdgeInsets.symmetric(vertical: 24),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withOpacity(
-                  0.4,
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.4,
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: theme.dividerColor),
@@ -814,6 +830,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final entry = _equipmentBySlot[slot];
     final inventoryItem = entry?.inventoryItem;
     final hasItem = entry != null && inventoryItem != null;
+    final rarityAccent = inventoryItem == null
+        ? null
+        : _rarityAccentColor(inventoryItem.rarityTier);
     final combatSummary = inventoryItem == null
         ? null
         : _equipmentCombatSummary(inventoryItem);
@@ -836,9 +855,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
+          color: rarityAccent == null
+              ? theme.colorScheme.surfaceContainerHighest
+              : rarityAccent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.dividerColor),
+          border: Border.all(
+            color: rarityAccent?.withValues(alpha: 0.85) ?? theme.dividerColor,
+            width: rarityAccent == null ? 1 : 1.6,
+          ),
         ),
         padding: const EdgeInsets.all(8),
         child: Row(
@@ -857,7 +881,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                       child: Image.network(
                         inventoryItem.imageUrl,
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => Icon(
+                        errorBuilder: (context, error, stackTrace) => Icon(
                           Icons.inventory_2_outlined,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -913,7 +937,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
         border: Border.all(color: theme.dividerColor),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -946,6 +970,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
   ) {
     final theme = Theme.of(context);
     final equipped = _equippedForOwned(owned);
+    final rarityAccent = _rarityAccentColor(inv.rarityTier);
     return InkWell(
       onTap: () {
         _selectOwnedItem(owned, inv);
@@ -953,12 +978,17 @@ class _InventoryPanelState extends State<InventoryPanel> {
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          border: Border.all(color: theme.dividerColor),
+          color: rarityAccent == null
+              ? theme.colorScheme.surfaceContainerHighest
+              : rarityAccent.withValues(alpha: 0.14),
+          border: Border.all(
+            color: rarityAccent?.withValues(alpha: 0.9) ?? theme.dividerColor,
+            width: rarityAccent == null ? 1 : 1.8,
+          ),
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: theme.shadowColor.withOpacity(0.08),
+              color: theme.shadowColor.withValues(alpha: 0.08),
               blurRadius: 10,
               offset: const Offset(0, 6),
             ),
@@ -972,7 +1002,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
               child: Image.network(
                 inv.imageUrl,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Icon(
+                errorBuilder: (context, error, stackTrace) => Icon(
                   Icons.inventory_2_outlined,
                   size: 32,
                   color: theme.colorScheme.onSurfaceVariant,
@@ -1028,7 +1058,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withOpacity(0.92),
+                  color: theme.colorScheme.surface.withValues(alpha: 0.92),
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(12),
                     bottomRight: Radius.circular(12),
@@ -1041,6 +1071,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w600,
+                    color: rarityAccent?.withValues(alpha: 0.95),
                   ),
                 ),
               ),
@@ -1076,6 +1107,13 @@ class _InventoryPanelState extends State<InventoryPanel> {
         icon: Icons.inventory_2_outlined,
         label: 'Owned ${owned.quantity}',
       ),
+      if (inv.rarityTier.trim().isNotEmpty)
+        _buildMetaChip(
+          context,
+          icon: Icons.auto_awesome,
+          label: inv.rarityTier.trim(),
+          colorOverride: _rarityAccentColor(inv.rarityTier),
+        ),
       if (inv.sellValue != null)
         _buildMetaChip(
           context,
@@ -1276,7 +1314,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
           child: Image.network(
             inv.imageUrl,
             fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Center(
+            errorBuilder: (context, error, stackTrace) => Center(
               child: Icon(
                 Icons.inventory_2_outlined,
                 size: 64,
@@ -1293,24 +1331,35 @@ class _InventoryPanelState extends State<InventoryPanel> {
     BuildContext context, {
     required IconData icon,
     required String label,
+    Color? colorOverride,
   }) {
     final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: colorOverride == null
+            ? theme.colorScheme.surfaceContainerHighest
+            : colorOverride.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: theme.dividerColor),
+        border: Border.all(
+          color: colorOverride?.withValues(alpha: 0.85) ?? theme.dividerColor,
+          width: colorOverride == null ? 1 : 1.4,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          Icon(
+            icon,
+            size: 16,
+            color: colorOverride ?? theme.colorScheme.onSurfaceVariant,
+          ),
           const SizedBox(width: 6),
           Text(
             label,
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w600,
+              color: colorOverride,
             ),
           ),
         ],

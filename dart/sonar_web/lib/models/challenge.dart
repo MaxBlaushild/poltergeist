@@ -11,6 +11,7 @@ class Challenge {
   final int? inventoryItemId;
   final String submissionType;
   final int difficulty;
+  final bool scaleWithUserLevel;
   final List<String> statTags;
   final String? proficiency;
 
@@ -27,6 +28,7 @@ class Challenge {
     this.inventoryItemId,
     this.submissionType = 'photo',
     this.difficulty = 0,
+    this.scaleWithUserLevel = false,
     this.statTags = const [],
     this.proficiency,
   });
@@ -49,6 +51,7 @@ class Challenge {
           ? json['submissionType'].toString().trim().toLowerCase()
           : 'photo',
       difficulty: (json['difficulty'] as num?)?.toInt() ?? 0,
+      scaleWithUserLevel: json['scaleWithUserLevel'] as bool? ?? false,
       statTags:
           (json['statTags'] as List<dynamic>?)
               ?.map((tag) => tag.toString())
