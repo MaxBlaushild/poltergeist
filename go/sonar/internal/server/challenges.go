@@ -5,6 +5,7 @@ import (
 	stdErrors "errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,11 @@ type challengeUpsertRequest struct {
 	Difficulty      int      `json:"difficulty"`
 	StatTags        []string `json:"statTags"`
 	Proficiency     string   `json:"proficiency"`
+}
+
+type challengeGenerationJobRequest struct {
+	ZoneID string `json:"zoneId"`
+	Count  int    `json:"count"`
 }
 
 func parseChallengeStatTags(raw []string) models.StringArray {
@@ -306,4 +312,123 @@ func (s *server) generateChallengeImage(ctx *gin.Context) {
 		"status":    "queued",
 		"challenge": challenge,
 	})
+}
+
+func (s *server) createChallengeGenerationJob(ctx *gin.Context) {
+	var requestBody challengeGenerationJobRequest
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	zoneID, err := uuid.Parse(strings.TrimSpace(requestBody.ZoneID))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+		return
+	}
+
+	count := requestBody.Count
+	if count <= 0 {
+		count = 1
+	}
+	if count > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
+		return
+	}
+
+	zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if zone == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "zone not found"})
+		return
+	}
+
+	job := &models.ChallengeGenerationJob{
+		ID:           uuid.New(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+		ZoneID:       zoneID,
+		Status:       models.ChallengeGenerationStatusQueued,
+		Count:        count,
+		CreatedCount: 0,
+	}
+	if err := s.dbClient.ChallengeGenerationJob().Create(ctx, job); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payload, err := json.Marshal(jobs.GenerateChallengesTaskPayload{
+		JobID: job.ID,
+	})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateChallengesTaskType, payload)); err != nil {
+		errMsg := err.Error()
+		job.Status = models.ChallengeGenerationStatusFailed
+		job.ErrorMessage = &errMsg
+		job.UpdatedAt = time.Now()
+		_ = s.dbClient.ChallengeGenerationJob().Update(ctx, job)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, job)
+}
+
+func (s *server) getChallengeGenerationJobs(ctx *gin.Context) {
+	zoneIDParam := strings.TrimSpace(ctx.Query("zoneId"))
+	limit := 20
+	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
+		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	var (
+		jobsList []models.ChallengeGenerationJob
+		err      error
+	)
+	if zoneIDParam != "" {
+		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		if parseErr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
+			return
+		}
+		jobsList, err = s.dbClient.ChallengeGenerationJob().FindByZoneID(ctx, zoneID, limit)
+	} else {
+		jobsList, err = s.dbClient.ChallengeGenerationJob().FindRecent(ctx, limit)
+	}
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, jobsList)
+}
+
+func (s *server) getChallengeGenerationJob(ctx *gin.Context) {
+	id := ctx.Param("id")
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge generation job ID"})
+		return
+	}
+
+	job, err := s.dbClient.ChallengeGenerationJob().FindByID(ctx, jobID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if job == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge generation job not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, job)
 }

@@ -41,6 +41,22 @@ type ImagePreviewState = {
   alt: string;
 };
 
+type ChallengeGenerationJob = {
+  id: string;
+  zoneId: string;
+  status: string;
+  count: number;
+  createdCount: number;
+  errorMessage?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type ChallengeGenerationFormState = {
+  zoneId: string;
+  count: string;
+};
+
 const statTagOptions = [
   'strength',
   'dexterity',
@@ -73,6 +89,13 @@ const parseCsv = (value: string): string[] =>
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => statTagOptions.includes(entry as (typeof statTagOptions)[number]));
 
+const formatDate = (value?: string | null): string => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
+
 const emptyForm = (): ChallengeFormState => ({
   zoneId: '',
   latitude: '',
@@ -88,6 +111,24 @@ const emptyForm = (): ChallengeFormState => ({
   statTags: '',
   proficiency: '',
 });
+
+const emptyGenerationForm = (): ChallengeGenerationFormState => ({
+  zoneId: '',
+  count: '6',
+});
+
+const challengeGenerationStatusBadgeClass = (status: string): string => {
+  switch (status) {
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    default:
+      return 'bg-gray-600';
+  }
+};
 
 const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   zoneId: record.zoneId ?? '',
@@ -134,6 +175,15 @@ export const Challenges = () => {
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(
     null
   );
+  const [generationForm, setGenerationForm] =
+    useState<ChallengeGenerationFormState>(emptyGenerationForm);
+  const [generationJobs, setGenerationJobs] = useState<ChallengeGenerationJob[]>(
+    []
+  );
+  const [generationJobsLoading, setGenerationJobsLoading] = useState(false);
+  const [generationSubmitting, setGenerationSubmitting] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
 
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mapRef = React.useRef<mapboxgl.Map | null>(null);
@@ -175,6 +225,67 @@ export const Challenges = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadGenerationJobs = useCallback(async () => {
+    try {
+      setGenerationJobsLoading(true);
+      const response = await apiClient.get<ChallengeGenerationJob[]>(
+        '/sonar/admin/challenge-generation-jobs',
+        { limit: 25 }
+      );
+      setGenerationJobs(Array.isArray(response) ? response : []);
+      setGenerationError(null);
+    } catch (err) {
+      console.error('Failed to load challenge generation jobs', err);
+      setGenerationError('Failed to load challenge generation jobs.');
+    } finally {
+      setGenerationJobsLoading(false);
+    }
+  }, [apiClient]);
+
+  useEffect(() => {
+    void loadGenerationJobs();
+  }, [loadGenerationJobs]);
+
+  useEffect(() => {
+    if (!generationForm.zoneId && zones.length > 0) {
+      setGenerationForm((prev) => ({ ...prev, zoneId: zones[0].id }));
+    }
+  }, [generationForm.zoneId, zones]);
+
+  const hasActiveGenerationJobs = useMemo(
+    () =>
+      generationJobs.some(
+        (job) => job.status === 'queued' || job.status === 'in_progress'
+      ),
+    [generationJobs]
+  );
+
+  useEffect(() => {
+    if (!hasActiveGenerationJobs) return;
+    const interval = window.setInterval(() => {
+      void loadGenerationJobs();
+    }, 3000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [hasActiveGenerationJobs, loadGenerationJobs]);
+
+  useEffect(() => {
+    const completed = generationJobs.filter((job) => job.status === 'completed');
+    let shouldReloadChallenges = false;
+    for (const job of completed) {
+      if (!seenCompletedGenerationJobsRef.current.has(job.id)) {
+        seenCompletedGenerationJobsRef.current.add(job.id);
+        if (job.createdCount > 0) {
+          shouldReloadChallenges = true;
+        }
+      }
+    }
+    if (shouldReloadChallenges) {
+      void load();
+    }
+  }, [generationJobs, load]);
 
   const filteredRecords = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -310,6 +421,36 @@ export const Challenges = () => {
     mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
   }, [form.latitude, form.longitude, showModal]);
 
+  const handleQueueChallengeGeneration = async () => {
+    if (!generationForm.zoneId) {
+      setGenerationError('Please select a zone.');
+      return;
+    }
+    const count = parseIntSafe(generationForm.count, 0);
+    if (count < 1 || count > 100) {
+      setGenerationError('Count must be between 1 and 100.');
+      return;
+    }
+
+    try {
+      setGenerationSubmitting(true);
+      setGenerationError(null);
+      const created = await apiClient.post<ChallengeGenerationJob>(
+        '/sonar/admin/challenge-generation-jobs',
+        {
+          zoneId: generationForm.zoneId,
+          count,
+        }
+      );
+      setGenerationJobs((prev) => [created, ...prev]);
+    } catch (err) {
+      console.error('Failed to queue challenge generation job', err);
+      setGenerationError('Failed to queue challenge generation job.');
+    } finally {
+      setGenerationSubmitting(false);
+    }
+  };
+
   const save = async () => {
     try {
       const payload = {
@@ -434,6 +575,110 @@ export const Challenges = () => {
       {error ? (
         <div className="mb-4 text-sm text-red-600">{error}</div>
       ) : null}
+
+      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg font-semibold">
+            Generate Random Challenges (Async)
+          </h2>
+          <button
+            type="button"
+            className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+            onClick={() => void loadGenerationJobs()}
+            disabled={generationJobsLoading}
+          >
+            {generationJobsLoading ? 'Refreshing…' : 'Refresh Jobs'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          <label className="text-sm">
+            Zone
+            <select
+              value={generationForm.zoneId}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  zoneId: event.target.value,
+                }))
+              }
+              className="w-full border rounded-md p-2"
+            >
+              <option value="">Select zone</option>
+              {zones.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            Challenge Count
+            <input
+              value={generationForm.count}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  count: event.target.value,
+                }))
+              }
+              className="w-full border rounded-md p-2"
+              type="number"
+              min={1}
+              max={100}
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            className="bg-indigo-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
+            onClick={handleQueueChallengeGeneration}
+            disabled={generationSubmitting}
+          >
+            {generationSubmitting ? 'Queueing…' : 'Queue Challenge Generation'}
+          </button>
+        </div>
+
+        {generationError ? (
+          <div className="mb-3 text-sm text-red-600">{generationError}</div>
+        ) : null}
+
+        <div className="font-medium mb-2">Recent Generation Jobs</div>
+        {generationJobsLoading && generationJobs.length === 0 ? (
+          <div className="text-sm text-gray-600">Loading jobs...</div>
+        ) : generationJobs.length === 0 ? (
+          <div className="text-sm text-gray-600">No jobs yet.</div>
+        ) : (
+          <div className="grid gap-2">
+            {generationJobs.map((job) => (
+              <div key={job.id} className="border rounded-md p-2 text-sm bg-gray-50">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="font-mono text-xs">{job.id}</span>
+                  <span
+                    className={`text-white text-xs px-2 py-0.5 rounded ${challengeGenerationStatusBadgeClass(job.status)}`}
+                  >
+                    {job.status}
+                  </span>
+                </div>
+                <div className="text-gray-700">
+                  Zone: {zoneNameById.get(job.zoneId) ?? job.zoneId}
+                </div>
+                <div className="text-gray-700">
+                  Created: {job.createdCount} / {job.count}
+                </div>
+                <div className="text-gray-600 text-xs">
+                  Queued: {formatDate(job.createdAt)}
+                </div>
+                {job.errorMessage ? (
+                  <div className="text-red-600 text-xs mt-1">{job.errorMessage}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="overflow-auto border rounded-md">
         <table className="min-w-full text-sm">

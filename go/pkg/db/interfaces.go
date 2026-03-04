@@ -32,6 +32,7 @@ type DbClient interface {
 	ZoneImport() ZoneImportHandle
 	ZoneSeedJob() ZoneSeedJobHandle
 	ScenarioGenerationJob() ScenarioGenerationJobHandle
+	ChallengeGenerationJob() ChallengeGenerationJobHandle
 	Spell() SpellHandle
 	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
@@ -355,6 +356,14 @@ type ScenarioGenerationJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ScenarioGenerationJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ScenarioGenerationJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ScenarioGenerationJob, error)
+}
+
+type ChallengeGenerationJobHandle interface {
+	Create(ctx context.Context, job *models.ChallengeGenerationJob) error
+	Update(ctx context.Context, job *models.ChallengeGenerationJob) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.ChallengeGenerationJob, error)
+	FindRecent(ctx context.Context, limit int) ([]models.ChallengeGenerationJob, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ChallengeGenerationJob, error)
 }
 
 type SpellHandle interface {
