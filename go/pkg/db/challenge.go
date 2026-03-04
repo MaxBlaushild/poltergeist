@@ -46,6 +46,17 @@ func (h *challengeHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([
 	return challenges, nil
 }
 
+func (h *challengeHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error) {
+	var challenges []models.Challenge
+	if err := h.preloadBase(ctx).
+		Where("zone_id = ?", zoneID).
+		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.challenge_id = challenges.id)").
+		Find(&challenges).Error; err != nil {
+		return nil, err
+	}
+	return challenges, nil
+}
+
 func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error {
 	if updates == nil {
 		return nil

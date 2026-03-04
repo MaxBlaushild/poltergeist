@@ -16,9 +16,9 @@ type client struct {
 }
 
 const (
-	CaptureMessage       = "%s captured %s at tier %s."
-	CompleteTaskMessage  = "%s completed a task at %s."
-	CompleteQuestMessage = "%s completed a quest: %s."
+	CaptureMessage           = "%s captured %s at tier %s."
+	CompleteTaskMessage      = "%s completed a task at %s."
+	CompleteQuestMessage     = "%s completed a quest: %s."
 	CompleteQuestTaskMessage = "%s completed a quest task: %s."
 )
 
@@ -179,14 +179,7 @@ func (c *client) AddQuestNodeCaptureMessage(ctx context.Context, teamID *uuid.UU
 		matchID = &teamMatch.MatchID
 	}
 
-	var target string
-	if node.PointOfInterestID != nil {
-		target = c.makePointOfInterestName(*node.PointOfInterestID)
-	} else {
-		target = c.makeQuestName(quest.ID)
-	}
-
-	message := fmt.Sprintf(CompleteQuestTaskMessage, teamName, target)
+	message := fmt.Sprintf(CompleteQuestTaskMessage, teamName, c.makeQuestName(quest.ID))
 	return c.dbClient.AuditItem().Create(ctx, matchID, userID, message)
 }
 

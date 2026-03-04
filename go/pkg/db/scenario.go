@@ -169,6 +169,17 @@ func (h *scenarioHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]
 	return scenarios, nil
 }
 
+func (h *scenarioHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error) {
+	var scenarios []models.Scenario
+	if err := h.preloadBase(ctx).
+		Where("zone_id = ?", zoneID).
+		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.scenario_id = scenarios.id)").
+		Find(&scenarios).Error; err != nil {
+		return nil, err
+	}
+	return scenarios, nil
+}
+
 func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
@@ -359,6 +370,37 @@ func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 	if err := h.db.WithContext(ctx).
 		Select("scenario_id").
 		Where("user_id = ? AND scenario_id IN (?)", *userID, h.db.Model(&models.Scenario{}).Select("id").Where("zone_id = ?", zoneID)).
+		Find(&attempts).Error; err != nil {
+		return nil, nil, err
+	}
+	for _, attempt := range attempts {
+		attempted[attempt.ScenarioID] = true
+	}
+	return scenarios, attempted, nil
+}
+
+func (h *scenarioHandle) FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
+	scenarios, err := h.FindByZoneIDExcludingQuestNodes(ctx, zoneID)
+	if err != nil {
+		return nil, nil, err
+	}
+	attempted := map[uuid.UUID]bool{}
+	if userID == nil {
+		return scenarios, attempted, nil
+	}
+
+	scenarioIDs := make([]uuid.UUID, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		scenarioIDs = append(scenarioIDs, scenario.ID)
+	}
+	if len(scenarioIDs) == 0 {
+		return scenarios, attempted, nil
+	}
+
+	var attempts []models.UserScenarioAttempt
+	if err := h.db.WithContext(ctx).
+		Select("scenario_id").
+		Where("user_id = ? AND scenario_id IN ?", *userID, scenarioIDs).
 		Find(&attempts).Error; err != nil {
 		return nil, nil, err
 	}

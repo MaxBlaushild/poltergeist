@@ -933,6 +933,7 @@ type ChallengeHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Challenge, error)
 	FindAll(ctx context.Context) ([]models.Challenge, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
+	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -942,6 +943,7 @@ type ScenarioHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Scenario, error)
 	FindAll(ctx context.Context) ([]models.Scenario, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
+	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error
@@ -951,6 +953,7 @@ type ScenarioHandle interface {
 	CreateAttempt(ctx context.Context, attempt *models.UserScenarioAttempt) error
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
+	FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 }
 
 type MonsterHandle interface {
@@ -958,6 +961,7 @@ type MonsterHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.Monster, error)
 	FindAll(ctx context.Context) ([]models.Monster, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error)
+	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error)
 	CountByTemplateID(ctx context.Context, templateID uuid.UUID) (int64, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Monster) error
 	Delete(ctx context.Context, id uuid.UUID) error

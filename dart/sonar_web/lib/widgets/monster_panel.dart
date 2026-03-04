@@ -56,7 +56,7 @@ class MonsterPanel extends StatelessWidget {
     final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
     final mysteryState = !withinRange;
-    final canFight = !mysteryState && onFight != null;
+    final canFight = onFight != null;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -71,7 +71,7 @@ class MonsterPanel extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    mysteryState ? 'Mysterious Presence' : monster.name,
+                    mysteryState ? 'Mysterious Monster' : monster.name,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -139,24 +139,25 @@ class MonsterPanel extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    FilledButton.icon(
-                      onPressed: canFight ? onFight : null,
-                      icon: const Icon(Icons.sports_martial_arts),
-                      label: Text(canFight ? 'Fight!' : 'Get closer to fight'),
-                    ),
-                    const SizedBox(height: 12),
+                    if (mysteryState)
+                      Text(
+                        'This encounter remains a mystery until you are close enough to investigate.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
                     if (!mysteryState && monster.description.trim().isNotEmpty)
                       Text(
                         monster.description,
                         style: theme.textTheme.bodyMedium,
                       ),
-                    if (!mysteryState && monster.description.trim().isNotEmpty)
-                      const SizedBox(height: 12),
-                    if (mysteryState)
-                      Text(
-                        'The details of this monster are obscured until you are close enough to inspect it.',
-                        style: theme.textTheme.bodyMedium,
+                    if (!mysteryState) ...[
+                      if (monster.description.trim().isNotEmpty)
+                        const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: canFight ? onFight : null,
+                        icon: const Icon(Icons.sports_martial_arts),
+                        label: const Text('Fight!'),
                       ),
+                    ],
                   ],
                 ),
               ),

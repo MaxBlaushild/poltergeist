@@ -559,17 +559,28 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 	}
 
 	node := &models.QuestNode{
-		ID:                uuid.New(),
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-		QuestID:           quest.ID,
-		OrderIndex:        0,
-		PointOfInterestID: nil,
-		SubmissionType:    submissionType,
+		ID:             uuid.New(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		QuestID:        quest.ID,
+		OrderIndex:     0,
+		SubmissionType: submissionType,
 	}
-	if poi != nil {
-		node.PointOfInterestID = &poi.ID
+	locationChallenge, err := p.createQuestNodeLocationChallenge(
+		zone.ID,
+		poi,
+		challengeQuestion,
+		draft.Description,
+		submissionType,
+		challengeDifficulty,
+	)
+	if err != nil {
+		return err
 	}
+	if err := p.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
+		return err
+	}
+	node.ChallengeID = &locationChallenge.ID
 	if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
 		return err
 	}
@@ -698,25 +709,36 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		challengeQuestion, submissionType := normalizeAppliedChallengeQuestion(challengeQuestion, poi, nil)
 
 		node := &models.QuestNode{
-			ID:                uuid.New(),
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-			QuestID:           quest.ID,
-			OrderIndex:        idx,
-			PointOfInterestID: nil,
-			SubmissionType:    submissionType,
-		}
-		if poi != nil {
-			node.PointOfInterestID = &poi.ID
-		}
-		if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
-			return err
+			ID:             uuid.New(),
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			QuestID:        quest.ID,
+			OrderIndex:     idx,
+			SubmissionType: submissionType,
 		}
 		difficulty := nodeDraft.ChallengeDifficulty
 		if difficulty <= 0 {
 			difficulty = randomQuestDifficulty()
 		}
 		difficulty = clampQuestDifficulty(difficulty)
+		locationChallenge, err := p.createQuestNodeLocationChallenge(
+			zone.ID,
+			poi,
+			challengeQuestion,
+			draft.Description,
+			submissionType,
+			difficulty,
+		)
+		if err != nil {
+			return err
+		}
+		if err := p.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
+			return err
+		}
+		node.ChallengeID = &locationChallenge.ID
+		if err := p.dbClient.QuestNode().Create(ctx, node); err != nil {
+			return err
+		}
 
 		statDraft := models.ZoneSeedQuestDraft{
 			Name:               draft.Name,
@@ -753,6 +775,50 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 	}
 
 	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createQuestNodeLocationChallenge(
+	zoneID uuid.UUID,
+	poi *models.PointOfInterest,
+	question string,
+	description string,
+	submissionType models.QuestNodeSubmissionType,
+	difficulty int,
+) (*models.Challenge, error) {
+	if poi == nil {
+		return nil, fmt.Errorf("quest node point of interest is required")
+	}
+	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid point of interest latitude: %w", err)
+	}
+	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid point of interest longitude: %w", err)
+	}
+	challengeQuestion := strings.TrimSpace(question)
+	if challengeQuestion == "" {
+		challengeQuestion = fallbackQuestChallengeQuestion(poi, nil)
+	}
+	challengeDescription := strings.TrimSpace(description)
+	if challengeDescription == "" {
+		challengeDescription = strings.TrimSpace(poi.Description)
+	}
+	now := time.Now()
+	return &models.Challenge{
+		ID:             uuid.New(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ZoneID:         zoneID,
+		Latitude:       lat,
+		Longitude:      lng,
+		Question:       challengeQuestion,
+		Description:    challengeDescription,
+		SubmissionType: submissionType,
+		Reward:         0,
+		Difficulty:     difficulty,
+		StatTags:       models.StringArray{},
+	}, nil
 }
 
 func (p *ApplyZoneSeedDraftProcessor) ensureQuestActionForCharacter(ctx context.Context, questID uuid.UUID, character *models.Character) error {

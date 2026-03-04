@@ -10,14 +10,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/db"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
-	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkt"
 )
-
-type LatLng struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-}
 
 type QuestNodeChallenge struct {
 	ID              uuid.UUID                      `json:"id"`
@@ -32,15 +25,13 @@ type QuestNodeChallenge struct {
 }
 
 type QuestNode struct {
-	ID              uuid.UUID                      `json:"id"`
-	OrderIndex      int                            `json:"orderIndex"`
-	PointOfInterest *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
-	ScenarioID      *uuid.UUID                     `json:"scenarioId,omitempty"`
-	MonsterID       *uuid.UUID                     `json:"monsterId,omitempty"`
-	ChallengeID     *uuid.UUID                     `json:"challengeId,omitempty"`
-	Polygon         []LatLng                       `json:"polygon,omitempty"`
-	Challenges      []QuestNodeChallenge           `json:"challenges"`
-	SubmissionType  models.QuestNodeSubmissionType `json:"submissionType"`
+	ID             uuid.UUID                      `json:"id"`
+	OrderIndex     int                            `json:"orderIndex"`
+	ScenarioID     *uuid.UUID                     `json:"scenarioId,omitempty"`
+	MonsterID      *uuid.UUID                     `json:"monsterId,omitempty"`
+	ChallengeID    *uuid.UUID                     `json:"challengeId,omitempty"`
+	Challenges     []QuestNodeChallenge           `json:"challenges"`
+	SubmissionType models.QuestNodeSubmissionType `json:"submissionType"`
 }
 
 type QuestItemReward struct {
@@ -130,11 +121,6 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			continue
 		}
 
-		poiLookup, err := c.loadQuestPointsOfInterest(ctx, &quest)
-		if err != nil {
-			return nil, err
-		}
-
 		progress := map[uuid.UUID]bool{}
 		nodeProgress, err := c.dbClient.QuestNodeProgress().FindByAcceptanceID(ctx, acceptance.ID)
 		if err != nil {
@@ -146,7 +132,7 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			}
 		}
 
-		currentNode := buildCurrentNode(&quest, poiLookup, progress)
+		currentNode := buildCurrentNode(&quest, progress)
 		allCompleted := len(quest.Nodes) > 0 && allNodesCompleted(&quest, progress)
 		itemRewards := make([]QuestItemReward, 0, len(quest.ItemRewards))
 		for _, reward := range quest.ItemRewards {
@@ -281,7 +267,7 @@ func allNodesCompleted(quest *models.Quest, completed map[uuid.UUID]bool) bool {
 	return true
 }
 
-func buildCurrentNode(quest *models.Quest, poiLookup map[uuid.UUID]*models.PointOfInterest, completed map[uuid.UUID]bool) *QuestNode {
+func buildCurrentNode(quest *models.Quest, completed map[uuid.UUID]bool) *QuestNode {
 	if quest == nil || len(quest.Nodes) == 0 {
 		return nil
 	}
@@ -293,17 +279,12 @@ func buildCurrentNode(quest *models.Quest, poiLookup map[uuid.UUID]*models.Point
 		if completed[node.ID] {
 			continue
 		}
-		return buildQuestNodeView(node, poiLookup)
+		return buildQuestNodeView(node)
 	}
 	return nil
 }
 
-func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.PointOfInterest) *QuestNode {
-	var poi *models.PointOfInterest
-	if node.PointOfInterestID != nil {
-		poi = poiLookup[*node.PointOfInterestID]
-	}
-
+func buildQuestNodeView(node models.QuestNode) *QuestNode {
 	challenges := make([]QuestNodeChallenge, 0, len(node.Challenges))
 	for _, ch := range node.Challenges {
 		submissionType := ch.SubmissionType
@@ -337,96 +318,12 @@ func buildQuestNodeView(node models.QuestNode, poiLookup map[uuid.UUID]*models.P
 	}
 
 	return &QuestNode{
-		ID:              node.ID,
-		OrderIndex:      node.OrderIndex,
-		PointOfInterest: poi,
-		ScenarioID:      node.ScenarioID,
-		MonsterID:       node.MonsterID,
-		ChallengeID:     node.ChallengeID,
-		Polygon:         parsePolygon(node.Polygon),
-		Challenges:      challenges,
-		SubmissionType:  submissionType,
+		ID:             node.ID,
+		OrderIndex:     node.OrderIndex,
+		ScenarioID:     node.ScenarioID,
+		MonsterID:      node.MonsterID,
+		ChallengeID:    node.ChallengeID,
+		Challenges:     challenges,
+		SubmissionType: submissionType,
 	}
-}
-
-func questMatchesTags(quest *models.Quest, poiLookup map[uuid.UUID]*models.PointOfInterest, tags []string) bool {
-	if len(tags) == 0 {
-		return true
-	}
-	tagSet := map[string]struct{}{}
-	for _, t := range tags {
-		tagSet[strings.ToLower(strings.TrimSpace(t))] = struct{}{}
-	}
-	hasAnyTags := false
-	for _, node := range quest.Nodes {
-		if node.PointOfInterestID == nil {
-			continue
-		}
-		poi := poiLookup[*node.PointOfInterestID]
-		if poi == nil {
-			continue
-		}
-		for _, tag := range poi.Tags {
-			hasAnyTags = true
-			if _, ok := tagSet[strings.ToLower(tag.Value)]; ok {
-				return true
-			}
-		}
-	}
-	if !hasAnyTags {
-		return true
-	}
-	return false
-}
-
-func (c *questlogClient) loadQuestPointsOfInterest(ctx context.Context, quest *models.Quest) (map[uuid.UUID]*models.PointOfInterest, error) {
-	lookup := map[uuid.UUID]*models.PointOfInterest{}
-	if quest == nil {
-		return lookup, nil
-	}
-	for _, node := range quest.Nodes {
-		if node.PointOfInterestID == nil {
-			continue
-		}
-		if _, ok := lookup[*node.PointOfInterestID]; ok {
-			continue
-		}
-		poi, err := c.dbClient.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
-		if err != nil {
-			return nil, err
-		}
-		if poi != nil {
-			lookup[*node.PointOfInterestID] = poi
-		}
-	}
-	return lookup, nil
-}
-
-func parsePolygon(raw string) []LatLng {
-	if raw == "" {
-		return nil
-	}
-	trimmed := strings.TrimSpace(raw)
-	if strings.HasPrefix(strings.ToUpper(trimmed), "SRID=") {
-		if parts := strings.SplitN(trimmed, ";", 2); len(parts) == 2 {
-			trimmed = parts[1]
-		}
-	}
-	geom, err := wkt.Unmarshal(trimmed)
-	if err != nil {
-		return nil
-	}
-	poly, ok := geom.(orb.Polygon)
-	if !ok || len(poly) == 0 {
-		return nil
-	}
-	ring := poly[0]
-	if len(ring) == 0 {
-		return nil
-	}
-	coords := make([]LatLng, 0, len(ring))
-	for _, pt := range ring {
-		coords = append(coords, LatLng{Latitude: pt[1], Longitude: pt[0]})
-	}
-	return coords
 }

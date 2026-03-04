@@ -655,15 +655,13 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 	if quest.ZoneID != nil {
 		zoneID = *quest.ZoneID
 	} else {
-		for _, node := range quest.Nodes {
-			if node.PointOfInterestID == nil {
+		for i := range quest.Nodes {
+			zone, _, err := c.questNodeZoneAndPOIInfo(ctx, &quest.Nodes[i])
+			if err != nil || zone == nil {
 				continue
 			}
-			zone, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, *node.PointOfInterestID)
-			if err == nil {
-				zoneID = zone.ZoneID
-				break
-			}
+			zoneID = zone.ID
+			break
 		}
 	}
 	if zoneID == uuid.Nil {
@@ -1012,62 +1010,11 @@ func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, 
 		return fmt.Errorf("quest, node, and challenge are required")
 	}
 
-	var zone *models.Zone
-	var currentPOI *models.PointOfInterest
-	if node.PointOfInterestID != nil {
-		poi, err := c.db.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
-		if err != nil {
-			return err
-		}
-		if poi == nil {
-			return fmt.Errorf("point of interest not found")
-		}
-		currentPOI = poi
-		zoneInfo, err := c.db.PointOfInterest().FindZoneForPointOfInterest(ctx, poi.ID)
-		if err != nil {
-			return err
-		}
-		zone, err = c.db.Zone().FindByID(ctx, zoneInfo.ZoneID)
-		if err != nil {
-			return err
-		}
-	} else if node.ScenarioID != nil {
-		scenario, err := c.db.Scenario().FindByID(ctx, *node.ScenarioID)
-		if err != nil {
-			return err
-		}
-		if scenario == nil {
-			return fmt.Errorf("scenario not found")
-		}
-		zone, err = c.db.Zone().FindByID(ctx, scenario.ZoneID)
-		if err != nil {
-			return err
-		}
-	} else if node.MonsterID != nil {
-		monster, err := c.db.Monster().FindByID(ctx, *node.MonsterID)
-		if err != nil {
-			return err
-		}
-		if monster == nil {
-			return fmt.Errorf("monster not found")
-		}
-		zone, err = c.db.Zone().FindByID(ctx, monster.ZoneID)
-		if err != nil {
-			return err
-		}
-	} else if node.ChallengeID != nil {
-		challenge, err := c.db.Challenge().FindByID(ctx, *node.ChallengeID)
-		if err != nil {
-			return err
-		}
-		if challenge == nil {
-			return fmt.Errorf("challenge not found")
-		}
-		zone, err = c.db.Zone().FindByID(ctx, challenge.ZoneID)
-		if err != nil {
-			return err
-		}
-	} else if quest.ZoneID != nil {
+	zone, currentPOIInfo, err := c.questNodeZoneAndPOIInfo(ctx, node)
+	if err != nil {
+		return err
+	}
+	if zone == nil && quest.ZoneID != nil {
 		z, err := c.db.Zone().FindByID(ctx, *quest.ZoneID)
 		if err != nil {
 			return err
@@ -1090,25 +1037,12 @@ func (c *gameEngineClient) AwardQuestNodeSubmissionRewards(ctx context.Context, 
 	itemsAwarded := []models.ItemAwarded{}
 	goldAwarded := 0
 
-	var currentPOIInfo models.POIInfo
-	if currentPOI != nil {
-		currentPOIInfo = models.POIInfo{
-			ID:       currentPOI.ID,
-			Name:     currentPOI.Name,
-			ImageURL: currentPOI.ImageUrl,
-		}
-	}
-
 	var nextPOI *models.POIInfo
 	nextNode := c.nextQuestNode(quest, node)
-	if nextNode != nil && nextNode.PointOfInterestID != nil {
-		poi, err := c.db.PointOfInterest().FindByID(ctx, *nextNode.PointOfInterestID)
-		if err == nil && poi != nil {
-			nextPOI = &models.POIInfo{
-				ID:       poi.ID,
-				Name:     poi.Name,
-				ImageURL: poi.ImageUrl,
-			}
+	if nextNode != nil {
+		_, nextPOIInfo, err := c.questNodeZoneAndPOIInfo(ctx, nextNode)
+		if err == nil && nextPOIInfo.ID != uuid.Nil {
+			nextPOI = &nextPOIInfo
 		}
 	}
 
@@ -1174,6 +1108,94 @@ func (c *gameEngineClient) nextQuestNode(quest *models.Quest, current *models.Qu
 		}
 	}
 	return next
+}
+
+func (c *gameEngineClient) questNodeZoneAndPOIInfo(ctx context.Context, node *models.QuestNode) (*models.Zone, models.POIInfo, error) {
+	if node == nil {
+		return nil, models.POIInfo{}, nil
+	}
+	switch {
+	case node.ScenarioID != nil:
+		scenario, err := c.db.Scenario().FindByID(ctx, *node.ScenarioID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		if scenario == nil {
+			return nil, models.POIInfo{}, fmt.Errorf("scenario not found")
+		}
+		zone, err := c.db.Zone().FindByID(ctx, scenario.ZoneID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		name := strings.TrimSpace(scenario.Prompt)
+		if name == "" {
+			name = "Scenario"
+		}
+		return zone, models.POIInfo{
+			ID:       scenario.ID,
+			Name:     name,
+			ImageURL: preferredObjectiveImageURL(scenario.ThumbnailURL, scenario.ImageURL),
+		}, nil
+	case node.MonsterID != nil:
+		monster, err := c.db.Monster().FindByID(ctx, *node.MonsterID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		if monster == nil {
+			return nil, models.POIInfo{}, fmt.Errorf("monster not found")
+		}
+		zone, err := c.db.Zone().FindByID(ctx, monster.ZoneID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		name := strings.TrimSpace(monster.Name)
+		if name == "" {
+			name = "Monster"
+		}
+		return zone, models.POIInfo{
+			ID:       monster.ID,
+			Name:     name,
+			ImageURL: preferredObjectiveImageURL(monster.ThumbnailURL, monster.ImageURL),
+		}, nil
+	case node.ChallengeID != nil:
+		challenge, err := c.db.Challenge().FindByID(ctx, *node.ChallengeID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		if challenge == nil {
+			return nil, models.POIInfo{}, fmt.Errorf("challenge not found")
+		}
+		zone, err := c.db.Zone().FindByID(ctx, challenge.ZoneID)
+		if err != nil {
+			return nil, models.POIInfo{}, err
+		}
+		name := strings.TrimSpace(challenge.Description)
+		if name == "" {
+			name = strings.TrimSpace(challenge.Question)
+		}
+		if name == "" {
+			name = "Challenge"
+		}
+		return zone, models.POIInfo{
+			ID:       challenge.ID,
+			Name:     name,
+			ImageURL: preferredObjectiveImageURL(challenge.ThumbnailURL, challenge.ImageURL),
+		}, nil
+	default:
+		return nil, models.POIInfo{}, nil
+	}
+}
+
+func preferredObjectiveImageURL(thumbnailURL string, imageURL string) string {
+	thumb := strings.TrimSpace(thumbnailURL)
+	if thumb != "" {
+		return thumb
+	}
+	primary := strings.TrimSpace(imageURL)
+	if primary != "" {
+		return primary
+	}
+	return ""
 }
 
 func questProficiencies(quest *models.Quest) []string {

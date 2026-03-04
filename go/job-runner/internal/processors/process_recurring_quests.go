@@ -237,18 +237,15 @@ func (p *ProcessRecurringQuestsProcessor) copyQuestNodes(ctx context.Context, qu
 		}
 
 		newNode := &models.QuestNode{
-			ID:                newNodeID,
-			CreatedAt:         now,
-			UpdatedAt:         now,
-			QuestID:           questID,
-			OrderIndex:        node.OrderIndex,
-			PointOfInterestID: node.PointOfInterestID,
-			SubmissionType:    submissionType,
-		}
-		if len(node.PolygonPoints) > 0 {
-			newNode.SetPolygonFromPoints(node.PolygonPoints)
-		} else if node.Polygon != "" {
-			newNode.Polygon = node.Polygon
+			ID:             newNodeID,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			QuestID:        questID,
+			OrderIndex:     node.OrderIndex,
+			ScenarioID:     node.ScenarioID,
+			MonsterID:      node.MonsterID,
+			ChallengeID:    node.ChallengeID,
+			SubmissionType: submissionType,
 		}
 
 		if err := p.dbClient.QuestNode().Create(ctx, newNode); err != nil {

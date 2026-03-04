@@ -159,7 +159,7 @@ func (s *server) getChallengesForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
 		return
 	}
-	challenges, err := s.dbClient.Challenge().FindByZoneID(ctx, zoneID)
+	challenges, err := s.dbClient.Challenge().FindByZoneIDExcludingQuestNodes(ctx, zoneID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

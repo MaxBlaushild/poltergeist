@@ -42,9 +42,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkt"
-	"github.com/paulmach/orb/planar"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -1633,24 +1630,6 @@ func (s *server) getUserLatLng(ctx context.Context, userID uuid.UUID) (float64, 
 	}
 
 	return userLat, userLng, nil
-}
-
-func parseQuestNodePolygon(raw string) (orb.Polygon, error) {
-	trimmed := strings.TrimSpace(raw)
-	if strings.HasPrefix(strings.ToUpper(trimmed), "SRID=") {
-		if parts := strings.SplitN(trimmed, ";", 2); len(parts) == 2 {
-			trimmed = parts[1]
-		}
-	}
-	geom, err := wkt.Unmarshal(trimmed)
-	if err != nil {
-		return nil, err
-	}
-	polygon, ok := geom.(orb.Polygon)
-	if !ok {
-		return nil, fmt.Errorf("invalid polygon geometry")
-	}
-	return polygon, nil
 }
 
 func selectQuestNodeChallenge(
@@ -3495,11 +3474,10 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 		return
 	}
 
-	hasPolygon := strings.TrimSpace(requestBody.Polygon) != "" || len(requestBody.PolygonPoints) > 0
+	hasLegacyLocation := requestBody.PointOfInterestID != nil ||
+		strings.TrimSpace(requestBody.Polygon) != "" ||
+		len(requestBody.PolygonPoints) > 0
 	targetCount := 0
-	if requestBody.PointOfInterestID != nil {
-		targetCount++
-	}
 	if requestBody.ScenarioID != nil {
 		targetCount++
 	}
@@ -3509,28 +3487,28 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 	if requestBody.ChallengeID != nil {
 		targetCount++
 	}
-	if hasPolygon {
-		targetCount++
+	if hasLegacyLocation {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest nodes now derive location from scenarioId, monsterId, or challengeId; pointOfInterestId and polygon are not supported"})
+		return
 	}
 	if targetCount == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have a pointOfInterestId, scenarioId, monsterId, challengeId, or polygon"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterId, or challengeId"})
 		return
 	}
 	if targetCount > 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must have exactly one target: pointOfInterestId, scenarioId, monsterId, challengeId, or polygon"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node must include exactly one target: scenarioId, monsterId, or challengeId"})
 		return
 	}
 
 	node := &models.QuestNode{
-		ID:                uuid.New(),
-		CreatedAt:         time.Now(),
-		UpdatedAt:         time.Now(),
-		QuestID:           requestBody.QuestID,
-		OrderIndex:        requestBody.OrderIndex,
-		PointOfInterestID: requestBody.PointOfInterestID,
-		ScenarioID:        requestBody.ScenarioID,
-		MonsterID:         requestBody.MonsterID,
-		ChallengeID:       requestBody.ChallengeID,
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		QuestID:     requestBody.QuestID,
+		OrderIndex:  requestBody.OrderIndex,
+		ScenarioID:  requestBody.ScenarioID,
+		MonsterID:   requestBody.MonsterID,
+		ChallengeID: requestBody.ChallengeID,
 	}
 	if strings.TrimSpace(requestBody.SubmissionType) == "" {
 		node.SubmissionType = models.DefaultQuestNodeSubmissionType()
@@ -3541,12 +3519,6 @@ func (s *server) createQuestNode(ctx *gin.Context) {
 			return
 		}
 	}
-	if len(requestBody.PolygonPoints) > 0 {
-		node.SetPolygonFromPoints(requestBody.PolygonPoints)
-	} else {
-		node.Polygon = requestBody.Polygon
-	}
-
 	if err := s.dbClient.QuestNode().Create(ctx, node); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -9160,28 +9132,7 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	if node.PointOfInterestID != nil {
-		poi, err := s.dbClient.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
-		if err != nil || poi == nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load point of interest"})
-			return
-		}
-		poiLat, err := strconv.ParseFloat(poi.Lat, 64)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest latitude"})
-			return
-		}
-		poiLng, err := strconv.ParseFloat(poi.Lng, 64)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid point of interest longitude"})
-			return
-		}
-		distance := util.HaversineDistance(userLat, userLng, poiLat, poiLng)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
-		}
-	} else if node.ScenarioID != nil {
+	if node.ScenarioID != nil {
 		scenario, err := s.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
 		if err != nil || scenario == nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load scenario"})
@@ -9216,16 +9167,6 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		)
 		if distance > 100 {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
-		}
-	} else if node.Polygon != "" {
-		polygon, err := parseQuestNodePolygon(node.Polygon)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest polygon"})
-			return
-		}
-		if !planar.PolygonContains(polygon, orb.Point{userLng, userLat}) {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the quest area to submit"})
 			return
 		}
 	} else {
@@ -13954,7 +13895,7 @@ func (s *server) getScenariosForZone(ctx *gin.Context) {
 		return
 	}
 
-	scenarios, attemptedMap, err := s.dbClient.Scenario().FindByZoneIDWithUserStatus(ctx, zoneID, &user.ID)
+	scenarios, attemptedMap, err := s.dbClient.Scenario().FindByZoneIDWithUserStatusExcludingQuestNodes(ctx, zoneID, &user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

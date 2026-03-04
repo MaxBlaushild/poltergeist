@@ -136,16 +136,58 @@ func (p *ShuffleQuestNodeChallengeProcessor) shuffleChallenge(ctx context.Contex
 		}
 	}
 
-	var poi *models.PointOfInterest
-	if node.PointOfInterestID != nil {
-		poi, err = p.dbClient.PointOfInterest().FindByID(ctx, *node.PointOfInterestID)
+	locationDetails := "No location details available."
+	fallbackLocationName := "this location"
+	switch {
+	case node.ChallengeID != nil:
+		standaloneChallenge, err := p.dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
 		if err != nil {
-			return fmt.Errorf("failed to find point of interest: %w", err)
+			return fmt.Errorf("failed to find standalone challenge: %w", err)
+		}
+		if standaloneChallenge != nil {
+			if strings.TrimSpace(standaloneChallenge.Description) != "" {
+				locationDetails = fmt.Sprintf(
+					"Name: Quest Challenge\nDescription: %s\nQuestion: %s",
+					truncate(strings.TrimSpace(standaloneChallenge.Description), 220),
+					truncate(strings.TrimSpace(standaloneChallenge.Question), 220),
+				)
+			} else {
+				locationDetails = fmt.Sprintf("Name: Quest Challenge\nQuestion: %s", truncate(strings.TrimSpace(standaloneChallenge.Question), 220))
+			}
+		}
+	case node.ScenarioID != nil:
+		scenario, err := p.dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
+		if err != nil {
+			return fmt.Errorf("failed to find scenario: %w", err)
+		}
+		if scenario != nil {
+			fallbackLocationName = "scenario location"
+			locationDetails = fmt.Sprintf(
+				"Name: %s\nPrompt: %s",
+				truncate(fallbackLocationName, 120),
+				truncate(strings.TrimSpace(scenario.Prompt), 220),
+			)
+		}
+	case node.MonsterID != nil:
+		monster, err := p.dbClient.Monster().FindByID(ctx, *node.MonsterID)
+		if err != nil {
+			return fmt.Errorf("failed to find monster: %w", err)
+		}
+		if monster != nil {
+			fallbackLocationName = strings.TrimSpace(monster.Name)
+			if fallbackLocationName == "" {
+				fallbackLocationName = "monster location"
+			}
+			locationDetails = fmt.Sprintf(
+				"Name: %s\nDescription: %s",
+				truncate(fallbackLocationName, 120),
+				truncate(strings.TrimSpace(monster.Description), 220),
+			)
 		}
 	}
 
-	question, difficulty := p.generateReplacementChallenge(ctx, zone, quest, questGiver, poi, challenge.Question)
-	question, submissionType := normalizeAppliedChallengeQuestion(question, poi, nil)
+	question, difficulty := p.generateReplacementChallenge(ctx, zone, quest, questGiver, locationDetails, fallbackLocationName, challenge.Question)
+	question, submissionType := normalizeAppliedChallengeQuestion(question, nil, nil)
 	if difficulty <= 0 {
 		difficulty = randomQuestDifficulty()
 	}
@@ -180,7 +222,8 @@ func (p *ShuffleQuestNodeChallengeProcessor) generateReplacementChallenge(
 	zone *models.Zone,
 	quest *models.Quest,
 	questGiver *models.Character,
-	poi *models.PointOfInterest,
+	locationDetails string,
+	fallbackLocationName string,
 	currentQuestion string,
 ) (string, int) {
 	zoneName := ""
@@ -193,8 +236,6 @@ func (p *ShuffleQuestNodeChallengeProcessor) generateReplacementChallenge(
 		questGiverName = questGiver.Name
 		questGiverDescription = questGiver.Description
 	}
-	poiDetails := formatZoneSeedPOIForPrompt(poi, nil)
-
 	prompt := fmt.Sprintf(
 		shuffleQuestNodeChallengePromptTemplate,
 		truncate(zoneName, 120),
@@ -202,23 +243,23 @@ func (p *ShuffleQuestNodeChallengeProcessor) generateReplacementChallenge(
 		truncate(strings.TrimSpace(quest.Description), 400),
 		truncate(questGiverName, 80),
 		truncate(questGiverDescription, 220),
-		poiDetails,
+		locationDetails,
 		truncate(strings.TrimSpace(currentQuestion), 240),
 	)
 
 	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
-		return fallbackQuestChallengeQuestion(poi, nil), randomQuestDifficulty()
+		return buildHeuristicChallengeQuestion(fallbackLocationName, nil), randomQuestDifficulty()
 	}
 
 	var response shuffledQuestChallengeResponse
 	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
-		return fallbackQuestChallengeQuestion(poi, nil), randomQuestDifficulty()
+		return buildHeuristicChallengeQuestion(fallbackLocationName, nil), randomQuestDifficulty()
 	}
 
 	question := strings.TrimSpace(response.Question)
 	if question == "" {
-		question = fallbackQuestChallengeQuestion(poi, nil)
+		question = buildHeuristicChallengeQuestion(fallbackLocationName, nil)
 	}
 	return question, response.Difficulty
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,14 +229,23 @@ func (c *client) processQuestNode(
 	} else {
 		questNodeID = uuid.New()
 		submissionType := models.DefaultQuestNodeSubmissionType()
+		locationChallenge, err := c.makeQuestLocationChallenge(zone.ID, pointOfInterest, submissionType)
+		if err != nil {
+			log.Printf("Error creating quest location challenge: %v", err)
+			return err
+		}
+		if err := c.dbClient.Challenge().Create(ctx, locationChallenge); err != nil {
+			log.Printf("Error persisting quest location challenge: %v", err)
+			return err
+		}
 		node := &models.QuestNode{
-			ID:                questNodeID,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
-			QuestID:           quest.ID,
-			OrderIndex:        *orderIndex,
-			PointOfInterestID: &pointOfInterest.ID,
-			SubmissionType:    submissionType,
+			ID:             questNodeID,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+			QuestID:        quest.ID,
+			OrderIndex:     *orderIndex,
+			ChallengeID:    &locationChallenge.ID,
+			SubmissionType: submissionType,
 		}
 		if err := c.dbClient.QuestNode().Create(ctx, node); err != nil {
 			log.Printf("Error creating quest node: %v", err)
@@ -312,6 +322,40 @@ func (c *client) processQuestNode(
 
 	log.Printf("Successfully processed node for point of interest %s", pointOfInterest.ID)
 	return nil
+}
+
+func (c *client) makeQuestLocationChallenge(zoneID uuid.UUID, poi *models.PointOfInterest, submissionType models.QuestNodeSubmissionType) (*models.Challenge, error) {
+	if poi == nil {
+		return nil, fmt.Errorf("point of interest is required")
+	}
+	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid point of interest latitude: %w", err)
+	}
+	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid point of interest longitude: %w", err)
+	}
+	question := fmt.Sprintf("Visit %s and share photo proof of your arrival.", strings.TrimSpace(poi.Name))
+	if strings.TrimSpace(poi.Name) == "" {
+		question = "Visit this location and share photo proof of your arrival."
+	}
+	description := strings.TrimSpace(poi.Description)
+	now := time.Now()
+	return &models.Challenge{
+		ID:             uuid.New(),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		ZoneID:         zoneID,
+		Latitude:       lat,
+		Longitude:      lng,
+		Question:       question,
+		Description:    description,
+		SubmissionType: submissionType,
+		Reward:         0,
+		Difficulty:     0,
+		StatTags:       models.StringArray{},
+	}, nil
 }
 
 func (c *client) applyQuestArchetypeRewards(ctx context.Context, questID uuid.UUID, questArchetype *models.QuestArchetype) error {

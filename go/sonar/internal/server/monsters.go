@@ -1494,7 +1494,7 @@ func (s *server) getMonstersForZone(ctx *gin.Context) {
 		return
 	}
 
-	monsters, err := s.dbClient.Monster().FindByZoneID(ctx, zoneID)
+	monsters, err := s.dbClient.Monster().FindByZoneIDExcludingQuestNodes(ctx, zoneID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

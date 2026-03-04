@@ -67,6 +67,7 @@ const _scenarioMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
 const _monsterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
 const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
@@ -119,11 +120,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _scenarioSymbolById = {};
   final Map<String, Circle> _scenarioCircleById = {};
   final Map<String, bool> _scenarioCircleMystery = {};
+  final Map<String, bool> _scenarioQuestObjective = {};
   List<Symbol> _monsterSymbols = [];
   List<Circle> _monsterCircles = [];
   final Map<String, Symbol> _monsterSymbolById = {};
   final Map<String, Circle> _monsterCircleById = {};
+  List<Symbol> _challengeSymbols = [];
   List<Circle> _challengeCircles = [];
+  final Map<String, Symbol> _challengeSymbolById = {};
   final Map<String, Circle> _challengeCircleById = {};
   final Set<String> _resolvedScenarioIds = <String>{};
   final Set<String> _resolvedScenarioSignatures = <String>{};
@@ -137,6 +141,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _scenarioMysteryThumbnailAdded = false;
   Uint8List? _monsterMysteryThumbnailBytes;
   bool _monsterMysteryThumbnailAdded = false;
+  Uint8List? _challengeMysteryThumbnailBytes;
+  bool _challengeMysteryThumbnailAdded = false;
   bool _styleLoaded = false;
   bool _markersAdded = false;
   bool _addedMarkersWithEmptyDiscoveries = false;
@@ -159,6 +165,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _scenarioVisibilityRefreshPending = false;
   Future<void> _scenarioRefreshSequence = Future<void>.value();
   Future<void> _monsterRefreshSequence = Future<void>.value();
+  Future<void> _challengeRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
@@ -367,7 +374,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final questLog = context.read<QuestLogProvider>();
     if (questLog.loading) return;
     _applyQuestLogOverlaysIfChanged();
+    unawaited(_refreshScenarioSymbols());
+    unawaited(_refreshMonsterSymbols());
     unawaited(_refreshChallengeSymbols());
+    unawaited(_loadTreasureChestsForSelectedZone());
     unawaited(_refreshQuestAvailabilityMarkers());
   }
 
@@ -497,6 +507,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         .toSet();
   }
 
+  Set<String> _currentQuestScenarioIds() {
+    final questLog = context.read<QuestLogProvider>();
+    return questLog.quests
+        .where((q) => q.isAccepted)
+        .map((q) => q.currentNode?.scenarioId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Set<String> _currentQuestMonsterIds() {
+    final questLog = context.read<QuestLogProvider>();
+    return questLog.quests
+        .where((q) => q.isAccepted)
+        .map((q) => q.currentNode?.monsterId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Set<String> _currentQuestChallengeIds() {
+    final questLog = context.read<QuestLogProvider>();
+    return questLog.quests
+        .where((q) => q.isAccepted)
+        .map((q) => q.currentNode?.challengeId?.trim() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
   Timer? _mapLoadTimeout;
 
   void _startMapLoadTimeout() {
@@ -532,16 +569,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _scenarioSymbolById.clear();
       _scenarioCircleById.clear();
       _scenarioCircleMystery.clear();
+      _scenarioQuestObjective.clear();
       _monsterSymbols = [];
       _monsterCircles = [];
       _monsterSymbolById.clear();
       _monsterCircleById.clear();
+      _challengeSymbols = [];
       _challengeCircles = [];
+      _challengeSymbolById.clear();
       _challengeCircleById.clear();
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
       _monsterMysteryThumbnailBytes = null;
       _monsterMysteryThumbnailAdded = false;
+      _challengeMysteryThumbnailBytes = null;
+      _challengeMysteryThumbnailAdded = false;
       _questLines = [];
       _characterSymbolsById.clear();
     });
@@ -693,6 +735,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _flyToLocation(lat, lng);
       _pulsePoi(lat, lng);
       return;
+    }
+    final scenarioId = node.scenarioId?.trim() ?? '';
+    if (scenarioId.isNotEmpty) {
+      final scenario = _scenarioById(scenarioId);
+      if (scenario != null) {
+        _flyToLocation(scenario.latitude, scenario.longitude);
+        _pulsePoi(scenario.latitude, scenario.longitude);
+        return;
+      }
+    }
+    final monsterId = node.monsterId?.trim() ?? '';
+    if (monsterId.isNotEmpty) {
+      final monster = _monsterById(monsterId);
+      if (monster != null) {
+        _flyToLocation(monster.latitude, monster.longitude);
+        _pulsePoi(monster.latitude, monster.longitude);
+        return;
+      }
+    }
+    final challengeId = node.challengeId?.trim() ?? '';
+    if (challengeId.isNotEmpty) {
+      final challenge = _challengeById(challengeId);
+      if (challenge != null) {
+        _flyToLocation(challenge.latitude, challenge.longitude);
+        _pulsePoi(challenge.latitude, challenge.longitude);
+        return;
+      }
     }
     if (node.polygon.isNotEmpty) {
       final center = _polygonCenter(node.polygon);
@@ -877,27 +946,72 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final monstersFuture = svc.getMonstersForZone(zoneId);
       final challengesFuture = svc.getChallengesForZone(zoneId);
       final chests = await chestsFuture;
-      final scenarios = await scenariosFuture;
-      final monsters = await monstersFuture;
-      final challenges = await challengesFuture;
+      final baseScenarios = await scenariosFuture;
+      final baseMonsters = await monstersFuture;
+      final baseChallenges = await challengesFuture;
+      if (!mounted) return;
+      final currentQuestScenarioIds = _currentQuestScenarioIds();
+      final currentQuestMonsterIds = _currentQuestMonsterIds();
+      final currentQuestChallengeIds = _currentQuestChallengeIds();
+
+      final scenarioById = <String, Scenario>{
+        for (final scenario in baseScenarios) scenario.id: scenario,
+      };
+      final monsterById = <String, Monster>{
+        for (final monster in baseMonsters) monster.id: monster,
+      };
+      final challengeById = <String, Challenge>{
+        for (final challenge in baseChallenges) challenge.id: challenge,
+      };
+
+      for (final scenarioId in currentQuestScenarioIds) {
+        if (scenarioById.containsKey(scenarioId)) continue;
+        final scenario = await svc.getScenarioById(scenarioId);
+        if (scenario == null) continue;
+        if (scenario.zoneId != zoneId) continue;
+        scenarioById[scenario.id] = scenario;
+      }
+      for (final monsterId in currentQuestMonsterIds) {
+        if (monsterById.containsKey(monsterId)) continue;
+        final monster = await svc.getMonsterById(monsterId);
+        if (monster == null) continue;
+        if (monster.zoneId != zoneId) continue;
+        monsterById[monster.id] = monster;
+      }
+      for (final challengeId in currentQuestChallengeIds) {
+        if (challengeById.containsKey(challengeId)) continue;
+        final challenge = await svc.getChallengeById(challengeId);
+        if (challenge == null) continue;
+        if (challenge.zoneId != zoneId) continue;
+        challengeById[challenge.id] = challenge;
+      }
+
+      final scenarios = scenarioById.values
+          .where(
+            (scenario) =>
+                (currentQuestScenarioIds.contains(scenario.id)) ||
+                (!scenario.attemptedByUser &&
+                    !_resolvedScenarioIds.contains(scenario.id) &&
+                    !_resolvedScenarioSignatures.contains(
+                      _scenarioSignature(scenario),
+                    )),
+          )
+          .toList();
+      final monsters = monsterById.values
+          .where(
+            (monster) =>
+                currentQuestMonsterIds.contains(monster.id) ||
+                !_defeatedMonsterIds.contains(monster.id),
+          )
+          .toList();
+      final challenges = challengeById.values.toList();
       if (!mounted) return;
       setState(() {
         _treasureChests = chests
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList();
-        _scenarios = scenarios
-            .where(
-              (scenario) =>
-                  !scenario.attemptedByUser &&
-                  !_resolvedScenarioIds.contains(scenario.id) &&
-                  !_resolvedScenarioSignatures.contains(
-                    _scenarioSignature(scenario),
-                  ),
-            )
-            .toList();
-        _monsters = monsters
-            .where((monster) => !_defeatedMonsterIds.contains(monster.id))
-            .toList();
+        _scenarios = scenarios;
+        _monsters = monsters;
         _challenges = challenges;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
@@ -945,6 +1059,18 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       location.longitude,
       monster.latitude,
       monster.longitude,
+    );
+    return distance > kProximityUnlockRadiusMeters;
+  }
+
+  bool _isChallengeMystery(Challenge challenge) {
+    final location = context.read<LocationProvider>().location;
+    if (location == null) return true;
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      challenge.latitude,
+      challenge.longitude,
     );
     return distance > kProximityUnlockRadiusMeters;
   }
@@ -1097,6 +1223,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         } catch (_) {}
         _scenarioSymbols.remove(entry.value);
         _scenarioSymbolById.remove(entry.key);
+        _scenarioQuestObjective.remove(entry.key);
       }
     }
     for (final entry in _scenarioCircleById.entries.toList()) {
@@ -1107,6 +1234,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioCircles.remove(entry.value);
         _scenarioCircleById.remove(entry.key);
         _scenarioCircleMystery.remove(entry.key);
+        _scenarioQuestObjective.remove(entry.key);
       }
     }
 
@@ -1116,11 +1244,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     for (final scenario in _scenarios) {
       final mystery = _isScenarioMystery(scenario);
+      final isCurrentQuestScenario = _isCurrentQuestScenario(scenario.id);
       final existingSymbol = _scenarioSymbolById[scenario.id];
       final existingCircle = _scenarioCircleById[scenario.id];
       final needsRefresh =
           _scenarioCircleMystery[scenario.id] != mystery ||
-          existingSymbol == null;
+          existingSymbol == null ||
+          _scenarioQuestObjective[scenario.id] != isCurrentQuestScenario;
 
       if (canUseImages) {
         if (needsRefresh) {
@@ -1153,8 +1283,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(scenario.latitude, scenario.longitude),
               iconImage: imageId,
               iconSize: 0.74,
-              iconHaloColor: '#000000',
-              iconHaloWidth: 0.75,
+              iconHaloColor: isCurrentQuestScenario ? '#e1b12c' : '#000000',
+              iconHaloWidth: isCurrentQuestScenario ? 1.15 : 0.75,
               iconAnchor: 'center',
             ),
             {'type': 'scenario', 'id': scenario.id},
@@ -1163,6 +1293,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _scenarioSymbols.add(symbol);
           _scenarioSymbolById[scenario.id] = symbol;
           _scenarioCircleMystery[scenario.id] = mystery;
+          _scenarioQuestObjective[scenario.id] = isCurrentQuestScenario;
         }
         continue;
       }
@@ -1175,7 +1306,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioSymbolById.remove(scenario.id);
       }
       if (existingCircle == null ||
-          _scenarioCircleMystery[scenario.id] != mystery) {
+          _scenarioCircleMystery[scenario.id] != mystery ||
+          _scenarioQuestObjective[scenario.id] != isCurrentQuestScenario) {
         if (existingCircle != null) {
           try {
             await c.removeCircle(existingCircle);
@@ -1187,7 +1319,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           CircleOptions(
             geometry: LatLng(scenario.latitude, scenario.longitude),
             circleRadius: 23,
-            circleColor: mystery ? '#5a5560' : '#4f8cff',
+            circleColor: isCurrentQuestScenario
+                ? '#e1b12c'
+                : (mystery ? '#5a5560' : '#4f8cff'),
             circleStrokeWidth: 2,
             circleStrokeColor: '#ffffff',
           ),
@@ -1197,6 +1331,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioCircles.add(circle);
         _scenarioCircleById[scenario.id] = circle;
         _scenarioCircleMystery[scenario.id] = mystery;
+        _scenarioQuestObjective[scenario.id] = isCurrentQuestScenario;
       }
     }
   }
@@ -1306,6 +1441,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     for (final monster in _monsters) {
+      final isCurrentQuestMonster = _isCurrentQuestMonster(monster.id);
       final mystery = _isMonsterMystery(monster);
       String? symbolImageId;
       if (mystery) {
@@ -1347,8 +1483,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(monster.latitude, monster.longitude),
               iconImage: symbolImageId,
               iconSize: 0.78,
-              iconHaloColor: '#000000',
-              iconHaloWidth: 0.75,
+              iconHaloColor: isCurrentQuestMonster ? '#e1b12c' : '#000000',
+              iconHaloWidth: isCurrentQuestMonster ? 1.15 : 0.75,
               iconAnchor: 'center',
             ),
             {'type': 'monster', 'id': monster.id},
@@ -1363,6 +1499,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               SymbolOptions(
                 geometry: LatLng(monster.latitude, monster.longitude),
                 iconImage: symbolImageId,
+                iconHaloColor: isCurrentQuestMonster ? '#e1b12c' : '#000000',
+                iconHaloWidth: isCurrentQuestMonster ? 1.15 : 0.75,
               ),
             );
           } catch (_) {}
@@ -1391,7 +1529,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         CircleOptions(
           geometry: LatLng(monster.latitude, monster.longitude),
           circleRadius: 24,
-          circleColor: mystery ? '#5a5560' : '#b63f3f',
+          circleColor: isCurrentQuestMonster
+              ? '#e1b12c'
+              : (mystery ? '#5a5560' : '#b63f3f'),
           circleStrokeWidth: 2,
           circleStrokeColor: '#ffffff',
         ),
@@ -1401,6 +1541,30 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _monsterCircles.add(circle);
       _monsterCircleById[monster.id] = circle;
     }
+  }
+
+  bool _isCurrentQuestScenario(String scenarioId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node?.scenarioId == scenarioId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _isCurrentQuestMonster(String monsterId) {
+    final questLog = context.read<QuestLogProvider>();
+    for (final quest in questLog.quests) {
+      if (!quest.isAccepted) continue;
+      final node = quest.currentNode;
+      if (node?.monsterId == monsterId) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _isCurrentQuestChallenge(String challengeId) {
@@ -1415,9 +1579,85 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return false;
   }
 
-  Future<void> _refreshChallengeSymbols() async {
+  Future<void> _loadChallengeMysteryThumbnail(MapLibreMapController c) async {
+    if (_challengeMysteryThumbnailBytes == null) {
+      try {
+        _challengeMysteryThumbnailBytes = await loadPoiThumbnail(
+          _challengeMysteryImageUrl,
+        );
+      } catch (_) {}
+      _challengeMysteryThumbnailBytes ??= await loadPoiThumbnail(
+        _legacyMysteryImageUrl,
+      );
+    }
+    if (_challengeMysteryThumbnailBytes != null &&
+        !_challengeMysteryThumbnailAdded) {
+      try {
+        await c.addImage(
+          'challenge_mystery_thumbnail_$_mapThumbnailVersion',
+          _challengeMysteryThumbnailBytes!,
+        );
+        _challengeMysteryThumbnailAdded = true;
+      } catch (_) {}
+    }
+  }
+
+  Future<String?> _ensureChallengeVisibleThumbnail(
+    MapLibreMapController c,
+    Challenge challenge,
+  ) async {
+    final source = challenge.thumbnailUrl.isNotEmpty
+        ? challenge.thumbnailUrl
+        : challenge.imageUrl;
+    if (source.isEmpty) return null;
+
+    final imageBytes = await loadPoiThumbnail(source);
+    if (imageBytes == null) return null;
+
+    final imageId = 'challenge_${challenge.id}_$_mapThumbnailVersion';
+    try {
+      await c.addImage(imageId, imageBytes);
+    } catch (_) {}
+    return imageId;
+  }
+
+  Future<void> _refreshChallengeSymbols() {
+    _challengeRefreshSequence = _challengeRefreshSequence.then((_) async {
+      try {
+        await _refreshChallengeSymbolsNow();
+      } catch (e, st) {
+        debugPrint('SinglePlayer: _refreshChallengeSymbols error: $e');
+        debugPrint('SinglePlayer: _refreshChallengeSymbols stack: $st');
+      }
+    });
+    return _challengeRefreshSequence;
+  }
+
+  Future<void> _refreshChallengeSymbolsNow() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
+    await _loadChallengeMysteryThumbnail(c);
+
+    final duplicateOrOrphanSymbols = <Symbol>[];
+    for (final symbol in _challengeSymbols.toList()) {
+      final id = _challengeIdFromData(symbol.data);
+      if (id == null) {
+        duplicateOrOrphanSymbols.add(symbol);
+        continue;
+      }
+      final tracked = _challengeSymbolById[id];
+      if (tracked == null || !identical(tracked, symbol)) {
+        duplicateOrOrphanSymbols.add(symbol);
+      }
+    }
+    if (duplicateOrOrphanSymbols.isNotEmpty) {
+      try {
+        await c.removeSymbols(duplicateOrOrphanSymbols);
+      } catch (_) {}
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _challengeSymbols.remove(symbol);
+      }
+    }
 
     final duplicateOrOrphanCircles = <Circle>[];
     for (final circle in _challengeCircles.toList()) {
@@ -1441,6 +1681,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     final desiredIds = _challenges.map((challenge) => challenge.id).toSet();
+    for (final entry in _challengeSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _challengeSymbols.remove(entry.value);
+        _challengeSymbolById.remove(entry.key);
+      }
+    }
     for (final entry in _challengeCircleById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
         try {
@@ -1453,7 +1702,76 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     for (final challenge in _challenges) {
       final isCurrentQuestChallenge = _isCurrentQuestChallenge(challenge.id);
-      final circleColor = isCurrentQuestChallenge ? '#e1b12c' : '#2a9d8f';
+      final mystery = _isChallengeMystery(challenge);
+      String? symbolImageId;
+
+      if (mystery) {
+        if (_challengeMysteryThumbnailBytes != null &&
+            _challengeMysteryThumbnailAdded) {
+          symbolImageId = 'challenge_mystery_thumbnail_$_mapThumbnailVersion';
+        }
+      } else {
+        try {
+          symbolImageId = await _ensureChallengeVisibleThumbnail(c, challenge);
+        } catch (_) {}
+      }
+
+      if (symbolImageId != null) {
+        final existingCircle = _challengeCircleById[challenge.id];
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _challengeCircles.remove(existingCircle);
+          _challengeCircleById.remove(challenge.id);
+        }
+
+        final existingSymbol = _challengeSymbolById[challenge.id];
+        final iconHaloColor = isCurrentQuestChallenge ? '#e1b12c' : '#000000';
+        final iconHaloWidth = isCurrentQuestChallenge ? 1.15 : 0.75;
+        if (existingSymbol == null) {
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(challenge.latitude, challenge.longitude),
+              iconImage: symbolImageId,
+              iconSize: 0.74,
+              iconHaloColor: iconHaloColor,
+              iconHaloWidth: iconHaloWidth,
+              iconAnchor: 'center',
+            ),
+            {'type': 'challenge', 'id': challenge.id},
+          );
+          if (!mounted) return;
+          _challengeSymbols.add(symbol);
+          _challengeSymbolById[challenge.id] = symbol;
+        } else {
+          try {
+            await c.updateSymbol(
+              existingSymbol,
+              SymbolOptions(
+                geometry: LatLng(challenge.latitude, challenge.longitude),
+                iconImage: symbolImageId,
+                iconHaloColor: iconHaloColor,
+                iconHaloWidth: iconHaloWidth,
+              ),
+            );
+          } catch (_) {}
+        }
+        continue;
+      }
+
+      final existingSymbol = _challengeSymbolById[challenge.id];
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _challengeSymbols.remove(existingSymbol);
+        _challengeSymbolById.remove(challenge.id);
+      }
+
+      final circleColor = isCurrentQuestChallenge
+          ? '#e1b12c'
+          : (mystery ? '#5a5560' : '#2a9d8f');
       final existingCircle = _challengeCircleById[challenge.id];
       if (existingCircle == null) {
         final circle = await c.addCircle(
@@ -2071,6 +2389,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _monsterCircles.clear();
       }
       _monsterCircleById.clear();
+      if (_challengeSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_challengeSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _challengeSymbols.clear();
+      }
+      _challengeSymbolById.clear();
       if (_challengeCircles.isNotEmpty) {
         for (final circle in _challengeCircles) {
           try {
@@ -4658,6 +4984,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             challenge.latitude,
             challenge.longitude,
           );
+    final withinRange =
+        distance != null && distance <= kProximityUnlockRadiusMeters;
+    final mysteryState = !withinRange;
+    final canSubmit = !mysteryState && activeQuestEntry != null;
 
     showModalBottomSheet(
       context: context,
@@ -4668,62 +4998,121 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
+        final theme = Theme.of(sheetContext);
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Challenge',
-                    style: Theme.of(sheetContext).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      mysteryState ? 'Mysterious Challenge' : 'Challenge',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: Image.network(
+                      mysteryState
+                          ? _challengeMysteryImageUrl
+                          : (challenge.thumbnailUrl.isNotEmpty
+                                ? challenge.thumbnailUrl
+                                : challenge.imageUrl),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => mysteryState
+                          ? Image.network(
+                              _legacyMysteryImageUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Container(
+                                color: theme.colorScheme.surfaceVariant,
+                                child: const Icon(Icons.auto_awesome_outlined),
+                              ),
+                            )
+                          : Container(
+                              color: theme.colorScheme.surfaceVariant,
+                              child: const Icon(Icons.auto_awesome_outlined),
+                            ),
+                    ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    icon: const Icon(Icons.close),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (distance != null)
+                      _MiniInfoChip(
+                        icon: Icons.place_outlined,
+                        label: '${distance.round()} m away',
+                      ),
+                    _MiniInfoChip(
+                      icon: Icons.shield_outlined,
+                      label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
+                    ),
+                    if (!mysteryState)
+                      _MiniInfoChip(
+                        icon: Icons.edit_note_outlined,
+                        label: challenge.submissionType.toUpperCase(),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (mysteryState)
+                  Text(
+                    'This challenge remains a mystery until you are close enough to investigate.',
+                    style: theme.textTheme.bodyMedium,
+                  )
+                else ...[
+                  Text(challenge.question, style: theme.textTheme.bodyLarge),
+                  if (challenge.description.trim().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      challenge.description.trim(),
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    'Difficulty: ${challenge.difficulty}',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                challenge.question,
-                style: Theme.of(sheetContext).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Difficulty: ${challenge.difficulty}',
-                style: Theme.of(sheetContext).textTheme.bodySmall,
-              ),
-              if (distance != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '${distance.round()} m away',
-                  style: Theme.of(sheetContext).textTheme.bodySmall,
-                ),
+                if (!mysteryState) ...[
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: canSubmit
+                        ? () {
+                            Navigator.of(sheetContext).pop();
+                            _showStandaloneQuestChallengeSubmissionModal(
+                              activeQuestEntry.key,
+                              activeQuestEntry.value,
+                              challenge,
+                            );
+                          }
+                        : null,
+                    child: Text(
+                      activeQuestEntry == null
+                          ? 'No active quest objective here'
+                          : 'Submit for quest: $questName',
+                    ),
+                  ),
+                ],
               ],
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: activeQuestEntry == null
-                    ? null
-                    : () {
-                        Navigator.of(sheetContext).pop();
-                        _showStandaloneQuestChallengeSubmissionModal(
-                          activeQuestEntry.key,
-                          activeQuestEntry.value,
-                          challenge,
-                        );
-                      },
-                child: Text(
-                  activeQuestEntry == null
-                      ? 'No active quest objective here'
-                      : 'Submit for quest: $questName',
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -5254,6 +5643,33 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MiniInfoChip extends StatelessWidget {
+  const _MiniInfoChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14),
+          const SizedBox(width: 6),
+          Text(label, style: theme.textTheme.labelMedium),
+        ],
       ),
     );
   }

@@ -199,7 +199,7 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    mysteryState ? 'Mysterious Encounter' : 'Scenario',
+                    mysteryState ? 'Mysterious Scenario' : 'Scenario',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),

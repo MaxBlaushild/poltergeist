@@ -45,9 +45,7 @@ func (h *questHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Quest
 		Preload("ItemRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
-		}).
+		Preload("Nodes").
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		First(&quest, "id = ?", id).Error; err != nil {
@@ -66,9 +64,7 @@ func (h *questHandle) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]models.
 		Preload("ItemRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
-		}).
+		Preload("Nodes").
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("id IN ?", ids).
@@ -85,9 +81,7 @@ func (h *questHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]mod
 		Preload("ItemRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
-		}).
+		Preload("Nodes").
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("zone_id = ?", zoneID).
@@ -104,9 +98,7 @@ func (h *questHandle) FindByQuestGiverCharacterID(ctx context.Context, character
 		Preload("ItemRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
-		}).
+		Preload("Nodes").
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Where("quest_giver_character_id = ?", characterID).
@@ -123,9 +115,7 @@ func (h *questHandle) FindAll(ctx context.Context) ([]models.Quest, error) {
 		Preload("ItemRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell").
-		Preload("Nodes", func(db *gorm.DB) *gorm.DB {
-			return db.Select("quest_nodes.*, ST_AsText(quest_nodes.polygon) as polygon")
-		}).
+		Preload("Nodes").
 		Preload("Nodes.Challenges").
 		Preload("Nodes.Children").
 		Find(&quests).Error; err != nil {

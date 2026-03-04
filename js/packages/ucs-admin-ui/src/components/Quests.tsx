@@ -73,7 +73,7 @@ const questStatOptions = [
 
 const emptyNodeForm = {
   orderIndex: 1,
-  nodeType: 'poi' as QuestNodeType,
+  nodeType: 'scenario' as QuestNodeType,
   submissionType: 'photo' as QuestNodeSubmissionType,
   pointOfInterestId: '',
   scenarioId: '',
@@ -1522,6 +1522,10 @@ const handleRemoveQuestReward = (index: number) => {
   const handleCreateNode = async () => {
     if (!selectedQuest) return;
     try {
+      if (nodeForm.nodeType === 'poi' || nodeForm.nodeType === 'polygon') {
+        alert('Quest nodes now must be Scenario, Monster, or Challenge.');
+        return;
+      }
       const polygonPoints = nodeForm.nodeType === 'polygon' ? parsePolygonPoints(nodeForm.polygonPoints) : null;
       if (nodeForm.nodeType === 'polygon' && !polygonPoints) {
         alert('Please enter polygon points as JSON: [[lng,lat],[lng,lat],...]');
@@ -1784,14 +1788,6 @@ const handleRemoveQuestReward = (index: number) => {
           next.add(job.id);
           hasNew = true;
           setImportToasts((existing) => [`Import complete: ${job.placeId}`, ...existing].slice(0, 3));
-          setNodeForm((form) => ({
-            ...form,
-            nodeType: 'poi',
-            pointOfInterestId: job.pointOfInterestId || form.pointOfInterestId,
-            scenarioId: '',
-            monsterId: '',
-            challengeId: '',
-          }));
         }
       });
       return hasNew ? next : prev;
@@ -2434,11 +2430,9 @@ const handleRemoveQuestReward = (index: number) => {
                           }));
                         }}
                       >
-                        <option value="poi">Point of Interest</option>
                         <option value="scenario">Scenario</option>
                         <option value="monster">Monster</option>
                         <option value="challenge">Challenge</option>
-                        <option value="polygon">Polygon</option>
                       </select>
                     </div>
                     <div>
@@ -2665,6 +2659,8 @@ const handleRemoveQuestReward = (index: number) => {
                     className="mt-4 bg-green-600 text-white px-4 py-2 rounded-md"
                     onClick={handleCreateNode}
                     disabled={
+                      nodeForm.nodeType === 'poi' ||
+                      nodeForm.nodeType === 'polygon' ||
                       (nodeForm.nodeType === 'poi' && !nodeForm.pointOfInterestId) ||
                       (nodeForm.nodeType === 'scenario' && !nodeForm.scenarioId) ||
                       (nodeForm.nodeType === 'monster' && !nodeForm.monsterId) ||
@@ -2773,14 +2769,9 @@ const handleRemoveQuestReward = (index: number) => {
                         <button
                           className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white"
                           onClick={() => {
-                            setNodeForm((prev) => ({
-                              ...prev,
-                              nodeType: 'poi',
-                              pointOfInterestId: selectedPoiForModal.id,
-                              scenarioId: '',
-                              monsterId: '',
-                              challengeId: '',
-                            }));
+                            window.alert(
+                              'Quest nodes now support only Scenario, Monster, or Challenge targets.'
+                            );
                             setSelectedPoiForModal(null);
                           }}
                         >

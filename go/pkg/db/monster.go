@@ -77,6 +77,18 @@ func (h *monsterHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]m
 	return monsters, nil
 }
 
+func (h *monsterHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Monster, error) {
+	var monsters []models.Monster
+	if err := h.preloadBase(ctx).
+		Where("zone_id = ?", zoneID).
+		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.monster_id = monsters.id)").
+		Order("name ASC").
+		Find(&monsters).Error; err != nil {
+		return nil, err
+	}
+	return monsters, nil
+}
+
 func (h *monsterHandle) CountByTemplateID(ctx context.Context, templateID uuid.UUID) (int64, error) {
 	var count int64
 	if err := h.db.WithContext(ctx).Model(&models.Monster{}).Where("template_id = ?", templateID).Count(&count).Error; err != nil {
