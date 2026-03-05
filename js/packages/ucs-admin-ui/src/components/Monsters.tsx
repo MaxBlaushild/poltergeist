@@ -88,6 +88,8 @@ type MonsterEncounterRecord = {
   imageUrl: string;
   thumbnailUrl: string;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency?: string | null;
+  nextRecurrenceAt?: string | null;
   zoneId: string;
   latitude: number;
   longitude: number;
@@ -184,11 +186,19 @@ type MonsterEncounterFormState = {
   imageUrl: string;
   thumbnailUrl: string;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency: string;
   zoneId: string;
   latitude: string;
   longitude: string;
   monsterIds: string[];
 };
+
+const recurrenceOptions = [
+  { value: '', label: 'No Recurrence' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
@@ -337,6 +347,7 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   imageUrl: '',
   thumbnailUrl: '',
   scaleWithUserLevel: false,
+  recurrenceFrequency: '',
   zoneId: '',
   latitude: '',
   longitude: '',
@@ -351,6 +362,7 @@ const monsterEncounterFormFromRecord = (
   imageUrl: encounter.imageUrl ?? '',
   thumbnailUrl: encounter.thumbnailUrl ?? '',
   scaleWithUserLevel: Boolean(encounter.scaleWithUserLevel),
+  recurrenceFrequency: encounter.recurrenceFrequency ?? '',
   zoneId: encounter.zoneId ?? '',
   latitude: String(encounter.latitude ?? ''),
   longitude: String(encounter.longitude ?? ''),
@@ -367,6 +379,7 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   imageUrl: form.imageUrl.trim(),
   thumbnailUrl: form.thumbnailUrl.trim(),
   scaleWithUserLevel: form.scaleWithUserLevel,
+  recurrenceFrequency: form.recurrenceFrequency,
   zoneId: form.zoneId.trim(),
   latitude: parseFloatSafe(form.latitude, 0),
   longitude: parseFloatSafe(form.longitude, 0),
@@ -1953,6 +1966,11 @@ export const Monsters = () => {
                                 ? 'Scales with user level'
                                 : 'Fixed monster levels'}
                             </p>
+                            {encounter.recurrenceFrequency ? (
+                              <p className="text-sm text-indigo-700">
+                                Recurs {encounter.recurrenceFrequency}
+                              </p>
+                            ) : null}
                             {encounter.description ? (
                               <p className="text-sm text-gray-600 mt-1">
                                 {encounter.description}
@@ -2671,6 +2689,26 @@ export const Monsters = () => {
                   />
                   Scale included monster levels with user level
                 </span>
+              </label>
+
+              <label className="block">
+                <span className="block text-sm mb-1">Recurrence</span>
+                <select
+                  className="w-full border border-gray-300 rounded-md p-2"
+                  value={encounterForm.recurrenceFrequency}
+                  onChange={(event) =>
+                    setEncounterForm((prev) => ({
+                      ...prev,
+                      recurrenceFrequency: event.target.value,
+                    }))
+                  }
+                >
+                  {recurrenceOptions.map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <div className="grid md:grid-cols-3 gap-4">

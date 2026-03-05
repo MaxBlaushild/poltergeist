@@ -939,6 +939,7 @@ type ChallengeHandle interface {
 	FindAll(ctx context.Context) ([]models.Challenge, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
+	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
@@ -949,6 +950,7 @@ type ScenarioHandle interface {
 	FindAll(ctx context.Context) ([]models.Scenario, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error)
+	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Scenario, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Scenario) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error
@@ -979,6 +981,7 @@ type MonsterEncounterHandle interface {
 	FindAll(ctx context.Context) ([]models.MonsterEncounter, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.MonsterEncounter, error)
+	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.MonsterEncounter, error)
 	FindFirstByMonsterID(ctx context.Context, monsterID uuid.UUID) (*models.MonsterEncounter, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterEncounter) error
 	Delete(ctx context.Context, id uuid.UUID) error

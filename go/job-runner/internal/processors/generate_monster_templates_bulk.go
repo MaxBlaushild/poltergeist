@@ -278,6 +278,7 @@ func (p *GenerateMonsterTemplatesBulkProcessor) findOrCreateAbilityForTemplate(
 		Name:                  name,
 		Description:           description,
 		AbilityType:           abilityType,
+		AbilityLevel:          1,
 		EffectText:            effectText,
 		SchoolOfMagic:         schoolOfMagic,
 		ManaCost:              manaCost,

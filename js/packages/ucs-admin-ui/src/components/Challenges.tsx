@@ -2,10 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { PointOfInterest } from '@poltergeist/types';
 
 type ChallengeRecord = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
   question: string;
@@ -17,12 +19,15 @@ type ChallengeRecord = {
   submissionType: 'photo' | 'text' | 'video';
   difficulty: number;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency?: string | null;
+  nextRecurrenceAt?: string | null;
   statTags: string[];
   proficiency?: string | null;
 };
 
 type ChallengeFormState = {
   zoneId: string;
+  pointOfInterestId: string;
   latitude: string;
   longitude: string;
   question: string;
@@ -34,6 +39,7 @@ type ChallengeFormState = {
   submissionType: 'photo' | 'text' | 'video';
   difficulty: string;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency: string;
   statTags: string;
   proficiency: string;
 };
@@ -59,6 +65,13 @@ type ChallengeGenerationFormState = {
   count: string;
 };
 
+type PointOfInterestOption = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
 const statTagOptions = [
   'strength',
   'dexterity',
@@ -67,6 +80,13 @@ const statTagOptions = [
   'wisdom',
   'charisma',
 ] as const;
+
+const recurrenceOptions = [
+  { value: '', label: 'No Recurrence' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
@@ -100,6 +120,7 @@ const formatDate = (value?: string | null): string => {
 
 const emptyForm = (): ChallengeFormState => ({
   zoneId: '',
+  pointOfInterestId: '',
   latitude: '',
   longitude: '',
   question: '',
@@ -111,6 +132,7 @@ const emptyForm = (): ChallengeFormState => ({
   submissionType: 'photo',
   difficulty: '0',
   scaleWithUserLevel: false,
+  recurrenceFrequency: '',
   statTags: '',
   proficiency: '',
 });
@@ -135,6 +157,7 @@ const challengeGenerationStatusBadgeClass = (status: string): string => {
 
 const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   zoneId: record.zoneId ?? '',
+  pointOfInterestId: record.pointOfInterestId ?? '',
   latitude: String(record.latitude ?? ''),
   longitude: String(record.longitude ?? ''),
   question: record.question ?? '',
@@ -152,6 +175,7 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
       : 'photo',
   difficulty: String(record.difficulty ?? 0),
   scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
+  recurrenceFrequency: record.recurrenceFrequency ?? '',
   statTags: (record.statTags ?? []).join(', '),
   proficiency: record.proficiency ?? '',
 });
@@ -162,6 +186,11 @@ export const Challenges = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
+  const [zonePointOfInterestMap, setZonePointOfInterestMap] = useState<
+    Record<string, PointOfInterestOption[]>
+  >({});
+  const [pointOfInterestLoadingByZone, setPointOfInterestLoadingByZone] =
+    useState<Record<string, boolean>>({});
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +223,51 @@ export const Challenges = () => {
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
   const formLatitudeRef = React.useRef(form.latitude);
   const formLongitudeRef = React.useRef(form.longitude);
+
+  const loadPointsOfInterestForZone = useCallback(
+    async (zoneId: string) => {
+      const trimmedZoneId = zoneId.trim();
+      if (!trimmedZoneId) return;
+      if (zonePointOfInterestMap[trimmedZoneId]) return;
+      setPointOfInterestLoadingByZone((prev) => ({
+        ...prev,
+        [trimmedZoneId]: true,
+      }));
+      try {
+        const points = await apiClient.get<PointOfInterest[]>(
+          `/sonar/zones/${trimmedZoneId}/pointsOfInterest`
+        );
+        const mapped = (Array.isArray(points) ? points : [])
+          .map((point) => {
+            const lat = Number.parseFloat(String(point.lat ?? ''));
+            const lng = Number.parseFloat(String(point.lng ?? ''));
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+            return {
+              id: point.id,
+              name: point.name || point.id,
+              latitude: lat,
+              longitude: lng,
+            };
+          })
+          .filter((point): point is PointOfInterestOption => point !== null);
+        setZonePointOfInterestMap((prev) => ({
+          ...prev,
+          [trimmedZoneId]: mapped,
+        }));
+      } catch (err) {
+        console.error(
+          `Failed to load points of interest for zone ${trimmedZoneId}`,
+          err
+        );
+      } finally {
+        setPointOfInterestLoadingByZone((prev) => ({
+          ...prev,
+          [trimmedZoneId]: false,
+        }));
+      }
+    },
+    [apiClient, zonePointOfInterestMap]
+  );
 
   const zoneNameById = useMemo(() => {
     return new Map(zones.map((zone) => [zone.id, zone.name]));
@@ -305,6 +379,39 @@ export const Challenges = () => {
     });
   }, [query, records, zoneNameById]);
 
+  const allPointOfInterestNamesById = useMemo(() => {
+    const byId = new Map<string, string>();
+    Object.values(zonePointOfInterestMap).forEach((points) => {
+      points.forEach((point) => {
+        if (!byId.has(point.id)) {
+          byId.set(point.id, point.name);
+        }
+      });
+    });
+    return byId;
+  }, [zonePointOfInterestMap]);
+
+  const pointsOfInterestForFormZone = useMemo(() => {
+    return zonePointOfInterestMap[form.zoneId] ?? [];
+  }, [form.zoneId, zonePointOfInterestMap]);
+  const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!form.zoneId) return;
+    void loadPointsOfInterestForZone(form.zoneId);
+  }, [form.zoneId, loadPointsOfInterestForZone, showModal]);
+
+  useEffect(() => {
+    if (!records.length) return;
+    const zoneIds = Array.from(new Set(records.map((record) => record.zoneId)));
+    zoneIds.forEach((zoneId) => {
+      if (zoneId && !zonePointOfInterestMap[zoneId]) {
+        void loadPointsOfInterestForZone(zoneId);
+      }
+    });
+  }, [loadPointsOfInterestForZone, records, zonePointOfInterestMap]);
+
   const openCreate = () => {
     setEditingChallenge(null);
     setForm({
@@ -334,6 +441,7 @@ export const Challenges = () => {
   const setFormLocation = useCallback((latitude: number, longitude: number) => {
     setForm((prev) => ({
       ...prev,
+      pointOfInterestId: '',
       latitude: latitude.toFixed(6),
       longitude: longitude.toFixed(6),
     }));
@@ -360,6 +468,7 @@ export const Challenges = () => {
 
   useEffect(() => {
     if (!showModal) return;
+    if (hasSelectedPointOfInterest) return;
     if (!mapContainerRef.current) return;
     if (!mapboxgl.accessToken) return;
     if (mapRef.current) return;
@@ -400,10 +509,11 @@ export const Challenges = () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [form.zoneId, setFormLocation, showModal, zones]);
+  }, [form.zoneId, hasSelectedPointOfInterest, setFormLocation, showModal, zones]);
 
   useEffect(() => {
     if (!showModal) return;
+    if (hasSelectedPointOfInterest) return;
     if (!mapRef.current) return;
 
     const lat = Number.parseFloat(form.latitude);
@@ -423,7 +533,7 @@ export const Challenges = () => {
     }
 
     mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
-  }, [form.latitude, form.longitude, showModal]);
+  }, [form.latitude, form.longitude, hasSelectedPointOfInterest, showModal]);
 
   const handleQueueChallengeGeneration = async () => {
     if (!generationForm.zoneId) {
@@ -459,6 +569,7 @@ export const Challenges = () => {
     try {
       const payload = {
         zoneId: form.zoneId.trim(),
+        pointOfInterestId: form.pointOfInterestId.trim(),
         latitude: parseFloatSafe(form.latitude, 0),
         longitude: parseFloatSafe(form.longitude, 0),
         question: form.question.trim(),
@@ -470,6 +581,7 @@ export const Challenges = () => {
         submissionType: form.submissionType,
         difficulty: parseIntSafe(form.difficulty, 0),
         scaleWithUserLevel: form.scaleWithUserLevel,
+        recurrenceFrequency: form.recurrenceFrequency,
         statTags: parseCsv(form.statTags),
         proficiency: form.proficiency.trim(),
       };
@@ -477,6 +589,16 @@ export const Challenges = () => {
       if (!payload.zoneId || !payload.question) {
         alert('Zone and question are required.');
         return;
+      }
+      if (!payload.pointOfInterestId) {
+        const latitude = Number.parseFloat(form.latitude);
+        const longitude = Number.parseFloat(form.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          alert(
+            'Choose a point of interest or provide valid latitude/longitude.'
+          );
+          return;
+        }
       }
       if (!payload.thumbnailUrl && payload.imageUrl) {
         payload.thumbnailUrl = payload.imageUrl;
@@ -736,6 +858,11 @@ export const Challenges = () => {
                         scales with level
                       </div>
                     ) : null}
+                    {record.recurrenceFrequency ? (
+                      <div className="text-xs text-indigo-700">
+                        repeats {record.recurrenceFrequency}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="p-2 border-b align-top">
                     {record.reward}
@@ -746,10 +873,15 @@ export const Challenges = () => {
                     ) : null}
                   </td>
                   <td className="p-2 border-b align-top">
-                    {Number.isFinite(record.latitude) &&
-                    Number.isFinite(record.longitude)
-                      ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
-                      : 'n/a'}
+                    {record.pointOfInterestId
+                      ? `POI: ${
+                          allPointOfInterestNamesById.get(record.pointOfInterestId) ??
+                          record.pointOfInterestId
+                        }`
+                      : Number.isFinite(record.latitude) &&
+                          Number.isFinite(record.longitude)
+                        ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
+                        : 'n/a'}
                   </td>
                   <td className="p-2 border-b align-top">
                     {record.thumbnailUrl || record.imageUrl ? (
@@ -830,6 +962,7 @@ export const Challenges = () => {
                     setForm((prev) => ({
                       ...prev,
                       zoneId: event.target.value,
+                      pointOfInterestId: '',
                     }))
                   }
                 >
@@ -914,6 +1047,26 @@ export const Challenges = () => {
               </label>
 
               <label className="text-sm">
+                Recurrence
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={form.recurrenceFrequency}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      recurrenceFrequency: event.target.value,
+                    }))
+                  }
+                >
+                  {recurrenceOptions.map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm">
                 Reward (Gold/Score)
                 <input
                   className="w-full border rounded-md p-2"
@@ -970,6 +1123,44 @@ export const Challenges = () => {
                 />
               </label>
 
+              <label className="text-sm md:col-span-2">
+                Point of Interest (Optional)
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={form.pointOfInterestId}
+                  onChange={(event) => {
+                    const nextPointOfInterestId = event.target.value;
+                    if (!nextPointOfInterestId) {
+                      setForm((prev) => ({ ...prev, pointOfInterestId: '' }));
+                      return;
+                    }
+                    const selectedPoint = pointsOfInterestForFormZone.find(
+                      (point) => point.id === nextPointOfInterestId
+                    );
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: nextPointOfInterestId,
+                      latitude:
+                        selectedPoint?.latitude.toFixed(6) ?? prev.latitude,
+                      longitude:
+                        selectedPoint?.longitude.toFixed(6) ?? prev.longitude,
+                    }));
+                  }}
+                >
+                  <option value="">Use standalone coordinates</option>
+                  {pointsOfInterestForFormZone.map((point) => (
+                    <option key={point.id} value={point.id}>
+                      {point.name}
+                    </option>
+                  ))}
+                </select>
+                {pointOfInterestLoadingByZone[form.zoneId] ? (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Loading points of interest...
+                  </div>
+                ) : null}
+              </label>
+
               <label className="text-sm">
                 Latitude
                 <input
@@ -978,8 +1169,13 @@ export const Challenges = () => {
                   step="any"
                   value={form.latitude}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, latitude: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: '',
+                      latitude: event.target.value,
+                    }))
                   }
+                  disabled={hasSelectedPointOfInterest}
                 />
               </label>
 
@@ -991,8 +1187,13 @@ export const Challenges = () => {
                   step="any"
                   value={form.longitude}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, longitude: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: '',
+                      longitude: event.target.value,
+                    }))
                   }
+                  disabled={hasSelectedPointOfInterest}
                 />
               </label>
             </div>
@@ -1002,28 +1203,38 @@ export const Challenges = () => {
                 type="button"
                 className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
                 onClick={handleUseCurrentLocation}
-                disabled={geoLoading}
+                disabled={geoLoading || hasSelectedPointOfInterest}
               >
                 {geoLoading ? 'Locating...' : 'Use Current Browser Location'}
               </button>
+              {hasSelectedPointOfInterest ? (
+                <div className="text-xs text-gray-500 mt-1">
+                  Clear point of interest selection to set manual coordinates.
+                </div>
+              ) : null}
             </div>
 
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm">Map Location Picker</span>
-                <span className="text-xs text-gray-500">
-                  Click map to set latitude/longitude
-                </span>
-              </div>
-              {mapboxgl.accessToken ? (
-                <div ref={mapContainerRef} className="w-full h-64 border rounded-md" />
-              ) : (
-                <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                  Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
-                  unavailable.
+            {!hasSelectedPointOfInterest && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm">Map Location Picker</span>
+                  <span className="text-xs text-gray-500">
+                    Click map to set latitude/longitude
+                  </span>
                 </div>
-              )}
-            </div>
+                {mapboxgl.accessToken ? (
+                  <div
+                    ref={mapContainerRef}
+                    className="w-full h-64 border rounded-md"
+                  />
+                ) : (
+                  <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                    unavailable.
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
               <label className="text-sm">

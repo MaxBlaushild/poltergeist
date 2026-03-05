@@ -4,6 +4,7 @@ class Spell {
   final String description;
   final String iconUrl;
   final String abilityType;
+  final int abilityLevel;
   final String effectText;
   final String schoolOfMagic;
   final int manaCost;
@@ -15,6 +16,7 @@ class Spell {
     this.description = '',
     this.iconUrl = '',
     this.abilityType = 'spell',
+    this.abilityLevel = 1,
     this.effectText = '',
     this.schoolOfMagic = '',
     this.manaCost = 0,
@@ -28,6 +30,7 @@ class Spell {
       description: json['description']?.toString() ?? '',
       iconUrl: json['iconUrl']?.toString() ?? '',
       abilityType: json['abilityType']?.toString() ?? 'spell',
+      abilityLevel: (json['abilityLevel'] as num?)?.toInt() ?? 1,
       effectText: json['effectText']?.toString() ?? '',
       schoolOfMagic: json['schoolOfMagic']?.toString() ?? '',
       manaCost: (json['manaCost'] as num?)?.toInt() ?? 0,
@@ -47,6 +50,7 @@ class Spell {
     'description': description,
     'iconUrl': iconUrl,
     'abilityType': abilityType,
+    'abilityLevel': abilityLevel,
     'effectText': effectText,
     'schoolOfMagic': schoolOfMagic,
     'manaCost': manaCost,

@@ -31,6 +31,7 @@ type SpellFormState = {
   description: string;
   iconUrl: string;
   abilityType: 'spell' | 'technique';
+  abilityLevel: string;
   effectText: string;
   schoolOfMagic: string;
   manaCost: string;
@@ -136,6 +137,7 @@ const emptyForm = (): SpellFormState => ({
   description: '',
   iconUrl: '',
   abilityType: 'spell',
+  abilityLevel: '1',
   effectText: '',
   schoolOfMagic: '',
   manaCost: '0',
@@ -280,6 +282,7 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     description: spell.description ?? '',
     iconUrl: spell.iconUrl ?? '',
     abilityType: spell.abilityType === 'technique' ? 'technique' : 'spell',
+    abilityLevel: String(Math.max(1, spell.abilityLevel ?? 1)),
     effectText: spell.effectText ?? '',
     schoolOfMagic: spell.schoolOfMagic ?? '',
     manaCost: String(spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)),
@@ -321,6 +324,7 @@ const payloadFromForm = (form: SpellFormState) => {
     description: form.description.trim(),
     iconUrl: form.iconUrl.trim(),
     abilityType: form.abilityType,
+    abilityLevel: Math.max(1, parseIntSafe(form.abilityLevel, 1)),
     effectText: form.effectText.trim(),
     schoolOfMagic: form.schoolOfMagic.trim(),
     manaCost: form.abilityType === 'technique' ? 0 : parseIntSafe(form.manaCost, 0),
@@ -1077,8 +1081,8 @@ export const Spells = () => {
                       <div className="text-lg font-semibold">{spell.name}</div>
                       <div className="text-sm text-gray-600">
                         {(spell.abilityType ?? 'spell') === 'technique'
-                          ? `${spell.schoolOfMagic} · Technique`
-                          : `${spell.schoolOfMagic} · Mana ${spell.manaCost}`}
+                          ? `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Technique`
+                          : `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Mana ${spell.manaCost}`}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
                         Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
@@ -1200,6 +1204,21 @@ export const Spells = () => {
                       value={form.manaCost}
                       disabled={form.abilityType === 'technique'}
                       onChange={(e) => setForm((prev) => ({ ...prev, manaCost: e.target.value }))}
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Ability Level
+                    <input
+                      className="w-full border rounded-md p-2"
+                      type="number"
+                      min={1}
+                      value={form.abilityLevel}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          abilityLevel: e.target.value,
+                        }))
+                      }
                     />
                   </label>
                 </div>

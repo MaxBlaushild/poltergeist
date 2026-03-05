@@ -22,6 +22,16 @@ type GenerateSpellsBulkProcessor struct {
 	redisClient *redis.Client
 }
 
+func normalizeBulkAbilityLevel(level int) int {
+	if level < 1 {
+		return 1
+	}
+	if level > 100 {
+		return 100
+	}
+	return level
+}
+
 func NewGenerateSpellsBulkProcessor(dbClient db.DbClient, redisClient *redis.Client) GenerateSpellsBulkProcessor {
 	log.Println("Initializing GenerateSpellsBulkProcessor")
 	return GenerateSpellsBulkProcessor{
@@ -115,6 +125,11 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 		if abilityType == string(models.SpellAbilityTypeTechnique) {
 			manaCost = 0
 		}
+		abilityLevel := spec.AbilityLevel
+		if payload.TargetLevel != nil {
+			abilityLevel = *payload.TargetLevel
+		}
+		abilityLevel = normalizeBulkAbilityLevel(abilityLevel)
 		preferredEffect := models.SpellEffectType("")
 		if index < len(configuredEffectPlan) {
 			preferredEffect = configuredEffectPlan[index]
@@ -148,6 +163,7 @@ func (p *GenerateSpellsBulkProcessor) ProcessTask(ctx context.Context, task *asy
 			Effects:               effects,
 			ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 			ImageGenerationError:  &emptyError,
+			AbilityLevel:          abilityLevel,
 		}
 
 		if err := p.dbClient.Spell().Create(ctx, spell); err != nil {

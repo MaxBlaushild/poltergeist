@@ -7,6 +7,7 @@ class InventoryItem {
   final String rarityTier;
   final int? sellValue;
   final int? unlockTier;
+  final int itemLevel;
   final String? equipSlot;
   final int strengthMod;
   final int dexterityMod;
@@ -37,6 +38,7 @@ class InventoryItem {
     this.rarityTier = '',
     this.sellValue,
     this.unlockTier,
+    this.itemLevel = 1,
     this.equipSlot,
     this.strengthMod = 0,
     this.dexterityMod = 0,
@@ -69,6 +71,7 @@ class InventoryItem {
       rarityTier: json['rarityTier'] as String? ?? '',
       sellValue: (json['sellValue'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
+      itemLevel: (json['itemLevel'] as num?)?.toInt() ?? 1,
       equipSlot: json['equipSlot'] as String?,
       strengthMod: (json['strengthMod'] as num?)?.toInt() ?? 0,
       dexterityMod: (json['dexterityMod'] as num?)?.toInt() ?? 0,

@@ -33,6 +33,9 @@ func (h *spellHandler) Create(ctx context.Context, spell *models.Spell) error {
 	if spell.AbilityType == "" {
 		spell.AbilityType = models.SpellAbilityTypeSpell
 	}
+	if spell.AbilityLevel <= 0 {
+		spell.AbilityLevel = 1
+	}
 	return h.db.WithContext(ctx).Create(spell).Error
 }
 

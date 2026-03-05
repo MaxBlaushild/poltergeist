@@ -27,20 +27,22 @@ var challengeValidStatTags = map[string]struct{}{
 }
 
 type challengeUpsertRequest struct {
-	ZoneID             string   `json:"zoneId"`
-	Latitude           float64  `json:"latitude"`
-	Longitude          float64  `json:"longitude"`
-	Question           string   `json:"question"`
-	Description        string   `json:"description"`
-	ImageURL           string   `json:"imageUrl"`
-	ThumbnailURL       string   `json:"thumbnailUrl"`
-	ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
-	Reward             int      `json:"reward"`
-	InventoryItemID    *int     `json:"inventoryItemId"`
-	SubmissionType     string   `json:"submissionType"`
-	Difficulty         int      `json:"difficulty"`
-	StatTags           []string `json:"statTags"`
-	Proficiency        string   `json:"proficiency"`
+	ZoneID              string   `json:"zoneId"`
+	PointOfInterestID   string   `json:"pointOfInterestId"`
+	Latitude            float64  `json:"latitude"`
+	Longitude           float64  `json:"longitude"`
+	Question            string   `json:"question"`
+	Description         string   `json:"description"`
+	ImageURL            string   `json:"imageUrl"`
+	ThumbnailURL        string   `json:"thumbnailUrl"`
+	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
+	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
+	Reward              int      `json:"reward"`
+	InventoryItemID     *int     `json:"inventoryItemId"`
+	SubmissionType      string   `json:"submissionType"`
+	Difficulty          int      `json:"difficulty"`
+	StatTags            []string `json:"statTags"`
+	Proficiency         string   `json:"proficiency"`
 }
 
 type challengeGenerationJobRequest struct {
@@ -71,7 +73,7 @@ func parseChallengeStatTags(raw []string) models.StringArray {
 	return out
 }
 
-func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge, error) {
+func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUpsertRequest) (*models.Challenge, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
 		return nil, fmt.Errorf("invalid zoneId")
@@ -104,11 +106,26 @@ func parseChallengeUpsertRequest(body challengeUpsertRequest) (*models.Challenge
 	if thumbnailURL == "" && imageURL != "" {
 		thumbnailURL = imageURL
 	}
+	pointOfInterestID, err := parseStandalonePointOfInterestID(body.PointOfInterestID)
+	if err != nil {
+		return nil, err
+	}
+	resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
+		ctx,
+		&zoneID,
+		pointOfInterestID,
+		body.Latitude,
+		body.Longitude,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	challenge := &models.Challenge{
 		ZoneID:             zoneID,
-		Latitude:           body.Latitude,
-		Longitude:          body.Longitude,
+		PointOfInterestID:  resolvedPointOfInterestID,
+		Latitude:           resolvedLatitude,
+		Longitude:          resolvedLongitude,
 		Question:           question,
 		Description:        description,
 		ImageURL:           imageURL,
@@ -208,7 +225,7 @@ func (s *server) createChallenge(ctx *gin.Context) {
 		return
 	}
 
-	challenge, err := parseChallengeUpsertRequest(requestBody)
+	challenge, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
 		return
@@ -216,6 +233,16 @@ func (s *server) createChallenge(ctx *gin.Context) {
 	challenge.ID = uuid.New()
 	challenge.CreatedAt = time.Now()
 	challenge.UpdatedAt = challenge.CreatedAt
+	if err := applyStandaloneRecurrenceForCreate(
+		requestBody.RecurrenceFrequency,
+		challenge.CreatedAt,
+		&challenge.RecurringChallengeID,
+		&challenge.RecurrenceFrequency,
+		&challenge.NextRecurrenceAt,
+	); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := s.dbClient.Challenge().Create(ctx, challenge); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -256,9 +283,22 @@ func (s *server) updateChallenge(ctx *gin.Context) {
 		return
 	}
 
-	updates, err := parseChallengeUpsertRequest(requestBody)
+	updates, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
+		return
+	}
+	updates.RecurringChallengeID = existing.RecurringChallengeID
+	updates.RecurrenceFrequency = existing.RecurrenceFrequency
+	updates.NextRecurrenceAt = existing.NextRecurrenceAt
+	if err := applyStandaloneRecurrenceForUpdate(
+		requestBody.RecurrenceFrequency,
+		time.Now(),
+		&updates.RecurringChallengeID,
+		&updates.RecurrenceFrequency,
+		&updates.NextRecurrenceAt,
+	); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	updates.UpdatedAt = time.Now()

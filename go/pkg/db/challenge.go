@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -13,7 +14,7 @@ type challengeHandle struct {
 }
 
 func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
-	return h.db.WithContext(ctx).Preload("Zone")
+	return h.db.WithContext(ctx).Preload("Zone").Preload("PointOfInterest")
 }
 
 func (h *challengeHandle) Create(ctx context.Context, challenge *models.Challenge) error {
@@ -65,26 +66,45 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		return err
 	}
 	payload := map[string]interface{}{
-		"zone_id":               updates.ZoneID,
-		"latitude":              updates.Latitude,
-		"longitude":             updates.Longitude,
-		"geometry":              updates.Geometry,
-		"question":              updates.Question,
-		"description":           updates.Description,
-		"image_url":             updates.ImageURL,
-		"thumbnail_url":         updates.ThumbnailURL,
-		"scale_with_user_level": updates.ScaleWithUserLevel,
-		"reward":                updates.Reward,
-		"inventory_item_id":     updates.InventoryItemID,
-		"submission_type":       updates.SubmissionType,
-		"difficulty":            updates.Difficulty,
-		"stat_tags":             updates.StatTags,
-		"proficiency":           updates.Proficiency,
-		"updated_at":            updates.UpdatedAt,
+		"zone_id":                updates.ZoneID,
+		"point_of_interest_id":   updates.PointOfInterestID,
+		"latitude":               updates.Latitude,
+		"longitude":              updates.Longitude,
+		"geometry":               updates.Geometry,
+		"question":               updates.Question,
+		"description":            updates.Description,
+		"image_url":              updates.ImageURL,
+		"thumbnail_url":          updates.ThumbnailURL,
+		"scale_with_user_level":  updates.ScaleWithUserLevel,
+		"recurring_challenge_id": updates.RecurringChallengeID,
+		"recurrence_frequency":   updates.RecurrenceFrequency,
+		"next_recurrence_at":     updates.NextRecurrenceAt,
+		"reward":                 updates.Reward,
+		"inventory_item_id":      updates.InventoryItemID,
+		"submission_type":        updates.SubmissionType,
+		"difficulty":             updates.Difficulty,
+		"stat_tags":              updates.StatTags,
+		"proficiency":            updates.Proficiency,
+		"updated_at":             updates.UpdatedAt,
 	}
 	return h.db.WithContext(ctx).Model(&models.Challenge{}).Where("id = ?", id).Updates(payload).Error
 }
 
 func (h *challengeHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Challenge{}, "id = ?", id).Error
+}
+
+func (h *challengeHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error) {
+	var challenges []models.Challenge
+	query := h.db.WithContext(ctx).
+		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
+		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
+		Order("next_recurrence_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&challenges).Error; err != nil {
+		return nil, err
+	}
+	return challenges, nil
 }

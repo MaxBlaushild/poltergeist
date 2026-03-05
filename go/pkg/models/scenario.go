@@ -14,6 +14,8 @@ type Scenario struct {
 	UpdatedAt                 time.Time                      `json:"updatedAt"`
 	ZoneID                    uuid.UUID                      `json:"zoneId"`
 	Zone                      Zone                           `json:"zone"`
+	PointOfInterestID         *uuid.UUID                     `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
+	PointOfInterest           *PointOfInterest               `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
 	Latitude                  float64                        `json:"latitude"`
 	Longitude                 float64                        `json:"longitude"`
 	Geometry                  string                         `json:"geometry" gorm:"type:geometry(Point,4326)"`
@@ -21,6 +23,9 @@ type Scenario struct {
 	ImageURL                  string                         `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL              string                         `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
 	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
+	RecurringScenarioID       *uuid.UUID                     `json:"recurringScenarioId,omitempty" gorm:"column:recurring_scenario_id;type:uuid"`
+	RecurrenceFrequency       *string                        `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`
+	NextRecurrenceAt          *time.Time                     `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
 	Difficulty                int                            `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                int                            `json:"rewardGold" gorm:"column:reward_gold"`

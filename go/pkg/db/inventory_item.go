@@ -152,6 +152,9 @@ func (h *inventoryItemHandler) DeleteAllForUser(ctx context.Context, userID uuid
 
 // CRUD methods for inventory items
 func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error {
+	if item != nil && item.ItemLevel <= 0 {
+		item.ItemLevel = 1
+	}
 	return h.db.WithContext(ctx).Create(item).Error
 }
 

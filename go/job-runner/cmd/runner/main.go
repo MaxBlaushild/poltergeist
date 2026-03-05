@@ -82,6 +82,7 @@ func main() {
 	generateQuestForZoneProcessor := processors.NewGenerateQuestForZoneProcessor(dbClient, dungeonmasterClient)
 	queueQuestGenerationsProcessor := processors.NewQueueQuestGenerationsProcessor(dbClient, dungeonmasterClient, client)
 	processRecurringQuestsProcessor := processors.NewProcessRecurringQuestsProcessor(dbClient)
+	processRecurringStandaloneContentProcessor := processors.NewProcessRecurringStandaloneContentProcessor(dbClient)
 	cleanupOrphanedQuestActionsProcessor := processors.NewCleanupOrphanedQuestActionsProcessor(dbClient)
 	createProfilePictureProcessor := processors.NewCreateProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
 	generateOutfitProfilePictureProcessor := processors.NewGenerateOutfitProfilePictureProcessor(dbClient, deepPriestClient, awsClient)
@@ -164,6 +165,7 @@ func main() {
 	mux.Handle(jobs.GenerateQuestForZoneTaskType, &generateQuestForZoneProcessor)
 	mux.Handle(jobs.QueueQuestGenerationsTaskType, &queueQuestGenerationsProcessor)
 	mux.Handle(jobs.ProcessRecurringQuestsTaskType, &processRecurringQuestsProcessor)
+	mux.Handle(jobs.ProcessRecurringStandaloneContentTaskType, &processRecurringStandaloneContentProcessor)
 	mux.Handle(jobs.CleanupOrphanedQuestActionsTaskType, &cleanupOrphanedQuestActionsProcessor)
 	mux.Handle(jobs.CreateProfilePictureTaskType, &createProfilePictureProcessor)
 	mux.Handle(jobs.GenerateOutfitProfilePictureTaskType, &generateOutfitProfilePictureProcessor)
@@ -203,6 +205,10 @@ func main() {
 
 	if _, err = scheduler.Register("@every 15m", asynq.NewTask(jobs.ProcessRecurringQuestsTaskType, nil)); err != nil {
 		log.Fatalf("could not register the recurring quest schedule: %v", err)
+	}
+
+	if _, err = scheduler.Register("@every 15m", asynq.NewTask(jobs.ProcessRecurringStandaloneContentTaskType, nil)); err != nil {
+		log.Fatalf("could not register the recurring standalone content schedule: %v", err)
 	}
 
 	if _, err = scheduler.Register("@every 1h", asynq.NewTask(jobs.CleanupOrphanedQuestActionsTaskType, nil)); err != nil {

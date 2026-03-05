@@ -30,6 +30,7 @@ const (
 	SeedTreasureChestsTaskType                 = "seed_treasure_chests"
 	CalculateTrendingDestinationsTaskType      = "calculate_trending_destinations"
 	ProcessRecurringQuestsTaskType             = "process_recurring_quests"
+	ProcessRecurringStandaloneContentTaskType  = "process_recurring_standalone_content"
 	CleanupOrphanedQuestActionsTaskType        = "cleanup_orphaned_quest_actions"
 	CheckBlockchainTransactionsTaskType        = "check_blockchain_transactions"
 	ImportPointOfInterestTaskType              = "import_point_of_interest"
@@ -114,6 +115,7 @@ type SpellCreationSpec struct {
 	Name          string `json:"name"`
 	Description   string `json:"description"`
 	AbilityType   string `json:"abilityType"`
+	AbilityLevel  int    `json:"abilityLevel"`
 	EffectText    string `json:"effectText"`
 	SchoolOfMagic string `json:"schoolOfMagic"`
 	ManaCost      int    `json:"manaCost"`

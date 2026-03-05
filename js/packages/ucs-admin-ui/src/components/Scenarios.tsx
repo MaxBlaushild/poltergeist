@@ -2,7 +2,7 @@ import { useAPI, useInventory, useZoneContext } from '@poltergeist/contexts';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Spell } from '@poltergeist/types';
+import { PointOfInterest, Spell } from '@poltergeist/types';
 
 type ScenarioRewardItem = {
   inventoryItemId: number;
@@ -58,6 +58,7 @@ type ScenarioOption = {
 type ScenarioRecord = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
   prompt: string;
@@ -65,6 +66,8 @@ type ScenarioRecord = {
   thumbnailUrl: string;
   difficulty: number;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency?: string | null;
+  nextRecurrenceAt?: string | null;
   rewardExperience: number;
   rewardGold: number;
   openEnded: boolean;
@@ -88,6 +91,7 @@ type ScenarioRecord = {
 
 type ScenarioFormState = {
   zoneId: string;
+  pointOfInterestId: string;
   latitude: string;
   longitude: string;
   prompt: string;
@@ -95,6 +99,7 @@ type ScenarioFormState = {
   thumbnailUrl: string;
   difficulty: string;
   scaleWithUserLevel: boolean;
+  recurrenceFrequency: string;
   openEnded: boolean;
   rewardExperience: string;
   rewardGold: string;
@@ -134,6 +139,13 @@ type ScenarioGenerationFormState = {
   includeLocation: boolean;
   latitude: string;
   longitude: string;
+};
+
+type PointOfInterestOption = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
 };
 
 type StaticThumbnailResponse = {
@@ -202,6 +214,7 @@ const emptyOption = (): ScenarioOption => ({
 
 const emptyFormState = (): ScenarioFormState => ({
   zoneId: '',
+  pointOfInterestId: '',
   latitude: '',
   longitude: '',
   prompt: '',
@@ -209,6 +222,7 @@ const emptyFormState = (): ScenarioFormState => ({
   thumbnailUrl: '',
   difficulty: '24',
   scaleWithUserLevel: false,
+  recurrenceFrequency: '',
   openEnded: false,
   rewardExperience: '0',
   rewardGold: '0',
@@ -236,6 +250,13 @@ const emptyGenerationFormState = (): ScenarioGenerationFormState => ({
   latitude: '',
   longitude: '',
 });
+
+const recurrenceOptions = [
+  { value: '', label: 'No Recurrence' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+];
 
 const parseIntValue = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
@@ -355,6 +376,11 @@ export const Scenarios = () => {
   const { zones } = useZoneContext();
   const { inventoryItems } = useInventory();
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [zonePointOfInterestMap, setZonePointOfInterestMap] = useState<
+    Record<string, PointOfInterestOption[]>
+  >({});
+  const [pointOfInterestLoadingByZone, setPointOfInterestLoadingByZone] =
+    useState<Record<string, boolean>>({});
 
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<ScenarioRecord[]>([]);
@@ -426,6 +452,51 @@ export const Scenarios = () => {
   const generationLatitudeRef = React.useRef(generationForm.latitude);
   const generationLongitudeRef = React.useRef(generationForm.longitude);
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
+
+  const loadPointsOfInterestForZone = useCallback(
+    async (zoneId: string) => {
+      const trimmedZoneId = zoneId.trim();
+      if (!trimmedZoneId) return;
+      if (zonePointOfInterestMap[trimmedZoneId]) return;
+      setPointOfInterestLoadingByZone((prev) => ({
+        ...prev,
+        [trimmedZoneId]: true,
+      }));
+      try {
+        const points = await apiClient.get<PointOfInterest[]>(
+          `/sonar/zones/${trimmedZoneId}/pointsOfInterest`
+        );
+        const mapped = (Array.isArray(points) ? points : [])
+          .map((point) => {
+            const lat = Number.parseFloat(String(point.lat ?? ''));
+            const lng = Number.parseFloat(String(point.lng ?? ''));
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+            return {
+              id: point.id,
+              name: point.name || point.id,
+              latitude: lat,
+              longitude: lng,
+            };
+          })
+          .filter((point): point is PointOfInterestOption => point !== null);
+        setZonePointOfInterestMap((prev) => ({
+          ...prev,
+          [trimmedZoneId]: mapped,
+        }));
+      } catch (err) {
+        console.error(
+          `Error loading points of interest for zone ${trimmedZoneId}:`,
+          err
+        );
+      } finally {
+        setPointOfInterestLoadingByZone((prev) => ({
+          ...prev,
+          [trimmedZoneId]: false,
+        }));
+      }
+    },
+    [apiClient, zonePointOfInterestMap]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -848,6 +919,39 @@ export const Scenarios = () => {
     });
   }, [query, records, zones]);
 
+  const allPointOfInterestNamesById = useMemo(() => {
+    const byId = new Map<string, string>();
+    Object.values(zonePointOfInterestMap).forEach((points) => {
+      points.forEach((point) => {
+        if (!byId.has(point.id)) {
+          byId.set(point.id, point.name);
+        }
+      });
+    });
+    return byId;
+  }, [zonePointOfInterestMap]);
+
+  const pointsOfInterestForFormZone = useMemo(() => {
+    return zonePointOfInterestMap[form.zoneId] ?? [];
+  }, [form.zoneId, zonePointOfInterestMap]);
+  const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!form.zoneId) return;
+    void loadPointsOfInterestForZone(form.zoneId);
+  }, [form.zoneId, loadPointsOfInterestForZone, showModal]);
+
+  useEffect(() => {
+    if (!records.length) return;
+    const zoneIds = Array.from(new Set(records.map((record) => record.zoneId)));
+    zoneIds.forEach((zoneId) => {
+      if (zoneId && !zonePointOfInterestMap[zoneId]) {
+        void loadPointsOfInterestForZone(zoneId);
+      }
+    });
+  }, [loadPointsOfInterestForZone, records, zonePointOfInterestMap]);
+
   const openCreate = () => {
     setEditingId(null);
     setForm(emptyFormState());
@@ -858,6 +962,7 @@ export const Scenarios = () => {
     setEditingId(record.id);
     setForm({
       zoneId: record.zoneId,
+      pointOfInterestId: record.pointOfInterestId ?? '',
       latitude: record.latitude.toString(),
       longitude: record.longitude.toString(),
       prompt: record.prompt,
@@ -865,6 +970,7 @@ export const Scenarios = () => {
       thumbnailUrl: record.thumbnailUrl ?? '',
       difficulty: record.difficulty.toString(),
       scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
+      recurrenceFrequency: record.recurrenceFrequency ?? '',
       openEnded: record.openEnded,
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
@@ -953,6 +1059,7 @@ export const Scenarios = () => {
   const setFormLocation = useCallback((latitude: number, longitude: number) => {
     setForm((prev) => ({
       ...prev,
+      pointOfInterestId: '',
       latitude: latitude.toFixed(6),
       longitude: longitude.toFixed(6),
     }));
@@ -983,6 +1090,7 @@ export const Scenarios = () => {
 
     return {
       zoneId: form.zoneId,
+      pointOfInterestId: form.pointOfInterestId.trim(),
       latitude: parseFloatValue(form.latitude),
       longitude: parseFloatValue(form.longitude),
       prompt: form.prompt.trim(),
@@ -990,6 +1098,7 @@ export const Scenarios = () => {
       thumbnailUrl: form.thumbnailUrl.trim(),
       difficulty: parseIntValue(form.difficulty, 24),
       scaleWithUserLevel: form.scaleWithUserLevel,
+      recurrenceFrequency: form.recurrenceFrequency,
       openEnded: form.openEnded,
       rewardExperience: form.openEnded
         ? parseIntValue(form.rewardExperience)
@@ -1096,6 +1205,17 @@ export const Scenarios = () => {
         alert('Non-open-ended scenarios need at least one option.');
         return;
       }
+      const hasPointOfInterest = payload.pointOfInterestId.length > 0;
+      if (!hasPointOfInterest) {
+        const latitude = Number.parseFloat(form.latitude);
+        const longitude = Number.parseFloat(form.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+          alert(
+            'Choose a point of interest or provide valid latitude/longitude.'
+          );
+          return;
+        }
+      }
 
       if (editingId) {
         const updated = await apiClient.put<ScenarioRecord>(
@@ -1175,6 +1295,7 @@ export const Scenarios = () => {
 
   useEffect(() => {
     if (!showModal) return;
+    if (hasSelectedPointOfInterest) return;
     if (!mapContainerRef.current) return;
     if (!mapboxgl.accessToken) return;
     if (mapRef.current) return;
@@ -1215,10 +1336,11 @@ export const Scenarios = () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [form.zoneId, setFormLocation, showModal, zones]);
+  }, [form.zoneId, hasSelectedPointOfInterest, setFormLocation, showModal, zones]);
 
   useEffect(() => {
     if (!showModal) return;
+    if (hasSelectedPointOfInterest) return;
     if (!mapRef.current) return;
 
     const lat = Number.parseFloat(form.latitude);
@@ -1238,7 +1360,7 @@ export const Scenarios = () => {
     }
 
     mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
-  }, [form.latitude, form.longitude, showModal]);
+  }, [form.latitude, form.longitude, hasSelectedPointOfInterest, showModal]);
 
   const updateOption = (index: number, next: Partial<ScenarioOption>) => {
     setForm((prev) => {
@@ -2415,13 +2537,26 @@ export const Scenarios = () => {
               </div>
               <div className="text-sm text-gray-700 mb-1">Zone: {zoneName}</div>
               <div className="text-sm text-gray-700 mb-1">
-                Location: {record.latitude.toFixed(5)},{' '}
-                {record.longitude.toFixed(5)}
+                Location:{' '}
+                {record.pointOfInterestId
+                  ? `POI: ${
+                      allPointOfInterestNamesById.get(record.pointOfInterestId) ??
+                      record.pointOfInterestId
+                    }`
+                  : `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`}
               </div>
               <div className="text-sm text-gray-700 mb-2">
                 Difficulty: {record.difficulty}
                 {record.scaleWithUserLevel ? ' (scales with user level)' : ''}
               </div>
+              {record.recurrenceFrequency ? (
+                <div className="text-xs text-indigo-700 mb-2">
+                  Repeats {record.recurrenceFrequency}
+                  {record.nextRecurrenceAt
+                    ? ` (next ${formatDate(record.nextRecurrenceAt)})`
+                    : ''}
+                </div>
+              ) : null}
               <div className="text-sm text-gray-800 mb-3 line-clamp-3">
                 {record.prompt}
               </div>
@@ -2484,7 +2619,11 @@ export const Scenarios = () => {
                 <select
                   value={form.zoneId}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, zoneId: e.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      zoneId: e.target.value,
+                      pointOfInterestId: '',
+                    }))
                   }
                   className="w-full border rounded-md p-2"
                 >
@@ -2522,15 +2661,76 @@ export const Scenarios = () => {
                 Scale difficulty with user level
               </label>
               <label className="text-sm">
+                Recurrence
+                <select
+                  value={form.recurrenceFrequency}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      recurrenceFrequency: e.target.value,
+                    }))
+                  }
+                  className="w-full border rounded-md p-2"
+                >
+                  {recurrenceOptions.map((option) => (
+                    <option key={option.value || 'none'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm md:col-span-2">
+                Point of Interest (Optional)
+                <select
+                  value={form.pointOfInterestId}
+                  onChange={(e) => {
+                    const nextPointOfInterestId = e.target.value;
+                    if (!nextPointOfInterestId) {
+                      setForm((prev) => ({ ...prev, pointOfInterestId: '' }));
+                      return;
+                    }
+                    const selectedPoint = pointsOfInterestForFormZone.find(
+                      (point) => point.id === nextPointOfInterestId
+                    );
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: nextPointOfInterestId,
+                      latitude:
+                        selectedPoint?.latitude.toFixed(6) ?? prev.latitude,
+                      longitude:
+                        selectedPoint?.longitude.toFixed(6) ?? prev.longitude,
+                    }));
+                  }}
+                  className="w-full border rounded-md p-2"
+                >
+                  <option value="">Use standalone coordinates</option>
+                  {pointsOfInterestForFormZone.map((point) => (
+                    <option key={point.id} value={point.id}>
+                      {point.name}
+                    </option>
+                  ))}
+                </select>
+                {pointOfInterestLoadingByZone[form.zoneId] ? (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Loading points of interest...
+                  </div>
+                ) : null}
+              </label>
+              <label className="text-sm">
                 Latitude
                 <input
                   value={form.latitude}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, latitude: e.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: '',
+                      latitude: e.target.value,
+                    }))
                   }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
+                  disabled={hasSelectedPointOfInterest}
                 />
               </label>
               <label className="text-sm">
@@ -2538,11 +2738,16 @@ export const Scenarios = () => {
                 <input
                   value={form.longitude}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, longitude: e.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      pointOfInterestId: '',
+                      longitude: e.target.value,
+                    }))
                   }
                   className="w-full border rounded-md p-2"
                   type="number"
                   step="any"
+                  disabled={hasSelectedPointOfInterest}
                 />
               </label>
               <div className="text-sm md:col-span-2">
@@ -2550,30 +2755,37 @@ export const Scenarios = () => {
                   type="button"
                   className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
                   onClick={handleUseCurrentLocation}
-                  disabled={geoLoading}
+                  disabled={geoLoading || hasSelectedPointOfInterest}
                 >
                   {geoLoading ? 'Locating…' : 'Use Current Browser Location'}
                 </button>
-              </div>
-              <div className="text-sm md:col-span-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span>Map Location Picker</span>
-                  <span className="text-xs text-gray-500">
-                    Click map to set latitude/longitude
-                  </span>
-                </div>
-                {mapboxgl.accessToken ? (
-                  <div
-                    ref={mapContainerRef}
-                    className="w-full h-64 border rounded-md"
-                  />
-                ) : (
-                  <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
-                    Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
-                    unavailable.
+                {hasSelectedPointOfInterest ? (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Clear point of interest selection to set manual coordinates.
                   </div>
-                )}
+                ) : null}
               </div>
+              {!hasSelectedPointOfInterest && (
+                <div className="text-sm md:col-span-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <span>Map Location Picker</span>
+                    <span className="text-xs text-gray-500">
+                      Click map to set latitude/longitude
+                    </span>
+                  </div>
+                  {mapboxgl.accessToken ? (
+                    <div
+                      ref={mapContainerRef}
+                      className="w-full h-64 border rounded-md"
+                    />
+                  ) : (
+                    <div className="w-full border rounded-md p-3 text-sm text-gray-600 bg-gray-50">
+                      Missing `REACT_APP_MAPBOX_ACCESS_TOKEN`; map picker is
+                      unavailable.
+                    </div>
+                  )}
+                </div>
+              )}
               <label className="text-sm md:col-span-2">
                 Image URL
                 <input

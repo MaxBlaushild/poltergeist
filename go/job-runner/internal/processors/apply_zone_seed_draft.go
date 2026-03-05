@@ -1306,6 +1306,7 @@ func (p *ApplyZoneSeedDraftProcessor) createInventoryItemReward(
 		FlavorText:            description,
 		RarityTier:            rarity,
 		IsCaptureType:         false,
+		ItemLevel:             1,
 		EquipSlot:             normalizedSlot,
 		ImageGenerationStatus: models.InventoryImageGenerationStatusQueued,
 	}

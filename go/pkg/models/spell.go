@@ -93,6 +93,7 @@ type Spell struct {
 	ImageGenerationStatus string                  `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError  *string                 `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 	AbilityType           SpellAbilityType        `json:"abilityType" gorm:"column:ability_type"`
+	AbilityLevel          int                     `json:"abilityLevel" gorm:"column:ability_level"`
 	EffectText            string                  `json:"effectText" gorm:"column:effect_text"`
 	SchoolOfMagic         string                  `json:"schoolOfMagic" gorm:"column:school_of_magic"`
 	ManaCost              int                     `json:"manaCost" gorm:"column:mana_cost"`

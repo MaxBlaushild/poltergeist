@@ -14,6 +14,7 @@ type InventoryItem struct {
 	IsCaptureType           bool                           `json:"isCaptureType" gorm:"column:is_capture_type"`
 	SellValue               *int                           `json:"sellValue" gorm:"column:sell_value"`
 	UnlockTier              *int                           `json:"unlockTier" gorm:"column:unlock_tier"`
+	ItemLevel               int                            `json:"itemLevel" gorm:"column:item_level"`
 	EquipSlot               *string                        `json:"equipSlot" gorm:"column:equip_slot"`
 	StrengthMod             int                            `json:"strengthMod" gorm:"column:strength_mod"`
 	DexterityMod            int                            `json:"dexterityMod" gorm:"column:dexterity_mod"`

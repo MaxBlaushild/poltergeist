@@ -37,6 +37,7 @@ type spellUpsertRequest struct {
 	Description   string               `json:"description"`
 	IconURL       string               `json:"iconUrl"`
 	AbilityType   string               `json:"abilityType"`
+	AbilityLevel  *int                 `json:"abilityLevel"`
 	EffectText    string               `json:"effectText"`
 	SchoolOfMagic string               `json:"schoolOfMagic"`
 	ManaCost      int                  `json:"manaCost"`
@@ -197,6 +198,16 @@ func clampBulkSpellManaCost(manaCost int, abilityType models.SpellAbilityType) i
 	return manaCost
 }
 
+func clampAbilityLevel(level int) int {
+	if level < 1 {
+		return 1
+	}
+	if level > 100 {
+		return 100
+	}
+	return level
+}
+
 func sanitizeGeneratedAbilitySpec(spec jobs.SpellCreationSpec, abilityType models.SpellAbilityType) jobs.SpellCreationSpec {
 	spec.Name = strings.TrimSpace(spec.Name)
 	spec.Description = strings.TrimSpace(spec.Description)
@@ -220,6 +231,7 @@ func sanitizeGeneratedAbilitySpec(spec jobs.SpellCreationSpec, abilityType model
 		}
 	}
 	spec.AbilityType = string(abilityType)
+	spec.AbilityLevel = clampAbilityLevel(spec.AbilityLevel)
 	spec.ManaCost = clampBulkSpellManaCost(spec.ManaCost, abilityType)
 	return spec
 }
@@ -631,6 +643,13 @@ func (s *server) bulkGenerateAbilities(ctx *gin.Context, forcedType *models.Spel
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	for i := range spellSpecs {
+		if targetLevel != nil {
+			spellSpecs[i].AbilityLevel = *targetLevel
+			continue
+		}
+		spellSpecs[i].AbilityLevel = clampAbilityLevel(spellSpecs[i].AbilityLevel)
+	}
 
 	jobID := uuid.New()
 	queuedAt := time.Now().UTC()
@@ -918,7 +937,7 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 	return effects, nil
 }
 
-func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell, error) {
+func (s *server) parseSpellUpsertRequest(body spellUpsertRequest, defaultAbilityLevel int) (*models.Spell, error) {
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
@@ -938,6 +957,16 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 	if body.ManaCost < 0 {
 		return nil, fmt.Errorf("manaCost must be zero or greater")
 	}
+	abilityLevel := defaultAbilityLevel
+	if abilityLevel < 1 {
+		abilityLevel = 1
+	}
+	if body.AbilityLevel != nil {
+		abilityLevel = *body.AbilityLevel
+	}
+	if abilityLevel < 1 {
+		return nil, fmt.Errorf("abilityLevel must be 1 or greater")
+	}
 	manaCost := body.ManaCost
 	if abilityType == models.SpellAbilityTypeTechnique {
 		manaCost = 0
@@ -954,6 +983,7 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest) (*models.Spell
 		IconURL:               strings.TrimSpace(body.IconURL),
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		AbilityType:           abilityType,
+		AbilityLevel:          abilityLevel,
 		EffectText:            strings.TrimSpace(body.EffectText),
 		SchoolOfMagic:         schoolOfMagic,
 		ManaCost:              manaCost,
@@ -984,6 +1014,9 @@ func normalizeSpellProgressionBand(levelBand int) int {
 func inferSpellProgressionBand(spell *models.Spell) int {
 	if spell == nil {
 		return 25
+	}
+	if spell.AbilityLevel > 0 {
+		return normalizeSpellProgressionBand(spell.AbilityLevel)
 	}
 	powerScore := float64(spellMaxInt(spell.ManaCost, 0))
 	for _, effect := range spell.Effects {
@@ -1616,6 +1649,7 @@ func buildSpellProgressionVariant(
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 		AbilityType:           models.SpellAbilityTypeSpell,
+		AbilityLevel:          targetBand,
 		EffectText:            buildSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
 		ManaCost:              spellMaxInt(manaCost, 1),
@@ -1780,7 +1814,7 @@ func (s *server) createSpellWithBoundRequest(ctx *gin.Context, requestBody spell
 		return
 	}
 
-	spell, err := s.parseSpellUpsertRequest(requestBody)
+	spell, err := s.parseSpellUpsertRequest(requestBody, 1)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -1812,17 +1846,22 @@ func (s *server) updateSpellWithBoundRequest(
 	existingSpell *models.Spell,
 	requestBody spellUpsertRequest,
 ) {
-	spell, err := s.parseSpellUpsertRequest(requestBody)
+	defaultAbilityLevel := 1
+	if existingSpell != nil && existingSpell.AbilityLevel > 0 {
+		defaultAbilityLevel = existingSpell.AbilityLevel
+	}
+	spell, err := s.parseSpellUpsertRequest(requestBody, defaultAbilityLevel)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if err := s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
-		"name":         spell.Name,
-		"description":  spell.Description,
-		"icon_url":     spell.IconURL,
-		"ability_type": spell.AbilityType,
+		"name":          spell.Name,
+		"description":   spell.Description,
+		"icon_url":      spell.IconURL,
+		"ability_type":  spell.AbilityType,
+		"ability_level": spell.AbilityLevel,
 		"image_generation_status": func() string {
 			if spell.IconURL != "" {
 				return models.SpellImageGenerationStatusComplete

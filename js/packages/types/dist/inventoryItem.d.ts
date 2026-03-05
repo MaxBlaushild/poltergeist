@@ -22,6 +22,7 @@ export type InventoryItem = {
     isCaptureType: boolean;
     sellValue?: number;
     unlockTier?: number;
+    itemLevel?: number;
     equipSlot?: string | null;
     strengthMod?: number;
     dexterityMod?: number;

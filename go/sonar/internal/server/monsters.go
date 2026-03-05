@@ -261,15 +261,16 @@ type monsterUpsertRequest struct {
 }
 
 type monsterEncounterUpsertRequest struct {
-	Name               string   `json:"name"`
-	Description        string   `json:"description"`
-	ImageURL           string   `json:"imageUrl"`
-	ThumbnailURL       string   `json:"thumbnailUrl"`
-	ScaleWithUserLevel bool     `json:"scaleWithUserLevel"`
-	ZoneID             string   `json:"zoneId"`
-	Latitude           float64  `json:"latitude"`
-	Longitude          float64  `json:"longitude"`
-	MonsterIDs         []string `json:"monsterIds"`
+	Name                string   `json:"name"`
+	Description         string   `json:"description"`
+	ImageURL            string   `json:"imageUrl"`
+	ThumbnailURL        string   `json:"thumbnailUrl"`
+	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
+	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
+	ZoneID              string   `json:"zoneId"`
+	Latitude            float64  `json:"latitude"`
+	Longitude           float64  `json:"longitude"`
+	MonsterIDs          []string `json:"monsterIds"`
 }
 
 type monsterTemplateResponse struct {
@@ -351,21 +352,24 @@ type monsterEncounterMemberResponse struct {
 }
 
 type monsterEncounterResponse struct {
-	ID                 uuid.UUID                        `json:"id"`
-	CreatedAt          time.Time                        `json:"createdAt"`
-	UpdatedAt          time.Time                        `json:"updatedAt"`
-	Name               string                           `json:"name"`
-	Description        string                           `json:"description"`
-	ImageURL           string                           `json:"imageUrl"`
-	ThumbnailURL       string                           `json:"thumbnailUrl"`
-	ScaleWithUserLevel bool                             `json:"scaleWithUserLevel"`
-	ZoneID             uuid.UUID                        `json:"zoneId"`
-	Zone               models.Zone                      `json:"zone"`
-	Latitude           float64                          `json:"latitude"`
-	Longitude          float64                          `json:"longitude"`
-	MonsterCount       int                              `json:"monsterCount"`
-	Members            []monsterEncounterMemberResponse `json:"members"`
-	Monsters           []monsterResponse                `json:"monsters"`
+	ID                          uuid.UUID                        `json:"id"`
+	CreatedAt                   time.Time                        `json:"createdAt"`
+	UpdatedAt                   time.Time                        `json:"updatedAt"`
+	Name                        string                           `json:"name"`
+	Description                 string                           `json:"description"`
+	ImageURL                    string                           `json:"imageUrl"`
+	ThumbnailURL                string                           `json:"thumbnailUrl"`
+	ScaleWithUserLevel          bool                             `json:"scaleWithUserLevel"`
+	RecurringMonsterEncounterID *uuid.UUID                       `json:"recurringMonsterEncounterId,omitempty"`
+	RecurrenceFrequency         *string                          `json:"recurrenceFrequency,omitempty"`
+	NextRecurrenceAt            *time.Time                       `json:"nextRecurrenceAt,omitempty"`
+	ZoneID                      uuid.UUID                        `json:"zoneId"`
+	Zone                        models.Zone                      `json:"zone"`
+	Latitude                    float64                          `json:"latitude"`
+	Longitude                   float64                          `json:"longitude"`
+	MonsterCount                int                              `json:"monsterCount"`
+	Members                     []monsterEncounterMemberResponse `json:"members"`
+	Monsters                    []monsterResponse                `json:"monsters"`
 }
 
 func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleResponse {
@@ -422,21 +426,24 @@ func (s *server) monsterEncounterResponseFrom(
 	}
 
 	return monsterEncounterResponse{
-		ID:                 encounter.ID,
-		CreatedAt:          encounter.CreatedAt,
-		UpdatedAt:          encounter.UpdatedAt,
-		Name:               encounter.Name,
-		Description:        encounter.Description,
-		ImageURL:           imageURL,
-		ThumbnailURL:       thumbnailURL,
-		ScaleWithUserLevel: encounter.ScaleWithUserLevel,
-		ZoneID:             encounter.ZoneID,
-		Zone:               encounter.Zone,
-		Latitude:           encounter.Latitude,
-		Longitude:          encounter.Longitude,
-		MonsterCount:       len(monsters),
-		Members:            members,
-		Monsters:           monsters,
+		ID:                          encounter.ID,
+		CreatedAt:                   encounter.CreatedAt,
+		UpdatedAt:                   encounter.UpdatedAt,
+		Name:                        encounter.Name,
+		Description:                 encounter.Description,
+		ImageURL:                    imageURL,
+		ThumbnailURL:                thumbnailURL,
+		ScaleWithUserLevel:          encounter.ScaleWithUserLevel,
+		RecurringMonsterEncounterID: encounter.RecurringMonsterEncounterID,
+		RecurrenceFrequency:         encounter.RecurrenceFrequency,
+		NextRecurrenceAt:            encounter.NextRecurrenceAt,
+		ZoneID:                      encounter.ZoneID,
+		Zone:                        encounter.Zone,
+		Latitude:                    encounter.Latitude,
+		Longitude:                   encounter.Longitude,
+		MonsterCount:                len(monsters),
+		Members:                     members,
+		Monsters:                    monsters,
 	}, nil
 }
 
@@ -1754,6 +1761,16 @@ func (s *server) createMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := applyStandaloneRecurrenceForCreate(
+		requestBody.RecurrenceFrequency,
+		time.Now(),
+		&encounter.RecurringMonsterEncounterID,
+		&encounter.RecurrenceFrequency,
+		&encounter.NextRecurrenceAt,
+	); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	if err := s.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1790,12 +1807,17 @@ func (s *server) updateMonsterEncounter(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID); err != nil {
+	existing, err := s.dbClient.MonsterEncounter().FindByID(ctx, encounterID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existing == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
 		return
 	}
 
@@ -1807,6 +1829,19 @@ func (s *server) updateMonsterEncounter(ctx *gin.Context) {
 
 	encounter, members, err := s.parseMonsterEncounterUpsertRequest(ctx, requestBody)
 	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	encounter.RecurringMonsterEncounterID = existing.RecurringMonsterEncounterID
+	encounter.RecurrenceFrequency = existing.RecurrenceFrequency
+	encounter.NextRecurrenceAt = existing.NextRecurrenceAt
+	if err := applyStandaloneRecurrenceForUpdate(
+		requestBody.RecurrenceFrequency,
+		time.Now(),
+		&encounter.RecurringMonsterEncounterID,
+		&encounter.RecurrenceFrequency,
+		&encounter.NextRecurrenceAt,
+	); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

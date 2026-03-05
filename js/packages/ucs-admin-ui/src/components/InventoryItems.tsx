@@ -428,6 +428,7 @@ export const InventoryItems = () => {
     isCaptureType: false,
     sellValue: undefined as number | undefined,
     unlockTier: undefined as number | undefined,
+    itemLevel: 1,
     equipSlot: '',
     strengthMod: 0,
     dexterityMod: 0,
@@ -540,6 +541,7 @@ export const InventoryItems = () => {
       isCaptureType: false,
       sellValue: undefined,
       unlockTier: undefined,
+      itemLevel: 1,
       equipSlot: '',
       strengthMod: 0,
       dexterityMod: 0,
@@ -1206,6 +1208,7 @@ export const InventoryItems = () => {
       isCaptureType: item.isCaptureType,
       sellValue: item.sellValue,
       unlockTier: item.unlockTier,
+      itemLevel: item.itemLevel ?? 1,
       equipSlot: item.equipSlot || '',
       strengthMod: item.strengthMod ?? 0,
       dexterityMod: item.dexterityMod ?? 0,
@@ -2127,6 +2130,25 @@ export const InventoryItems = () => {
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
                 Set the tier level required to unlock this item. Leave empty if no tier requirement.
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Item Level *:</label>
+              <input
+                type="number"
+                min="1"
+                value={formData.itemLevel}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    itemLevel: e.target.value === '' ? 1 : Math.max(1, parseInt(e.target.value, 10) || 1),
+                  })
+                }
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Used for balancing and progression. Must be at least 1.
               </small>
             </div>
 

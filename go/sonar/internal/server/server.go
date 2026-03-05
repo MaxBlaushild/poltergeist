@@ -6914,6 +6914,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier              string                         `json:"rarityTier" binding:"required"`
 		IsCaptureType           bool                           `json:"isCaptureType"`
 		UnlockTier              *int                           `json:"unlockTier"`
+		ItemLevel               *int                           `json:"itemLevel"`
 		EquipSlot               *string                        `json:"equipSlot"`
 		StrengthMod             int                            `json:"strengthMod"`
 		DexterityMod            int                            `json:"dexterityMod"`
@@ -6939,6 +6940,14 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	itemLevel := 1
+	if requestBody.ItemLevel != nil {
+		itemLevel = *requestBody.ItemLevel
+	}
+	if itemLevel < 1 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
 		return
 	}
 
@@ -6999,6 +7008,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier:              requestBody.RarityTier,
 		IsCaptureType:           requestBody.IsCaptureType,
 		UnlockTier:              requestBody.UnlockTier,
+		ItemLevel:               itemLevel,
 		EquipSlot:               equipSlot,
 		StrengthMod:             requestBody.StrengthMod,
 		DexterityMod:            requestBody.DexterityMod,
@@ -7041,6 +7051,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		Name             string  `json:"name" binding:"required"`
 		Description      string  `json:"description"`
 		RarityTier       string  `json:"rarityTier" binding:"required"`
+		ItemLevel        *int    `json:"itemLevel"`
 		EquipSlot        *string `json:"equipSlot"`
 		HandItemCategory *string `json:"handItemCategory"`
 		Handedness       *string `json:"handedness"`
@@ -7049,6 +7060,14 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	itemLevel := 1
+	if requestBody.ItemLevel != nil {
+		itemLevel = *requestBody.ItemLevel
+	}
+	if itemLevel < 1 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
 		return
 	}
 
@@ -7091,6 +7110,7 @@ func (s *server) generateInventoryItem(ctx *gin.Context) {
 		FlavorText:              requestBody.Description,
 		RarityTier:              requestBody.RarityTier,
 		IsCaptureType:           false,
+		ItemLevel:               itemLevel,
 		EquipSlot:               equipSlot,
 		HandItemCategory:        validatedHandAttrs.HandItemCategory,
 		Handedness:              validatedHandAttrs.Handedness,
@@ -7208,6 +7228,7 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 			IsCaptureType:           false,
 			SellValue:               cloneIntPtr(sourceItem.SellValue),
 			UnlockTier:              cloneIntPtr(sourceItem.UnlockTier),
+			ItemLevel:               maxInt(sourceItem.ItemLevel, 1),
 			EquipSlot:               stringPtr(slot),
 			StrengthMod:             strengthMod,
 			DexterityMod:            dexterityMod,
@@ -7500,6 +7521,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 		RarityTier:              rarity,
 		IsCaptureType:           false,
 		UnlockTier:              intPtr(requestBody.TargetLevel),
+		ItemLevel:               requestBody.TargetLevel,
 		EquipSlot:               stringPtr(string(models.EquipmentSlotChest)),
 		ConsumeStatusesToAdd:    models.ScenarioFailureStatusTemplates{},
 		ConsumeStatusesToRemove: models.StringArray{},
@@ -7544,6 +7566,7 @@ func (s *server) generateEquippableInventorySet(ctx *gin.Context) {
 			RarityTier:              rarity,
 			IsCaptureType:           false,
 			UnlockTier:              intPtr(requestBody.TargetLevel),
+			ItemLevel:               requestBody.TargetLevel,
 			EquipSlot:               stringPtr(slot),
 			StrengthMod:             strengthMod,
 			DexterityMod:            dexterityMod,
@@ -7712,6 +7735,7 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 			IsCaptureType:           false,
 			SellValue:               scaleConsumableOptionalInt(sourceItem.SellValue, powerScale),
 			UnlockTier:              scaleConsumableOptionalInt(sourceItem.UnlockTier, math.Max(1.0, powerScale*0.5)),
+			ItemLevel:               quality.LevelMin,
 			EquipSlot:               nil,
 			StrengthMod:             0,
 			DexterityMod:            0,
@@ -8697,6 +8721,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		RarityTier              string                         `json:"rarityTier"`
 		IsCaptureType           bool                           `json:"isCaptureType"`
 		UnlockTier              *int                           `json:"unlockTier"`
+		ItemLevel               *int                           `json:"itemLevel"`
 		EquipSlot               *string                        `json:"equipSlot"`
 		StrengthMod             int                            `json:"strengthMod"`
 		DexterityMod            int                            `json:"dexterityMod"`
@@ -8722,6 +8747,17 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	itemLevel := existingItem.ItemLevel
+	if itemLevel < 1 {
+		itemLevel = 1
+	}
+	if requestBody.ItemLevel != nil {
+		itemLevel = *requestBody.ItemLevel
+	}
+	if itemLevel < 1 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
 		return
 	}
 
@@ -8782,6 +8818,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"rarity_tier":                requestBody.RarityTier,
 		"is_capture_type":            requestBody.IsCaptureType,
 		"unlock_tier":                requestBody.UnlockTier,
+		"item_level":                 itemLevel,
 		"equip_slot":                 equipSlot,
 		"strength_mod":               requestBody.StrengthMod,
 		"dexterity_mod":              requestBody.DexterityMod,
@@ -12844,6 +12881,7 @@ type scenarioFailureStatusPayload struct {
 
 type scenarioUpsertRequest struct {
 	ZoneID                    string                         `json:"zoneId"`
+	PointOfInterestID         string                         `json:"pointOfInterestId"`
 	Latitude                  float64                        `json:"latitude"`
 	Longitude                 float64                        `json:"longitude"`
 	Prompt                    string                         `json:"prompt"`
@@ -12854,6 +12892,7 @@ type scenarioUpsertRequest struct {
 	RewardGold                int                            `json:"rewardGold"`
 	OpenEnded                 bool                           `json:"openEnded"`
 	ScaleWithUserLevel        bool                           `json:"scaleWithUserLevel"`
+	RecurrenceFrequency       *string                        `json:"recurrenceFrequency"`
 	FailurePenaltyMode        string                         `json:"failurePenaltyMode"`
 	FailureHealthDrainType    string                         `json:"failureHealthDrainType"`
 	FailureHealthDrainValue   int                            `json:"failureHealthDrainValue"`
@@ -13625,7 +13664,7 @@ func (s *server) applyScenarioSuccessReward(
 	return applied, nil
 }
 
-func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, []models.ScenarioSpellReward, error) {
+func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUpsertRequest) (*models.Scenario, []models.ScenarioOption, []models.ScenarioItemReward, []models.ScenarioSpellReward, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("invalid zone ID")
@@ -13635,6 +13674,20 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 	}
 	if strings.TrimSpace(body.ImageURL) == "" {
 		return nil, nil, nil, nil, fmt.Errorf("imageUrl is required")
+	}
+	pointOfInterestID, err := parseStandalonePointOfInterestID(body.PointOfInterestID)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
+		ctx,
+		&zoneID,
+		pointOfInterestID,
+		body.Latitude,
+		body.Longitude,
+	)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 	thumbnailURL, err := normalizeScenarioThumbnailURL(body.ThumbnailURL)
 	if err != nil {
@@ -13723,8 +13776,9 @@ func (s *server) parseScenarioUpsertRequest(body scenarioUpsertRequest) (*models
 
 	scenario := &models.Scenario{
 		ZoneID:                    zoneID,
-		Latitude:                  body.Latitude,
-		Longitude:                 body.Longitude,
+		PointOfInterestID:         resolvedPointOfInterestID,
+		Latitude:                  resolvedLatitude,
+		Longitude:                 resolvedLongitude,
 		Prompt:                    strings.TrimSpace(body.Prompt),
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
@@ -14196,8 +14250,19 @@ func (s *server) createScenario(ctx *gin.Context) {
 		return
 	}
 
-	scenario, options, scenarioRewards, scenarioSpellRewards, err := s.parseScenarioUpsertRequest(requestBody)
+	scenario, options, scenarioRewards, scenarioSpellRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody)
 	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	now := time.Now()
+	if err := applyStandaloneRecurrenceForCreate(
+		requestBody.RecurrenceFrequency,
+		now,
+		&scenario.RecurringScenarioID,
+		&scenario.RecurrenceFrequency,
+		&scenario.NextRecurrenceAt,
+	); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -14258,8 +14323,21 @@ func (s *server) updateScenario(ctx *gin.Context) {
 		return
 	}
 
-	scenario, options, scenarioRewards, scenarioSpellRewards, err := s.parseScenarioUpsertRequest(requestBody)
+	scenario, options, scenarioRewards, scenarioSpellRewards, err := s.parseScenarioUpsertRequest(ctx, requestBody)
 	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	scenario.RecurringScenarioID = existing.RecurringScenarioID
+	scenario.RecurrenceFrequency = existing.RecurrenceFrequency
+	scenario.NextRecurrenceAt = existing.NextRecurrenceAt
+	if err := applyStandaloneRecurrenceForUpdate(
+		requestBody.RecurrenceFrequency,
+		time.Now(),
+		&scenario.RecurringScenarioID,
+		&scenario.RecurrenceFrequency,
+		&scenario.NextRecurrenceAt,
+	); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

@@ -121,6 +121,7 @@ func normalizeScenarioOptionFailurePenaltyDefaults(option *models.ScenarioOption
 func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 	return h.db.WithContext(ctx).
 		Preload("Zone").
+		Preload("PointOfInterest").
 		Preload("Options").
 		Preload("Options.ItemRewards").
 		Preload("Options.ItemRewards.InventoryItem").
@@ -190,12 +191,16 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 
 	payload := map[string]interface{}{
 		"zone_id":                      updates.ZoneID,
+		"point_of_interest_id":         updates.PointOfInterestID,
 		"latitude":                     updates.Latitude,
 		"longitude":                    updates.Longitude,
 		"geometry":                     updates.Geometry,
 		"prompt":                       updates.Prompt,
 		"image_url":                    updates.ImageURL,
 		"scale_with_user_level":        updates.ScaleWithUserLevel,
+		"recurring_scenario_id":        updates.RecurringScenarioID,
+		"recurrence_frequency":         updates.RecurrenceFrequency,
+		"next_recurrence_at":           updates.NextRecurrenceAt,
 		"difficulty":                   updates.Difficulty,
 		"reward_experience":            updates.RewardExperience,
 		"reward_gold":                  updates.RewardGold,
@@ -221,6 +226,21 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 
 func (h *scenarioHandle) Delete(ctx context.Context, id uuid.UUID) error {
 	return h.db.WithContext(ctx).Delete(&models.Scenario{}, "id = ?", id).Error
+}
+
+func (h *scenarioHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Scenario, error) {
+	var scenarios []models.Scenario
+	query := h.db.WithContext(ctx).
+		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
+		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
+		Order("next_recurrence_at ASC")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if err := query.Find(&scenarios).Error; err != nil {
+		return nil, err
+	}
+	return scenarios, nil
 }
 
 func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error {

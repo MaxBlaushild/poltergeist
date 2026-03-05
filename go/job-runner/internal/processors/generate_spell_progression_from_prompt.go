@@ -96,6 +96,16 @@ type GenerateSpellProgressionFromPromptProcessor struct {
 	deepPriestClient deep_priest.DeepPriest
 }
 
+func normalizePromptAbilityLevel(level int) int {
+	if level < 1 {
+		return 25
+	}
+	if level > 100 {
+		return 100
+	}
+	return level
+}
+
 type spellProgressionFromPromptResult struct {
 	ProgressionID uuid.UUID
 	SeedSpellID   uuid.UUID
@@ -246,6 +256,7 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 		AbilityType:           abilityType,
+		AbilityLevel:          normalizePromptAbilityLevel(seedSpec.AbilityLevel),
 		EffectText:            seedEffectText,
 		SchoolOfMagic:         school,
 		ManaCost:              seedManaCost,
@@ -340,6 +351,10 @@ func (p *GenerateSpellProgressionFromPromptProcessor) buildSeedSpec(
 		spec.ManaCost = 0
 	}
 	spec.AbilityType = string(abilityType)
+	if spec.AbilityLevel <= 0 {
+		spec.AbilityLevel = fallback.AbilityLevel
+	}
+	spec.AbilityLevel = normalizePromptAbilityLevel(spec.AbilityLevel)
 	return spec, preferred, nil
 }
 
@@ -369,6 +384,7 @@ func parseGeneratedSpellProgressionPromptSpec(
 		EffectText:    strings.TrimSpace(payload.EffectText),
 		SchoolOfMagic: strings.TrimSpace(payload.SchoolOfMagic),
 		AbilityType:   string(models.SpellAbilityTypeSpell),
+		AbilityLevel:  25,
 		ManaCost:      18,
 	}
 	if payload.ManaCost != nil {
@@ -449,6 +465,7 @@ func fallbackSpellSpecFromPrompt(
 		EffectText:    effectText,
 		SchoolOfMagic: school,
 		AbilityType:   string(abilityType),
+		AbilityLevel:  25,
 		ManaCost:      manaCost,
 	}
 }
@@ -579,6 +596,9 @@ func promptNormalizeSpellProgressionBand(levelBand int) int {
 func promptInferSpellProgressionBand(spell *models.Spell) int {
 	if spell == nil {
 		return 25
+	}
+	if spell.AbilityLevel > 0 {
+		return promptNormalizeSpellProgressionBand(spell.AbilityLevel)
 	}
 	powerScore := float64(promptMaxInt(spell.ManaCost, 0))
 	for _, effect := range spell.Effects {
@@ -1325,6 +1345,7 @@ func buildPromptSpellProgressionVariant(
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 		AbilityType:           abilityType,
+		AbilityLevel:          targetBand,
 		EffectText:            buildPromptSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
 		ManaCost:              manaCost,
