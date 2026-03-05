@@ -13,6 +13,8 @@ export interface ShopInventoryItem {
   price: number;
 }
 
+export type ShopMode = 'explicit' | 'tags';
+
 export interface CharacterAction {
   id: string;
   createdAt: Date;
@@ -23,8 +25,9 @@ export interface CharacterAction {
   dialogue: DialogueMessage[];
   metadata?: {
     inventory?: ShopInventoryItem[];
+    shopMode?: ShopMode;
+    shopItemTags?: string[];
     pointOfInterestGroupId?: string;
     [key: string]: any;
   };
 }
-

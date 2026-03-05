@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"math"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
@@ -69,4 +70,19 @@ func scenarioWithScaledDifficulty(scenario models.Scenario, userLevel int) model
 func challengeWithScaledDifficulty(challenge models.Challenge, userLevel int) models.Challenge {
 	challenge.Difficulty = challengeDifficultyForUserLevel(&challenge, userLevel)
 	return challenge
+}
+
+func scaledEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
+	normalizedLevel := normalizeScaledLevel(level)
+	scaleFactor := 0.90
+	switch {
+	case memberCount <= 1:
+		scaleFactor = 0.90
+	case memberCount == 2:
+		scaleFactor = 0.50
+	default:
+		scaleFactor = 0.35
+	}
+	scaled := int(math.Round(float64(normalizedLevel) * scaleFactor))
+	return maxInt(1, scaled)
 }

@@ -67,11 +67,16 @@ const _scenarioMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
 const _monsterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const _characterMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
 const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
+const _discoveredCharactersPrefsKeyPrefix =
+    'single_player_discovered_characters';
 const _mapThumbnailVersion = 'v4';
+const _standardMarkerThumbnailSize = 0.75;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
 const _stamenWatercolorStyleBase =
@@ -133,7 +138,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Set<String> _resolvedScenarioSignatures = <String>{};
   final Set<String> _openedTreasureChestIds = <String>{};
   final Set<String> _defeatedMonsterIds = <String>{};
+  final Set<String> _discoveredCharacterIds = <String>{};
   String? _defeatedMonsterIdsUserId;
+  String? _discoveredCharacterIdsUserId;
   final ZoneWidgetController _zoneWidgetController = ZoneWidgetController();
   Uint8List? _chestThumbnailBytes;
   bool _chestThumbnailAdded = false;
@@ -278,10 +285,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     _requestQuestLogIfReady(force: true);
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
+    unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
   }
 
   String _defeatedMonstersPrefsKey(String userId) {
     return '$_defeatedMonstersPrefsKeyPrefix:$userId';
+  }
+
+  String _discoveredCharactersPrefsKey(String userId) {
+    return '$_discoveredCharactersPrefsKeyPrefix:$userId';
   }
 
   Future<void> _restoreDefeatedMonsterIds({bool refreshMap = false}) async {
@@ -322,6 +334,50 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _defeatedMonstersPrefsKey(userId),
       _defeatedMonsterIds.toList(growable: false),
     );
+  }
+
+  Future<void> _restoreDiscoveredCharacterIds({bool refreshMap = false}) async {
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    final userId = auth.user?.id;
+    if (_discoveredCharacterIdsUserId == userId) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final storedIds = userId == null || userId.isEmpty
+        ? const <String>[]
+        : (prefs.getStringList(_discoveredCharactersPrefsKey(userId)) ??
+              const <String>[]);
+    if (!mounted) return;
+
+    setState(() {
+      _discoveredCharacterIdsUserId = userId;
+      _discoveredCharacterIds
+        ..clear()
+        ..addAll(storedIds.where((id) => id.trim().isNotEmpty));
+    });
+
+    if (refreshMap && _styleLoaded && _mapController != null && _markersAdded) {
+      await _refreshCharacterDiscoveryMarkers();
+    }
+  }
+
+  Future<void> _persistDiscoveredCharacterIds() async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _discoveredCharactersPrefsKey(userId),
+      _discoveredCharacterIds.toList(growable: false),
+    );
+  }
+
+  Future<void> _markCharacterDiscovered(String characterId) async {
+    final normalized = characterId.trim();
+    if (normalized.isEmpty) return;
+    if (!_discoveredCharacterIds.contains(normalized)) {
+      setState(() => _discoveredCharacterIds.add(normalized));
+    }
+    await _persistDiscoveredCharacterIds();
   }
 
   void _onFilterChanged() {
@@ -910,6 +966,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final zoneProvider = context.read<ZoneProvider>();
     try {
       await _restoreDefeatedMonsterIds();
+      await _restoreDiscoveredCharacterIds();
       await discoveriesProvider.refresh();
       final zones = await svc.getZones();
       final pois = await svc.getPointsOfInterest();
@@ -2285,6 +2342,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         onUnlocked: () async {
           await context.read<DiscoveriesProvider>().refresh();
           if (!mounted) return;
+          await _refreshCharacterMarkersForPoi(poi.id);
+          if (!mounted) return;
           final questLog = context.read<QuestLogProvider>();
           final isQuestCurrent = _currentQuestPoiIdsForFilter(
             questLog,
@@ -2359,7 +2418,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         changedCharacters.add(ch);
       }
       if (changedCharacters.isNotEmpty) {
-        await _updateCharacterSymbolsForQuestAvailability(changedCharacters);
+        await _updateCharacterSymbolsForState(changedCharacters);
       }
     } catch (_) {
       // Best-effort refresh; ignore failures.
@@ -2514,6 +2573,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final availablePlaceholderFuture = loadPoiThumbnailWithQuestMarker(
         null,
       ).catchError((_) => null);
+      final characterPlaceholderFuture = loadPoiThumbnail(
+        _characterMysteryImageUrl,
+      ).catchError((_) => null);
+      final characterAvailablePlaceholderFuture =
+          loadPoiThumbnailWithQuestMarker(
+            _characterMysteryImageUrl,
+          ).catchError((_) => null);
       final chestFuture = loadPoiThumbnail(
         _chestImageUrl,
       ).catchError((_) => null);
@@ -2545,6 +2611,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           );
         } catch (_) {}
       }
+      final characterPlaceholderBytes = await characterPlaceholderFuture;
+      final characterAvailablePlaceholderBytes =
+          await characterAvailablePlaceholderFuture;
 
       final chestBytes = await chestFuture;
       if (chestBytes != null) {
@@ -2563,44 +2632,60 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
         if (points.isEmpty) continue;
 
-        final thumbnailUrl = ch.thumbnailUrl;
+        final hasDiscovered = _hasDiscoveredCharacter(ch);
+        final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
         final hasQuestAvailable = ch.hasAvailableQuest;
+        Uint8List? markerBytes;
+        String? markerId;
         if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
           try {
-            final imageBytes = hasQuestAvailable
+            markerBytes = hasQuestAvailable
                 ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
                 : await loadPoiThumbnail(thumbnailUrl);
-            if (imageBytes != null) {
-              final imageId = hasQuestAvailable
+            if (markerBytes != null) {
+              markerId = hasQuestAvailable
                   ? 'character_${ch.id}_quest'
                   : 'character_${ch.id}';
-              final versionedId = '${imageId}_$_mapThumbnailVersion';
-              try {
-                await c.addImage(versionedId, imageBytes);
-              } catch (_) {}
-              for (final point in points) {
-                final sym = await c.addSymbol(
-                  SymbolOptions(
-                    geometry: point,
-                    iconImage: versionedId,
-                    iconSize: 0.6,
-                    iconHaloColor: '#000000',
-                    iconHaloWidth: 0.75,
-                    iconAnchor: 'center',
-                  ),
-                  {'type': 'character', 'id': ch.id, 'name': ch.name},
-                );
-                if (!mounted) return;
-                _characterSymbols.add(sym);
-                (_characterSymbolsById[ch.id] ??= []).add(sym);
-              }
-              continue;
             }
           } catch (_) {}
         }
 
+        if (markerBytes == null) {
+          markerBytes = hasQuestAvailable
+              ? (characterAvailablePlaceholderBytes ??
+                    availablePlaceholderBytes)
+              : (characterPlaceholderBytes ?? placeholderBytes);
+          markerId = hasQuestAvailable
+              ? 'character_placeholder_available'
+              : 'character_placeholder';
+        }
+
+        if (markerBytes != null && markerId != null) {
+          final versionedId = '${markerId}_$_mapThumbnailVersion';
+          try {
+            await c.addImage(versionedId, markerBytes);
+          } catch (_) {}
+          for (final point in points) {
+            final sym = await c.addSymbol(
+              SymbolOptions(
+                geometry: point,
+                iconImage: versionedId,
+                iconSize: _standardMarkerThumbnailSize,
+                iconHaloColor: '#000000',
+                iconHaloWidth: 0.75,
+                iconAnchor: 'center',
+              ),
+              {'type': 'character', 'id': ch.id, 'name': ch.name},
+            );
+            if (!mounted) return;
+            _characterSymbols.add(sym);
+            (_characterSymbolsById[ch.id] ??= []).add(sym);
+          }
+          continue;
+        }
+
         for (final point in points) {
-          c.addCircle(
+          await c.addCircle(
             CircleOptions(
               geometry: point,
               circleRadius: 30,
@@ -3495,48 +3580,133 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
   }
 
-  Future<void> _updateCharacterSymbolsForQuestAvailability(
+  String _characterDiscoveryPoiId(Character character) {
+    return character.pointOfInterestId?.trim() ?? '';
+  }
+
+  bool _isValidCharacterCoordinate(double lat, double lng) {
+    if (!lat.isFinite || !lng.isFinite) return false;
+    if (lat.abs() > 90 || lng.abs() > 180) return false;
+    return lat != 0 || lng != 0;
+  }
+
+  bool _isCharacterDiscoveryManaged(Character character) {
+    if (_characterDiscoveryPoiId(character).isNotEmpty) return true;
+    if (character.pointOfInterestLat != null &&
+        character.pointOfInterestLng != null &&
+        _isValidCharacterCoordinate(
+          character.pointOfInterestLat!,
+          character.pointOfInterestLng!,
+        )) {
+      return true;
+    }
+    if (character.locations.any(
+      (loc) => _isValidCharacterCoordinate(loc.latitude, loc.longitude),
+    )) {
+      return true;
+    }
+    return _isValidCharacterCoordinate(character.lat, character.lng);
+  }
+
+  bool _hasDiscoveredCharacter(Character character) {
+    if (!_isCharacterDiscoveryManaged(character)) return true;
+    final poiId = _characterDiscoveryPoiId(character);
+    if (poiId.isNotEmpty) {
+      return context.read<DiscoveriesProvider>().hasDiscovered(poiId);
+    }
+    return _discoveredCharacterIds.contains(character.id);
+  }
+
+  Future<void> _updateCharacterSymbolsForState(
     List<Character> characters,
   ) async {
+    for (final ch in characters) {
+      await _updateCharacterSymbolForState(ch);
+    }
+  }
+
+  Future<void> _updateCharacterSymbolForState(Character ch) async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
-    for (final ch in characters) {
-      final symbols = _characterSymbolsById[ch.id];
-      if (symbols == null || symbols.isEmpty) continue;
-      final thumbnailUrl = ch.thumbnailUrl;
-      if (thumbnailUrl == null || thumbnailUrl.isEmpty) continue;
-      Uint8List? imageBytes;
-      String? imageId;
+    final symbols = _characterSymbolsById[ch.id];
+    if (symbols == null || symbols.isEmpty) return;
+    final hasDiscovered = _hasDiscoveredCharacter(ch);
+    final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
+    final hasQuestAvailable = ch.hasAvailableQuest;
+    Uint8List? imageBytes;
+    String? imageId;
+    if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
       try {
-        imageBytes = ch.hasAvailableQuest
+        imageBytes = hasQuestAvailable
             ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
             : await loadPoiThumbnail(thumbnailUrl);
         if (imageBytes != null) {
-          imageId = ch.hasAvailableQuest
+          imageId = hasQuestAvailable
               ? 'character_${ch.id}_quest'
               : 'character_${ch.id}';
         }
       } catch (_) {}
-      if (imageBytes == null || imageId == null) continue;
-      final versionedId = '${imageId}_$_mapThumbnailVersion';
-      try {
-        await c.addImage(versionedId, imageBytes);
-      } catch (_) {}
-      for (final sym in symbols) {
-        try {
-          await c.updateSymbol(
-            sym,
-            SymbolOptions(
-              iconImage: versionedId,
-              iconSize: 0.6,
-              iconHaloColor: '#000000',
-              iconHaloWidth: 0.75,
-              iconAnchor: 'center',
-            ),
-          );
-        } catch (_) {}
-      }
     }
+    if (imageBytes == null) {
+      try {
+        imageBytes = hasQuestAvailable
+            ? await loadPoiThumbnailWithQuestMarker(_characterMysteryImageUrl)
+            : await loadPoiThumbnail(_characterMysteryImageUrl);
+        if (imageBytes != null) {
+          imageId = hasQuestAvailable
+              ? 'character_placeholder_available'
+              : 'character_placeholder';
+        }
+      } catch (_) {}
+    }
+    if (imageBytes == null) {
+      try {
+        imageBytes = hasQuestAvailable
+            ? await loadPoiThumbnailWithQuestMarker(null)
+            : await loadPoiThumbnail(null);
+        if (imageBytes != null) {
+          imageId = hasQuestAvailable
+              ? 'character_placeholder_available'
+              : 'character_placeholder';
+        }
+      } catch (_) {}
+    }
+    if (imageBytes == null || imageId == null) return;
+    final versionedId = '${imageId}_$_mapThumbnailVersion';
+    try {
+      await c.addImage(versionedId, imageBytes);
+    } catch (_) {}
+    for (final sym in symbols) {
+      try {
+        await c.updateSymbol(
+          sym,
+          SymbolOptions(
+            iconImage: versionedId,
+            iconSize: _standardMarkerThumbnailSize,
+            iconHaloColor: '#000000',
+            iconHaloWidth: 0.75,
+            iconAnchor: 'center',
+          ),
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _refreshCharacterDiscoveryMarkers() async {
+    if (!_styleLoaded || _mapController == null || !_markersAdded) return;
+    for (final ch in _characters) {
+      if (!_isCharacterDiscoveryManaged(ch)) continue;
+      await _updateCharacterSymbolForState(ch);
+    }
+  }
+
+  Future<void> _refreshCharacterMarkersForPoi(String poiId) async {
+    if (poiId.isEmpty) return;
+    final linkedCharacters = _characters
+        .where((character) => _characterDiscoveryPoiId(character) == poiId)
+        .toList();
+    if (linkedCharacters.isEmpty) return;
+    await _updateCharacterSymbolsForState(linkedCharacters);
   }
 
   Future<void> _pulseQuestPoiBorders() async {
@@ -4261,6 +4431,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (!mounted) return;
         setState(() => _addedMarkersWithEmptyDiscoveries = false);
         unawaited(_refreshDiscoveredPoiMarkers());
+        unawaited(_refreshCharacterDiscoveryMarkers());
       });
     }
 
@@ -4962,6 +5133,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<void> _showCharacterPanel(Character ch) async {
     var openTrackedQuests = false;
+    final hasDiscovered = _hasDiscoveredCharacter(ch);
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4972,7 +5144,31 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       ),
       builder: (context) => CharacterPanel(
         character: ch,
+        hasDiscovered: hasDiscovered,
         onClose: () => Navigator.of(context).pop(),
+        onUnlocked: () async {
+          final poiId = _characterDiscoveryPoiId(ch);
+          if (poiId.isNotEmpty) {
+            await context.read<DiscoveriesProvider>().refresh();
+          } else {
+            await _markCharacterDiscovered(ch.id);
+          }
+          if (!mounted) return;
+          await _updateCharacterSymbolForState(ch);
+          if (!mounted) return;
+          if (poiId.isNotEmpty) {
+            final questLog = context.read<QuestLogProvider>();
+            final isQuestCurrent = _currentQuestPoiIdsForFilter(
+              questLog,
+            ).contains(poiId);
+            unawaited(
+              _updatePoiSymbolForQuestState(
+                poiId,
+                isQuestCurrent: isQuestCurrent,
+              ),
+            );
+          }
+        },
         onQuestAccepted: () => openTrackedQuests = true,
         onStartDialogue: (dialogContext, character, action) {
           debugPrint(

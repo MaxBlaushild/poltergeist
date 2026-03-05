@@ -42,6 +42,7 @@ type ZoneSeedJob struct {
 	OptionEncounterCount int           `json:"optionEncounterCount"`
 	TreasureChestCount   int           `json:"treasureChestCount"`
 	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
+	ShopkeeperItemTags   StringArray   `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
 	Draft                ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
 }
 
@@ -72,10 +73,13 @@ type ZoneSeedPointOfInterestDraft struct {
 }
 
 type ZoneSeedCharacterDraft struct {
-	DraftID     uuid.UUID `json:"draftId"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	PlaceID     string    `json:"placeId"`
+	DraftID      uuid.UUID   `json:"draftId"`
+	Name         string      `json:"name"`
+	Description  string      `json:"description"`
+	PlaceID      string      `json:"placeId"`
+	Latitude     *float64    `json:"latitude,omitempty"`
+	Longitude    *float64    `json:"longitude,omitempty"`
+	ShopItemTags StringArray `json:"shopItemTags,omitempty"`
 }
 
 type ZoneSeedQuestDraft struct {

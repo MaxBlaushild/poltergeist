@@ -8,7 +8,7 @@ import '../providers/discoveries_provider.dart';
 import '../providers/quest_log_provider.dart';
 
 const _placeholderImageUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 
 class TrackedQuestsOverlayController extends ChangeNotifier {
   void open() {

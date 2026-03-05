@@ -15,8 +15,37 @@ type PointOfInterestImport = {
   updatedAt: string;
 };
 
+type StaticThumbnailResponse = {
+  thumbnailUrl?: string;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
+  prompt?: string;
+};
+
 const flattenTags = (tagGroups: { tags: Tag[] }[]): Tag[] => {
   return tagGroups.flatMap(group => group.tags);
+};
+
+const defaultPoiUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
+const staticStatusClassName = (status?: string) => {
+  const normalized = (status || '').trim().toLowerCase();
+  if (normalized === 'completed') return 'bg-emerald-600';
+  if (normalized === 'queued' || normalized === 'in_progress')
+    return 'bg-indigo-600';
+  if (normalized === 'failed' || normalized === 'missing')
+    return 'bg-red-600';
+  return 'bg-gray-500';
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
 };
 
 export const PointOfInterest = () => {
@@ -37,9 +66,32 @@ export const PointOfInterest = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  const [placeholderThumbnailUrl, setPlaceholderThumbnailUrl] = useState<string | null>(null);
-  const [placeholderThumbnailStatus, setPlaceholderThumbnailStatus] = useState<'idle' | 'loading' | 'queued' | 'error'>('idle');
-  const [placeholderThumbnailError, setPlaceholderThumbnailError] = useState<string | null>(null);
+  const [poiUndiscoveredBusy, setPoiUndiscoveredBusy] = useState(false);
+  const [poiUndiscoveredStatusLoading, setPoiUndiscoveredStatusLoading] =
+    useState(false);
+  const [poiUndiscoveredError, setPoiUndiscoveredError] = useState<string | null>(
+    null
+  );
+  const [poiUndiscoveredMessage, setPoiUndiscoveredMessage] = useState<
+    string | null
+  >(null);
+  const [poiUndiscoveredUrl, setPoiUndiscoveredUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png'
+  );
+  const [poiUndiscoveredStatus, setPoiUndiscoveredStatus] =
+    useState('unknown');
+  const [poiUndiscoveredExists, setPoiUndiscoveredExists] = useState(false);
+  const [poiUndiscoveredRequestedAt, setPoiUndiscoveredRequestedAt] = useState<
+    string | null
+  >(null);
+  const [poiUndiscoveredLastModified, setPoiUndiscoveredLastModified] = useState<
+    string | null
+  >(null);
+  const [poiUndiscoveredPreviewNonce, setPoiUndiscoveredPreviewNonce] =
+    useState(Date.now());
+  const [poiUndiscoveredPrompt, setPoiUndiscoveredPrompt] = useState(
+    defaultPoiUndiscoveredIconPrompt
+  );
   const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
@@ -143,31 +195,112 @@ export const PointOfInterest = () => {
     setImportError(null);
   };
 
-  const handleGeneratePlaceholderThumbnail = async () => {
-    setPlaceholderThumbnailStatus('loading');
-    setPlaceholderThumbnailError(null);
-    try {
-      const response = await apiClient.post<{ thumbnailUrl: string; status?: string }>(
-        '/sonar/admin/thumbnails/poi-placeholder',
-      );
-      setPlaceholderThumbnailUrl(response.thumbnailUrl);
-      setPlaceholderThumbnailStatus(response.status === 'queued' ? 'queued' : 'idle');
-    } catch (err) {
-      console.error('Error generating placeholder thumbnail:', err);
-      setPlaceholderThumbnailStatus('error');
-      setPlaceholderThumbnailError('Failed to queue thumbnail generation.');
-    }
-  };
+  const refreshPoiUndiscoveredIconStatus = React.useCallback(
+    async (showMessage = false) => {
+      try {
+        setPoiUndiscoveredStatusLoading(true);
+        setPoiUndiscoveredError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/poi-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setPoiUndiscoveredUrl(url);
+        }
+        setPoiUndiscoveredStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setPoiUndiscoveredExists(Boolean(response?.exists));
+        setPoiUndiscoveredRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setPoiUndiscoveredLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setPoiUndiscoveredPreviewNonce(Date.now());
+        if (showMessage) {
+          setPoiUndiscoveredMessage('Undiscovered POI icon status refreshed.');
+        }
+      } catch (err) {
+        console.error('Failed to load undiscovered POI icon status', err);
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load undiscovered POI icon status.';
+        setPoiUndiscoveredError(message);
+      } finally {
+        setPoiUndiscoveredStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
 
-  const handleCopyPlaceholderUrl = async () => {
-    if (!placeholderThumbnailUrl) return;
-    try {
-      await navigator.clipboard.writeText(placeholderThumbnailUrl);
-      setImportToasts((prev) => ['Copied placeholder thumbnail URL.', ...prev].slice(0, 3));
-    } catch (err) {
-      console.error('Failed to copy placeholder thumbnail URL:', err);
+  const handleGeneratePoiUndiscoveredIcon = React.useCallback(async () => {
+    const prompt = poiUndiscoveredPrompt.trim();
+    if (!prompt) {
+      setPoiUndiscoveredError('Prompt is required.');
+      return;
     }
-  };
+    try {
+      setPoiUndiscoveredBusy(true);
+      setPoiUndiscoveredError(null);
+      setPoiUndiscoveredMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/poi-undiscovered',
+        { prompt }
+      );
+      setPoiUndiscoveredMessage('Undiscovered POI icon queued for generation.');
+      await refreshPoiUndiscoveredIconStatus();
+    } catch (err) {
+      console.error('Failed to generate undiscovered POI icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate undiscovered POI icon.';
+      setPoiUndiscoveredError(message);
+    } finally {
+      setPoiUndiscoveredBusy(false);
+    }
+  }, [apiClient, poiUndiscoveredPrompt, refreshPoiUndiscoveredIconStatus]);
+
+  const handleDeletePoiUndiscoveredIcon = React.useCallback(async () => {
+    try {
+      setPoiUndiscoveredBusy(true);
+      setPoiUndiscoveredError(null);
+      setPoiUndiscoveredMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/poi-undiscovered'
+      );
+      setPoiUndiscoveredMessage('Undiscovered POI icon deleted.');
+      await refreshPoiUndiscoveredIconStatus();
+    } catch (err) {
+      console.error('Failed to delete undiscovered POI icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete undiscovered POI icon.';
+      setPoiUndiscoveredError(message);
+    } finally {
+      setPoiUndiscoveredBusy(false);
+    }
+  }, [apiClient, refreshPoiUndiscoveredIconStatus]);
+
+  useEffect(() => {
+    void refreshPoiUndiscoveredIconStatus();
+  }, [refreshPoiUndiscoveredIconStatus]);
+
+  useEffect(() => {
+    if (
+      poiUndiscoveredStatus !== 'queued' &&
+      poiUndiscoveredStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshPoiUndiscoveredIconStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [poiUndiscoveredStatus, refreshPoiUndiscoveredIconStatus]);
 
   const handleCreateImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -368,52 +501,88 @@ export const PointOfInterest = () => {
         >
           Import from Google Maps
         </button>
-        <button
-          type="button"
-          className="bg-slate-700 text-white px-4 py-2 rounded-md disabled:opacity-60"
-          onClick={handleGeneratePlaceholderThumbnail}
-          disabled={placeholderThumbnailStatus === 'loading'}
-        >
-          {placeholderThumbnailStatus === 'loading'
-            ? 'Queueing Placeholder Thumbnail...'
-            : 'Generate Undiscovered Thumbnail'}
-        </button>
       </div>
 
-      {(placeholderThumbnailUrl || placeholderThumbnailError) && (
-        <div className="bg-white rounded-lg shadow-md p-4 mb-6">
-          <h2 className="text-lg font-semibold mb-2">Undiscovered Thumbnail</h2>
-          {placeholderThumbnailError ? (
-            <p className="text-sm text-red-600">{placeholderThumbnailError}</p>
-          ) : (
-            <>
-              <p className="text-sm text-gray-600 mb-3">
-                The thumbnail is queued. It should be available at:
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                  {placeholderThumbnailUrl}
-                </code>
-                <button
-                  type="button"
-                  className="text-sm text-blue-600 hover:underline"
-                  onClick={handleCopyPlaceholderUrl}
-                >
-                  Copy URL
-                </button>
-                <a
-                  className="text-sm text-blue-600 hover:underline"
-                  href={placeholderThumbnailUrl ?? '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open
-                </a>
-              </div>
-            </>
-          )}
+      <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h2 className="text-lg font-semibold">Undiscovered POI Icon</h2>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={() => void refreshPoiUndiscoveredIconStatus(true)}
+              disabled={poiUndiscoveredStatusLoading}
+            >
+              {poiUndiscoveredStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+            </button>
+            <button
+              type="button"
+              className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleGeneratePoiUndiscoveredIcon}
+              disabled={poiUndiscoveredBusy || poiUndiscoveredStatusLoading}
+            >
+              {poiUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
+            </button>
+            <button
+              type="button"
+              className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleDeletePoiUndiscoveredIcon}
+              disabled={poiUndiscoveredBusy || poiUndiscoveredStatusLoading}
+            >
+              {poiUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
+            </button>
+          </div>
         </div>
-      )}
+        <div className="mb-2">
+          <span
+            className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
+              poiUndiscoveredStatus
+            )}`}
+          >
+            {poiUndiscoveredStatus || 'unknown'}
+          </span>
+        </div>
+        <div className="text-xs text-gray-600 break-all">
+          URL: {poiUndiscoveredUrl}
+        </div>
+        <div className="text-xs text-gray-600 mt-1">
+          Requested: {formatDate(poiUndiscoveredRequestedAt ?? undefined)}
+          {' · '}
+          Last updated: {formatDate(poiUndiscoveredLastModified ?? undefined)}
+        </div>
+        <label className="block text-sm mt-3">
+          Generation Prompt
+          <textarea
+            className="w-full border rounded-md p-2 mt-1 min-h-[88px]"
+            value={poiUndiscoveredPrompt}
+            onChange={(event) => setPoiUndiscoveredPrompt(event.target.value)}
+            placeholder="Prompt used to generate the undiscovered POI icon."
+          />
+        </label>
+        {poiUndiscoveredExists ? (
+          <div className="mt-3">
+            <img
+              src={`${poiUndiscoveredUrl}?v=${poiUndiscoveredPreviewNonce}`}
+              alt="Undiscovered POI icon preview"
+              className="w-24 h-24 object-cover border rounded-md bg-gray-50"
+            />
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 mt-2">
+            No icon currently found at this URL.
+          </div>
+        )}
+        {poiUndiscoveredMessage ? (
+          <div className="text-sm text-emerald-700 mt-2">
+            {poiUndiscoveredMessage}
+          </div>
+        ) : null}
+        {poiUndiscoveredError ? (
+          <div className="text-sm text-red-600 mt-2">
+            {poiUndiscoveredError}
+          </div>
+        ) : null}
+      </div>
 
       <div className="bg-white rounded-lg shadow-md p-4 mb-6">
         <div className="flex items-center justify-between mb-4">

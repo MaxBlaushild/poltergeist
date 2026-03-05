@@ -1,12 +1,12 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, ShopInventoryItem, Quest } from '@poltergeist/types';
+import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, Quest } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
 import { CharacterMapPicker } from './CharacterMapPicker.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
-import { ShopActionEditor } from './ShopActionEditor.tsx';
+import { ShopActionEditor, ShopActionSavePayload } from './ShopActionEditor.tsx';
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -146,6 +146,41 @@ interface CharacterLocationsMapProps {
   onAddLocation: (lng: number, lat: number) => void;
   onRemoveLocation: (index: number) => void;
 }
+
+type StaticThumbnailResponse = {
+  thumbnailUrl?: string;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
+  prompt?: string;
+};
+
+const defaultCharacterUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
+const staticStatusColor = (status?: string) => {
+  const normalized = (status || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'completed':
+      return '#059669';
+    case 'queued':
+    case 'in_progress':
+      return '#2563eb';
+    case 'failed':
+    case 'missing':
+      return '#b91c1c';
+    default:
+      return '#4b5563';
+  }
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+};
 
 const CharacterLocationsMap: React.FC<CharacterLocationsMapProps> = ({
   locations,
@@ -342,6 +377,21 @@ export const Characters = () => {
     name: '',
     description: ''
   });
+  const [characterUndiscoveredBusy, setCharacterUndiscoveredBusy] = useState(false);
+  const [characterUndiscoveredStatusLoading, setCharacterUndiscoveredStatusLoading] = useState(false);
+  const [characterUndiscoveredError, setCharacterUndiscoveredError] = useState<string | null>(null);
+  const [characterUndiscoveredMessage, setCharacterUndiscoveredMessage] = useState<string | null>(null);
+  const [characterUndiscoveredUrl, setCharacterUndiscoveredUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png'
+  );
+  const [characterUndiscoveredStatus, setCharacterUndiscoveredStatus] = useState('unknown');
+  const [characterUndiscoveredExists, setCharacterUndiscoveredExists] = useState(false);
+  const [characterUndiscoveredRequestedAt, setCharacterUndiscoveredRequestedAt] = useState<string | null>(null);
+  const [characterUndiscoveredLastModified, setCharacterUndiscoveredLastModified] = useState<string | null>(null);
+  const [characterUndiscoveredPreviewNonce, setCharacterUndiscoveredPreviewNonce] = useState<number>(Date.now());
+  const [characterUndiscoveredPrompt, setCharacterUndiscoveredPrompt] = useState(
+    defaultCharacterUndiscoveredIconPrompt
+  );
 
   const zoneOptions = React.useMemo<ComboOption[]>(() => {
     return [...availableZones]
@@ -408,6 +458,104 @@ export const Characters = () => {
     }
   };
 
+  const refreshUndiscoveredCharacterIconStatus = React.useCallback(
+    async (showMessage = false) => {
+      try {
+        setCharacterUndiscoveredStatusLoading(true);
+        setCharacterUndiscoveredError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/character-undiscovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setCharacterUndiscoveredUrl(url);
+        }
+        setCharacterUndiscoveredStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setCharacterUndiscoveredExists(Boolean(response?.exists));
+        setCharacterUndiscoveredRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setCharacterUndiscoveredLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setCharacterUndiscoveredPreviewNonce(Date.now());
+        if (showMessage) {
+          setCharacterUndiscoveredMessage(
+            'Undiscovered character icon status refreshed.'
+          );
+        }
+      } catch (error) {
+        console.error('Failed to load undiscovered character icon status', error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to load undiscovered character icon status.';
+        setCharacterUndiscoveredError(message);
+      } finally {
+        setCharacterUndiscoveredStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const handleGenerateUndiscoveredCharacterIcon = React.useCallback(async () => {
+    const prompt = characterUndiscoveredPrompt.trim();
+    if (!prompt) {
+      setCharacterUndiscoveredError('Prompt is required.');
+      return;
+    }
+    try {
+      setCharacterUndiscoveredBusy(true);
+      setCharacterUndiscoveredError(null);
+      setCharacterUndiscoveredMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/character-undiscovered',
+        { prompt }
+      );
+      setCharacterUndiscoveredMessage(
+        'Undiscovered character icon queued for generation.'
+      );
+      await refreshUndiscoveredCharacterIconStatus();
+    } catch (error) {
+      console.error('Failed to generate undiscovered character icon', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate undiscovered character icon.';
+      setCharacterUndiscoveredError(message);
+    } finally {
+      setCharacterUndiscoveredBusy(false);
+    }
+  }, [
+    apiClient,
+    characterUndiscoveredPrompt,
+    refreshUndiscoveredCharacterIconStatus,
+  ]);
+
+  const handleDeleteUndiscoveredCharacterIcon = React.useCallback(async () => {
+    try {
+      setCharacterUndiscoveredBusy(true);
+      setCharacterUndiscoveredError(null);
+      setCharacterUndiscoveredMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/character-undiscovered'
+      );
+      setCharacterUndiscoveredMessage('Undiscovered character icon deleted.');
+      await refreshUndiscoveredCharacterIconStatus();
+    } catch (error) {
+      console.error('Failed to delete undiscovered character icon', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete undiscovered character icon.';
+      setCharacterUndiscoveredError(message);
+    } finally {
+      setCharacterUndiscoveredBusy(false);
+    }
+  }, [apiClient, refreshUndiscoveredCharacterIconStatus]);
+
   useEffect(() => {
     if (searchQuery === '') {
       setFilteredCharacters(characters);
@@ -427,6 +575,23 @@ export const Characters = () => {
         .map((zoneQuestArchetype) => zoneQuestArchetype.id)
     );
   }, [editingCharacter, zoneQuestArchetypes]);
+
+  useEffect(() => {
+    void refreshUndiscoveredCharacterIconStatus();
+  }, [refreshUndiscoveredCharacterIconStatus]);
+
+  useEffect(() => {
+    if (
+      characterUndiscoveredStatus !== 'queued' &&
+      characterUndiscoveredStatus !== 'in_progress'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshUndiscoveredCharacterIconStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [characterUndiscoveredStatus, refreshUndiscoveredCharacterIconStatus]);
 
   const fetchCharacters = async () => {
     try {
@@ -586,14 +751,14 @@ export const Characters = () => {
     }
   };
 
-  const handleSaveShop = async (inventory: ShopInventoryItem[]) => {
+  const handleSaveShop = async (payload: ShopActionSavePayload) => {
     if (!selectedCharacterForDialogue) return;
 
     try {
       if (editingAction) {
-        await updateCharacterAction(editingAction.id, undefined, { inventory });
+        await updateCharacterAction(editingAction.id, undefined, payload);
       } else {
-        await createCharacterAction(selectedCharacterForDialogue.id, 'shop', [], { inventory });
+        await createCharacterAction(selectedCharacterForDialogue.id, 'shop', [], payload);
       }
       setShowShopEditor(false);
       setEditingAction(null);
@@ -836,6 +1001,127 @@ export const Characters = () => {
   return (
     <div className="m-10">
       <h1 className="text-2xl font-bold mb-4">Characters</h1>
+
+      <div
+        style={{
+          marginBottom: '20px',
+          padding: '16px',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          backgroundColor: '#ffffff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            gap: '10px',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '10px',
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
+            Undiscovered Character Icon
+          </h2>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="bg-gray-700 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={() => void refreshUndiscoveredCharacterIconStatus(true)}
+              disabled={characterUndiscoveredStatusLoading}
+            >
+              {characterUndiscoveredStatusLoading ? 'Refreshing…' : 'Refresh Status'}
+            </button>
+            <button
+              type="button"
+              className="bg-indigo-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleGenerateUndiscoveredCharacterIcon}
+              disabled={characterUndiscoveredBusy || characterUndiscoveredStatusLoading}
+            >
+              {characterUndiscoveredBusy ? 'Working…' : 'Generate Icon'}
+            </button>
+            <button
+              type="button"
+              className="bg-red-600 text-white px-3 py-1 rounded-md disabled:opacity-60"
+              onClick={handleDeleteUndiscoveredCharacterIcon}
+              disabled={characterUndiscoveredBusy || characterUndiscoveredStatusLoading}
+            >
+              {characterUndiscoveredBusy ? 'Working…' : 'Delete Icon'}
+            </button>
+          </div>
+        </div>
+        <div style={{ marginBottom: '6px' }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              color: '#ffffff',
+              fontSize: '12px',
+              padding: '2px 8px',
+              borderRadius: '9999px',
+              backgroundColor: staticStatusColor(characterUndiscoveredStatus),
+            }}
+          >
+            {characterUndiscoveredStatus || 'unknown'}
+          </span>
+        </div>
+        <div style={{ fontSize: '12px', color: '#4b5563', wordBreak: 'break-all' }}>
+          URL: {characterUndiscoveredUrl}
+        </div>
+        <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px' }}>
+          Requested: {formatDate(characterUndiscoveredRequestedAt)}
+          {' · '}
+          Last updated: {formatDate(characterUndiscoveredLastModified)}
+        </div>
+        <div style={{ marginTop: '10px' }}>
+          <label style={{ display: 'block', marginBottom: '5px' }}>
+            Generation Prompt
+          </label>
+          <textarea
+            value={characterUndiscoveredPrompt}
+            onChange={(event) => setCharacterUndiscoveredPrompt(event.target.value)}
+            placeholder="Prompt used to generate the undiscovered character icon."
+            style={{
+              width: '100%',
+              padding: '8px',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              minHeight: '88px',
+            }}
+          />
+        </div>
+        {characterUndiscoveredExists ? (
+          <div style={{ marginTop: '12px' }}>
+            <img
+              src={`${characterUndiscoveredUrl}?v=${characterUndiscoveredPreviewNonce}`}
+              alt="Undiscovered character icon preview"
+              style={{
+                width: '96px',
+                height: '96px',
+                borderRadius: '6px',
+                border: '1px solid #d1d5db',
+                objectFit: 'cover',
+                backgroundColor: '#f9fafb',
+              }}
+            />
+          </div>
+        ) : (
+          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+            No icon currently found at this URL.
+          </div>
+        )}
+        {characterUndiscoveredMessage ? (
+          <div style={{ fontSize: '14px', color: '#047857', marginTop: '8px' }}>
+            {characterUndiscoveredMessage}
+          </div>
+        ) : null}
+        {characterUndiscoveredError ? (
+          <div style={{ fontSize: '14px', color: '#b91c1c', marginTop: '8px' }}>
+            {characterUndiscoveredError}
+          </div>
+        ) : null}
+      </div>
       
       {/* Search */}
       <div className="mb-4">
@@ -1503,7 +1789,11 @@ export const Characters = () => {
                                   'No dialogue messages'
                                 )
                               ) : action.actionType === 'shop' ? (
-                                action.metadata?.inventory ? (
+                                action.metadata?.shopMode === 'tags' ? (
+                                  <>
+                                    Shop by tags ({action.metadata?.shopItemTags?.length ?? 0} tag{(action.metadata?.shopItemTags?.length ?? 0) !== 1 ? 's' : ''})
+                                  </>
+                                ) : action.metadata?.inventory ? (
                                   <>
                                     Shop with {action.metadata.inventory.length} item{action.metadata.inventory.length !== 1 ? 's' : ''}
                                   </>
@@ -1536,9 +1826,15 @@ export const Characters = () => {
                                   {action.dialogue.length} message{action.dialogue.length !== 1 ? 's' : ''}
                                 </>
                               ) : action.actionType === 'shop' ? (
-                                <>
-                                  {action.metadata?.inventory?.length || 0} item{action.metadata?.inventory?.length !== 1 ? 's' : ''}
-                                </>
+                                action.metadata?.shopMode === 'tags' ? (
+                                  <>
+                                    Tags: {(action.metadata?.shopItemTags ?? []).join(', ') || 'None'}
+                                  </>
+                                ) : (
+                                  <>
+                                    {action.metadata?.inventory?.length || 0} item{action.metadata?.inventory?.length !== 1 ? 's' : ''}
+                                  </>
+                                )
                               ) : action.actionType === 'giveQuest' ? (
                                 questId ? <>Quest ID: {questId}</> : <>Missing quest metadata</>
                               ) : null}

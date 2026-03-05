@@ -27,19 +27,20 @@ import '../utils/camera_capture.dart';
 import '../widgets/paper_texture.dart';
 
 const _placeholderImageUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 
 enum QuestSubmissionOverlayPhase { hidden, loading, success, failure }
 
-typedef QuestSubmissionOverlayCallback = void Function(
-  QuestSubmissionOverlayPhase phase, {
-  String? message,
-  int? score,
-  int? difficulty,
-  int? combinedScore,
-  List<String>? statTags,
-  Map<String, int>? statValues,
-});
+typedef QuestSubmissionOverlayCallback =
+    void Function(
+      QuestSubmissionOverlayPhase phase, {
+      String? message,
+      int? score,
+      int? difficulty,
+      int? combinedScore,
+      List<String>? statTags,
+      Map<String, int>? statValues,
+    });
 
 /// Unlock radius in meters. Must match backend (POST /sonar/pointOfInterest/unlock).
 const _unlockRadiusMeters = kProximityUnlockRadiusMeters;
@@ -65,6 +66,7 @@ class PointOfInterestPanel extends StatefulWidget {
   final Quest? quest;
   final QuestNode? questNode;
   final VoidCallback onClose;
+
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
   final void Function(Character character)? onCharacterTap;
@@ -137,19 +139,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           effectText: '',
         ),
       );
-      InventoryItem? telescopeItem =
-          item.id == 0 ? null : item;
+      InventoryItem? telescopeItem = item.id == 0 ? null : item;
       OwnedInventoryItem? telescopeOwned;
       if (telescopeItem != null) {
         telescopeOwned = owned.firstWhere(
-          (o) =>
-              o.inventoryItemId == telescopeItem.id &&
-              o.quantity > 0,
-          orElse: () => const OwnedInventoryItem(
-            id: '',
-            inventoryItemId: 0,
-            quantity: 0,
-          ),
+          (o) => o.inventoryItemId == telescopeItem.id && o.quantity > 0,
+          orElse: () =>
+              const OwnedInventoryItem(id: '', inventoryItemId: 0, quantity: 0),
         );
         if (telescopeOwned.id.isEmpty || telescopeOwned.quantity <= 0) {
           telescopeOwned = null;
@@ -221,9 +217,12 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final phi2 = lat2 * math.pi / 180;
     final dPhi = (lat2 - lat1) * math.pi / 180;
     final dLambda = (lon2 - lon1) * math.pi / 180;
-    final a = math.sin(dPhi / 2) * math.sin(dPhi / 2) +
-        math.cos(phi1) * math.cos(phi2) *
-            math.sin(dLambda / 2) * math.sin(dLambda / 2);
+    final a =
+        math.sin(dPhi / 2) * math.sin(dPhi / 2) +
+        math.cos(phi1) *
+            math.cos(phi2) *
+            math.sin(dLambda / 2) *
+            math.sin(dLambda / 2);
     final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return R * c;
   }
@@ -239,8 +238,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
 
   bool _isDiscoveryDuplicateError(Object e) {
     final msg = _errorMessage(e).toLowerCase();
-    final mentionsDiscovery = msg.contains('discover') || msg.contains('point_of_interest');
-    final mentionsDuplicate = msg.contains('duplicate') ||
+    final mentionsDiscovery =
+        msg.contains('discover') || msg.contains('point_of_interest');
+    final mentionsDuplicate =
+        msg.contains('duplicate') ||
         msg.contains('already') ||
         msg.contains('unique') ||
         msg.contains('constraint');
@@ -250,9 +251,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   bool _isAlreadyDiscovered() {
     if (widget.hasDiscovered || _justUnlocked) return true;
     try {
-      return context
-          .read<DiscoveriesProvider>()
-          .hasDiscovered(widget.pointOfInterest.id);
+      return context.read<DiscoveriesProvider>().hasDiscovered(
+        widget.pointOfInterest.id,
+      );
     } catch (_) {
       return false;
     }
@@ -267,14 +268,16 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         _justUnlocked = true;
         _error = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Already discovered.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
       return;
     }
     final loc = context.read<LocationProvider>().location;
     if (loc == null) {
-      setState(() => _error = 'Location not available. Enable location access.');
+      setState(
+        () => _error = 'Location not available. Enable location access.',
+      );
       return;
     }
     final userId = context.read<AuthProvider>().user?.id;
@@ -287,7 +290,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final plng = double.tryParse(poi.lng) ?? 0.0;
     final dist = _haversineMeters(loc.latitude, loc.longitude, plat, plng);
     if (dist > _unlockRadiusMeters) {
-      setState(() => _error = 'Too far away (${dist.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.');
+      setState(
+        () => _error =
+            'Too far away (${dist.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.',
+      );
       return;
     }
     setState(() {
@@ -296,11 +302,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     });
     try {
       await context.read<PoiService>().unlockPointOfInterest(
-            poi.id,
-            loc.latitude,
-            loc.longitude,
-            userId: userId,
-          );
+        poi.id,
+        loc.latitude,
+        loc.longitude,
+        userId: userId,
+      );
       if (!mounted) return;
       await widget.onUnlocked?.call();
       if (!mounted) return;
@@ -309,9 +315,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         _loading = false;
         _error = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Discovered!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Discovered!')));
     } catch (e) {
       if (_isDiscoveryDuplicateError(e)) {
         if (!mounted) return;
@@ -322,9 +328,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           _loading = false;
           _error = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Already discovered.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
         return;
       }
       if (mounted) {
@@ -346,9 +352,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         _usingTelescope = false;
         _telescopeError = null;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Already discovered.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
       return;
     }
     final owned = _ownedTelescope;
@@ -358,7 +364,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     }
     final userId = context.read<AuthProvider>().user?.id;
     if (userId == null || userId.isEmpty) {
-      setState(() => _telescopeError = 'Please log in to use the Golden Telescope.');
+      setState(
+        () => _telescopeError = 'Please log in to use the Golden Telescope.',
+      );
       return;
     }
     final poi = widget.pointOfInterest;
@@ -370,11 +378,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     });
     try {
       await context.read<PoiService>().unlockPointOfInterest(
-            poi.id,
-            plat,
-            plng,
-            userId: userId,
-          );
+        poi.id,
+        plat,
+        plng,
+        userId: userId,
+      );
       String? consumeWarning;
       try {
         await context.read<InventoryService>().useItem(owned.id);
@@ -409,9 +417,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           _usingTelescope = false;
           _telescopeError = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Already discovered.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
         return;
       }
       if (!mounted) return;
@@ -452,21 +460,25 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           ),
           child: StatefulBuilder(
             builder: (context, setModalState) {
-              final canUseCamera = kIsWeb ||
+              final canUseCamera =
+                  kIsWeb ||
                   defaultTargetPlatform == TargetPlatform.iOS ||
                   defaultTargetPlatform == TargetPlatform.android;
               final submissionType = node.submissionType;
-              final isTextSubmission = submissionType == QuestNode.submissionTypeText;
-              final isPhotoSubmission = submissionType == QuestNode.submissionTypePhoto;
-              final isVideoSubmission = submissionType == QuestNode.submissionTypeVideo;
+              final isTextSubmission =
+                  submissionType == QuestNode.submissionTypeText;
+              final isPhotoSubmission =
+                  submissionType == QuestNode.submissionTypePhoto;
+              final isVideoSubmission =
+                  submissionType == QuestNode.submissionTypeVideo;
               final selectedChallenge = node.challenges.isEmpty
                   ? null
                   : (selectedChallengeId == null
-                      ? node.challenges.first
-                      : node.challenges.firstWhere(
-                          (c) => c.id == selectedChallengeId,
-                          orElse: () => node.challenges.first,
-                        ));
+                        ? node.challenges.first
+                        : node.challenges.firstWhere(
+                            (c) => c.id == selectedChallengeId,
+                            orElse: () => node.challenges.first,
+                          ));
               final statValues = context.watch<CharacterStatsProvider>().stats;
               final statTags = (selectedChallenge?.statTags ?? const [])
                   .map((tag) => tag.trim().toLowerCase())
@@ -474,8 +486,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                   .toList();
               final difficultyValue = selectedChallenge?.difficulty ?? 0;
               final statAverage = _averageStatValue(statValues, statTags);
-              final difficultyColor =
-                  _difficultyColor(statAverage, difficultyValue);
+              final difficultyColor = _difficultyColor(
+                statAverage,
+                difficultyValue,
+              );
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -483,8 +497,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                   Text(
                     quest.name,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (node.challenges.length > 1)
@@ -516,9 +530,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Text(
                       'Difficulty: ${selectedChallenge.difficulty}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: difficultyColor,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: difficultyColor,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ],
                   if (statTags.isNotEmpty) ...[
@@ -526,8 +540,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Text(
                       'Stat modifiers',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Wrap(
@@ -535,7 +549,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                       runSpacing: 8,
                       children: statTags.map((tag) {
                         final label = _formatTagName(tag);
-                        final value = statValues[tag] ??
+                        final value =
+                            statValues[tag] ??
                             CharacterStatsProvider.baseStatValue;
                         return Container(
                           padding: const EdgeInsets.symmetric(
@@ -543,15 +558,14 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .surfaceVariant
-                                .withOpacity(0.6),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceVariant.withOpacity(0.6),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .outlineVariant,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outlineVariant,
                             ),
                           ),
                           child: Text(
@@ -583,17 +597,23 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               onPressed: uploadingSubmission
                                   ? null
                                   : () async {
-                                      final result = await captureImageFromCamera();
+                                      final result =
+                                          await captureImageFromCamera();
                                       if (!mounted) return;
-                                      if (result == null || result.bytes.isEmpty) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                      if (result == null ||
+                                          result.bytes.isEmpty) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
                                           const SnackBar(
                                             content: Text('No photo captured.'),
                                           ),
                                         );
                                         return;
                                       }
-                                      setModalState(() => capturedImage = result);
+                                      setModalState(
+                                        () => capturedImage = result,
+                                      );
                                     },
                               icon: const Icon(Icons.photo_camera),
                               label: const Text('Take photo'),
@@ -602,7 +622,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                           if (capturedImage != null) ...[
                             const SizedBox(width: 12),
                             TextButton(
-                              onPressed: () => setModalState(() => capturedImage = null),
+                              onPressed: () =>
+                                  setModalState(() => capturedImage = null),
                               child: const Text('Clear'),
                             ),
                           ],
@@ -634,29 +655,40 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             onPressed: uploadingSubmission
                                 ? null
                                 : () async {
-                                    final result = await FilePicker.platform.pickFiles(
-                                      type: FileType.video,
-                                      withData: true,
-                                    );
+                                    final result = await FilePicker.platform
+                                        .pickFiles(
+                                          type: FileType.video,
+                                          withData: true,
+                                        );
                                     if (!mounted) return;
-                                    if (result == null || result.files.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                    if (result == null ||
+                                        result.files.isEmpty) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text('No video selected.'),
                                         ),
                                       );
                                       return;
                                     }
-                                    setModalState(() => capturedVideo = result.files.first);
+                                    setModalState(
+                                      () => capturedVideo = result.files.first,
+                                    );
                                   },
                             icon: const Icon(Icons.videocam),
-                            label: Text(capturedVideo == null ? 'Select video' : 'Replace video'),
+                            label: Text(
+                              capturedVideo == null
+                                  ? 'Select video'
+                                  : 'Replace video',
+                            ),
                           ),
                         ),
                         if (capturedVideo != null) ...[
                           const SizedBox(width: 12),
                           TextButton(
-                            onPressed: () => setModalState(() => capturedVideo = null),
+                            onPressed: () =>
+                                setModalState(() => capturedVideo = null),
                             child: const Text('Clear'),
                           ),
                         ],
@@ -682,9 +714,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         ? null
                         : () async {
                             final mediaService = context.read<MediaService>();
-                            final questLogProvider = context.read<QuestLogProvider>();
+                            final questLogProvider = context
+                                .read<QuestLogProvider>();
                             final userId =
-                                context.read<AuthProvider>().user?.id ?? 'anonymous';
+                                context.read<AuthProvider>().user?.id ??
+                                'anonymous';
                             final trimmedText = textController.text.trim();
                             if (isTextSubmission && trimmedText.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -720,20 +754,25 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             String? imageSubmissionUrl;
                             String? videoSubmissionUrl;
                             if (isPhotoSubmission && capturedImage != null) {
-                              final ext = _extensionFromMime(
+                              final ext =
+                                  _extensionFromMime(
                                     capturedImage!.mimeType,
                                     capturedImage!.name,
                                   ) ??
                                   'jpg';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService.getPresignedUploadUrl(
-                                ApiConstants.crewPointsOfInterestBucket,
-                                key,
-                              );
+                              final url = await mediaService
+                                  .getPresignedUploadUrl(
+                                    ApiConstants.crewPointsOfInterestBucket,
+                                    key,
+                                  );
                               if (url == null) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -750,8 +789,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                 capturedImage!.mimeType ?? 'image/jpeg',
                               );
                               if (!ok) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -765,20 +807,25 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               imageSubmissionUrl = url.split('?').first;
                             }
                             if (isVideoSubmission && capturedVideo != null) {
-                              final ext = _extensionFromMime(
+                              final ext =
+                                  _extensionFromMime(
                                     _mimeTypeFromFile(capturedVideo!),
                                     capturedVideo!.name,
                                   ) ??
                                   'mp4';
                               final key =
                                   'quest-submissions/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
-                              final url = await mediaService.getPresignedUploadUrl(
-                                ApiConstants.crewPointsOfInterestBucket,
-                                key,
-                              );
+                              final url = await mediaService
+                                  .getPresignedUploadUrl(
+                                    ApiConstants.crewPointsOfInterestBucket,
+                                    key,
+                                  );
                               if (url == null) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -791,8 +838,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               }
                               final bytes = capturedVideo!.bytes;
                               if (bytes == null || bytes.isEmpty) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -806,11 +856,15 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               final ok = await mediaService.uploadToPresigned(
                                 url,
                                 Uint8List.fromList(bytes),
-                                _mimeTypeFromFile(capturedVideo!) ?? 'video/mp4',
+                                _mimeTypeFromFile(capturedVideo!) ??
+                                    'video/mp4',
                               );
                               if (!ok) {
-                                final elapsed = DateTime.now().difference(startedAt);
-                                if (elapsed < const Duration(milliseconds: 700)) {
+                                final elapsed = DateTime.now().difference(
+                                  startedAt,
+                                );
+                                if (elapsed <
+                                    const Duration(milliseconds: 700)) {
                                   await Future<void>.delayed(
                                     const Duration(milliseconds: 700),
                                   );
@@ -823,14 +877,19 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               }
                               videoSubmissionUrl = url.split('?').first;
                             }
-                            final resp = await questLogProvider.submitQuestNodeChallenge(
-                              node.id,
-                              questNodeChallengeId: selectedChallengeId,
-                              textSubmission: isTextSubmission ? trimmedText : null,
-                              imageSubmissionUrl: imageSubmissionUrl,
-                              videoSubmissionUrl: videoSubmissionUrl,
+                            final resp = await questLogProvider
+                                .submitQuestNodeChallenge(
+                                  node.id,
+                                  questNodeChallengeId: selectedChallengeId,
+                                  textSubmission: isTextSubmission
+                                      ? trimmedText
+                                      : null,
+                                  imageSubmissionUrl: imageSubmissionUrl,
+                                  videoSubmissionUrl: videoSubmissionUrl,
+                                );
+                            final elapsed = DateTime.now().difference(
+                              startedAt,
                             );
-                            final elapsed = DateTime.now().difference(startedAt);
                             if (elapsed < const Duration(milliseconds: 700)) {
                               await Future<void>.delayed(
                                 const Duration(milliseconds: 700),
@@ -839,17 +898,27 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             final success = resp['successful'] == true;
                             final reason = resp['reason']?.toString() ?? '';
                             final score = (resp['score'] as num?)?.toInt();
-                            final difficulty = (resp['difficulty'] as num?)?.toInt();
-                            final combined = (resp['combinedScore'] as num?)?.toInt();
+                            final difficulty = (resp['difficulty'] as num?)
+                                ?.toInt();
+                            final combined = (resp['combinedScore'] as num?)
+                                ?.toInt();
                             final statTags = (resp['statTags'] as List?)
                                 ?.map((tag) => tag.toString())
                                 .toList();
                             final statValues = (resp['statValues'] as Map?)
-                                ?.map((key, value) =>
-                                    MapEntry(key.toString(), (value as num?)?.toInt() ?? 0));
+                                ?.map(
+                                  (key, value) => MapEntry(
+                                    key.toString(),
+                                    (value as num?)?.toInt() ?? 0,
+                                  ),
+                                );
                             final baseMessage = success
-                                ? (reason.isNotEmpty ? reason : 'Challenge completed!')
-                                : (reason.isNotEmpty ? reason : 'Submission failed');
+                                ? (reason.isNotEmpty
+                                      ? reason
+                                      : 'Challenge completed!')
+                                : (reason.isNotEmpty
+                                      ? reason
+                                      : 'Submission failed');
                             widget.onQuestSubmissionState?.call(
                               success
                                   ? QuestSubmissionOverlayPhase.success
@@ -895,7 +964,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   }
 
   String? _mimeTypeFromFile(PlatformFile file) {
-    final ext = (file.extension ?? _extensionFromMime(null, file.name))?.toLowerCase();
+    final ext = (file.extension ?? _extensionFromMime(null, file.name))
+        ?.toLowerCase();
     switch (ext) {
       case 'png':
         return 'image/png';
@@ -962,8 +1032,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                       Text(
                         'Undiscovered',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
@@ -984,12 +1054,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Text(
                       'Tags',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.8),
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.8),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -1023,24 +1092,22 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                           ? 'Within range! Tap Unlock to discover.'
                           : 'You are ${distance.round()} m away.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: withinRange
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.7),
-                            fontWeight: withinRange ? FontWeight.w600 : null,
-                          ),
+                        color: withinRange
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontWeight: withinRange ? FontWeight.w600 : null,
+                      ),
                     )
                   else
                     Text(
                       'Enable location to see distance.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6),
-                          ),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
                     ),
                   if (_error != null) ...[
                     const SizedBox(height: 12),
@@ -1074,9 +1141,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: Theme.of(context).dividerColor,
@@ -1094,9 +1161,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               const SizedBox(width: 8),
                               Text(
                                 'Golden Telescope',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleMedium
+                                style: Theme.of(context).textTheme.titleMedium
                                     ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                               const Spacer(),
@@ -1122,7 +1187,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                           ],
                           const SizedBox(height: 12),
                           FilledButton(
-                            onPressed: _usingTelescope ? null : _handleTelescopeUnlock,
+                            onPressed: _usingTelescope
+                                ? null
+                                : _handleTelescopeUnlock,
                             child: Text(
                               _usingTelescope
                                   ? 'Revealing…'
@@ -1143,13 +1210,15 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                   ],
                   const SizedBox(height: 24),
                   FilledButton(
-                    onPressed: (_loading || !withinRange) ? null : _handleUnlock,
+                    onPressed: (_loading || !withinRange)
+                        ? null
+                        : _handleUnlock,
                     child: Text(
                       _loading
                           ? 'Unlocking…'
                           : !withinRange
-                              ? 'Too far to unlock'
-                              : 'Unlock',
+                          ? 'Too far to unlock'
+                          : 'Unlock',
                     ),
                   ),
                 ],
@@ -1165,8 +1234,8 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final imageUrl = (poi.imageURL != null && poi.imageURL!.isNotEmpty)
         ? poi.imageURL!
         : ((poi.thumbnailUrl != null && poi.thumbnailUrl!.isNotEmpty)
-            ? poi.thumbnailUrl!
-            : _placeholderImageUrl);
+              ? poi.thumbnailUrl!
+              : _placeholderImageUrl);
     final tags = poi.tags;
     final characters = poi.characters;
 
@@ -1189,19 +1258,17 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                       children: [
                         Text(
                           poi.name,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         if (poi.originalName != null &&
                             poi.originalName!.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
                             poi.originalName!,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.onSurface
                                       .withValues(alpha: 0.7),
                                 ),
                           ),
@@ -1215,7 +1282,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                 'https://www.google.com/maps/place/?q=place_id:${poi.googleMapsPlaceId}',
                               );
                               try {
-                                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                await launchUrl(
+                                  uri,
+                                  mode: LaunchMode.externalApplication,
+                                );
                               } catch (_) {}
                             },
                             child: Text(
@@ -1271,20 +1341,19 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                         children: [
                           Text(
                             'Quest Objective',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 6),
                           ...widget.questNode!.challenges.map(
-                                (c) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 4),
-                                  child: Text(
-                                    '• ${c.question}',
-                                    style: Theme.of(context).textTheme.bodySmall,
-                                  ),
-                                ),
+                            (c) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '• ${c.question}',
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           FilledButton(
                             onPressed: _showQuestSubmissionModal,
@@ -1299,12 +1368,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Text(
                       'Tags',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.8),
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.8),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Wrap(
@@ -1325,19 +1393,21 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (poi.description != null && poi.description!.isNotEmpty) ...[
+                  if (poi.description != null &&
+                      poi.description!.isNotEmpty) ...[
                     GestureDetector(
-                      onTap: () => setState(() => _isDescriptionExpanded = !_isDescriptionExpanded),
+                      onTap: () => setState(
+                        () => _isDescriptionExpanded = !_isDescriptionExpanded,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
                             'Description',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurface
+                                  color: Theme.of(context).colorScheme.onSurface
                                       .withValues(alpha: 0.8),
                                 ),
                           ),
@@ -1345,10 +1415,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             _isDescriptionExpanded
                                 ? Icons.keyboard_arrow_up
                                 : Icons.keyboard_arrow_down,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ],
                       ),
@@ -1377,12 +1446,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     Text(
                       'Patrons',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.8),
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.8),
+                      ),
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
@@ -1403,7 +1471,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                               width: 120,
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceVariant,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Column(
@@ -1418,8 +1488,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                         CircleAvatar(
                                           radius: 28,
                                           backgroundColor: Colors.grey.shade300,
-                                          backgroundImage:
-                                              imageUrl != null ? NetworkImage(imageUrl) : null,
+                                          backgroundImage: imageUrl != null
+                                              ? NetworkImage(imageUrl)
+                                              : null,
                                           child: imageUrl == null
                                               ? const Icon(Icons.person)
                                               : null,
@@ -1467,7 +1538,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     textAlign: TextAlign.center,
-                                    style: Theme.of(context).textTheme.bodySmall,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                 ],
                               ),

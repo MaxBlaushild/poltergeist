@@ -46,8 +46,10 @@ Create ONE new replacement challenge that is materially different from the curre
 Constraints:
 - Safe, legal, and respectful. Do not require restricted areas or staff interaction.
 - Single-input only: EITHER photo proof OR short text response (1-2 sentences), never both.
-- Avoid hard-to-verify prompts. Prefer proof-of-participation.
-- If activity typically involves ordering, a photo of a drink/meal/menu board is okay; do not require purchase.
+- Require meaningful participation in the POI's core activity (not just approaching it).
+- Avoid hard-to-verify prompts. Prefer proof-of-participation in the activity itself.
+- Do NOT use signage-only prompts (storefront sign, menu board, entrance, marquee, poster, or facade) as the main proof.
+- If the POI is food/drink-focused, the challenge should involve getting a drink/food item and proving that selected item.
 - Must be doable on-site by one player without external research.
 - 1-2 short sentences.
 - Difficulty must be 25-50 (inclusive).

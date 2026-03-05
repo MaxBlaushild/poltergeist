@@ -126,6 +126,10 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate characters: %w", err))
 		}
 	}
+	shopkeeperItemTags := normalizeZoneSeedShopkeeperItemTags(job.ShopkeeperItemTags)
+	if len(shopkeeperItemTags) > 0 {
+		characters = append(characters, generateZoneSeedShopkeepers(*zone, shopkeeperItemTags)...)
+	}
 
 	quests := []models.ZoneSeedQuestDraft{}
 	mainQuests := []models.ZoneSeedMainQuestDraft{}
@@ -275,9 +279,11 @@ Create %d main quests. Each main quest must:
   - Ignore fantasy flavor; base the challenge only on the real-world POI type
   - Safe, legal, respectful, and no restricted areas or staff interaction
   - Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both
+  - Require meaningful participation in the POI's core activity (not just approaching it)
   - Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation tied to the main activity at the POI
+  - Do NOT use signage-only prompts (storefront sign, menu board, entrance, marquee, poster, or facade) as the main proof
     (bookstore: pick a book and photograph it; comedy club: photograph the stage/lineup during a set; cafe: photograph a drink or menu choice)
-  - If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase
+  - If the POI is food/drink-focused, the challenge should involve getting a drink/food item and photographing the selected item
   - Enjoyable on-site activity; answerable without external research
 - Include a challengeDifficulty integer between 25 and 50 (inclusive) for each node
 - Include a rewardItem with a short name, 1-2 sentence description, and rarityTier (Common, Uncommon, Epic, Mythic)
@@ -368,9 +374,11 @@ Create %d quests that fit the district flavor. Each quest must:
   - Ignore fantasy flavor; base the challenge only on the real-world POI type
   - Safe, legal, respectful, and no restricted areas or staff interaction
   - Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both
+  - Require meaningful participation in the POI's core activity (not just approaching it)
   - Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation tied to the main activity at the POI
+  - Do NOT use signage-only prompts (storefront sign, menu board, entrance, marquee, poster, or facade) as the main proof
     (bookstore: pick a book and photograph it; comedy club: photograph the stage/lineup during a set; cafe: photograph a drink or menu choice)
-  - If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase
+  - If the POI is food/drink-focused, the challenge should involve getting a drink/food item and photographing the selected item
   - Answerable on-site without external research
 - Include a challengeDifficulty integer between 25 and 50 (inclusive)
 - Include a rewardItem with a short name, 1-2 sentence description, and rarityTier (Common, Uncommon, Epic, Mythic)
@@ -475,6 +483,88 @@ func (p *SeedZoneDraftProcessor) generateCharacters(
 	}
 
 	return characters, nil
+}
+
+func normalizeZoneSeedShopkeeperItemTags(input models.StringArray) []string {
+	normalized := make([]string, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, raw := range []string(input) {
+		tag := strings.ToLower(strings.TrimSpace(raw))
+		if tag == "" {
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneSeedCharacterDraft {
+	shopkeepers := make([]models.ZoneSeedCharacterDraft, 0, len(tags))
+	for _, tag := range tags {
+		lat := zone.Latitude
+		lng := zone.Longitude
+		point := zone.GetRandomPoint()
+		if point.Y() >= -90 && point.Y() <= 90 && point.X() >= -180 && point.X() <= 180 {
+			lat = point.Y()
+			lng = point.X()
+		}
+
+		tagLabel := humanizeShopkeeperTag(tag)
+		description := fmt.Sprintf(
+			"A traveling quartermaster who curates %s wares and barters with adventurers passing through %s.",
+			tagLabel,
+			strings.TrimSpace(zone.Name),
+		)
+		if strings.TrimSpace(zone.Name) == "" {
+			description = fmt.Sprintf(
+				"A traveling quartermaster who curates %s wares and barters with adventurers.",
+				tagLabel,
+			)
+		}
+
+		shopkeepers = append(shopkeepers, models.ZoneSeedCharacterDraft{
+			DraftID:      uuid.New(),
+			Name:         fmt.Sprintf("%s Merchant", titleCaseWords(tagLabel)),
+			Description:  description,
+			PlaceID:      "",
+			Latitude:     float64Ptr(lat),
+			Longitude:    float64Ptr(lng),
+			ShopItemTags: models.StringArray{tag},
+		})
+	}
+	return shopkeepers
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
+}
+
+func humanizeShopkeeperTag(tag string) string {
+	cleaned := strings.ReplaceAll(strings.TrimSpace(tag), "_", " ")
+	cleaned = strings.Join(strings.Fields(cleaned), " ")
+	if cleaned == "" {
+		return "specialized"
+	}
+	return strings.ToLower(cleaned)
+}
+
+func titleCaseWords(value string) string {
+	parts := strings.Fields(strings.TrimSpace(value))
+	if len(parts) == 0 {
+		return "Wandering"
+	}
+	for idx, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[idx] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
 }
 
 func (p *SeedZoneDraftProcessor) requestCharacterDrafts(
@@ -2203,9 +2293,9 @@ func buildSeedParticipationPhotoQuestion(name string, types []string) string {
 	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
 		return fmt.Sprintf("Photograph a spot you spent time at %s (bench, trail marker, or play area).", name)
 	case hasType("cafe", "coffee", "coffee_shop", "bakery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
-		return fmt.Sprintf("Photograph the drink or pastry you chose at %s (menu board or item).", name)
+		return fmt.Sprintf("Get a coffee, drink, or pastry at %s and photograph the item you chose.", name)
 	case hasType("restaurant", "bar", "brewery", "meal_takeaway", "meal_delivery") || strings.Contains(lowerName, "restaurant") || strings.Contains(lowerName, "bar"):
-		return fmt.Sprintf("Photograph the meal or drink you chose at %s (menu board or item).", name)
+		return fmt.Sprintf("Get a meal or drink at %s and photograph the item you chose.", name)
 	case hasType("ice_cream_shop", "dessert") || strings.Contains(lowerName, "ice cream") || strings.Contains(lowerName, "gelato"):
 		return fmt.Sprintf("Photograph the dessert or flavor board you picked at %s.", name)
 	case hasType("market", "store", "shopping_mall", "supermarket", "clothing_store", "shoe_store", "department_store") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):

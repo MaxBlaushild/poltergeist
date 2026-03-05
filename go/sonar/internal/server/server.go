@@ -48,20 +48,26 @@ import (
 )
 
 const (
-	poiPlaceholderImageURL        = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
-	poiPlaceholderThumbnailKey    = "thumbnails/placeholders/poi-undiscovered.png"
-	scenarioUndiscoveredIconKey   = "thumbnails/placeholders/scenario-undiscovered.png"
-	monsterUndiscoveredIconKey    = "thumbnails/placeholders/monster-undiscovered.png"
-	scenarioUndiscoveredStatusKey = "admin:thumbnails:scenario-undiscovered:requested-at"
-	monsterUndiscoveredStatusKey  = "admin:thumbnails:monster-undiscovered:requested-at"
-	scenarioUndiscoveredIconText  = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	monsterUndiscoveredIconText   = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	staticThumbnailJobTimeout     = 10 * time.Minute
-	staticThumbnailStatusTTL      = 2 * time.Hour
-	questAcceptRadiusMeters       = 50.0
-	scenarioInteractRadiusMeters  = 50.0
-	scenarioDefaultDifficulty     = 24
-	scenarioRollSides             = 20
+	poiPlaceholderImageURL         = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderThumbnailKey     = "thumbnails/placeholders/poi-undiscovered.png"
+	poiUndiscoveredIconKey         = "thumbnails/placeholders/poi-undiscovered.png"
+	scenarioUndiscoveredIconKey    = "thumbnails/placeholders/scenario-undiscovered.png"
+	monsterUndiscoveredIconKey     = "thumbnails/placeholders/monster-undiscovered.png"
+	characterUndiscoveredIconKey   = "thumbnails/placeholders/character-undiscovered.png"
+	poiUndiscoveredStatusKey       = "admin:thumbnails:poi-undiscovered:requested-at"
+	scenarioUndiscoveredStatusKey  = "admin:thumbnails:scenario-undiscovered:requested-at"
+	monsterUndiscoveredStatusKey   = "admin:thumbnails:monster-undiscovered:requested-at"
+	characterUndiscoveredStatusKey = "admin:thumbnails:character-undiscovered:requested-at"
+	poiUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	scenarioUndiscoveredIconText   = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	monsterUndiscoveredIconText    = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	characterUndiscoveredIconText  = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	staticThumbnailJobTimeout      = 10 * time.Minute
+	staticThumbnailStatusTTL       = 2 * time.Hour
+	questAcceptRadiusMeters        = 50.0
+	scenarioInteractRadiusMeters   = 50.0
+	scenarioDefaultDifficulty      = 24
+	scenarioRollSides              = 20
 )
 
 var (
@@ -300,12 +306,18 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/admin/challenge-generation-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeGenerationJobs))
 	r.GET("/sonar/admin/challenge-generation-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengeGenerationJob))
 	r.POST("/sonar/admin/thumbnails/poi-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.queuePoiPlaceholderThumbnail))
+	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
+	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
+	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -4501,6 +4513,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
 		TreasureChestCount   *int     `json:"treasureChestCount"`
 		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
+		ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
 	}
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -4542,6 +4555,21 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 			requiredPlaceTags = append(requiredPlaceTags, normalized)
 		}
 	}
+	shopkeeperItemTags := make([]string, 0)
+	if len(requestBody.ShopkeeperItemTags) > 0 {
+		seenTags := make(map[string]struct{})
+		for _, tag := range requestBody.ShopkeeperItemTags {
+			normalized := strings.ToLower(strings.TrimSpace(tag))
+			if normalized == "" {
+				continue
+			}
+			if _, ok := seenTags[normalized]; ok {
+				continue
+			}
+			seenTags[normalized] = struct{}{}
+			shopkeeperItemTags = append(shopkeeperItemTags, normalized)
+		}
+	}
 
 	if placeCount <= 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount must be greater than zero; monsterCount, inputEncounterCount, optionEncounterCount, and treasureChestCount must be zero or greater"})
@@ -4567,6 +4595,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		OptionEncounterCount: optionEncounterCount,
 		TreasureChestCount:   treasureChestCount,
 		RequiredPlaceTags:    models.StringArray(requiredPlaceTags),
+		ShopkeeperItemTags:   models.StringArray(shopkeeperItemTags),
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -6218,8 +6247,16 @@ func (s *server) generateScenarioUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, scenarioUndiscoveredIconText, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
 }
 
+func (s *server) generatePoiUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, poiUndiscoveredIconText, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+}
+
 func (s *server) generateMonsterUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, monsterUndiscoveredIconText, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
+func (s *server) generateCharacterUndiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, characterUndiscoveredIconText, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
 }
 
 func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
@@ -6273,8 +6310,16 @@ func (s *server) getScenarioUndiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
 }
 
+func (s *server) getPoiUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+}
+
 func (s *server) getMonsterUndiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
+func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
 }
 
 func (s *server) deleteStaticThumbnail(ctx *gin.Context, destinationKey string, statusKey string) {
@@ -6297,8 +6342,16 @@ func (s *server) deleteScenarioUndiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, scenarioUndiscoveredIconKey, scenarioUndiscoveredStatusKey)
 }
 
+func (s *server) deletePoiUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, poiUndiscoveredIconKey, poiUndiscoveredStatusKey)
+}
+
 func (s *server) deleteMonsterUndiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+}
+
+func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
 }
 
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {
@@ -6987,6 +7040,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
+		InternalTags            []string                       `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -7039,6 +7093,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
 	for idx, rawSpellID := range consumeSpellIDs {
 		spellID, _ := uuid.Parse(rawSpellID)
 		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
@@ -7081,6 +7136,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd:    consumeStatusesToAdd,
 		ConsumeStatusesToRemove: consumeStatusesToRemove,
 		ConsumeSpellIDs:         consumeSpellIDs,
+		InternalTags:            internalTags,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -7889,6 +7945,7 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 			ConsumeStatusesToAdd:    statusesToAdd,
 			ConsumeStatusesToRemove: sourceItem.ConsumeStatusesToRemove,
 			ConsumeSpellIDs:         sourceItem.ConsumeSpellIDs,
+			InternalTags:            append(models.StringArray{}, sourceItem.InternalTags...),
 			ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
 		}
 
@@ -8876,6 +8933,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
+		InternalTags            []string                       `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -8931,6 +8989,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	internalTags := parseInventoryInternalTags(requestBody.InternalTags)
 	for idx, rawSpellID := range consumeSpellIDs {
 		spellID, _ := uuid.Parse(rawSpellID)
 		if _, err := s.dbClient.Spell().FindByID(ctx, spellID); err != nil {
@@ -8973,6 +9032,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"consume_statuses_to_add":    consumeStatusesToAdd,
 		"consume_statuses_to_remove": consumeStatusesToRemove,
 		"consume_spell_ids":          consumeSpellIDs,
+		"internal_tags":              internalTags,
 	}
 
 	if requestBody.ImageURL != "" {
@@ -11985,6 +12045,15 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 		return
 	}
 	log.Printf("getCharacterActions: found %d actions for characterId=%s", len(actions), id.String())
+	for _, action := range actions {
+		if action == nil || action.ActionType != models.ActionTypeShop {
+			continue
+		}
+		if err := s.hydrateShopActionMetadataForUser(ctx, user.ID, action); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve shop inventory: " + err.Error()})
+			return
+		}
+	}
 
 	acceptedV2 := map[uuid.UUID]models.QuestAcceptanceV2{}
 	if acceptances, accErr := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, user.ID); accErr == nil {
@@ -12128,6 +12197,12 @@ func (s *server) getCharacterActions(ctx *gin.Context) {
 }
 
 func (s *server) getCharacterAction(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	idStr := ctx.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -12144,6 +12219,12 @@ func (s *server) getCharacterAction(ctx *gin.Context) {
 	if action == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "character action not found"})
 		return
+	}
+	if action.ActionType == models.ActionTypeShop {
+		if err := s.hydrateShopActionMetadataForUser(ctx, user.ID, action); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve shop inventory: " + err.Error()})
+			return
+		}
 	}
 
 	ctx.JSON(http.StatusOK, action)
@@ -12179,6 +12260,9 @@ func (s *server) createCharacterAction(ctx *gin.Context) {
 		ActionType:  requestBody.ActionType,
 		Dialogue:    models.DialogueSequence(requestBody.Dialogue),
 		Metadata:    models.MetadataJSONB(requestBody.Metadata),
+	}
+	if requestBody.ActionType == models.ActionTypeShop {
+		action.Metadata = normalizeShopMetadata(requestBody.Metadata)
 	}
 
 	if err := s.dbClient.CharacterAction().Create(ctx, action); err != nil {
@@ -12229,7 +12313,15 @@ func (s *server) updateCharacterAction(ctx *gin.Context) {
 		updates.Dialogue = models.DialogueSequence(requestBody.Dialogue)
 	}
 	if requestBody.Metadata != nil {
-		updates.Metadata = models.MetadataJSONB(requestBody.Metadata)
+		effectiveActionType := existingAction.ActionType
+		if requestBody.ActionType != "" {
+			effectiveActionType = requestBody.ActionType
+		}
+		if effectiveActionType == models.ActionTypeShop {
+			updates.Metadata = normalizeShopMetadata(requestBody.Metadata)
+		} else {
+			updates.Metadata = models.MetadataJSONB(requestBody.Metadata)
+		}
 	}
 
 	if err := s.dbClient.CharacterAction().Update(ctx, id, updates); err != nil {
@@ -12321,75 +12413,32 @@ func (s *server) purchaseFromShop(ctx *gin.Context) {
 		requestBody.Quantity = 1
 	}
 
-	// Extract inventory from metadata
-	metadata := action.Metadata
-	if metadata == nil {
-		metadata = models.MetadataJSONB{}
-	}
-
-	inventoryInterface, ok := metadata["inventory"]
-	if !ok {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "shop has no inventory"})
+	resolvedInventory, err := s.resolveShopInventoryForUser(ctx, user.ID, action)
+	if err != nil {
+		if stdErrors.Is(err, errShopHasNoInventory) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "shop has no inventory"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve shop inventory: " + err.Error()})
 		return
 	}
 
-	inventoryArray, ok := inventoryInterface.([]interface{})
-	if !ok {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid inventory format"})
-		return
-	}
-
-	// Find item in inventory and get price
-	var itemPrice float64
-	var found bool
-	for _, itemInterface := range inventoryArray {
-		item, ok := itemInterface.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		itemIDInterface, ok := item["itemId"]
-		if !ok {
-			continue
-		}
-
-		var itemID int
-		switch v := itemIDInterface.(type) {
-		case float64:
-			itemID = int(v)
-		case int:
-			itemID = v
-		default:
-			continue
-		}
-
-		if itemID == requestBody.ItemID {
-			priceInterface, ok := item["price"]
-			if !ok {
-				continue
-			}
-
-			switch v := priceInterface.(type) {
-			case float64:
-				itemPrice = v
-			case int:
-				itemPrice = float64(v)
-			default:
-				continue
-			}
-
+	itemPrice := 0
+	found := false
+	for _, entry := range resolvedInventory {
+		if entry.ItemID == requestBody.ItemID {
+			itemPrice = entry.Price
 			found = true
 			break
 		}
 	}
-
 	if !found {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item not found in shop inventory"})
 		return
 	}
 
 	// Calculate total price
-	totalPrice := int(itemPrice) * requestBody.Quantity
+	totalPrice := itemPrice * requestBody.Quantity
 
 	// Verify user has sufficient gold
 	if user.Gold < totalPrice {
@@ -13529,6 +13578,23 @@ func parseInventoryConsumeStatusNames(input []string) models.StringArray {
 		statusNames = append(statusNames, name)
 	}
 	return statusNames
+}
+
+func parseInventoryInternalTags(input []string) models.StringArray {
+	tags := make(models.StringArray, 0, len(input))
+	seen := map[string]struct{}{}
+	for _, rawTag := range input {
+		normalized := strings.ToLower(strings.TrimSpace(rawTag))
+		if normalized == "" {
+			continue
+		}
+		if _, exists := seen[normalized]; exists {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		tags = append(tags, normalized)
+	}
+	return tags
 }
 
 func parseInventoryConsumeSpellIDs(input []string) (models.StringArray, error) {

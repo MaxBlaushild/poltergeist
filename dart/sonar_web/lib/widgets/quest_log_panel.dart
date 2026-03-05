@@ -10,7 +10,7 @@ import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
 
 const _placeholderImageUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 
 /// Bottom-sheet content for Quest Log.
 /// [onFocusPoI] when user taps a POI in a quest: close sheet, fly to POI, open POI panel.

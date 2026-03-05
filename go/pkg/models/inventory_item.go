@@ -36,6 +36,7 @@ type InventoryItem struct {
 	ConsumeStatusesToAdd    ScenarioFailureStatusTemplates `json:"consumeStatusesToAdd" gorm:"column:consume_statuses_to_add;type:jsonb"`
 	ConsumeStatusesToRemove StringArray                    `json:"consumeStatusesToRemove" gorm:"column:consume_statuses_to_remove;type:jsonb"`
 	ConsumeSpellIDs         StringArray                    `json:"consumeSpellIds" gorm:"column:consume_spell_ids;type:jsonb"`
+	InternalTags            StringArray                    `json:"internalTags" gorm:"column:internal_tags;type:jsonb"`
 	ImageGenerationStatus   string                         `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError    *string                        `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 }

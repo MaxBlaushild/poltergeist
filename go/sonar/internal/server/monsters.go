@@ -404,7 +404,7 @@ func (s *server) monsterEncounterResponseFrom(
 		member := encounter.Members[i]
 		monster := member.Monster
 		if applyLevelScaling && encounter.ScaleWithUserLevel {
-			monster.Level = normalizeScaledLevel(userLevel)
+			monster.Level = scaledEncounterMonsterLevelForUserLevel(userLevel, len(encounter.Members))
 		}
 		entry, err := s.buildMonsterResponse(ctx, userID, &monster)
 		if err != nil {

@@ -467,6 +467,7 @@ export const InventoryItems = () => {
     consumeStatusesToAdd: [] as InventoryConsumeStatus[],
     consumeStatusesToRemove: [] as string[],
     consumeSpellIds: [] as string[],
+    internalTags: [] as string[],
   });
 
   const [generationData, setGenerationData] = useState({
@@ -580,6 +581,7 @@ export const InventoryItems = () => {
       consumeStatusesToAdd: [],
       consumeStatusesToRemove: [],
       consumeSpellIds: [],
+      internalTags: [],
     });
     setImageFile(null);
     setImagePreview(null);
@@ -729,6 +731,13 @@ export const InventoryItems = () => {
         (next.consumeSpellIds ?? [])
           .map((spellID) => spellID.trim())
           .filter((spellID) => spellID !== '')
+      )
+    );
+    next.internalTags = Array.from(
+      new Set(
+        (next.internalTags ?? [])
+          .map((tag) => tag.trim().toLowerCase())
+          .filter((tag) => tag !== '')
       )
     );
 
@@ -1251,6 +1260,7 @@ export const InventoryItems = () => {
       ),
       consumeStatusesToRemove: [...(item.consumeStatusesToRemove ?? [])],
       consumeSpellIds: [...(item.consumeSpellIds ?? [])],
+      internalTags: [...(item.internalTags ?? [])],
     });
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
@@ -1930,6 +1940,11 @@ export const InventoryItems = () => {
                 {line}
               </p>
             ))}
+            {(item.internalTags?.length ?? 0) > 0 && (
+              <p style={{ margin: '5px 0', color: '#666' }}>
+                Internal Tags: {item.internalTags?.join(', ')}
+              </p>
+            )}
 
             {statModSummary(item) && (
               <p style={{ margin: '5px 0', color: '#666' }}>
@@ -2091,6 +2106,30 @@ export const InventoryItems = () => {
                 onChange={(e) => setFormData({ ...formData, effectText: e.target.value })}
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px', minHeight: '60px' }}
               />
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Internal Tags (comma-separated):
+              </label>
+              <input
+                type="text"
+                value={formData.internalTags.join(', ')}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    internalTags: e.target.value
+                      .split(',')
+                      .map((tag) => tag.trim())
+                      .filter((tag) => tag !== ''),
+                  })
+                }
+                placeholder="e.g. consumable, potion, healing, seed_drop_only"
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Used only for internal classification; not shown in player-facing gameplay UI.
+              </small>
             </div>
 
             <div style={{ marginBottom: '15px' }}>

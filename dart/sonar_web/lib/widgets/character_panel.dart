@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -11,26 +12,33 @@ import '../models/quest.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
+import '../providers/discoveries_provider.dart';
 import '../providers/location_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
 import 'rpg_dialogue_modal.dart';
 
-const _questAcceptRadiusMeters = kProximityUnlockRadiusMeters;
+const _unlockRadiusMeters = kProximityUnlockRadiusMeters;
+const _placeholderImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 
 class CharacterPanel extends StatefulWidget {
   const CharacterPanel({
     super.key,
     required this.character,
+    required this.hasDiscovered,
     required this.onClose,
+    this.onUnlocked,
     this.onQuestAccepted,
     this.onStartDialogue,
     this.onStartShop,
   });
 
   final Character character;
+  final bool hasDiscovered;
   final VoidCallback onClose;
+  final Future<void> Function()? onUnlocked;
   final VoidCallback? onQuestAccepted;
   final void Function(BuildContext, Character, CharacterAction)?
   onStartDialogue;
@@ -42,7 +50,10 @@ class CharacterPanel extends StatefulWidget {
 
 class _CharacterPanelState extends State<CharacterPanel> {
   List<CharacterAction> _actions = [];
-  bool _loading = true;
+  bool _loadingActions = true;
+  bool _unlocking = false;
+  bool _justUnlocked = false;
+  String? _unlockError;
   bool _acceptingQuest = false;
   bool _turningInQuest = false;
 
@@ -53,7 +64,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
   }
 
   Future<void> _loadActions() async {
-    setState(() => _loading = true);
+    setState(() => _loadingActions = true);
     try {
       final svc = context.read<PoiService>();
       _actions = await svc.getCharacterActions(widget.character.id);
@@ -77,7 +88,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
       );
       _actions = [fallbackTalk, ..._actions];
     }
-    if (mounted) setState(() => _loading = false);
+    if (mounted) setState(() => _loadingActions = false);
   }
 
   CharacterAction? _firstActionOfType(String type) {
@@ -492,10 +503,143 @@ class _CharacterPanelState extends State<CharacterPanel> {
     if (distanceMeters == null) {
       return 'Character location unavailable.';
     }
-    if (distanceMeters > _questAcceptRadiusMeters) {
-      return '${distanceMeters.round()} m away. Need ${_questAcceptRadiusMeters.round()} m.';
+    if (distanceMeters > _unlockRadiusMeters) {
+      return '${distanceMeters.round()} m away. Need ${_unlockRadiusMeters.round()} m.';
     }
     return null;
+  }
+
+  bool get _isDiscoveryManaged {
+    return _hasCharacterLocation;
+  }
+
+  bool _isAlreadyDiscovered() {
+    if (widget.hasDiscovered || _justUnlocked) return true;
+    final poiId = widget.character.pointOfInterestId?.trim() ?? '';
+    if (poiId.isEmpty) return false;
+    try {
+      return context.read<DiscoveriesProvider>().hasDiscovered(poiId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  String _errorMessage(Object e) {
+    if (e is DioException && e.response?.data is Map) {
+      final d = e.response!.data as Map<String, dynamic>;
+      final msg = d['error'] ?? d['message'];
+      if (msg != null && msg.toString().isNotEmpty) return msg.toString();
+    }
+    return e.toString();
+  }
+
+  bool _isDiscoveryDuplicateError(Object e) {
+    final msg = _errorMessage(e).toLowerCase();
+    final mentionsDiscovery =
+        msg.contains('discover') || msg.contains('point_of_interest');
+    final mentionsDuplicate =
+        msg.contains('duplicate') ||
+        msg.contains('already') ||
+        msg.contains('unique') ||
+        msg.contains('constraint');
+    return mentionsDiscovery && mentionsDuplicate;
+  }
+
+  Future<void> _handleUnlock() async {
+    if (_unlocking) return;
+    if (_isAlreadyDiscovered()) {
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _unlockError = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
+      return;
+    }
+    final poiId = widget.character.pointOfInterestId?.trim() ?? '';
+    final loc = context.read<LocationProvider>().location;
+    if (loc == null) {
+      setState(
+        () => _unlockError = 'Location not available. Enable location access.',
+      );
+      return;
+    }
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) {
+      setState(() => _unlockError = 'Please log in to discover.');
+      return;
+    }
+    final distance = _questDistanceFrom(loc);
+    if (distance == null) {
+      setState(() => _unlockError = 'Character location unavailable.');
+      return;
+    }
+    if (distance > _unlockRadiusMeters) {
+      setState(() {
+        _unlockError =
+            'Too far away (${distance.round()} m). Get within ${_unlockRadiusMeters.round()} m to unlock.';
+      });
+      return;
+    }
+    setState(() {
+      _unlocking = true;
+      _unlockError = null;
+    });
+    if (poiId.isEmpty) {
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _unlocking = false;
+        _unlockError = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Discovered!')));
+      return;
+    }
+    try {
+      await context.read<PoiService>().unlockPointOfInterest(
+        poiId,
+        loc.latitude,
+        loc.longitude,
+        userId: userId,
+      );
+      if (!mounted) return;
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _justUnlocked = true;
+        _unlocking = false;
+        _unlockError = null;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Discovered!')));
+    } catch (e) {
+      if (_isDiscoveryDuplicateError(e)) {
+        if (!mounted) return;
+        await widget.onUnlocked?.call();
+        if (!mounted) return;
+        setState(() {
+          _justUnlocked = true;
+          _unlocking = false;
+          _unlockError = null;
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Already discovered.')));
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _unlocking = false;
+        _unlockError = _errorMessage(e);
+      });
+    }
   }
 
   Future<void> _showCharacterImageDialog(String imageUrl) async {
@@ -561,6 +705,11 @@ class _CharacterPanelState extends State<CharacterPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final showFull =
+        widget.hasDiscovered || _justUnlocked || !_isDiscoveryManaged;
+    if (!showFull) {
+      return _buildUndiscovered(context);
+    }
     final talkAction = _firstActionOfType('talk');
     final shopAction = _firstActionOfType('shop');
     final questActions = _actions
@@ -657,7 +806,7 @@ class _CharacterPanelState extends State<CharacterPanel> {
               ),
             ),
             Expanded(
-              child: _loading
+              child: _loadingActions
                   ? const Center(child: CircularProgressIndicator())
                   : _actions.isEmpty
                   ? const Center(child: Text('No actions available'))
@@ -750,6 +899,127 @@ class _CharacterPanelState extends State<CharacterPanel> {
                         ),
                       ],
                     ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUndiscovered(BuildContext context) {
+    final location = context.watch<LocationProvider>().location;
+    final distance = _questDistanceFrom(location);
+    final withinRange = distance != null && distance <= _unlockRadiusMeters;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.9,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) => PaperSheet(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 28,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Undiscovered',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: Image.network(
+                        _placeholderImageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => Container(
+                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          child: const Icon(Icons.person_search, size: 72),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Visit this location to unlock this character. You must be within ${_unlockRadiusMeters.round()} meters to discover it.',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 12),
+                  if (distance != null)
+                    Text(
+                      withinRange
+                          ? 'Within range! Tap Unlock to discover.'
+                          : 'You are ${distance.round()} m away.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: withinRange
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                        fontWeight: withinRange ? FontWeight.w600 : null,
+                      ),
+                    )
+                  else
+                    Text(
+                      _hasCharacterLocation
+                          ? 'Enable location to see distance.'
+                          : 'Character location unavailable.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  if (_unlockError != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _unlockError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: (_unlocking || !withinRange)
+                        ? null
+                        : _handleUnlock,
+                    child: Text(
+                      _unlocking
+                          ? 'Unlocking...'
+                          : !withinRange
+                          ? 'Too far to unlock'
+                          : 'Unlock',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

@@ -20,6 +20,9 @@ type ZoneSeedCharacterDraft = {
   name: string;
   description: string;
   placeId: string;
+  latitude?: number;
+  longitude?: number;
+  shopItemTags?: string[];
 };
 
 type ZoneSeedDraft = {
@@ -43,6 +46,7 @@ type ZoneSeedJob = {
   optionEncounterCount: number;
   treasureChestCount?: number;
   requiredPlaceTags?: string[];
+  shopkeeperItemTags?: string[];
   createdAt?: string;
   updatedAt?: string;
   draft?: ZoneSeedDraft;
@@ -97,6 +101,8 @@ export const ZoneSeedJobs = () => {
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
   const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
+  const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
+  const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
 
   const knownPlaceTags = useMemo(
     () => [
@@ -217,6 +223,7 @@ export const ZoneSeedJobs = () => {
           optionEncounterCount: optionEncounters,
           treasureChestCount: treasureChests,
           requiredPlaceTags,
+          shopkeeperItemTags,
         }
       );
       setJobs((prev) => [created, ...prev]);
@@ -291,6 +298,17 @@ export const ZoneSeedJobs = () => {
 
   const removeRequiredTag = (value: string) => {
     setRequiredPlaceTags((prev) => prev.filter((tag) => tag !== value));
+  };
+
+  const addShopkeeperTag = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return;
+    if (shopkeeperItemTags.includes(trimmed)) return;
+    setShopkeeperItemTags((prev) => [...prev, trimmed]);
+  };
+
+  const removeShopkeeperTag = (value: string) => {
+    setShopkeeperItemTags((prev) => prev.filter((tag) => tag !== value));
   };
 
   const filteredTagSuggestions = useMemo(() => {
@@ -514,6 +532,49 @@ export const ZoneSeedJobs = () => {
               We will ensure at least one POI matches each tag.
             </p>
           </div>
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Shopkeeper item tags
+            </label>
+            <div className="rounded border border-gray-300 px-2 py-2 text-sm">
+              <div className="flex flex-wrap gap-2">
+                {shopkeeperItemTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      className="ml-2 text-emerald-600 hover:text-emerald-800"
+                      onClick={() => removeShopkeeperTag(tag)}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="flex-1 min-w-[140px] border-0 px-2 py-1 text-sm focus:outline-none"
+                  placeholder="Add item tag..."
+                  value={shopkeeperTagQuery}
+                  onChange={(e) => setShopkeeperTagQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                      e.preventDefault();
+                      addShopkeeperTag(shopkeeperTagQuery);
+                      setShopkeeperTagQuery('');
+                    }
+                    if (e.key === 'Backspace' && shopkeeperTagQuery === '' && shopkeeperItemTags.length > 0) {
+                      removeShopkeeperTag(shopkeeperItemTags[shopkeeperItemTags.length - 1]);
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <p className="mt-1 text-xs text-gray-400">
+              One shopkeeper will be generated per tag at a random location in the zone.
+            </p>
+          </div>
           <button
             className="mt-5 w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-500 disabled:opacity-60"
             onClick={handleCreateDraft}
@@ -600,11 +661,16 @@ export const ZoneSeedJobs = () => {
                       <p className="text-xs text-gray-500">
                         Counts: {job.placeCount} POIs/challenges, {job.monsterCount ?? 0} monster encounters,{' '}
                         {job.inputEncounterCount ?? 0} input scenarios, {job.optionEncounterCount ?? 0} option scenarios,{' '}
-                        {job.treasureChestCount ?? 0} treasure chests
+                        {job.treasureChestCount ?? 0} treasure chests, {job.shopkeeperItemTags?.length ?? 0} shopkeepers
                       </p>
                       {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (
                         <p className="text-xs text-gray-500">
                           Required tags: {job.requiredPlaceTags.join(', ')}
+                        </p>
+                      )}
+                      {job.shopkeeperItemTags && job.shopkeeperItemTags.length > 0 && (
+                        <p className="text-xs text-gray-500">
+                          Shopkeeper tags: {job.shopkeeperItemTags.join(', ')}
                         </p>
                       )}
                     </div>
@@ -715,6 +781,15 @@ export const ZoneSeedJobs = () => {
                                   {character.name || 'Unnamed character'}
                                 </div>
                                 <div>Place ID: {character.placeId || 'n/a'}</div>
+                                {typeof character.latitude === 'number' &&
+                                  typeof character.longitude === 'number' && (
+                                    <div>
+                                      Coordinates: {character.latitude}, {character.longitude}
+                                    </div>
+                                  )}
+                                {character.shopItemTags && character.shopItemTags.length > 0 && (
+                                  <div>Shopkeeper tags: {character.shopItemTags.join(', ')}</div>
+                                )}
                                 {character.description && (
                                   <div className="mt-1 text-gray-500 whitespace-pre-wrap">
                                     {character.description}
@@ -733,6 +808,7 @@ export const ZoneSeedJobs = () => {
                             <div>{job.inputEncounterCount ?? 0} random input scenarios (scalable)</div>
                             <div>{job.optionEncounterCount ?? 0} random option scenarios (scalable)</div>
                             <div>{job.treasureChestCount ?? 0} random treasure chests (scalable rewards)</div>
+                            <div>{job.shopkeeperItemTags?.length ?? 0} shopkeepers generated at random zone locations</div>
                           </div>
                         </div>
                       </div>

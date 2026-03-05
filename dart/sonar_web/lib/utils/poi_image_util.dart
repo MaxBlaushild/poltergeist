@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 
 const _placeholderUrl =
-    'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _thumbnailSize = 192;
 const _cornerRadius = 12;
 const _questMarkerSize = 44;
@@ -106,7 +106,12 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
           color: gold,
         );
       }
-      img.compositeImage(bordered, square, dstX: borderWidth, dstY: borderWidth);
+      img.compositeImage(
+        bordered,
+        square,
+        dstX: borderWidth,
+        dstY: borderWidth,
+      );
       return Uint8List.fromList(img.encodePng(bordered));
     } catch (_) {
       return null;

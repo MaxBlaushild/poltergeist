@@ -55,6 +55,7 @@ export type InventoryItem = {
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];
+  internalTags?: string[];
   imageGenerationStatus?: string;
   imageGenerationError?: string;
   createdAt?: string;

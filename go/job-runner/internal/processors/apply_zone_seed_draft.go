@@ -124,6 +124,9 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		if err != nil {
 			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create character: %w", err))
 		}
+		if err := p.ensureShopActionForCharacterTags(ctx, character, draftCharacter.ShopItemTags); err != nil {
+			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create shop action: %w", err))
+		}
 		characterByDraftID[draftCharacter.DraftID] = character
 	}
 
@@ -276,7 +279,7 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 	for i := 0; i < encounterCount; i++ {
 		location := p.randomLocationForZone(zone, locations)
 		leadTemplate := templates[rand.Intn(len(templates))]
-		memberCount := 1 + rand.Intn(9)
+		memberCount := zoneSeedEncounterMemberCount()
 
 		encounterName := zoneSeedEncounterName(strings.TrimSpace(leadTemplate.Name), memberCount)
 		encounterDescription := zoneSeedEncounterDescription(strings.TrimSpace(leadTemplate.Description), memberCount)
@@ -690,6 +693,19 @@ func zoneSeedEncounterDescription(baseDescription string, memberCount int) strin
 	return fmt.Sprintf("%s This encounter has multiple hostile monsters acting together.", trimmed)
 }
 
+func zoneSeedEncounterMemberCount() int {
+	roll := rand.Intn(100)
+	switch {
+	case roll < 45:
+		return 1
+	case roll < 90:
+		return 2
+	default:
+		// Rare 3-monster encounter.
+		return 3
+	}
+}
+
 func zoneSeedTreasureChestRewardProfile() (int, models.RandomRewardSize) {
 	roll := rand.Intn(100)
 	switch {
@@ -710,11 +726,34 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 	poi *models.PointOfInterest,
 	draft models.ZoneSeedCharacterDraft,
 ) (*models.Character, error) {
+	startingLat := 0.0
+	startingLng := 0.0
+	hasStartingLocation := false
+	switch {
+	case draft.Latitude != nil && draft.Longitude != nil:
+		startingLat = *draft.Latitude
+		startingLng = *draft.Longitude
+		hasStartingLocation = true
+	case poi != nil:
+		lat, latErr := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+		lng, lngErr := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+		if latErr == nil && lngErr == nil {
+			startingLat = lat
+			startingLng = lng
+			hasStartingLocation = true
+		}
+	}
+	if !hasStartingLocation || startingLat < -90 || startingLat > 90 || startingLng < -180 || startingLng > 180 {
+		fallback := p.randomLocationForZone(zone, nil)
+		startingLat = fallback.Latitude
+		startingLng = fallback.Longitude
+	}
+
 	movementPattern := &models.MovementPattern{
 		MovementPatternType: models.MovementPatternStatic,
 		ZoneID:              &zone.ID,
-		StartingLatitude:    0,
-		StartingLongitude:   0,
+		StartingLatitude:    startingLat,
+		StartingLongitude:   startingLng,
 		Path:                models.LocationPath{},
 	}
 	if err := p.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
@@ -756,6 +795,97 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 	}
 
 	return character, nil
+}
+
+func normalizeShopActionTags(tags models.StringArray) []string {
+	normalized := make([]string, 0, len(tags))
+	seen := map[string]struct{}{}
+	for _, rawTag := range []string(tags) {
+		tag := strings.ToLower(strings.TrimSpace(rawTag))
+		if tag == "" {
+			continue
+		}
+		if _, exists := seen[tag]; exists {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func (p *ApplyZoneSeedDraftProcessor) ensureShopActionForCharacterTags(
+	ctx context.Context,
+	character *models.Character,
+	tags models.StringArray,
+) error {
+	if character == nil {
+		return fmt.Errorf("character is nil")
+	}
+
+	normalizedTags := normalizeShopActionTags(tags)
+	if len(normalizedTags) == 0 {
+		return nil
+	}
+
+	actions, err := p.dbClient.CharacterAction().FindByCharacterID(ctx, character.ID)
+	if err != nil {
+		return err
+	}
+	for _, action := range actions {
+		if action == nil || action.ActionType != models.ActionTypeShop || action.Metadata == nil {
+			continue
+		}
+		mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(action.Metadata["shopMode"])))
+		if mode != "tags" {
+			continue
+		}
+		rawTags, ok := action.Metadata["shopItemTags"].([]interface{})
+		if !ok {
+			continue
+		}
+		existing := make([]string, 0, len(rawTags))
+		for _, raw := range rawTags {
+			tag := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
+			if tag != "" {
+				existing = append(existing, tag)
+			}
+		}
+		sort.Strings(existing)
+		if len(existing) != len(normalizedTags) {
+			continue
+		}
+		matched := true
+		for idx := range existing {
+			if existing[idx] != normalizedTags[idx] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return nil
+		}
+	}
+
+	shopTags := make([]interface{}, 0, len(normalizedTags))
+	for _, tag := range normalizedTags {
+		shopTags = append(shopTags, tag)
+	}
+	action := &models.CharacterAction{
+		ID:          uuid.New(),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		CharacterID: character.ID,
+		ActionType:  models.ActionTypeShop,
+		Dialogue:    p.generateQuestGiverAmbientDialogue(ctx, character),
+		Metadata: map[string]interface{}{
+			"shopMode":     "tags",
+			"shopItemTags": shopTags,
+			"inventory":    []interface{}{},
+		},
+	}
+	return p.dbClient.CharacterAction().Create(ctx, action)
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
@@ -1312,8 +1442,10 @@ Create one challenge that can be completed by a single person while physically a
 Constraints:
 - Safe, legal, and respectful. Do not require entering restricted areas or interacting with staff.
 - Single-input only: EITHER a photo proof OR a short text response (1-2 sentences), never both.
-- Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation.
-- If the activity typically involves ordering, a photo of a drink or menu board is acceptable, but avoid requiring a purchase.
+- Require meaningful participation in the POI's core activity (not just approaching it).
+- Avoid knowledge-based or hard-to-verify prompts; prefer proof-of-participation in the activity itself.
+- Do NOT use signage-only prompts (storefront sign, menu board, entrance, marquee, poster, or facade) as the main proof.
+- If the POI is food/drink-focused, the challenge should involve getting a drink/food item (for example, "get a coffee"), and proof should show the selected item.
 - Make it an enjoyable on-site activity that fits the POI type.
 - Answerable on-site without external research.
 - 1-2 short sentences.
@@ -1725,12 +1857,18 @@ func normalizeAppliedChallengeQuestion(
 			return fmt.Sprintf("Sketch something you notice at %s and take a photo of your sketch.", name), models.QuestNodeSubmissionTypePhoto
 		}
 		if strings.HasPrefix(lower, "take") || strings.HasPrefix(lower, "photograph") || strings.HasPrefix(lower, "photo") {
+			if needsParticipationOverrideApplied(lower) {
+				return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+			}
 			return trimmed, models.QuestNodeSubmissionTypePhoto
 		}
 		return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
 	}
 
 	if hasText {
+		if needsParticipationOverrideApplied(lower) {
+			return buildAppliedPhotoProofQuestion(name, types), models.QuestNodeSubmissionTypePhoto
+		}
 		return ensureTextOnlyQuestionApplied(trimmed), models.QuestNodeSubmissionTypeText
 	}
 
@@ -1760,20 +1898,43 @@ func buildAppliedPhotoProofQuestion(name string, types []string) string {
 
 	switch {
 	case hasType("cafe", "coffee", "coffee_shop", "bakery", "restaurant", "bar", "meal_takeaway", "meal_delivery") || strings.Contains(lowerName, "coffee") || strings.Contains(lowerName, "cafe"):
-		return fmt.Sprintf("Take a photo of the storefront sign or menu board at %s.", name)
+		return fmt.Sprintf("Get a coffee, drink, or food item at %s and photograph the item you chose.", name)
 	case hasType("park", "garden", "playground", "trail", "campground", "natural_feature") || strings.Contains(lowerName, "park") || strings.Contains(lowerName, "garden"):
-		return fmt.Sprintf("Take a photo of a path, bench, or tree at %s.", name)
+		return fmt.Sprintf("Spend a moment at %s, then photograph a specific spot where you paused (bench, path, or tree).", name)
 	case hasType("museum", "art_gallery", "gallery", "tourist_attraction", "landmark") || strings.Contains(lowerName, "museum") || strings.Contains(lowerName, "gallery"):
-		return fmt.Sprintf("Take a photo of the entrance sign or poster outside %s.", name)
+		return fmt.Sprintf("Pick an exhibit or artwork at %s and photograph its title card or placard.", name)
 	case hasType("movie_theater", "cinema", "theater", "performing_arts_theater", "night_club", "concert_hall") || strings.Contains(lowerName, "theater") || strings.Contains(lowerName, "cinema"):
-		return fmt.Sprintf("Take a photo of the marquee or entrance sign at %s.", name)
+		return fmt.Sprintf("Choose a show or performance at %s and photograph the listing or ticket detail for what you picked.", name)
 	case hasType("store", "shopping_mall", "supermarket", "market", "book_store", "clothing_store") || strings.Contains(lowerName, "market") || strings.Contains(lowerName, "shop"):
-		return fmt.Sprintf("Take a photo of a window display or storefront sign at %s.", name)
+		return fmt.Sprintf("Find something at %s that caught your attention and photograph the item or display.", name)
 	case hasType("plaza", "square", "bridge", "beach", "marina", "harbor") || strings.Contains(lowerName, "plaza") || strings.Contains(lowerName, "square"):
-		return fmt.Sprintf("Take a photo of the view or landmark at %s.", name)
+		return fmt.Sprintf("Explore %s and photograph a specific viewpoint or feature where you spent time.", name)
 	default:
-		return fmt.Sprintf("Take a photo that shows you visited %s.", name)
+		return fmt.Sprintf("Take a photo that clearly shows you participating in the main activity at %s.", name)
 	}
+}
+
+func needsParticipationOverrideApplied(text string) bool {
+	if text == "" {
+		return false
+	}
+	lower := strings.ToLower(text)
+	if !hasAnyKeywordApplied(lower,
+		"sign", "storefront", "entrance", "exterior", "outside", "front",
+		"marquee", "poster", "window", "logo", "facade", "building",
+	) {
+		return false
+	}
+	if hasAnyKeywordApplied(lower,
+		"drink", "meal", "food", "book", "read", "page", "shelf",
+		"stage", "show", "performance", "set", "lineup", "ticket", "program",
+		"exhibit", "gallery", "trail", "play", "game", "class", "workout",
+		"ride", "viewing", "display", "bench", "picnic", "market", "shop",
+		"browse", "order", "sip", "eat", "watch", "listen",
+	) {
+		return false
+	}
+	return true
 }
 
 func hasAnyKeywordApplied(text string, keywords ...string) bool {
