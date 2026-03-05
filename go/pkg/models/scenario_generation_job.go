@@ -20,6 +20,7 @@ type ScenarioGenerationJob struct {
 	ZoneID              uuid.UUID  `json:"zoneId" gorm:"type:uuid"`
 	Status              string     `json:"status"`
 	OpenEnded           bool       `json:"openEnded" gorm:"column:open_ended"`
+	ScaleWithUserLevel  bool       `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
 	Latitude            *float64   `json:"latitude,omitempty"`
 	Longitude           *float64   `json:"longitude,omitempty"`
 	GeneratedScenarioID *uuid.UUID `json:"generatedScenarioId,omitempty" gorm:"column:generated_scenario_id;type:uuid"`

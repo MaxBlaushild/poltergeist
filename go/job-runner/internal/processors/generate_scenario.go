@@ -276,17 +276,18 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 	allowedItemsPrompt := buildAllowedItemsPrompt(inventoryItems)
 
 	scenario := &models.Scenario{
-		ZoneID:           job.ZoneID,
-		Latitude:         lat,
-		Longitude:        lng,
-		ImageURL:         scenarioPlaceholderImageURL,
-		ThumbnailURL:     scenarioPlaceholderImageURL,
-		RewardMode:       models.RewardModeExplicit,
-		RandomRewardSize: models.RandomRewardSizeSmall,
-		Difficulty:       24,
-		RewardExperience: 0,
-		RewardGold:       0,
-		OpenEnded:        job.OpenEnded,
+		ZoneID:             job.ZoneID,
+		Latitude:           lat,
+		Longitude:          lng,
+		ImageURL:           scenarioPlaceholderImageURL,
+		ThumbnailURL:       scenarioPlaceholderImageURL,
+		RewardMode:         models.RewardModeExplicit,
+		RandomRewardSize:   models.RandomRewardSizeSmall,
+		ScaleWithUserLevel: job.ScaleWithUserLevel,
+		Difficulty:         24,
+		RewardExperience:   0,
+		RewardGold:         0,
+		OpenEnded:          job.OpenEnded,
 	}
 	options := make([]models.ScenarioOption, 0)
 	rewards := make([]models.ScenarioItemReward, 0)

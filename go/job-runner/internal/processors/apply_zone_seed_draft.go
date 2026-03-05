@@ -127,70 +127,32 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 		characterByDraftID[draftCharacter.DraftID] = character
 	}
 
-	for _, draftQuest := range job.Draft.Quests {
-		poi, err := p.ensurePointOfInterest(ctx, zone, draftQuest.PlaceID)
-		if err != nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to ensure quest POI: %w", err))
-		}
-		var poiDraft *models.ZoneSeedPointOfInterestDraft
-		if strings.TrimSpace(draftQuest.PlaceID) != "" {
-			for i := range job.Draft.PointsOfInterest {
-				if job.Draft.PointsOfInterest[i].PlaceID == draftQuest.PlaceID {
-					poiDraft = &job.Draft.PointsOfInterest[i]
-					break
-				}
-			}
-		}
-		character := characterByDraftID[draftQuest.QuestGiverDraftID]
-		if character == nil {
-			for _, fallback := range characterByDraftID {
-				character = fallback
-				break
-			}
-		}
-		if character == nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("no quest giver available"))
-		}
-
-		if err := p.createQuestFromDraft(ctx, zone, poi, poiDraft, character, draftQuest); err != nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create quest: %w", err))
-		}
+	if err := p.seedStandaloneChallengesForPOIs(ctx, zone, job, characterByDraftID); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed standalone challenges: %w", err))
 	}
 
-	for _, draftMainQuest := range job.Draft.MainQuests {
-		character := characterByDraftID[draftMainQuest.QuestGiverDraftID]
-		if character == nil {
-			for _, fallback := range characterByDraftID {
-				character = fallback
-				break
-			}
-		}
-		if character == nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("no quest giver available for main quest"))
-		}
-		if err := p.createMainQuestFromDraft(ctx, zone, character, draftMainQuest); err != nil {
-			return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to create main quest: %w", err))
-		}
+	if err := p.seedMonsterEncountersForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed monster encounters: %w", err))
 	}
 
-	if err := p.seedMonstersForZone(ctx, zone, job); err != nil {
-		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed monsters: %w", err))
-	}
-
-	scenarioLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	scenarioFallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
 	inputQueued, inputFailed := p.enqueueScenarioGenerationJobs(
 		ctx,
+		zone,
 		job.ZoneID,
 		true,
 		job.InputEncounterCount,
-		scenarioLocations,
+		scenarioFallbackLocations,
+		true,
 	)
 	optionQueued, optionFailed := p.enqueueScenarioGenerationJobs(
 		ctx,
+		zone,
 		job.ZoneID,
 		false,
 		job.OptionEncounterCount,
-		scenarioLocations,
+		scenarioFallbackLocations,
+		true,
 	)
 	if inputFailed > 0 || optionFailed > 0 {
 		log.Printf(
@@ -201,6 +163,10 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 			optionQueued,
 			optionFailed,
 		)
+	}
+
+	if err := p.seedTreasureChestsForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed treasure chests: %w", err))
 	}
 
 	job.Status = models.ZoneSeedStatusApplied
@@ -288,14 +254,14 @@ func zoneSeedScenarioLocations(pois []models.ZoneSeedPointOfInterestDraft) []zon
 	return locations
 }
 
-func (p *ApplyZoneSeedDraftProcessor) seedMonstersForZone(
+func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 	ctx context.Context,
 	zone *models.Zone,
 	job *models.ZoneSeedJob,
 ) error {
-	monsterCount := job.MonsterCount
-	if monsterCount <= 0 {
-		monsterCount = 6
+	encounterCount := job.MonsterCount
+	if encounterCount <= 0 {
+		return nil
 	}
 
 	templates, err := p.dbClient.MonsterTemplate().FindAll(ctx)
@@ -307,49 +273,85 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonstersForZone(
 	}
 
 	locations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
-	if len(locations) == 0 {
-		locations = append(locations, zoneSeedScenarioLocation{
-			Latitude:  zone.Latitude,
-			Longitude: zone.Longitude,
-		})
-	}
+	for i := 0; i < encounterCount; i++ {
+		location := p.randomLocationForZone(zone, locations)
+		leadTemplate := templates[rand.Intn(len(templates))]
+		memberCount := 1 + rand.Intn(9)
 
-	for i := 0; i < monsterCount; i++ {
-		template := templates[rand.Intn(len(templates))]
-		location := locations[rand.Intn(len(locations))]
-		templateID := template.ID
-		level := 1 + rand.Intn(10)
-
-		imageURL := strings.TrimSpace(template.ImageURL)
-		thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
-		if thumbnailURL == "" && imageURL != "" {
-			thumbnailURL = imageURL
+		encounterName := zoneSeedEncounterName(strings.TrimSpace(leadTemplate.Name), memberCount)
+		encounterDescription := zoneSeedEncounterDescription(strings.TrimSpace(leadTemplate.Description), memberCount)
+		encounterImageURL := strings.TrimSpace(leadTemplate.ImageURL)
+		encounterThumbnailURL := strings.TrimSpace(leadTemplate.ThumbnailURL)
+		if encounterThumbnailURL == "" {
+			encounterThumbnailURL = encounterImageURL
 		}
 
-		monster := &models.Monster{
-			ID:           uuid.New(),
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
-			Name:         template.Name,
-			Description:  template.Description,
-			ImageURL:     imageURL,
-			ThumbnailURL: thumbnailURL,
-			ZoneID:       zone.ID,
-			Latitude:     location.Latitude,
-			Longitude:    location.Longitude,
-			TemplateID:   &templateID,
-			Level:        level,
+		encounter := &models.MonsterEncounter{
+			ID:                 uuid.New(),
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+			Name:               encounterName,
+			Description:        encounterDescription,
+			ImageURL:           encounterImageURL,
+			ThumbnailURL:       encounterThumbnailURL,
+			ScaleWithUserLevel: true,
+			ZoneID:             zone.ID,
+			Latitude:           location.Latitude,
+			Longitude:          location.Longitude,
 		}
-		if imageURL != "" {
-			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusComplete
-			emptyError := ""
-			monster.ImageGenerationError = &emptyError
-		} else {
-			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
+		if err := p.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
+			return fmt.Errorf("failed to create monster encounter %d/%d: %w", i+1, encounterCount, err)
 		}
 
-		if err := p.dbClient.Monster().Create(ctx, monster); err != nil {
-			return fmt.Errorf("failed to create monster %d/%d: %w", i+1, monsterCount, err)
+		members := make([]models.MonsterEncounterMember, 0, memberCount)
+		for slot := 0; slot < memberCount; slot++ {
+			template := leadTemplate
+			if slot > 0 {
+				template = templates[rand.Intn(len(templates))]
+			}
+			templateID := template.ID
+
+			imageURL := strings.TrimSpace(template.ImageURL)
+			thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
+			if thumbnailURL == "" {
+				thumbnailURL = imageURL
+			}
+
+			monster := &models.Monster{
+				ID:               uuid.New(),
+				CreatedAt:        time.Now(),
+				UpdatedAt:        time.Now(),
+				Name:             strings.TrimSpace(template.Name),
+				Description:      strings.TrimSpace(template.Description),
+				ImageURL:         imageURL,
+				ThumbnailURL:     thumbnailURL,
+				ZoneID:           zone.ID,
+				Latitude:         location.Latitude,
+				Longitude:        location.Longitude,
+				TemplateID:       &templateID,
+				Level:            5 + rand.Intn(26),
+				RewardMode:       models.RewardModeRandom,
+				RandomRewardSize: models.RandomRewardSizeSmall,
+			}
+			if imageURL != "" {
+				monster.ImageGenerationStatus = models.MonsterImageGenerationStatusComplete
+				emptyError := ""
+				monster.ImageGenerationError = &emptyError
+			} else {
+				monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
+			}
+
+			if err := p.dbClient.Monster().Create(ctx, monster); err != nil {
+				return fmt.Errorf("failed to create monster encounter member %d/%d: %w", slot+1, memberCount, err)
+			}
+			members = append(members, models.MonsterEncounterMember{
+				MonsterID: monster.ID,
+				Slot:      slot,
+			})
+		}
+
+		if err := p.dbClient.MonsterEncounter().ReplaceMembers(ctx, encounter.ID, members); err != nil {
+			return fmt.Errorf("failed to attach encounter members: %w", err)
 		}
 	}
 
@@ -358,10 +360,12 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonstersForZone(
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
 	ctx context.Context,
+	zone *models.Zone,
 	zoneID uuid.UUID,
 	openEnded bool,
 	count int,
-	locations []zoneSeedScenarioLocation,
+	fallbackLocations []zoneSeedScenarioLocation,
+	scaleWithUserLevel bool,
 ) (queued int, failed int) {
 	if count <= 0 {
 		return 0, 0
@@ -370,23 +374,22 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
 	for i := 0; i < count; i++ {
 		var latitude *float64
 		var longitude *float64
-		if len(locations) > 0 {
-			loc := locations[i%len(locations)]
-			lat := loc.Latitude
-			lng := loc.Longitude
-			latitude = &lat
-			longitude = &lng
-		}
+		loc := p.randomLocationForZone(zone, fallbackLocations)
+		lat := loc.Latitude
+		lng := loc.Longitude
+		latitude = &lat
+		longitude = &lng
 
 		job := &models.ScenarioGenerationJob{
-			ID:        uuid.New(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			ZoneID:    zoneID,
-			Status:    models.ScenarioGenerationStatusQueued,
-			OpenEnded: openEnded,
-			Latitude:  latitude,
-			Longitude: longitude,
+			ID:                 uuid.New(),
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+			ZoneID:             zoneID,
+			Status:             models.ScenarioGenerationStatusQueued,
+			OpenEnded:          openEnded,
+			ScaleWithUserLevel: scaleWithUserLevel,
+			Latitude:           latitude,
+			Longitude:          longitude,
 		}
 		if err := p.dbClient.ScenarioGenerationJob().Create(ctx, job); err != nil {
 			log.Printf("Failed to create scenario generation job (openEnded=%t): %v", openEnded, err)
@@ -432,6 +435,336 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
 	}
 
 	return queued, failed
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+	characterByDraftID map[uuid.UUID]*models.Character,
+) error {
+	if len(job.Draft.PointsOfInterest) == 0 {
+		return nil
+	}
+
+	narrator := pickZoneSeedNarrator(characterByDraftID)
+	for _, draftPOI := range job.Draft.PointsOfInterest {
+		poi, err := p.ensurePointOfInterest(ctx, zone, draftPOI.PlaceID)
+		if err != nil {
+			return err
+		}
+		if poi == nil {
+			continue
+		}
+
+		lat, lng, err := challengeCoordinatesFromPOI(poi, draftPOI)
+		if err != nil {
+			return err
+		}
+
+		questDraft := models.ZoneSeedQuestDraft{
+			Name:        fmt.Sprintf("Field Challenge at %s", strings.TrimSpace(poi.Name)),
+			Description: strings.TrimSpace(zone.Description),
+		}
+		question, difficulty := p.generateQuestChallenge(ctx, zone, poi, &draftPOI, narrator, questDraft)
+		question, submissionType := normalizeAppliedChallengeQuestion(question, poi, &draftPOI)
+		description := p.generateStandalonePOIChallengeDescription(ctx, zone, poi, &draftPOI, question)
+		questDraft.ChallengeQuestion = question
+		statTags := p.classifyQuestStatTags(ctx, questDraft)
+		if statTags == nil {
+			statTags = models.StringArray{}
+		}
+
+		now := time.Now()
+		challenge := &models.Challenge{
+			ID:                 uuid.New(),
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			ZoneID:             zone.ID,
+			PointOfInterestID:  &poi.ID,
+			Latitude:           lat,
+			Longitude:          lng,
+			Question:           strings.TrimSpace(question),
+			Description:        strings.TrimSpace(description),
+			SubmissionType:     submissionType,
+			Difficulty:         clampQuestDifficulty(difficulty),
+			ScaleWithUserLevel: true,
+			RewardMode:         models.RewardModeRandom,
+			RandomRewardSize:   models.RandomRewardSizeSmall,
+			StatTags:           statTags,
+		}
+		if err := p.dbClient.Challenge().Create(ctx, challenge); err != nil {
+			return err
+		}
+		p.enqueueChallengeImageTask(challenge.ID)
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) generateStandalonePOIChallengeDescription(
+	ctx context.Context,
+	zone *models.Zone,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	question string,
+) string {
+	zoneName := ""
+	zoneDescription := ""
+	if zone != nil {
+		zoneName = strings.TrimSpace(zone.Name)
+		zoneDescription = strings.TrimSpace(zone.Description)
+	}
+	poiDetails := formatZoneSeedPOIForPrompt(poi, poiDraft)
+	prompt := fmt.Sprintf(
+		`You are writing fantasy flavor text for a location-based RPG challenge.
+Keep the real-world action intact, but dress it with atmospheric fantasy style.
+
+Zone: %s
+Zone description: %s
+Point of Interest:
+%s
+
+Challenge question:
+%s
+
+Write 2-4 sentences of evocative flavor text (40-120 words) suitable for challenge image generation.
+No markdown. No bullet points. Output JSON only:
+{"description":"string"}`,
+		truncate(zoneName, 120),
+		truncate(zoneDescription, 400),
+		poiDetails,
+		truncate(strings.TrimSpace(question), 320),
+	)
+
+	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
+	if err != nil {
+		return fallbackStandalonePOIChallengeDescription(zoneName, poi, poiDraft, question)
+	}
+	var parsed struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &parsed); err != nil {
+		return fallbackStandalonePOIChallengeDescription(zoneName, poi, poiDraft, question)
+	}
+	description := strings.TrimSpace(parsed.Description)
+	if description == "" {
+		return fallbackStandalonePOIChallengeDescription(zoneName, poi, poiDraft, question)
+	}
+	return description
+}
+
+func (p *ApplyZoneSeedDraftProcessor) enqueueChallengeImageTask(challengeID uuid.UUID) {
+	if p.asyncClient == nil {
+		return
+	}
+	payload, err := json.Marshal(jobs.GenerateChallengeImageTaskPayload{ChallengeID: challengeID})
+	if err != nil {
+		log.Printf("Failed to marshal challenge image payload: %v", err)
+		return
+	}
+	if _, err := p.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateChallengeImageTaskType, payload)); err != nil {
+		log.Printf("Failed to enqueue challenge image task: %v", err)
+	}
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedTreasureChestsForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	chestCount := job.TreasureChestCount
+	if chestCount <= 0 {
+		return nil
+	}
+
+	inventoryItems, err := p.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to load inventory items for treasure chests: %w", err)
+	}
+
+	rewardItems := make([]models.InventoryItem, 0, len(inventoryItems))
+	for _, item := range inventoryItems {
+		if item.ID <= 0 || item.IsCaptureType {
+			continue
+		}
+		rewardItems = append(rewardItems, item)
+	}
+
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	for i := 0; i < chestCount; i++ {
+		location := p.randomLocationForZone(zone, fallbackLocations)
+		targetLevel, size := zoneSeedTreasureChestRewardProfile()
+		seed := fmt.Sprintf("zone:%s:treasure:%d", zone.ID, i)
+		plan := models.BuildRandomRewardPlan(targetLevel, size, seed, rewardItems)
+
+		gold := plan.Gold
+		if gold <= 0 {
+			gold = 25
+		}
+		unlockTier := targetLevel
+		chest := &models.TreasureChest{
+			Latitude:    location.Latitude,
+			Longitude:   location.Longitude,
+			ZoneID:      zone.ID,
+			Gold:        &gold,
+			UnlockTier:  &unlockTier,
+			Invalidated: false,
+		}
+		if err := p.dbClient.TreasureChest().Create(ctx, chest); err != nil {
+			return fmt.Errorf("failed to create treasure chest %d/%d: %w", i+1, chestCount, err)
+		}
+
+		addedItem := false
+		for _, grant := range plan.ItemGrants {
+			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
+				continue
+			}
+			if err := p.dbClient.TreasureChest().AddItem(ctx, chest.ID, grant.InventoryItemID, grant.Quantity); err != nil {
+				return fmt.Errorf("failed to add item to treasure chest: %w", err)
+			}
+			addedItem = true
+		}
+		if !addedItem {
+			fallbackItemID := pickZoneSeedTreasureChestFallbackItemID(rewardItems, targetLevel)
+			if fallbackItemID > 0 {
+				if err := p.dbClient.TreasureChest().AddItem(ctx, chest.ID, fallbackItemID, 1); err != nil {
+					return fmt.Errorf("failed to add fallback item to treasure chest: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) randomLocationForZone(
+	zone *models.Zone,
+	fallbackLocations []zoneSeedScenarioLocation,
+) zoneSeedScenarioLocation {
+	if zone != nil {
+		point := zone.GetRandomPoint()
+		lat := point.Y()
+		lng := point.X()
+		if lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 {
+			return zoneSeedScenarioLocation{Latitude: lat, Longitude: lng}
+		}
+	}
+	if len(fallbackLocations) > 0 {
+		return fallbackLocations[rand.Intn(len(fallbackLocations))]
+	}
+	if zone != nil {
+		return zoneSeedScenarioLocation{Latitude: zone.Latitude, Longitude: zone.Longitude}
+	}
+	return zoneSeedScenarioLocation{}
+}
+
+func pickZoneSeedNarrator(characterByDraftID map[uuid.UUID]*models.Character) *models.Character {
+	for _, character := range characterByDraftID {
+		if character != nil {
+			return character
+		}
+	}
+	return &models.Character{
+		Name:        "Guild Chronicler",
+		Description: "A field chronicler who frames local tasks in mythic language.",
+	}
+}
+
+func challengeCoordinatesFromPOI(
+	poi *models.PointOfInterest,
+	draftPOI models.ZoneSeedPointOfInterestDraft,
+) (float64, float64, error) {
+	if poi != nil {
+		lat, latErr := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+		lng, lngErr := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+		if latErr == nil && lngErr == nil {
+			return lat, lng, nil
+		}
+	}
+	if draftPOI.Latitude < -90 || draftPOI.Latitude > 90 || draftPOI.Longitude < -180 || draftPOI.Longitude > 180 {
+		return 0, 0, fmt.Errorf("invalid point of interest coordinates for challenge")
+	}
+	return draftPOI.Latitude, draftPOI.Longitude, nil
+}
+
+func fallbackStandalonePOIChallengeDescription(
+	zoneName string,
+	poi *models.PointOfInterest,
+	poiDraft *models.ZoneSeedPointOfInterestDraft,
+	question string,
+) string {
+	name := poiNameForPrompt(poi, poiDraft)
+	if strings.TrimSpace(zoneName) == "" {
+		return fmt.Sprintf("Rumors coil around %s like drifting embers. Step into the scene, play your role, and prove it by completing this action: %s", name, strings.TrimSpace(question))
+	}
+	return fmt.Sprintf("In %s, %s feels like a threshold between the ordinary and the uncanny. Play your part in the unfolding tale, then prove it by completing this action: %s", strings.TrimSpace(zoneName), name, strings.TrimSpace(question))
+}
+
+func zoneSeedEncounterName(baseName string, memberCount int) string {
+	trimmed := strings.TrimSpace(baseName)
+	if trimmed == "" {
+		trimmed = "Host"
+	}
+	if memberCount <= 1 {
+		return fmt.Sprintf("Wandering %s", trimmed)
+	}
+	return fmt.Sprintf("%s Warband", trimmed)
+}
+
+func zoneSeedEncounterDescription(baseDescription string, memberCount int) string {
+	trimmed := strings.TrimSpace(baseDescription)
+	if trimmed == "" {
+		if memberCount <= 1 {
+			return "A lone hostile presence prowls this part of the zone."
+		}
+		return "A coordinated pack of hostiles has been spotted in this part of the zone."
+	}
+	if memberCount <= 1 {
+		return trimmed
+	}
+	return fmt.Sprintf("%s This encounter has multiple hostile monsters acting together.", trimmed)
+}
+
+func zoneSeedTreasureChestRewardProfile() (int, models.RandomRewardSize) {
+	roll := rand.Intn(100)
+	switch {
+	case roll < 45:
+		return 10, models.RandomRewardSizeSmall
+	case roll < 78:
+		return 25, models.RandomRewardSizeSmall
+	case roll < 95:
+		return 50, models.RandomRewardSizeMedium
+	default:
+		return 70, models.RandomRewardSizeLarge
+	}
+}
+
+func pickZoneSeedTreasureChestFallbackItemID(items []models.InventoryItem, targetLevel int) int {
+	bestID := 0
+	bestDelta := 1<<31 - 1
+	for _, item := range items {
+		if item.ID <= 0 || item.IsCaptureType {
+			continue
+		}
+		level := item.ItemLevel
+		if level <= 0 {
+			if item.UnlockTier != nil && *item.UnlockTier > 0 {
+				level = *item.UnlockTier
+			} else {
+				level = targetLevel
+			}
+		}
+		delta := level - targetLevel
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta < bestDelta {
+			bestDelta = delta
+			bestID = item.ID
+		}
+	}
+	return bestID
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(

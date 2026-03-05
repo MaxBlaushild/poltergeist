@@ -4495,12 +4495,10 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 
 	var requestBody struct {
 		PlaceCount           *int     `json:"placeCount"`
-		CharacterCount       *int     `json:"characterCount"`
-		QuestCount           *int     `json:"questCount"`
-		MainQuestCount       *int     `json:"mainQuestCount"`
 		MonsterCount         *int     `json:"monsterCount"`
 		InputEncounterCount  *int     `json:"inputEncounterCount"`
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
+		TreasureChestCount   *int     `json:"treasureChestCount"`
 		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
 	}
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
@@ -4512,29 +4510,21 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 	if requestBody.PlaceCount != nil {
 		placeCount = *requestBody.PlaceCount
 	}
-	characterCount := 4
-	if requestBody.CharacterCount != nil {
-		characterCount = *requestBody.CharacterCount
-	}
-	questCount := 4
-	if requestBody.QuestCount != nil {
-		questCount = *requestBody.QuestCount
-	}
-	mainQuestCount := 1
-	if requestBody.MainQuestCount != nil {
-		mainQuestCount = *requestBody.MainQuestCount
-	}
 	monsterCount := 6
 	if requestBody.MonsterCount != nil {
 		monsterCount = *requestBody.MonsterCount
 	}
-	inputEncounterCount := 0
+	inputEncounterCount := 6
 	if requestBody.InputEncounterCount != nil {
 		inputEncounterCount = *requestBody.InputEncounterCount
 	}
-	optionEncounterCount := 0
+	optionEncounterCount := 6
 	if requestBody.OptionEncounterCount != nil {
 		optionEncounterCount = *requestBody.OptionEncounterCount
+	}
+	treasureChestCount := 6
+	if requestBody.TreasureChestCount != nil {
+		treasureChestCount = *requestBody.TreasureChestCount
 	}
 	requiredPlaceTags := make([]string, 0)
 	if len(requestBody.RequiredPlaceTags) > 0 {
@@ -4552,8 +4542,8 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		}
 	}
 
-	if placeCount <= 0 || characterCount <= 0 || questCount <= 0 || mainQuestCount < 0 || monsterCount <= 0 || inputEncounterCount < 0 || optionEncounterCount < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, characterCount, questCount, and monsterCount must be greater than zero; mainQuestCount, inputEncounterCount, and optionEncounterCount must be zero or greater"})
+	if placeCount <= 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount must be greater than zero; monsterCount, inputEncounterCount, optionEncounterCount, and treasureChestCount must be zero or greater"})
 		return
 	}
 	if len(requiredPlaceTags) > placeCount {
@@ -4568,12 +4558,13 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		ZoneID:               zoneID,
 		Status:               models.ZoneSeedStatusQueued,
 		PlaceCount:           placeCount,
-		CharacterCount:       characterCount,
-		QuestCount:           questCount,
-		MainQuestCount:       mainQuestCount,
+		CharacterCount:       0,
+		QuestCount:           0,
+		MainQuestCount:       0,
 		MonsterCount:         monsterCount,
 		InputEncounterCount:  inputEncounterCount,
 		OptionEncounterCount: optionEncounterCount,
+		TreasureChestCount:   treasureChestCount,
 		RequiredPlaceTags:    models.StringArray(requiredPlaceTags),
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {

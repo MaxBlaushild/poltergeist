@@ -296,6 +296,8 @@ export const Quests = () => {
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
   const [polygonRefreshNonce, setPolygonRefreshNonce] = useState(0);
   const [deletingQuestId, setDeletingQuestId] = useState<string | null>(null);
+  const [bulkDeletingQuests, setBulkDeletingQuests] = useState(false);
+  const [selectedQuestIds, setSelectedQuestIds] = useState<Set<string>>(new Set());
   const [shufflingChallengeId, setShufflingChallengeId] = useState<string | null>(null);
   const [creatingArchetype, setCreatingArchetype] = useState(false);
   const questMapContainer = useRef<HTMLDivElement>(null);
@@ -306,6 +308,7 @@ export const Quests = () => {
   const characterLocationMarkers = useRef<mapboxgl.Marker[]>([]);
 
   const selectedQuest = useMemo(() => quests.find((quest) => quest.id === selectedQuestId) ?? null, [quests, selectedQuestId]);
+  const selectedQuestIdSet = useMemo(() => selectedQuestIds, [selectedQuestIds]);
 
   useEffect(() => {
     let isMounted = true;
@@ -757,12 +760,36 @@ export const Quests = () => {
     }
   }, [nodeForm.nodeType]);
 
+  useEffect(() => {
+    setSelectedQuestIds((prev) => {
+      if (prev.size === 0) return prev;
+      const available = new Set(quests.map((quest) => quest.id));
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((questId) => {
+        if (available.has(questId)) {
+          next.add(questId);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [quests]);
+
 
   const filteredQuests = useMemo(() => {
     if (!searchQuery.trim()) return quests;
     const term = searchQuery.toLowerCase();
     return quests.filter((quest) => quest.name.toLowerCase().includes(term));
   }, [quests, searchQuery]);
+
+  const allFilteredQuestsSelected = useMemo(
+    () =>
+      filteredQuests.length > 0 &&
+      filteredQuests.every((quest) => selectedQuestIdSet.has(quest.id)),
+    [filteredQuests, selectedQuestIdSet]
+  );
 
   const filteredZones = useMemo(() => {
     if (!zoneSearch.trim()) return zones;
@@ -1438,7 +1465,7 @@ export const Quests = () => {
   };
 
   const handleDeleteQuest = async () => {
-    if (!selectedQuest) return;
+    if (!selectedQuest || bulkDeletingQuests) return;
     const confirmDelete = window.confirm(`Delete quest "${selectedQuest.name}"? This cannot be undone.`);
     if (!confirmDelete) return;
 
@@ -1446,6 +1473,11 @@ export const Quests = () => {
     try {
       await apiClient.delete(`/sonar/quests/${selectedQuest.id}`);
       setQuests((prev) => prev.filter((quest) => quest.id !== selectedQuest.id));
+      setSelectedQuestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedQuest.id);
+        return next;
+      });
       setSelectedQuestId('');
       setQuestForm({ ...emptyQuestForm });
     } catch (error) {
@@ -1457,6 +1489,7 @@ export const Quests = () => {
   };
 
   const handleDeleteQuestById = async (quest: Quest) => {
+    if (bulkDeletingQuests) return;
     const confirmDelete = window.confirm(`Delete quest "${quest.name}"? This cannot be undone.`);
     if (!confirmDelete) return;
 
@@ -1464,6 +1497,11 @@ export const Quests = () => {
     try {
       await apiClient.delete(`/sonar/quests/${quest.id}`);
       setQuests((prev) => prev.filter((item) => item.id !== quest.id));
+      setSelectedQuestIds((prev) => {
+        const next = new Set(prev);
+        next.delete(quest.id);
+        return next;
+      });
       if (selectedQuestId === quest.id) {
         setSelectedQuestId('');
         setQuestForm({ ...emptyQuestForm });
@@ -1473,6 +1511,98 @@ export const Quests = () => {
       alert('Failed to delete quest.');
     } finally {
       setDeletingQuestId(null);
+    }
+  };
+
+  const toggleQuestSelection = (questId: string) => {
+    setSelectedQuestIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(questId)) {
+        next.delete(questId);
+      } else {
+        next.add(questId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisibleQuests = () => {
+    if (filteredQuests.length === 0) return;
+    setSelectedQuestIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredQuestsSelected) {
+        filteredQuests.forEach((quest) => next.delete(quest.id));
+      } else {
+        filteredQuests.forEach((quest) => next.add(quest.id));
+      }
+      return next;
+    });
+  };
+
+  const clearQuestSelection = () => {
+    setSelectedQuestIds(new Set());
+  };
+
+  const handleBulkDeleteQuests = async () => {
+    if (bulkDeletingQuests || selectedQuestIds.size === 0 || deletingQuestId) return;
+
+    const selectedIds = Array.from(selectedQuestIds);
+    const selectedNames = quests
+      .filter((quest) => selectedQuestIds.has(quest.id))
+      .map((quest) => quest.name);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected quest (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected quests${
+            preview ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})` : ''
+          }? This cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingQuests(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((questId) => apiClient.delete(`/sonar/quests/${questId}`))
+      );
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const questId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(questId);
+        } else {
+          console.error(`Failed to delete quest ${questId}`, result.reason);
+          failedIds.push(questId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setQuests((prev) => prev.filter((quest) => !deletedIds.has(quest.id)));
+        setSelectedQuestIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((questId) => next.delete(questId));
+          return next;
+        });
+        if (selectedQuestId && deletedIds.has(selectedQuestId)) {
+          setSelectedQuestId('');
+          setQuestForm({ ...emptyQuestForm });
+        }
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} quest${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
+            failedIds.length
+          }. Check console for details.`
+        );
+      }
+    } catch (error) {
+      console.error('Failed to bulk delete quests', error);
+      alert('Failed to delete selected quests.');
+    } finally {
+      setBulkDeletingQuests(false);
     }
   };
 
@@ -2221,12 +2351,47 @@ const handleRemoveQuestReward = (index: number) => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+              onClick={toggleSelectVisibleQuests}
+              disabled={filteredQuests.length === 0 || bulkDeletingQuests}
+            >
+              {allFilteredQuestsSelected ? 'Unselect Visible' : 'Select Visible'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+              onClick={clearQuestSelection}
+              disabled={selectedQuestIds.size === 0 || bulkDeletingQuests}
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              className="qa-btn qa-btn-danger"
+              onClick={handleBulkDeleteQuests}
+              disabled={selectedQuestIds.size === 0 || bulkDeletingQuests || deletingQuestId !== null}
+            >
+              {bulkDeletingQuests
+                ? `Deleting ${selectedQuestIds.size}...`
+                : `Delete Selected (${selectedQuestIds.size})`}
+            </button>
+          </div>
           <div className="space-y-2 max-h-[520px] overflow-y-auto">
             {filteredQuests.map((quest) => (
               <div
                 key={quest.id}
                 className={`flex items-center justify-between gap-2 p-3 rounded-md border ${selectedQuestId === quest.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
               >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={selectedQuestIdSet.has(quest.id)}
+                  disabled={bulkDeletingQuests}
+                  onChange={() => toggleQuestSelection(quest.id)}
+                />
                 <button
                   className="flex-1 text-left"
                   onClick={() => handleSelectQuest(quest)}
@@ -2237,7 +2402,7 @@ const handleRemoveQuestReward = (index: number) => {
                 <button
                   className="qa-btn qa-btn-danger"
                   onClick={() => handleDeleteQuestById(quest)}
-                  disabled={deletingQuestId === quest.id}
+                  disabled={deletingQuestId === quest.id || bulkDeletingQuests}
                 >
                   {deletingQuestId === quest.id ? 'Deleting...' : 'Delete'}
                 </button>
@@ -2279,7 +2444,7 @@ const handleRemoveQuestReward = (index: number) => {
                   <button
                     className="qa-btn qa-btn-danger"
                     onClick={handleDeleteQuest}
-                    disabled={deletingQuestId === selectedQuest.id}
+                    disabled={deletingQuestId === selectedQuest.id || bulkDeletingQuests}
                   >
                     {deletingQuestId === selectedQuest.id ? 'Deleting...' : 'Delete Quest'}
                   </button>

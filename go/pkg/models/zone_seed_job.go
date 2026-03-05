@@ -40,6 +40,7 @@ type ZoneSeedJob struct {
 	MonsterCount         int           `json:"monsterCount"`
 	InputEncounterCount  int           `json:"inputEncounterCount"`
 	OptionEncounterCount int           `json:"optionEncounterCount"`
+	TreasureChestCount   int           `json:"treasureChestCount"`
 	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
 	Draft                ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`
 }

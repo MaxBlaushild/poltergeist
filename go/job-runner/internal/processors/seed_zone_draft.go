@@ -115,36 +115,20 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	}
 
 	characterCount := job.CharacterCount
-	if characterCount <= 0 {
-		characterCount = 4
+	if characterCount < 0 {
+		characterCount = 0
 	}
 
-	characters, err := p.generateCharacters(ctx, *zone, branding, places, characterCount)
-	if err != nil {
-		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate characters: %w", err))
-	}
-
-	questCount := job.QuestCount
-	if questCount <= 0 {
-		questCount = 4
-	}
-
-	quests, err := p.generateQuests(ctx, *zone, branding, places, characters, questCount)
-	if err != nil {
-		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate quests: %w", err))
-	}
-
-	mainQuestCount := job.MainQuestCount
-	if mainQuestCount < 0 {
-		mainQuestCount = 0
-	}
-	mainQuests := []models.ZoneSeedMainQuestDraft{}
-	if mainQuestCount > 0 {
-		mainQuests, err = p.generateMainQuests(ctx, *zone, branding, places, characters, mainQuestCount)
+	characters := []models.ZoneSeedCharacterDraft{}
+	if characterCount > 0 {
+		characters, err = p.generateCharacters(ctx, *zone, branding, places, characterCount)
 		if err != nil {
-			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate main quests: %w", err))
+			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate characters: %w", err))
 		}
 	}
+
+	quests := []models.ZoneSeedQuestDraft{}
+	mainQuests := []models.ZoneSeedMainQuestDraft{}
 
 	poiDrafts := make([]models.ZoneSeedPointOfInterestDraft, 0, len(places))
 	for _, place := range places {
