@@ -59,6 +59,9 @@ const emptyQuestForm = {
   questGiverCharacterId: '',
   questArchetypeId: '',
   recurrenceFrequency: '',
+  rewardMode: 'random' as 'explicit' | 'random',
+  randomRewardSize: 'small' as 'small' | 'medium' | 'large',
+  rewardExperience: 0,
   gold: 0,
   itemRewards: [] as { inventoryItemId: string; quantity: number }[],
   spellRewards: [] as { spellId: string }[],
@@ -1225,16 +1228,25 @@ export const Quests = () => {
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
-        gold: Number(questForm.gold) || 0,
-        itemRewards: questForm.itemRewards
-          .map((reward) => ({
-            inventoryItemId: Number(reward.inventoryItemId) || 0,
-            quantity: Number(reward.quantity) || 0,
-          }))
-          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
-        spellRewards: questForm.spellRewards
-          .map((reward) => ({ spellId: reward.spellId.trim() }))
-          .filter((reward) => reward.spellId.length > 0),
+        rewardMode: questForm.rewardMode,
+        randomRewardSize: questForm.randomRewardSize,
+        rewardExperience: questForm.rewardMode === 'explicit' ? Number(questForm.rewardExperience) || 0 : 0,
+        gold: questForm.rewardMode === 'explicit' ? Number(questForm.gold) || 0 : 0,
+        itemRewards:
+          questForm.rewardMode === 'explicit'
+            ? questForm.itemRewards
+                .map((reward) => ({
+                  inventoryItemId: Number(reward.inventoryItemId) || 0,
+                  quantity: Number(reward.quantity) || 0,
+                }))
+                .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+            : [],
+        spellRewards:
+          questForm.rewardMode === 'explicit'
+            ? questForm.spellRewards
+                .map((reward) => ({ spellId: reward.spellId.trim() }))
+                .filter((reward) => reward.spellId.length > 0)
+            : [],
       };
       const created = await apiClient.post<Quest>('/sonar/quests', payload);
       setQuests((prev) => [created, ...prev]);
@@ -1258,16 +1270,25 @@ export const Quests = () => {
         questGiverCharacterId: questForm.questGiverCharacterId || null,
         questArchetypeId: questForm.questArchetypeId || null,
         recurrenceFrequency: questForm.recurrenceFrequency || '',
-        gold: Number(questForm.gold) || 0,
-        itemRewards: questForm.itemRewards
-          .map((reward) => ({
-            inventoryItemId: Number(reward.inventoryItemId) || 0,
-            quantity: Number(reward.quantity) || 0,
-          }))
-          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
-        spellRewards: questForm.spellRewards
-          .map((reward) => ({ spellId: reward.spellId.trim() }))
-          .filter((reward) => reward.spellId.length > 0),
+        rewardMode: questForm.rewardMode,
+        randomRewardSize: questForm.randomRewardSize,
+        rewardExperience: questForm.rewardMode === 'explicit' ? Number(questForm.rewardExperience) || 0 : 0,
+        gold: questForm.rewardMode === 'explicit' ? Number(questForm.gold) || 0 : 0,
+        itemRewards:
+          questForm.rewardMode === 'explicit'
+            ? questForm.itemRewards
+                .map((reward) => ({
+                  inventoryItemId: Number(reward.inventoryItemId) || 0,
+                  quantity: Number(reward.quantity) || 0,
+                }))
+                .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+            : [],
+        spellRewards:
+          questForm.rewardMode === 'explicit'
+            ? questForm.spellRewards
+                .map((reward) => ({ spellId: reward.spellId.trim() }))
+                .filter((reward) => reward.spellId.length > 0)
+            : [],
       };
       const updated = await apiClient.patch<Quest>(`/sonar/quests/${selectedQuest.id}`, payload);
       updateQuestState(selectedQuest.id, () => updated);
@@ -1466,6 +1487,9 @@ export const Quests = () => {
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
       questArchetypeId: quest.questArchetypeId ?? '',
       recurrenceFrequency: quest.recurrenceFrequency ?? '',
+      rewardMode: (quest.rewardMode as 'explicit' | 'random') ?? 'random',
+      randomRewardSize: (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
+      rewardExperience: quest.rewardExperience ?? 0,
       gold: quest.gold ?? 0,
       itemRewards: (quest.itemRewards ?? []).map((reward) => ({
         inventoryItemId: reward.inventoryItemId ? String(reward.inventoryItemId) : '',
@@ -2011,14 +2035,66 @@ const handleRemoveQuestReward = (index: number) => {
               </select>
             </div>
             <div>
+              <label className="block text-sm font-medium text-gray-700">Reward Mode</label>
+              <select
+                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                value={questForm.rewardMode}
+                onChange={(e) =>
+                  setQuestForm((prev) => ({
+                    ...prev,
+                    rewardMode: e.target.value as 'explicit' | 'random',
+                  }))
+                }
+              >
+                <option value="random">Random Reward</option>
+                <option value="explicit">Explicit Reward</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Random Reward Size</label>
+              <select
+                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                value={questForm.randomRewardSize}
+                disabled={questForm.rewardMode !== 'random'}
+                onChange={(e) =>
+                  setQuestForm((prev) => ({
+                    ...prev,
+                    randomRewardSize: e.target.value as 'small' | 'medium' | 'large',
+                  }))
+                }
+              >
+                <option value="small">Small</option>
+                <option value="medium">Medium</option>
+                <option value="large">Large</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Experience Reward</label>
+              <input
+                type="number"
+                className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                value={questForm.rewardExperience}
+                disabled={questForm.rewardMode !== 'explicit'}
+                onChange={(e) =>
+                  setQuestForm((prev) => ({ ...prev, rewardExperience: Number(e.target.value) }))
+                }
+              />
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700">Gold Reward</label>
               <input
                 type="number"
                 className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                 value={questForm.gold}
+                disabled={questForm.rewardMode !== 'explicit'}
                 onChange={(e) => setQuestForm((prev) => ({ ...prev, gold: Number(e.target.value) }))}
               />
             </div>
+            {questForm.rewardMode === 'random' && (
+              <div className="md:col-span-2 text-xs text-gray-500">
+                Random rewards ignore explicit gold/item/spell fields.
+              </div>
+            )}
             <div className="md:col-span-2">
               <div className="flex items-center justify-between">
                 <label className="block text-sm font-medium text-gray-700">Item Rewards</label>
@@ -2026,6 +2102,7 @@ const handleRemoveQuestReward = (index: number) => {
                   type="button"
                   className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   onClick={handleAddQuestReward}
+                  disabled={questForm.rewardMode !== 'explicit'}
                 >
                   Add Item Reward
                 </button>
@@ -2042,6 +2119,7 @@ const handleRemoveQuestReward = (index: number) => {
                       <select
                         className="block w-full border border-gray-300 rounded-md p-2"
                         value={reward.inventoryItemId}
+                        disabled={questForm.rewardMode !== 'explicit'}
                         onChange={(e) => handleUpdateQuestReward(index, { inventoryItemId: e.target.value })}
                       >
                         <option value="">Select item</option>
@@ -2056,11 +2134,13 @@ const handleRemoveQuestReward = (index: number) => {
                         className="block w-full border border-gray-300 rounded-md p-2"
                         min={1}
                         value={reward.quantity}
+                        disabled={questForm.rewardMode !== 'explicit'}
                         onChange={(e) => handleUpdateQuestReward(index, { quantity: Number(e.target.value) })}
                       />
                       <button
                         type="button"
                         className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                        disabled={questForm.rewardMode !== 'explicit'}
                         onClick={() => handleRemoveQuestReward(index)}
                       >
                         Remove
@@ -2077,6 +2157,7 @@ const handleRemoveQuestReward = (index: number) => {
                   type="button"
                   className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   onClick={handleAddQuestSpellReward}
+                  disabled={questForm.rewardMode !== 'explicit'}
                 >
                   Add Spell Reward
                 </button>
@@ -2093,6 +2174,7 @@ const handleRemoveQuestReward = (index: number) => {
                       <select
                         className="block w-full border border-gray-300 rounded-md p-2"
                         value={reward.spellId}
+                        disabled={questForm.rewardMode !== 'explicit'}
                         onChange={(e) =>
                           handleUpdateQuestSpellReward(index, { spellId: e.target.value })
                         }
@@ -2107,6 +2189,7 @@ const handleRemoveQuestReward = (index: number) => {
                       <button
                         type="button"
                         className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                        disabled={questForm.rewardMode !== 'explicit'}
                         onClick={() => handleRemoveQuestSpellReward(index)}
                       >
                         Remove

@@ -683,7 +683,63 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 		}
 	}
 
-	goldAwarded = quest.Gold
+	rewardMode := models.NormalizeRewardMode(string(quest.RewardMode))
+	randomRewardSize := models.NormalizeRandomRewardSize(string(quest.RandomRewardSize))
+	experienceAwarded := 0
+	itemGrants := []models.RandomRewardItemGrant{}
+	itemByID := map[int]models.InventoryItem{}
+	spellRewardIDs := []uuid.UUID{}
+
+	if rewardMode == models.RewardModeRandom {
+		userLevel, err := c.db.UserLevel().FindOrCreateForUser(ctx, userID)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		allItems, err := c.db.InventoryItem().FindAllInventoryItems(ctx)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		for _, item := range allItems {
+			itemByID[item.ID] = item
+		}
+		plan := models.BuildRandomRewardPlan(
+			userLevel.Level,
+			randomRewardSize,
+			fmt.Sprintf("quest:%s:user:%s", quest.ID, userID),
+			allItems,
+		)
+		goldAwarded = plan.Gold
+		experienceAwarded = plan.Experience
+		itemGrants = append(itemGrants, plan.ItemGrants...)
+	} else {
+		goldAwarded = quest.Gold
+		if goldAwarded < 0 {
+			goldAwarded = 0
+		}
+		experienceAwarded = quest.RewardExperience
+		if experienceAwarded < 0 {
+			experienceAwarded = 0
+		}
+		for _, reward := range quest.ItemRewards {
+			if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+				continue
+			}
+			if reward.InventoryItem.ID != 0 {
+				itemByID[reward.InventoryItemID] = reward.InventoryItem
+			}
+			itemGrants = append(itemGrants, models.RandomRewardItemGrant{
+				InventoryItemID: reward.InventoryItemID,
+				Quantity:        reward.Quantity,
+			})
+		}
+		for _, reward := range quest.SpellRewards {
+			if reward.SpellID == uuid.Nil {
+				continue
+			}
+			spellRewardIDs = append(spellRewardIDs, reward.SpellID)
+		}
+	}
+
 	if goldAwarded > 0 {
 		for _, member := range partyMembers {
 			if err := c.db.User().AddGold(ctx, member.ID, goldAwarded); err != nil {
@@ -691,22 +747,39 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 			}
 		}
 	}
-
-	itemsAwarded = []models.ItemAwarded{}
-	for _, reward := range quest.ItemRewards {
-		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
-			continue
-		}
-		item := reward.InventoryItem
-		if item.ID == 0 {
-			itemRecord, err := c.db.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+	if experienceAwarded > 0 {
+		for _, member := range partyMembers {
+			userLevel, err := c.db.UserLevel().ProcessExperiencePointAdditions(ctx, member.ID, experienceAwarded)
 			if err != nil {
 				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
+			if userLevel.LevelsGained > 0 {
+				if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
+					return goldAwarded, itemsAwarded, spellsAwarded, err
+				}
+			}
+		}
+	}
+
+	itemsAwarded = []models.ItemAwarded{}
+	for _, grant := range itemGrants {
+		if grant.InventoryItemID == 0 || grant.Quantity <= 0 {
+			continue
+		}
+		item, ok := itemByID[grant.InventoryItemID]
+		if !ok || item.ID == 0 {
+			itemRecord, err := c.db.InventoryItem().FindInventoryItemByID(ctx, grant.InventoryItemID)
+			if err != nil {
+				return goldAwarded, itemsAwarded, spellsAwarded, err
+			}
+			if itemRecord == nil {
+				continue
+			}
 			item = *itemRecord
+			itemByID[grant.InventoryItemID] = item
 		}
 		for _, member := range partyMembers {
-			if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &member.ID, reward.InventoryItemID, reward.Quantity); err != nil {
+			if err := c.db.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &member.ID, grant.InventoryItemID, grant.Quantity); err != nil {
 				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
 		}
@@ -714,29 +787,25 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 			ID:       item.ID,
 			Name:     item.Name,
 			ImageURL: item.ImageURL,
-			Quantity: reward.Quantity,
+			Quantity: grant.Quantity,
 		})
 	}
 
 	spellsAwarded = []models.SpellAwarded{}
 	seenSpellRewards := map[uuid.UUID]bool{}
-	for _, reward := range quest.SpellRewards {
-		if reward.SpellID == uuid.Nil {
+	for _, spellID := range spellRewardIDs {
+		if spellID == uuid.Nil {
 			continue
 		}
-		spell := reward.Spell
-		if spell.ID == uuid.Nil {
-			spellRecord, err := c.db.Spell().FindByID(ctx, reward.SpellID)
-			if err != nil {
-				return goldAwarded, itemsAwarded, spellsAwarded, err
-			}
-			if spellRecord == nil {
-				continue
-			}
-			spell = *spellRecord
+		spell, err := c.db.Spell().FindByID(ctx, spellID)
+		if err != nil {
+			return goldAwarded, itemsAwarded, spellsAwarded, err
+		}
+		if spell == nil {
+			continue
 		}
 		for _, member := range partyMembers {
-			if err := c.db.UserSpell().GrantToUser(ctx, member.ID, reward.SpellID); err != nil {
+			if err := c.db.UserSpell().GrantToUser(ctx, member.ID, spellID); err != nil {
 				return goldAwarded, itemsAwarded, spellsAwarded, err
 			}
 		}

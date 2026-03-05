@@ -527,6 +527,8 @@ func (p *ApplyZoneSeedDraftProcessor) createQuestFromDraft(
 		AcceptanceDialogue:    acceptanceDialogue,
 		ZoneID:                &zone.ID,
 		QuestGiverCharacterID: &character.ID,
+		RewardMode:            models.RewardModeExplicit,
+		RandomRewardSize:      models.RandomRewardSizeSmall,
 		Gold:                  gold,
 	}
 
@@ -638,6 +640,8 @@ func (p *ApplyZoneSeedDraftProcessor) createMainQuestFromDraft(
 		AcceptanceDialogue:    acceptanceDialogue,
 		ZoneID:                &zone.ID,
 		QuestGiverCharacterID: &character.ID,
+		RewardMode:            models.RewardModeExplicit,
+		RandomRewardSize:      models.RandomRewardSizeSmall,
 		Gold:                  gold,
 	}
 

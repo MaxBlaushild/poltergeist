@@ -53,6 +53,9 @@ type Quest struct {
 	RecurringQuestID      *uuid.UUID         `json:"recurringQuestId,omitempty" gorm:"type:uuid"`
 	RecurrenceFrequency   *string            `json:"recurrenceFrequency,omitempty"`
 	NextRecurrenceAt      *time.Time         `json:"nextRecurrenceAt,omitempty"`
+	RewardMode            RewardMode         `json:"rewardMode" gorm:"column:reward_mode"`
+	RandomRewardSize      RandomRewardSize   `json:"randomRewardSize" gorm:"column:random_reward_size"`
+	RewardExperience      int                `json:"rewardExperience" gorm:"column:reward_experience"`
 	Gold                  int                `json:"gold"`
 	ItemRewards           []QuestItemReward  `json:"itemRewards" gorm:"foreignKey:QuestID"`
 	SpellRewards          []QuestSpellReward `json:"spellRewards" gorm:"foreignKey:QuestID"`

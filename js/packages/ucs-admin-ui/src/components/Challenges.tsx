@@ -14,6 +14,9 @@ type ChallengeRecord = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
+  rewardExperience?: number;
   reward: number;
   inventoryItemId?: number | null;
   submissionType: 'photo' | 'text' | 'video';
@@ -34,6 +37,9 @@ type ChallengeFormState = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  rewardExperience: string;
   reward: string;
   inventoryItemId: string;
   submissionType: 'photo' | 'text' | 'video';
@@ -127,6 +133,9 @@ const emptyForm = (): ChallengeFormState => ({
   description: '',
   imageUrl: '',
   thumbnailUrl: '',
+  rewardMode: 'random',
+  randomRewardSize: 'small',
+  rewardExperience: '0',
   reward: '0',
   inventoryItemId: '',
   submissionType: 'photo',
@@ -164,6 +173,12 @@ const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   description: record.description ?? '',
   imageUrl: record.imageUrl ?? '',
   thumbnailUrl: record.thumbnailUrl ?? '',
+  rewardMode: record.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    record.randomRewardSize === 'medium' || record.randomRewardSize === 'large'
+      ? record.randomRewardSize
+      : 'small',
+  rewardExperience: String(record.rewardExperience ?? 0),
   reward: String(record.reward ?? 0),
   inventoryItemId:
     record.inventoryItemId !== undefined && record.inventoryItemId !== null
@@ -567,6 +582,7 @@ export const Challenges = () => {
 
   const save = async () => {
     try {
+      const rewardMode = form.rewardMode;
       const payload = {
         zoneId: form.zoneId.trim(),
         pointOfInterestId: form.pointOfInterestId.trim(),
@@ -576,8 +592,15 @@ export const Challenges = () => {
         description: form.description.trim(),
         imageUrl: form.imageUrl.trim(),
         thumbnailUrl: form.thumbnailUrl.trim(),
-        reward: parseIntSafe(form.reward, 0),
-        inventoryItemId: parseOptionalInt(form.inventoryItemId),
+        rewardMode,
+        randomRewardSize: form.randomRewardSize,
+        rewardExperience:
+          rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
+        reward: rewardMode === 'explicit' ? parseIntSafe(form.reward, 0) : 0,
+        inventoryItemId:
+          rewardMode === 'explicit'
+            ? parseOptionalInt(form.inventoryItemId)
+            : undefined,
         submissionType: form.submissionType,
         difficulty: parseIntSafe(form.difficulty, 0),
         scaleWithUserLevel: form.scaleWithUserLevel,
@@ -865,12 +888,22 @@ export const Challenges = () => {
                     ) : null}
                   </td>
                   <td className="p-2 border-b align-top">
-                    {record.reward}
-                    {record.inventoryItemId ? (
-                      <div className="text-xs text-gray-600">
-                        Item #{record.inventoryItemId}
+                    {(record.rewardMode ?? 'random') === 'random' ? (
+                      <div>
+                        <div className="text-xs font-medium text-indigo-700">
+                          Random {(record.randomRewardSize ?? 'small').toUpperCase()}
+                        </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div>
+                        XP {record.rewardExperience ?? 0} · Gold {record.reward}
+                        {record.inventoryItemId ? (
+                          <div className="text-xs text-gray-600">
+                            Item #{record.inventoryItemId}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </td>
                   <td className="p-2 border-b align-top">
                     {record.pointOfInterestId
@@ -1067,12 +1100,69 @@ export const Challenges = () => {
               </label>
 
               <label className="text-sm">
-                Reward (Gold/Score)
+                Reward Mode
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={form.rewardMode}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      rewardMode: event.target.value as 'explicit' | 'random',
+                    }))
+                  }
+                >
+                  <option value="random">Random Reward</option>
+                  <option value="explicit">Explicit Reward</option>
+                </select>
+              </label>
+
+              <label className="text-sm">
+                Random Reward Size
+                <select
+                  className="w-full border rounded-md p-2"
+                  value={form.randomRewardSize}
+                  disabled={form.rewardMode !== 'random'}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      randomRewardSize: event.target.value as
+                        | 'small'
+                        | 'medium'
+                        | 'large',
+                    }))
+                  }
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+
+              <label className="text-sm">
+                Reward Experience
+                <input
+                  className="w-full border rounded-md p-2"
+                  type="number"
+                  min={0}
+                  value={form.rewardExperience}
+                  disabled={form.rewardMode !== 'explicit'}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      rewardExperience: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className="text-sm">
+                Reward Gold
                 <input
                   className="w-full border rounded-md p-2"
                   type="number"
                   min={0}
                   value={form.reward}
+                  disabled={form.rewardMode !== 'explicit'}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, reward: event.target.value }))
                   }
@@ -1084,6 +1174,7 @@ export const Challenges = () => {
                 <select
                   className="w-full border rounded-md p-2"
                   value={form.inventoryItemId}
+                  disabled={form.rewardMode !== 'explicit'}
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
@@ -1099,6 +1190,12 @@ export const Challenges = () => {
                   ))}
                 </select>
               </label>
+
+              {form.rewardMode === 'random' ? (
+                <div className="text-xs text-gray-500 md:col-span-2">
+                  Random rewards ignore explicit XP, gold, and item fields.
+                </div>
+              ) : null}
 
               <label className="text-sm">
                 Proficiency (Optional)

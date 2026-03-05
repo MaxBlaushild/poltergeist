@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -14,12 +15,31 @@ type questHandle struct {
 }
 
 func (h *questHandle) Create(ctx context.Context, quest *models.Quest) error {
+	if quest != nil {
+		if strings.TrimSpace(string(quest.RewardMode)) == "" {
+			if quest.Gold > 0 || quest.RewardExperience > 0 {
+				quest.RewardMode = models.RewardModeExplicit
+			} else {
+				quest.RewardMode = models.RewardModeRandom
+			}
+		}
+		quest.RewardMode = models.NormalizeRewardMode(string(quest.RewardMode))
+		quest.RandomRewardSize = models.NormalizeRandomRewardSize(string(quest.RandomRewardSize))
+		if quest.RewardExperience < 0 {
+			quest.RewardExperience = 0
+		}
+	}
 	return h.db.WithContext(ctx).Create(quest).Error
 }
 
 func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Quest) error {
 	if updates == nil {
 		return nil
+	}
+	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
+	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
+	if updates.RewardExperience < 0 {
+		updates.RewardExperience = 0
 	}
 	payload := map[string]interface{}{
 		"name":                     updates.Name,
@@ -32,6 +52,9 @@ func (h *questHandle) Update(ctx context.Context, id uuid.UUID, updates *models.
 		"recurring_quest_id":       updates.RecurringQuestID,
 		"recurrence_frequency":     updates.RecurrenceFrequency,
 		"next_recurrence_at":       updates.NextRecurrenceAt,
+		"reward_mode":              updates.RewardMode,
+		"random_reward_size":       updates.RandomRewardSize,
+		"reward_experience":        updates.RewardExperience,
 		"gold":                     updates.Gold,
 		"updated_at":               updates.UpdatedAt,
 	}

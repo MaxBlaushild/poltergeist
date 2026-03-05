@@ -255,6 +255,8 @@ type monsterUpsertRequest struct {
 	OffHandInventoryItemID      *int                       `json:"offHandInventoryItemId"`
 	WeaponInventoryItemID       *int                       `json:"weaponInventoryItemId"`
 	Level                       int                        `json:"level"`
+	RewardMode                  string                     `json:"rewardMode"`
+	RandomRewardSize            string                     `json:"randomRewardSize"`
 	RewardExperience            int                        `json:"rewardExperience"`
 	RewardGold                  int                        `json:"rewardGold"`
 	ItemRewards                 []monsterRewardItemPayload `json:"itemRewards"`
@@ -329,6 +331,8 @@ type monsterResponse struct {
 	Spells                      []models.Spell             `json:"spells"`
 	Statuses                    []models.MonsterStatus     `json:"statuses"`
 	ActiveBattleID              *uuid.UUID                 `json:"activeBattleId,omitempty"`
+	RewardMode                  models.RewardMode          `json:"rewardMode"`
+	RandomRewardSize            models.RandomRewardSize    `json:"randomRewardSize"`
 	RewardExperience            int                        `json:"rewardExperience"`
 	RewardGold                  int                        `json:"rewardGold"`
 	ItemRewards                 []models.MonsterItemReward `json:"itemRewards"`
@@ -567,6 +571,8 @@ func monsterResponseFrom(
 			}
 			return &activeBattle.ID
 		}(),
+		RewardMode:            monster.RewardMode,
+		RandomRewardSize:      monster.RandomRewardSize,
 		RewardExperience:      monster.RewardExperience,
 		RewardGold:            monster.RewardGold,
 		ItemRewards:           monster.ItemRewards,
@@ -611,7 +617,11 @@ func (s *server) buildMonsterResponse(
 		return monsterResponse{}, err
 	}
 	if activeBattle == nil {
-		return monsterResponseFrom(monster, models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil), nil
+		response := monsterResponseFrom(monster, models.CharacterStatBonuses{}, []models.MonsterStatus{}, nil)
+		if err := s.applyMonsterRewardsForUser(ctx, userID, monster, &response); err != nil {
+			return monsterResponse{}, err
+		}
+		return response, nil
 	}
 
 	activeStatuses, err := s.dbClient.MonsterStatus().FindActiveByBattleID(ctx, activeBattle.ID)
@@ -622,7 +632,11 @@ func (s *server) buildMonsterResponse(
 	for _, status := range activeStatuses {
 		totalStatusBonuses = totalStatusBonuses.Add(status.StatModifiers())
 	}
-	return monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, activeBattle), nil
+	response := monsterResponseFrom(monster, totalStatusBonuses, activeStatuses, activeBattle)
+	if err := s.applyMonsterRewardsForUser(ctx, userID, monster, &response); err != nil {
+		return monsterResponse{}, err
+	}
+	return response, nil
 }
 
 func (s *server) parseMonsterTemplateUpsertRequest(
@@ -716,6 +730,13 @@ func (s *server) parseMonsterUpsertRequest(
 	if body.RewardGold < 0 {
 		return nil, nil, fmt.Errorf("rewardGold must be zero or greater")
 	}
+	rewardMode := models.NormalizeRewardMode(body.RewardMode)
+	if strings.TrimSpace(body.RewardMode) == "" {
+		if body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 {
+			rewardMode = models.RewardModeExplicit
+		}
+	}
+	randomRewardSize := models.NormalizeRandomRewardSize(body.RandomRewardSize)
 
 	dominantItemID := body.DominantHandInventoryItemID
 	if dominantItemID == nil || (dominantItemID != nil && *dominantItemID <= 0) {
@@ -817,6 +838,8 @@ func (s *server) parseMonsterUpsertRequest(
 		OffHandInventoryItemID:      offHandItemID,
 		WeaponInventoryItemID:       dominantItemID,
 		Level:                       body.Level,
+		RewardMode:                  rewardMode,
+		RandomRewardSize:            randomRewardSize,
 		RewardExperience:            body.RewardExperience,
 		RewardGold:                  body.RewardGold,
 		ImageGenerationStatus:       models.MonsterImageGenerationStatusNone,

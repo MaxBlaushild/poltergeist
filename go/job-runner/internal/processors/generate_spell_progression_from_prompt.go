@@ -262,6 +262,9 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 		ManaCost:              seedManaCost,
 		Effects:               effects,
 	}
+	seedBand := promptInferSpellProgressionBand(seedSpell)
+	seedSpell.AbilityLevel = seedBand
+
 	if err := p.dbClient.Spell().Create(ctx, seedSpell); err != nil {
 		return nil, fmt.Errorf("failed to create seed spell: %w", err)
 	}
@@ -280,7 +283,6 @@ func (p *GenerateSpellProgressionFromPromptProcessor) generateSpellProgressionFr
 		return nil, fmt.Errorf("failed to create spell progression: %w", err)
 	}
 
-	seedBand := promptInferSpellProgressionBand(seedSpell)
 	if err := p.dbClient.Spell().UpsertProgressionMember(ctx, progression.ID, seedSpell.ID, seedBand); err != nil {
 		return nil, fmt.Errorf("failed to assign seed spell to progression: %w", err)
 	}

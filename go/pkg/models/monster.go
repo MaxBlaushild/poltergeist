@@ -30,6 +30,8 @@ type Monster struct {
 	WeaponInventoryItemID       *int                `json:"weaponInventoryItemId,omitempty" gorm:"column:weapon_inventory_item_id"`
 	WeaponInventoryItem         *InventoryItem      `json:"weaponInventoryItem,omitempty" gorm:"foreignKey:WeaponInventoryItemID"`
 	Level                       int                 `json:"level"`
+	RewardMode                  RewardMode          `json:"rewardMode" gorm:"column:reward_mode"`
+	RandomRewardSize            RandomRewardSize    `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	RewardExperience            int                 `json:"rewardExperience" gorm:"column:reward_experience"`
 	RewardGold                  int                 `json:"rewardGold" gorm:"column:reward_gold"`
 	ImageGenerationStatus       string              `json:"imageGenerationStatus" gorm:"column:image_generation_status"`

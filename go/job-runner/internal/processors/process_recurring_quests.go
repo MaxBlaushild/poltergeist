@@ -146,6 +146,9 @@ func (p *ProcessRecurringQuestsProcessor) cloneQuest(
 		RecurringQuestID:      &recurringID,
 		RecurrenceFrequency:   &frequency,
 		NextRecurrenceAt:      &nextAt,
+		RewardMode:            source.RewardMode,
+		RandomRewardSize:      source.RandomRewardSize,
+		RewardExperience:      source.RewardExperience,
 		Gold:                  source.Gold,
 	}
 

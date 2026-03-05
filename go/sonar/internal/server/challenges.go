@@ -37,6 +37,9 @@ type challengeUpsertRequest struct {
 	ThumbnailURL        string   `json:"thumbnailUrl"`
 	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
 	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
+	RewardMode          string   `json:"rewardMode"`
+	RandomRewardSize    string   `json:"randomRewardSize"`
+	RewardExperience    int      `json:"rewardExperience"`
 	Reward              int      `json:"reward"`
 	InventoryItemID     *int     `json:"inventoryItemId"`
 	SubmissionType      string   `json:"submissionType"`
@@ -83,6 +86,12 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		return nil, fmt.Errorf("question is required")
 	}
 	description := strings.TrimSpace(body.Description)
+	if body.RewardExperience < 0 {
+		return nil, fmt.Errorf("rewardExperience must be zero or greater")
+	}
+	if body.Reward < 0 {
+		return nil, fmt.Errorf("reward must be zero or greater")
+	}
 	if body.Difficulty < 0 {
 		return nil, fmt.Errorf("difficulty must be zero or greater")
 	}
@@ -120,6 +129,13 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	if err != nil {
 		return nil, err
 	}
+	rewardMode := models.NormalizeRewardMode(body.RewardMode)
+	if strings.TrimSpace(body.RewardMode) == "" {
+		if body.RewardExperience > 0 || body.Reward > 0 || body.InventoryItemID != nil {
+			rewardMode = models.RewardModeExplicit
+		}
+	}
+	randomRewardSize := models.NormalizeRandomRewardSize(body.RandomRewardSize)
 
 	challenge := &models.Challenge{
 		ZoneID:             zoneID,
@@ -131,6 +147,9 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		ImageURL:           imageURL,
 		ThumbnailURL:       thumbnailURL,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
+		RewardMode:         rewardMode,
+		RandomRewardSize:   randomRewardSize,
+		RewardExperience:   body.RewardExperience,
 		Reward:             body.Reward,
 		InventoryItemID:    body.InventoryItemID,
 		SubmissionType:     submissionType,

@@ -29,6 +29,9 @@ export interface Quest {
     recurrenceFrequency?: string | null;
     nextRecurrenceAt?: string | null;
     completionCount?: number;
+    rewardMode?: 'explicit' | 'random';
+    randomRewardSize?: 'small' | 'medium' | 'large';
+    rewardExperience?: number;
     gold?: number;
     itemRewards?: QuestItemReward[];
     spellRewards?: QuestSpellReward[];

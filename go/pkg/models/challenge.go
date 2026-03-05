@@ -27,6 +27,9 @@ type Challenge struct {
 	RecurringChallengeID *uuid.UUID              `json:"recurringChallengeId,omitempty" gorm:"column:recurring_challenge_id;type:uuid"`
 	RecurrenceFrequency  *string                 `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`
 	NextRecurrenceAt     *time.Time              `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
+	RewardMode           RewardMode              `json:"rewardMode" gorm:"column:reward_mode"`
+	RandomRewardSize     RandomRewardSize        `json:"randomRewardSize" gorm:"column:random_reward_size"`
+	RewardExperience     int                     `json:"rewardExperience" gorm:"column:reward_experience"`
 	Reward               int                     `json:"reward"`
 	InventoryItemID      *int                    `json:"inventoryItemId" gorm:"column:inventory_item_id"`
 	SubmissionType       QuestNodeSubmissionType `json:"submissionType" gorm:"type:text;default:photo"`

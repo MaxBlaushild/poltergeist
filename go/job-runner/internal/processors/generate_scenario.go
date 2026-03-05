@@ -281,6 +281,8 @@ func (p *GenerateScenarioProcessor) generateScenario(ctx context.Context, job *m
 		Longitude:        lng,
 		ImageURL:         scenarioPlaceholderImageURL,
 		ThumbnailURL:     scenarioPlaceholderImageURL,
+		RewardMode:       models.RewardModeExplicit,
+		RandomRewardSize: models.RandomRewardSizeSmall,
 		Difficulty:       24,
 		RewardExperience: 0,
 		RewardGold:       0,

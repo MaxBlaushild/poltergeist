@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -41,6 +42,15 @@ func (h *monsterHandle) Create(ctx context.Context, monster *models.Monster) err
 	if monster.DominantHandInventoryItemID != nil && monster.WeaponInventoryItemID == nil {
 		monster.WeaponInventoryItemID = monster.DominantHandInventoryItemID
 	}
+	if strings.TrimSpace(string(monster.RewardMode)) == "" {
+		if monster.RewardExperience > 0 || monster.RewardGold > 0 {
+			monster.RewardMode = models.RewardModeExplicit
+		} else {
+			monster.RewardMode = models.RewardModeRandom
+		}
+	}
+	monster.RewardMode = models.NormalizeRewardMode(string(monster.RewardMode))
+	monster.RandomRewardSize = models.NormalizeRandomRewardSize(string(monster.RandomRewardSize))
 	if monster.ImageGenerationStatus == "" {
 		monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
 	}
@@ -114,6 +124,8 @@ func (h *monsterHandle) Update(ctx context.Context, id uuid.UUID, updates *model
 	if updates.Level < 1 {
 		updates.Level = 1
 	}
+	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
+	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
 	}
@@ -132,6 +144,8 @@ func (h *monsterHandle) Update(ctx context.Context, id uuid.UUID, updates *model
 		"off_hand_inventory_item_id":      updates.OffHandInventoryItemID,
 		"weapon_inventory_item_id":        updates.WeaponInventoryItemID,
 		"level":                           updates.Level,
+		"reward_mode":                     updates.RewardMode,
+		"random_reward_size":              updates.RandomRewardSize,
 		"reward_experience":               updates.RewardExperience,
 		"reward_gold":                     updates.RewardGold,
 		"image_generation_status":         updates.ImageGenerationStatus,

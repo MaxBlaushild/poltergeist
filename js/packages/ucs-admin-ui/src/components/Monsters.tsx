@@ -67,6 +67,8 @@ type MonsterRecord = {
   attackDamageMax: number;
   attackSwipesPerAttack: number;
   spells: Spell[];
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience: number;
   rewardGold: number;
   imageGenerationStatus?: string;
@@ -175,6 +177,8 @@ type MonsterFormState = {
   dominantHandInventoryItemId: string;
   offHandInventoryItemId: string;
   level: string;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   rewardGold: string;
   itemRewards: MonsterFormItem[];
@@ -279,6 +283,8 @@ const emptyMonsterForm = (): MonsterFormState => ({
   dominantHandInventoryItemId: '',
   offHandInventoryItemId: '',
   level: '1',
+  rewardMode: 'random',
+  randomRewardSize: 'small',
   rewardExperience: '0',
   rewardGold: '0',
   itemRewards: [],
@@ -307,6 +313,11 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
       ? String(monster.offHandInventoryItemId)
       : '',
   level: String(monster.level ?? 1),
+  rewardMode: monster.rewardMode === 'explicit' ? 'explicit' : 'random',
+  randomRewardSize:
+    monster.randomRewardSize === 'medium' || monster.randomRewardSize === 'large'
+      ? monster.randomRewardSize
+      : 'small',
   rewardExperience: String(monster.rewardExperience ?? 0),
   rewardGold: String(monster.rewardGold ?? 0),
   itemRewards: (monster.itemRewards ?? []).map((reward) => ({
@@ -331,14 +342,20 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   offHandInventoryItemId: parseOptionalInt(form.offHandInventoryItemId),
   weaponInventoryItemId: parseIntSafe(form.dominantHandInventoryItemId, 0),
   level: parseIntSafe(form.level, 1),
-  rewardExperience: parseIntSafe(form.rewardExperience, 0),
-  rewardGold: parseIntSafe(form.rewardGold, 0),
-  itemRewards: form.itemRewards
-    .map((reward) => ({
-      inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
-      quantity: parseIntSafe(reward.quantity, 0),
-    }))
-    .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0),
+  rewardMode: form.rewardMode,
+  randomRewardSize: form.randomRewardSize,
+  rewardExperience:
+    form.rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
+  rewardGold: form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
+  itemRewards:
+    form.rewardMode === 'explicit'
+      ? form.itemRewards
+          .map((reward) => ({
+            inventoryItemId: parseIntSafe(reward.inventoryItemId, 0),
+            quantity: parseIntSafe(reward.quantity, 0),
+          }))
+          .filter((reward) => reward.inventoryItemId > 0 && reward.quantity > 0)
+      : [],
 });
 
 const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
@@ -1858,9 +1875,11 @@ export const Monsters = () => {
                               CHA {monster.charisma}
                             </p>
                             <p className="text-sm text-gray-600">
-                              XP {monster.rewardExperience} · Gold{' '}
-                              {monster.rewardGold} · Item rewards{' '}
-                              {monster.itemRewards?.length ?? 0}
+                              {(monster.rewardMode ?? 'random') === 'random'
+                                ? `Random ${(monster.randomRewardSize ?? 'small').toUpperCase()} reward`
+                                : `XP ${monster.rewardExperience} · Gold ${monster.rewardGold} · Item rewards ${
+                                    monster.itemRewards?.length ?? 0
+                                  }`}
                             </p>
                             <p className="text-xs text-gray-500 mt-1">
                               Image generation:{' '}
@@ -2468,12 +2487,53 @@ export const Monsters = () => {
 
               <div className="grid md:grid-cols-2 gap-4">
                 <label className="block">
+                  <span className="block text-sm mb-1">Reward Mode</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={monsterForm.rewardMode}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        rewardMode: event.target.value as 'explicit' | 'random',
+                      }))
+                    }
+                  >
+                    <option value="random">Random Reward</option>
+                    <option value="explicit">Explicit Reward</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Random Reward Size</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={monsterForm.randomRewardSize}
+                    disabled={monsterForm.rewardMode !== 'random'}
+                    onChange={(event) =>
+                      setMonsterForm((prev) => ({
+                        ...prev,
+                        randomRewardSize: event.target.value as
+                          | 'small'
+                          | 'medium'
+                          | 'large',
+                      }))
+                    }
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
                   <span className="block text-sm mb-1">Reward Experience</span>
                   <input
                     type="number"
                     min={0}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.rewardExperience}
+                    disabled={monsterForm.rewardMode !== 'explicit'}
                     onChange={(event) =>
                       setMonsterForm((prev) => ({
                         ...prev,
@@ -2489,6 +2549,7 @@ export const Monsters = () => {
                     min={0}
                     className="w-full border border-gray-300 rounded-md p-2"
                     value={monsterForm.rewardGold}
+                    disabled={monsterForm.rewardMode !== 'explicit'}
                     onChange={(event) =>
                       setMonsterForm((prev) => ({
                         ...prev,
@@ -2505,6 +2566,7 @@ export const Monsters = () => {
                   <button
                     type="button"
                     className="qa-btn qa-btn-secondary"
+                    disabled={monsterForm.rewardMode !== 'explicit'}
                     onClick={() =>
                       setMonsterForm((prev) => ({
                         ...prev,
@@ -2531,6 +2593,7 @@ export const Monsters = () => {
                       <select
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.inventoryItemId}
+                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateMonsterItemReward(index, {
                             inventoryItemId: event.target.value,
@@ -2549,6 +2612,7 @@ export const Monsters = () => {
                         min={1}
                         className="border border-gray-300 rounded-md p-2"
                         value={reward.quantity}
+                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onChange={(event) =>
                           updateMonsterItemReward(index, {
                             quantity: event.target.value,
@@ -2558,6 +2622,7 @@ export const Monsters = () => {
                       <button
                         type="button"
                         className="qa-btn qa-btn-danger"
+                        disabled={monsterForm.rewardMode !== 'explicit'}
                         onClick={() =>
                           setMonsterForm((prev) => ({
                             ...prev,
@@ -2573,6 +2638,12 @@ export const Monsters = () => {
                   ))
                 )}
               </div>
+
+              {monsterForm.rewardMode === 'random' ? (
+                <p className="text-xs text-gray-500">
+                  Random rewards ignore explicit XP, gold, and item rewards.
+                </p>
+              ) : null}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button

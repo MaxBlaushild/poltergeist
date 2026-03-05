@@ -68,6 +68,8 @@ type ScenarioRecord = {
   scaleWithUserLevel: boolean;
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;
+  rewardMode?: 'explicit' | 'random';
+  randomRewardSize?: 'small' | 'medium' | 'large';
   rewardExperience: number;
   rewardGold: number;
   openEnded: boolean;
@@ -101,6 +103,8 @@ type ScenarioFormState = {
   scaleWithUserLevel: boolean;
   recurrenceFrequency: string;
   openEnded: boolean;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
   rewardExperience: string;
   rewardGold: string;
   failurePenaltyMode: ScenarioFailurePenaltyMode;
@@ -224,6 +228,8 @@ const emptyFormState = (): ScenarioFormState => ({
   scaleWithUserLevel: false,
   recurrenceFrequency: '',
   openEnded: false,
+  rewardMode: 'random',
+  randomRewardSize: 'small',
   rewardExperience: '0',
   rewardGold: '0',
   failurePenaltyMode: 'shared',
@@ -972,6 +978,12 @@ export const Scenarios = () => {
       scaleWithUserLevel: Boolean(record.scaleWithUserLevel),
       recurrenceFrequency: record.recurrenceFrequency ?? '',
       openEnded: record.openEnded,
+      rewardMode: record.rewardMode === 'explicit' ? 'explicit' : 'random',
+      randomRewardSize:
+        record.randomRewardSize === 'medium' ||
+        record.randomRewardSize === 'large'
+          ? record.randomRewardSize
+          : 'small',
       rewardExperience: record.rewardExperience.toString(),
       rewardGold: record.rewardGold.toString(),
       failurePenaltyMode: normalizeFailurePenaltyMode(
@@ -1100,10 +1112,15 @@ export const Scenarios = () => {
       scaleWithUserLevel: form.scaleWithUserLevel,
       recurrenceFrequency: form.recurrenceFrequency,
       openEnded: form.openEnded,
-      rewardExperience: form.openEnded
+      rewardMode: form.rewardMode,
+      randomRewardSize: form.randomRewardSize,
+      rewardExperience: form.openEnded && form.rewardMode === 'explicit'
         ? parseIntValue(form.rewardExperience)
         : 0,
-      rewardGold: form.openEnded ? parseIntValue(form.rewardGold) : 0,
+      rewardGold:
+        form.openEnded && form.rewardMode === 'explicit'
+          ? parseIntValue(form.rewardGold)
+          : 0,
       failurePenaltyMode: scenarioPenaltyMode,
       successRewardMode,
       failureHealthDrainType: form.failureHealthDrainType,
@@ -1180,8 +1197,10 @@ export const Scenarios = () => {
               .map((reward) => ({ spellId: reward.spellId.trim() }))
               .filter((reward) => reward.spellId.length > 0),
           })),
-      itemRewards: form.openEnded ? form.itemRewards : [],
-      spellRewards: form.openEnded
+      itemRewards:
+        form.openEnded && form.rewardMode === 'explicit' ? form.itemRewards : [],
+      spellRewards:
+        form.openEnded && form.rewardMode === 'explicit'
         ? form.spellRewards
             .map((reward) => ({ spellId: reward.spellId.trim() }))
             .filter((reward) => reward.spellId.length > 0)
@@ -2847,6 +2866,51 @@ export const Scenarios = () => {
               Open-ended scenario (freeform response)
             </label>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+              <label className="text-sm">
+                Reward Mode
+                <select
+                  value={form.rewardMode}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      rewardMode: e.target.value as 'explicit' | 'random',
+                    }))
+                  }
+                  className="w-full border rounded-md p-2"
+                >
+                  <option value="random">Random Reward</option>
+                  <option value="explicit">Explicit Reward</option>
+                </select>
+              </label>
+              <label className="text-sm">
+                Random Reward Size
+                <select
+                  value={form.randomRewardSize}
+                  disabled={form.rewardMode !== 'random'}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      randomRewardSize: e.target.value as
+                        | 'small'
+                        | 'medium'
+                        | 'large',
+                    }))
+                  }
+                  className="w-full border rounded-md p-2"
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+            </div>
+            {form.rewardMode === 'random' ? (
+              <div className="text-xs text-gray-500 mb-4">
+                Random rewards ignore explicit XP, gold, item, and spell rewards.
+              </div>
+            ) : null}
+
             {form.openEnded ? (
               <div className="border rounded-md p-3 mb-4">
                 <div className="font-medium mb-2">Scenario Rewards</div>
@@ -2855,6 +2919,7 @@ export const Scenarios = () => {
                     Reward Experience
                     <input
                       value={form.rewardExperience}
+                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
@@ -2870,6 +2935,7 @@ export const Scenarios = () => {
                     Reward Gold
                     <input
                       value={form.rewardGold}
+                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
@@ -2887,6 +2953,7 @@ export const Scenarios = () => {
                   <button
                     className="bg-green-600 text-white px-3 py-1 rounded-md"
                     type="button"
+                    disabled={form.rewardMode !== 'explicit'}
                     onClick={addScenarioItemReward}
                   >
                     Add Item
@@ -2899,6 +2966,7 @@ export const Scenarios = () => {
                   >
                     <select
                       value={reward.inventoryItemId}
+                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         updateScenarioItemReward(index, {
                           inventoryItemId: parseIntValue(e.target.value, 0),
@@ -2915,6 +2983,7 @@ export const Scenarios = () => {
                     </select>
                     <input
                       value={reward.quantity}
+                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         updateScenarioItemReward(index, {
                           quantity: parseIntValue(e.target.value, 1),
@@ -2927,6 +2996,7 @@ export const Scenarios = () => {
                     <button
                       type="button"
                       className="bg-red-500 text-white px-3 py-1 rounded-md"
+                      disabled={form.rewardMode !== 'explicit'}
                       onClick={() => removeScenarioItemReward(index)}
                     >
                       Remove
@@ -2939,6 +3009,7 @@ export const Scenarios = () => {
                   <button
                     className="bg-green-600 text-white px-3 py-1 rounded-md"
                     type="button"
+                    disabled={form.rewardMode !== 'explicit'}
                     onClick={addScenarioSpellReward}
                   >
                     Add Spell
@@ -2951,6 +3022,7 @@ export const Scenarios = () => {
                   >
                     <select
                       value={reward.spellId}
+                      disabled={form.rewardMode !== 'explicit'}
                       onChange={(e) =>
                         updateScenarioSpellReward(index, {
                           spellId: e.target.value,
@@ -2968,6 +3040,7 @@ export const Scenarios = () => {
                     <button
                       type="button"
                       className="bg-red-500 text-white px-3 py-1 rounded-md"
+                      disabled={form.rewardMode !== 'explicit'}
                       onClick={() => removeScenarioSpellReward(index)}
                     >
                       Remove

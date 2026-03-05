@@ -3138,6 +3138,9 @@ func (s *server) createQuest(ctx *gin.Context) {
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
 		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
+		RewardMode            string     `json:"rewardMode"`
+		RandomRewardSize      string     `json:"randomRewardSize"`
+		RewardExperience      *int       `json:"rewardExperience"`
 		Gold                  *int       `json:"gold"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -3155,6 +3158,14 @@ func (s *server) createQuest(ctx *gin.Context) {
 
 	if strings.TrimSpace(requestBody.Name) == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest name is required"})
+		return
+	}
+	if requestBody.Gold != nil && *requestBody.Gold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "gold must be zero or greater"})
+		return
+	}
+	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
 		return
 	}
 
@@ -3175,11 +3186,29 @@ func (s *server) createQuest(ctx *gin.Context) {
 		ZoneID:                requestBody.ZoneID,
 		QuestArchetypeID:      requestBody.QuestArchetypeID,
 		QuestGiverCharacterID: requestBody.QuestGiverCharacterID,
+		RewardMode:            models.RewardModeRandom,
+		RandomRewardSize:      models.NormalizeRandomRewardSize(requestBody.RandomRewardSize),
+		RewardExperience:      0,
 		Gold:                  0,
 	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
 	}
+	if requestBody.RewardExperience != nil {
+		quest.RewardExperience = *requestBody.RewardExperience
+	}
+	rewardMode := models.NormalizeRewardMode(requestBody.RewardMode)
+	if strings.TrimSpace(requestBody.RewardMode) == "" {
+		hasExplicitRewardConfig :=
+			quest.Gold > 0 ||
+				quest.RewardExperience > 0 ||
+				(requestBody.ItemRewards != nil && len(*requestBody.ItemRewards) > 0) ||
+				(requestBody.SpellRewards != nil && len(*requestBody.SpellRewards) > 0)
+		if hasExplicitRewardConfig {
+			rewardMode = models.RewardModeExplicit
+		}
+	}
+	quest.RewardMode = rewardMode
 	if requestBody.RecurrenceFrequency != nil {
 		recurrence := models.NormalizeQuestRecurrenceFrequency(*requestBody.RecurrenceFrequency)
 		if recurrence != "" {
@@ -3271,6 +3300,9 @@ func (s *server) updateQuest(ctx *gin.Context) {
 		QuestArchetypeID      *uuid.UUID `json:"questArchetypeId"`
 		QuestGiverCharacterID *uuid.UUID `json:"questGiverCharacterId"`
 		RecurrenceFrequency   *string    `json:"recurrenceFrequency"`
+		RewardMode            string     `json:"rewardMode"`
+		RandomRewardSize      string     `json:"randomRewardSize"`
+		RewardExperience      *int       `json:"rewardExperience"`
 		Gold                  *int       `json:"gold"`
 		ItemRewards           *[]struct {
 			InventoryItemID int `json:"inventoryItemId"`
@@ -3283,6 +3315,14 @@ func (s *server) updateQuest(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Gold != nil && *requestBody.Gold < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "gold must be zero or greater"})
+		return
+	}
+	if requestBody.RewardExperience != nil && *requestBody.RewardExperience < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "rewardExperience must be zero or greater"})
 		return
 	}
 
@@ -3306,8 +3346,27 @@ func (s *server) updateQuest(ctx *gin.Context) {
 	quest.ZoneID = requestBody.ZoneID
 	quest.QuestArchetypeID = requestBody.QuestArchetypeID
 	quest.QuestGiverCharacterID = requestBody.QuestGiverCharacterID
+	if strings.TrimSpace(requestBody.RewardMode) != "" {
+		quest.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
+	}
+	if strings.TrimSpace(requestBody.RandomRewardSize) != "" {
+		quest.RandomRewardSize = models.NormalizeRandomRewardSize(requestBody.RandomRewardSize)
+	}
+	if requestBody.RewardExperience != nil {
+		quest.RewardExperience = *requestBody.RewardExperience
+	}
 	if requestBody.Gold != nil {
 		quest.Gold = *requestBody.Gold
+	}
+	if strings.TrimSpace(requestBody.RewardMode) == "" {
+		if strings.TrimSpace(string(quest.RewardMode)) == "" {
+			quest.RewardMode = models.RewardModeRandom
+		}
+	} else {
+		quest.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
+	}
+	if strings.TrimSpace(string(quest.RandomRewardSize)) == "" {
+		quest.RandomRewardSize = models.RandomRewardSizeSmall
 	}
 	if requestBody.RecurrenceFrequency != nil {
 		recurrence := models.NormalizeQuestRecurrenceFrequency(*requestBody.RecurrenceFrequency)
@@ -7199,6 +7258,7 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	setItemLevel := resolveInventorySetItemLevel(sourceItem, setTheme, profile, targetSlots, existingItems)
 	existingKeys := make(map[string]struct{}, len(existingItems))
 	for _, existing := range existingItems {
 		if existing.EquipSlot == nil || strings.TrimSpace(*existing.EquipSlot) == "" {
@@ -7228,7 +7288,7 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 			IsCaptureType:           false,
 			SellValue:               cloneIntPtr(sourceItem.SellValue),
 			UnlockTier:              cloneIntPtr(sourceItem.UnlockTier),
-			ItemLevel:               maxInt(sourceItem.ItemLevel, 1),
+			ItemLevel:               setItemLevel,
 			EquipSlot:               stringPtr(slot),
 			StrengthMod:             strengthMod,
 			DexterityMod:            dexterityMod,
@@ -7401,6 +7461,93 @@ func normalizeInventorySetRarityTier(value string) string {
 	default:
 		return ""
 	}
+}
+
+func resolveInventorySetItemLevel(
+	sourceItem *models.InventoryItem,
+	setTheme string,
+	profile string,
+	targetSlots []string,
+	existingItems []models.InventoryItem,
+) int {
+	defaultLevel := 1
+	if sourceItem != nil {
+		if sourceItem.ItemLevel > 0 {
+			defaultLevel = sourceItem.ItemLevel
+		} else if sourceItem.UnlockTier != nil && *sourceItem.UnlockTier > 0 {
+			defaultLevel = *sourceItem.UnlockTier
+		}
+	}
+	defaultLevel = maxInt(defaultLevel, 1)
+
+	if sourceItem == nil || len(existingItems) == 0 {
+		return defaultLevel
+	}
+
+	slotSet := map[string]struct{}{}
+	for _, slot := range targetSlots {
+		slotSet[normalizeInventorySetSlot(slot)] = struct{}{}
+	}
+	if sourceItem.EquipSlot != nil && strings.TrimSpace(*sourceItem.EquipSlot) != "" {
+		slotSet[normalizeInventorySetSlot(*sourceItem.EquipSlot)] = struct{}{}
+	}
+
+	expectedKeys := map[string]struct{}{}
+	for slot := range slotSet {
+		name, _ := inventorySetItemName(sourceItem, setTheme, slot, profile)
+		expectedKeys[inventorySetItemKey(slot, name)] = struct{}{}
+	}
+	if sourceItem.EquipSlot != nil && strings.TrimSpace(*sourceItem.EquipSlot) != "" {
+		expectedKeys[inventorySetItemKey(normalizeInventorySetSlot(*sourceItem.EquipSlot), sourceItem.Name)] = struct{}{}
+	}
+
+	themePrefix := strings.ToLower(strings.TrimSpace(setTheme)) + " "
+	counts := map[int]int{}
+	for _, existing := range existingItems {
+		if existing.EquipSlot == nil || strings.TrimSpace(*existing.EquipSlot) == "" {
+			continue
+		}
+		slot := normalizeInventorySetSlot(*existing.EquipSlot)
+		if _, trackedSlot := slotSet[slot]; !trackedSlot {
+			continue
+		}
+
+		key := inventorySetItemKey(slot, existing.Name)
+		if _, exactMatch := expectedKeys[key]; !exactMatch {
+			if strings.TrimSpace(setTheme) == "" || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(existing.Name)), themePrefix) {
+				continue
+			}
+		}
+
+		level := existing.ItemLevel
+		if level <= 0 && existing.UnlockTier != nil {
+			level = *existing.UnlockTier
+		}
+		if level <= 0 {
+			continue
+		}
+		counts[level]++
+	}
+
+	if len(counts) == 0 {
+		return defaultLevel
+	}
+
+	bestLevel := defaultLevel
+	bestCount := counts[defaultLevel]
+	levels := make([]int, 0, len(counts))
+	for level := range counts {
+		levels = append(levels, level)
+	}
+	sort.Ints(levels)
+	for _, level := range levels {
+		count := counts[level]
+		if count > bestCount {
+			bestLevel = level
+			bestCount = count
+		}
+	}
+	return maxInt(bestLevel, 1)
 }
 
 func inventorySetPrimaryStatPointsForTargetLevel(targetLevel int, rarity string) int {
@@ -7681,12 +7828,6 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 	if !hasQuality {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "source item name must include a quality prefix like 'Minor'",
-		})
-		return
-	}
-	if strings.ToLower(sourceQualityLabel) != "minor" {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "source consumable must start with 'Minor' to generate full quality progression",
 		})
 		return
 	}
@@ -9275,15 +9416,72 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	if successReason == "" {
 		successReason = "Challenge completed successfully!"
 	}
-	ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
-		Successful:     true,
-		Reason:         successReason,
-		QuestCompleted: false,
-		Score:          &scoreValue,
-		Difficulty:     &difficultyValue,
-		CombinedScore:  &combinedValue,
-		StatTags:       statTags,
-		StatValues:     statValues,
+	rewardExperience := 0
+	rewardGold := 0
+	rewardItems := []scenarioRewardItem{}
+	rewardMode := models.NormalizeRewardMode(string(challenge.RewardMode))
+	if rewardMode == models.RewardModeRandom {
+		plan, _, err := s.randomRewardPlanForUser(
+			ctx,
+			user.ID,
+			challenge.RandomRewardSize,
+			fmt.Sprintf("challenge:%s:user:%s", challenge.ID, user.ID),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		rewardExperience = plan.Experience
+		rewardGold = plan.Gold
+		rewardItems = randomRewardPlanToScenarioItems(plan)
+	} else {
+		rewardExperience = challenge.RewardExperience
+		if rewardExperience < 0 {
+			rewardExperience = 0
+		}
+		rewardGold = challenge.Reward
+		if rewardGold < 0 {
+			rewardGold = 0
+		}
+		if challenge.InventoryItemID != nil && *challenge.InventoryItemID > 0 {
+			rewardItems = append(rewardItems, scenarioRewardItem{
+				InventoryItemID: *challenge.InventoryItemID,
+				Quantity:        1,
+			})
+		}
+	}
+
+	proficiencies := []string{}
+	if challenge.Proficiency != nil {
+		proficiencies = append(proficiencies, strings.TrimSpace(*challenge.Proficiency))
+	}
+	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
+		ctx,
+		user.ID,
+		rewardExperience,
+		rewardGold,
+		rewardItems,
+		[]scenarioRewardSpell{},
+		proficiencies,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"successful":       true,
+		"reason":           successReason,
+		"questCompleted":   false,
+		"score":            scoreValue,
+		"difficulty":       difficultyValue,
+		"combinedScore":    combinedValue,
+		"statTags":         statTags,
+		"statValues":       statValues,
+		"rewardExperience": rewardExperience,
+		"rewardGold":       rewardGold,
+		"itemsAwarded":     itemsAwarded,
+		"spellsAwarded":    spellsAwarded,
 	})
 }
 
@@ -12887,6 +13085,8 @@ type scenarioUpsertRequest struct {
 	Prompt                    string                         `json:"prompt"`
 	ImageURL                  string                         `json:"imageUrl"`
 	ThumbnailURL              string                         `json:"thumbnailUrl"`
+	RewardMode                string                         `json:"rewardMode"`
+	RandomRewardSize          string                         `json:"randomRewardSize"`
 	Difficulty                *int                           `json:"difficulty"`
 	RewardExperience          int                            `json:"rewardExperience"`
 	RewardGold                int                            `json:"rewardGold"`
@@ -13074,6 +13274,18 @@ func normalizeScenarioSuccessRewardMode(raw string, openEnded bool) (models.Scen
 	default:
 		return "", fmt.Errorf("invalid successRewardMode")
 	}
+}
+
+func scenarioOptionsHaveExplicitRewards(options []scenarioOptionPayload) bool {
+	for _, option := range options {
+		if option.RewardExperience > 0 || option.RewardGold > 0 {
+			return true
+		}
+		if len(option.ItemRewards) > 0 || len(option.SpellRewards) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeScenarioFailureDrainType(raw string) (models.ScenarioFailureDrainType, error) {
@@ -13696,6 +13908,19 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	if body.RewardExperience < 0 || body.RewardGold < 0 {
 		return nil, nil, nil, nil, fmt.Errorf("reward values must be zero or greater")
 	}
+	rewardMode := models.NormalizeRewardMode(body.RewardMode)
+	if strings.TrimSpace(body.RewardMode) == "" {
+		hasExplicitRewardConfig :=
+			body.RewardExperience > 0 ||
+				body.RewardGold > 0 ||
+				len(body.ItemRewards) > 0 ||
+				len(body.SpellRewards) > 0 ||
+				scenarioOptionsHaveExplicitRewards(body.Options)
+		if hasExplicitRewardConfig {
+			rewardMode = models.RewardModeExplicit
+		}
+	}
+	randomRewardSize := models.NormalizeRandomRewardSize(body.RandomRewardSize)
 	difficulty, err := scenarioDifficultyValue(body.Difficulty)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -13706,7 +13931,9 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 	if !body.OpenEnded && len(body.Options) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("non-open-ended scenarios require at least one option")
 	}
-	if !body.OpenEnded && (body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 || len(body.SpellRewards) > 0) {
+	if rewardMode == models.RewardModeExplicit &&
+		!body.OpenEnded &&
+		(body.RewardExperience > 0 || body.RewardGold > 0 || len(body.ItemRewards) > 0 || len(body.SpellRewards) > 0) {
 		return nil, nil, nil, nil, fmt.Errorf("scenario-level rewards are only for open-ended scenarios")
 	}
 	failurePenaltyMode, err := normalizeScenarioFailurePenaltyMode(body.FailurePenaltyMode, body.OpenEnded)
@@ -13783,6 +14010,8 @@ func (s *server) parseScenarioUpsertRequest(ctx context.Context, body scenarioUp
 		ImageURL:                  strings.TrimSpace(body.ImageURL),
 		ThumbnailURL:              thumbnailURL,
 		ScaleWithUserLevel:        body.ScaleWithUserLevel,
+		RewardMode:                rewardMode,
+		RandomRewardSize:          randomRewardSize,
 		Difficulty:                difficulty,
 		RewardExperience:          body.RewardExperience,
 		RewardGold:                body.RewardGold,
@@ -14425,6 +14654,8 @@ func (s *server) performScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	scenarioRewardMode := models.NormalizeRewardMode(string(scenario.RewardMode))
+	scenarioRandomRewardSize := models.NormalizeRandomRewardSize(string(scenario.RandomRewardSize))
 
 	existingAttempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
 	if err != nil {
@@ -14555,6 +14786,22 @@ func (s *server) performScenario(ctx *gin.Context) {
 		Statuses: []scenarioAppliedFailureStatus{},
 	}
 	if success {
+		if scenarioRewardMode == models.RewardModeRandom {
+			plan, _, err := s.randomRewardPlanForUser(
+				ctx,
+				user.ID,
+				scenarioRandomRewardSize,
+				fmt.Sprintf("scenario:%s:user:%s", scenario.ID, user.ID),
+			)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			rewardExperience = plan.Experience
+			rewardGold = plan.Gold
+			rewardItems = randomRewardPlanToScenarioItems(plan)
+			rewardSpells = []scenarioRewardSpell{}
+		}
 		itemsAwarded, spellsAwarded, err = s.awardScenarioRewards(
 			ctx,
 			user.ID,

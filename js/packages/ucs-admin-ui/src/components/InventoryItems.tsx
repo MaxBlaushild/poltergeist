@@ -352,10 +352,27 @@ const hasConsumableEffects = (item: InventoryItemRecord) => {
   return false;
 };
 
-const isMinorConsumableSeed = (item: InventoryItemRecord) => {
+const consumableQualityPrefixes = [
+  'minor',
+  'lesser',
+  'greater',
+  'major',
+  'superior',
+  'superb',
+] as const;
+
+const hasConsumableQualityPrefix = (name?: string | null) => {
+  const normalized = (name ?? '').trim().toLowerCase();
+  if (!normalized) return false;
+  return consumableQualityPrefixes.some((prefix) =>
+    normalized.startsWith(`${prefix} `)
+  );
+};
+
+const canGenerateConsumableQualities = (item: InventoryItemRecord) => {
   if (item.equipSlot) return false;
   if (!hasConsumableEffects(item)) return false;
-  return /^\s*minor\s+/i.test(item.name ?? '');
+  return hasConsumableQualityPrefix(item.name);
 };
 
 export const InventoryItems = () => {
@@ -1149,8 +1166,10 @@ export const InventoryItems = () => {
   };
 
   const handleGenerateConsumableQualities = async (item: InventoryItemRecord) => {
-    if (!isMinorConsumableSeed(item)) {
-      alert('Only minor consumables can generate quality progression.');
+    if (!canGenerateConsumableQualities(item)) {
+      alert(
+        'Only non-equippable consumables with effects and a quality prefix (Minor/Lesser/Greater/Major/Superior/Superb) can generate quality progression.'
+      );
       return;
     }
 
@@ -1964,7 +1983,7 @@ export const InventoryItems = () => {
               >
                 Regenerate Image
               </button>
-              {isMinorConsumableSeed(item) && (
+              {canGenerateConsumableQualities(item) && (
                 <button
                   onClick={() => handleGenerateConsumableQualities(item)}
                   className="bg-orange-600 text-white px-4 py-2 rounded-md mr-2 disabled:bg-gray-300 disabled:cursor-not-allowed"

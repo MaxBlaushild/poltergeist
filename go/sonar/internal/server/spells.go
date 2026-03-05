@@ -2161,10 +2161,15 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 	}
 	occupiedBands := map[int]uuid.UUID{}
 	seedBand := 0
+	seedBandNeedsNormalization := false
 	for _, member := range members {
 		occupiedBands[member.LevelBand] = member.SpellID
 		if member.SpellID == seedSpell.ID {
-			seedBand = member.LevelBand
+			normalizedSeedBand := normalizeSpellProgressionBand(member.LevelBand)
+			seedBand = normalizedSeedBand
+			if normalizedSeedBand != member.LevelBand {
+				seedBandNeedsNormalization = true
+			}
 		}
 	}
 	if seedBand == 0 {
@@ -2175,6 +2180,21 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 			return
 		}
 		occupiedBands[seedBand] = seedSpell.ID
+	} else if seedBandNeedsNormalization {
+		if err := s.dbClient.Spell().UpsertProgressionMember(ctx, progression.ID, seedSpell.ID, seedBand); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		occupiedBands[seedBand] = seedSpell.ID
+	}
+	if seedSpell.AbilityLevel != seedBand {
+		if err := s.dbClient.Spell().Update(ctx, seedSpell.ID, map[string]interface{}{
+			"ability_level": seedBand,
+		}); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		seedSpell.AbilityLevel = seedBand
 	}
 
 	existingSpells, err := s.dbClient.Spell().FindAll(ctx)

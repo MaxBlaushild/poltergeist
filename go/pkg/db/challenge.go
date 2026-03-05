@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -18,6 +19,20 @@ func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
 }
 
 func (h *challengeHandle) Create(ctx context.Context, challenge *models.Challenge) error {
+	if challenge != nil {
+		if strings.TrimSpace(string(challenge.RewardMode)) == "" {
+			if challenge.Reward > 0 || challenge.RewardExperience > 0 || challenge.InventoryItemID != nil {
+				challenge.RewardMode = models.RewardModeExplicit
+			} else {
+				challenge.RewardMode = models.RewardModeRandom
+			}
+		}
+		challenge.RewardMode = models.NormalizeRewardMode(string(challenge.RewardMode))
+		challenge.RandomRewardSize = models.NormalizeRandomRewardSize(string(challenge.RandomRewardSize))
+		if challenge.RewardExperience < 0 {
+			challenge.RewardExperience = 0
+		}
+	}
 	return h.db.WithContext(ctx).Create(challenge).Error
 }
 
@@ -65,6 +80,11 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
 		return err
 	}
+	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
+	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
+	if updates.RewardExperience < 0 {
+		updates.RewardExperience = 0
+	}
 	payload := map[string]interface{}{
 		"zone_id":                updates.ZoneID,
 		"point_of_interest_id":   updates.PointOfInterestID,
@@ -79,6 +99,9 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		"recurring_challenge_id": updates.RecurringChallengeID,
 		"recurrence_frequency":   updates.RecurrenceFrequency,
 		"next_recurrence_at":     updates.NextRecurrenceAt,
+		"reward_mode":            updates.RewardMode,
+		"random_reward_size":     updates.RandomRewardSize,
+		"reward_experience":      updates.RewardExperience,
 		"reward":                 updates.Reward,
 		"inventory_item_id":      updates.InventoryItemID,
 		"submission_type":        updates.SubmissionType,

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -67,6 +68,15 @@ func normalizeScenarioFailurePenaltyDefaults(scenario *models.Scenario) {
 	if scenario.SuccessStatuses == nil {
 		scenario.SuccessStatuses = models.ScenarioFailureStatusTemplates{}
 	}
+	if strings.TrimSpace(string(scenario.RewardMode)) == "" {
+		if scenario.RewardExperience > 0 || scenario.RewardGold > 0 {
+			scenario.RewardMode = models.RewardModeExplicit
+		} else {
+			scenario.RewardMode = models.RewardModeRandom
+		}
+	}
+	scenario.RewardMode = models.NormalizeRewardMode(string(scenario.RewardMode))
+	scenario.RandomRewardSize = models.NormalizeRandomRewardSize(string(scenario.RandomRewardSize))
 }
 
 func normalizeScenarioOptionFailurePenaltyDefaults(option *models.ScenarioOption) {
@@ -201,6 +211,8 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"recurring_scenario_id":        updates.RecurringScenarioID,
 		"recurrence_frequency":         updates.RecurrenceFrequency,
 		"next_recurrence_at":           updates.NextRecurrenceAt,
+		"reward_mode":                  updates.RewardMode,
+		"random_reward_size":           updates.RandomRewardSize,
 		"difficulty":                   updates.Difficulty,
 		"reward_experience":            updates.RewardExperience,
 		"reward_gold":                  updates.RewardGold,
