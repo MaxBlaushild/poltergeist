@@ -1073,6 +1073,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         await _refreshScenarioSymbols();
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
+        await _refreshUndiscoveredPoiOpacitiesForZone();
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
@@ -1088,6 +1089,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           await _refreshScenarioSymbols();
           await _refreshMonsterSymbols();
           await _refreshChallengeSymbols();
+          await _refreshUndiscoveredPoiOpacitiesForZone();
         }
       }
     }
@@ -2652,6 +2654,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
       final poiImageUpdates = <_PoiImageUpdate>[];
       final poiSymbolRequests = <_PoiSymbolRequest>[];
+      final challengePoiIds = _challenges
+          .map((challenge) => challenge.pointOfInterestId?.trim() ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
       for (final poi in _pois) {
         final lat = double.tryParse(poi.lat) ?? 0.0;
         final lng = double.tryParse(poi.lng) ?? 0.0;
@@ -2659,10 +2665,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final undiscovered = !useRealImage;
         final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
         final isQuestCurrent = questPoiIds.contains(poi.id);
+        final hasChallengeAssociation = challengePoiIds.contains(poi.id);
+        final hasQuestAssociation = poi.hasAvailableQuest || isQuestCurrent;
+
+        if (undiscovered && !hasChallengeAssociation && !hasQuestAssociation) {
+          continue;
+        }
+
         final hasQuestAvailable = poi.hasAvailableQuest;
         final hasCharacter = poi.characters.isNotEmpty;
         final baseEligible =
-            hasCharacter || hasQuestAvailable || isQuestCurrent;
+            hasCharacter ||
+            hasQuestAvailable ||
+            isQuestCurrent ||
+            hasChallengeAssociation;
         if (!baseEligible) {
           continue;
         }
@@ -3089,6 +3105,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     required bool undiscovered,
   }) {
     if (isQuestCurrent || !undiscovered) return 1.0;
+    final hasChallengeAssociation = _challenges.any(
+      (challenge) =>
+          (challenge.pointOfInterestId?.trim().isNotEmpty ?? false) &&
+          challenge.pointOfInterestId?.trim() == poi.id,
+    );
+    final hasQuestAssociation = poi.hasAvailableQuest || isQuestCurrent;
+    if (!hasChallengeAssociation && !hasQuestAssociation) return 0.0;
     if (!mounted) return 0.5;
 
     final selectedZone = context.read<ZoneProvider>().selectedZone;

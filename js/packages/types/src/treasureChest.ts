@@ -19,10 +19,12 @@ export interface TreasureChest {
   longitude: number;
   zoneId: string;
   zone: Zone;
+  rewardMode: 'explicit' | 'random';
+  randomRewardSize: 'small' | 'medium' | 'large';
+  rewardExperience: number;
   gold: number | null;
   geometry: string;
   unlockTier: number | null;
   items: TreasureChestItem[];
   openedByUser?: boolean;
 }
-

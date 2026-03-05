@@ -315,7 +315,8 @@ const monsterFormFromRecord = (monster: MonsterRecord): MonsterFormState => ({
   level: String(monster.level ?? 1),
   rewardMode: monster.rewardMode === 'explicit' ? 'explicit' : 'random',
   randomRewardSize:
-    monster.randomRewardSize === 'medium' || monster.randomRewardSize === 'large'
+    monster.randomRewardSize === 'medium' ||
+    monster.randomRewardSize === 'large'
       ? monster.randomRewardSize
       : 'small',
   rewardExperience: String(monster.rewardExperience ?? 0),
@@ -346,7 +347,8 @@ const monsterPayloadFromForm = (form: MonsterFormState) => ({
   randomRewardSize: form.randomRewardSize,
   rewardExperience:
     form.rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
-  rewardGold: form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
+  rewardGold:
+    form.rewardMode === 'explicit' ? parseIntSafe(form.rewardGold, 0) : 0,
   itemRewards:
     form.rewardMode === 'explicit'
       ? form.itemRewards
@@ -475,6 +477,10 @@ export const Monsters = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItemLite[]>([]);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [bulkDeletingEncounters, setBulkDeletingEncounters] = useState(false);
+  const [selectedEncounterIds, setSelectedEncounterIds] = useState<Set<string>>(
+    new Set()
+  );
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] =
@@ -747,6 +753,16 @@ export const Monsters = () => {
       );
     });
   }, [encounters, query, zoneNameById]);
+  const selectedEncounterIdSet = useMemo(
+    () => selectedEncounterIds,
+    [selectedEncounterIds]
+  );
+  const allFilteredEncountersSelected = useMemo(() => {
+    if (filteredEncounters.length === 0) return false;
+    return filteredEncounters.every((encounter) =>
+      selectedEncounterIds.has(encounter.id)
+    );
+  }, [filteredEncounters, selectedEncounterIds]);
 
   const encounterMonsterOptions = useMemo(() => {
     if (!encounterForm.zoneId) {
@@ -997,12 +1013,19 @@ export const Monsters = () => {
   };
 
   const deleteEncounter = async (encounter: MonsterEncounterRecord) => {
+    if (bulkDeletingEncounters) return;
     if (!window.confirm(`Delete encounter "${encounter.name}"?`)) return;
     try {
       await apiClient.delete(`/sonar/monster-encounters/${encounter.id}`);
       setEncounters((prev) =>
         prev.filter((entry) => entry.id !== encounter.id)
       );
+      setSelectedEncounterIds((prev) => {
+        if (!prev.has(encounter.id)) return prev;
+        const next = new Set(prev);
+        next.delete(encounter.id);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to delete monster encounter', err);
       const message =
@@ -1010,6 +1033,105 @@ export const Monsters = () => {
           ? err.message
           : 'Failed to delete monster encounter.';
       alert(message);
+    }
+  };
+
+  const toggleEncounterSelection = (encounterId: string) => {
+    setSelectedEncounterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(encounterId)) {
+        next.delete(encounterId);
+      } else {
+        next.add(encounterId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisibleEncounters = () => {
+    if (filteredEncounters.length === 0) return;
+    setSelectedEncounterIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredEncountersSelected) {
+        filteredEncounters.forEach((encounter) => next.delete(encounter.id));
+      } else {
+        filteredEncounters.forEach((encounter) => next.add(encounter.id));
+      }
+      return next;
+    });
+  };
+
+  const clearEncounterSelection = () => {
+    setSelectedEncounterIds(new Set());
+  };
+
+  const handleBulkDeleteEncounters = async () => {
+    if (bulkDeletingEncounters || selectedEncounterIds.size === 0) return;
+
+    const selectedIds = Array.from(selectedEncounterIds);
+    const selectedNames = encounters
+      .filter((encounter) => selectedEncounterIds.has(encounter.id))
+      .map((encounter) => encounter.name);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected monster encounter (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected monster encounters${
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
+          }? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingEncounters(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((encounterId) =>
+          apiClient.delete(`/sonar/monster-encounters/${encounterId}`)
+        )
+      );
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const encounterId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(encounterId);
+        } else {
+          console.error(
+            `Failed to delete encounter ${encounterId}`,
+            result.reason
+          );
+          failedIds.push(encounterId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setEncounters((prev) =>
+          prev.filter((encounter) => !deletedIds.has(encounter.id))
+        );
+        setSelectedEncounterIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((encounterId) => next.delete(encounterId));
+          return next;
+        });
+        if (editingEncounter && deletedIds.has(editingEncounter.id)) {
+          closeEncounterModal();
+        }
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} encounter${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
+            failedIds.length
+          }. Check console for details.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete encounters', err);
+      alert('Failed to delete selected monster encounters.');
+    } finally {
+      setBulkDeletingEncounters(false);
     }
   };
 
@@ -1925,7 +2047,45 @@ export const Monsters = () => {
             </div>
 
             <div className="qa-card">
-              <h2 className="text-lg font-semibold mb-3">Monster Encounters</h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">Monster Encounters</h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={toggleSelectVisibleEncounters}
+                    disabled={
+                      filteredEncounters.length === 0 || bulkDeletingEncounters
+                    }
+                  >
+                    {allFilteredEncountersSelected
+                      ? 'Unselect Visible'
+                      : 'Select Visible'}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    onClick={clearEncounterSelection}
+                    disabled={
+                      selectedEncounterIds.size === 0 || bulkDeletingEncounters
+                    }
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    type="button"
+                    className="qa-btn qa-btn-danger"
+                    onClick={handleBulkDeleteEncounters}
+                    disabled={
+                      selectedEncounterIds.size === 0 || bulkDeletingEncounters
+                    }
+                  >
+                    {bulkDeletingEncounters
+                      ? `Deleting ${selectedEncounterIds.size}...`
+                      : `Delete Selected (${selectedEncounterIds.size})`}
+                  </button>
+                </div>
+              </div>
               {filteredEncounters.length === 0 ? (
                 <p className="text-sm text-gray-600">No encounters found.</p>
               ) : (
@@ -1937,6 +2097,15 @@ export const Monsters = () => {
                     >
                       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <div className="flex gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 mt-1"
+                            checked={selectedEncounterIdSet.has(encounter.id)}
+                            disabled={bulkDeletingEncounters}
+                            onChange={() =>
+                              toggleEncounterSelection(encounter.id)
+                            }
+                          />
                           {encounter.thumbnailUrl || encounter.imageUrl ? (
                             <button
                               type="button"
@@ -2020,6 +2189,7 @@ export const Monsters = () => {
                           <button
                             className="qa-btn qa-btn-danger"
                             onClick={() => deleteEncounter(encounter)}
+                            disabled={bulkDeletingEncounters}
                           >
                             Delete
                           </button>

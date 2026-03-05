@@ -429,10 +429,9 @@ export const Scenarios = () => {
     scenarioUndiscoveredPreviewNonce,
     setScenarioUndiscoveredPreviewNonce,
   ] = useState<number>(Date.now());
-  const [
-    scenarioUndiscoveredPrompt,
-    setScenarioUndiscoveredPrompt,
-  ] = useState(defaultScenarioUndiscoveredIconPrompt);
+  const [scenarioUndiscoveredPrompt, setScenarioUndiscoveredPrompt] = useState(
+    defaultScenarioUndiscoveredIconPrompt
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -440,6 +439,10 @@ export const Scenarios = () => {
   const [generatingScenarioId, setGeneratingScenarioId] = useState<
     string | null
   >(null);
+  const [bulkDeletingScenarios, setBulkDeletingScenarios] = useState(false);
+  const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(
+    new Set()
+  );
   const [geoLoading, setGeoLoading] = useState(false);
   const [expandedScenarioImage, setExpandedScenarioImage] = useState<{
     url: string;
@@ -924,6 +927,14 @@ export const Scenarios = () => {
       );
     });
   }, [query, records, zones]);
+  const selectedScenarioIdSet = useMemo(
+    () => selectedScenarioIds,
+    [selectedScenarioIds]
+  );
+  const allFilteredScenariosSelected = useMemo(() => {
+    if (filtered.length === 0) return false;
+    return filtered.every((record) => selectedScenarioIds.has(record.id));
+  }, [filtered, selectedScenarioIds]);
 
   const allPointOfInterestNamesById = useMemo(() => {
     const byId = new Map<string, string>();
@@ -1114,9 +1125,10 @@ export const Scenarios = () => {
       openEnded: form.openEnded,
       rewardMode: form.rewardMode,
       randomRewardSize: form.randomRewardSize,
-      rewardExperience: form.openEnded && form.rewardMode === 'explicit'
-        ? parseIntValue(form.rewardExperience)
-        : 0,
+      rewardExperience:
+        form.openEnded && form.rewardMode === 'explicit'
+          ? parseIntValue(form.rewardExperience)
+          : 0,
       rewardGold:
         form.openEnded && form.rewardMode === 'explicit'
           ? parseIntValue(form.rewardGold)
@@ -1198,13 +1210,15 @@ export const Scenarios = () => {
               .filter((reward) => reward.spellId.length > 0),
           })),
       itemRewards:
-        form.openEnded && form.rewardMode === 'explicit' ? form.itemRewards : [],
+        form.openEnded && form.rewardMode === 'explicit'
+          ? form.itemRewards
+          : [],
       spellRewards:
         form.openEnded && form.rewardMode === 'explicit'
-        ? form.spellRewards
-            .map((reward) => ({ spellId: reward.spellId.trim() }))
-            .filter((reward) => reward.spellId.length > 0)
-        : [],
+          ? form.spellRewards
+              .map((reward) => ({ spellId: reward.spellId.trim() }))
+              .filter((reward) => reward.spellId.length > 0)
+          : [],
     };
   };
 
@@ -1263,10 +1277,122 @@ export const Scenarios = () => {
     try {
       await apiClient.delete(`/sonar/scenarios/${deleteId}`);
       setRecords((prev) => prev.filter((record) => record.id !== deleteId));
+      setSelectedScenarioIds((prev) => {
+        if (!prev.has(deleteId)) return prev;
+        const next = new Set(prev);
+        next.delete(deleteId);
+        return next;
+      });
       setDeleteId(null);
     } catch (err) {
       console.error('Error deleting scenario:', err);
       alert('Failed to delete scenario.');
+    }
+  };
+
+  const toggleScenarioSelection = (scenarioId: string) => {
+    setSelectedScenarioIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(scenarioId)) {
+        next.delete(scenarioId);
+      } else {
+        next.add(scenarioId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisibleScenarios = () => {
+    if (filtered.length === 0) return;
+    setSelectedScenarioIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredScenariosSelected) {
+        filtered.forEach((record) => next.delete(record.id));
+      } else {
+        filtered.forEach((record) => next.add(record.id));
+      }
+      return next;
+    });
+  };
+
+  const clearScenarioSelection = () => {
+    setSelectedScenarioIds(new Set());
+  };
+
+  const handleBulkDeleteScenarios = async () => {
+    if (
+      bulkDeletingScenarios ||
+      selectedScenarioIds.size === 0 ||
+      deleteId !== null
+    ) {
+      return;
+    }
+
+    const selectedIds = Array.from(selectedScenarioIds);
+    const selectedNames = records
+      .filter((record) => selectedScenarioIds.has(record.id))
+      .map((record) => record.prompt);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected scenario (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected scenarios${
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
+          }? This cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingScenarios(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((scenarioId) =>
+          apiClient.delete(`/sonar/scenarios/${scenarioId}`)
+        )
+      );
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const scenarioId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(scenarioId);
+        } else {
+          console.error(
+            `Failed to delete scenario ${scenarioId}`,
+            result.reason
+          );
+          failedIds.push(scenarioId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setRecords((prev) =>
+          prev.filter((record) => !deletedIds.has(record.id))
+        );
+        setSelectedScenarioIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((scenarioId) => next.delete(scenarioId));
+          return next;
+        });
+        if (editingId && deletedIds.has(editingId)) {
+          closeModal();
+        }
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} scenario${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
+            failedIds.length
+          }. Check console for details.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete scenarios', err);
+      alert('Failed to delete selected scenarios.');
+    } finally {
+      setBulkDeletingScenarios(false);
     }
   };
 
@@ -1355,7 +1481,13 @@ export const Scenarios = () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [form.zoneId, hasSelectedPointOfInterest, setFormLocation, showModal, zones]);
+  }, [
+    form.zoneId,
+    hasSelectedPointOfInterest,
+    setFormLocation,
+    showModal,
+    zones,
+  ]);
 
   useEffect(() => {
     if (!showModal) return;
@@ -2536,6 +2668,38 @@ export const Scenarios = () => {
           className="w-full p-2 border rounded-md"
         />
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          onClick={toggleSelectVisibleScenarios}
+          disabled={filtered.length === 0 || bulkDeletingScenarios}
+        >
+          {allFilteredScenariosSelected ? 'Unselect Visible' : 'Select Visible'}
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          onClick={clearScenarioSelection}
+          disabled={selectedScenarioIds.size === 0 || bulkDeletingScenarios}
+        >
+          Clear Selection
+        </button>
+        <button
+          type="button"
+          className="qa-btn qa-btn-danger"
+          onClick={handleBulkDeleteScenarios}
+          disabled={
+            selectedScenarioIds.size === 0 ||
+            bulkDeletingScenarios ||
+            deleteId !== null
+          }
+        >
+          {bulkDeletingScenarios
+            ? `Deleting ${selectedScenarioIds.size}...`
+            : `Delete Selected (${selectedScenarioIds.size})`}
+        </button>
+      </div>
 
       <div
         className="grid gap-4"
@@ -2550,7 +2714,18 @@ export const Scenarios = () => {
               key={record.id}
               className="border rounded-md p-4 bg-white shadow-sm"
             >
-              <div className="text-xs text-gray-500 mb-1">{record.id}</div>
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <div className="text-xs text-gray-500 break-all">
+                  {record.id}
+                </div>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={selectedScenarioIdSet.has(record.id)}
+                  disabled={bulkDeletingScenarios}
+                  onChange={() => toggleScenarioSelection(record.id)}
+                />
+              </div>
               <div className="font-semibold mb-2">
                 {record.openEnded ? 'Open-Ended' : 'Choice'} Scenario
               </div>
@@ -2559,8 +2734,9 @@ export const Scenarios = () => {
                 Location:{' '}
                 {record.pointOfInterestId
                   ? `POI: ${
-                      allPointOfInterestNamesById.get(record.pointOfInterestId) ??
-                      record.pointOfInterestId
+                      allPointOfInterestNamesById.get(
+                        record.pointOfInterestId
+                      ) ?? record.pointOfInterestId
                     }`
                   : `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`}
               </div>
@@ -2616,6 +2792,7 @@ export const Scenarios = () => {
                 <button
                   className="bg-red-500 text-white px-3 py-1 rounded-md"
                   onClick={() => setDeleteId(record.id)}
+                  disabled={bulkDeletingScenarios}
                 >
                   Delete
                 </button>
@@ -2907,7 +3084,8 @@ export const Scenarios = () => {
             </div>
             {form.rewardMode === 'random' ? (
               <div className="text-xs text-gray-500 mb-4">
-                Random rewards ignore explicit XP, gold, item, and spell rewards.
+                Random rewards ignore explicit XP, gold, item, and spell
+                rewards.
               </div>
             ) : null}
 

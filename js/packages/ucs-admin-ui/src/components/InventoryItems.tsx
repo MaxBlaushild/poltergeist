@@ -1908,6 +1908,10 @@ export const InventoryItems = () => {
             <p style={{ margin: '5px 0', color: '#666' }}>
               Rarity: {item.rarityTier}
             </p>
+
+            <p style={{ margin: '5px 0', color: '#666' }}>
+              Item Level: {item.itemLevel ?? 1}
+            </p>
             
             <p style={{ margin: '5px 0', color: '#666' }}>
               Capture Type: {item.isCaptureType ? 'Yes' : 'No'}

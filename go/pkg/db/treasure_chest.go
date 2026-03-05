@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
@@ -18,6 +19,18 @@ func (h *treasureChestHandle) Create(ctx context.Context, treasureChest *models.
 	treasureChest.ID = uuid.New()
 	treasureChest.CreatedAt = time.Now()
 	treasureChest.UpdatedAt = time.Now()
+	if strings.TrimSpace(string(treasureChest.RewardMode)) == "" {
+		if treasureChest.RewardExperience > 0 || (treasureChest.Gold != nil && *treasureChest.Gold > 0) {
+			treasureChest.RewardMode = models.RewardModeExplicit
+		} else {
+			treasureChest.RewardMode = models.RewardModeRandom
+		}
+	}
+	treasureChest.RewardMode = models.NormalizeRewardMode(string(treasureChest.RewardMode))
+	treasureChest.RandomRewardSize = models.NormalizeRandomRewardSize(string(treasureChest.RandomRewardSize))
+	if treasureChest.RewardExperience < 0 {
+		treasureChest.RewardExperience = 0
+	}
 
 	if err := treasureChest.SetGeometry(treasureChest.Latitude, treasureChest.Longitude); err != nil {
 		return err
@@ -66,6 +79,11 @@ func (h *treasureChestHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID
 func (h *treasureChestHandle) Update(ctx context.Context, id uuid.UUID, updates *models.TreasureChest) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
+	updates.RandomRewardSize = models.NormalizeRandomRewardSize(string(updates.RandomRewardSize))
+	if updates.RewardExperience < 0 {
+		updates.RewardExperience = 0
+	}
 
 	if updates.Latitude != 0 && updates.Longitude != 0 {
 		if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
@@ -73,12 +91,51 @@ func (h *treasureChestHandle) Update(ctx context.Context, id uuid.UUID, updates 
 		}
 	}
 
-	return h.db.WithContext(ctx).Model(&models.TreasureChest{}).Where("id = ?", id).Updates(updates).Error
+	payload := map[string]interface{}{
+		"zone_id":            updates.ZoneID,
+		"latitude":           updates.Latitude,
+		"longitude":          updates.Longitude,
+		"geometry":           updates.Geometry,
+		"reward_mode":        updates.RewardMode,
+		"random_reward_size": updates.RandomRewardSize,
+		"reward_experience":  updates.RewardExperience,
+		"gold":               updates.Gold,
+		"invalidated":        updates.Invalidated,
+		"unlock_tier":        updates.UnlockTier,
+		"updated_at":         updates.UpdatedAt,
+	}
+	return h.db.WithContext(ctx).Model(&models.TreasureChest{}).Where("id = ?", id).Updates(payload).Error
 }
 
 func (h *treasureChestHandle) Delete(ctx context.Context, id uuid.UUID) error {
-	// Items are cascade deleted, so we just need to delete the chest
-	return h.db.WithContext(ctx).Delete(&models.TreasureChest{}, "id = ?", id).Error
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// This table does not currently use ON DELETE CASCADE for chest FK.
+		if err := tx.Where("treasure_chest_id = ?", id).
+			Delete(&models.UserTreasureChestOpening{}).Error; err != nil {
+			return err
+		}
+
+		// Items are cascade deleted by FK from treasure_chest_items.
+		return tx.Delete(&models.TreasureChest{}, "id = ?", id).Error
+	})
+}
+
+func (h *treasureChestHandle) DeleteByIDs(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Clear user-opened status rows first to satisfy FK constraints.
+		if err := tx.Where("treasure_chest_id IN ?", ids).
+			Delete(&models.UserTreasureChestOpening{}).Error; err != nil {
+			return err
+		}
+
+		// Items are cascade deleted by FK from treasure_chest_items.
+		return tx.Where("id IN ?", ids).
+			Delete(&models.TreasureChest{}).Error
+	})
 }
 
 func (h *treasureChestHandle) AddItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error {

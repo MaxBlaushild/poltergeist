@@ -22,59 +22,11 @@ type ZoneSeedCharacterDraft = {
   placeId: string;
 };
 
-type ZoneSeedQuestDraft = {
-  draftId: string;
-  name: string;
-  description: string;
-  acceptanceDialogue?: string[];
-  placeId: string;
-  questGiverDraftId: string;
-  challengeQuestion?: string;
-  challengeDifficulty?: number;
-  challengeShuffleStatus?: string;
-  challengeShuffleError?: string;
-  gold?: number;
-  rewardItem?: {
-    name?: string;
-    description?: string;
-    rarityTier?: string;
-  };
-};
-
-type ZoneSeedMainQuestNodeDraft = {
-  draftId: string;
-  orderIndex: number;
-  title?: string;
-  story?: string;
-  placeId: string;
-  challengeQuestion?: string;
-  challengeDifficulty?: number;
-  challengeShuffleStatus?: string;
-  challengeShuffleError?: string;
-};
-
-type ZoneSeedMainQuestDraft = {
-  draftId: string;
-  name: string;
-  description: string;
-  acceptanceDialogue?: string[];
-  questGiverDraftId: string;
-  nodes?: ZoneSeedMainQuestNodeDraft[];
-  gold?: number;
-  rewardItem?: {
-    name?: string;
-    description?: string;
-    rarityTier?: string;
-  };
-};
-
 type ZoneSeedDraft = {
   fantasyName?: string;
   zoneDescription?: string;
   pointsOfInterest?: ZoneSeedPointOfInterestDraft[];
   characters?: ZoneSeedCharacterDraft[];
-  quests?: ZoneSeedQuestDraft[];
-  mainQuests?: ZoneSeedMainQuestDraft[];
 };
 
 type ZoneSeedJob = {
@@ -124,21 +76,6 @@ const formatDate = (value?: string) => {
   return parsed.toLocaleString();
 };
 
-const formatShuffleStatus = (status?: string) => {
-  switch ((status || '').toLowerCase()) {
-    case 'queued':
-      return 'Queued';
-    case 'in_progress':
-      return 'In progress';
-    case 'completed':
-      return 'Completed';
-    case 'failed':
-      return 'Failed';
-    default:
-      return 'Idle';
-  }
-};
-
 export const ZoneSeedJobs = () => {
   const { apiClient } = useAPI();
   const { zones, refreshZones } = useZoneContext();
@@ -150,7 +87,6 @@ export const ZoneSeedJobs = () => {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [shufflingKey, setShufflingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [placeCount, setPlaceCount] = useState('12');
@@ -343,58 +279,6 @@ export const ZoneSeedJobs = () => {
       setError('Failed to retry draft job.');
     } finally {
       setRetryingId(null);
-    }
-  };
-
-  const refreshJobsAfterShuffle = async (zoneId?: string) => {
-    await fetchJobs(zoneId);
-    window.setTimeout(() => {
-      fetchJobs(zoneId);
-    }, 1200);
-  };
-
-  const handleShuffleQuestChallenge = async (job: ZoneSeedJob, quest: ZoneSeedQuestDraft) => {
-    if (!quest?.draftId) return;
-    const key = `${job.id}:quest:${quest.draftId}`;
-    if (shufflingKey) return;
-    setShufflingKey(key);
-    setError(null);
-    setSuccess(null);
-    try {
-      await apiClient.post(`/sonar/admin/zone-seed-jobs/${job.id}/shuffle-challenge`, {
-        questDraftId: quest.draftId,
-      });
-      setSuccess('Challenge shuffle queued.');
-      await refreshJobsAfterShuffle(jobFilterZoneId || undefined);
-    } catch (err) {
-      console.error('Failed to shuffle quest challenge', err);
-      setError('Failed to queue quest challenge shuffle.');
-    } finally {
-      setShufflingKey(null);
-    }
-  };
-
-  const handleShuffleMainQuestNodeChallenge = async (
-    job: ZoneSeedJob,
-    node: ZoneSeedMainQuestNodeDraft
-  ) => {
-    if (!node?.draftId) return;
-    const key = `${job.id}:node:${node.draftId}`;
-    if (shufflingKey) return;
-    setShufflingKey(key);
-    setError(null);
-    setSuccess(null);
-    try {
-      await apiClient.post(`/sonar/admin/zone-seed-jobs/${job.id}/shuffle-challenge`, {
-        mainQuestNodeDraftId: node.draftId,
-      });
-      setSuccess('Challenge shuffle queued.');
-      await refreshJobsAfterShuffle(jobFilterZoneId || undefined);
-    } catch (err) {
-      console.error('Failed to shuffle main quest node challenge', err);
-      setError('Failed to queue main quest node challenge shuffle.');
-    } finally {
-      setShufflingKey(null);
     }
   };
 
@@ -700,10 +584,6 @@ export const ZoneSeedJobs = () => {
           ) : (
             <div className="space-y-4">
               {jobs.map((job) => {
-                const canShuffleChallenges =
-                  job.status !== 'in_progress' &&
-                  job.status !== 'applying' &&
-                  job.status !== 'applied';
                 return (
                   <div
                     key={job.id}
@@ -845,223 +725,14 @@ export const ZoneSeedJobs = () => {
                           </div>
                         </div>
                         <div>
-                          <div className="font-semibold">Quests</div>
-                          <div className="mt-2 space-y-3 text-xs text-gray-600">
-                            {(job.draft.quests || []).map((quest) => (
-                              <div
-                                key={quest.draftId}
-                                className="rounded border border-gray-100 bg-gray-50 p-3"
-                              >
-                                <div className="text-sm font-semibold text-gray-800">
-                                  {quest.name || 'Untitled quest'}
-                                </div>
-                                <div>Place ID: {quest.placeId || 'n/a'}</div>
-                                <div>
-                                  Quest giver draft ID:{' '}
-                                  {quest.questGiverDraftId || 'n/a'}
-                                </div>
-                                {typeof quest.gold === 'number' && (
-                                  <div>Gold: {quest.gold}</div>
-                                )}
-                                {quest.description && (
-                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
-                                    {quest.description}
-                                  </div>
-                                )}
-                                {quest.challengeQuestion && (
-                                  <div className="mt-2 text-gray-500">
-                                    Challenge: {quest.challengeQuestion}
-                                  </div>
-                                )}
-                                {typeof quest.challengeDifficulty === 'number' && (
-                                  <div className="mt-1 text-gray-500">
-                                    Difficulty: {quest.challengeDifficulty}
-                                  </div>
-                                )}
-                                <div className="mt-1 text-gray-500">
-                                  Shuffle status: {formatShuffleStatus(quest.challengeShuffleStatus)}
-                                </div>
-                                {quest.challengeShuffleError && (
-                                  <div className="mt-1 text-red-600">
-                                    Shuffle error: {quest.challengeShuffleError}
-                                  </div>
-                                )}
-                                <div className="mt-2">
-                                  <button
-                                    type="button"
-                                    className="rounded border border-gray-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                                    onClick={() => handleShuffleQuestChallenge(job, quest)}
-                                    disabled={
-                                      !canShuffleChallenges ||
-                                      quest.challengeShuffleStatus === 'queued' ||
-                                      quest.challengeShuffleStatus === 'in_progress' ||
-                                      shufflingKey === `${job.id}:quest:${quest.draftId}`
-                                    }
-                                  >
-                                    {quest.challengeShuffleStatus === 'queued' ||
-                                    quest.challengeShuffleStatus === 'in_progress' ||
-                                    shufflingKey === `${job.id}:quest:${quest.draftId}`
-                                      ? 'Shuffling...'
-                                      : 'Shuffle challenge'}
-                                  </button>
-                                </div>
-                                {quest.rewardItem && (
-                                  <div className="mt-2 text-gray-500">
-                                    <div className="font-semibold text-gray-600">
-                                      Reward item
-                                    </div>
-                                    <div>
-                                      {quest.rewardItem.name || 'Unnamed item'}
-                                      {quest.rewardItem.rarityTier
-                                        ? ` (${quest.rewardItem.rarityTier})`
-                                        : ''}
-                                    </div>
-                                    {quest.rewardItem.description && (
-                                      <div className="mt-1 whitespace-pre-wrap">
-                                        {quest.rewardItem.description}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {quest.acceptanceDialogue &&
-                                  quest.acceptanceDialogue.length > 0 && (
-                                    <div className="mt-2">
-                                      <div className="font-semibold text-gray-600">
-                                        Acceptance dialogue
-                                      </div>
-                                      <div className="mt-1 space-y-1 text-gray-500">
-                                        {quest.acceptanceDialogue.map((line, idx) => (
-                                          <div key={`${quest.draftId}-line-${idx}`}>
-                                            {line}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-semibold">Main quests</div>
-                          <div className="mt-2 space-y-3 text-xs text-gray-600">
-                            {(job.draft.mainQuests || []).map((quest) => (
-                              <div
-                                key={quest.draftId}
-                                className="rounded border border-gray-100 bg-gray-50 p-3"
-                              >
-                                <div className="text-sm font-semibold text-gray-800">
-                                  {quest.name || 'Untitled main quest'}
-                                </div>
-                                <div>
-                                  Quest giver draft ID:{' '}
-                                  {quest.questGiverDraftId || 'n/a'}
-                                </div>
-                                {typeof quest.gold === 'number' && (
-                                  <div>Gold: {quest.gold}</div>
-                                )}
-                                {quest.description && (
-                                  <div className="mt-1 text-gray-500 whitespace-pre-wrap">
-                                    {quest.description}
-                                  </div>
-                                )}
-                                {quest.rewardItem && (
-                                  <div className="mt-2 text-gray-500">
-                                    <div className="font-semibold text-gray-600">
-                                      Reward item
-                                    </div>
-                                    <div>
-                                      {quest.rewardItem.name || 'Unnamed item'}
-                                      {quest.rewardItem.rarityTier
-                                        ? ` (${quest.rewardItem.rarityTier})`
-                                        : ''}
-                                    </div>
-                                    {quest.rewardItem.description && (
-                                      <div className="mt-1 whitespace-pre-wrap">
-                                        {quest.rewardItem.description}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {quest.acceptanceDialogue &&
-                                  quest.acceptanceDialogue.length > 0 && (
-                                    <div className="mt-2">
-                                      <div className="font-semibold text-gray-600">
-                                        Acceptance dialogue
-                                      </div>
-                                      <div className="mt-1 space-y-1 text-gray-500">
-                                        {quest.acceptanceDialogue.map((line, idx) => (
-                                          <div key={`${quest.draftId}-main-line-${idx}`}>
-                                            {line}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                {quest.nodes && quest.nodes.length > 0 && (
-                                  <div className="mt-3">
-                                    <div className="font-semibold text-gray-600">
-                                      Nodes
-                                    </div>
-                                    <div className="mt-2 space-y-2">
-                                      {quest.nodes.map((node, idx) => (
-                                        <div
-                                          key={`${quest.draftId}-node-${node.draftId || idx}`}
-                                          className="rounded border border-gray-200 bg-white p-2 text-gray-600"
-                                        >
-                                          <div className="font-semibold text-gray-700">
-                                            {node.title || `Node ${node.orderIndex + 1}`}
-                                          </div>
-                                          <div>Place ID: {node.placeId || 'n/a'}</div>
-                                          {node.story && (
-                                            <div className="mt-1 text-gray-500 whitespace-pre-wrap">
-                                              Story: {node.story}
-                                            </div>
-                                          )}
-                                          {node.challengeQuestion && (
-                                            <div className="mt-1 text-gray-500">
-                                              Challenge: {node.challengeQuestion}
-                                            </div>
-                                          )}
-                                          {typeof node.challengeDifficulty === 'number' && (
-                                            <div className="mt-1 text-gray-500">
-                                              Difficulty: {node.challengeDifficulty}
-                                            </div>
-                                          )}
-                                          <div className="mt-1 text-gray-500">
-                                            Shuffle status: {formatShuffleStatus(node.challengeShuffleStatus)}
-                                          </div>
-                                          {node.challengeShuffleError && (
-                                            <div className="mt-1 text-red-600">
-                                              Shuffle error: {node.challengeShuffleError}
-                                            </div>
-                                          )}
-                                          <div className="mt-2">
-                                            <button
-                                              type="button"
-                                              className="rounded border border-gray-200 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-                                              onClick={() => handleShuffleMainQuestNodeChallenge(job, node)}
-                                              disabled={
-                                                !canShuffleChallenges ||
-                                                node.challengeShuffleStatus === 'queued' ||
-                                                node.challengeShuffleStatus === 'in_progress' ||
-                                                shufflingKey === `${job.id}:node:${node.draftId}`
-                                              }
-                                            >
-                                              {node.challengeShuffleStatus === 'queued' ||
-                                              node.challengeShuffleStatus === 'in_progress' ||
-                                              shufflingKey === `${job.id}:node:${node.draftId}`
-                                                ? 'Shuffling...'
-                                                : 'Shuffle challenge'}
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
+                          <div className="font-semibold">Seeding plan preview</div>
+                          <div className="mt-2 rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600">
+                            <div>{job.placeCount} POIs selected for challenge placement</div>
+                            <div>{job.placeCount} standalone challenges at those POIs</div>
+                            <div>{job.monsterCount ?? 0} random monster encounters (scalable)</div>
+                            <div>{job.inputEncounterCount ?? 0} random input scenarios (scalable)</div>
+                            <div>{job.optionEncounterCount ?? 0} random option scenarios (scalable)</div>
+                            <div>{job.treasureChestCount ?? 0} random treasure chests (scalable rewards)</div>
                           </div>
                         </div>
                       </div>

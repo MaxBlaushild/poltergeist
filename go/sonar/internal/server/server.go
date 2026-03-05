@@ -416,6 +416,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTreasureChest))
 	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
+	r.POST("/sonar/treasure-chests/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteTreasureChests))
 	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
@@ -12671,11 +12672,14 @@ func (s *server) getTreasureChestsForZone(ctx *gin.Context) {
 
 func (s *server) createTreasureChest(ctx *gin.Context) {
 	var requestBody struct {
-		Latitude  float64 `json:"latitude" binding:"required"`
-		Longitude float64 `json:"longitude" binding:"required"`
-		ZoneID    string  `json:"zoneId" binding:"required"`
-		Gold      *int    `json:"gold"`
-		Items     []struct {
+		Latitude         float64 `json:"latitude" binding:"required"`
+		Longitude        float64 `json:"longitude" binding:"required"`
+		ZoneID           string  `json:"zoneId" binding:"required"`
+		RewardMode       string  `json:"rewardMode"`
+		RandomRewardSize string  `json:"randomRewardSize"`
+		RewardExperience int     `json:"rewardExperience"`
+		Gold             *int    `json:"gold"`
+		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"items"`
@@ -12691,12 +12695,34 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zone ID"})
 		return
 	}
+	rewardMode := models.NormalizeRewardMode(requestBody.RewardMode)
+	if strings.TrimSpace(requestBody.RewardMode) == "" {
+		if requestBody.RewardExperience > 0 || (requestBody.Gold != nil && *requestBody.Gold > 0) || len(requestBody.Items) > 0 {
+			rewardMode = models.RewardModeExplicit
+		} else {
+			rewardMode = models.RewardModeRandom
+		}
+	}
+	randomRewardSize := models.NormalizeRandomRewardSize(requestBody.RandomRewardSize)
+	rewardExperience := requestBody.RewardExperience
+	if rewardExperience < 0 {
+		rewardExperience = 0
+	}
+	rewardGold := requestBody.Gold
+	if rewardMode == models.RewardModeRandom {
+		rewardGold = nil
+		rewardExperience = 0
+	}
 
 	treasureChest := &models.TreasureChest{
-		Latitude:  requestBody.Latitude,
-		Longitude: requestBody.Longitude,
-		ZoneID:    zoneID,
-		Gold:      requestBody.Gold,
+		Latitude:         requestBody.Latitude,
+		Longitude:        requestBody.Longitude,
+		ZoneID:           zoneID,
+		RewardMode:       rewardMode,
+		RandomRewardSize: randomRewardSize,
+		RewardExperience: rewardExperience,
+		Gold:             rewardGold,
+		Invalidated:      false,
 	}
 
 	if err := s.dbClient.TreasureChest().Create(ctx, treasureChest); err != nil {
@@ -12704,12 +12730,13 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	// Add items if provided
-	for _, item := range requestBody.Items {
-		if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChest.ID, item.InventoryItemID, item.Quantity); err != nil {
-			// Log error but don't fail the request
-			// In production, you might want to rollback the treasure chest creation
-			continue
+	// Add explicit items only when explicit reward mode is selected.
+	if rewardMode == models.RewardModeExplicit {
+		for _, item := range requestBody.Items {
+			if err := s.dbClient.TreasureChest().AddItem(ctx, treasureChest.ID, item.InventoryItemID, item.Quantity); err != nil {
+				// Log error but don't fail the request
+				continue
+			}
 		}
 	}
 
@@ -12743,11 +12770,14 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Latitude  *float64 `json:"latitude"`
-		Longitude *float64 `json:"longitude"`
-		ZoneID    *string  `json:"zoneId"`
-		Gold      *int     `json:"gold"`
-		Items     []struct {
+		Latitude         *float64 `json:"latitude"`
+		Longitude        *float64 `json:"longitude"`
+		ZoneID           *string  `json:"zoneId"`
+		RewardMode       string   `json:"rewardMode"`
+		RandomRewardSize string   `json:"randomRewardSize"`
+		RewardExperience *int     `json:"rewardExperience"`
+		Gold             *int     `json:"gold"`
+		Items            []struct {
 			InventoryItemID int `json:"inventoryItemId"`
 			Quantity        int `json:"quantity"`
 		} `json:"items"`
@@ -12759,7 +12789,12 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	}
 
 	updates := &models.TreasureChest{
-		ID: treasureChestID,
+		ID:               treasureChestID,
+		Invalidated:      existingChest.Invalidated,
+		UnlockTier:       existingChest.UnlockTier,
+		RewardMode:       existingChest.RewardMode,
+		RandomRewardSize: existingChest.RandomRewardSize,
+		RewardExperience: existingChest.RewardExperience,
 	}
 
 	if requestBody.Latitude != nil && requestBody.Longitude != nil {
@@ -12786,14 +12821,40 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 	} else {
 		updates.Gold = existingChest.Gold
 	}
+	if strings.TrimSpace(requestBody.RewardMode) != "" {
+		updates.RewardMode = models.NormalizeRewardMode(requestBody.RewardMode)
+	}
+	if strings.TrimSpace(string(updates.RewardMode)) == "" {
+		if (updates.Gold != nil && *updates.Gold > 0) || updates.RewardExperience > 0 || len(existingChest.Items) > 0 || len(requestBody.Items) > 0 {
+			updates.RewardMode = models.RewardModeExplicit
+		} else {
+			updates.RewardMode = models.RewardModeRandom
+		}
+	}
+	if strings.TrimSpace(requestBody.RandomRewardSize) != "" {
+		updates.RandomRewardSize = models.NormalizeRandomRewardSize(requestBody.RandomRewardSize)
+	}
+	if strings.TrimSpace(string(updates.RandomRewardSize)) == "" {
+		updates.RandomRewardSize = models.RandomRewardSizeSmall
+	}
+	if requestBody.RewardExperience != nil {
+		updates.RewardExperience = *requestBody.RewardExperience
+	}
+	if updates.RewardExperience < 0 {
+		updates.RewardExperience = 0
+	}
+	if updates.RewardMode == models.RewardModeRandom {
+		updates.RewardExperience = 0
+		updates.Gold = nil
+	}
 
 	if err := s.dbClient.TreasureChest().Update(ctx, treasureChestID, updates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update treasure chest: " + err.Error()})
 		return
 	}
 
-	// Update items if provided
-	if requestBody.Items != nil {
+	// Update explicit items only when explicit mode is selected.
+	if updates.RewardMode == models.RewardModeExplicit && requestBody.Items != nil {
 		// Remove all existing items
 		existingChest, err := s.dbClient.TreasureChest().FindByID(ctx, treasureChestID)
 		if err == nil && existingChest != nil {
@@ -12808,6 +12869,11 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 				// Log error but continue
 				continue
 			}
+		}
+	}
+	if updates.RewardMode == models.RewardModeRandom {
+		for _, item := range existingChest.Items {
+			_ = s.dbClient.TreasureChest().RemoveItem(ctx, treasureChestID, item.InventoryItemID)
 		}
 	}
 
@@ -12846,6 +12912,57 @@ func (s *server) deleteTreasureChest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "treasure chest deleted successfully"})
+}
+
+func (s *server) bulkDeleteTreasureChests(ctx *gin.Context) {
+	var requestBody struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.IDs))
+	ids := make([]uuid.UUID, 0, len(requestBody.IDs))
+	for _, idStr := range requestBody.IDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid treasure chest ID: %s", idStr),
+			})
+			return
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	if err := s.dbClient.TreasureChest().DeleteByIDs(ctx, ids); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to bulk delete treasure chests: " + err.Error(),
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("deleted %d treasure chest(s)", len(ids)),
+		"deleted": len(ids),
+		"ids":     ids,
+	})
 }
 
 func (s *server) openTreasureChest(ctx *gin.Context) {
@@ -12973,20 +13090,47 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		}
 	}
 
-	// Give gold if chest has gold
-	if treasureChest.Gold != nil && *treasureChest.Gold > 0 {
-		if err := s.dbClient.User().AddGold(ctx, user.ID, *treasureChest.Gold); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to add gold: " + err.Error()})
+	rewardMode := models.NormalizeRewardMode(string(treasureChest.RewardMode))
+	rewardSize := models.NormalizeRandomRewardSize(string(treasureChest.RandomRewardSize))
+	rewardExperience := 0
+	rewardGold := 0
+	rewardItems := []scenarioRewardItem{}
+	if rewardMode == models.RewardModeRandom {
+		plan, _, err := s.randomRewardPlanForUser(
+			ctx,
+			user.ID,
+			rewardSize,
+			fmt.Sprintf("treasure_chest:%s:user:%s", treasureChest.ID, user.ID),
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-	}
-
-	// Give items
-	for _, chestItem := range treasureChest.Items {
-		if err := s.dbClient.InventoryItem().CreateOrIncrementInventoryItem(ctx, nil, &user.ID, chestItem.InventoryItemID, chestItem.Quantity); err != nil {
-			// Log error but continue
-			continue
+		rewardExperience = plan.Experience
+		rewardGold = plan.Gold
+		rewardItems = randomRewardPlanToScenarioItems(plan)
+	} else {
+		rewardExperience = treasureChest.RewardExperience
+		if rewardExperience < 0 {
+			rewardExperience = 0
 		}
+		if treasureChest.Gold != nil && *treasureChest.Gold > 0 {
+			rewardGold = *treasureChest.Gold
+		}
+		rewardItems = chestRewardItemsFromChest(treasureChest.Items)
+	}
+	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
+		ctx,
+		user.ID,
+		rewardExperience,
+		rewardGold,
+		rewardItems,
+		[]scenarioRewardSpell{},
+		[]string{},
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Record opening
@@ -13006,9 +13150,29 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"message": "treasure chest opened successfully",
-		"user":    updatedUser,
+		"message":          "treasure chest opened successfully",
+		"rewardMode":       rewardMode,
+		"randomRewardSize": rewardSize,
+		"rewardExperience": rewardExperience,
+		"rewardGold":       rewardGold,
+		"itemsAwarded":     itemsAwarded,
+		"spellsAwarded":    spellsAwarded,
+		"user":             updatedUser,
 	})
+}
+
+func chestRewardItemsFromChest(items []models.TreasureChestItem) []scenarioRewardItem {
+	out := make([]scenarioRewardItem, 0, len(items))
+	for _, chestItem := range items {
+		if chestItem.InventoryItemID <= 0 || chestItem.Quantity <= 0 {
+			continue
+		}
+		out = append(out, scenarioRewardItem{
+			InventoryItemID: chestItem.InventoryItemID,
+			Quantity:        chestItem.Quantity,
+		})
+	}
+	return out
 }
 
 var scenarioValidStatTags = map[string]struct{}{

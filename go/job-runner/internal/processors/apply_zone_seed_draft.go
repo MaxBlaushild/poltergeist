@@ -346,7 +346,7 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 			}
 			members = append(members, models.MonsterEncounterMember{
 				MonsterID: monster.ID,
-				Slot:      slot,
+				Slot:      slot + 1,
 			})
 		}
 
@@ -578,60 +578,24 @@ func (p *ApplyZoneSeedDraftProcessor) seedTreasureChestsForZone(
 		return nil
 	}
 
-	inventoryItems, err := p.dbClient.InventoryItem().FindAllInventoryItems(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load inventory items for treasure chests: %w", err)
-	}
-
-	rewardItems := make([]models.InventoryItem, 0, len(inventoryItems))
-	for _, item := range inventoryItems {
-		if item.ID <= 0 || item.IsCaptureType {
-			continue
-		}
-		rewardItems = append(rewardItems, item)
-	}
-
 	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
 	for i := 0; i < chestCount; i++ {
 		location := p.randomLocationForZone(zone, fallbackLocations)
 		targetLevel, size := zoneSeedTreasureChestRewardProfile()
-		seed := fmt.Sprintf("zone:%s:treasure:%d", zone.ID, i)
-		plan := models.BuildRandomRewardPlan(targetLevel, size, seed, rewardItems)
-
-		gold := plan.Gold
-		if gold <= 0 {
-			gold = 25
-		}
 		unlockTier := targetLevel
 		chest := &models.TreasureChest{
-			Latitude:    location.Latitude,
-			Longitude:   location.Longitude,
-			ZoneID:      zone.ID,
-			Gold:        &gold,
-			UnlockTier:  &unlockTier,
-			Invalidated: false,
+			Latitude:         location.Latitude,
+			Longitude:        location.Longitude,
+			ZoneID:           zone.ID,
+			RewardMode:       models.RewardModeRandom,
+			RandomRewardSize: size,
+			RewardExperience: 0,
+			Gold:             nil,
+			UnlockTier:       &unlockTier,
+			Invalidated:      false,
 		}
 		if err := p.dbClient.TreasureChest().Create(ctx, chest); err != nil {
 			return fmt.Errorf("failed to create treasure chest %d/%d: %w", i+1, chestCount, err)
-		}
-
-		addedItem := false
-		for _, grant := range plan.ItemGrants {
-			if grant.InventoryItemID <= 0 || grant.Quantity <= 0 {
-				continue
-			}
-			if err := p.dbClient.TreasureChest().AddItem(ctx, chest.ID, grant.InventoryItemID, grant.Quantity); err != nil {
-				return fmt.Errorf("failed to add item to treasure chest: %w", err)
-			}
-			addedItem = true
-		}
-		if !addedItem {
-			fallbackItemID := pickZoneSeedTreasureChestFallbackItemID(rewardItems, targetLevel)
-			if fallbackItemID > 0 {
-				if err := p.dbClient.TreasureChest().AddItem(ctx, chest.ID, fallbackItemID, 1); err != nil {
-					return fmt.Errorf("failed to add fallback item to treasure chest: %w", err)
-				}
-			}
 		}
 	}
 
@@ -738,33 +702,6 @@ func zoneSeedTreasureChestRewardProfile() (int, models.RandomRewardSize) {
 	default:
 		return 70, models.RandomRewardSizeLarge
 	}
-}
-
-func pickZoneSeedTreasureChestFallbackItemID(items []models.InventoryItem, targetLevel int) int {
-	bestID := 0
-	bestDelta := 1<<31 - 1
-	for _, item := range items {
-		if item.ID <= 0 || item.IsCaptureType {
-			continue
-		}
-		level := item.ItemLevel
-		if level <= 0 {
-			if item.UnlockTier != nil && *item.UnlockTier > 0 {
-				level = *item.UnlockTier
-			} else {
-				level = targetLevel
-			}
-		}
-		delta := level - targetLevel
-		if delta < 0 {
-			delta = -delta
-		}
-		if delta < bestDelta {
-			bestDelta = delta
-			bestID = item.ID
-		}
-	}
-	return bestID
 }
 
 func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(

@@ -1,6 +1,7 @@
 class Challenge {
   final String id;
   final String zoneId;
+  final String? pointOfInterestId;
   final double latitude;
   final double longitude;
   final String question;
@@ -18,6 +19,7 @@ class Challenge {
   const Challenge({
     required this.id,
     required this.zoneId,
+    this.pointOfInterestId,
     required this.latitude,
     required this.longitude,
     required this.question,
@@ -37,6 +39,7 @@ class Challenge {
     return Challenge(
       id: json['id']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',
+      pointOfInterestId: json['pointOfInterestId']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       question: json['question']?.toString() ?? '',

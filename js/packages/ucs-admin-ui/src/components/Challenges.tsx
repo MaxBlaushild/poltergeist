@@ -115,7 +115,9 @@ const parseCsv = (value: string): string[] =>
   value
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => statTagOptions.includes(entry as (typeof statTagOptions)[number]));
+    .filter((entry) =>
+      statTagOptions.includes(entry as (typeof statTagOptions)[number])
+    );
 
 const formatDate = (value?: string | null): string => {
   if (!value) return 'n/a';
@@ -212,9 +214,8 @@ export const Challenges = () => {
   const [records, setRecords] = useState<ChallengeRecord[]>([]);
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [editingChallenge, setEditingChallenge] = useState<ChallengeRecord | null>(
-    null
-  );
+  const [editingChallenge, setEditingChallenge] =
+    useState<ChallengeRecord | null>(null);
   const [form, setForm] = useState<ChallengeFormState>(emptyForm);
   const [geoLoading, setGeoLoading] = useState(false);
   const [generatingChallengeId, setGeneratingChallengeId] = useState<
@@ -225,12 +226,16 @@ export const Challenges = () => {
   );
   const [generationForm, setGenerationForm] =
     useState<ChallengeGenerationFormState>(emptyGenerationForm);
-  const [generationJobs, setGenerationJobs] = useState<ChallengeGenerationJob[]>(
-    []
-  );
+  const [generationJobs, setGenerationJobs] = useState<
+    ChallengeGenerationJob[]
+  >([]);
   const [generationJobsLoading, setGenerationJobsLoading] = useState(false);
   const [generationSubmitting, setGenerationSubmitting] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [bulkDeletingChallenges, setBulkDeletingChallenges] = useState(false);
+  const [selectedChallengeIds, setSelectedChallengeIds] = useState<Set<string>>(
+    new Set()
+  );
   const seenCompletedGenerationJobsRef = React.useRef<Set<string>>(new Set());
 
   const mapContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -292,7 +297,8 @@ export const Challenges = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiClient.get<ChallengeRecord[]>('/sonar/challenges');
+      const response =
+        await apiClient.get<ChallengeRecord[]>('/sonar/challenges');
       setRecords(Array.isArray(response) ? response : []);
     } catch (err) {
       console.error('Failed to load challenges', err);
@@ -365,7 +371,9 @@ export const Challenges = () => {
   }, [hasActiveGenerationJobs, loadGenerationJobs]);
 
   useEffect(() => {
-    const completed = generationJobs.filter((job) => job.status === 'completed');
+    const completed = generationJobs.filter(
+      (job) => job.status === 'completed'
+    );
     let shouldReloadChallenges = false;
     for (const job of completed) {
       if (!seenCompletedGenerationJobsRef.current.has(job.id)) {
@@ -393,6 +401,16 @@ export const Challenges = () => {
       );
     });
   }, [query, records, zoneNameById]);
+  const selectedChallengeIdSet = useMemo(
+    () => selectedChallengeIds,
+    [selectedChallengeIds]
+  );
+  const allFilteredChallengesSelected = useMemo(() => {
+    if (filteredRecords.length === 0) return false;
+    return filteredRecords.every((record) =>
+      selectedChallengeIds.has(record.id)
+    );
+  }, [filteredRecords, selectedChallengeIds]);
 
   const allPointOfInterestNamesById = useMemo(() => {
     const byId = new Map<string, string>();
@@ -524,7 +542,13 @@ export const Challenges = () => {
       map.remove();
       mapRef.current = null;
     };
-  }, [form.zoneId, hasSelectedPointOfInterest, setFormLocation, showModal, zones]);
+  }, [
+    form.zoneId,
+    hasSelectedPointOfInterest,
+    setFormLocation,
+    showModal,
+    zones,
+  ]);
 
   useEffect(() => {
     if (!showModal) return;
@@ -595,7 +619,9 @@ export const Challenges = () => {
         rewardMode,
         randomRewardSize: form.randomRewardSize,
         rewardExperience:
-          rewardMode === 'explicit' ? parseIntSafe(form.rewardExperience, 0) : 0,
+          rewardMode === 'explicit'
+            ? parseIntSafe(form.rewardExperience, 0)
+            : 0,
         reward: rewardMode === 'explicit' ? parseIntSafe(form.reward, 0) : 0,
         inventoryItemId:
           rewardMode === 'explicit'
@@ -645,33 +671,148 @@ export const Challenges = () => {
       closeModal();
     } catch (err) {
       console.error('Failed to save challenge', err);
-      const message = err instanceof Error ? err.message : 'Failed to save challenge.';
+      const message =
+        err instanceof Error ? err.message : 'Failed to save challenge.';
       alert(message);
     }
   };
 
   const deleteChallenge = async (record: ChallengeRecord) => {
+    if (bulkDeletingChallenges) return;
     if (!window.confirm(`Delete challenge "${record.question}"?`)) return;
     try {
       await apiClient.delete(`/sonar/challenges/${record.id}`);
       setRecords((prev) => prev.filter((entry) => entry.id !== record.id));
+      setSelectedChallengeIds((prev) => {
+        if (!prev.has(record.id)) return prev;
+        const next = new Set(prev);
+        next.delete(record.id);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to delete challenge', err);
       alert('Failed to delete challenge.');
     }
   };
 
+  const toggleChallengeSelection = (challengeId: string) => {
+    setSelectedChallengeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(challengeId)) {
+        next.delete(challengeId);
+      } else {
+        next.add(challengeId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisibleChallenges = () => {
+    if (filteredRecords.length === 0) return;
+    setSelectedChallengeIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredChallengesSelected) {
+        filteredRecords.forEach((record) => next.delete(record.id));
+      } else {
+        filteredRecords.forEach((record) => next.add(record.id));
+      }
+      return next;
+    });
+  };
+
+  const clearChallengeSelection = () => {
+    setSelectedChallengeIds(new Set());
+  };
+
+  const handleBulkDeleteChallenges = async () => {
+    if (bulkDeletingChallenges || selectedChallengeIds.size === 0) return;
+
+    const selectedIds = Array.from(selectedChallengeIds);
+    const selectedNames = records
+      .filter((record) => selectedChallengeIds.has(record.id))
+      .map((record) => record.question);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected challenge (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected challenges${
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
+          }? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingChallenges(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((challengeId) =>
+          apiClient.delete(`/sonar/challenges/${challengeId}`)
+        )
+      );
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const challengeId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(challengeId);
+        } else {
+          console.error(
+            `Failed to delete challenge ${challengeId}`,
+            result.reason
+          );
+          failedIds.push(challengeId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setRecords((prev) =>
+          prev.filter((record) => !deletedIds.has(record.id))
+        );
+        setSelectedChallengeIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((challengeId) => next.delete(challengeId));
+          return next;
+        });
+        if (editingChallenge && deletedIds.has(editingChallenge.id)) {
+          closeModal();
+        }
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} challenge${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
+            failedIds.length
+          }. Check console for details.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete challenges', err);
+      alert('Failed to delete selected challenges.');
+    } finally {
+      setBulkDeletingChallenges(false);
+    }
+  };
+
   const handleGenerateImage = async (record: ChallengeRecord) => {
     if (generatingChallengeId) return;
     setGeneratingChallengeId(record.id);
-    const previousImageURL = (record.imageUrl || record.thumbnailUrl || '').trim();
+    const previousImageURL = (
+      record.imageUrl ||
+      record.thumbnailUrl ||
+      ''
+    ).trim();
     try {
       await apiClient.post(`/sonar/challenges/${record.id}/generate-image`, {});
 
       for (let attempt = 0; attempt < 18; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 1200));
         const latest = await refreshChallengeById(record.id);
-        const nextImageURL = (latest.imageUrl || latest.thumbnailUrl || '').trim();
+        const nextImageURL = (
+          latest.imageUrl ||
+          latest.thumbnailUrl ||
+          ''
+        ).trim();
         if (nextImageURL && nextImageURL !== previousImageURL) {
           break;
         }
@@ -721,10 +862,38 @@ export const Challenges = () => {
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          onClick={toggleSelectVisibleChallenges}
+          disabled={filteredRecords.length === 0 || bulkDeletingChallenges}
+        >
+          {allFilteredChallengesSelected
+            ? 'Unselect Visible'
+            : 'Select Visible'}
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          onClick={clearChallengeSelection}
+          disabled={selectedChallengeIds.size === 0 || bulkDeletingChallenges}
+        >
+          Clear Selection
+        </button>
+        <button
+          type="button"
+          className="qa-btn qa-btn-danger"
+          onClick={handleBulkDeleteChallenges}
+          disabled={selectedChallengeIds.size === 0 || bulkDeletingChallenges}
+        >
+          {bulkDeletingChallenges
+            ? `Deleting ${selectedChallengeIds.size}...`
+            : `Delete Selected (${selectedChallengeIds.size})`}
+        </button>
+      </div>
 
-      {error ? (
-        <div className="mb-4 text-sm text-red-600">{error}</div>
-      ) : null}
+      {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
 
       <div className="mb-6 border rounded-md p-4 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -803,7 +972,10 @@ export const Challenges = () => {
         ) : (
           <div className="grid gap-2">
             {generationJobs.map((job) => (
-              <div key={job.id} className="border rounded-md p-2 text-sm bg-gray-50">
+              <div
+                key={job.id}
+                className="border rounded-md p-2 text-sm bg-gray-50"
+              >
                 <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="font-mono text-xs">{job.id}</span>
                   <span
@@ -822,7 +994,9 @@ export const Challenges = () => {
                   Queued: {formatDate(job.createdAt)}
                 </div>
                 {job.errorMessage ? (
-                  <div className="text-red-600 text-xs mt-1">{job.errorMessage}</div>
+                  <div className="text-red-600 text-xs mt-1">
+                    {job.errorMessage}
+                  </div>
                 ) : null}
               </div>
             ))}
@@ -834,6 +1008,7 @@ export const Challenges = () => {
         <table className="min-w-full text-sm">
           <thead className="bg-gray-100">
             <tr>
+              <th className="text-left p-2 border-b w-10">Select</th>
               <th className="text-left p-2 border-b">Question</th>
               <th className="text-left p-2 border-b">Zone</th>
               <th className="text-left p-2 border-b">Submission</th>
@@ -847,13 +1022,22 @@ export const Challenges = () => {
           <tbody>
             {filteredRecords.length === 0 ? (
               <tr>
-                <td className="p-3 text-gray-500" colSpan={8}>
+                <td className="p-3 text-gray-500" colSpan={9}>
                   No challenges found.
                 </td>
               </tr>
             ) : (
               filteredRecords.map((record) => (
                 <tr key={record.id} className="odd:bg-white even:bg-gray-50">
+                  <td className="p-2 border-b align-top">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={selectedChallengeIdSet.has(record.id)}
+                      disabled={bulkDeletingChallenges}
+                      onChange={() => toggleChallengeSelection(record.id)}
+                    />
+                  </td>
                   <td className="p-2 border-b align-top max-w-md">
                     <div className="font-medium">{record.question}</div>
                     {record.description ? (
@@ -873,7 +1057,9 @@ export const Challenges = () => {
                   <td className="p-2 border-b align-top">
                     {zoneNameById.get(record.zoneId) ?? record.zoneId}
                   </td>
-                  <td className="p-2 border-b align-top">{record.submissionType}</td>
+                  <td className="p-2 border-b align-top">
+                    {record.submissionType}
+                  </td>
                   <td className="p-2 border-b align-top">
                     {record.difficulty}
                     {record.scaleWithUserLevel ? (
@@ -891,7 +1077,8 @@ export const Challenges = () => {
                     {(record.rewardMode ?? 'random') === 'random' ? (
                       <div>
                         <div className="text-xs font-medium text-indigo-700">
-                          Random {(record.randomRewardSize ?? 'small').toUpperCase()}
+                          Random{' '}
+                          {(record.randomRewardSize ?? 'small').toUpperCase()}
                         </div>
                       </div>
                     ) : (
@@ -908,8 +1095,9 @@ export const Challenges = () => {
                   <td className="p-2 border-b align-top">
                     {record.pointOfInterestId
                       ? `POI: ${
-                          allPointOfInterestNamesById.get(record.pointOfInterestId) ??
-                          record.pointOfInterestId
+                          allPointOfInterestNamesById.get(
+                            record.pointOfInterestId
+                          ) ?? record.pointOfInterestId
                         }`
                       : Number.isFinite(record.latitude) &&
                           Number.isFinite(record.longitude)
@@ -957,6 +1145,7 @@ export const Challenges = () => {
                         type="button"
                         className="bg-red-600 text-white px-2 py-1 rounded-md"
                         onClick={() => void deleteChallenge(record)}
+                        disabled={bulkDeletingChallenges}
                       >
                         Delete
                       </button>
@@ -1016,7 +1205,10 @@ export const Challenges = () => {
                   onChange={(event) =>
                     setForm((prev) => ({
                       ...prev,
-                      submissionType: event.target.value as 'photo' | 'text' | 'video',
+                      submissionType: event.target.value as
+                        | 'photo'
+                        | 'text'
+                        | 'video',
                     }))
                   }
                 >
@@ -1032,7 +1224,10 @@ export const Challenges = () => {
                   className="w-full border rounded-md p-2 min-h-[100px]"
                   value={form.question}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, question: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      question: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -1060,7 +1255,10 @@ export const Challenges = () => {
                   min={0}
                   value={form.difficulty}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, difficulty: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      difficulty: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -1203,7 +1401,10 @@ export const Challenges = () => {
                   className="w-full border rounded-md p-2"
                   value={form.proficiency}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, proficiency: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      proficiency: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -1215,7 +1416,10 @@ export const Challenges = () => {
                   placeholder="strength, dexterity"
                   value={form.statTags}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, statTags: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      statTags: event.target.value,
+                    }))
                   }
                 />
               </label>
@@ -1340,7 +1544,10 @@ export const Challenges = () => {
                   className="w-full border rounded-md p-2"
                   value={form.imageUrl}
                   onChange={(event) =>
-                    setForm((prev) => ({ ...prev, imageUrl: event.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      imageUrl: event.target.value,
+                    }))
                   }
                 />
               </label>

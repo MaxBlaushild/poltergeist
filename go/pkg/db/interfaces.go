@@ -922,6 +922,7 @@ type TreasureChestHandle interface {
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.TreasureChest, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.TreasureChest) error
 	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByIDs(ctx context.Context, ids []uuid.UUID) error
 	AddItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
 	RemoveItem(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int) error
 	UpdateItemQuantity(ctx context.Context, treasureChestID uuid.UUID, inventoryItemID int, quantity int) error
