@@ -45,6 +45,7 @@ type ZoneSeedJob = {
   inputEncounterCount: number;
   optionEncounterCount: number;
   treasureChestCount?: number;
+  healingFountainCount?: number;
   requiredPlaceTags?: string[];
   shopkeeperItemTags?: string[];
   createdAt?: string;
@@ -98,6 +99,7 @@ export const ZoneSeedJobs = () => {
   const [inputEncounterCount, setInputEncounterCount] = useState('6');
   const [optionEncounterCount, setOptionEncounterCount] = useState('6');
   const [treasureChestCount, setTreasureChestCount] = useState('6');
+  const [healingFountainCount, setHealingFountainCount] = useState('0');
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');
   const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
@@ -200,12 +202,14 @@ export const ZoneSeedJobs = () => {
     const inputEncounters = Number.parseInt(inputEncounterCount, 10);
     const optionEncounters = Number.parseInt(optionEncounterCount, 10);
     const treasureChests = Number.parseInt(treasureChestCount, 10);
+    const healingFountains = Number.parseInt(healingFountainCount, 10);
     if (
       Number.isNaN(places) ||
       Number.isNaN(monsters) ||
       Number.isNaN(inputEncounters) ||
       Number.isNaN(optionEncounters) ||
-      Number.isNaN(treasureChests)
+      Number.isNaN(treasureChests) ||
+      Number.isNaN(healingFountains)
     ) {
       setError('Counts must be integers.');
       return;
@@ -222,6 +226,7 @@ export const ZoneSeedJobs = () => {
           inputEncounterCount: inputEncounters,
           optionEncounterCount: optionEncounters,
           treasureChestCount: treasureChests,
+          healingFountainCount: healingFountains,
           requiredPlaceTags,
           shopkeeperItemTags,
         }
@@ -399,7 +404,7 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Places
@@ -448,6 +453,16 @@ export const ZoneSeedJobs = () => {
                 className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
                 value={treasureChestCount}
                 onChange={(e) => setTreasureChestCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Healing fountains
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={healingFountainCount}
+                onChange={(e) => setHealingFountainCount(e.target.value)}
               />
             </div>
           </div>
@@ -661,7 +676,8 @@ export const ZoneSeedJobs = () => {
                       <p className="text-xs text-gray-500">
                         Counts: {job.placeCount} POIs/challenges, {job.monsterCount ?? 0} monster encounters,{' '}
                         {job.inputEncounterCount ?? 0} input scenarios, {job.optionEncounterCount ?? 0} option scenarios,{' '}
-                        {job.treasureChestCount ?? 0} treasure chests, {job.shopkeeperItemTags?.length ?? 0} shopkeepers
+                        {job.treasureChestCount ?? 0} treasure chests, {job.healingFountainCount ?? 0} healing fountains,{' '}
+                        {job.shopkeeperItemTags?.length ?? 0} shopkeepers
                       </p>
                       {job.requiredPlaceTags && job.requiredPlaceTags.length > 0 && (
                         <p className="text-xs text-gray-500">
@@ -808,6 +824,7 @@ export const ZoneSeedJobs = () => {
                             <div>{job.inputEncounterCount ?? 0} random input scenarios (scalable)</div>
                             <div>{job.optionEncounterCount ?? 0} random option scenarios (scalable)</div>
                             <div>{job.treasureChestCount ?? 0} random treasure chests (scalable rewards)</div>
+                            <div>{job.healingFountainCount ?? 0} random healing fountains</div>
                             <div>{job.shopkeeperItemTags?.length ?? 0} shopkeepers generated at random zone locations</div>
                           </div>
                         </div>

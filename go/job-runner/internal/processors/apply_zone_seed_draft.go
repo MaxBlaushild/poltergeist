@@ -27,6 +27,12 @@ type ApplyZoneSeedDraftProcessor struct {
 	asyncClient    *asynq.Client
 }
 
+const (
+	zoneSeedHealingFountainDefaultName        = "Healing Fountain"
+	zoneSeedHealingFountainDefaultDescription = "A mythic spring that restores travelers. Discover it to unlock its blessing."
+	zoneSeedHealingFountainDefaultThumbnail   = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png"
+)
+
 type questRewardStatBonuses struct {
 	Strength     int
 	Dexterity    int
@@ -170,6 +176,9 @@ func (p *ApplyZoneSeedDraftProcessor) ProcessTask(ctx context.Context, task *asy
 
 	if err := p.seedTreasureChestsForZone(ctx, zone, job); err != nil {
 		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed treasure chests: %w", err))
+	}
+	if err := p.seedHealingFountainsForZone(ctx, zone, job); err != nil {
+		return p.failApplyZoneSeedJob(ctx, job, fmt.Errorf("failed to seed healing fountains: %w", err))
 	}
 
 	job.Status = models.ZoneSeedStatusApplied
@@ -599,6 +608,36 @@ func (p *ApplyZoneSeedDraftProcessor) seedTreasureChestsForZone(
 		}
 		if err := p.dbClient.TreasureChest().Create(ctx, chest); err != nil {
 			return fmt.Errorf("failed to create treasure chest %d/%d: %w", i+1, chestCount, err)
+		}
+	}
+
+	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) seedHealingFountainsForZone(
+	ctx context.Context,
+	zone *models.Zone,
+	job *models.ZoneSeedJob,
+) error {
+	fountainCount := job.HealingFountainCount
+	if fountainCount <= 0 {
+		return nil
+	}
+
+	fallbackLocations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
+	for i := 0; i < fountainCount; i++ {
+		location := p.randomLocationForZone(zone, fallbackLocations)
+		fountain := &models.HealingFountain{
+			Name:         zoneSeedHealingFountainDefaultName,
+			Description:  zoneSeedHealingFountainDefaultDescription,
+			ThumbnailURL: zoneSeedHealingFountainDefaultThumbnail,
+			ZoneID:       zone.ID,
+			Latitude:     location.Latitude,
+			Longitude:    location.Longitude,
+			Invalidated:  false,
+		}
+		if err := p.dbClient.HealingFountain().Create(ctx, fountain); err != nil {
+			return fmt.Errorf("failed to create healing fountain %d/%d: %w", i+1, fountainCount, err)
 		}
 	}
 

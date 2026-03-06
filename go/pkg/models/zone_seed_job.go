@@ -41,6 +41,7 @@ type ZoneSeedJob struct {
 	InputEncounterCount  int           `json:"inputEncounterCount"`
 	OptionEncounterCount int           `json:"optionEncounterCount"`
 	TreasureChestCount   int           `json:"treasureChestCount"`
+	HealingFountainCount int           `json:"healingFountainCount"`
 	RequiredPlaceTags    StringArray   `json:"requiredPlaceTags,omitempty" gorm:"type:jsonb"`
 	ShopkeeperItemTags   StringArray   `json:"shopkeeperItemTags,omitempty" gorm:"type:jsonb"`
 	Draft                ZoneSeedDraft `json:"draft" gorm:"type:jsonb"`

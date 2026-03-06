@@ -4517,6 +4517,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		InputEncounterCount  *int     `json:"inputEncounterCount"`
 		OptionEncounterCount *int     `json:"optionEncounterCount"`
 		TreasureChestCount   *int     `json:"treasureChestCount"`
+		HealingFountainCount *int     `json:"healingFountainCount"`
 		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
 		ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
 	}
@@ -4544,6 +4545,10 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 	treasureChestCount := 6
 	if requestBody.TreasureChestCount != nil {
 		treasureChestCount = *requestBody.TreasureChestCount
+	}
+	healingFountainCount := 0
+	if requestBody.HealingFountainCount != nil {
+		healingFountainCount = *requestBody.HealingFountainCount
 	}
 	requiredPlaceTags := make([]string, 0)
 	if len(requestBody.RequiredPlaceTags) > 0 {
@@ -4576,8 +4581,8 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		}
 	}
 
-	if placeCount < 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, monsterCount, inputEncounterCount, optionEncounterCount, and treasureChestCount must be zero or greater"})
+	if placeCount < 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 || healingFountainCount < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, monsterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater"})
 		return
 	}
 	if placeCount > 0 && len(requiredPlaceTags) > placeCount {
@@ -4602,6 +4607,7 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		InputEncounterCount:  inputEncounterCount,
 		OptionEncounterCount: optionEncounterCount,
 		TreasureChestCount:   treasureChestCount,
+		HealingFountainCount: healingFountainCount,
 		RequiredPlaceTags:    models.StringArray(requiredPlaceTags),
 		ShopkeeperItemTags:   models.StringArray(shopkeeperItemTags),
 	}
