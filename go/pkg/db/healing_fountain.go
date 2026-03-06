@@ -114,6 +114,37 @@ func (h *healingFountainHandle) FindLatestVisitByUserAndFountain(ctx context.Con
 	return &visit, nil
 }
 
+func (h *healingFountainHandle) GetDiscoveriesForUser(ctx context.Context, userID uuid.UUID) ([]models.UserHealingFountainDiscovery, error) {
+	var discoveries []models.UserHealingFountainDiscovery
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Find(&discoveries).Error; err != nil {
+		return nil, err
+	}
+	return discoveries, nil
+}
+
+func (h *healingFountainHandle) FindDiscoveryByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainDiscovery, error) {
+	var discovery models.UserHealingFountainDiscovery
+	err := h.db.WithContext(ctx).
+		Where("user_id = ? AND healing_fountain_id = ?", userID, healingFountainID).
+		First(&discovery).Error
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &discovery, nil
+}
+
+func (h *healingFountainHandle) CreateUserHealingFountainDiscovery(ctx context.Context, discovery *models.UserHealingFountainDiscovery) error {
+	discovery.ID = uuid.New()
+	discovery.CreatedAt = time.Now()
+	discovery.UpdatedAt = discovery.CreatedAt
+	return h.db.WithContext(ctx).Create(discovery).Error
+}
+
 func (h *healingFountainHandle) FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error) {
 	var visits []models.UserHealingFountainVisit
 	if err := h.db.WithContext(ctx).

@@ -3,11 +3,13 @@ package server
 import (
 	stdErrors "errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/MaxBlaushild/poltergeist/pkg/util"
 	"github.com/gin-gonic/gin"
@@ -18,10 +20,12 @@ import (
 const (
 	healingFountainInteractRadiusMeters = 50.0
 	healingFountainCooldownDuration     = 7 * 24 * time.Hour
+	defaultHealingFountainImagePrompt   = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
 )
 
 type healingFountainWithUserStatus struct {
 	models.HealingFountain
+	Discovered               bool       `json:"discovered"`
 	AvailableNow             bool       `json:"availableNow"`
 	LastUsedAt               *time.Time `json:"lastUsedAt,omitempty"`
 	NextAvailableAt          *time.Time `json:"nextAvailableAt,omitempty"`
@@ -54,6 +58,11 @@ func (s *server) getHealingFountains(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	discoveredByFountain, err := s.userHealingFountainDiscoveryMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	response := make([]healingFountainWithUserStatus, 0, len(fountains))
 	for _, fountain := range fountains {
 		if fountain.Invalidated {
@@ -63,7 +72,14 @@ func (s *server) getHealingFountains(ctx *gin.Context) {
 			latestVisitsByFountain[fountain.ID],
 			now,
 		)
-		response = append(response, healingFountainResponseWithStatus(fountain, status))
+		response = append(
+			response,
+			healingFountainResponseWithStatus(
+				fountain,
+				status,
+				discoveredByFountain[fountain.ID],
+			),
+		)
 	}
 	ctx.JSON(http.StatusOK, response)
 }
@@ -97,8 +113,13 @@ func (s *server) getHealingFountain(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	discovery, err := s.dbClient.HealingFountain().FindDiscoveryByUserAndFountain(ctx, user.ID, fountain.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	status := healingFountainCooldownStatusFromVisit(latestVisit, time.Now())
-	ctx.JSON(http.StatusOK, healingFountainResponseWithStatus(*fountain, status))
+	ctx.JSON(http.StatusOK, healingFountainResponseWithStatus(*fountain, status, discovery != nil))
 }
 
 func (s *server) getHealingFountainsForZone(ctx *gin.Context) {
@@ -123,6 +144,11 @@ func (s *server) getHealingFountainsForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	discoveredByFountain, err := s.userHealingFountainDiscoveryMap(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	response := make([]healingFountainWithUserStatus, 0, len(fountains))
 	for _, fountain := range fountains {
 		if fountain.Invalidated {
@@ -132,7 +158,14 @@ func (s *server) getHealingFountainsForZone(ctx *gin.Context) {
 			latestVisitsByFountain[fountain.ID],
 			now,
 		)
-		response = append(response, healingFountainResponseWithStatus(fountain, status))
+		response = append(
+			response,
+			healingFountainResponseWithStatus(
+				fountain,
+				status,
+				discoveredByFountain[fountain.ID],
+			),
+		)
 	}
 	ctx.JSON(http.StatusOK, response)
 }
@@ -289,6 +322,163 @@ func (s *server) deleteHealingFountain(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "healing fountain deleted successfully"})
 }
 
+func (s *server) unlockHealingFountain(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+	fountainID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid healing fountain ID"})
+		return
+	}
+	fountain, err := s.dbClient.HealingFountain().FindByID(ctx, fountainID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "healing fountain not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if fountain == nil || fountain.Invalidated {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "healing fountain not found"})
+		return
+	}
+
+	existingDiscovery, err := s.dbClient.HealingFountain().FindDiscoveryByUserAndFountain(ctx, user.ID, fountain.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if existingDiscovery != nil {
+		ctx.JSON(http.StatusOK, gin.H{
+			"message":           "healing fountain already discovered",
+			"healingFountainId": fountain.ID,
+			"discovered":        true,
+		})
+		return
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	distance := util.HaversineDistance(userLat, userLng, fountain.Latitude, fountain.Longitude)
+	if distance > healingFountainInteractRadiusMeters {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf(
+				"you must be within %.0f meters of the healing fountain to discover it. Currently %.0f meters away",
+				healingFountainInteractRadiusMeters,
+				distance,
+			),
+		})
+		return
+	}
+
+	discovery := &models.UserHealingFountainDiscovery{
+		UserID:            user.ID,
+		HealingFountainID: fountain.ID,
+	}
+	if err := s.dbClient.HealingFountain().CreateUserHealingFountainDiscovery(ctx, discovery); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message":           "healing fountain discovered",
+		"healingFountainId": fountain.ID,
+		"discovered":        true,
+	})
+}
+
+func (s *server) generateHealingFountainImage(ctx *gin.Context) {
+	fountainID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid healing fountain ID"})
+		return
+	}
+	fountain, err := s.dbClient.HealingFountain().FindByID(ctx, fountainID)
+	if err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "healing fountain not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if fountain == nil || fountain.Invalidated {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "healing fountain not found"})
+		return
+	}
+
+	var requestBody struct {
+		Prompt *string `json:"prompt"`
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	prompt := strings.TrimSpace(defaultHealingFountainImagePrompt)
+	if requestBody.Prompt != nil {
+		customPrompt := strings.TrimSpace(*requestBody.Prompt)
+		if customPrompt == "" {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "prompt cannot be blank"})
+			return
+		}
+		prompt = customPrompt
+	} else {
+		name := strings.TrimSpace(fountain.Name)
+		description := strings.TrimSpace(fountain.Description)
+		if name != "" || description != "" {
+			prompt = fmt.Sprintf(
+				"%s Name: %s. Description: %s.",
+				defaultHealingFountainImagePrompt,
+				name,
+				description,
+			)
+		}
+	}
+
+	request := deep_priest.GenerateImageRequest{Prompt: prompt}
+	deep_priest.ApplyGenerateImageDefaults(&request)
+	generatedImageURL, err := s.deepPriest.GenerateImage(request)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	updates := &models.HealingFountain{
+		ID:           fountain.ID,
+		Name:         fountain.Name,
+		Description:  fountain.Description,
+		ThumbnailURL: generatedImageURL,
+		ZoneID:       fountain.ZoneID,
+		Latitude:     fountain.Latitude,
+		Longitude:    fountain.Longitude,
+		Invalidated:  fountain.Invalidated,
+	}
+	if err := s.dbClient.HealingFountain().Update(ctx, fountain.ID, updates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update healing fountain image: " + err.Error()})
+		return
+	}
+
+	updated, err := s.dbClient.HealingFountain().FindByID(ctx, fountain.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch updated healing fountain: " + err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"status":          "completed",
+		"healingFountain": updated,
+		"thumbnailUrl":    generatedImageURL,
+		"prompt":          prompt,
+	})
+}
+
 func (s *server) useHealingFountain(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -311,6 +501,17 @@ func (s *server) useHealingFountain(ctx *gin.Context) {
 	}
 	if fountain == nil || fountain.Invalidated {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "healing fountain not found"})
+		return
+	}
+	discovery, err := s.dbClient.HealingFountain().FindDiscoveryByUserAndFountain(ctx, user.ID, fountain.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if discovery == nil {
+		ctx.JSON(http.StatusForbidden, gin.H{
+			"error": "healing fountain must be discovered before use",
+		})
 		return
 	}
 
@@ -428,6 +629,7 @@ func healingFountainCooldownStatusFromVisit(
 func healingFountainResponseWithStatus(
 	fountain models.HealingFountain,
 	status healingFountainCooldownInfo,
+	discovered bool,
 ) healingFountainWithUserStatus {
 	var lastUsedAt *time.Time
 	if status.LastUsedAt != nil {
@@ -441,9 +643,22 @@ func healingFountainResponseWithStatus(
 	}
 	return healingFountainWithUserStatus{
 		HealingFountain:          fountain,
+		Discovered:               discovered,
 		AvailableNow:             status.AvailableNow,
 		LastUsedAt:               lastUsedAt,
 		NextAvailableAt:          nextAvailableAt,
 		CooldownSecondsRemaining: status.CooldownSecondsRemaining,
 	}
+}
+
+func (s *server) userHealingFountainDiscoveryMap(ctx *gin.Context, userID uuid.UUID) (map[uuid.UUID]bool, error) {
+	rows, err := s.dbClient.HealingFountain().GetDiscoveriesForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	discoveredByFountain := make(map[uuid.UUID]bool, len(rows))
+	for _, row := range rows {
+		discoveredByFountain[row.HealingFountainID] = true
+	}
+	return discoveredByFountain, nil
 }

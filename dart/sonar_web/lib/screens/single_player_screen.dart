@@ -3240,8 +3240,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (fountain.latitude == 0.0 && fountain.longitude == 0.0) continue;
 
       final haloColor = fountain.availableNow ? '#2ecc71' : '#888888';
-      final circleColor = fountain.availableNow ? '#2ecc71' : '#7f8c8d';
-      final imageSource = fountain.thumbnailUrl.trim().isNotEmpty
+      final discovered = fountain.discovered;
+      final effectiveHaloColor = discovered ? haloColor : '#000000';
+      final circleColor = discovered
+          ? (fountain.availableNow ? '#2ecc71' : '#7f8c8d')
+          : '#3388ff';
+      final imageSource = discovered && fountain.thumbnailUrl.trim().isNotEmpty
           ? fountain.thumbnailUrl.trim()
           : _healingFountainFallbackImageUrl;
       Uint8List? imageBytes;
@@ -3271,7 +3275,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(fountain.latitude, fountain.longitude),
               iconImage: imageId,
               iconSize: 0.8,
-              iconHaloColor: haloColor,
+              iconHaloColor: effectiveHaloColor,
               iconHaloWidth: 1.0,
               iconAnchor: 'center',
             ),
@@ -3287,7 +3291,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               SymbolOptions(
                 geometry: LatLng(fountain.latitude, fountain.longitude),
                 iconImage: imageId,
-                iconHaloColor: haloColor,
+                iconHaloColor: effectiveHaloColor,
                 iconHaloWidth: 1.0,
               ),
             );
@@ -5447,6 +5451,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => HealingFountainPanel(
         fountain: fountain,
         onClose: () => Navigator.of(context).pop(),
+        onUnlocked: () async {
+          if (!mounted) return;
+          setState(() {
+            _healingFountains = _healingFountains
+                .map(
+                  (item) => item.id == fountain.id
+                      ? item.copyWith(discovered: true)
+                      : item,
+                )
+                .toList(growable: false);
+          });
+          await _refreshHealingFountainSymbols();
+        },
         onUsed: (result) {
           if (!mounted) return;
           final lastUsedAt = DateTime.tryParse(

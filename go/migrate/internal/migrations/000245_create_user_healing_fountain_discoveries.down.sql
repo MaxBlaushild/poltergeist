@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS idx_user_healing_fountain_discoveries_fountain_id;
+DROP INDEX IF EXISTS idx_user_healing_fountain_discoveries_user_id;
+DROP INDEX IF EXISTS idx_user_healing_fountain_discoveries_user_fountain;
+DROP TABLE IF EXISTS user_healing_fountain_discoveries;

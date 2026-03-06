@@ -942,6 +942,9 @@ type HealingFountainHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.HealingFountain) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteByIDs(ctx context.Context, ids []uuid.UUID) error
+	GetDiscoveriesForUser(ctx context.Context, userID uuid.UUID) ([]models.UserHealingFountainDiscovery, error)
+	FindDiscoveryByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainDiscovery, error)
+	CreateUserHealingFountainDiscovery(ctx context.Context, discovery *models.UserHealingFountainDiscovery) error
 	FindLatestVisitByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainVisit, error)
 	FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error)
 	CreateUserHealingFountainVisit(ctx context.Context, visit *models.UserHealingFountainVisit) error

@@ -19,11 +19,13 @@ class HealingFountainPanel extends StatefulWidget {
     required this.fountain,
     required this.onClose,
     this.onUsed,
+    this.onUnlocked,
   });
 
   final HealingFountain fountain;
   final VoidCallback onClose;
   final void Function(Map<String, dynamic> result)? onUsed;
+  final Future<void> Function()? onUnlocked;
 
   @override
   State<HealingFountainPanel> createState() => _HealingFountainPanelState();
@@ -31,6 +33,7 @@ class HealingFountainPanel extends StatefulWidget {
 
 class _HealingFountainPanelState extends State<HealingFountainPanel> {
   bool _loading = false;
+  bool _justUnlocked = false;
   String? _error;
   late HealingFountain _fountain;
 
@@ -77,6 +80,73 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     return DateTime.tryParse(text)?.toLocal();
   }
 
+  String _errorMessage(Object error, {String fallback = 'Request failed.'}) {
+    if (error is DioException && error.response?.data is Map) {
+      final data = Map<String, dynamic>.from(
+        error.response!.data as Map<dynamic, dynamic>,
+      );
+      final rawMessage = data['error'] ?? data['message'];
+      if (rawMessage != null) {
+        final text = rawMessage.toString().trim();
+        if (text.isNotEmpty) return text;
+      }
+    }
+    return fallback;
+  }
+
+  bool get _isDiscovered => _fountain.discovered || _justUnlocked;
+
+  Future<void> _unlockFountain() async {
+    if (_loading) return;
+    final location = context.read<LocationProvider>().location;
+    if (location == null) {
+      setState(
+        () => _error = 'Location not available. Enable location access.',
+      );
+      return;
+    }
+    final distance = _distanceMeters(
+      location.latitude,
+      location.longitude,
+      _fountain.latitude,
+      _fountain.longitude,
+    );
+    if (distance > kProximityUnlockRadiusMeters) {
+      setState(
+        () => _error =
+            'Too far away (${distance.round()} m). Get within ${kProximityUnlockRadiusMeters.round()} m to unlock.',
+      );
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      await context.read<PoiService>().unlockHealingFountain(_fountain.id);
+      await widget.onUnlocked?.call();
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _justUnlocked = true;
+        _fountain = _fountain.copyWith(discovered: true);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Discovered!')));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _errorMessage(
+          error,
+          fallback: 'Unable to discover this healing fountain right now.',
+        );
+      });
+    }
+  }
+
   Future<void> _useFountain() async {
     if (_loading) return;
     setState(() {
@@ -93,15 +163,14 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
       widget.onUsed?.call(result);
     } catch (error) {
       if (!mounted) return;
-      String message = 'Unable to use healing fountain right now.';
+      String message = _errorMessage(
+        error,
+        fallback: 'Unable to use healing fountain right now.',
+      );
       if (error is DioException && error.response?.data is Map) {
         final data = Map<String, dynamic>.from(
           error.response!.data as Map<dynamic, dynamic>,
         );
-        final rawMessage = data['error'] ?? data['message'];
-        if (rawMessage != null && rawMessage.toString().trim().isNotEmpty) {
-          message = rawMessage.toString().trim();
-        }
         final nextAvailableAt = _parseDateTime(data['nextAvailableAt']);
         if (nextAvailableAt != null) {
           _fountain = _fountain.copyWith(
@@ -136,6 +205,9 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
           );
     final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
+    if (!_isDiscovered) {
+      return _buildUndiscovered(context, distance, withinRange);
+    }
     final now = DateTime.now();
     final nextAvailableAt = _fountain.nextAvailableAt;
     final remaining = nextAvailableAt == null
@@ -257,6 +329,109 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUndiscovered(
+    BuildContext context,
+    double? distance,
+    bool withinRange,
+  ) {
+    final theme = Theme.of(context);
+    return DraggableScrollableSheet(
+      initialChildSize: 0.86,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) => PaperSheet(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lock_outline,
+                        size: 28,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Undiscovered',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    onPressed: widget.onClose,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  Text(
+                    'Visit this location to unlock this healing fountain. You must be within ${kProximityUnlockRadiusMeters.round()} meters to discover it.',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  if (distance != null)
+                    Text(
+                      withinRange
+                          ? 'Within range! Tap Unlock to discover.'
+                          : 'You are ${distance.round()} m away.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: withinRange
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.7,
+                              ),
+                        fontWeight: withinRange ? FontWeight.w600 : null,
+                      ),
+                    )
+                  else
+                    Text(
+                      'Enable location to see distance.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
+                      ),
+                    ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: (_loading || !withinRange)
+                        ? null
+                        : _unlockFountain,
+                    child: Text(
+                      _loading
+                          ? 'Unlocking...'
+                          : !withinRange
+                          ? 'Too far to unlock'
+                          : 'Unlock',
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

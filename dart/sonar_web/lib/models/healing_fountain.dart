@@ -7,6 +7,7 @@ class HealingFountain {
   final double latitude;
   final double longitude;
   final bool availableNow;
+  final bool discovered;
   final DateTime? lastUsedAt;
   final DateTime? nextAvailableAt;
   final int cooldownSecondsRemaining;
@@ -20,6 +21,7 @@ class HealingFountain {
     required this.latitude,
     required this.longitude,
     this.availableNow = true,
+    this.discovered = false,
     this.lastUsedAt,
     this.nextAvailableAt,
     this.cooldownSecondsRemaining = 0,
@@ -42,6 +44,7 @@ class HealingFountain {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       availableNow: json['availableNow'] as bool? ?? true,
+      discovered: json['discovered'] as bool? ?? false,
       lastUsedAt: parseDateTime(json['lastUsedAt']),
       nextAvailableAt: parseDateTime(json['nextAvailableAt']),
       cooldownSecondsRemaining:
@@ -51,6 +54,7 @@ class HealingFountain {
 
   HealingFountain copyWith({
     bool? availableNow,
+    bool? discovered,
     DateTime? lastUsedAt,
     DateTime? nextAvailableAt,
     int? cooldownSecondsRemaining,
@@ -64,6 +68,7 @@ class HealingFountain {
       latitude: latitude,
       longitude: longitude,
       availableNow: availableNow ?? this.availableNow,
+      discovered: discovered ?? this.discovered,
       lastUsedAt: lastUsedAt ?? this.lastUsedAt,
       nextAvailableAt: nextAvailableAt ?? this.nextAvailableAt,
       cooldownSecondsRemaining:

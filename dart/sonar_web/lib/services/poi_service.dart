@@ -271,6 +271,15 @@ class PoiService {
         : <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> unlockHealingFountain(String fountainId) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/healing-fountains/$fountainId/unlock',
+    );
+    return raw is Map
+        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        : <String, dynamic>{};
+  }
+
   Future<ScenarioPerformResult> performScenario(
     String scenarioId, {
     String? scenarioOptionId,
