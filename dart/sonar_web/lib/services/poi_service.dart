@@ -5,6 +5,7 @@ import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/point_of_interest_discovery.dart';
 import '../models/quest.dart';
+import '../models/healing_fountain.dart';
 import '../models/scenario.dart';
 import '../models/treasure_chest.dart';
 import '../models/user_zone_reputation.dart';
@@ -49,6 +50,17 @@ class PoiService {
     );
     return list
         .map((e) => Scenario.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<HealingFountain>> getHealingFountainsForZone(
+    String zoneId,
+  ) async {
+    final list = await _api.get<List<dynamic>>(
+      '/sonar/zones/$zoneId/healing-fountains',
+    );
+    return list
+        .map((e) => HealingFountain.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
@@ -248,6 +260,15 @@ class PoiService {
     return await _api.post<Map<String, dynamic>>(
       '/sonar/treasure-chests/$chestId/open',
     );
+  }
+
+  Future<Map<String, dynamic>> useHealingFountain(String fountainId) async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/healing-fountains/$fountainId/use',
+    );
+    return raw is Map
+        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        : <String, dynamic>{};
   }
 
   Future<ScenarioPerformResult> performScenario(

@@ -97,6 +97,7 @@ type DbClient interface {
 	QuestNodeChild() QuestNodeChildHandle
 	QuestNodeProgress() QuestNodeProgressHandle
 	TreasureChest() TreasureChestHandle
+	HealingFountain() HealingFountainHandle
 	Challenge() ChallengeHandle
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
@@ -931,6 +932,19 @@ type TreasureChestHandle interface {
 	FindByIDWithUserStatus(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*models.TreasureChest, bool, error)
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.TreasureChest, map[uuid.UUID]bool, error)
+}
+
+type HealingFountainHandle interface {
+	Create(ctx context.Context, fountain *models.HealingFountain) error
+	FindByID(ctx context.Context, id uuid.UUID) (*models.HealingFountain, error)
+	FindAll(ctx context.Context) ([]models.HealingFountain, error)
+	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.HealingFountain, error)
+	Update(ctx context.Context, id uuid.UUID, updates *models.HealingFountain) error
+	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteByIDs(ctx context.Context, ids []uuid.UUID) error
+	FindLatestVisitByUserAndFountain(ctx context.Context, userID uuid.UUID, healingFountainID uuid.UUID) (*models.UserHealingFountainVisit, error)
+	FindLatestVisitsByUser(ctx context.Context, userID uuid.UUID) (map[uuid.UUID]*models.UserHealingFountainVisit, error)
+	CreateUserHealingFountainVisit(ctx context.Context, visit *models.UserHealingFountainVisit) error
 }
 
 type ChallengeHandle interface {

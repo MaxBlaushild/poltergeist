@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,21 +20,11 @@ type Character struct {
 	Locations             []CharacterLocation `json:"locations" gorm:"foreignKey:CharacterID"`
 	PointOfInterestID     *uuid.UUID          `json:"pointOfInterestId,omitempty" gorm:"type:uuid"`
 	PointOfInterest       *PointOfInterest    `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
-	Geometry              *string             `json:"geometry,omitempty" gorm:"type:geometry(Point,4326)"`
-	Latitude              *float64            `json:"latitude,omitempty" gorm:"->;-:migration"`
-	Longitude             *float64            `json:"longitude,omitempty" gorm:"->;-:migration"`
 	HasAvailableQuest     bool                `json:"hasAvailableQuest" gorm:"-"`
 }
 
 func (n *Character) TableName() string {
 	return "characters"
-}
-
-// SetGeometry creates a PostGIS geometry point from lat/lng coordinates
-func (c *Character) SetGeometry(lat float64, lng float64) {
-	// Create WKT (Well-Known Text) format: 'SRID=4326;POINT(lng lat)'
-	geom := fmt.Sprintf("SRID=4326;POINT(%f %f)", lng, lat)
-	c.Geometry = &geom
 }
 
 const (

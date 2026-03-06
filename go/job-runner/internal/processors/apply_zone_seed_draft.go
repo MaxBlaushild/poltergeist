@@ -755,13 +755,22 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 		PointOfInterestID:     nil,
 		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
 	}
-	character.SetGeometry(startingLat, startingLng)
 	if poi != nil {
 		character.PointOfInterestID = &poi.ID
 	}
 
 	if err := p.dbClient.Character().Create(ctx, character); err != nil {
 		return nil, err
+	}
+	if poi == nil {
+		if err := p.dbClient.CharacterLocation().ReplaceForCharacter(ctx, character.ID, []models.CharacterLocation{
+			{
+				Latitude:  startingLat,
+				Longitude: startingLng,
+			},
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	payloadBytes, err := json.Marshal(jobs.GenerateCharacterImageTaskPayload{

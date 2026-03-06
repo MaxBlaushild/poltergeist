@@ -450,14 +450,6 @@ class _CharacterPanelState extends State<CharacterPanel> {
       );
     }
 
-    final fallbackLat = widget.character.lat;
-    final fallbackLng = widget.character.lng;
-    if (coordinates.isEmpty && isValid(fallbackLat, fallbackLng)) {
-      coordinates.add(
-        AppLocation(latitude: fallbackLat, longitude: fallbackLng, accuracy: 0),
-      );
-    }
-
     return coordinates;
   }
 

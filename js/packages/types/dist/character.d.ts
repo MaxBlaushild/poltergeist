@@ -11,9 +11,6 @@ export interface Character {
     imageGenerationStatus?: string;
     imageGenerationError?: string | null;
     locations?: CharacterLocation[];
-    geometry?: string;
-    latitude?: number | null;
-    longitude?: number | null;
     pointOfInterestId?: string | null;
     pointOfInterest?: {
         id: string;

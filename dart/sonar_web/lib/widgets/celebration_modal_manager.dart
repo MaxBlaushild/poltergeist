@@ -65,6 +65,8 @@ class CelebrationModalManager extends StatelessWidget {
         return 'Quest Complete!';
       case 'treasureChestOpened':
         return 'Treasure Found!';
+      case 'healingFountainUsed':
+        return 'Fully Restored!';
       case 'scenarioOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Scenario Success!' : 'Scenario Failed';
@@ -156,6 +158,25 @@ class CelebrationModalManager extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: rewards,
+        );
+      case 'healingFountainUsed':
+        final healthRestored = (data['healthRestored'] as num?)?.toInt() ?? 0;
+        final manaRestored = (data['manaRestored'] as num?)?.toInt() ?? 0;
+        final nextAvailableAt = data['nextAvailableAt']?.toString() ?? '';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Health restored: $healthRestored'),
+            Text('Mana restored: $manaRestored'),
+            if (nextAvailableAt.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Next fountain use: $nextAvailableAt',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
         );
       case 'levelUp':
         return Column(

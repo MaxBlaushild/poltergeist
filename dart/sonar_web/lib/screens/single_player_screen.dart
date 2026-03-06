@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
+import '../models/healing_fountain.dart';
 import '../models/monster.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -44,6 +45,7 @@ import '../constants/gameplay_constants.dart';
 import '../widgets/activity_feed_panel.dart';
 import '../widgets/celebration_modal_manager.dart';
 import '../widgets/character_panel.dart';
+import '../widgets/healing_fountain_panel.dart';
 import '../widgets/inventory_panel.dart';
 import '../widgets/log_panel.dart';
 import '../widgets/monster_battle_dialog.dart';
@@ -70,6 +72,8 @@ const _monsterMysteryImageUrl =
 const _characterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
+const _healingFountainFallbackImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
 const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
@@ -102,6 +106,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   List<PointOfInterest> _pois = [];
   List<Character> _characters = [];
   List<TreasureChest> _treasureChests = [];
+  List<HealingFountain> _healingFountains = [];
   List<Scenario> _scenarios = [];
   List<MonsterEncounter> _monsters = [];
   List<Challenge> _challenges = [];
@@ -120,6 +125,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final Map<String, Symbol> _chestSymbolById = {};
   final Map<String, Circle> _chestCircleById = {};
   final Map<String, bool> _chestCircleOpened = {};
+  List<Symbol> _healingFountainSymbols = [];
+  List<Circle> _healingFountainCircles = [];
+  final Map<String, Symbol> _healingFountainSymbolById = {};
+  final Map<String, Circle> _healingFountainCircleById = {};
   List<Symbol> _scenarioSymbols = [];
   List<Circle> _scenarioCircles = [];
   final Map<String, Symbol> _scenarioSymbolById = {};
@@ -623,6 +632,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _chestSymbolById.clear();
       _chestCircleById.clear();
       _chestCircleOpened.clear();
+      _healingFountainSymbols = [];
+      _healingFountainCircles = [];
+      _healingFountainSymbolById.clear();
+      _healingFountainCircleById.clear();
       _chestThumbnailBytes = null;
       _chestThumbnailAdded = false;
       _scenarioSymbols = [];
@@ -1003,6 +1016,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (mounted) {
         setState(() {
           _treasureChests = [];
+          _healingFountains = [];
           _scenarios = [];
           _monsters = [];
           _challenges = [];
@@ -1013,10 +1027,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     try {
       final svc = context.read<PoiService>();
       final chestsFuture = svc.getTreasureChestsForZone(zoneId);
+      final healingFountainsFuture = svc.getHealingFountainsForZone(zoneId);
       final scenariosFuture = svc.getScenariosForZone(zoneId);
       final monstersFuture = svc.getMonsterEncountersForZone(zoneId);
       final challengesFuture = svc.getChallengesForZone(zoneId);
       final chests = await chestsFuture;
+      final healingFountains = await healingFountainsFuture;
       final baseScenarios = await scenariosFuture;
       final baseMonsters = await monstersFuture;
       final baseChallenges = await challengesFuture;
@@ -1121,12 +1137,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _treasureChests = chests
             .where((chest) => !_openedTreasureChestIds.contains(chest.id))
             .toList();
+        _healingFountains = healingFountains;
         _scenarios = scenarios;
         _monsters = monsters;
         _challenges = challenges;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
         await _refreshTreasureChestSymbols();
+        await _refreshHealingFountainSymbols();
         await _refreshScenarioSymbols();
         await _refreshMonsterSymbols();
         await _refreshChallengeSymbols();
@@ -1137,12 +1155,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (mounted) {
         setState(() {
           _treasureChests = [];
+          _healingFountains = [];
           _scenarios = [];
           _monsters = [];
           _challenges = [];
         });
         if (_styleLoaded && _mapController != null && _markersAdded) {
           await _refreshTreasureChestSymbols();
+          await _refreshHealingFountainSymbols();
           await _refreshScenarioSymbols();
           await _refreshMonsterSymbols();
           await _refreshChallengeSymbols();
@@ -1221,6 +1241,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Challenge? _challengeById(String id) {
     for (final challenge in _challenges) {
       if (challenge.id == id) return challenge;
+    }
+    return null;
+  }
+
+  HealingFountain? _healingFountainById(String id) {
+    for (final fountain in _healingFountains) {
+      if (fountain.id == id) return fountain;
     }
     return null;
   }
@@ -2127,6 +2154,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
         return;
       }
+      if (type == 'healingFountain') {
+        final fountain = _healingFountainById(idStr);
+        if (fountain != null) {
+          _showHealingFountainPanel(fountain);
+        }
+        return;
+      }
       if (type == 'scenario') {
         final scenario = _scenarioById(idStr);
         if (scenario != null) {
@@ -2178,6 +2212,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           final tc = _treasureChests.where((t) => t.id == idStr).toList();
           if (tc.isNotEmpty && mounted) {
             _showTreasureChestPanel(tc.first);
+          }
+          return;
+        }
+        if (type == 'healingFountain') {
+          final fountain = _healingFountainById(idStr);
+          if (fountain != null && mounted) {
+            _showHealingFountainPanel(fountain);
           }
           return;
         }
@@ -2442,7 +2483,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
     debugPrint(
-      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
+      'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} fountains=${_healingFountains.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
     );
 
     try {
@@ -2507,6 +2548,24 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
       _chestCircleById.clear();
       _chestCircleOpened.clear();
+      if (_healingFountainSymbols.isNotEmpty) {
+        try {
+          await c.removeSymbols(_healingFountainSymbols);
+        } catch (_) {}
+        if (!mounted) return;
+        _healingFountainSymbols.clear();
+      }
+      _healingFountainSymbolById.clear();
+      if (_healingFountainCircles.isNotEmpty) {
+        for (final circle in _healingFountainCircles) {
+          try {
+            await c.removeCircle(circle);
+          } catch (_) {}
+        }
+        if (!mounted) return;
+        _healingFountainCircles.clear();
+      }
+      _healingFountainCircleById.clear();
       if (_scenarioSymbols.isNotEmpty) {
         try {
           await c.removeSymbols(_scenarioSymbols);
@@ -2731,6 +2790,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _chestCircleOpened[tc.id] = tc.openedByUser == true;
         }
       }
+      await _refreshHealingFountainSymbols();
       await _refreshScenarioSymbols();
       await _refreshMonsterSymbols();
       await _refreshChallengeSymbols();
@@ -3145,6 +3205,131 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _chestCircleById[tc.id] = circle;
           _chestCircleOpened[tc.id] = opened;
         }
+      }
+    }
+  }
+
+  Future<void> _refreshHealingFountainSymbols() async {
+    final c = _mapController;
+    if (c == null || !_styleLoaded) return;
+
+    final desiredIds = _healingFountains.map((fountain) => fountain.id).toSet();
+
+    for (final entry in _healingFountainSymbolById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeSymbols([entry.value]);
+        } catch (_) {}
+        _healingFountainSymbols.remove(entry.value);
+        _healingFountainSymbolById.remove(entry.key);
+      }
+    }
+    for (final entry in _healingFountainCircleById.entries.toList()) {
+      if (!desiredIds.contains(entry.key)) {
+        try {
+          await c.removeCircle(entry.value);
+        } catch (_) {}
+        _healingFountainCircles.remove(entry.value);
+        _healingFountainCircleById.remove(entry.key);
+      }
+    }
+
+    for (final fountain in _healingFountains) {
+      if (fountain.id.isEmpty) continue;
+      if (!fountain.latitude.isFinite || !fountain.longitude.isFinite) continue;
+      if (fountain.latitude == 0.0 && fountain.longitude == 0.0) continue;
+
+      final haloColor = fountain.availableNow ? '#2ecc71' : '#888888';
+      final circleColor = fountain.availableNow ? '#2ecc71' : '#7f8c8d';
+      final imageSource = fountain.thumbnailUrl.trim().isNotEmpty
+          ? fountain.thumbnailUrl.trim()
+          : _healingFountainFallbackImageUrl;
+      Uint8List? imageBytes;
+      try {
+        imageBytes = await loadPoiThumbnail(imageSource);
+      } catch (_) {}
+
+      if (imageBytes != null) {
+        final imageId = 'healing_fountain_${fountain.id}_$_mapThumbnailVersion';
+        try {
+          await c.addImage(imageId, imageBytes);
+        } catch (_) {}
+
+        final existingCircle = _healingFountainCircleById[fountain.id];
+        if (existingCircle != null) {
+          try {
+            await c.removeCircle(existingCircle);
+          } catch (_) {}
+          _healingFountainCircles.remove(existingCircle);
+          _healingFountainCircleById.remove(fountain.id);
+        }
+
+        final existingSymbol = _healingFountainSymbolById[fountain.id];
+        if (existingSymbol == null) {
+          final symbol = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(fountain.latitude, fountain.longitude),
+              iconImage: imageId,
+              iconSize: 0.8,
+              iconHaloColor: haloColor,
+              iconHaloWidth: 1.0,
+              iconAnchor: 'center',
+            ),
+            {'type': 'healingFountain', 'id': fountain.id},
+          );
+          if (!mounted) return;
+          _healingFountainSymbols.add(symbol);
+          _healingFountainSymbolById[fountain.id] = symbol;
+        } else {
+          try {
+            await c.updateSymbol(
+              existingSymbol,
+              SymbolOptions(
+                geometry: LatLng(fountain.latitude, fountain.longitude),
+                iconImage: imageId,
+                iconHaloColor: haloColor,
+                iconHaloWidth: 1.0,
+              ),
+            );
+          } catch (_) {}
+        }
+        continue;
+      }
+
+      final existingSymbol = _healingFountainSymbolById[fountain.id];
+      if (existingSymbol != null) {
+        try {
+          await c.removeSymbols([existingSymbol]);
+        } catch (_) {}
+        _healingFountainSymbols.remove(existingSymbol);
+        _healingFountainSymbolById.remove(fountain.id);
+      }
+
+      final existingCircle = _healingFountainCircleById[fountain.id];
+      if (existingCircle == null) {
+        final circle = await c.addCircle(
+          CircleOptions(
+            geometry: LatLng(fountain.latitude, fountain.longitude),
+            circleRadius: 20,
+            circleColor: circleColor,
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#ffffff',
+          ),
+          {'type': 'healingFountain', 'id': fountain.id},
+        );
+        if (!mounted) return;
+        _healingFountainCircles.add(circle);
+        _healingFountainCircleById[fountain.id] = circle;
+      } else {
+        try {
+          await c.updateCircle(
+            existingCircle,
+            CircleOptions(
+              geometry: LatLng(fountain.latitude, fountain.longitude),
+              circleColor: circleColor,
+            ),
+          );
+        } catch (_) {}
       }
     }
   }
@@ -3605,7 +3790,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     )) {
       return true;
     }
-    return _isValidCharacterCoordinate(character.lat, character.lng);
+    return false;
   }
 
   bool _hasDiscoveredCharacter(Character character) {
@@ -5247,6 +5432,69 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (dialogContext.mounted && Navigator.of(dialogContext).canPop()) {
       Navigator.of(dialogContext).pop();
     }
+  }
+
+  void _showHealingFountainPanel(HealingFountain fountain) {
+    final parentContext = context;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => HealingFountainPanel(
+        fountain: fountain,
+        onClose: () => Navigator.of(context).pop(),
+        onUsed: (result) {
+          if (!mounted) return;
+          final lastUsedAt = DateTime.tryParse(
+            result['lastUsedAt']?.toString() ?? '',
+          )?.toLocal();
+          final nextAvailableAt = DateTime.tryParse(
+            result['nextAvailableAt']?.toString() ?? '',
+          )?.toLocal();
+
+          setState(() {
+            _healingFountains = _healingFountains
+                .map(
+                  (item) => item.id == fountain.id
+                      ? item.copyWith(
+                          availableNow: false,
+                          lastUsedAt: lastUsedAt,
+                          nextAvailableAt: nextAvailableAt,
+                          cooldownSecondsRemaining:
+                              (result['cooldownSecondsRemaining'] as num?)
+                                  ?.toInt() ??
+                              0,
+                        )
+                      : item,
+                )
+                .toList(growable: false);
+          });
+
+          unawaited(_refreshHealingFountainSymbols());
+          unawaited(
+            context.read<CharacterStatsProvider>().refresh(silent: true),
+          );
+          unawaited(_loadTreasureChestsForSelectedZone());
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            parentContext.read<CompletedTaskProvider>().showModal(
+              'healingFountainUsed',
+              data: {
+                'healthRestored':
+                    (result['healthRestored'] as num?)?.toInt() ?? 0,
+                'manaRestored': (result['manaRestored'] as num?)?.toInt() ?? 0,
+                'nextAvailableAt': result['nextAvailableAt']?.toString() ?? '',
+              },
+            );
+          });
+        },
+      ),
+    );
   }
 
   void _showTreasureChestPanel(TreasureChest tc) {

@@ -19,7 +19,6 @@ func (h *characterHandler) Create(ctx context.Context, character *models.Charact
 func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.Character, error) {
 	var character models.Character
 	if err := h.db.WithContext(ctx).
-		Select("characters.*, ST_Y(characters.geometry::geometry) AS latitude, ST_X(characters.geometry::geometry) AS longitude").
 		Preload("PointOfInterest").
 		Preload("Locations").
 		First(&character, "id = ?", id).Error; err != nil {
@@ -34,7 +33,6 @@ func (h *characterHandler) FindByID(ctx context.Context, id uuid.UUID) (*models.
 func (h *characterHandler) FindAll(ctx context.Context) ([]*models.Character, error) {
 	var characters []*models.Character
 	if err := h.db.WithContext(ctx).
-		Select("characters.*, ST_Y(characters.geometry::geometry) AS latitude, ST_X(characters.geometry::geometry) AS longitude").
 		Preload("PointOfInterest").
 		Preload("Locations").
 		Find(&characters).Error; err != nil {

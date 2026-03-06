@@ -10,8 +10,6 @@ class Character {
   final String? pointOfInterestId;
   final double? pointOfInterestLat;
   final double? pointOfInterestLng;
-  final double? latitude;
-  final double? longitude;
   final List<CharacterLocation> locations;
   final bool hasAvailableQuest;
 
@@ -25,8 +23,6 @@ class Character {
     this.pointOfInterestId,
     this.pointOfInterestLat,
     this.pointOfInterestLng,
-    this.latitude,
-    this.longitude,
     this.locations = const [],
     this.hasAvailableQuest = false,
   });
@@ -57,8 +53,6 @@ class Character {
       pointOfInterestId: json['pointOfInterestId'] as String?,
       pointOfInterestLat: pointOfInterestLat,
       pointOfInterestLng: pointOfInterestLng,
-      latitude: parseCoordinate(json['latitude']),
-      longitude: parseCoordinate(json['longitude']),
       locations:
           (json['locations'] as List<dynamic>?)
               ?.map(
@@ -69,7 +63,4 @@ class Character {
       hasAvailableQuest: json['hasAvailableQuest'] as bool? ?? false,
     );
   }
-
-  double get lat => latitude ?? 0;
-  double get lng => longitude ?? 0;
 }

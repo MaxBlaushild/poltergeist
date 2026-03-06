@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useQuestArchetypes } from '../contexts/questArchetypes.tsx';
-import { CharacterMapPicker } from './CharacterMapPicker.tsx';
 import { DialogueActionEditor } from './DialogueActionEditor.tsx';
 import { ShopActionEditor, ShopActionSavePayload } from './ShopActionEditor.tsx';
 
@@ -412,8 +411,6 @@ export const Characters = () => {
     dialogueImageUrl: '',
     thumbnailUrl: '',
     pointOfInterestId: '',
-    latitude: 0,
-    longitude: 0,
   });
 
   useEffect(() => {
@@ -770,8 +767,6 @@ export const Characters = () => {
       dialogueImageUrl: '',
       thumbnailUrl: '',
       pointOfInterestId: '',
-      latitude: 0,
-      longitude: 0,
     });
     setCharacterLocations([]);
     setLocationsError(null);
@@ -786,16 +781,9 @@ export const Characters = () => {
   };
 
   const buildCharacterPayload = () => {
-    const hasExplicitCoordinate =
-      Number.isFinite(formData.latitude) &&
-      Number.isFinite(formData.longitude) &&
-      !(formData.latitude === 0 && formData.longitude === 0);
-
     return {
       ...formData,
       pointOfInterestId: formData.pointOfInterestId || null,
-      latitude: hasExplicitCoordinate ? formData.latitude : null,
-      longitude: hasExplicitCoordinate ? formData.longitude : null,
     };
   };
 
@@ -986,8 +974,6 @@ export const Characters = () => {
       dialogueImageUrl: character.dialogueImageUrl,
       thumbnailUrl: character.thumbnailUrl ?? '',
       pointOfInterestId: character.pointOfInterestId ?? '',
-      latitude: character.latitude ?? 0,
-      longitude: character.longitude ?? 0,
     });
     const locations = character.locations?.map(loc => [loc.longitude, loc.latitude] as [number, number]) ?? [];
     setCharacterLocations(locations);
@@ -1527,50 +1513,6 @@ export const Characters = () => {
                   })}
                 </div>
               )}
-            </div>
-
-            {/* Character Position Section */}
-            <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
-              <h3 style={{ margin: '0 0 15px 0' }}>Character Position</h3>
-              <CharacterMapPicker
-                latitude={formData.latitude}
-                longitude={formData.longitude}
-                onChange={(lat, lng) => {
-                  setFormData({
-                    ...formData,
-                    latitude: lat,
-                    longitude: lng,
-                  });
-                }}
-              />
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Latitude:</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={formData.latitude}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      latitude: parseFloat(e.target.value) || 0,
-                    })}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Longitude:</label>
-                  <input
-                    type="number"
-                    step="any"
-                    value={formData.longitude}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      longitude: parseFloat(e.target.value) || 0,
-                    })}
-                    style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Modal Buttons */}

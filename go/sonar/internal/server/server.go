@@ -431,6 +431,13 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
 	r.POST("/sonar/treasure-chests/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteTreasureChests))
 	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
+	r.GET("/sonar/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountains))
+	r.GET("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountain))
+	r.GET("/sonar/zones/:id/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainsForZone))
+	r.POST("/sonar/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createHealingFountain))
+	r.PUT("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateHealingFountain))
+	r.DELETE("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountain))
+	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
 	r.GET("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplates))
 	r.GET("/sonar/monster-templates/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterTemplate))
 	r.POST("/sonar/monster-templates", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterTemplate))
@@ -1874,17 +1881,6 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 			}
 			candidates = append(candidates, coordinate{lat: loc.Latitude, lng: loc.Longitude})
 		}
-	}
-	startLat := 0.0
-	startLng := 0.0
-	if character.Latitude != nil {
-		startLat = *character.Latitude
-	}
-	if character.Longitude != nil {
-		startLng = *character.Longitude
-	}
-	if len(candidates) == 0 && isValidCoordinate(startLat, startLng) {
-		candidates = append(candidates, coordinate{lat: startLat, lng: startLng})
 	}
 	if len(candidates) > 0 {
 		locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
@@ -11644,27 +11640,11 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		DialogueImageUrl  string     `json:"dialogueImageUrl"`
 		ThumbnailUrl      string     `json:"thumbnailUrl"`
 		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
-		Latitude          *float64   `json:"latitude"`
-		Longitude         *float64   `json:"longitude"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-	if (requestBody.Latitude == nil) != (requestBody.Longitude == nil) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be provided together"})
-		return
-	}
-	if requestBody.Latitude != nil && requestBody.Longitude != nil {
-		if math.IsNaN(*requestBody.Latitude) || math.IsInf(*requestBody.Latitude, 0) || *requestBody.Latitude < -90 || *requestBody.Latitude > 90 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90"})
-			return
-		}
-		if math.IsNaN(*requestBody.Longitude) || math.IsInf(*requestBody.Longitude, 0) || *requestBody.Longitude < -180 || *requestBody.Longitude > 180 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude must be between -180 and 180"})
-			return
-		}
 	}
 
 	if requestBody.PointOfInterestID != nil {
@@ -11692,11 +11672,6 @@ func (s *server) createCharacter(ctx *gin.Context) {
 			}
 			return models.CharacterImageGenerationStatusNone
 		}(),
-	}
-	if requestBody.Latitude != nil && requestBody.Longitude != nil {
-		character.SetGeometry(*requestBody.Latitude, *requestBody.Longitude)
-		character.Latitude = requestBody.Latitude
-		character.Longitude = requestBody.Longitude
 	}
 
 	if err := s.dbClient.Character().Create(ctx, character); err != nil {
@@ -11844,27 +11819,11 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		DialogueImageUrl  string     `json:"dialogueImageUrl"`
 		ThumbnailUrl      string     `json:"thumbnailUrl"`
 		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
-		Latitude          *float64   `json:"latitude"`
-		Longitude         *float64   `json:"longitude"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-	if (requestBody.Latitude == nil) != (requestBody.Longitude == nil) {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be provided together"})
-		return
-	}
-	if requestBody.Latitude != nil && requestBody.Longitude != nil {
-		if math.IsNaN(*requestBody.Latitude) || math.IsInf(*requestBody.Latitude, 0) || *requestBody.Latitude < -90 || *requestBody.Latitude > 90 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90"})
-			return
-		}
-		if math.IsNaN(*requestBody.Longitude) || math.IsInf(*requestBody.Longitude, 0) || *requestBody.Longitude < -180 || *requestBody.Longitude > 180 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude must be between -180 and 180"})
-			return
-		}
 	}
 
 	// Update the character
@@ -11886,9 +11845,6 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 			return
 		}
 		characterUpdates.PointOfInterestID = requestBody.PointOfInterestID
-	}
-	if requestBody.Latitude != nil && requestBody.Longitude != nil {
-		characterUpdates.SetGeometry(*requestBody.Latitude, *requestBody.Longitude)
 	}
 
 	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {
