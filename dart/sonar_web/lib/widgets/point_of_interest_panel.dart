@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/api_constants.dart';
 import '../constants/gameplay_constants.dart';
 import '../models/character.dart';
+import '../models/challenge.dart';
 import '../models/inventory_item.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -55,9 +56,11 @@ class PointOfInterestPanel extends StatefulWidget {
     required this.hasDiscovered,
     this.quest,
     this.questNode,
+    this.linkedChallenges = const [],
     required this.onClose,
     this.onUnlocked,
     this.onCharacterTap,
+    this.onChallengeTap,
     this.onQuestSubmissionState,
   });
 
@@ -65,11 +68,13 @@ class PointOfInterestPanel extends StatefulWidget {
   final bool hasDiscovered;
   final Quest? quest;
   final QuestNode? questNode;
+  final List<Challenge> linkedChallenges;
   final VoidCallback onClose;
 
   /// Called after successful unlock (e.g. refresh discoveries and POI markers). Optional.
   final Future<void> Function()? onUnlocked;
   final void Function(Character character)? onCharacterTap;
+  final void Function(Challenge challenge)? onChallengeTap;
   final QuestSubmissionOverlayCallback? onQuestSubmissionState;
 
   @override
@@ -1238,6 +1243,13 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
               : _placeholderImageUrl);
     final tags = poi.tags;
     final characters = poi.characters;
+    final questChallengeIds = <String>{
+      if (widget.questNode != null)
+        ...widget.questNode!.challenges.map((challenge) => challenge.id),
+    };
+    final linkedChallenges = widget.linkedChallenges
+        .where((challenge) => !questChallengeIds.contains(challenge.id))
+        .toList();
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -1359,6 +1371,102 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             onPressed: _showQuestSubmissionModal,
                             child: Text('Quest: ${widget.quest!.name}'),
                           ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (linkedChallenges.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            linkedChallenges.length == 1
+                                ? 'Challenge at this location'
+                                : 'Challenges at this location',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          ...linkedChallenges.map((challenge) {
+                            final location = context
+                                .watch<LocationProvider>()
+                                .location;
+                            final mystery =
+                                location == null ||
+                                _haversineMeters(
+                                      location.latitude,
+                                      location.longitude,
+                                      challenge.latitude,
+                                      challenge.longitude,
+                                    ) >
+                                    _unlockRadiusMeters;
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    mystery
+                                        ? 'Mysterious Challenge'
+                                        : challenge.question,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  if (mystery)
+                                    Text(
+                                      'Move within ${_unlockRadiusMeters.round()} m to reveal this challenge.',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    )
+                                  else ...[
+                                    Text(
+                                      'Difficulty: ${challenge.difficulty}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                    if (challenge.description.trim().isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          challenge.description.trim(),
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  if (widget.onChallengeTap != null) ...[
+                                    const SizedBox(height: 8),
+                                    OutlinedButton(
+                                      onPressed: () =>
+                                          widget.onChallengeTap!(challenge),
+                                      child: const Text('Open challenge'),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }),
                         ],
                       ),
                     ),

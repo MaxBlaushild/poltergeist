@@ -2406,19 +2406,47 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		monsterBattle, err = s.refreshMonsterBattleInviteState(ctx, monsterBattle.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if monsterBattle.State != string(models.MonsterBattleStateActive) {
+			detail, detailErr := s.monsterBattleDetailResponse(ctx, monsterBattle)
+			if detailErr != nil {
+				ctx.JSON(http.StatusConflict, gin.H{"error": "battle is waiting for party invite responses"})
+				return
+			}
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error":  "battle is waiting for party invite responses",
+				"battle": detail,
+			})
+			return
+		}
 	}
 
 	allowedTargets := map[uuid.UUID]bool{
 		user.ID: true,
 	}
 	if targetHealAmount > 0 || groupHealAmount > 0 || hasTargetUserID {
-		partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		for _, member := range partyMembers {
-			allowedTargets[member.ID] = true
+		if monsterBattle != nil {
+			participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, monsterBattle.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			for _, participant := range participants {
+				allowedTargets[participant.UserID] = true
+			}
+		} else {
+			partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			for _, member := range partyMembers {
+				allowedTargets[member.ID] = true
+			}
 		}
 	}
 	if hasTargetUserID {
@@ -2610,6 +2638,12 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		}
 		battleTurnUserDotDamage = userDotDamage
 		battleTurnMonsterDotDamage = monsterDotDamage
+		monsterBattle.MonsterHealthDeficit += monsterDotDamage
+		monsterBattle, err = s.finalizeMonsterBattleIfDefeated(ctx, monsterBattle)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	_, _, maxMana, _, manaAfter, err := s.getScenarioResourceState(ctx, user.ID)
@@ -2640,6 +2674,9 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 	if monsterBattleID != nil {
 		response["battleId"] = *monsterBattleID
+	}
+	if monsterBattle != nil && monsterBattle.EndedAt != nil {
+		response["battleEndedAt"] = monsterBattle.EndedAt
 	}
 	if len(appliedUserStatuses) > 0 {
 		response["userStatusesApplied"] = appliedUserStatuses

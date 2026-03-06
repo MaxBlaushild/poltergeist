@@ -16,11 +16,40 @@ type HealingFountainRecord = {
   };
 };
 
-type GenerateHealingFountainImageResponse = {
-  status?: string;
+type StaticThumbnailResponse = {
   thumbnailUrl?: string;
-  healingFountain?: HealingFountainRecord;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
   prompt?: string;
+};
+
+const defaultHealingFountainDiscoveredIconPrompt =
+  'A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette.';
+
+const staticStatusClassName = (status?: string) => {
+  switch ((status || '').toLowerCase()) {
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'in_progress':
+      return 'bg-amber-600';
+    case 'queued':
+      return 'bg-blue-600';
+    case 'failed':
+      return 'bg-red-600';
+    case 'missing':
+      return 'bg-slate-500';
+    default:
+      return 'bg-slate-500';
+  }
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return 'n/a';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
 };
 
 export const HealingFountains = () => {
@@ -29,8 +58,34 @@ export const HealingFountains = () => {
   const [records, setRecords] = useState<HealingFountainRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [generatingId, setGeneratingId] = useState<string | null>(null);
-  const [promptsById, setPromptsById] = useState<Record<string, string>>({});
+
+  const [discoveredIconPrompt, setDiscoveredIconPrompt] = useState(
+    defaultHealingFountainDiscoveredIconPrompt
+  );
+  const [discoveredIconUrl, setDiscoveredIconUrl] = useState(
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png'
+  );
+  const [discoveredIconStatus, setDiscoveredIconStatus] =
+    useState<string>('unknown');
+  const [discoveredIconExists, setDiscoveredIconExists] = useState(false);
+  const [discoveredIconRequestedAt, setDiscoveredIconRequestedAt] = useState<
+    string | null
+  >(null);
+  const [discoveredIconLastModified, setDiscoveredIconLastModified] = useState<
+    string | null
+  >(null);
+  const [discoveredIconStatusLoading, setDiscoveredIconStatusLoading] =
+    useState(false);
+  const [discoveredIconBusy, setDiscoveredIconBusy] = useState(false);
+  const [discoveredIconMessage, setDiscoveredIconMessage] = useState<
+    string | null
+  >(null);
+  const [discoveredIconError, setDiscoveredIconError] = useState<string | null>(
+    null
+  );
+  const [discoveredIconPreviewNonce, setDiscoveredIconPreviewNonce] = useState(
+    Date.now()
+  );
 
   const zoneNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -54,35 +109,123 @@ export const HealingFountains = () => {
     }
   }, [apiClient]);
 
+  const refreshDiscoveredIconStatus = useCallback(
+    async (showMessage = false) => {
+      try {
+        setDiscoveredIconStatusLoading(true);
+        setDiscoveredIconError(null);
+        const response = await apiClient.get<StaticThumbnailResponse>(
+          '/sonar/admin/thumbnails/healing-fountain-discovered/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setDiscoveredIconUrl(url);
+        }
+        setDiscoveredIconStatus(
+          (response?.status || 'unknown').trim() || 'unknown'
+        );
+        setDiscoveredIconExists(Boolean(response?.exists));
+        setDiscoveredIconRequestedAt(
+          response?.requestedAt ? response.requestedAt : null
+        );
+        setDiscoveredIconLastModified(
+          response?.lastModified ? response.lastModified : null
+        );
+        setDiscoveredIconPreviewNonce(Date.now());
+        if (showMessage) {
+          setDiscoveredIconMessage(
+            'Discovered healing fountain icon status refreshed.'
+          );
+        }
+      } catch (err) {
+        console.error(
+          'Failed to load discovered healing fountain icon status',
+          err
+        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Failed to load discovered healing fountain icon status.';
+        setDiscoveredIconError(message);
+      } finally {
+        setDiscoveredIconStatusLoading(false);
+      }
+    },
+    [apiClient]
+  );
+
+  const handleGenerateDiscoveredIcon = useCallback(async () => {
+    const prompt = discoveredIconPrompt.trim();
+    if (!prompt) {
+      setDiscoveredIconError('Prompt is required.');
+      return;
+    }
+    try {
+      setDiscoveredIconBusy(true);
+      setDiscoveredIconError(null);
+      setDiscoveredIconMessage(null);
+      await apiClient.post<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/healing-fountain-discovered',
+        { prompt }
+      );
+      setDiscoveredIconMessage(
+        'Discovered healing fountain icon queued for generation.'
+      );
+      await refreshDiscoveredIconStatus();
+    } catch (err) {
+      console.error('Failed to generate discovered healing fountain icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate discovered healing fountain icon.';
+      setDiscoveredIconError(message);
+    } finally {
+      setDiscoveredIconBusy(false);
+    }
+  }, [apiClient, discoveredIconPrompt, refreshDiscoveredIconStatus]);
+
+  const handleDeleteDiscoveredIcon = useCallback(async () => {
+    try {
+      setDiscoveredIconBusy(true);
+      setDiscoveredIconError(null);
+      setDiscoveredIconMessage(null);
+      await apiClient.delete<StaticThumbnailResponse>(
+        '/sonar/admin/thumbnails/healing-fountain-discovered'
+      );
+      setDiscoveredIconMessage('Discovered healing fountain icon deleted.');
+      await refreshDiscoveredIconStatus();
+    } catch (err) {
+      console.error('Failed to delete discovered healing fountain icon', err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to delete discovered healing fountain icon.';
+      setDiscoveredIconError(message);
+    } finally {
+      setDiscoveredIconBusy(false);
+    }
+  }, [apiClient, refreshDiscoveredIconStatus]);
+
   useEffect(() => {
-    fetchHealingFountains();
+    void fetchHealingFountains();
   }, [fetchHealingFountains]);
 
-  const handleGenerateDiscoveredImage = async (record: HealingFountainRecord) => {
-    if (generatingId) return;
-    setGeneratingId(record.id);
-    setError(null);
-    try {
-      const prompt = (promptsById[record.id] || '').trim();
-      const response = await apiClient.post<GenerateHealingFountainImageResponse>(
-        `/sonar/healing-fountains/${record.id}/generate-image`,
-        prompt ? { prompt } : {}
-      );
-      const updatedRecord = response?.healingFountain;
-      if (updatedRecord) {
-        setRecords((prev) =>
-          prev.map((entry) => (entry.id === updatedRecord.id ? updatedRecord : entry))
-        );
-      } else {
-        await fetchHealingFountains();
-      }
-    } catch (err) {
-      console.error('Failed to generate healing fountain image', err);
-      setError('Failed to generate healing fountain image.');
-    } finally {
-      setGeneratingId(null);
+  useEffect(() => {
+    void refreshDiscoveredIconStatus();
+  }, [refreshDiscoveredIconStatus]);
+
+  useEffect(() => {
+    if (
+      discoveredIconStatus !== 'queued' &&
+      discoveredIconStatus !== 'in_progress'
+    ) {
+      return;
     }
-  };
+    const interval = window.setInterval(() => {
+      void refreshDiscoveredIconStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [discoveredIconStatus, refreshDiscoveredIconStatus]);
 
   if (loading) {
     return <div className="m-10">Loading healing fountains...</div>;
@@ -94,17 +237,97 @@ export const HealingFountains = () => {
         <h1 className="text-2xl font-bold">Healing Fountains</h1>
         <button
           type="button"
-          onClick={() => fetchHealingFountains()}
+          onClick={() => void fetchHealingFountains()}
           className="rounded bg-blue-600 px-3 py-2 text-white hover:bg-blue-700"
         >
-          Refresh
+          Refresh Fountains
         </button>
       </div>
 
       <p className="text-sm text-gray-600">
-        Generate the discovered thumbnail for each healing fountain. Undiscovered
-        fountains use the same mystery icon/UX as points of interest in gameplay.
+        Discovered healing fountains use one shared S3 icon. Undiscovered
+        healing fountains use the same mystery icon and UX as points of
+        interest.
       </p>
+
+      <section className="rounded border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">
+              Discovered Icon
+            </h2>
+            <p className="text-xs text-gray-600 mt-1">
+              Requested: {formatDate(discoveredIconRequestedAt ?? undefined)}
+              {' · '}Last updated:{' '}
+              {formatDate(discoveredIconLastModified ?? undefined)}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="rounded border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-60"
+              onClick={() => void refreshDiscoveredIconStatus(true)}
+              disabled={discoveredIconStatusLoading}
+            >
+              {discoveredIconStatusLoading ? 'Refreshing...' : 'Refresh Status'}
+            </button>
+            <button
+              className="rounded bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-60"
+              onClick={handleGenerateDiscoveredIcon}
+              disabled={discoveredIconBusy || discoveredIconStatusLoading}
+            >
+              {discoveredIconBusy ? 'Working...' : 'Generate Icon'}
+            </button>
+            <button
+              className="rounded bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-60"
+              onClick={handleDeleteDiscoveredIcon}
+              disabled={discoveredIconBusy || discoveredIconStatusLoading}
+            >
+              {discoveredIconBusy ? 'Working...' : 'Delete Icon'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-2">
+          <span
+            className={`inline-flex rounded px-2 py-0.5 text-xs text-white ${staticStatusClassName(
+              discoveredIconStatus
+            )}`}
+          >
+            {discoveredIconStatus || 'unknown'}
+          </span>
+        </div>
+
+        <label className="block text-sm mt-3">
+          Generation Prompt
+          <textarea
+            className="block w-full rounded border border-gray-300 p-2 mt-1 min-h-[88px]"
+            value={discoveredIconPrompt}
+            onChange={(event) => setDiscoveredIconPrompt(event.target.value)}
+            placeholder="Prompt used to generate the discovered healing fountain icon."
+          />
+        </label>
+
+        {discoveredIconExists ? (
+          <div className="mt-3">
+            <img
+              src={`${discoveredIconUrl}?v=${discoveredIconPreviewNonce}`}
+              alt="Discovered healing fountain icon preview"
+              className="h-24 w-24 rounded border bg-gray-50 object-cover"
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500 mt-2">
+            No icon currently found at this URL.
+          </p>
+        )}
+
+        {discoveredIconMessage ? (
+          <p className="text-sm text-emerald-700 mt-2">{discoveredIconMessage}</p>
+        ) : null}
+        {discoveredIconError ? (
+          <p className="text-sm text-red-600 mt-2">{discoveredIconError}</p>
+        ) : null}
+      </section>
 
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -121,7 +344,6 @@ export const HealingFountains = () => {
           {records.map((record) => {
             const zoneName =
               record.zone?.name || zoneNameById.get(record.zoneId) || record.zoneId;
-            const isGenerating = generatingId === record.id;
             return (
               <article
                 key={record.id}
@@ -140,14 +362,12 @@ export const HealingFountains = () => {
                     </div>
                   )}
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div>
                     <h2 className="text-lg font-semibold">
                       {record.name || 'Healing Fountain'}
                     </h2>
-                    <p className="text-sm text-gray-600">
-                      Zone: {zoneName}
-                    </p>
+                    <p className="text-sm text-gray-600">Zone: {zoneName}</p>
                     <p className="text-xs text-gray-500">
                       {record.latitude.toFixed(6)}, {record.longitude.toFixed(6)}
                     </p>
@@ -155,33 +375,9 @@ export const HealingFountains = () => {
                   <p className="text-sm text-gray-700">
                     {record.description?.trim() || 'No description'}
                   </p>
-                  <div className="space-y-2">
-                    <label className="block text-xs font-medium text-gray-700">
-                      Custom generation prompt (optional)
-                    </label>
-                    <textarea
-                      value={promptsById[record.id] || ''}
-                      onChange={(event) =>
-                        setPromptsById((prev) => ({
-                          ...prev,
-                          [record.id]: event.target.value,
-                        }))
-                      }
-                      rows={3}
-                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                      placeholder="Leave blank to use the default discovered healing fountain prompt."
-                    />
-                  </div>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => handleGenerateDiscoveredImage(record)}
-                      disabled={isGenerating}
-                      className="rounded bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                    >
-                      {isGenerating ? 'Generating...' : 'Generate Discovered Image'}
-                    </button>
-                  </div>
+                  <p className="text-xs text-gray-500 break-all">
+                    Resolved thumbnail URL: {record.thumbnailUrl || 'n/a'}
+                  </p>
                 </div>
               </article>
             );

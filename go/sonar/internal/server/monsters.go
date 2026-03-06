@@ -344,6 +344,8 @@ type monsterBattleResponse struct {
 	ID                   uuid.UUID  `json:"id"`
 	UserID               uuid.UUID  `json:"userId"`
 	MonsterID            uuid.UUID  `json:"monsterId"`
+	State                string     `json:"state"`
+	TurnIndex            int        `json:"turnIndex"`
 	StartedAt            time.Time  `json:"startedAt"`
 	LastActivityAt       time.Time  `json:"lastActivityAt"`
 	MonsterHealthDeficit int        `json:"monsterHealthDeficit"`
@@ -384,6 +386,8 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		ID:                   battle.ID,
 		UserID:               battle.UserID,
 		MonsterID:            battle.MonsterID,
+		State:                battle.State,
+		TurnIndex:            battle.TurnIndex,
 		StartedAt:            battle.StartedAt,
 		LastActivityAt:       battle.LastActivityAt,
 		MonsterHealthDeficit: battle.MonsterHealthDeficit,
@@ -593,15 +597,27 @@ func (s *server) getOrCreateActiveMonsterBattle(
 	if activeBattle != nil {
 		return activeBattle, nil
 	}
+	activeBattle, err = s.dbClient.MonsterBattle().FindActiveByParticipantAndMonster(ctx, userID, monsterID)
+	if err != nil {
+		return nil, err
+	}
+	if activeBattle != nil {
+		return activeBattle, nil
+	}
 
 	now := time.Now()
 	battle := &models.MonsterBattle{
 		UserID:         userID,
 		MonsterID:      monsterID,
+		State:          string(models.MonsterBattleStateActive),
+		TurnIndex:      0,
 		StartedAt:      now,
 		LastActivityAt: now,
 	}
 	if err := s.dbClient.MonsterBattle().Create(ctx, battle); err != nil {
+		return nil, err
+	}
+	if err := s.initializeMonsterBattlePartyState(ctx, battle); err != nil {
 		return nil, err
 	}
 	return battle, nil
@@ -612,7 +628,7 @@ func (s *server) buildMonsterResponse(
 	userID uuid.UUID,
 	monster *models.Monster,
 ) (monsterResponse, error) {
-	activeBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monster.ID)
+	activeBattle, err := s.findActiveMonsterBattleForUser(ctx, userID, monster.ID)
 	if err != nil {
 		return monsterResponse{}, err
 	}
@@ -2004,14 +2020,25 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	now := time.Now()
-	if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	battle.LastActivityAt = now
+	if battle.State == string(models.MonsterBattleStateActive) {
+		now := time.Now()
+		if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		battle.LastActivityAt = now
+	}
 
-	ctx.JSON(http.StatusOK, monsterBattleResponseFrom(battle))
+	response, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) endMonsterBattle(ctx *gin.Context) {
@@ -2027,7 +2054,7 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 		return
 	}
 
-	battle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, user.ID, monsterID)
+	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2073,13 +2100,31 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		return
 	}
 
-	battle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, user.ID, monsterID)
+	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	if battle == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
+		return
+	}
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle.State != string(models.MonsterBattleStateActive) {
+		detail, detailErr := s.monsterBattleDetailResponse(ctx, battle)
+		if detailErr != nil {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "battle is waiting for party invite responses",
+			})
+			return
+		}
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error":  "battle is waiting for party invite responses",
+			"battle": detail,
+		})
 		return
 	}
 
@@ -2099,6 +2144,11 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		battle.MonsterHealthDeficit += monsterDotDamage
 	}
 
+	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	updatedMonster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2115,9 +2165,15 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"battle":           monsterBattleResponseFrom(battle),
+		"battleDetail":     battleDetail,
 		"monster":          monsterResponse,
 		"userDotDamage":    userDotDamage,
 		"monsterDotDamage": monsterDotDamage,

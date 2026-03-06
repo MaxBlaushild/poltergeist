@@ -12,11 +12,12 @@ import (
 type ActivityType string
 
 const (
-	ActivityTypeLevelUp            ActivityType = "level_up"
-	ActivityTypeChallengeCompleted ActivityType = "challenge_completed"
-	ActivityTypeQuestCompleted     ActivityType = "quest_completed"
-	ActivityTypeItemReceived       ActivityType = "item_received"
-	ActivityTypeReputationUp       ActivityType = "reputation_up"
+	ActivityTypeLevelUp             ActivityType = "level_up"
+	ActivityTypeChallengeCompleted  ActivityType = "challenge_completed"
+	ActivityTypeQuestCompleted      ActivityType = "quest_completed"
+	ActivityTypeItemReceived        ActivityType = "item_received"
+	ActivityTypeReputationUp        ActivityType = "reputation_up"
+	ActivityTypeMonsterBattleInvite ActivityType = "monster_battle_invite"
 )
 
 type LevelUpActivity struct {

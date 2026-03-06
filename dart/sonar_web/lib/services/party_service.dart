@@ -12,7 +12,9 @@ class PartyService {
   /// Returns party when user is in one. 404 when not in a party.
   Future<Party?> getParty() async {
     try {
-      final data = await _api.get<Map<String, dynamic>>(ApiConstants.partyEndpoint);
+      final data = await _api.get<Map<String, dynamic>>(
+        ApiConstants.partyEndpoint,
+      );
       return Party.fromJson(data);
     } on Exception catch (_) {
       return null;
@@ -21,7 +23,9 @@ class PartyService {
 
   Future<List<PartyInvite>> getPartyInvites() async {
     try {
-      final list = await _api.get<List<dynamic>>(ApiConstants.partyInvitesEndpoint);
+      final list = await _api.get<List<dynamic>>(
+        ApiConstants.partyInvitesEndpoint,
+      );
       return list
           .map((e) => PartyInvite.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -59,6 +63,20 @@ class PartyService {
   Future<void> rejectPartyInvite(String inviteId) async {
     await _api.post<dynamic>(
       ApiConstants.partyInvitesRejectEndpoint,
+      data: {'inviteID': inviteId},
+    );
+  }
+
+  Future<void> acceptMonsterBattleInvite(String inviteId) async {
+    await _api.post<dynamic>(
+      ApiConstants.monsterBattleInvitesAcceptEndpoint,
+      data: {'inviteID': inviteId},
+    );
+  }
+
+  Future<void> rejectMonsterBattleInvite(String inviteId) async {
+    await _api.post<dynamic>(
+      ApiConstants.monsterBattleInvitesRejectEndpoint,
       data: {'inviteID': inviteId},
     );
   }

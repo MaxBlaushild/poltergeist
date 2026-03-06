@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../constants/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../services/media_service.dart';
+import '../services/notification_permission_service.dart';
 
 class LogisterModal extends StatelessWidget {
   const LogisterModal({
@@ -89,7 +88,13 @@ class _LogisterFormState extends State<_LogisterForm> {
   final _nameController = TextEditingController();
   bool _loading = false;
   bool _showProfileSetup = false;
+  bool _showNotificationSetup = false;
+  bool _notificationLoading = false;
   PlatformFile? _pickedFile;
+  final NotificationPermissionService _notificationPermissionService =
+      NotificationPermissionService();
+  NotificationPermissionState _notificationPermissionState =
+      NotificationPermissionState.notDetermined;
 
   @override
   void dispose() {
@@ -158,8 +163,7 @@ class _LogisterFormState extends State<_LogisterForm> {
         }
         final ext = _pickedFile!.name.split('.').last.toLowerCase();
         if (ext.isEmpty) return;
-        final key =
-            '${user.id}-${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final key = '${user.id}-${DateTime.now().millisecondsSinceEpoch}.$ext';
         final url = await widget.mediaService.getPresignedUploadUrl(
           ApiConstants.crewProfileBucket,
           key,
@@ -171,8 +175,8 @@ class _LogisterFormState extends State<_LogisterForm> {
         final contentType = ext == 'png'
             ? 'image/png'
             : ext == 'gif'
-                ? 'image/gif'
-                : 'image/jpeg';
+            ? 'image/gif'
+            : 'image/jpeg';
         final ok = await widget.mediaService.uploadToPresigned(
           url,
           Uint8List.fromList(_pickedFile!.bytes!),
@@ -188,10 +192,72 @@ class _LogisterFormState extends State<_LogisterForm> {
         username: hasUsername ? username : null,
         profilePictureUrl: profilePictureUrl,
       );
-      setState(() => _loading = false);
-      if (mounted) widget.onSuccess();
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _showProfileSetup = false;
+        _showNotificationSetup = true;
+      });
+      await _loadNotificationPermissionState();
     } catch (_) {
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadNotificationPermissionState() async {
+    setState(() => _notificationLoading = true);
+    try {
+      final state = await _notificationPermissionService.getPermissionState();
+      if (!mounted) return;
+      setState(() {
+        _notificationPermissionState = state;
+        _notificationLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _notificationLoading = false);
+    }
+  }
+
+  Future<void> _onNotificationToggle(bool value) async {
+    if (!value) {
+      if (_notificationPermissionState == NotificationPermissionState.granted &&
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Notifications are enabled. Use browser/system settings to disable.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _notificationLoading = true);
+    try {
+      final state = await _notificationPermissionService.requestPermission();
+      if (!mounted) return;
+      setState(() {
+        _notificationPermissionState = state;
+        _notificationLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _notificationLoading = false);
+    }
+  }
+
+  String _notificationStatusText() {
+    switch (_notificationPermissionState) {
+      case NotificationPermissionState.granted:
+        return 'Enabled';
+      case NotificationPermissionState.denied:
+        return 'Blocked';
+      case NotificationPermissionState.unsupported:
+        return 'Not supported on this device/browser';
+      case NotificationPermissionState.notDetermined:
+        return 'Not enabled yet';
     }
   }
 
@@ -199,6 +265,7 @@ class _LogisterFormState extends State<_LogisterForm> {
   Widget build(BuildContext context) {
     final auth = widget.auth;
     final waiting = auth.isWaitingForVerificationCode;
+    final colorScheme = Theme.of(context).colorScheme;
 
     if (_showProfileSetup) {
       return Column(
@@ -207,16 +274,16 @@ class _LogisterFormState extends State<_LogisterForm> {
         children: [
           Text(
             'Set up your profile',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
           Text(
             'Add a name or a profile image so your crew can recognize you.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
-                ),
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
+            ),
           ),
           const SizedBox(height: 20),
           TextField(
@@ -236,7 +303,8 @@ class _LogisterFormState extends State<_LogisterForm> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: (_loading ||
+            onPressed:
+                (_loading ||
                     ((_pickedFile == null || _pickedFile!.bytes == null) &&
                         _nameController.text.trim().length < 2))
                 ? null
@@ -253,22 +321,99 @@ class _LogisterFormState extends State<_LogisterForm> {
       );
     }
 
+    if (_showNotificationSetup) {
+      final enabled =
+          _notificationPermissionState == NotificationPermissionState.granted;
+      final canRequest =
+          _notificationPermissionState !=
+          NotificationPermissionState.unsupported;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Stay in the loop',
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Turn on notifications for party invites and combat updates.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withOpacity(0.75),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceVariant.withOpacity(0.45),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: colorScheme.outlineVariant),
+            ),
+            child: SwitchListTile(
+              value: enabled,
+              onChanged: (_notificationLoading || !canRequest)
+                  ? null
+                  : _onNotificationToggle,
+              title: const Text('Allow push notifications'),
+              subtitle: Text(_notificationStatusText()),
+              secondary: _notificationLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.notifications_active_outlined),
+            ),
+          ),
+          if (_notificationPermissionState ==
+              NotificationPermissionState.denied)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Notifications are currently blocked. You can continue and enable them later in browser settings.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withOpacity(0.72),
+                ),
+              ),
+            ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FilledButton.icon(
+                onPressed: widget.onSuccess,
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Continue'),
+              ),
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: widget.onSuccess,
+                child: const Text('Skip for now'),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           'Sign in to Unclaimed Streets',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         Text(
           'Enter your phone number to receive a code.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
-              ),
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.75),
+          ),
         ),
         const SizedBox(height: 16),
         if (auth.error != null)
@@ -290,9 +435,7 @@ class _LogisterFormState extends State<_LogisterForm> {
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-              ],
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             );
             final phoneField = TextField(
               controller: _phoneController,
@@ -370,10 +513,7 @@ class _LogisterFormState extends State<_LogisterForm> {
                     : const Text('Send code'),
               ),
             const SizedBox(width: 12),
-            TextButton(
-              onPressed: widget.onSkip,
-              child: const Text('Back'),
-            ),
+            TextButton(onPressed: widget.onSkip, child: const Text('Back')),
           ],
         ),
       ],

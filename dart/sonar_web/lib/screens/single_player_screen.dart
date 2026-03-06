@@ -1245,6 +1245,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return null;
   }
 
+  bool _isChallengeRepresentedByPoi(Challenge challenge) {
+    final poiId = challenge.pointOfInterestId?.trim() ?? '';
+    if (poiId.isEmpty) return false;
+    for (final poi in _pois) {
+      if (poi.id == poiId) return true;
+    }
+    return false;
+  }
+
+  List<Challenge> _linkedChallengesForPoi(String poiId) {
+    if (poiId.trim().isEmpty) return const [];
+    return _challenges.where((challenge) {
+      final linkedPoiId = challenge.pointOfInterestId?.trim() ?? '';
+      return linkedPoiId.isNotEmpty && linkedPoiId == poiId;
+    }).toList();
+  }
+
   HealingFountain? _healingFountainById(String id) {
     for (final fountain in _healingFountains) {
       if (fountain.id == id) return fountain;
@@ -1860,7 +1877,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    final desiredIds = _challenges.map((challenge) => challenge.id).toSet();
+    final standaloneChallenges = _challenges
+        .where((challenge) => !_isChallengeRepresentedByPoi(challenge))
+        .toList();
+    final desiredIds = standaloneChallenges
+        .map((challenge) => challenge.id)
+        .toSet();
     for (final entry in _challengeSymbolById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
         try {
@@ -1880,7 +1902,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    for (final challenge in _challenges) {
+    for (final challenge in standaloneChallenges) {
       final isCurrentQuestChallenge = _isCurrentQuestChallenge(challenge.id);
       final mystery = _isChallengeMystery(challenge);
       String? symbolImageId;
@@ -2350,6 +2372,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _showPointOfInterestPanel(PointOfInterest poi, bool hasDiscovered) {
     Quest? questForPoi;
     QuestNode? nodeForPoi;
+    final linkedChallenges = _linkedChallengesForPoi(poi.id);
     final questLog = context.read<QuestLogProvider>();
     for (final quest in questLog.quests) {
       final node = quest.currentNode;
@@ -2374,7 +2397,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         hasDiscovered: hasDiscovered,
         quest: questForPoi,
         questNode: nodeForPoi,
+        linkedChallenges: linkedChallenges,
         onClose: () => Navigator.of(context).pop(),
+        onChallengeTap: (challenge) {
+          Navigator.of(context).pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showChallengePanel(challenge);
+          });
+        },
         onQuestSubmissionState: _setQuestSubmissionOverlay,
         onCharacterTap: (character) {
           Navigator.of(context).pop();

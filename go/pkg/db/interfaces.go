@@ -103,6 +103,8 @@ type DbClient interface {
 	Monster() MonsterHandle
 	MonsterEncounter() MonsterEncounterHandle
 	MonsterBattle() MonsterBattleHandle
+	MonsterBattleParticipant() MonsterBattleParticipantHandle
+	MonsterBattleInvite() MonsterBattleInviteHandle
 	Scenario() ScenarioHandle
 	Document() DocumentHandle
 	DocumentTag() DocumentTagHandle
@@ -628,10 +630,37 @@ type MonsterStatusHandle interface {
 type MonsterBattleHandle interface {
 	Create(ctx context.Context, battle *models.MonsterBattle) error
 	FindActiveByUserAndMonster(ctx context.Context, userID uuid.UUID, monsterID uuid.UUID) (*models.MonsterBattle, error)
+	FindActiveByParticipantAndMonster(ctx context.Context, userID uuid.UUID, monsterID uuid.UUID) (*models.MonsterBattle, error)
+	FindByID(ctx context.Context, battleID uuid.UUID) (*models.MonsterBattle, error)
 	HasAnyActiveForUser(ctx context.Context, userID uuid.UUID) (bool, error)
 	Touch(ctx context.Context, battleID uuid.UUID, at time.Time) error
 	AdjustMonsterHealthDeficit(ctx context.Context, battleID uuid.UUID, delta int) error
+	SetState(ctx context.Context, battleID uuid.UUID, state string) error
+	SetTurnIndex(ctx context.Context, battleID uuid.UUID, turnIndex int) error
 	End(ctx context.Context, battleID uuid.UUID, endedAt time.Time) error
+}
+
+type MonsterBattleParticipantHandle interface {
+	CreateOrUpdate(ctx context.Context, participant *models.MonsterBattleParticipant) error
+	FindByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterBattleParticipant, error)
+	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
+}
+
+type MonsterBattleInviteHandle interface {
+	Create(ctx context.Context, invite *models.MonsterBattleInvite) error
+	FindByID(ctx context.Context, inviteID uuid.UUID) (*models.MonsterBattleInvite, error)
+	FindByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterBattleInvite, error)
+	FindPendingByInvitee(ctx context.Context, inviteeID uuid.UUID, now time.Time) ([]models.MonsterBattleInvite, error)
+	UpdateStatus(
+		ctx context.Context,
+		inviteID uuid.UUID,
+		inviteeID uuid.UUID,
+		status string,
+		respondedAt *time.Time,
+	) (int64, error)
+	AutoDeclineExpiredByBattle(ctx context.Context, battleID uuid.UUID, now time.Time) (int64, error)
+	AutoDeclineExpiredByInvitee(ctx context.Context, inviteeID uuid.UUID, now time.Time) (int64, error)
+	CountPendingByBattle(ctx context.Context, battleID uuid.UUID, now time.Time) (int64, error)
 }
 
 type UserZoneReputationHandle interface {

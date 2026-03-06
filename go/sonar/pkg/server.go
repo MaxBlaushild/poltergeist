@@ -20,6 +20,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/push"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/search"
@@ -176,6 +177,7 @@ func NewServerFromDependencies(
 		livenessClient = liveness.NewClient(redisClient)
 	}
 	gameEngineClient := gameengine.NewGameEngineClient(dbClient, judgeClient, quartermaster, chatClient, livenessClient)
+	pushClient := push.NewClient()
 
 	return server.NewServer(
 		authClient,
@@ -198,6 +200,7 @@ func NewServerFromDependencies(
 		deepPriest,
 		gameEngineClient,
 		livenessClient,
+		pushClient,
 	)
 }
 
@@ -224,6 +227,7 @@ func NewServer(
 	gameEngineClient gameengine.GameEngineClient,
 	livenessClient liveness.LivenessClient,
 ) Server {
+	pushClient := push.NewClient()
 	return server.NewServer(
 		authClient,
 		texterClient,
@@ -245,5 +249,6 @@ func NewServer(
 		deepPriest,
 		gameEngineClient,
 		livenessClient,
+		pushClient,
 	)
 }

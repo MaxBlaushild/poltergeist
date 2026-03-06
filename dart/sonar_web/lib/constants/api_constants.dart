@@ -27,6 +27,12 @@ class ApiConstants {
   static const String partyInvitesEndpoint = '/sonar/partyInvites';
   static const String partyInvitesAcceptEndpoint = '/sonar/partyInvites/accept';
   static const String partyInvitesRejectEndpoint = '/sonar/partyInvites/reject';
+  static const String monsterBattleInvitesEndpoint =
+      '/sonar/monsterBattleInvites';
+  static const String monsterBattleInvitesAcceptEndpoint =
+      '/sonar/monsterBattleInvites/accept';
+  static const String monsterBattleInvitesRejectEndpoint =
+      '/sonar/monsterBattleInvites/reject';
 
   // Friends
   static const String usersSearchEndpoint = '/sonar/users/search';

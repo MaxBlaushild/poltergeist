@@ -30,6 +30,7 @@ replace (
 )
 
 require (
+	firebase.google.com/go/v4 v4.14.0
 	github.com/MaxBlaushild/poltergeist/pkg/auth v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/aws v0.0.0-00010101000000-000000000000
 	github.com/MaxBlaushild/poltergeist/pkg/db v0.0.0
@@ -54,6 +55,7 @@ require (
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/spf13/viper v1.21.0
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
+	google.golang.org/api v0.170.0
 	gorm.io/gorm v1.30.0
 )
 

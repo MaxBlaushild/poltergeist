@@ -36,6 +36,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/config"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/gameengine"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/judge"
+	"github.com/MaxBlaushild/poltergeist/sonar/internal/push"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/quartermaster"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/questlog"
 	"github.com/MaxBlaushild/poltergeist/sonar/internal/search"
@@ -48,26 +49,29 @@ import (
 )
 
 const (
-	poiPlaceholderImageURL         = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
-	poiPlaceholderThumbnailKey     = "thumbnails/placeholders/poi-undiscovered.png"
-	poiUndiscoveredIconKey         = "thumbnails/placeholders/poi-undiscovered.png"
-	scenarioUndiscoveredIconKey    = "thumbnails/placeholders/scenario-undiscovered.png"
-	monsterUndiscoveredIconKey     = "thumbnails/placeholders/monster-undiscovered.png"
-	characterUndiscoveredIconKey   = "thumbnails/placeholders/character-undiscovered.png"
-	poiUndiscoveredStatusKey       = "admin:thumbnails:poi-undiscovered:requested-at"
-	scenarioUndiscoveredStatusKey  = "admin:thumbnails:scenario-undiscovered:requested-at"
-	monsterUndiscoveredStatusKey   = "admin:thumbnails:monster-undiscovered:requested-at"
-	characterUndiscoveredStatusKey = "admin:thumbnails:character-undiscovered:requested-at"
-	poiUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	scenarioUndiscoveredIconText   = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	monsterUndiscoveredIconText    = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	characterUndiscoveredIconText  = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
-	staticThumbnailJobTimeout      = 10 * time.Minute
-	staticThumbnailStatusTTL       = 2 * time.Hour
-	questAcceptRadiusMeters        = 50.0
-	scenarioInteractRadiusMeters   = 50.0
-	scenarioDefaultDifficulty      = 24
-	scenarioRollSides              = 20
+	poiPlaceholderImageURL             = "https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp"
+	poiPlaceholderThumbnailKey         = "thumbnails/placeholders/poi-undiscovered.png"
+	poiUndiscoveredIconKey             = "thumbnails/placeholders/poi-undiscovered.png"
+	scenarioUndiscoveredIconKey        = "thumbnails/placeholders/scenario-undiscovered.png"
+	monsterUndiscoveredIconKey         = "thumbnails/placeholders/monster-undiscovered.png"
+	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
+	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
+	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
+	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
+	monsterUndiscoveredStatusKey       = "admin:thumbnails:monster-undiscovered:requested-at"
+	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
+	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
+	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	monsterUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	characterUndiscoveredIconText      = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	healingFountainDiscoveredIconText  = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
+	staticThumbnailJobTimeout          = 10 * time.Minute
+	staticThumbnailStatusTTL           = 2 * time.Hour
+	questAcceptRadiusMeters            = 50.0
+	scenarioInteractRadiusMeters       = 50.0
+	scenarioDefaultDifficulty          = 24
+	scenarioRollSides                  = 20
 )
 
 var (
@@ -95,6 +99,7 @@ type server struct {
 	deepPriest       deep_priest.DeepPriest
 	gameEngineClient gameengine.GameEngineClient
 	livenessClient   liveness.LivenessClient
+	pushClient       push.Client
 }
 
 type Server interface {
@@ -123,6 +128,7 @@ func NewServer(
 	deepPriest deep_priest.DeepPriest,
 	gameEngineClient gameengine.GameEngineClient,
 	livenessClient liveness.LivenessClient,
+	pushClient push.Client,
 ) Server {
 	return &server{
 		authClient:       authClient,
@@ -145,6 +151,7 @@ func NewServer(
 		deepPriest:       deepPriest,
 		gameEngineClient: gameEngineClient,
 		livenessClient:   livenessClient,
+		pushClient:       pushClient,
 	}
 }
 
@@ -310,14 +317,17 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
 	r.POST("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePointsOfInterestForZone))
 	r.GET("/sonar/placeTypes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPlaceTypes))
@@ -457,6 +467,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/monsters/:id/battle/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMonsterBattle))
 	r.POST("/sonar/monsters/:id/battle/turn", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceMonsterBattleTurn))
 	r.POST("/sonar/monsters/:id/battle/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMonsterBattle))
+	r.GET("/sonar/monsterBattleInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterBattleInvites))
+	r.POST("/sonar/monsterBattleInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptMonsterBattleInvite))
+	r.POST("/sonar/monsterBattleInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectMonsterBattleInvite))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
@@ -6273,6 +6286,10 @@ func (s *server) generateCharacterUndiscoveredIcon(ctx *gin.Context) {
 	s.queueGeneratedStaticThumbnail(ctx, characterUndiscoveredIconText, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
 }
 
+func (s *server) generateHealingFountainDiscoveredIcon(ctx *gin.Context) {
+	s.queueGeneratedStaticThumbnail(ctx, healingFountainDiscoveredIconText, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+}
+
 func (s *server) getStaticThumbnailStatus(ctx *gin.Context, destinationKey string, statusKey string) {
 	if strings.TrimSpace(destinationKey) == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing thumbnail destination key"})
@@ -6336,6 +6353,10 @@ func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
 	s.getStaticThumbnailStatus(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
 }
 
+func (s *server) getHealingFountainDiscoveredIconStatus(ctx *gin.Context) {
+	s.getStaticThumbnailStatus(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
+}
+
 func (s *server) deleteStaticThumbnail(ctx *gin.Context, destinationKey string, statusKey string) {
 	if strings.TrimSpace(destinationKey) == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "missing thumbnail destination key"})
@@ -6366,6 +6387,10 @@ func (s *server) deleteMonsterUndiscoveredIcon(ctx *gin.Context) {
 
 func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {
 	s.deleteStaticThumbnail(ctx, characterUndiscoveredIconKey, characterUndiscoveredStatusKey)
+}
+
+func (s *server) deleteHealingFountainDiscoveredIcon(ctx *gin.Context) {
+	s.deleteStaticThumbnail(ctx, healingFountainDiscoveredIconKey, healingFountainDiscoveredStatusKey)
 }
 
 func (s *server) queuePoiPlaceholderThumbnail(ctx *gin.Context) {

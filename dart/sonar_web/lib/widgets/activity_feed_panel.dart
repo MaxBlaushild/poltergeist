@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/activity_feed.dart';
 import '../providers/activity_feed_provider.dart';
+import '../providers/party_provider.dart';
 
 class ActivityFeedPanel extends StatefulWidget {
   const ActivityFeedPanel({super.key});
@@ -13,6 +14,7 @@ class ActivityFeedPanel extends StatefulWidget {
 
 class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
   final Set<String> _markedIds = {};
+  final Set<String> _respondingInviteIds = {};
   bool _marking = false;
 
   Map<String, dynamic> _entitiesFor(ActivityFeed a) {
@@ -34,9 +36,9 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
 
   List<Widget> _detailLines(BuildContext context, ActivityFeed a) {
     final entities = _entitiesFor(a);
-    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Colors.grey.shade700,
-        );
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade700);
 
     final lines = <String>[];
 
@@ -60,7 +62,10 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
         }
         final challenge = entities['challenge'];
         if (challenge is Map) {
-          final question = _stringField(Map<String, dynamic>.from(challenge), 'question');
+          final question = _stringField(
+            Map<String, dynamic>.from(challenge),
+            'question',
+          );
           if (question.isNotEmpty) {
             lines.add('Challenge: $question');
           }
@@ -74,7 +79,10 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
         }
         final currentPoi = entities['currentPoi'];
         if (currentPoi is Map) {
-          final name = _stringField(Map<String, dynamic>.from(currentPoi), 'name');
+          final name = _stringField(
+            Map<String, dynamic>.from(currentPoi),
+            'name',
+          );
           if (name.isNotEmpty) {
             lines.add('Current POI: $name');
           }
@@ -108,15 +116,33 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
       case 'level_up':
         final level = entities['level'];
         if (level is Map) {
-          final newLevel = _stringField(Map<String, dynamic>.from(level), 'newLevel');
+          final newLevel = _stringField(
+            Map<String, dynamic>.from(level),
+            'newLevel',
+          );
           if (newLevel.isNotEmpty) {
             lines.add('New Level: $newLevel');
           }
         }
         break;
+      case 'monster_battle_invite':
+        final inviterName = _stringField(a.data, 'inviterName');
+        final monsterName = _stringField(a.data, 'monsterName');
+        if (inviterName.isNotEmpty && monsterName.isNotEmpty) {
+          lines.add('$inviterName invited you to fight $monsterName.');
+        } else if (monsterName.isNotEmpty) {
+          lines.add('You were invited to fight $monsterName.');
+        } else {
+          lines.add('You were invited to join a party combat encounter.');
+        }
+        final expiresAt = _stringField(a.data, 'expiresAt');
+        if (expiresAt.isNotEmpty) {
+          lines.add('Expires at: ${_formatTimestamp(expiresAt)}');
+        }
+        break;
     }
 
-    return lines
+    final List<Widget> widgets = lines
         .map(
           (line) => Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -124,6 +150,94 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
           ),
         )
         .toList();
+    if (a.activityType == 'monster_battle_invite') {
+      widgets.add(_monsterBattleInviteActions(context, a));
+    }
+    return widgets;
+  }
+
+  Widget _monsterBattleInviteActions(BuildContext context, ActivityFeed a) {
+    final inviteId = _stringField(a.data, 'inviteId').trim();
+    if (inviteId.isEmpty) return const SizedBox.shrink();
+    final expiresAtRaw = _stringField(a.data, 'expiresAt').trim();
+    final expiresAt = DateTime.tryParse(expiresAtRaw);
+    final expired =
+        expiresAt != null && DateTime.now().isAfter(expiresAt.toLocal());
+    final busy = _respondingInviteIds.contains(inviteId);
+    if (expired) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          'Invite expired',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          OutlinedButton(
+            onPressed: busy
+                ? null
+                : () => _respondToMonsterBattleInvite(
+                    context,
+                    inviteId,
+                    accept: false,
+                  ),
+            child: const Text('Decline'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: busy
+                ? null
+                : () => _respondToMonsterBattleInvite(
+                    context,
+                    inviteId,
+                    accept: true,
+                  ),
+            child: const Text('Join'),
+          ),
+          if (busy) ...[
+            const SizedBox(width: 10),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _respondToMonsterBattleInvite(
+    BuildContext context,
+    String inviteId, {
+    required bool accept,
+  }) async {
+    setState(() {
+      _respondingInviteIds.add(inviteId);
+    });
+    try {
+      final partyProvider = context.read<PartyProvider>();
+      if (accept) {
+        await partyProvider.acceptMonsterBattleInvite(inviteId);
+      } else {
+        await partyProvider.rejectMonsterBattleInvite(inviteId);
+      }
+      if (!mounted) return;
+      await context.read<ActivityFeedProvider>().refresh();
+    } catch (_) {
+      // Keep failures non-blocking in feed UI.
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _respondingInviteIds.remove(inviteId);
+      });
+    }
   }
 
   String _formatTimestamp(String raw) {
@@ -181,7 +295,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => feed.markAsSeen(unseen.map((a) => a.id).toList()),
+                    onPressed: () =>
+                        feed.markAsSeen(unseen.map((a) => a.id).toList()),
                     child: const Text('Mark all as seen'),
                   ),
                 ),
@@ -194,12 +309,17 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                 final a = list[i];
                 final timestamp = _formatTimestamp(a.createdAt);
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: a.seen ? Colors.grey.shade50 : Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: a.seen ? Colors.grey.shade200 : Colors.red.shade100,
+                      color: a.seen
+                          ? Colors.grey.shade200
+                          : Colors.red.shade100,
                     ),
                     boxShadow: const [
                       BoxShadow(
@@ -217,7 +337,9 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: a.seen ? Colors.transparent : Colors.red.shade600,
+                          color: a.seen
+                              ? Colors.transparent
+                              : Colors.red.shade600,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -228,18 +350,16 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                           children: [
                             Text(
                               _titleFor(a),
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                             ..._detailLines(context, a),
                             if (timestamp.isNotEmpty) ...[
                               const SizedBox(height: 6),
                               Text(
                                 timestamp,
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey.shade600,
-                                    ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey.shade600),
                               ),
                             ],
                           ],
@@ -268,6 +388,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
         return 'Item received';
       case 'reputation_up':
         return 'Reputation up!';
+      case 'monster_battle_invite':
+        return 'Party combat invite';
       default:
         return a.activityType;
     }

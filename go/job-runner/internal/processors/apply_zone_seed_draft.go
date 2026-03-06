@@ -653,14 +653,20 @@ func (p *ApplyZoneSeedDraftProcessor) randomLocationForZone(
 		lat := point.Y()
 		lng := point.X()
 		if lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 {
-			return zoneSeedScenarioLocation{Latitude: lat, Longitude: lng}
+			// Zone.GetRandomPoint can return (0,0) when zone geometry is missing.
+			// Prefer fallback/zone center unless the zone is actually centered at (0,0).
+			if (lat != 0 || lng != 0) || (zone.Latitude == 0 && zone.Longitude == 0) {
+				return zoneSeedScenarioLocation{Latitude: lat, Longitude: lng}
+			}
 		}
 	}
 	if len(fallbackLocations) > 0 {
 		return fallbackLocations[rand.Intn(len(fallbackLocations))]
 	}
 	if zone != nil {
-		return zoneSeedScenarioLocation{Latitude: zone.Latitude, Longitude: zone.Longitude}
+		if zone.Latitude >= -90 && zone.Latitude <= 90 && zone.Longitude >= -180 && zone.Longitude <= 180 {
+			return zoneSeedScenarioLocation{Latitude: zone.Latitude, Longitude: zone.Longitude}
+		}
 	}
 	return zoneSeedScenarioLocation{}
 }

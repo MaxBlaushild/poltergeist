@@ -18,6 +18,7 @@ import '../widgets/inventory_panel.dart';
 import '../widgets/party_tab_content.dart';
 import '../widgets/quest_log_panel.dart';
 import '../widgets/reputation_tab_content.dart';
+import '../widgets/settings_tab_content.dart';
 import 'user_character_screen.dart';
 
 class LayoutShell extends StatefulWidget {
@@ -222,6 +223,15 @@ class _SideDrawer extends StatefulWidget {
 }
 
 class _SideDrawerState extends State<_SideDrawer> {
+  static const int _characterTab = 0;
+  static const int _inventoryTab = 1;
+  static const int _questLogTab = 2;
+  static const int _partyTab = 3;
+  static const int _friendsTab = 4;
+  static const int _reputationTab = 5;
+  static const int _abilitiesTab = 6;
+  static const int _settingsTab = 7;
+
   int _tabIndex = 0;
   User? _profileUser;
 
@@ -230,7 +240,8 @@ class _SideDrawerState extends State<_SideDrawer> {
   }
 
   void _refreshCharacterStatsIfVisible() {
-    final showsCharacterOrAbilities = _tabIndex == 0 || _tabIndex == 6;
+    final showsCharacterOrAbilities =
+        _tabIndex == _characterTab || _tabIndex == _abilitiesTab;
     if (_profileUser != null || !showsCharacterOrAbilities) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -239,9 +250,10 @@ class _SideDrawerState extends State<_SideDrawer> {
   }
 
   void _selectTab(int index) {
-    final shouldRefreshQuestLog = index == 2;
-    final shouldRefreshActivityFeed = index == 0;
-    final shouldRefreshCharacterStats = index == 0 || index == 6;
+    final shouldRefreshQuestLog = index == _questLogTab;
+    final shouldRefreshActivityFeed = index == _characterTab;
+    final shouldRefreshCharacterStats =
+        index == _characterTab || index == _abilitiesTab;
     if (_tabIndex == index) {
       if (shouldRefreshQuestLog) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -325,44 +337,50 @@ class _SideDrawerState extends State<_SideDrawer> {
                           _DrawerMenuButton(
                             label: 'Character',
                             icon: Icons.person,
-                            selected: _tabIndex == 0,
-                            onTap: () => _selectTab(0),
+                            selected: _tabIndex == _characterTab,
+                            onTap: () => _selectTab(_characterTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Abilities',
                             icon: Icons.auto_fix_high,
-                            selected: _tabIndex == 6,
-                            onTap: () => _selectTab(6),
+                            selected: _tabIndex == _abilitiesTab,
+                            onTap: () => _selectTab(_abilitiesTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Inventory',
                             icon: Icons.inventory_2,
-                            selected: _tabIndex == 1,
-                            onTap: () => _selectTab(1),
+                            selected: _tabIndex == _inventoryTab,
+                            onTap: () => _selectTab(_inventoryTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Quest Log',
                             icon: Icons.menu_book,
-                            selected: _tabIndex == 2,
-                            onTap: () => _selectTab(2),
+                            selected: _tabIndex == _questLogTab,
+                            onTap: () => _selectTab(_questLogTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Party',
                             icon: Icons.groups,
-                            selected: _tabIndex == 3,
-                            onTap: () => _selectTab(3),
+                            selected: _tabIndex == _partyTab,
+                            onTap: () => _selectTab(_partyTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Friends',
                             icon: Icons.people,
-                            selected: _tabIndex == 4,
-                            onTap: () => _selectTab(4),
+                            selected: _tabIndex == _friendsTab,
+                            onTap: () => _selectTab(_friendsTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Reputation',
                             icon: Icons.stars,
-                            selected: _tabIndex == 5,
-                            onTap: () => _selectTab(5),
+                            selected: _tabIndex == _reputationTab,
+                            onTap: () => _selectTab(_reputationTab),
+                          ),
+                          _DrawerMenuButton(
+                            label: 'Settings',
+                            icon: Icons.settings,
+                            selected: _tabIndex == _settingsTab,
+                            onTap: () => _selectTab(_settingsTab),
                           ),
                         ],
                       ),
@@ -378,16 +396,16 @@ class _SideDrawerState extends State<_SideDrawer> {
                                   user: profileUser,
                                   onBack: _closeProfile,
                                 )
-                              : _tabIndex == 0
+                              : _tabIndex == _characterTab
                               ? const CharacterTabContent(
                                   key: ValueKey('character'),
                                 )
-                              : _tabIndex == 1
+                              : _tabIndex == _inventoryTab
                               ? InventoryPanel(
                                   key: const ValueKey('inventory'),
                                   onClose: () => Navigator.of(context).pop(),
                                 )
-                              : _tabIndex == 2
+                              : _tabIndex == _questLogTab
                               ? QuestLogPanel(
                                   key: const ValueKey('quest-log'),
                                   onClose: () => Navigator.of(context).pop(),
@@ -404,22 +422,26 @@ class _SideDrawerState extends State<_SideDrawer> {
                                     context.go('/single-player');
                                   },
                                 )
-                              : _tabIndex == 3
+                              : _tabIndex == _partyTab
                               ? PartyTabContent(
                                   key: const ValueKey('party'),
                                   onViewProfile: _openProfile,
                                 )
-                              : _tabIndex == 4
+                              : _tabIndex == _friendsTab
                               ? FriendsTabContent(
                                   key: const ValueKey('friends'),
                                   onViewProfile: _openProfile,
                                 )
-                              : _tabIndex == 6
+                              : _tabIndex == _abilitiesTab
                               ? const AbilitiesTabContent(
                                   key: ValueKey('abilities'),
                                 )
-                              : const ReputationTabContent(
+                              : _tabIndex == _reputationTab
+                              ? const ReputationTabContent(
                                   key: ValueKey('reputation'),
+                                )
+                              : const SettingsTabContent(
+                                  key: ValueKey('settings'),
                                 ),
                         ),
                       ),
