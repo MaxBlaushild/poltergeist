@@ -10,13 +10,8 @@ const buildCharacterPayload = (character: Character, pointOfInterestId: string |
     mapIconUrl: character.mapIconUrl,
     dialogueImageUrl: character.dialogueImageUrl,
     pointOfInterestId,
-    movementPattern: {
-      movementPatternType: character.movementPattern.movementPatternType,
-      zoneId: character.movementPattern.zoneId ?? null,
-      startingLatitude: character.movementPattern.startingLatitude,
-      startingLongitude: character.movementPattern.startingLongitude,
-      path: character.movementPattern.path ?? [],
-    },
+    latitude: character.latitude ?? null,
+    longitude: character.longitude ?? null,
   };
 };
 

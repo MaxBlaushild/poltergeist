@@ -406,6 +406,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacter))
 	r.PUT("/sonar/characters/:id/locations", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateCharacterLocations))
 	r.DELETE("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacter))
+	r.POST("/sonar/characters/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteCharacters))
 	r.GET("/sonar/characters/:id/actions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterActions))
 	r.GET("/sonar/character-actions/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterAction))
 	r.POST("/sonar/character-actions", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createCharacterAction))
@@ -1874,8 +1875,14 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 			candidates = append(candidates, coordinate{lat: loc.Latitude, lng: loc.Longitude})
 		}
 	}
-	startLat := character.MovementPattern.StartingLatitude
-	startLng := character.MovementPattern.StartingLongitude
+	startLat := 0.0
+	startLng := 0.0
+	if character.Latitude != nil {
+		startLat = *character.Latitude
+	}
+	if character.Longitude != nil {
+		startLng = *character.Longitude
+	}
 	if len(candidates) == 0 && isValidCoordinate(startLat, startLng) {
 		candidates = append(candidates, coordinate{lat: startLat, lng: startLng})
 	}
@@ -4571,13 +4578,16 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		}
 	}
 
-	if placeCount <= 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount must be greater than zero; monsterCount, inputEncounterCount, optionEncounterCount, and treasureChestCount must be zero or greater"})
+	if placeCount < 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, monsterCount, inputEncounterCount, optionEncounterCount, and treasureChestCount must be zero or greater"})
 		return
 	}
-	if len(requiredPlaceTags) > placeCount {
+	if placeCount > 0 && len(requiredPlaceTags) > placeCount {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "requiredPlaceTags cannot exceed placeCount"})
 		return
+	}
+	if placeCount == 0 {
+		requiredPlaceTags = []string{}
 	}
 
 	job := &models.ZoneSeedJob{
@@ -11634,18 +11644,27 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		DialogueImageUrl  string     `json:"dialogueImageUrl"`
 		ThumbnailUrl      string     `json:"thumbnailUrl"`
 		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
-		MovementPattern   struct {
-			MovementPatternType models.MovementPatternType `json:"movementPatternType" binding:"required"`
-			ZoneID              *uuid.UUID                 `json:"zoneId"`
-			StartingLatitude    float64                    `json:"startingLatitude"`
-			StartingLongitude   float64                    `json:"startingLongitude"`
-			Path                []models.Location          `json:"path"`
-		} `json:"movementPattern" binding:"required"`
+		Latitude          *float64   `json:"latitude"`
+		Longitude         *float64   `json:"longitude"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+	if (requestBody.Latitude == nil) != (requestBody.Longitude == nil) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be provided together"})
+		return
+	}
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		if math.IsNaN(*requestBody.Latitude) || math.IsInf(*requestBody.Latitude, 0) || *requestBody.Latitude < -90 || *requestBody.Latitude > 90 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90"})
+			return
+		}
+		if math.IsNaN(*requestBody.Longitude) || math.IsInf(*requestBody.Longitude, 0) || *requestBody.Longitude < -180 || *requestBody.Longitude > 180 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude must be between -180 and 180"})
+			return
+		}
 	}
 
 	if requestBody.PointOfInterestID != nil {
@@ -11660,21 +11679,6 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		}
 	}
 
-	// First create the movement pattern
-	movementPattern := &models.MovementPattern{
-		MovementPatternType: requestBody.MovementPattern.MovementPatternType,
-		ZoneID:              requestBody.MovementPattern.ZoneID,
-		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
-		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
-		Path:                models.LocationPath(requestBody.MovementPattern.Path),
-	}
-
-	if err := s.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create movement pattern: " + err.Error()})
-		return
-	}
-
-	// Then create the character with geometry auto-populated from movement pattern
 	character := &models.Character{
 		Name:              requestBody.Name,
 		Description:       requestBody.Description,
@@ -11682,14 +11686,17 @@ func (s *server) createCharacter(ctx *gin.Context) {
 		DialogueImageURL:  requestBody.DialogueImageUrl,
 		ThumbnailURL:      requestBody.ThumbnailUrl,
 		PointOfInterestID: requestBody.PointOfInterestID,
-		MovementPatternID: movementPattern.ID,
-		MovementPattern:   *movementPattern,
 		ImageGenerationStatus: func() string {
 			if strings.TrimSpace(requestBody.DialogueImageUrl) != "" {
 				return models.CharacterImageGenerationStatusComplete
 			}
 			return models.CharacterImageGenerationStatusNone
 		}(),
+	}
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		character.SetGeometry(*requestBody.Latitude, *requestBody.Longitude)
+		character.Latitude = requestBody.Latitude
+		character.Longitude = requestBody.Longitude
 	}
 
 	if err := s.dbClient.Character().Create(ctx, character); err != nil {
@@ -11706,15 +11713,8 @@ func (s *server) createCharacter(ctx *gin.Context) {
 
 func (s *server) generateCharacter(ctx *gin.Context) {
 	var requestBody struct {
-		Name            string `json:"name" binding:"required"`
-		Description     string `json:"description"`
-		MovementPattern *struct {
-			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
-			ZoneID              *uuid.UUID                 `json:"zoneId"`
-			StartingLatitude    float64                    `json:"startingLatitude"`
-			StartingLongitude   float64                    `json:"startingLongitude"`
-			Path                []models.Location          `json:"path"`
-		} `json:"movementPattern"`
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -11722,39 +11722,9 @@ func (s *server) generateCharacter(ctx *gin.Context) {
 		return
 	}
 
-	movementType := models.MovementPatternStatic
-	var zoneID *uuid.UUID
-	var startingLatitude float64
-	var startingLongitude float64
-	var path []models.Location
-	if requestBody.MovementPattern != nil {
-		if requestBody.MovementPattern.MovementPatternType != "" {
-			movementType = requestBody.MovementPattern.MovementPatternType
-		}
-		zoneID = requestBody.MovementPattern.ZoneID
-		startingLatitude = requestBody.MovementPattern.StartingLatitude
-		startingLongitude = requestBody.MovementPattern.StartingLongitude
-		path = requestBody.MovementPattern.Path
-	}
-
-	movementPattern := &models.MovementPattern{
-		MovementPatternType: movementType,
-		ZoneID:              zoneID,
-		StartingLatitude:    startingLatitude,
-		StartingLongitude:   startingLongitude,
-		Path:                models.LocationPath(path),
-	}
-
-	if err := s.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create movement pattern: " + err.Error()})
-		return
-	}
-
 	character := &models.Character{
 		Name:                  requestBody.Name,
 		Description:           requestBody.Description,
-		MovementPatternID:     movementPattern.ID,
-		MovementPattern:       *movementPattern,
 		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
 	}
 
@@ -11874,32 +11844,27 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		DialogueImageUrl  string     `json:"dialogueImageUrl"`
 		ThumbnailUrl      string     `json:"thumbnailUrl"`
 		PointOfInterestID *uuid.UUID `json:"pointOfInterestId"`
-		MovementPattern   struct {
-			MovementPatternType models.MovementPatternType `json:"movementPatternType"`
-			ZoneID              *uuid.UUID                 `json:"zoneId"`
-			StartingLatitude    float64                    `json:"startingLatitude"`
-			StartingLongitude   float64                    `json:"startingLongitude"`
-			Path                []models.Location          `json:"path"`
-		} `json:"movementPattern"`
+		Latitude          *float64   `json:"latitude"`
+		Longitude         *float64   `json:"longitude"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Update the movement pattern first
-	movementPatternUpdates := &models.MovementPattern{
-		MovementPatternType: requestBody.MovementPattern.MovementPatternType,
-		ZoneID:              requestBody.MovementPattern.ZoneID,
-		StartingLatitude:    requestBody.MovementPattern.StartingLatitude,
-		StartingLongitude:   requestBody.MovementPattern.StartingLongitude,
-		Path:                models.LocationPath(requestBody.MovementPattern.Path),
-	}
-
-	if err := s.dbClient.MovementPattern().Update(ctx, existingCharacter.MovementPatternID, movementPatternUpdates); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update movement pattern: " + err.Error()})
+	if (requestBody.Latitude == nil) != (requestBody.Longitude == nil) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude must be provided together"})
 		return
+	}
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		if math.IsNaN(*requestBody.Latitude) || math.IsInf(*requestBody.Latitude, 0) || *requestBody.Latitude < -90 || *requestBody.Latitude > 90 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude must be between -90 and 90"})
+			return
+		}
+		if math.IsNaN(*requestBody.Longitude) || math.IsInf(*requestBody.Longitude, 0) || *requestBody.Longitude < -180 || *requestBody.Longitude > 180 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude must be between -180 and 180"})
+			return
+		}
 	}
 
 	// Update the character
@@ -11922,6 +11887,9 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		}
 		characterUpdates.PointOfInterestID = requestBody.PointOfInterestID
 	}
+	if requestBody.Latitude != nil && requestBody.Longitude != nil {
+		characterUpdates.SetGeometry(*requestBody.Latitude, *requestBody.Longitude)
+	}
 
 	if err := s.dbClient.Character().Update(ctx, id, characterUpdates); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update character: " + err.Error()})
@@ -11935,7 +11903,7 @@ func (s *server) updateCharacter(ctx *gin.Context) {
 		s.enqueueThumbnailTask(jobs.ThumbnailEntityCharacter, id, requestBody.DialogueImageUrl)
 	}
 
-	// Fetch the updated character with movement pattern
+	// Fetch the updated character
 	updatedCharacter, err := s.dbClient.Character().FindByID(ctx, id)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -11989,30 +11957,91 @@ func (s *server) deleteCharacter(ctx *gin.Context) {
 		return
 	}
 
-	// Check if character exists and get its movement pattern ID
-	existingCharacter, err := s.dbClient.Character().FindByID(ctx, id)
-	if err != nil {
+	if err := s.deleteCharacterByID(ctx, id); err != nil {
+		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if existingCharacter == nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "character not found"})
-		return
-	}
-
-	// Delete the character first (due to foreign key constraint)
-	if err := s.dbClient.Character().Delete(ctx, id); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete character: " + err.Error()})
-		return
-	}
-
-	// Then delete the movement pattern
-	if err := s.dbClient.MovementPattern().Delete(ctx, existingCharacter.MovementPatternID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete movement pattern: " + err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "character deleted successfully"})
+}
+
+func (s *server) bulkDeleteCharacters(ctx *gin.Context) {
+	var requestBody struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.IDs))
+	ids := make([]uuid.UUID, 0, len(requestBody.IDs))
+	for _, idStr := range requestBody.IDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid character ID: %s", idStr),
+			})
+			return
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	for _, id := range ids {
+		if err := s.deleteCharacterByID(ctx, id); err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusNotFound, gin.H{
+					"error": fmt.Sprintf("character not found: %s", id.String()),
+				})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to delete character %s: %s", id.String(), err.Error()),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("deleted %d character(s)", len(ids)),
+		"deleted": len(ids),
+		"ids":     ids,
+	})
+}
+
+func (s *server) deleteCharacterByID(ctx context.Context, characterID uuid.UUID) error {
+	existingCharacter, err := s.dbClient.Character().FindByID(ctx, characterID)
+	if err != nil {
+		return err
+	}
+	if existingCharacter == nil {
+		return gorm.ErrRecordNotFound
+	}
+
+	if err := s.dbClient.Character().Delete(ctx, characterID); err != nil {
+		return fmt.Errorf("failed to delete character: %w", err)
+	}
+
+	return nil
 }
 
 // Character action handlers

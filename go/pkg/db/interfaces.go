@@ -820,7 +820,6 @@ type CharacterHandle interface {
 	FindAll(ctx context.Context) ([]*models.Character, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Character) error
 	Delete(ctx context.Context, id uuid.UUID) error
-	FindByMovementPatternType(ctx context.Context, patternType models.MovementPatternType) ([]*models.Character, error)
 }
 
 type CharacterLocationHandle interface {
@@ -940,6 +939,7 @@ type ChallengeHandle interface {
 	FindAll(ctx context.Context) ([]models.Challenge, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
 	FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error)
+	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
 	Delete(ctx context.Context, id uuid.UUID) error

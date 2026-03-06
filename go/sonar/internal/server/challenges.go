@@ -353,6 +353,17 @@ func (s *server) deleteChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	linkedToQuestNode, err := s.dbClient.Challenge().IsLinkedToQuestNode(ctx, challengeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if linkedToQuestNode {
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error": "challenge is referenced by a quest node and cannot be deleted directly",
+		})
+		return
+	}
 	if err := s.dbClient.Challenge().Delete(ctx, challengeID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

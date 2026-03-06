@@ -73,6 +73,17 @@ func (h *challengeHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, z
 	return challenges, nil
 }
 
+func (h *challengeHandle) IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error) {
+	var count int64
+	if err := h.db.WithContext(ctx).
+		Table("quest_nodes").
+		Where("challenge_id = ?", id).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error {
 	if updates == nil {
 		return nil

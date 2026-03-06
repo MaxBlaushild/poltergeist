@@ -1,5 +1,5 @@
 import { useAPI } from '@poltergeist/contexts';
-import { Character, Zone, PointOfInterest, MovementPatternType, Location, CharacterAction, DialogueMessage, Quest } from '@poltergeist/types';
+import { Character, PointOfInterest, CharacterAction, DialogueMessage, Quest } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -352,12 +352,13 @@ export const Characters = () => {
   const { zoneQuestArchetypes, updateZoneQuestArchetype } = useQuestArchetypes();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [filteredCharacters, setFilteredCharacters] = useState<Character[]>([]);
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<string>>(new Set());
+  const [bulkDeletingCharacters, setBulkDeletingCharacters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [showCreateCharacter, setShowCreateCharacter] = useState(false);
   const [showGenerateCharacter, setShowGenerateCharacter] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
-  const [availableZones, setAvailableZones] = useState<Zone[]>([]);
   const [availablePointsOfInterest, setAvailablePointsOfInterest] = useState<PointOfInterest[]>([]);
   const [selectedZoneQuestArchetypeIds, setSelectedZoneQuestArchetypeIds] = useState<string[]>([]);
   
@@ -393,16 +394,6 @@ export const Characters = () => {
     defaultCharacterUndiscoveredIconPrompt
   );
 
-  const zoneOptions = React.useMemo<ComboOption[]>(() => {
-    return [...availableZones]
-      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-      .map((zone) => ({
-        value: zone.id,
-        label: zone.name || zone.id,
-        searchText: [zone.name, zone.id].filter(Boolean).join(' ')
-      }));
-  }, [availableZones]);
-
   const pointOfInterestOptions = React.useMemo<ComboOption[]>(() => {
     return [...availablePointsOfInterest]
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -421,18 +412,12 @@ export const Characters = () => {
     dialogueImageUrl: '',
     thumbnailUrl: '',
     pointOfInterestId: '',
-    movementPattern: {
-      movementPatternType: 'static' as MovementPatternType,
-      zoneId: '',
-      startingLatitude: 0,
-      startingLongitude: 0,
-      path: [] as Location[]
-    }
+    latitude: 0,
+    longitude: 0,
   });
 
   useEffect(() => {
     fetchCharacters();
-    fetchZones();
     fetchPointsOfInterest();
   }, []);
 
@@ -568,6 +553,23 @@ export const Characters = () => {
   }, [searchQuery, characters]);
 
   useEffect(() => {
+    setSelectedCharacterIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIDs = new Set(characters.map((character) => character.id));
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (validIDs.has(id)) {
+          next.add(id);
+        }
+      });
+      if (next.size === prev.size) {
+        return prev;
+      }
+      return next;
+    });
+  }, [characters]);
+
+  useEffect(() => {
     if (!editingCharacter) return;
     setSelectedZoneQuestArchetypeIds(
       zoneQuestArchetypes
@@ -602,15 +604,6 @@ export const Characters = () => {
     } catch (error) {
       console.error('Error fetching characters:', error);
       setLoading(false);
-    }
-  };
-
-  const fetchZones = async () => {
-    try {
-      const response = await apiClient.get<Zone[]>('/sonar/zones');
-      setAvailableZones(response);
-    } catch (error) {
-      console.error('Error fetching zones:', error);
     }
   };
 
@@ -777,13 +770,8 @@ export const Characters = () => {
       dialogueImageUrl: '',
       thumbnailUrl: '',
       pointOfInterestId: '',
-      movementPattern: {
-        movementPatternType: 'static',
-        zoneId: '',
-        startingLatitude: 0,
-        startingLongitude: 0,
-        path: []
-      }
+      latitude: 0,
+      longitude: 0,
     });
     setCharacterLocations([]);
     setLocationsError(null);
@@ -798,13 +786,16 @@ export const Characters = () => {
   };
 
   const buildCharacterPayload = () => {
+    const hasExplicitCoordinate =
+      Number.isFinite(formData.latitude) &&
+      Number.isFinite(formData.longitude) &&
+      !(formData.latitude === 0 && formData.longitude === 0);
+
     return {
       ...formData,
       pointOfInterestId: formData.pointOfInterestId || null,
-      movementPattern: {
-        ...formData.movementPattern,
-        zoneId: formData.movementPattern.zoneId || null,
-      },
+      latitude: hasExplicitCoordinate ? formData.latitude : null,
+      longitude: hasExplicitCoordinate ? formData.longitude : null,
     };
   };
 
@@ -905,8 +896,84 @@ export const Characters = () => {
     try {
       await apiClient.delete(`/sonar/characters/${character.id}`);
       setCharacters(characters.filter(c => c.id !== character.id));
+      setSelectedCharacterIds((prev) => {
+        const next = new Set(prev);
+        next.delete(character.id);
+        return next;
+      });
     } catch (error) {
       console.error('Error deleting character:', error);
+    }
+  };
+
+  const allFilteredSelected =
+    filteredCharacters.length > 0 &&
+    filteredCharacters.every((character) => selectedCharacterIds.has(character.id));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedCharacterIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredCharacters.forEach((character) => next.delete(character.id));
+      } else {
+        filteredCharacters.forEach((character) => next.add(character.id));
+      }
+      return next;
+    });
+  };
+
+  const toggleCharacterSelection = (characterID: string) => {
+    setSelectedCharacterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(characterID)) {
+        next.delete(characterID);
+      } else {
+        next.add(characterID);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteCharacters = async () => {
+    if (bulkDeletingCharacters || selectedCharacterIds.size === 0) return;
+
+    const selectedIDs = Array.from(selectedCharacterIds);
+    const selectedNames = characters
+      .filter((character) => selectedCharacterIds.has(character.id))
+      .map((character) => character.name || character.id);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIDs.length === 1
+        ? `Delete 1 selected character (${preview})? This cannot be undone.`
+        : `Delete ${selectedIDs.length} selected characters${
+            preview ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})` : ''
+          }? This cannot be undone.`;
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingCharacters(true);
+    try {
+      await apiClient.post('/sonar/characters/bulk-delete', { ids: selectedIDs });
+      const deleted = new Set(selectedIDs);
+      setCharacters((prev) => prev.filter((character) => !deleted.has(character.id)));
+      setSelectedCharacterIds(new Set());
+      if (editingCharacter && deleted.has(editingCharacter.id)) {
+        setEditingCharacter(null);
+        resetForm();
+      }
+      if (selectedCharacterForDialogue && deleted.has(selectedCharacterForDialogue.id)) {
+        setSelectedCharacterForDialogue(null);
+        setShowDialogueManager(false);
+        setShowDialogueEditor(false);
+        setShowShopEditor(false);
+        setEditingAction(null);
+        setCharacterActions([]);
+      }
+    } catch (error) {
+      console.error('Error bulk deleting characters:', error);
+      alert('Failed to bulk delete characters.');
+    } finally {
+      setBulkDeletingCharacters(false);
     }
   };
 
@@ -919,13 +986,8 @@ export const Characters = () => {
       dialogueImageUrl: character.dialogueImageUrl,
       thumbnailUrl: character.thumbnailUrl ?? '',
       pointOfInterestId: character.pointOfInterestId ?? '',
-      movementPattern: {
-        movementPatternType: character.movementPattern.movementPatternType,
-        zoneId: character.movementPattern.zoneId || '',
-        startingLatitude: character.movementPattern.startingLatitude,
-        startingLongitude: character.movementPattern.startingLongitude,
-        path: character.movementPattern.path || []
-      }
+      latitude: character.latitude ?? 0,
+      longitude: character.longitude ?? 0,
     });
     const locations = character.locations?.map(loc => [loc.longitude, loc.latitude] as [number, number]) ?? [];
     setCharacterLocations(locations);
@@ -937,44 +999,12 @@ export const Characters = () => {
     );
   };
 
-  const addWaypoint = () => {
-    setFormData({
-      ...formData,
-      movementPattern: {
-        ...formData.movementPattern,
-        path: [...formData.movementPattern.path, { latitude: 0, longitude: 0 }]
-      }
-    });
-  };
-
   const addCharacterLocation = (lng: number, lat: number) => {
     setCharacterLocations(prev => [...prev, [lng, lat]]);
   };
 
   const removeCharacterLocation = (index: number) => {
     setCharacterLocations(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateWaypoint = (index: number, field: 'latitude' | 'longitude', value: number) => {
-    const newPath = [...formData.movementPattern.path];
-    newPath[index][field] = value;
-    setFormData({
-      ...formData,
-      movementPattern: {
-        ...formData.movementPattern,
-        path: newPath
-      }
-    });
-  };
-
-  const removeWaypoint = (index: number) => {
-    setFormData({
-      ...formData,
-      movementPattern: {
-        ...formData.movementPattern,
-        path: formData.movementPattern.path.filter((_, i) => i !== index)
-      }
-    });
   };
 
   const formatGenerationStatus = (status?: string) => {
@@ -1134,6 +1164,35 @@ export const Characters = () => {
         />
       </div>
 
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          marginBottom: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+          <input
+            type="checkbox"
+            checked={allFilteredSelected}
+            onChange={toggleSelectAllFiltered}
+            disabled={filteredCharacters.length === 0 || bulkDeletingCharacters}
+          />
+          Select all filtered ({filteredCharacters.length})
+        </label>
+        <button
+          className="bg-red-600 text-white px-4 py-2 rounded-md disabled:opacity-60"
+          onClick={handleBulkDeleteCharacters}
+          disabled={selectedCharacterIds.size === 0 || bulkDeletingCharacters}
+        >
+          {bulkDeletingCharacters
+            ? `Deleting ${selectedCharacterIds.size}...`
+            : `Delete Selected (${selectedCharacterIds.size})`}
+        </button>
+      </div>
+
       {/* Characters Grid */}
       <div style={{
         display: 'grid',
@@ -1152,6 +1211,16 @@ export const Characters = () => {
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
           >
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedCharacterIds.has(character.id)}
+                  onChange={() => toggleCharacterSelection(character.id)}
+                />
+                Select
+              </label>
+            </div>
             <h2 style={{ 
               margin: '0 0 15px 0',
               color: '#333'
@@ -1161,10 +1230,6 @@ export const Characters = () => {
               Description: {character.description || 'No description'}
             </p>
             
-            <p style={{ margin: '5px 0', color: '#666' }}>
-              Movement: {character.movementPattern.movementPatternType}
-            </p>
-
             <p style={{ margin: '5px 0', color: '#666' }}>
               Dialogue Image URL: {character.dialogueImageUrl || '—'}
             </p>
@@ -1468,140 +1533,44 @@ export const Characters = () => {
             <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
               <h3 style={{ margin: '0 0 15px 0' }}>Character Position</h3>
               <CharacterMapPicker
-                latitude={formData.movementPattern.startingLatitude}
-                longitude={formData.movementPattern.startingLongitude}
+                latitude={formData.latitude}
+                longitude={formData.longitude}
                 onChange={(lat, lng) => {
                   setFormData({
                     ...formData,
-                    movementPattern: {
-                      ...formData.movementPattern,
-                      startingLatitude: lat,
-                      startingLongitude: lng
-                    }
+                    latitude: lat,
+                    longitude: lng,
                   });
                 }}
               />
-            </div>
-
-            {/* Movement Pattern Section */}
-            <div style={{ marginBottom: '15px', padding: '15px', border: '1px solid #eee', borderRadius: '4px' }}>
-              <h3 style={{ margin: '0 0 15px 0' }}>Movement Pattern</h3>
-              
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', marginBottom: '5px' }}>Movement Type:</label>
-                <select
-                  value={formData.movementPattern.movementPatternType}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    movementPattern: {
-                      ...formData.movementPattern,
-                      movementPatternType: e.target.value as MovementPatternType
-                    }
-                  })}
-                  style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                >
-                  <option value="static">Static</option>
-                  <option value="random">Random</option>
-                  <option value="path">Path</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px' }}>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Starting Latitude:</label>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Latitude:</label>
                   <input
                     type="number"
                     step="any"
-                    value={formData.movementPattern.startingLatitude}
+                    value={formData.latitude}
                     onChange={(e) => setFormData({
                       ...formData,
-                      movementPattern: {
-                        ...formData.movementPattern,
-                        startingLatitude: parseFloat(e.target.value) || 0
-                      }
+                      latitude: parseFloat(e.target.value) || 0,
                     })}
                     style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '5px' }}>Starting Longitude:</label>
+                  <label style={{ display: 'block', marginBottom: '5px' }}>Longitude:</label>
                   <input
                     type="number"
                     step="any"
-                    value={formData.movementPattern.startingLongitude}
+                    value={formData.longitude}
                     onChange={(e) => setFormData({
                       ...formData,
-                      movementPattern: {
-                        ...formData.movementPattern,
-                        startingLongitude: parseFloat(e.target.value) || 0
-                      }
+                      longitude: parseFloat(e.target.value) || 0,
                     })}
                     style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
                   />
                 </div>
               </div>
-
-              <div style={{ marginBottom: '15px' }}>
-                <SearchableComboBox
-                  label="Zone:"
-                  value={formData.movementPattern.zoneId}
-                  options={zoneOptions}
-                  placeholder="Search zones..."
-                  allowClear
-                  clearLabel="No zone"
-                  onChange={(value) => setFormData({
-                    ...formData,
-                    movementPattern: {
-                      ...formData.movementPattern,
-                      zoneId: value
-                    }
-                  })}
-                />
-              </div>
-
-              {/* Path Waypoints (only for path type) */}
-              {formData.movementPattern.movementPatternType === 'path' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <label>Path Waypoints:</label>
-                    <button
-                      type="button"
-                      onClick={addWaypoint}
-                      className="bg-green-500 text-white px-3 py-1 rounded-md text-sm"
-                    >
-                      Add Waypoint
-                    </button>
-                  </div>
-                  
-                  {formData.movementPattern.path.map((waypoint, index) => (
-                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '10px', marginBottom: '10px' }}>
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="Latitude"
-                        value={waypoint.latitude}
-                        onChange={(e) => updateWaypoint(index, 'latitude', parseFloat(e.target.value) || 0)}
-                        style={{ padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                      />
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="Longitude"
-                        value={waypoint.longitude}
-                        onChange={(e) => updateWaypoint(index, 'longitude', parseFloat(e.target.value) || 0)}
-                        style={{ padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeWaypoint(index)}
-                        className="bg-red-500 text-white px-3 py-1 rounded-md text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* Modal Buttons */}

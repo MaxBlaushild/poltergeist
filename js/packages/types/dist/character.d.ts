@@ -1,4 +1,3 @@
-import { MovementPattern } from './movementPattern';
 import { CharacterLocation } from './characterLocation';
 export interface Character {
     id: string;
@@ -13,8 +12,8 @@ export interface Character {
     imageGenerationError?: string | null;
     locations?: CharacterLocation[];
     geometry?: string;
-    movementPatternId: string;
-    movementPattern: MovementPattern;
+    latitude?: number | null;
+    longitude?: number | null;
     pointOfInterestId?: string | null;
     pointOfInterest?: {
         id: string;

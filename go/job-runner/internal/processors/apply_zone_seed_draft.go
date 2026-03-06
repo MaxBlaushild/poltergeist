@@ -749,25 +749,13 @@ func (p *ApplyZoneSeedDraftProcessor) createCharacterFromDraft(
 		startingLng = fallback.Longitude
 	}
 
-	movementPattern := &models.MovementPattern{
-		MovementPatternType: models.MovementPatternStatic,
-		ZoneID:              &zone.ID,
-		StartingLatitude:    startingLat,
-		StartingLongitude:   startingLng,
-		Path:                models.LocationPath{},
-	}
-	if err := p.dbClient.MovementPattern().Create(ctx, movementPattern); err != nil {
-		return nil, err
-	}
-
 	character := &models.Character{
 		Name:                  draft.Name,
 		Description:           draft.Description,
 		PointOfInterestID:     nil,
-		MovementPatternID:     movementPattern.ID,
-		MovementPattern:       *movementPattern,
 		ImageGenerationStatus: models.CharacterImageGenerationStatusQueued,
 	}
+	character.SetGeometry(startingLat, startingLng)
 	if poi != nil {
 		character.PointOfInterestID = &poi.ID
 	}

@@ -96,8 +96,8 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	}
 
 	placeCount := job.PlaceCount
-	if placeCount <= 0 {
-		placeCount = 6
+	if placeCount < 0 {
+		placeCount = 0
 	}
 
 	requiredTags := normalizeRequiredPlaceTags(job.RequiredPlaceTags)
@@ -105,13 +105,16 @@ func (p *SeedZoneDraftProcessor) ProcessTask(ctx context.Context, task *asynq.Ta
 	if err != nil {
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to find top places: %w", err))
 	}
-	if len(places) == 0 {
+	if placeCount > 0 && len(places) == 0 {
 		return p.failZoneSeedJob(ctx, job, fmt.Errorf("no places found in zone"))
 	}
 
-	branding, err := p.generateZoneBranding(ctx, *zone, places)
-	if err != nil {
-		return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate zone branding: %w", err))
+	branding := fallbackZoneBranding(*zone)
+	if placeCount > 0 {
+		branding, err = p.generateZoneBranding(ctx, *zone, places)
+		if err != nil {
+			return p.failZoneSeedJob(ctx, job, fmt.Errorf("failed to generate zone branding: %w", err))
+		}
 	}
 
 	characterCount := job.CharacterCount
@@ -434,6 +437,21 @@ func (p *SeedZoneDraftProcessor) generateZoneBranding(ctx context.Context, zone 
 	return &response, nil
 }
 
+func fallbackZoneBranding(zone models.Zone) *zoneBrandingResponse {
+	fantasyName := strings.TrimSpace(zone.Name)
+	if fantasyName == "" {
+		fantasyName = "Untamed District"
+	}
+	description := strings.TrimSpace(zone.Description)
+	if description == "" {
+		description = fmt.Sprintf("%s is a shifting quarter where new stories and wandering merchants appear each day.", fantasyName)
+	}
+	return &zoneBrandingResponse{
+		FantasyName:     fantasyName,
+		ZoneDescription: description,
+	}
+}
+
 func (p *SeedZoneDraftProcessor) generateCharacters(
 	ctx context.Context,
 	zone models.Zone,
@@ -505,6 +523,7 @@ func normalizeZoneSeedShopkeeperItemTags(input models.StringArray) []string {
 
 func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneSeedCharacterDraft {
 	shopkeepers := make([]models.ZoneSeedCharacterDraft, 0, len(tags))
+	usedNames := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		lat := zone.Latitude
 		lng := zone.Longitude
@@ -527,9 +546,10 @@ func generateZoneSeedShopkeepers(zone models.Zone, tags []string) []models.ZoneS
 			)
 		}
 
+		shopkeeperName := generateZoneSeedShopkeeperName(tag, zone.Name, usedNames)
 		shopkeepers = append(shopkeepers, models.ZoneSeedCharacterDraft{
 			DraftID:      uuid.New(),
-			Name:         fmt.Sprintf("%s Merchant", titleCaseWords(tagLabel)),
+			Name:         shopkeeperName,
 			Description:  description,
 			PlaceID:      "",
 			Latitude:     float64Ptr(lat),
@@ -553,18 +573,41 @@ func humanizeShopkeeperTag(tag string) string {
 	return strings.ToLower(cleaned)
 }
 
-func titleCaseWords(value string) string {
-	parts := strings.Fields(strings.TrimSpace(value))
-	if len(parts) == 0 {
-		return "Wandering"
+func generateZoneSeedShopkeeperName(tag string, zoneName string, used map[string]struct{}) string {
+	firstNames := []string{
+		"Aria", "Bren", "Cassian", "Dahlia", "Elric", "Fiora", "Galen", "Helena",
+		"Iris", "Jasper", "Kael", "Liora", "Marek", "Nadia", "Orin", "Petra",
+		"Quinn", "Rowan", "Selene", "Theron", "Ulric", "Vera", "Wren", "Yara", "Zane",
 	}
-	for idx, part := range parts {
-		if part == "" {
+	lastNames := []string{
+		"Amberfall", "Blackwood", "Cinder", "Dawnmere", "Emberlane", "Fairwind", "Graves",
+		"Hawthorne", "Ironvale", "Jade", "Kingsley", "Larkspur", "Morrow", "North", "Oakhart",
+		"Pryce", "Quill", "Ravencrest", "Storm", "Thorne", "Umber", "Vale", "West", "York", "Zephyr",
+	}
+
+	key := strings.ToLower(strings.TrimSpace(tag + "|" + zoneName))
+	if key == "" {
+		key = "shopkeeper"
+	}
+	hash := 0
+	for _, r := range key {
+		hash = (hash*31 + int(r)) % 1_000_000
+	}
+
+	for offset := 0; offset < len(firstNames)*len(lastNames); offset++ {
+		first := firstNames[(hash+offset)%len(firstNames)]
+		last := lastNames[(hash/len(firstNames)+offset*7)%len(lastNames)]
+		name := first + " " + last
+		if _, exists := used[name]; exists {
 			continue
 		}
-		parts[idx] = strings.ToUpper(part[:1]) + part[1:]
+		used[name] = struct{}{}
+		return name
 	}
-	return strings.Join(parts, " ")
+
+	fallback := "Avery Merchant"
+	used[fallback] = struct{}{}
+	return fallback
 }
 
 func (p *SeedZoneDraftProcessor) requestCharacterDrafts(
