@@ -49,8 +49,9 @@ type challengeUpsertRequest struct {
 }
 
 type challengeGenerationJobRequest struct {
-	ZoneID string `json:"zoneId"`
-	Count  int    `json:"count"`
+	ZoneID            string `json:"zoneId"`
+	PointOfInterestID string `json:"pointOfInterestId"`
+	Count             int    `json:"count"`
 }
 
 func parseChallengeStatTags(raw []string) models.StringArray {
@@ -445,14 +446,27 @@ func (s *server) createChallengeGenerationJob(ctx *gin.Context) {
 		return
 	}
 
+	pointOfInterestID, err := parseStandalonePointOfInterestID(requestBody.PointOfInterestID)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if pointOfInterestID != nil {
+		if _, _, _, err := s.resolveStandaloneLocation(ctx, &zoneID, pointOfInterestID, 0, 0); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	job := &models.ChallengeGenerationJob{
-		ID:           uuid.New(),
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
-		ZoneID:       zoneID,
-		Status:       models.ChallengeGenerationStatusQueued,
-		Count:        count,
-		CreatedCount: 0,
+		ID:                uuid.New(),
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+		ZoneID:            zoneID,
+		PointOfInterestID: pointOfInterestID,
+		Status:            models.ChallengeGenerationStatusQueued,
+		Count:             count,
+		CreatedCount:      0,
 	}
 	if err := s.dbClient.ChallengeGenerationJob().Create(ctx, job); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -15,3 +15,7 @@ type NeighboringPointsOfInterest struct {
 	PointOfInterestTwoID uuid.UUID       `json:"pointOfInterestTwoId" binding:"required"`
 	PointOfInterestTwo   PointOfInterest `json:"pointOfInterestTwo"`
 }
+
+func (n *NeighboringPointsOfInterest) TableName() string {
+	return "neighboring_points_of_interest"
+}

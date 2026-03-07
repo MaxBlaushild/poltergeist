@@ -31,37 +31,70 @@ type CreatePointOfInterestRequest struct {
 }
 
 func (c *pointOfInterestHandle) Delete(ctx context.Context, id uuid.UUID) error {
-	// Start a transaction since we'll be deleting multiple related records
 	tx := c.db.WithContext(ctx).Begin()
 	if err := tx.Error; err != nil {
 		return err
 	}
 
-	// Delete related PointOfInterestChallenge records
-	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestChallenge{}).Error; err != nil {
-		tx.Rollback()
+	runDelete := func(query string, args ...interface{}) error {
+		if err := tx.Exec(query, args...).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		return nil
+	}
+
+	// Child rows that depend on group members/challenges for this POI.
+	if err := runDelete(
+		`DELETE FROM point_of_interest_children
+		WHERE point_of_interest_group_member_id IN (
+			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id = ?
+		) OR next_point_of_interest_group_member_id IN (
+			SELECT id FROM point_of_interest_group_members WHERE point_of_interest_id = ?
+		) OR point_of_interest_challenge_id IN (
+			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id = ?
+		)`,
+		id, id, id,
+	); err != nil {
 		return err
 	}
 
-	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestDiscovery{}).Error; err != nil {
-		tx.Rollback()
+	if err := runDelete(
+		`DELETE FROM point_of_interest_challenge_submissions
+		WHERE point_of_interest_challenge_id IN (
+			SELECT id FROM point_of_interest_challenges WHERE point_of_interest_id = ?
+		)`,
+		id,
+	); err != nil {
 		return err
 	}
 
-	// Delete related PointOfInterestGroupMember records
-	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestGroupMember{}).Error; err != nil {
-		tx.Rollback()
+	// Direct POI references.
+	if err := runDelete("DELETE FROM point_of_interest_activities WHERE point_of_interest_id = ?", id); err != nil {
 		return err
 	}
-
-	if err := tx.Where("point_of_interest_id = ?", id).Delete(&models.PointOfInterestZone{}).Error; err != nil {
-		tx.Rollback()
+	if err := runDelete("DELETE FROM match_points_of_interest WHERE point_of_interest_id = ?", id); err != nil {
 		return err
 	}
-
-	// Delete the PointOfInterest itself
-	if err := tx.Delete(&models.PointOfInterest{}, "id = ?", id).Error; err != nil {
-		tx.Rollback()
+	if err := runDelete("DELETE FROM neighboring_points_of_interest WHERE point_of_interest_one_id = ? OR point_of_interest_two_id = ?", id, id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM point_of_interest_teams WHERE point_of_interest_id = ?", id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM point_of_interest_challenges WHERE point_of_interest_id = ?", id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM point_of_interest_discoveries WHERE point_of_interest_id = ?", id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM point_of_interest_group_members WHERE point_of_interest_id = ?", id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM point_of_interest_zones WHERE point_of_interest_id = ?", id); err != nil {
+		return err
+	}
+	if err := runDelete("DELETE FROM points_of_interest WHERE id = ?", id); err != nil {
 		return err
 	}
 

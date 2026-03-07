@@ -83,6 +83,7 @@ const _mapThumbnailVersion = 'v4';
 const _standardMarkerThumbnailSize = 0.75;
 const _poiImageLoadBatchSize = 24;
 const _poiSymbolAddBatchSize = 32;
+const _poiAssociationCoordinatePrecision = 4;
 const _stamenWatercolorStyleBase =
     'https://tiles.stadiamaps.com/styles/stamen_watercolor.json';
 const _stamenWatercolorApiKey = String.fromEnvironment(
@@ -563,6 +564,77 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final image = poi.imageURL;
     if (image != null && image.isNotEmpty) return image;
     return null;
+  }
+
+  String _normalizePoiId(String? rawId) {
+    return rawId?.trim() ?? '';
+  }
+
+  String? _coordinateKey(double latitude, double longitude) {
+    if (!latitude.isFinite || !longitude.isFinite) return null;
+    if (latitude.abs() > 90 || longitude.abs() > 180) return null;
+    return '${latitude.toStringAsFixed(_poiAssociationCoordinatePrecision)},${longitude.toStringAsFixed(_poiAssociationCoordinatePrecision)}';
+  }
+
+  String? _poiCoordinateKey(PointOfInterest poi) {
+    final latitude = double.tryParse(poi.lat);
+    final longitude = double.tryParse(poi.lng);
+    if (latitude == null || longitude == null) return null;
+    return _coordinateKey(latitude, longitude);
+  }
+
+  Map<String, Set<String>> _buildPoiCoordinateIndex() {
+    final index = <String, Set<String>>{};
+    for (final poi in _pois) {
+      final key = _poiCoordinateKey(poi);
+      if (key == null) continue;
+      (index[key] ??= <String>{}).add(poi.id);
+    }
+    return index;
+  }
+
+  Set<String> _buildPoiIdsWithMapContent() {
+    final ids = <String>{};
+    final byCoordinate = _buildPoiCoordinateIndex();
+
+    void addPoiId(String? poiId) {
+      final normalizedId = _normalizePoiId(poiId);
+      if (normalizedId.isEmpty) return;
+      ids.add(normalizedId);
+    }
+
+    void addByCoordinate(double latitude, double longitude) {
+      final key = _coordinateKey(latitude, longitude);
+      if (key == null) return;
+      final matchedPoiIds = byCoordinate[key];
+      if (matchedPoiIds == null || matchedPoiIds.isEmpty) return;
+      ids.addAll(matchedPoiIds);
+    }
+
+    for (final challenge in _challenges) {
+      addPoiId(challenge.pointOfInterestId);
+      addByCoordinate(challenge.latitude, challenge.longitude);
+    }
+    for (final scenario in _scenarios) {
+      addPoiId(scenario.pointOfInterestId);
+      addByCoordinate(scenario.latitude, scenario.longitude);
+    }
+    for (final monster in _monsters) {
+      addPoiId(monster.pointOfInterestId);
+      addByCoordinate(monster.latitude, monster.longitude);
+    }
+
+    return ids;
+  }
+
+  bool _poiHasMapContent(
+    PointOfInterest poi, {
+    required bool isQuestCurrent,
+    Set<String>? mapContentPoiIds,
+  }) {
+    if (poi.hasAvailableQuest || isQuestCurrent) return true;
+    final contentIds = mapContentPoiIds ?? _buildPoiIdsWithMapContent();
+    return contentIds.contains(poi.id);
   }
 
   Set<String> _currentQuestTurnInCharacterIds(QuestLogProvider questLog) {
@@ -2657,9 +2729,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       } catch (_) {}
 
       final placeholderFuture = loadPoiThumbnail(null).catchError((_) => null);
-      final questPlaceholderFuture = loadPoiThumbnailWithBorder(
-        null,
-      ).catchError((_) => null);
       final availablePlaceholderFuture = loadPoiThumbnailWithQuestMarker(
         null,
       ).catchError((_) => null);
@@ -2680,15 +2749,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           await c.addImage(
             'poi_placeholder_$_mapThumbnailVersion',
             placeholderBytes,
-          );
-        } catch (_) {}
-      }
-      final questPlaceholderBytes = await questPlaceholderFuture;
-      if (questPlaceholderBytes != null) {
-        try {
-          await c.addImage(
-            'poi_placeholder_quest_$_mapThumbnailVersion',
-            questPlaceholderBytes,
           );
         } catch (_) {}
       }
@@ -2830,10 +2890,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
       final poiImageUpdates = <_PoiImageUpdate>[];
       final poiSymbolRequests = <_PoiSymbolRequest>[];
-      final challengePoiIds = _challenges
-          .map((challenge) => challenge.pointOfInterestId?.trim() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
+      final mapContentPoiIds = _buildPoiIdsWithMapContent();
       for (final poi in _pois) {
         final lat = double.tryParse(poi.lat) ?? 0.0;
         final lng = double.tryParse(poi.lng) ?? 0.0;
@@ -2841,20 +2898,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         final undiscovered = !useRealImage;
         final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
         final isQuestCurrent = questPoiIds.contains(poi.id);
-        final hasChallengeAssociation = challengePoiIds.contains(poi.id);
-        final hasQuestAssociation = poi.hasAvailableQuest || isQuestCurrent;
-
-        if (undiscovered && !hasChallengeAssociation && !hasQuestAssociation) {
-          continue;
-        }
-
-        final hasQuestAvailable = poi.hasAvailableQuest;
+        final hasMapContent = _poiHasMapContent(
+          poi,
+          isQuestCurrent: isQuestCurrent,
+          mapContentPoiIds: mapContentPoiIds,
+        );
         final hasCharacter = poi.characters.isNotEmpty;
-        final baseEligible =
-            hasCharacter ||
-            hasQuestAvailable ||
-            isQuestCurrent ||
-            hasChallengeAssociation;
+        final baseEligible = !undiscovered || hasCharacter || hasMapContent;
         if (!baseEligible) {
           continue;
         }
@@ -2869,11 +2919,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         }
 
         String? placeholderId;
-        if (isQuestCurrent) {
-          placeholderId = questPlaceholderBytes != null
-              ? 'poi_placeholder_quest'
-              : null;
-        } else if (hasQuestAvailable) {
+        if (hasMapContent) {
           placeholderId = availablePlaceholderBytes != null
               ? 'poi_placeholder_available'
               : null;
@@ -2899,6 +2945,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                   poi,
                   isQuestCurrent: isQuestCurrent,
                   undiscovered: undiscovered,
+                  mapContentPoiIds: mapContentPoiIds,
                 ),
                 iconAnchor: 'center',
                 zIndex: 2,
@@ -2919,6 +2966,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 poi,
                 isQuestCurrent: isQuestCurrent,
                 undiscovered: undiscovered,
+                mapContentPoiIds: mapContentPoiIds,
               ),
               circleStrokeWidth: 2,
               circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
@@ -2933,7 +2981,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               poi: poi,
               imageUrl: imageUrl,
               isQuestCurrent: isQuestCurrent,
-              hasQuestAvailable: hasQuestAvailable,
+              hasMapContent: hasMapContent,
               undiscovered: undiscovered,
             ),
           );
@@ -3018,6 +3066,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       if (c == null || !_styleLoaded) return;
       final questLog = context.read<QuestLogProvider>();
       final currentQuestPoiIds = _currentQuestPoiIdsForFilter(questLog);
+      final mapContentPoiIds = _buildPoiIdsWithMapContent();
       await Future.wait(
         results.map(
           (result) => _applyPoiImageUpdate(
@@ -3025,6 +3074,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             markerGeneration,
             result,
             currentQuestPoiIds,
+            mapContentPoiIds,
           ),
         ),
       );
@@ -3036,6 +3086,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     int markerGeneration,
     _PoiImageUpdateResult result,
     Set<String> currentQuestPoiIds,
+    Set<String> mapContentPoiIds,
   ) async {
     final bytes = result.bytes;
     final imageId = result.imageId;
@@ -3043,9 +3094,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted || markerGeneration != _poiMarkerGeneration) return;
 
     final isQuestCurrentNow = currentQuestPoiIds.contains(result.update.poi.id);
-    final hasQuestAvailableNow = result.update.poi.hasAvailableQuest;
+    final hasMapContentNow = _poiHasMapContent(
+      result.update.poi,
+      isQuestCurrent: isQuestCurrentNow,
+      mapContentPoiIds: mapContentPoiIds,
+    );
     if (isQuestCurrentNow != result.update.isQuestCurrent ||
-        hasQuestAvailableNow != result.update.hasQuestAvailable) {
+        hasMapContentNow != result.update.hasMapContent) {
       return;
     }
 
@@ -3072,6 +3127,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               result.update.poi,
               isQuestCurrent: isQuestCurrentNow,
               undiscovered: result.update.undiscovered,
+              mapContentPoiIds: mapContentPoiIds,
             ),
             iconAnchor: 'center',
             zIndex: 2,
@@ -3103,6 +3159,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             result.update.poi,
             isQuestCurrent: isQuestCurrentNow,
             undiscovered: result.update.undiscovered,
+            mapContentPoiIds: mapContentPoiIds,
           ),
           iconAnchor: 'center',
           zIndex: 2,
@@ -3117,15 +3174,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   ) async {
     Uint8List? imageBytes;
     String? imageId;
-    if (update.isQuestCurrent) {
-      imageBytes = await loadPoiThumbnailWithBorder(update.imageUrl);
-      if (imageBytes != null) {
-        imageId = 'poi_${update.poi.id}_quest';
-      }
-    } else if (update.hasQuestAvailable) {
+    if (update.hasMapContent) {
       imageBytes = await loadPoiThumbnailWithQuestMarker(update.imageUrl);
       if (imageBytes != null) {
-        imageId = 'poi_${update.poi.id}_available';
+        imageId = 'poi_${update.poi.id}_activity';
       }
     } else {
       imageBytes = await loadPoiThumbnail(update.imageUrl);
@@ -3408,15 +3460,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     PointOfInterest poi, {
     required bool isQuestCurrent,
     required bool undiscovered,
+    Set<String>? mapContentPoiIds,
   }) {
     if (isQuestCurrent || !undiscovered) return 1.0;
-    final hasChallengeAssociation = _challenges.any(
-      (challenge) =>
-          (challenge.pointOfInterestId?.trim().isNotEmpty ?? false) &&
-          challenge.pointOfInterestId?.trim() == poi.id,
+    final hasMapContent = _poiHasMapContent(
+      poi,
+      isQuestCurrent: isQuestCurrent,
+      mapContentPoiIds: mapContentPoiIds,
     );
-    final hasQuestAssociation = poi.hasAvailableQuest || isQuestCurrent;
-    if (!hasChallengeAssociation && !hasQuestAssociation) return 0.0;
+    if (!hasMapContent) return 0.0;
     if (!mounted) return 0.5;
 
     final selectedZone = context.read<ZoneProvider>().selectedZone;
@@ -3624,6 +3676,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       context.read<QuestLogProvider>(),
     );
     final discoveries = context.read<DiscoveriesProvider>();
+    final mapContentPoiIds = _buildPoiIdsWithMapContent();
 
     for (final poi in _pois) {
       final symbol = _poiSymbolById[poi.id];
@@ -3637,6 +3690,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         poi,
         isQuestCurrent: isQuestCurrent,
         undiscovered: undiscovered,
+        mapContentPoiIds: mapContentPoiIds,
       );
       try {
         await c.updateSymbol(symbol, SymbolOptions(iconOpacity: opacity));
@@ -3687,9 +3741,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final useRealImage = discoveries.hasDiscovered(poi.id);
     final undiscovered = !useRealImage;
     final imageUrl = useRealImage ? _poiThumbnailSourceUrl(poi) : null;
-    final hasQuestAvailable = poi.hasAvailableQuest;
+    final mapContentPoiIds = _buildPoiIdsWithMapContent();
+    final hasMapContent = _poiHasMapContent(
+      poi,
+      isQuestCurrent: isQuestCurrent,
+      mapContentPoiIds: mapContentPoiIds,
+    );
     final hasCharacter = poi.characters.isNotEmpty;
-    final baseEligible = hasCharacter || hasQuestAvailable || isQuestCurrent;
+    final baseEligible = !undiscovered || hasCharacter || hasMapContent;
     final tagMatch =
         !tagFilterActive ||
         poi.tags.any(
@@ -3712,17 +3771,12 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
     final sym = _poiSymbolById[poiId];
 
-    String? imageId;
+    late final String imageId;
     Uint8List? imageBytes;
-    if (isQuestCurrent) {
-      imageBytes = await loadPoiThumbnailWithBorder(imageUrl);
-      imageId = imageBytes != null
-          ? 'poi_${poi.id}_quest'
-          : 'poi_placeholder_quest';
-    } else if (hasQuestAvailable) {
+    if (hasMapContent) {
       imageBytes = await loadPoiThumbnailWithQuestMarker(imageUrl);
       imageId = imageBytes != null
-          ? 'poi_${poi.id}_available'
+          ? 'poi_${poi.id}_activity'
           : 'poi_placeholder_available';
     } else if (useRealImage) {
       imageBytes = await loadPoiThumbnail(imageUrl);
@@ -3730,15 +3784,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } else {
       imageId = 'poi_placeholder';
     }
-
-    if (imageId == null) return;
     final versionedId = '${imageId}_$_mapThumbnailVersion';
     if (imageBytes == null) {
       try {
         if (imageId == 'poi_placeholder') {
           imageBytes = await loadPoiThumbnail(null);
-        } else if (imageId == 'poi_placeholder_quest') {
-          imageBytes = await loadPoiThumbnailWithBorder(null);
         } else if (imageId == 'poi_placeholder_available') {
           imageBytes = await loadPoiThumbnailWithQuestMarker(null);
         }
@@ -3765,6 +3815,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               poi,
               isQuestCurrent: isQuestCurrent,
               undiscovered: undiscovered,
+              mapContentPoiIds: mapContentPoiIds,
             ),
             iconAnchor: 'center',
             zIndex: 2,
@@ -3791,6 +3842,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             poi,
             isQuestCurrent: isQuestCurrent,
             undiscovered: undiscovered,
+            mapContentPoiIds: mapContentPoiIds,
           ),
           iconAnchor: 'center',
           zIndex: 2,
@@ -5344,8 +5396,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           const CelebrationModalManager(),
           const NewItemModal(),
           const UsedItemModal(),
-          // Shop is opened via showDialog from the character panel.
-          // Dialogue is opened via showDialog to avoid overlay rendering issues.
+          // Shop and dialogue are opened from the character panel.
         ],
       ),
     );
@@ -5419,16 +5470,25 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     debugPrint(
       'SinglePlayer: showShopModal open character=${character.id} action=${action.id}',
     );
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: dialogContext,
+      isScrollControlled: true,
       useRootNavigator: true,
-      barrierDismissible: true,
+      useSafeArea: false,
+      backgroundColor: Theme.of(dialogContext).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      isDismissible: true,
       builder: (context) {
         debugPrint('SinglePlayer: showShopModal builder');
-        return ShopModal(
-          character: character,
-          action: action,
-          onClose: () => Navigator.of(context).pop(),
+        return SafeArea(
+          top: false,
+          child: ShopModal(
+            character: character,
+            action: action,
+            onClose: () => Navigator.of(context).pop(),
+          ),
         );
       },
     );
@@ -6431,14 +6491,14 @@ class _PoiImageUpdate {
     required this.poi,
     required this.imageUrl,
     required this.isQuestCurrent,
-    required this.hasQuestAvailable,
+    required this.hasMapContent,
     required this.undiscovered,
   });
 
   final PointOfInterest poi;
   final String? imageUrl;
   final bool isQuestCurrent;
-  final bool hasQuestAvailable;
+  final bool hasMapContent;
   final bool undiscovered;
 }
 

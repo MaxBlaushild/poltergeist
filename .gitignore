@@ -21,3 +21,4 @@ terraform.rc
 node_modules/
 
 go/verifiable-sn/vera-firebase.json
+go/core/fcm-service-account.json

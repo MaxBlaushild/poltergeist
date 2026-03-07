@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,9 @@ You are designing %d location-based fantasy RPG map challenges for one zone.
 Zone:
 - name: %s
 - description: %s
+
+Specific location target:
+%s
 
 Recent scenarios in this zone (match tone/theme, but do not copy):
 %s
@@ -166,6 +170,25 @@ func (p *GenerateChallengesProcessor) generateChallenges(ctx context.Context, jo
 	if zoneDescription == "" {
 		zoneDescription = "No description available."
 	}
+	locationTargetHint := "- none (any location in the zone is allowed)"
+	var targetLatitude float64
+	var targetLongitude float64
+	if job.PointOfInterestID != nil {
+		poi, err := p.dbClient.PointOfInterest().FindByID(ctx, *job.PointOfInterestID)
+		if err != nil {
+			return fmt.Errorf("failed to load point of interest: %w", err)
+		}
+		if poi == nil {
+			return fmt.Errorf("point of interest not found")
+		}
+		poiLat, poiLng, err := challengeGenerationPointOfInterestLocation(*poi)
+		if err != nil {
+			return err
+		}
+		locationTargetHint = buildChallengeGenerationLocationTargetHint(*poi)
+		targetLatitude = poiLat
+		targetLongitude = poiLng
+	}
 
 	scenarios, err := p.dbClient.Scenario().FindByZoneID(ctx, job.ZoneID)
 	if err != nil {
@@ -179,6 +202,7 @@ func (p *GenerateChallengesProcessor) generateChallenges(ctx context.Context, jo
 		job.Count,
 		zoneName,
 		zoneDescription,
+		locationTargetHint,
 		scenarioHints,
 		challengeAvoidance,
 		job.Count,
@@ -199,22 +223,27 @@ func (p *GenerateChallengesProcessor) generateChallenges(ctx context.Context, jo
 	for i := 0; i < len(challengeSpecs); i++ {
 		spec := challengeSpecs[i]
 		lat, lng := challengeGenerationLocation(*zone, i)
+		if job.PointOfInterestID != nil {
+			lat = targetLatitude
+			lng = targetLongitude
+		}
 		now := time.Now()
 
 		challenge := &models.Challenge{
-			ID:             uuid.New(),
-			CreatedAt:      now,
-			UpdatedAt:      now,
-			ZoneID:         job.ZoneID,
-			Latitude:       lat,
-			Longitude:      lng,
-			Question:       spec.Question,
-			Description:    spec.Description,
-			Reward:         spec.Reward,
-			SubmissionType: spec.SubmissionType,
-			Difficulty:     spec.Difficulty,
-			StatTags:       spec.StatTags,
-			Proficiency:    spec.Proficiency,
+			ID:                uuid.New(),
+			CreatedAt:         now,
+			UpdatedAt:         now,
+			ZoneID:            job.ZoneID,
+			PointOfInterestID: job.PointOfInterestID,
+			Latitude:          lat,
+			Longitude:         lng,
+			Question:          spec.Question,
+			Description:       spec.Description,
+			Reward:            spec.Reward,
+			SubmissionType:    spec.SubmissionType,
+			Difficulty:        spec.Difficulty,
+			StatTags:          spec.StatTags,
+			Proficiency:       spec.Proficiency,
 		}
 		if err := p.dbClient.Challenge().Create(ctx, challenge); err != nil {
 			job.CreatedCount = createdCount
@@ -489,6 +518,36 @@ func challengeGenerationLocation(zone models.Zone, offset int) (float64, float64
 	baseLng := -73.98513
 	jitter := float64((offset%7)-3) * 0.00012
 	return baseLat + jitter, baseLng - jitter
+}
+
+func challengeGenerationPointOfInterestLocation(poi models.PointOfInterest) (float64, float64, error) {
+	lat, err := strconv.ParseFloat(strings.TrimSpace(poi.Lat), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("point of interest has invalid latitude")
+	}
+	lng, err := strconv.ParseFloat(strings.TrimSpace(poi.Lng), 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("point of interest has invalid longitude")
+	}
+	if lat < -90 || lat > 90 || lng < -180 || lng > 180 {
+		return 0, 0, fmt.Errorf("point of interest has invalid coordinates")
+	}
+	return lat, lng, nil
+}
+
+func buildChallengeGenerationLocationTargetHint(poi models.PointOfInterest) string {
+	name := strings.TrimSpace(poi.Name)
+	if name == "" {
+		name = "Unknown point of interest"
+	}
+	description := strings.TrimSpace(poi.Description)
+	if description == "" {
+		description = "No description provided."
+	}
+	if len(description) > 240 {
+		description = strings.TrimSpace(description[:240]) + "..."
+	}
+	return fmt.Sprintf("- Name: %s\n- Description: %s\n- Keep each challenge action grounded at this specific point of interest.", name, description)
 }
 
 func buildRecentScenarioThemeHints(scenarios []models.Scenario, limit int) string {

@@ -440,8 +440,11 @@ class _SideDrawerState extends State<_SideDrawer> {
                               ? const ReputationTabContent(
                                   key: ValueKey('reputation'),
                                 )
-                              : const SettingsTabContent(
-                                  key: ValueKey('settings'),
+                              : const Align(
+                                  alignment: Alignment.topCenter,
+                                  child: SettingsTabContent(
+                                    key: ValueKey('settings'),
+                                  ),
                                 ),
                         ),
                       ),

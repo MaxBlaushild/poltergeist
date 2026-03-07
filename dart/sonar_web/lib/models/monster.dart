@@ -319,6 +319,7 @@ class MonsterEncounter {
   final String imageUrl;
   final String thumbnailUrl;
   final String zoneId;
+  final String? pointOfInterestId;
   final double latitude;
   final double longitude;
   final int monsterCount;
@@ -332,6 +333,7 @@ class MonsterEncounter {
     this.imageUrl = '',
     this.thumbnailUrl = '',
     required this.zoneId,
+    this.pointOfInterestId,
     required this.latitude,
     required this.longitude,
     this.monsterCount = 0,
@@ -377,6 +379,7 @@ class MonsterEncounter {
       imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',
+      pointOfInterestId: json['pointOfInterestId']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       monsterCount:

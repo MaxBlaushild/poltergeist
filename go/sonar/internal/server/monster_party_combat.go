@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -195,13 +196,46 @@ func (s *server) sendMonsterBattleInvitePush(
 	monster *models.Monster,
 	inviter *models.User,
 ) {
-	if s.pushClient == nil || invite == nil {
+	if invite == nil {
+		log.Printf("[push][party-invite] skipped: invite is nil")
+		return
+	}
+	if s.pushClient == nil {
+		log.Printf(
+			"[push][party-invite] skipped: push client not configured (battle=%s invite=%s invitee=%s)",
+			invite.BattleID,
+			invite.ID,
+			invite.InviteeUserID,
+		)
 		return
 	}
 	tokens, err := s.dbClient.UserDeviceToken().FindByUserID(ctx, invite.InviteeUserID)
-	if err != nil || len(tokens) == 0 {
+	if err != nil {
+		log.Printf(
+			"[push][party-invite] failed to fetch tokens (battle=%s invite=%s invitee=%s): %v",
+			invite.BattleID,
+			invite.ID,
+			invite.InviteeUserID,
+			err,
+		)
 		return
 	}
+	if len(tokens) == 0 {
+		log.Printf(
+			"[push][party-invite] skipped: no tokens (battle=%s invite=%s invitee=%s)",
+			invite.BattleID,
+			invite.ID,
+			invite.InviteeUserID,
+		)
+		return
+	}
+	log.Printf(
+		"[push][party-invite] sending push (battle=%s invite=%s invitee=%s tokens=%d)",
+		invite.BattleID,
+		invite.ID,
+		invite.InviteeUserID,
+		len(tokens),
+	)
 	title := "Party Combat Invite"
 	monsterName := "a monster"
 	if monster != nil && strings.TrimSpace(monster.Name) != "" {
@@ -215,9 +249,32 @@ func (s *server) sendMonsterBattleInvitePush(
 		"monsterId": invite.MonsterID.String(),
 		"expiresAt": invite.ExpiresAt.UTC().Format(time.RFC3339),
 	}
+	sentCount := 0
+	failedCount := 0
 	for _, token := range tokens {
-		_ = s.pushClient.Send(ctx, token.Token, title, body, data)
+		if err := s.pushClient.Send(ctx, token.Token, title, body, data); err != nil {
+			failedCount++
+			log.Printf(
+				"[push][party-invite] send failed (battle=%s invite=%s invitee=%s platform=%s token=%s): %v",
+				invite.BattleID,
+				invite.ID,
+				invite.InviteeUserID,
+				token.Platform,
+				tokenPreview(token.Token),
+				err,
+			)
+			continue
+		}
+		sentCount++
 	}
+	log.Printf(
+		"[push][party-invite] send complete (battle=%s invite=%s invitee=%s sent=%d failed=%d)",
+		invite.BattleID,
+		invite.ID,
+		invite.InviteeUserID,
+		sentCount,
+		failedCount,
+	)
 }
 
 func (s *server) refreshMonsterBattleInviteState(

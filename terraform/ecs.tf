@@ -93,6 +93,10 @@ module "ecs" {
             {
               name  = "GOOGLE_APPLICATION_CREDENTIALS"
               value = "/etc/core/vera-firebase.json"
+            },
+            {
+              name  = "UNCLAIMED_STREETS_APPLICATION_CREDENTIALS"
+              value = "/etc/core/fcm-service-account.json"
             }
           ]
           secrets = [

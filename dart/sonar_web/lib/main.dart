@@ -20,6 +20,7 @@ import 'services/character_stats_service.dart';
 import 'services/inventory_service.dart';
 import 'services/party_service.dart';
 import 'services/poi_service.dart';
+import 'services/push_notification_service.dart';
 import 'services/quest_log_service.dart';
 import 'services/tags_service.dart';
 import 'services/user_level_service.dart';
@@ -69,6 +70,7 @@ class SonarApp extends StatelessWidget {
     final inventoryService = InventoryService(apiClient);
     final userLevelService = UserLevelService(apiClient);
     final userCharacterService = UserCharacterService(apiClient);
+    final pushNotificationService = PushNotificationService(apiClient);
     final partyProvider = PartyProvider(partyService);
     final friendProvider = FriendProvider(friendService);
     final activityFeedProvider = ActivityFeedProvider(activityService);
@@ -99,6 +101,7 @@ class SonarApp extends StatelessWidget {
         Provider<PoiService>.value(value: poiService),
         Provider<InventoryService>.value(value: inventoryService),
         Provider<UserCharacterService>.value(value: userCharacterService),
+        Provider<PushNotificationService>.value(value: pushNotificationService),
         ChangeNotifierProvider<PartyProvider>.value(value: partyProvider),
         ChangeNotifierProvider<FriendProvider>.value(value: friendProvider),
         ChangeNotifierProvider<ActivityFeedProvider>.value(

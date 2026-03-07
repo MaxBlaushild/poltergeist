@@ -118,6 +118,7 @@ class ScenarioOption {
 class Scenario {
   final String id;
   final String zoneId;
+  final String? pointOfInterestId;
   final double latitude;
   final double longitude;
   final String prompt;
@@ -136,6 +137,7 @@ class Scenario {
   const Scenario({
     required this.id,
     required this.zoneId,
+    this.pointOfInterestId,
     required this.latitude,
     required this.longitude,
     required this.prompt,
@@ -190,6 +192,7 @@ class Scenario {
     return Scenario(
       id: json['id']?.toString() ?? '',
       zoneId: json['zoneId']?.toString() ?? '',
+      pointOfInterestId: json['pointOfInterestId']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0.0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0.0,
       prompt: json['prompt']?.toString() ?? '',

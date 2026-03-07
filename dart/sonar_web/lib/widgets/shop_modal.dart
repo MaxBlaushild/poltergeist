@@ -9,13 +9,14 @@ import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
+import '../widgets/paper_texture.dart';
 
 /// Inventory item IDs that can be "Used" from the inventory menu (match JS ItemsUsabledInMenu).
 const _itemsUsableInMenu = <int>{
-  1,  // CipherOfTheLaughingMonkey
-  6,  // CortezsCutlass
-  7,  // RustedMusket
-  9,  // Dagger
+  1, // CipherOfTheLaughingMonkey
+  6, // CortezsCutlass
+  7, // RustedMusket
+  9, // Dagger
   12, // Ale
   14, // WickedSpellbook
 };
@@ -140,9 +141,9 @@ class _ShopModalState extends State<ShopModal> {
     });
     try {
       await context.read<PoiService>().purchaseFromShop(
-            widget.action.id,
-            itemId,
-          );
+        widget.action.id,
+        itemId,
+      );
       if (mounted) {
         await _loadInventory();
         await context.read<AuthProvider>().refresh();
@@ -165,10 +166,7 @@ class _ShopModalState extends State<ShopModal> {
     }
   }
 
-  Future<void> _sell(
-    int itemId, {
-    int quantity = 1,
-  }) async {
+  Future<void> _sell(int itemId, {int quantity = 1}) async {
     final user = context.read<AuthProvider>().user;
     if (user == null) {
       setState(() => _error = 'You must be logged in to sell items');
@@ -190,9 +188,11 @@ class _ShopModalState extends State<ShopModal> {
       _success = null;
     });
     try {
-      await context
-          .read<PoiService>()
-          .sellToShop(widget.action.id, itemId, quantity: quantity);
+      await context.read<PoiService>().sellToShop(
+        widget.action.id,
+        itemId,
+        quantity: quantity,
+      );
       if (mounted) {
         await _loadInventory();
         await context.read<AuthProvider>().refresh();
@@ -220,6 +220,8 @@ class _ShopModalState extends State<ShopModal> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final media = MediaQuery.of(context);
+    final horizontalPadding = media.size.width >= 900 ? 24.0 : 12.0;
     final user = context.watch<AuthProvider>().user;
     final gold = user?.gold ?? 0;
     final shopItems = widget.action.shopInventory ?? [];
@@ -241,15 +243,14 @@ class _ShopModalState extends State<ShopModal> {
     final characterImageUrl =
         widget.character.dialogueImageUrl ?? widget.character.mapIconUrl;
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            onTap: widget.onClose,
-            child: Container(color: Colors.black54),
-          ),
-        ),
-        Center(
+    return SafeArea(
+      top: false,
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.9,
+        minChildSize: 0.55,
+        maxChildSize: 0.96,
+        expand: false,
+        builder: (_, __) => PaperSheet(
           child: Focus(
             autofocus: true,
             focusNode: _focusNode,
@@ -261,89 +262,121 @@ class _ShopModalState extends State<ShopModal> {
               }
               return KeyEventResult.ignored;
             },
-            child: Material(
-              color: colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              elevation: 10,
-              child: Container(
-                width: 760,
-                height: 680,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    4,
+                    horizontalPadding,
+                    0,
+                  ),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.onSurface.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                "${widget.character.name}'s Shop",
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "${widget.character.name}'s Shop",
+                                          style: theme.textTheme.titleLarge
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _activeTab == 'buy'
+                                              ? 'Browse curated wares and curios.'
+                                              : 'Trade in gear for a fair price.',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                                color: colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      if (user != null) ...[
+                                        _buildGoldPill(context, gold),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      IconButton(
+                                        onPressed: widget.onClose,
+                                        icon: const Icon(Icons.close),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _activeTab == 'buy'
-                                    ? 'Browse curated wares and curios.'
-                                    : 'Trade in gear for a fair price.',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                              if (characterImageUrl != null &&
+                                  characterImageUrl.isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                _buildShopHero(context, characterImageUrl),
+                              ],
+                              const SizedBox(height: 16),
+                              _buildShopTabs(context),
+                              if (_error != null)
+                                _buildStatusBanner(
+                                  context,
+                                  message: _error!,
+                                  isError: true,
                                 ),
+                              if (_success != null)
+                                _buildStatusBanner(
+                                  context,
+                                  message: _success!,
+                                  isError: false,
+                                ),
+                              const SizedBox(height: 8),
+                              _buildFilterRow(context),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: _activeTab == 'buy'
+                                    ? _buildBuyList(
+                                        context,
+                                        filteredShopItems,
+                                        user,
+                                      )
+                                    : _buildSellList(
+                                        context,
+                                        filteredSellableItems,
+                                      ),
                               ),
                             ],
                           ),
                         ),
-                        Row(
-                          children: [
-                            if (user != null) ...[
-                              _buildGoldPill(context, gold),
-                              const SizedBox(width: 8),
-                            ],
-                            IconButton(
-                              onPressed: widget.onClose,
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    if (characterImageUrl != null &&
-                        characterImageUrl.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _buildShopHero(context, characterImageUrl),
+                      ),
                     ],
-                    const SizedBox(height: 16),
-                    _buildShopTabs(context),
-                    if (_error != null)
-                      _buildStatusBanner(
-                        context,
-                        message: _error!,
-                        isError: true,
-                      ),
-                    if (_success != null)
-                      _buildStatusBanner(
-                        context,
-                        message: _success!,
-                        isError: false,
-                      ),
-                    const SizedBox(height: 8),
-                    _buildFilterRow(context),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: _activeTab == 'buy'
-                          ? _buildBuyList(context, filteredShopItems, user)
-                          : _buildSellList(context, filteredSellableItems),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -359,11 +392,7 @@ class _ShopModalState extends State<ShopModal> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.monetization_on,
-            size: 18,
-            color: Colors.amber.shade700,
-          ),
+          Icon(Icons.monetization_on, size: 18, color: Colors.amber.shade700),
           const SizedBox(width: 6),
           Text(
             'GOLD',
@@ -523,7 +552,6 @@ class _ShopModalState extends State<ShopModal> {
   }
 
   Widget _buildFilterRow(BuildContext context) {
-    final theme = Theme.of(context);
     return Row(
       children: [
         Expanded(
@@ -574,18 +602,9 @@ class _ShopModalState extends State<ShopModal> {
             setState(() => _sortMode = value);
           },
           items: const [
-            DropdownMenuItem(
-              value: 'name',
-              child: Text('Name'),
-            ),
-            DropdownMenuItem(
-              value: 'price',
-              child: Text('Price'),
-            ),
-            DropdownMenuItem(
-              value: 'owned',
-              child: Text('Owned'),
-            ),
+            DropdownMenuItem(value: 'name', child: Text('Name')),
+            DropdownMenuItem(value: 'price', child: Text('Price')),
+            DropdownMenuItem(value: 'owned', child: Text('Owned')),
           ],
         ),
       ),
@@ -662,8 +681,12 @@ class _ShopModalState extends State<ShopModal> {
           case 'price':
             return b.price.compareTo(a.price);
           case 'owned':
-            final ownedA = itemA == null ? 0 : _ownedQuantityForItemId(itemA.id);
-            final ownedB = itemB == null ? 0 : _ownedQuantityForItemId(itemB.id);
+            final ownedA = itemA == null
+                ? 0
+                : _ownedQuantityForItemId(itemA.id);
+            final ownedB = itemB == null
+                ? 0
+                : _ownedQuantityForItemId(itemB.id);
             return ownedB.compareTo(ownedA);
           case 'name':
           default:
@@ -844,7 +867,10 @@ class _ShopModalState extends State<ShopModal> {
                           onPressed: canAfford
                               ? () => _purchase(shopItem.itemId, shopItem.price)
                               : null,
-                          icon: const Icon(Icons.shopping_bag_outlined, size: 18),
+                          icon: const Icon(
+                            Icons.shopping_bag_outlined,
+                            size: 18,
+                          ),
                           label: const Text('Buy'),
                         ),
                       ),
@@ -931,16 +957,18 @@ class _ShopModalState extends State<ShopModal> {
                                 child: SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ),
                             )
                           : OutlinedButton(
                               onPressed: sellValue > 0
                                   ? () => _sell(
-                                        owned.inventoryItemId,
-                                        quantity: 1,
-                                      )
+                                      owned.inventoryItemId,
+                                      quantity: 1,
+                                    )
                                   : null,
                               child: const Text('Sell 1'),
                             ),
@@ -955,16 +983,18 @@ class _ShopModalState extends State<ShopModal> {
                                 child: SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ),
                             )
                           : FilledButton(
                               onPressed: sellValue > 0
                                   ? () => _sell(
-                                        owned.inventoryItemId,
-                                        quantity: owned.quantity,
-                                      )
+                                      owned.inventoryItemId,
+                                      quantity: owned.quantity,
+                                    )
                                   : null,
                               child: Text('Sell All (${owned.quantity})'),
                             ),
@@ -988,10 +1018,7 @@ class _ShopModalState extends State<ShopModal> {
                         )
                       : FilledButton(
                           onPressed: sellValue > 0
-                              ? () => _sell(
-                                    owned.inventoryItemId,
-                                    quantity: 1,
-                                  )
+                              ? () => _sell(owned.inventoryItemId, quantity: 1)
                               : null,
                           child: const Text('Sell'),
                         ),
@@ -1049,11 +1076,7 @@ class _ShopModalState extends State<ShopModal> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            Icons.monetization_on,
-            size: 16,
-            color: Colors.amber.shade700,
-          ),
+          Icon(Icons.monetization_on, size: 16, color: Colors.amber.shade700),
           const SizedBox(width: 6),
           Text(
             '$label $value',

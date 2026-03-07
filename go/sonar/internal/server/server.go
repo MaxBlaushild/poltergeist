@@ -470,6 +470,8 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monsterBattleInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterBattleInvites))
 	r.POST("/sonar/monsterBattleInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptMonsterBattleInvite))
 	r.POST("/sonar/monsterBattleInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectMonsterBattleInvite))
+	r.POST("/sonar/device-tokens", middleware.WithAuthenticationWithoutLocation(s.authClient, s.registerDeviceToken))
+	r.POST("/sonar/push/test", middleware.WithAuthenticationWithoutLocation(s.authClient, s.sendTestPushToCurrentUser))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
@@ -1115,6 +1117,7 @@ func (s *server) inviteToParty(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.sendPartyInvitePushNotification(ctx.Request.Context(), invite, user)
 
 	ctx.JSON(http.StatusOK, invite)
 }
@@ -1300,10 +1303,12 @@ func (s *server) createFriendInvite(ctx *gin.Context) {
 		return
 	}
 
-	if _, err = s.dbClient.FriendInvite().Create(ctx, user.ID, requestBody.InviteeID); err != nil {
+	invite, err := s.dbClient.FriendInvite().Create(ctx, user.ID, requestBody.InviteeID)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.sendFriendInvitePushNotification(ctx.Request.Context(), invite, user)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "friend invite created successfully"})
 }
@@ -1344,6 +1349,7 @@ func (s *server) acceptFriendInvite(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.sendFriendInviteAcceptedPushNotification(ctx.Request.Context(), invite, user)
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "friend invite accepted successfully"})
 }

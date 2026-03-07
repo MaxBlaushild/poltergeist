@@ -33,6 +33,8 @@ class ApiConstants {
       '/sonar/monsterBattleInvites/accept';
   static const String monsterBattleInvitesRejectEndpoint =
       '/sonar/monsterBattleInvites/reject';
+  static const String deviceTokensEndpoint = '/sonar/device-tokens';
+  static const String pushTestEndpoint = '/sonar/push/test';
 
   // Friends
   static const String usersSearchEndpoint = '/sonar/users/search';

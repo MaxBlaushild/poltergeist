@@ -41,11 +41,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM scratch
 
 COPY --from=builder /usr/home/app/core/*.env /etc/core/
+COPY --from=builder /usr/home/app/core/fcm-service-account.json /etc/core/fcm-service-account.json
 COPY --from=builder /usr/home/app/verifiable-sn/vera-firebase.json /etc/core/vera-firebase.json
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 COPY --from=builder /usr/local/bin/core /usr/local/bin/core
 
 WORKDIR /etc/core
+ENV GOOGLE_APPLICATION_CREDENTIALS=/etc/core/vera-firebase.json
+ENV UNCLAIMED_STREETS_APPLICATION_CREDENTIALS=/etc/core/fcm-service-account.json
 
 EXPOSE 8080
 

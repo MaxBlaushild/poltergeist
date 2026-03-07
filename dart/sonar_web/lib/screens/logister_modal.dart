@@ -7,6 +7,7 @@ import '../constants/api_constants.dart';
 import '../providers/auth_provider.dart';
 import '../services/media_service.dart';
 import '../services/notification_permission_service.dart';
+import '../services/push_notification_service.dart';
 
 class LogisterModal extends StatelessWidget {
   const LogisterModal({
@@ -131,7 +132,11 @@ class _LogisterFormState extends State<_LogisterForm> {
         _loading = false;
         _showProfileSetup = needsProfile;
       });
-      if (!needsProfile && mounted) widget.onSuccess();
+      if (!needsProfile && mounted) {
+        await _registerPushTokenForCurrentUser(force: false);
+        if (!mounted) return;
+        widget.onSuccess();
+      }
     } catch (_) {
       setState(() => _loading = false);
     }
@@ -238,6 +243,9 @@ class _LogisterFormState extends State<_LogisterForm> {
     try {
       final state = await _notificationPermissionService.requestPermission();
       if (!mounted) return;
+      if (state == NotificationPermissionState.granted) {
+        await _registerPushTokenForCurrentUser(force: true);
+      }
       setState(() {
         _notificationPermissionState = state;
         _notificationLoading = false;
@@ -259,6 +267,25 @@ class _LogisterFormState extends State<_LogisterForm> {
       case NotificationPermissionState.notDetermined:
         return 'Not enabled yet';
     }
+  }
+
+  Future<void> _registerPushTokenForCurrentUser({required bool force}) async {
+    final userId = widget.auth.user?.id;
+    if (userId == null || userId.isEmpty) return;
+    try {
+      await context.read<PushNotificationService>().registerDeviceTokenForUser(
+        userId,
+        force: force,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _completeNotificationSetup() async {
+    if (_notificationPermissionState == NotificationPermissionState.granted) {
+      await _registerPushTokenForCurrentUser(force: false);
+    }
+    if (!mounted) return;
+    widget.onSuccess();
   }
 
   @override
@@ -383,13 +410,13 @@ class _LogisterFormState extends State<_LogisterForm> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               FilledButton.icon(
-                onPressed: widget.onSuccess,
+                onPressed: _completeNotificationSetup,
                 icon: const Icon(Icons.arrow_forward),
                 label: const Text('Continue'),
               ),
               const SizedBox(width: 12),
               TextButton(
-                onPressed: widget.onSuccess,
+                onPressed: _completeNotificationSetup,
                 child: const Text('Skip for now'),
               ),
             ],

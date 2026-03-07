@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:dio/dio.dart';
 
+import '../providers/auth_provider.dart';
 import '../services/notification_permission_service.dart';
+import '../services/push_notification_service.dart';
 
 class SettingsTabContent extends StatefulWidget {
   const SettingsTabContent({super.key});
@@ -17,6 +21,7 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
       NotificationPermissionState.notDetermined;
   bool _loading = true;
   bool _requesting = false;
+  bool _sendingTestPush = false;
 
   @override
   void initState() {
@@ -33,6 +38,9 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
         _permissionState = state;
         _loading = false;
       });
+      if (state == NotificationPermissionState.granted) {
+        await _syncPushRegistration(force: false);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
@@ -57,6 +65,9 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
     try {
       final state = await _notificationPermissionService.requestPermission();
       if (!mounted) return;
+      if (state == NotificationPermissionState.granted) {
+        await _syncPushRegistration(force: true);
+      }
       setState(() {
         _permissionState = state;
         _requesting = false;
@@ -77,6 +88,78 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
         return 'Unsupported on this browser';
       case NotificationPermissionState.notDetermined:
         return 'Not enabled';
+    }
+  }
+
+  Future<void> _syncPushRegistration({required bool force}) async {
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.isEmpty) return;
+    try {
+      await context.read<PushNotificationService>().registerDeviceTokenForUser(
+        userId,
+        force: force,
+      );
+    } catch (_) {}
+  }
+
+  String _pushErrorMessage(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map && data['error'] is String) {
+        return data['error'] as String;
+      }
+      if (error.message != null && error.message!.trim().isNotEmpty) {
+        return error.message!.trim();
+      }
+    }
+    return 'Failed to send test push notification.';
+  }
+
+  Future<void> _sendTestPush({int delaySeconds = 0}) async {
+    if (_permissionState != NotificationPermissionState.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enable notifications first.')),
+      );
+      return;
+    }
+
+    setState(() => _sendingTestPush = true);
+    final pushNotificationService = context.read<PushNotificationService>();
+    try {
+      await _syncPushRegistration(force: false);
+      if (delaySeconds > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Sending test push in $delaySeconds seconds. Background the app now.',
+            ),
+          ),
+        );
+      }
+      final result = await pushNotificationService.sendTestPush(
+        delaySeconds: delaySeconds,
+      );
+      if (!mounted) return;
+      final sent = (result['sent'] as num?)?.toInt() ?? 0;
+      final failed = (result['failed'] as num?)?.toInt() ?? 0;
+      final tokens = (result['tokens'] as num?)?.toInt();
+      final total = tokens ?? (sent + failed);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Test push sent to $sent/$total token(s).${failed > 0 ? ' $failed failed.' : ''}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_pushErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() => _sendingTestPush = false);
+      }
     }
   }
 
@@ -152,22 +235,40 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(
-                        'Push is blocked right now. Enable it in browser settings and then refresh status.',
+                        'Push is blocked right now. Enable it in browser settings.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
                     ),
                   const SizedBox(height: 12),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _loading || _requesting
-                          ? null
-                          : _loadPermissionState,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Refresh status'),
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: (_loading || _requesting || _sendingTestPush)
+                            ? null
+                            : () => _sendTestPush(),
+                        icon: _sendingTestPush
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded),
+                        label: const Text('Send test push now'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: (_loading || _requesting || _sendingTestPush)
+                            ? null
+                            : () => _sendTestPush(delaySeconds: 10),
+                        icon: const Icon(Icons.timer_outlined),
+                        label: const Text('Send test push in 10s'),
+                      ),
+                    ],
                   ),
                 ],
               ),

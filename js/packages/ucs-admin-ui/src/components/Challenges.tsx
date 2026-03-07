@@ -58,6 +58,7 @@ type ImagePreviewState = {
 type ChallengeGenerationJob = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   status: string;
   count: number;
   createdCount: number;
@@ -68,6 +69,7 @@ type ChallengeGenerationJob = {
 
 type ChallengeGenerationFormState = {
   zoneId: string;
+  pointOfInterestId: string;
   count: string;
 };
 
@@ -150,6 +152,7 @@ const emptyForm = (): ChallengeFormState => ({
 
 const emptyGenerationForm = (): ChallengeGenerationFormState => ({
   zoneId: '',
+  pointOfInterestId: '',
   count: '6',
 });
 
@@ -427,6 +430,9 @@ export const Challenges = () => {
   const pointsOfInterestForFormZone = useMemo(() => {
     return zonePointOfInterestMap[form.zoneId] ?? [];
   }, [form.zoneId, zonePointOfInterestMap]);
+  const pointsOfInterestForGenerationZone = useMemo(() => {
+    return zonePointOfInterestMap[generationForm.zoneId] ?? [];
+  }, [generationForm.zoneId, zonePointOfInterestMap]);
   const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
 
   useEffect(() => {
@@ -434,6 +440,11 @@ export const Challenges = () => {
     if (!form.zoneId) return;
     void loadPointsOfInterestForZone(form.zoneId);
   }, [form.zoneId, loadPointsOfInterestForZone, showModal]);
+
+  useEffect(() => {
+    if (!generationForm.zoneId) return;
+    void loadPointsOfInterestForZone(generationForm.zoneId);
+  }, [generationForm.zoneId, loadPointsOfInterestForZone]);
 
   useEffect(() => {
     if (!records.length) return;
@@ -444,6 +455,16 @@ export const Challenges = () => {
       }
     });
   }, [loadPointsOfInterestForZone, records, zonePointOfInterestMap]);
+
+  useEffect(() => {
+    if (!generationJobs.length) return;
+    const zoneIds = Array.from(new Set(generationJobs.map((job) => job.zoneId)));
+    zoneIds.forEach((zoneId) => {
+      if (zoneId && !zonePointOfInterestMap[zoneId]) {
+        void loadPointsOfInterestForZone(zoneId);
+      }
+    });
+  }, [generationJobs, loadPointsOfInterestForZone, zonePointOfInterestMap]);
 
   const openCreate = () => {
     setEditingChallenge(null);
@@ -592,6 +613,7 @@ export const Challenges = () => {
         '/sonar/admin/challenge-generation-jobs',
         {
           zoneId: generationForm.zoneId,
+          pointOfInterestId: generationForm.pointOfInterestId.trim(),
           count,
         }
       );
@@ -910,7 +932,7 @@ export const Challenges = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <label className="text-sm">
             Zone
             <select
@@ -919,6 +941,7 @@ export const Challenges = () => {
                 setGenerationForm((prev) => ({
                   ...prev,
                   zoneId: event.target.value,
+                  pointOfInterestId: '',
                 }))
               }
               className="w-full border rounded-md p-2"
@@ -927,6 +950,30 @@ export const Challenges = () => {
               {zones.map((zone) => (
                 <option key={zone.id} value={zone.id}>
                   {zone.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            Point of Interest (Optional)
+            <select
+              value={generationForm.pointOfInterestId}
+              onChange={(event) =>
+                setGenerationForm((prev) => ({
+                  ...prev,
+                  pointOfInterestId: event.target.value,
+                }))
+              }
+              className="w-full border rounded-md p-2"
+              disabled={
+                !generationForm.zoneId ||
+                pointOfInterestLoadingByZone[generationForm.zoneId]
+              }
+            >
+              <option value="">Any POI in zone</option>
+              {pointsOfInterestForGenerationZone.map((point) => (
+                <option key={point.id} value={point.id}>
+                  {point.name}
                 </option>
               ))}
             </select>
@@ -987,6 +1034,13 @@ export const Challenges = () => {
                 <div className="text-gray-700">
                   Zone: {zoneNameById.get(job.zoneId) ?? job.zoneId}
                 </div>
+                {job.pointOfInterestId ? (
+                  <div className="text-gray-700">
+                    POI:{' '}
+                    {allPointOfInterestNamesById.get(job.pointOfInterestId) ??
+                      job.pointOfInterestId}
+                  </div>
+                ) : null}
                 <div className="text-gray-700">
                   Created: {job.createdCount} / {job.count}
                 </div>

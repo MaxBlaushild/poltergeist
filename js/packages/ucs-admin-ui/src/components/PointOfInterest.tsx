@@ -113,6 +113,9 @@ export const PointOfInterest = () => {
   const [importPolling, setImportPolling] = useState(false);
   const [importToasts, setImportToasts] = useState<string[]>([]);
   const [notifiedImportIds, setNotifiedImportIds] = useState<Set<string>>(new Set());
+  const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set());
+  const [deletingPointId, setDeletingPointId] = useState<string | null>(null);
+  const [bulkDeletingPoints, setBulkDeletingPoints] = useState(false);
 
   const allTags = useMemo(() => flattenTags(tagGroups), [tagGroups]);
   const fetchPointsOfInterest = async () => {
@@ -171,6 +174,11 @@ export const PointOfInterest = () => {
       return selectedTags.every(tagId => pointTagIds.includes(tagId));
     });
   }, [pointsOfInterest, nameQuery, selectedTagIds]);
+
+  const allFilteredPointsSelected = useMemo(() => {
+    if (filteredPoints.length === 0) return false;
+    return filteredPoints.every(point => selectedPointIds.has(point.id));
+  }, [filteredPoints, selectedPointIds]);
 
   const resetCreateForm = () => {
     setCreateForm({
@@ -459,6 +467,137 @@ export const PointOfInterest = () => {
     });
   }, [importJobs]);
 
+  const togglePointSelection = (pointId: string) => {
+    setSelectedPointIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(pointId)) {
+        next.delete(pointId);
+      } else {
+        next.add(pointId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectVisiblePoints = () => {
+    if (filteredPoints.length === 0) return;
+    setSelectedPointIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredPointsSelected) {
+        filteredPoints.forEach((point) => next.delete(point.id));
+      } else {
+        filteredPoints.forEach((point) => next.add(point.id));
+      }
+      return next;
+    });
+  };
+
+  const clearPointSelection = () => {
+    setSelectedPointIds(new Set());
+  };
+
+  const handleDeletePoint = async (point: PointOfInterestType) => {
+    if (deletingPointId || bulkDeletingPoints) return;
+
+    const pointLabel = point.name?.trim() || point.id;
+    if (
+      !window.confirm(
+        `Delete point of interest "${pointLabel}"? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setDeletingPointId(point.id);
+      await apiClient.delete(`/sonar/pointsOfInterest/${point.id}`);
+      setPointsOfInterest((prev) => prev.filter((poi) => poi.id !== point.id));
+      setSelectedPointIds((prev) => {
+        if (!prev.has(point.id)) return prev;
+        const next = new Set(prev);
+        next.delete(point.id);
+        return next;
+      });
+    } catch (err) {
+      console.error('Error deleting point of interest:', err);
+      alert('Failed to delete point of interest.');
+    } finally {
+      setDeletingPointId(null);
+    }
+  };
+
+  const handleBulkDeletePoints = async () => {
+    if (
+      bulkDeletingPoints ||
+      selectedPointIds.size === 0 ||
+      deletingPointId !== null
+    ) {
+      return;
+    }
+
+    const selectedIds = Array.from(selectedPointIds);
+    const selectedNames = pointsOfInterest
+      .filter((point) => selectedPointIds.has(point.id))
+      .map((point) => point.name || point.id);
+    const preview = selectedNames.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedNames.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected point of interest (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected points of interest${
+            preview
+              ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})`
+              : ''
+          }? This cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingPoints(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map((pointId) =>
+          apiClient.delete(`/sonar/pointsOfInterest/${pointId}`)
+        )
+      );
+
+      const deletedIds = new Set<string>();
+      const failedIds: string[] = [];
+      results.forEach((result, index) => {
+        const pointId = selectedIds[index];
+        if (result.status === 'fulfilled') {
+          deletedIds.add(pointId);
+        } else {
+          console.error(`Failed to delete point of interest ${pointId}`, result.reason);
+          failedIds.push(pointId);
+        }
+      });
+
+      if (deletedIds.size > 0) {
+        setPointsOfInterest((prev) =>
+          prev.filter((point) => !deletedIds.has(point.id))
+        );
+        setSelectedPointIds((prev) => {
+          const next = new Set(prev);
+          deletedIds.forEach((pointId) => next.delete(pointId));
+          return next;
+        });
+      }
+
+      if (failedIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.size} point${
+            deletedIds.size === 1 ? '' : 's'
+          }, but failed to delete ${failedIds.length}. Check console for details.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk delete points of interest', err);
+      alert('Failed to delete selected points of interest.');
+    } finally {
+      setBulkDeletingPoints(false);
+    }
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {importToasts.length > 0 && (
@@ -670,6 +809,43 @@ export const PointOfInterest = () => {
         )}
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          onClick={toggleSelectVisiblePoints}
+          disabled={
+            filteredPoints.length === 0 ||
+            bulkDeletingPoints ||
+            deletingPointId !== null
+          }
+        >
+          {allFilteredPointsSelected ? 'Unselect Visible' : 'Select Visible'}
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          onClick={clearPointSelection}
+          disabled={selectedPointIds.size === 0 || bulkDeletingPoints}
+        >
+          Clear Selection
+        </button>
+        <button
+          type="button"
+          className="rounded-md bg-red-600 px-2 py-1 text-xs text-white disabled:opacity-60"
+          onClick={handleBulkDeletePoints}
+          disabled={
+            selectedPointIds.size === 0 ||
+            bulkDeletingPoints ||
+            deletingPointId !== null
+          }
+        >
+          {bulkDeletingPoints
+            ? `Deleting ${selectedPointIds.size}...`
+            : `Delete Selected (${selectedPointIds.size})`}
+        </button>
+      </div>
+
       {loading && (
         <div className="text-gray-600">Loading points of interest...</div>
       )}
@@ -680,35 +856,62 @@ export const PointOfInterest = () => {
       {!loading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredPoints.map(point => {
-            const card = (
-              <div className="bg-white rounded-lg shadow-md p-4 h-full">
-                {point.imageURL && (
-                  <img
-                    src={point.imageURL}
-                    alt={point.name}
-                    className="w-full h-40 object-cover rounded mb-3"
-                  />
-                )}
-                <h2 className="text-xl font-semibold mb-1">{point.name}</h2>
-                {point.originalName && (
-                  <p className="text-sm text-gray-500 mb-2">{point.originalName}</p>
-                )}
-                <p className="text-sm text-gray-700 mb-2">{point.description}</p>
-                <div className="text-sm text-gray-600 space-y-1">
-                  <div>Latitude: {point.lat}</div>
-                  <div>Longitude: {point.lng}</div>
-                  <div>Clue: {point.clue || 'None'}</div>
-                  <div>
-                    Tags: {point.tags?.length ? point.tags.map(tag => tag.name).join(', ') : 'None'}
-                  </div>
-                </div>
-              </div>
-            );
+            const isDeleting = deletingPointId === point.id;
 
             return (
-              <Link key={point.id} to={`/points-of-interest/${point.id}`} className="block hover:shadow-lg transition-shadow">
-                {card}
-              </Link>
+              <div key={point.id} className="bg-white rounded-lg shadow-md p-4 h-full">
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="text-xs text-gray-500 break-all">{point.id}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={selectedPointIds.has(point.id)}
+                      disabled={bulkDeletingPoints || deletingPointId !== null}
+                      onChange={() => togglePointSelection(point.id)}
+                    />
+                    <button
+                      type="button"
+                      className="rounded-md bg-red-600 px-2 py-1 text-xs text-white disabled:opacity-60"
+                      onClick={() => void handleDeletePoint(point)}
+                      disabled={bulkDeletingPoints || deletingPointId !== null}
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+
+                <Link to={`/points-of-interest/${point.id}`} className="block hover:opacity-90 transition-opacity">
+                  {point.imageURL && (
+                    <img
+                      src={point.imageURL}
+                      alt={point.name}
+                      className="w-full h-40 object-cover rounded mb-3"
+                    />
+                  )}
+                  <h2 className="text-xl font-semibold mb-1">{point.name}</h2>
+                  {point.originalName && (
+                    <p className="text-sm text-gray-500 mb-2">{point.originalName}</p>
+                  )}
+                  <p className="text-sm text-gray-700 mb-2">{point.description}</p>
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <div>Latitude: {point.lat}</div>
+                    <div>Longitude: {point.lng}</div>
+                    <div>Clue: {point.clue || 'None'}</div>
+                    <div>
+                      Tags: {point.tags?.length ? point.tags.map(tag => tag.name).join(', ') : 'None'}
+                    </div>
+                  </div>
+                </Link>
+                <div className="mt-3 text-right">
+                  <Link
+                    to={`/points-of-interest/${point.id}`}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    Open Editor
+                  </Link>
+                </div>
+              </div>
             );
           })}
 
