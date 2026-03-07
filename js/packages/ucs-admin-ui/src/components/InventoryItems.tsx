@@ -91,6 +91,16 @@ const normalizeConsumeStatus = (
   };
 };
 
+const parseInternalTagsInput = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag !== '')
+    )
+  );
+
 const SearchableSelect = ({
   label,
   placeholder,
@@ -469,6 +479,7 @@ export const InventoryItems = () => {
     consumeSpellIds: [] as string[],
     internalTags: [] as string[],
   });
+  const [internalTagsInput, setInternalTagsInput] = useState('');
 
   const [generationData, setGenerationData] = useState({
     name: '',
@@ -583,6 +594,7 @@ export const InventoryItems = () => {
       consumeSpellIds: [],
       internalTags: [],
     });
+    setInternalTagsInput('');
     setImageFile(null);
     setImagePreview(null);
     if (fileInputRef.current) {
@@ -733,13 +745,7 @@ export const InventoryItems = () => {
           .filter((spellID) => spellID !== '')
       )
     );
-    next.internalTags = Array.from(
-      new Set(
-        (next.internalTags ?? [])
-          .map((tag) => tag.trim().toLowerCase())
-          .filter((tag) => tag !== '')
-      )
-    );
+    next.internalTags = parseInternalTagsInput(internalTagsInput);
 
     return next;
   };
@@ -1262,6 +1268,7 @@ export const InventoryItems = () => {
       consumeSpellIds: [...(item.consumeSpellIds ?? [])],
       internalTags: [...(item.internalTags ?? [])],
     });
+    setInternalTagsInput((item.internalTags ?? []).join(', '));
     setImageFile(null);
     setImagePreview(item.imageUrl || null);
     if (fileInputRef.current) {
@@ -2114,16 +2121,8 @@ export const InventoryItems = () => {
               </label>
               <input
                 type="text"
-                value={formData.internalTags.join(', ')}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    internalTags: e.target.value
-                      .split(',')
-                      .map((tag) => tag.trim())
-                      .filter((tag) => tag !== ''),
-                  })
-                }
+                value={internalTagsInput}
+                onChange={(e) => setInternalTagsInput(e.target.value)}
                 placeholder="e.g. consumable, potion, healing, seed_drop_only"
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               />

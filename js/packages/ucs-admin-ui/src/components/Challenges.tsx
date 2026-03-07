@@ -80,6 +80,95 @@ type PointOfInterestOption = {
   longitude: number;
 };
 
+type SelectOption = {
+  value: string;
+  label: string;
+  secondary?: string;
+};
+
+const SearchableSelect = ({
+  label,
+  placeholder,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  noMatchesLabel = 'No matches found',
+}: {
+  label: string;
+  placeholder: string;
+  options: SelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  noMatchesLabel?: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const selected = options.find((option) => option.value === value);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return options;
+    return options.filter((option) => {
+      const haystack = `${option.label} ${option.secondary ?? ''}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [options, query]);
+
+  const displayValue = open ? query : selected?.label ?? '';
+
+  return (
+    <div className="relative">
+      <label className="block text-sm">{label}</label>
+      <input
+        value={displayValue}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (disabled) return;
+          setOpen(true);
+          setQuery('');
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 150);
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="w-full border rounded-md p-2 disabled:bg-gray-100 disabled:text-gray-500"
+      />
+      {open && !disabled ? (
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-gray-500">{noMatchesLabel}</div>
+          ) : (
+            filtered.map((option) => (
+              <button
+                type="button"
+                key={option.value || '__empty-option__'}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-indigo-50"
+              >
+                <span className="font-medium text-gray-900">{option.label}</span>
+                {option.secondary ? (
+                  <span className="text-xs text-gray-500">{option.secondary}</span>
+                ) : null}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const statTagOptions = [
   'strength',
   'dexterity',
@@ -433,6 +522,28 @@ export const Challenges = () => {
   const pointsOfInterestForGenerationZone = useMemo(() => {
     return zonePointOfInterestMap[generationForm.zoneId] ?? [];
   }, [generationForm.zoneId, zonePointOfInterestMap]);
+  const generationZoneOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: 'Select zone' },
+      ...zones.map((zone) => ({
+        value: zone.id,
+        label: zone.name || zone.id,
+        secondary: zone.id,
+      })),
+    ],
+    [zones]
+  );
+  const generationPointOfInterestOptions = useMemo<SelectOption[]>(
+    () => [
+      { value: '', label: 'Any POI in zone' },
+      ...pointsOfInterestForGenerationZone.map((point) => ({
+        value: point.id,
+        label: point.name || point.id,
+        secondary: point.id,
+      })),
+    ],
+    [pointsOfInterestForGenerationZone]
+  );
   const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
 
   useEffect(() => {
@@ -933,51 +1044,43 @@ export const Challenges = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-          <label className="text-sm">
-            Zone
-            <select
-              value={generationForm.zoneId}
-              onChange={(event) =>
-                setGenerationForm((prev) => ({
-                  ...prev,
-                  zoneId: event.target.value,
-                  pointOfInterestId: '',
-                }))
-              }
-              className="w-full border rounded-md p-2"
-            >
-              <option value="">Select zone</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            Point of Interest (Optional)
-            <select
-              value={generationForm.pointOfInterestId}
-              onChange={(event) =>
-                setGenerationForm((prev) => ({
-                  ...prev,
-                  pointOfInterestId: event.target.value,
-                }))
-              }
-              className="w-full border rounded-md p-2"
-              disabled={
-                !generationForm.zoneId ||
-                pointOfInterestLoadingByZone[generationForm.zoneId]
-              }
-            >
-              <option value="">Any POI in zone</option>
-              {pointsOfInterestForGenerationZone.map((point) => (
-                <option key={point.id} value={point.id}>
-                  {point.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SearchableSelect
+            label="Zone"
+            placeholder="Search zones..."
+            options={generationZoneOptions}
+            value={generationForm.zoneId}
+            onChange={(zoneId) =>
+              setGenerationForm((prev) => ({
+                ...prev,
+                zoneId,
+                pointOfInterestId: '',
+              }))
+            }
+            noMatchesLabel="No zones found"
+          />
+          <SearchableSelect
+            label="Point of Interest (Optional)"
+            placeholder={
+              !generationForm.zoneId
+                ? 'Select a zone first'
+                : pointOfInterestLoadingByZone[generationForm.zoneId]
+                  ? 'Loading points of interest...'
+                  : 'Search points of interest...'
+            }
+            options={generationPointOfInterestOptions}
+            value={generationForm.pointOfInterestId}
+            onChange={(pointOfInterestId) =>
+              setGenerationForm((prev) => ({
+                ...prev,
+                pointOfInterestId,
+              }))
+            }
+            disabled={
+              !generationForm.zoneId ||
+              pointOfInterestLoadingByZone[generationForm.zoneId]
+            }
+            noMatchesLabel="No points of interest found for this zone"
+          />
           <label className="text-sm">
             Challenge Count
             <input
