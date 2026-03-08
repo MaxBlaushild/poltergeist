@@ -18,8 +18,12 @@ class CelebrationModalManager extends StatelessWidget {
         final scenarioSuccess = type == 'scenarioOutcome'
             ? data['successful'] == true
             : true;
+        final challengeSuccess = type == 'challengeOutcome'
+            ? data['successful'] == true
+            : true;
         final showFailureColor =
             (type == 'scenarioOutcome' && !scenarioSuccess) ||
+            (type == 'challengeOutcome' && !challengeSuccess) ||
             type == 'monsterBattleDefeat';
         final titleColor = showFailureColor
             ? Colors.red.shade400
@@ -70,6 +74,9 @@ class CelebrationModalManager extends StatelessWidget {
       case 'scenarioOutcome':
         final successful = data['successful'] == true;
         return successful ? 'Scenario Success!' : 'Scenario Failed';
+      case 'challengeOutcome':
+        final successful = data['successful'] == true;
+        return successful ? 'Challenge Success!' : 'Challenge Failed';
       case 'monsterBattleVictory':
         return 'Victory!';
       case 'monsterBattleDefeat':
@@ -104,17 +111,20 @@ class CelebrationModalManager extends StatelessWidget {
           if (questName.isNotEmpty)
             Text(questName, style: Theme.of(context).textTheme.titleMedium),
         ];
-        if (goldAwarded > 0) {
-          rewards.add(Text('+$goldAwarded Gold'));
-        }
-        for (final item in itemsAwarded) {
-          final name = item['name'] as String? ?? 'Item';
-          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
-          rewards.add(Text('+$quantity $name'));
-        }
-        for (final spell in spellsAwarded) {
-          final name = spell['name'] as String? ?? 'Spell';
-          rewards.add(Text('+Spell: $name'));
+        if (goldAwarded > 0 ||
+            itemsAwarded.isNotEmpty ||
+            spellsAwarded.isNotEmpty) {
+          if (rewards.isNotEmpty) {
+            rewards.add(const SizedBox(height: 12));
+          }
+          rewards.add(
+            _buildRewardSection(
+              context,
+              gold: goldAwarded,
+              items: itemsAwarded,
+              spells: spellsAwarded,
+            ),
+          );
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,25 +145,13 @@ class CelebrationModalManager extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 10),
+          _buildRewardSection(
+            context,
+            gold: goldAwarded,
+            items: itemsAwarded,
+            emptyMessage: 'No loot this time.',
+          ),
         ];
-        if (goldAwarded > 0) {
-          rewards.add(
-            Text(
-              '+$goldAwarded Gold',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          );
-        }
-        for (final item in itemsAwarded) {
-          final name = item['name'] as String? ?? 'Item';
-          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
-          rewards.add(Text('+$quantity $name'));
-        }
-        if (goldAwarded <= 0 && itemsAwarded.isEmpty) {
-          rewards.add(const Text('No loot this time.'));
-        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -204,15 +202,115 @@ class CelebrationModalManager extends StatelessWidget {
         final zoneName = data['zoneName'];
         return Text('You reached level $level in $zoneName!');
       case 'challenge':
+        final experienceAwarded = (data['experienceAwarded'] as num?)?.toInt();
+        final reputationAwarded = (data['reputationAwarded'] as num?)?.toInt();
+        final goldAwarded = (data['goldAwarded'] as num?)?.toInt();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            if (data['experienceAwarded'] != null)
-              Text('+${data['experienceAwarded']} XP'),
-            if (data['reputationAwarded'] != null)
-              Text('+${data['reputationAwarded']} Reputation'),
-            if (data['goldAwarded'] != null)
-              Text('+${data['goldAwarded']} Gold'),
+            if (experienceAwarded != null)
+              _buildRewardRow(
+                context,
+                label: '+$experienceAwarded XP',
+                icon: Icons.auto_awesome,
+                iconColor: Colors.blue.shade700,
+                backgroundColor: Colors.blue.shade50,
+              ),
+            if (reputationAwarded != null) ...[
+              if (experienceAwarded != null) const SizedBox(height: 8),
+              Text('+$reputationAwarded Reputation'),
+            ],
+            if (goldAwarded != null) ...[
+              if (experienceAwarded != null || reputationAwarded != null)
+                const SizedBox(height: 8),
+              _buildRewardRow(
+                context,
+                label: '+$goldAwarded Gold',
+                icon: Icons.monetization_on,
+                iconColor: Colors.amber.shade800,
+                backgroundColor: Colors.amber.shade100,
+              ),
+            ],
+          ],
+        );
+      case 'challengeOutcome':
+        final successful = data['successful'] == true;
+        final reason = (data['reason'] as String?)?.trim() ?? '';
+        final score = (data['score'] as num?)?.toInt() ?? 0;
+        final difficulty = (data['difficulty'] as num?)?.toInt() ?? 0;
+        final combinedScore = (data['combinedScore'] as num?)?.toInt() ?? 0;
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+        final statTags =
+            (data['statTags'] as List<dynamic>?)
+                ?.map((value) => value.toString().trim())
+                .where((value) => value.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        final statValues =
+            (data['statValues'] as Map?)?.map(
+              (key, value) => MapEntry(
+                key.toString().trim(),
+                (value as num?)?.toInt() ?? 0,
+              ),
+            ) ??
+            const <String, int>{};
+        final itemsAwarded =
+            (data['itemsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList() ??
+            const [];
+        final spellsAwarded =
+            (data['spellsAwarded'] as List<dynamic>?)
+                ?.whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList() ??
+            const [];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              successful
+                  ? 'Your party passed the challenge.'
+                  : 'Your party did not meet the challenge threshold.',
+            ),
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(reason, style: Theme.of(context).textTheme.bodySmall),
+            ],
+            const SizedBox(height: 10),
+            Text('Score: $score'),
+            if (statTags.isNotEmpty)
+              Text(
+                'Modifiers: ${statTags.map((tag) => '+${statValues[tag] ?? 0} $tag').join(' · ')}',
+              ),
+            Text('Combined: $combinedScore'),
+            Text('Target: $difficulty'),
+            if (rewardExperience > 0 ||
+                rewardGold > 0 ||
+                itemsAwarded.isNotEmpty ||
+                spellsAwarded.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Rewards',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              _buildRewardSection(
+                context,
+                experience: rewardExperience,
+                gold: rewardGold,
+                items: itemsAwarded,
+                spells: spellsAwarded,
+              ),
+            ],
           ],
         );
       case 'scenarioOutcome':
@@ -550,14 +648,14 @@ class CelebrationModalManager extends StatelessWidget {
                   context,
                 ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
-              if (rewardExperience > 0) Text('+$rewardExperience XP'),
-              if (rewardGold > 0) Text('+$rewardGold Gold'),
-              for (final item in itemsAwarded)
-                Text(
-                  '+${(item['quantity'] as num?)?.toInt() ?? 1} ${item['name'] as String? ?? 'Item'}',
-                ),
-              for (final spell in spellsAwarded)
-                Text('+Spell: ${spell['name'] as String? ?? 'Spell'}'),
+              const SizedBox(height: 8),
+              _buildRewardSection(
+                context,
+                experience: rewardExperience,
+                gold: rewardGold,
+                items: itemsAwarded,
+                spells: spellsAwarded,
+              ),
             ],
           ],
         );
@@ -576,21 +674,14 @@ class CelebrationModalManager extends StatelessWidget {
         final rewards = <Widget>[
           Text('You defeated $monsterName!'),
           const SizedBox(height: 10),
+          _buildRewardSection(
+            context,
+            experience: rewardExperience,
+            gold: rewardGold,
+            items: itemsAwarded,
+            emptyMessage: 'No loot this time.',
+          ),
         ];
-        if (rewardExperience > 0) {
-          rewards.add(Text('+$rewardExperience XP'));
-        }
-        if (rewardGold > 0) {
-          rewards.add(Text('+$rewardGold Gold'));
-        }
-        for (final item in itemsAwarded) {
-          final name = item['name'] as String? ?? 'Item';
-          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
-          rewards.add(Text('+$quantity $name'));
-        }
-        if (rewardExperience <= 0 && rewardGold <= 0 && itemsAwarded.isEmpty) {
-          rewards.add(const Text('No loot this time.'));
-        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -612,5 +703,150 @@ class CelebrationModalManager extends StatelessWidget {
       default:
         return const Text('Task completed!');
     }
+  }
+
+  Widget _buildRewardSection(
+    BuildContext context, {
+    int experience = 0,
+    int gold = 0,
+    List<Map<String, dynamic>> items = const [],
+    List<Map<String, dynamic>> spells = const [],
+    String? emptyMessage,
+  }) {
+    final children = <Widget>[];
+
+    void addReward(Widget child) {
+      if (children.isNotEmpty) {
+        children.add(const SizedBox(height: 8));
+      }
+      children.add(child);
+    }
+
+    if (experience > 0) {
+      addReward(
+        _buildRewardRow(
+          context,
+          label: '+$experience XP',
+          icon: Icons.auto_awesome,
+          iconColor: Colors.blue.shade700,
+          backgroundColor: Colors.blue.shade50,
+        ),
+      );
+    }
+    if (gold > 0) {
+      addReward(
+        _buildRewardRow(
+          context,
+          label: '+$gold Gold',
+          icon: Icons.monetization_on,
+          iconColor: Colors.amber.shade800,
+          backgroundColor: Colors.amber.shade100,
+        ),
+      );
+    }
+    for (final item in items) {
+      final name = item['name']?.toString().trim();
+      final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+      addReward(
+        _buildRewardRow(
+          context,
+          label:
+              '+$quantity ${name != null && name.isNotEmpty ? name : 'Item'}',
+          imageUrl: item['imageUrl']?.toString(),
+          icon: Icons.inventory_2_outlined,
+          iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
+        ),
+      );
+    }
+    for (final spell in spells) {
+      final name = spell['name']?.toString().trim();
+      addReward(
+        _buildRewardRow(
+          context,
+          label: '+Spell: ${name != null && name.isNotEmpty ? name : 'Spell'}',
+          icon: Icons.menu_book_rounded,
+          iconColor: Colors.teal.shade700,
+          backgroundColor: Colors.teal.shade50,
+        ),
+      );
+    }
+
+    if (children.isEmpty) {
+      if (emptyMessage == null || emptyMessage.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      return Text(emptyMessage);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
+  }
+
+  Widget _buildRewardRow(
+    BuildContext context, {
+    required String label,
+    String? imageUrl,
+    required IconData icon,
+    required Color iconColor,
+    required Color backgroundColor,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildRewardThumbnail(
+          context,
+          imageUrl: imageUrl,
+          icon: icon,
+          iconColor: iconColor,
+          backgroundColor: backgroundColor,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRewardThumbnail(
+    BuildContext context, {
+    String? imageUrl,
+    required IconData icon,
+    required Color iconColor,
+    required Color backgroundColor,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: imageUrl != null && imageUrl.trim().isNotEmpty
+            ? Image.network(
+                imageUrl.trim(),
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(icon, size: 20, color: iconColor),
+              )
+            : Icon(icon, size: 20, color: iconColor),
+      ),
+    );
   }
 }

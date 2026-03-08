@@ -401,6 +401,9 @@ export const Scenarios = () => {
   const [generationSubmitting, setGenerationSubmitting] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationGeoLoading, setGenerationGeoLoading] = useState(false);
+  const [generationZoneQuery, setGenerationZoneQuery] = useState('');
+  const [showGenerationZoneSuggestions, setShowGenerationZoneSuggestions] =
+    useState(false);
   const [scenarioUndiscoveredBusy, setScenarioUndiscoveredBusy] =
     useState(false);
   const [
@@ -585,6 +588,21 @@ export const Scenarios = () => {
       setGenerationForm((prev) => ({ ...prev, zoneId: zones[0].id }));
     }
   }, [generationForm.zoneId, zones]);
+
+  const selectedGenerationZone = useMemo(
+    () => zones.find((zone) => zone.id === generationForm.zoneId),
+    [generationForm.zoneId, zones]
+  );
+
+  useEffect(() => {
+    if (selectedGenerationZone?.name) {
+      setGenerationZoneQuery(selectedGenerationZone.name);
+      return;
+    }
+    if (!generationForm.zoneId) {
+      setGenerationZoneQuery('');
+    }
+  }, [generationForm.zoneId, selectedGenerationZone]);
 
   useEffect(() => {
     generationLatitudeRef.current = generationForm.latitude;
@@ -2450,23 +2468,58 @@ export const Scenarios = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <label className="text-sm">
             Zone
-            <select
-              value={generationForm.zoneId}
-              onChange={(e) =>
-                setGenerationForm((prev) => ({
-                  ...prev,
-                  zoneId: e.target.value,
-                }))
-              }
-              className="w-full border rounded-md p-2"
-            >
-              <option value="">Select zone</option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <input
+                className="w-full border rounded-md p-2"
+                value={generationZoneQuery}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setGenerationZoneQuery(value);
+                  setShowGenerationZoneSuggestions(true);
+                  if (value.trim() === '') {
+                    setGenerationForm((prev) => ({
+                      ...prev,
+                      zoneId: '',
+                    }));
+                  }
+                }}
+                onFocus={() => setShowGenerationZoneSuggestions(true)}
+                onBlur={() => {
+                  window.setTimeout(
+                    () => setShowGenerationZoneSuggestions(false),
+                    120
+                  );
+                }}
+                placeholder="Type to filter zones..."
+              />
+              {showGenerationZoneSuggestions && zones.length > 0 ? (
+                <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                  {zones
+                    .filter((zone) =>
+                      zone.name
+                        .toLowerCase()
+                        .includes(generationZoneQuery.toLowerCase())
+                    )
+                    .map((zone) => (
+                      <button
+                        type="button"
+                        key={zone.id}
+                        onClick={() => {
+                          setGenerationForm((prev) => ({
+                            ...prev,
+                            zoneId: zone.id,
+                          }));
+                          setGenerationZoneQuery(zone.name);
+                          setShowGenerationZoneSuggestions(false);
+                        }}
+                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        {zone.name}
+                      </button>
+                    ))}
+                </div>
+              ) : null}
+            </div>
           </label>
           <label className="text-sm">
             Scenario Type

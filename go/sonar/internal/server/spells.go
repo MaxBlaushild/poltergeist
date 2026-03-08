@@ -1011,6 +1011,10 @@ func normalizeSpellProgressionBand(levelBand int) int {
 	return best
 }
 
+func spellProgressionTargetLevelForBand(levelBand int) int {
+	return normalizeSpellProgressionBand(levelBand)
+}
+
 func inferSpellProgressionBand(spell *models.Spell) int {
 	if spell == nil {
 		return 25
@@ -1626,16 +1630,17 @@ func buildSpellProgressionVariant(
 	targetBand int,
 	usedNames map[string]struct{},
 ) *models.Spell {
+	targetLevel := spellProgressionTargetLevelForBand(targetBand)
 	primaryEffect := spellProgressionPrimaryEffectType(seed)
 	theme := spellProgressionTheme(seed)
-	bandTerm := spellProgressionBandTerm(primaryEffect, targetBand)
+	bandTerm := spellProgressionBandTerm(primaryEffect, targetLevel)
 	name := nextUniqueAbilityName(
 		fmt.Sprintf("%s %s", theme, bandTerm),
 		usedNames,
 		models.SpellAbilityTypeSpell,
 	)
-	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetBand)
-	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetBand)
+	effects := buildScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel)
+	manaCost := scaleSpellProgressionManaCost(spellMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetLevel)
 	description := buildSpellProgressionFlavorDescription(seed, primaryEffect)
 	emptyError := ""
 	now := time.Now()
@@ -1649,7 +1654,7 @@ func buildSpellProgressionVariant(
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 		AbilityType:           models.SpellAbilityTypeSpell,
-		AbilityLevel:          targetBand,
+		AbilityLevel:          targetLevel,
 		EffectText:            buildSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
 		ManaCost:              spellMaxInt(manaCost, 1),
@@ -2164,8 +2169,20 @@ func (s *server) generateSpellProgression(ctx *gin.Context) {
 	seedBandNeedsNormalization := false
 	for _, member := range members {
 		occupiedBands[member.LevelBand] = member.SpellID
+		targetLevel := spellProgressionTargetLevelForBand(member.LevelBand)
+		if member.Spell.AbilityLevel != targetLevel {
+			if err := s.dbClient.Spell().Update(ctx, member.SpellID, map[string]interface{}{
+				"ability_level": targetLevel,
+			}); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if member.SpellID == seedSpell.ID {
+				seedSpell.AbilityLevel = targetLevel
+			}
+		}
 		if member.SpellID == seedSpell.ID {
-			normalizedSeedBand := normalizeSpellProgressionBand(member.LevelBand)
+			normalizedSeedBand := targetLevel
 			seedBand = normalizedSeedBand
 			if normalizedSeedBand != member.LevelBand {
 				seedBandNeedsNormalization = true

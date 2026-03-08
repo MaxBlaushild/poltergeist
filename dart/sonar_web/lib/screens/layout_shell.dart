@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +13,8 @@ import '../providers/party_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/character_stats_provider.dart';
+import '../providers/completed_task_provider.dart';
+import '../services/push_notification_service.dart';
 import '../widgets/abilities_tab_content.dart';
 import '../widgets/character_tab_content.dart';
 import '../widgets/friends_tab_content.dart';
@@ -33,15 +37,218 @@ class LayoutShell extends StatefulWidget {
 class _LayoutShellState extends State<LayoutShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _sideDrawerKey = GlobalKey<_SideDrawerState>();
+  StreamSubscription<InAppPushEvent>? _pushEventSubscription;
+  bool _drainingPartySubmissionResults = false;
+  int? _pendingDrawerTabIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_initializeForegroundInviteToasts());
+    });
+  }
+
+  @override
+  void dispose() {
+    _pushEventSubscription?.cancel();
+    _pushEventSubscription = null;
+    super.dispose();
+  }
+
+  Future<void> _initializeForegroundInviteToasts() async {
+    final pushService = context.read<PushNotificationService>();
+    _pushEventSubscription ??= pushService.inAppEvents.listen(
+      _handleInAppPushEvent,
+    );
+    await pushService.initializeForegroundMessageHandling();
+    if (!mounted) return;
+    await _drainPendingPartySubmissionResults();
+  }
+
+  void _handleInAppPushEvent(InAppPushEvent event) {
+    if (!mounted) return;
+    final type = event.type.trim();
+    if (type != 'monster_battle_invite' &&
+        type != 'party_invite' &&
+        type != 'friend_invite' &&
+        type != 'friend_invite_accepted' &&
+        type != 'party_submission_result' &&
+        type != 'push_test') {
+      return;
+    }
+
+    final title = _toastTitleFor(event);
+    final body = _toastBodyFor(event);
+    final actionLabel = _toastActionLabelFor(type);
+
+    if (type == 'monster_battle_invite') {
+      unawaited(context.read<ActivityFeedProvider>().refresh());
+    }
+    if (type == 'party_invite') {
+      if (event.openedFromNotification) {
+        unawaited(_openPartyInviteDestination());
+        return;
+      }
+      unawaited(context.read<PartyProvider>().fetchPartyInvites());
+    }
+    if (type == 'friend_invite' || type == 'friend_invite_accepted') {
+      if (event.openedFromNotification) {
+        unawaited(_openFriendsDestination());
+        return;
+      }
+    }
+    if (type == 'party_submission_result') {
+      unawaited(_drainPendingPartySubmissionResults());
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('$title: $body'),
+        duration: const Duration(seconds: 8),
+        action: actionLabel == null
+            ? null
+            : SnackBarAction(
+                label: actionLabel,
+                onPressed: () => _openDrawerForPushType(type),
+              ),
+      ),
+    );
+  }
+
+  Future<void> _openPartyInviteDestination() async {
+    try {
+      await context.read<PartyProvider>().fetchPartyInvites();
+    } catch (_) {
+      // Continue to party tab even if invite refresh fails.
+    }
+    if (!mounted) return;
+    _openDrawerForPushType('party_invite');
+  }
+
+  Future<void> _openFriendsDestination() async {
+    try {
+      await context.read<FriendProvider>().refresh();
+    } catch (_) {
+      // Continue to friends tab even if refresh fails.
+    }
+    if (!mounted) return;
+    _openDrawerForPushType('friend_invite');
+  }
+
+  String _toastTitleFor(InAppPushEvent event) {
+    if (event.title.trim().isNotEmpty) return event.title.trim();
+    switch (event.type.trim()) {
+      case 'monster_battle_invite':
+        return 'Party Combat Invite';
+      case 'party_invite':
+        return 'Party Invite';
+      case 'friend_invite':
+        return 'Friend Invite';
+      case 'friend_invite_accepted':
+        return 'Friend Invite Accepted';
+      case 'party_submission_result':
+        return 'Party Result Ready';
+      case 'push_test':
+        return 'Push Test';
+      default:
+        return 'Notification';
+    }
+  }
+
+  String _toastBodyFor(InAppPushEvent event) {
+    if (event.body.trim().isNotEmpty) return event.body.trim();
+    switch (event.type.trim()) {
+      case 'monster_battle_invite':
+        return 'A party member invited you to join combat.';
+      case 'party_invite':
+        return 'You received a party invite.';
+      case 'friend_invite':
+        return 'You received a friend invite.';
+      case 'friend_invite_accepted':
+        return 'A friend invite was accepted.';
+      case 'party_submission_result':
+        return 'A party challenge or scenario result is ready.';
+      case 'push_test':
+        return 'Foreground push received.';
+      default:
+        return 'You received a notification.';
+    }
+  }
+
+  String? _toastActionLabelFor(String type) {
+    switch (type) {
+      case 'monster_battle_invite':
+      case 'party_invite':
+      case 'friend_invite':
+      case 'friend_invite_accepted':
+      case 'party_submission_result':
+        return 'Open';
+      default:
+        return null;
+    }
+  }
+
+  void _openDrawerForPushType(String type) {
+    _pendingDrawerTabIndex = _tabForPushType(type);
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  int _tabForPushType(String type) {
+    switch (type) {
+      case 'party_invite':
+        return _SideDrawerState._partyTab;
+      case 'friend_invite':
+      case 'friend_invite_accepted':
+        return _SideDrawerState._friendsTab;
+      case 'party_submission_result':
+      case 'monster_battle_invite':
+      default:
+        return _SideDrawerState._characterTab;
+    }
+  }
+
+  Future<void> _drainPendingPartySubmissionResults() async {
+    if (!mounted || _drainingPartySubmissionResults) return;
+    final userId = context.read<AuthProvider>().user?.id;
+    if (userId == null || userId.trim().isEmpty) return;
+    _drainingPartySubmissionResults = true;
+    try {
+      final results = await context
+          .read<PushNotificationService>()
+          .getPendingPartySubmissionResults();
+      if (!mounted || results.isEmpty) return;
+      final provider = context.read<CompletedTaskProvider>();
+      for (final result in results) {
+        final type = result.type.trim();
+        if (type.isEmpty) continue;
+        provider.showModal(type, data: result.data);
+      }
+    } catch (_) {
+    } finally {
+      _drainingPartySubmissionResults = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _LogoutCleaner(
       scaffoldKey: _scaffoldKey,
+      onUserLoggedIn: () {
+        unawaited(_drainPendingPartySubmissionResults());
+      },
       child: Scaffold(
         key: _scaffoldKey,
         onEndDrawerChanged: (isOpened) {
           if (!isOpened) return;
+          final pendingTab = _pendingDrawerTabIndex;
+          if (pendingTab != null) {
+            _sideDrawerKey.currentState?._selectTab(pendingTab);
+            _pendingDrawerTabIndex = null;
+          }
           _sideDrawerKey.currentState?.handleDrawerOpened();
         },
         endDrawer: _SideDrawer(key: _sideDrawerKey),
@@ -63,10 +270,15 @@ class _LayoutShellState extends State<LayoutShell> {
 }
 
 class _LogoutCleaner extends StatefulWidget {
-  const _LogoutCleaner({required this.child, required this.scaffoldKey});
+  const _LogoutCleaner({
+    required this.child,
+    required this.scaffoldKey,
+    this.onUserLoggedIn,
+  });
 
   final Widget child;
   final GlobalKey<ScaffoldState> scaffoldKey;
+  final VoidCallback? onUserLoggedIn;
 
   @override
   State<_LogoutCleaner> createState() => _LogoutCleanerState();
@@ -87,6 +299,12 @@ class _LogoutCleanerState extends State<_LogoutCleaner> {
       });
       _lastUserId = null;
     } else if (uid != null) {
+      final isNewUser = _lastUserId != uid;
+      if (isNewUser) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          widget.onUserLoggedIn?.call();
+        });
+      }
       _lastUserId = uid;
     }
     return widget.child;

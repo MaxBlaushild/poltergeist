@@ -38,8 +38,8 @@ Return JSON only:
 {
   "challenges": [
     {
-      "question": "2-4 sentences asking player to roleplay a concrete action in the real world",
-      "description": "40-140 words of visual flavor and atmosphere for later image generation",
+      "question": "One short sentence (6-18 words) stating exactly what the player must do",
+      "description": "40-140 words of scene flavor and context that supports the action",
       "submissionType": "photo or text",
       "difficulty": 0-40,
       "reward": 0-100,
@@ -57,6 +57,7 @@ Hard rules:
   - photo: player submits a photo of what they did
   - text: player submits a short written report of what they did
 - Use only submissionType values: "photo" or "text".
+- Keep question concise and task-only; put atmosphere and lore flavor in description.
 - Keep content safe for public spaces and legal behavior.
 - Avoid minors, explicit content, illegal activity, harassment, trespassing, or dangerous stunts.
 - Make each challenge materially distinct from the others and from recent challenges.
@@ -349,7 +350,6 @@ func sanitizeGeneratedChallenge(raw generatedChallengePayload, index int, zoneNa
 	if len(question) > 700 {
 		question = strings.TrimSpace(question[:700])
 	}
-	question = ensureChallengeProofInstruction(question, submissionType)
 
 	description := strings.TrimSpace(raw.Description)
 	if description == "" {
@@ -445,43 +445,15 @@ func sanitizeChallengeProficiency(raw *string) *string {
 	return &trimmed
 }
 
-func ensureChallengeProofInstruction(question string, submissionType models.QuestNodeSubmissionType) string {
-	normalized := strings.ToLower(question)
-	switch submissionType {
-	case models.QuestNodeSubmissionTypePhoto:
-		if strings.Contains(normalized, "photo") ||
-			strings.Contains(normalized, "picture") ||
-			strings.Contains(normalized, "image") ||
-			strings.Contains(normalized, "selfie") ||
-			strings.Contains(normalized, "snapshot") {
-			return question
-		}
-		return strings.TrimSpace(question + " Take a photo as proof.")
-	case models.QuestNodeSubmissionTypeText:
-		if strings.Contains(normalized, "text") ||
-			strings.Contains(normalized, "write") ||
-			strings.Contains(normalized, "written") ||
-			strings.Contains(normalized, "describe") ||
-			strings.Contains(normalized, "report") ||
-			strings.Contains(normalized, "journal") {
-			return question
-		}
-		return strings.TrimSpace(question + " Submit a short text write-up as proof.")
-	default:
-		return question
-	}
-}
-
 func fallbackGeneratedChallenge(zoneName string, index int) sanitizedGeneratedChallenge {
 	action := challengeGenerationFallbackActions[index%len(challengeGenerationFallbackActions)]
 	submissionType := sanitizeChallengeSubmissionType("", index)
 
 	question := fmt.Sprintf(
-		"Roleplay a local adventurer in %s and %s. Keep it immersive and specific to your surroundings.",
+		"Roleplay a local adventurer in %s and %s.",
 		zoneName,
 		action,
 	)
-	question = ensureChallengeProofInstruction(question, submissionType)
 
 	description := fmt.Sprintf(
 		"Set this challenge in %s with distinct environmental flavor: weathered architecture, ambient movement, and small grounded details that imply history. The player action should feel intentional, theatrical, and believable in a public setting. Emphasize props, posture, and nearby textures so the generated image can show a clear roleplay moment.",

@@ -12,7 +12,7 @@ import '../providers/character_stats_provider.dart';
 import '../services/inventory_service.dart';
 import 'paper_texture.dart';
 
-enum MonsterBattleOutcome { victory, defeat }
+enum MonsterBattleOutcome { victory, defeat, escaped }
 
 enum _BattleMenuView { root, spells, techniques, items }
 
@@ -20,10 +20,12 @@ class MonsterBattleResult {
   const MonsterBattleResult({
     required this.outcome,
     required this.playerHealthRemaining,
+    required this.playerManaRemaining,
   });
 
   final MonsterBattleOutcome outcome;
   final int playerHealthRemaining;
+  final int playerManaRemaining;
 }
 
 class _BattleItemChoice {
@@ -80,9 +82,14 @@ class _TurnOrderEntry {
 }
 
 class MonsterBattleDialog extends StatefulWidget {
-  const MonsterBattleDialog({super.key, required this.encounter});
+  const MonsterBattleDialog({
+    super.key,
+    required this.encounter,
+    this.isPartyBattle = false,
+  });
 
   final MonsterEncounter encounter;
+  final bool isPartyBattle;
 
   @override
   State<MonsterBattleDialog> createState() => _MonsterBattleDialogState();
@@ -697,6 +704,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       MonsterBattleResult(
         outcome: outcome,
         playerHealthRemaining: _playerHealth,
+        playerManaRemaining: _playerMana,
       ),
     );
   }
@@ -936,6 +944,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       damageToMonster: 0,
       playerHealthDelta: item.healthDelta,
       playerManaDelta: item.manaDelta,
+    );
+  }
+
+  Future<void> _escape() async {
+    if (!_canAct) return;
+    await _finishBattle(
+      MonsterBattleOutcome.escaped,
+      widget.isPartyBattle
+          ? 'You escaped. Your party remains engaged in the fight.'
+          : 'You escaped from the encounter.',
     );
   }
 
@@ -1623,10 +1641,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           height: 138,
           child: GridView.count(
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             mainAxisSpacing: 8,
             crossAxisSpacing: 8,
-            childAspectRatio: 3.2,
+            childAspectRatio: 2.1,
             children: [
               _buildCommandButton(
                 context: context,
@@ -1666,6 +1684,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                         selectedCommandKey: 'item:0',
                       )
                     : null,
+              ),
+              _buildCommandButton(
+                context: context,
+                label: 'Escape',
+                commandKey: 'root:Escape',
+                onPressed: _canAct ? _escape : null,
               ),
             ],
           ),

@@ -154,23 +154,6 @@ class MonsterPanel extends StatelessWidget {
                     if (!mysteryState) ...[
                       if (encounter.description.trim().isNotEmpty)
                         const SizedBox(height: 12),
-                      if (encounter.monsters.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: encounter.monsters
-                                .map(
-                                  (monster) => _InfoChip(
-                                    icon: Icons.pets,
-                                    label:
-                                        '${monster.name} (Lv ${monster.level})',
-                                  ),
-                                )
-                                .toList(growable: false),
-                          ),
-                        ),
                       FilledButton.icon(
                         onPressed: canFight ? onFight : null,
                         icon: const Icon(Icons.sports_martial_arts),

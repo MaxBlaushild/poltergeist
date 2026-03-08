@@ -182,19 +182,28 @@ class CharacterStatsProvider with ChangeNotifier {
 
   Future<bool> setHealthToOne() => setHealthTo(1);
 
-  Future<bool> setHealthTo(int value) async {
+  Future<bool> setHealthAndManaTo({
+    required int health,
+    required int mana,
+  }) async {
     if (_userId == null) return false;
     if (_stats == null) {
       await refresh(silent: true);
     }
 
-    final targetHealth = value < 1 ? 1 : value;
-    final currentHealth = health;
-    if (currentHealth == targetHealth) return true;
+    final current = _stats;
+    if (current == null) return false;
+
+    final targetHealth = health.clamp(0, current.maxHealth).toInt();
+    final targetMana = mana.clamp(0, current.maxMana).toInt();
+    final healthDelta = targetHealth - current.health;
+    final manaDelta = targetMana - current.mana;
+    if (healthDelta == 0 && manaDelta == 0) return true;
 
     final updated = await _service.adjustUserResources(
       _userId!,
-      healthDelta: targetHealth - currentHealth,
+      healthDelta: healthDelta,
+      manaDelta: manaDelta,
     );
     if (updated != null) {
       _stats = updated;
@@ -202,9 +211,6 @@ class CharacterStatsProvider with ChangeNotifier {
       return true;
     }
 
-    final current = _stats;
-    if (current == null) return false;
-    final clampedHealth = targetHealth.clamp(0, current.maxHealth).toInt();
     _stats = CharacterStats(
       strength: current.strength,
       dexterity: current.dexterity,
@@ -212,9 +218,9 @@ class CharacterStatsProvider with ChangeNotifier {
       intelligence: current.intelligence,
       wisdom: current.wisdom,
       charisma: current.charisma,
-      health: clampedHealth,
+      health: targetHealth,
       maxHealth: current.maxHealth,
-      mana: current.mana,
+      mana: targetMana,
       maxMana: current.maxMana,
       equipmentBonuses: current.equipmentBonuses,
       statusBonuses: current.statusBonuses,
@@ -226,6 +232,11 @@ class CharacterStatsProvider with ChangeNotifier {
     );
     notifyListeners();
     return true;
+  }
+
+  Future<bool> setHealthTo(int value) async {
+    final targetHealth = value < 1 ? 1 : value;
+    return setHealthAndManaTo(health: targetHealth, mana: mana);
   }
 
   @override

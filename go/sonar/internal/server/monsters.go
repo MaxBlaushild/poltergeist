@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -595,6 +596,13 @@ func (s *server) getOrCreateActiveMonsterBattle(
 		return nil, err
 	}
 	if activeBattle != nil {
+		log.Printf(
+			"[party-combat][start] reusing active battle as owner user=%s monster=%s battle=%s state=%s",
+			userID,
+			monsterID,
+			activeBattle.ID,
+			activeBattle.State,
+		)
 		return activeBattle, nil
 	}
 	activeBattle, err = s.dbClient.MonsterBattle().FindActiveByParticipantAndMonster(ctx, userID, monsterID)
@@ -602,6 +610,13 @@ func (s *server) getOrCreateActiveMonsterBattle(
 		return nil, err
 	}
 	if activeBattle != nil {
+		log.Printf(
+			"[party-combat][start] reusing active battle as participant user=%s monster=%s battle=%s state=%s",
+			userID,
+			monsterID,
+			activeBattle.ID,
+			activeBattle.State,
+		)
 		return activeBattle, nil
 	}
 
@@ -617,6 +632,71 @@ func (s *server) getOrCreateActiveMonsterBattle(
 	if err := s.dbClient.MonsterBattle().Create(ctx, battle); err != nil {
 		return nil, err
 	}
+	log.Printf(
+		"[party-combat][start] created new battle user=%s monster=%s battle=%s",
+		userID,
+		monsterID,
+		battle.ID,
+	)
+	if err := s.initializeMonsterBattlePartyState(ctx, battle); err != nil {
+		return nil, err
+	}
+	return battle, nil
+}
+
+func (s *server) createFreshMonsterBattle(
+	ctx context.Context,
+	userID uuid.UUID,
+	monsterID uuid.UUID,
+) (*models.MonsterBattle, error) {
+	now := time.Now()
+
+	ownerBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monsterID)
+	if err != nil {
+		return nil, err
+	}
+	if ownerBattle != nil {
+		if err := s.dbClient.MonsterBattle().End(ctx, ownerBattle.ID, now); err != nil {
+			return nil, err
+		}
+		log.Printf(
+			"[party-combat][start] ended previous owner battle user=%s monster=%s battle=%s",
+			userID,
+			monsterID,
+			ownerBattle.ID,
+		)
+	}
+
+	participantBattle, err := s.dbClient.MonsterBattle().FindActiveByParticipantAndMonster(ctx, userID, monsterID)
+	if err != nil {
+		return nil, err
+	}
+	if participantBattle != nil {
+		log.Printf(
+			"[party-combat][start] user has active participant battle; creating fresh owner battle user=%s monster=%s participantBattle=%s",
+			userID,
+			monsterID,
+			participantBattle.ID,
+		)
+	}
+
+	battle := &models.MonsterBattle{
+		UserID:         userID,
+		MonsterID:      monsterID,
+		State:          string(models.MonsterBattleStateActive),
+		TurnIndex:      0,
+		StartedAt:      now,
+		LastActivityAt: now,
+	}
+	if err := s.dbClient.MonsterBattle().Create(ctx, battle); err != nil {
+		return nil, err
+	}
+	log.Printf(
+		"[party-combat][start] created fresh battle user=%s monster=%s battle=%s",
+		userID,
+		monsterID,
+		battle.ID,
+	)
 	if err := s.initializeMonsterBattlePartyState(ctx, battle); err != nil {
 		return nil, err
 	}
@@ -2015,7 +2095,7 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 		return
 	}
 
-	battle, err := s.getOrCreateActiveMonsterBattle(ctx, user.ID, monsterID)
+	battle, err := s.createFreshMonsterBattle(ctx, user.ID, monsterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

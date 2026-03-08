@@ -20,11 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	demoPhone = "+14407858475"
-	demoCode  = "123456"
-)
-
 // formatPhoneNumber ensures phone number starts with + (matches verifiable-sn auth.go).
 func formatPhoneNumber(phone string) string {
 	cleaned := strings.ReplaceAll(phone, " ", "")
@@ -186,12 +181,12 @@ func main() {
 
 		formatted := formatPhoneNumber(requestBody.PhoneNumber)
 
-		// Demo account: skip SMS and code insert, return user so app shows code screen.
-		if formatted == demoPhone {
-			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
-			if err != nil || user == nil {
+		// Allowlisted test accounts skip SMS and code inserts.
+		if testUser, ok := lookupTestAuthUser(formatted); ok {
+			user, err := ensureTestAuthUser(c, dbClient, testUser)
+			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": "demo account +14407858475 must exist in database",
+					"error": errors.Wrap(err, "ensuring test auth user error").Error(),
 				})
 				return
 			}
@@ -282,12 +277,12 @@ func main() {
 
 		formatted := formatPhoneNumber(requestBody.PhoneNumber)
 
-		// Demo account: skip code lookup, find user, issue token.
-		if formatted == demoPhone && requestBody.Code == demoCode {
-			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
-			if err != nil || user == nil {
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": "demo user not found",
+		// Allowlisted test accounts skip code lookup and issue tokens directly.
+		if testUser, ok := lookupTestAuthUserForLogin(formatted, requestBody.Code); ok {
+			user, err := ensureTestAuthUser(c, dbClient, testUser)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error": errors.Wrap(err, "ensuring test auth user error").Error(),
 				})
 				return
 			}
@@ -354,31 +349,20 @@ func main() {
 
 		formatted := formatPhoneNumber(requestBody.PhoneNumber)
 
-		// Demo account: skip code lookup, find or create user, issue token.
-		if formatted == demoPhone && requestBody.Code == demoCode {
-			user, err := dbClient.User().FindByPhoneNumber(c, demoPhone)
-			if err == nil && user != nil {
-				tok, err := tokenClient.New(user.ID)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{
-						"error": errors.Wrap(err, "jwt creation error").Error(),
-					})
-					return
-				}
-				c.JSON(200, gin.H{"user": user, "token": tok})
-				return
-			}
-			user, err = dbClient.User().Insert(ctx, "", demoPhone, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		// Allowlisted test accounts skip code lookup and issue tokens directly.
+		if testUser, ok := lookupTestAuthUserForLogin(formatted, requestBody.Code); ok {
+			user, err := ensureTestAuthUser(ctx, dbClient, testUser)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": errors.Wrap(err, "inserting demo user error").Error(),
+					"error": errors.Wrap(err, "ensuring test auth user error").Error(),
 				})
 				return
 			}
+
 			user, err = dbClient.User().FindByID(ctx, user.ID)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
-					"error": errors.Wrap(err, "refreshing user error").Error(),
+					"error": errors.Wrap(err, "refreshing test auth user error").Error(),
 				})
 				return
 			}

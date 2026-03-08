@@ -94,11 +94,11 @@ export const ZoneSeedJobs = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [placeCount, setPlaceCount] = useState('12');
-  const [monsterCount, setMonsterCount] = useState('6');
-  const [inputEncounterCount, setInputEncounterCount] = useState('6');
-  const [optionEncounterCount, setOptionEncounterCount] = useState('6');
-  const [treasureChestCount, setTreasureChestCount] = useState('6');
+  const [placeCount, setPlaceCount] = useState('0');
+  const [monsterCount, setMonsterCount] = useState('0');
+  const [inputEncounterCount, setInputEncounterCount] = useState('0');
+  const [optionEncounterCount, setOptionEncounterCount] = useState('0');
+  const [treasureChestCount, setTreasureChestCount] = useState('0');
   const [healingFountainCount, setHealingFountainCount] = useState('0');
   const [requiredPlaceTags, setRequiredPlaceTags] = useState<string[]>([]);
   const [requiredTagQuery, setRequiredTagQuery] = useState('');

@@ -1,3 +1,4 @@
+import '../constants/api_constants.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/challenge.dart';
@@ -11,6 +12,29 @@ import '../models/treasure_chest.dart';
 import '../models/user_zone_reputation.dart';
 import '../models/zone.dart';
 import 'api_client.dart';
+
+class PartySubmissionStatus {
+  const PartySubmissionStatus({
+    required this.locked,
+    this.status,
+    this.submittedByUserId,
+  });
+
+  final bool locked;
+  final String? status;
+  final String? submittedByUserId;
+
+  bool get isCompleted => (status ?? '').trim().toLowerCase() == 'completed';
+  bool get isProcessing => (status ?? '').trim().toLowerCase() == 'processing';
+
+  factory PartySubmissionStatus.fromJson(Map<String, dynamic> json) {
+    return PartySubmissionStatus(
+      locked: json['locked'] == true,
+      status: json['status']?.toString(),
+      submittedByUserId: json['submittedByUserId']?.toString(),
+    );
+  }
+}
 
 class PoiService {
   final ApiClient _api;
@@ -115,6 +139,13 @@ class PoiService {
     }
   }
 
+  Future<Map<String, dynamic>> spawnNearbyScenarioAndMonster() async {
+    final raw = await _api.post<dynamic>(
+      '/sonar/settings/spawn-nearby-content',
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
   Future<List<Challenge>> getChallengesForZone(String zoneId) async {
     final list = await _api.get<List<dynamic>>(
       '/sonar/zones/$zoneId/challenges',
@@ -152,9 +183,20 @@ class PoiService {
       },
     );
     final map = raw is Map
-        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     return map;
+  }
+
+  Future<PartySubmissionStatus> getPartySubmissionStatus({
+    required String contentType,
+    required String contentId,
+  }) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      ApiConstants.partySubmissionStatusEndpoint,
+      params: {'contentType': contentType, 'contentId': contentId},
+    );
+    return PartySubmissionStatus.fromJson(raw);
   }
 
   Future<List<Zone>> getZones() async {
@@ -266,18 +308,14 @@ class PoiService {
     final raw = await _api.post<dynamic>(
       '/sonar/healing-fountains/$fountainId/use',
     );
-    return raw is Map
-        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
-        : <String, dynamic>{};
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> unlockHealingFountain(String fountainId) async {
     final raw = await _api.post<dynamic>(
       '/sonar/healing-fountains/$fountainId/unlock',
     );
-    return raw is Map
-        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
-        : <String, dynamic>{};
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
   Future<ScenarioPerformResult> performScenario(

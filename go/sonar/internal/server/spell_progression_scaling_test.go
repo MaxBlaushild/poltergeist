@@ -156,3 +156,22 @@ func TestSpellProgressionFlavorDescriptionStripsMetaReferences(t *testing.T) {
 		t.Fatalf("expected only flavorful description to remain, got %q", description)
 	}
 }
+
+func TestBuildSpellProgressionVariantUsesBandTargetLevel(t *testing.T) {
+	seed := &models.Spell{
+		Name:          "Inferno Blast",
+		SchoolOfMagic: "Fire",
+		ManaCost:      12,
+		Effects: models.SpellEffects{
+			{
+				Type:   models.SpellEffectTypeDealDamage,
+				Amount: 60,
+			},
+		},
+	}
+
+	variant := buildSpellProgressionVariant(seed, 25, 42, map[string]struct{}{})
+	if variant.AbilityLevel != 50 {
+		t.Fatalf("expected variant level to match the target band level, got %d", variant.AbilityLevel)
+	}
+}

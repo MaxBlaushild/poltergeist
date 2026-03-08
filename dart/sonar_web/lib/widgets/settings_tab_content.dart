@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import '../providers/auth_provider.dart';
 import '../services/notification_permission_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/poi_service.dart';
 
 class SettingsTabContent extends StatefulWidget {
   const SettingsTabContent({super.key});
@@ -22,6 +23,7 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
   bool _loading = true;
   bool _requesting = false;
   bool _sendingTestPush = false;
+  bool _spawningNearbyContent = false;
 
   @override
   void initState() {
@@ -113,6 +115,59 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
       }
     }
     return 'Failed to send test push notification.';
+  }
+
+  String _spawnErrorMessage(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map && data['error'] is String) {
+        return data['error'] as String;
+      }
+      if (error.message != null && error.message!.trim().isNotEmpty) {
+        return error.message!.trim();
+      }
+    }
+    return 'Failed to generate nearby scenario and monster encounter.';
+  }
+
+  String _shortId(dynamic value) {
+    final raw = (value ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+    if (raw.length <= 8) return raw;
+    return raw.substring(0, 8);
+  }
+
+  Future<void> _spawnNearbyScenarioAndMonster() async {
+    setState(() => _spawningNearbyContent = true);
+    try {
+      final result = await context
+          .read<PoiService>()
+          .spawnNearbyScenarioAndMonster();
+      if (!mounted) return;
+      final zoneName = (result['zoneName'] ?? '').toString().trim();
+      final scenario = result['scenario'];
+      final encounter = result['monsterEncounter'];
+      final scenarioId = scenario is Map ? _shortId(scenario['id']) : '';
+      final encounterId = encounter is Map ? _shortId(encounter['id']) : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Spawned nearby content${zoneName.isNotEmpty ? ' in $zoneName' : ''}'
+            '${scenarioId.isNotEmpty ? ' • Scenario $scenarioId' : ''}'
+            '${encounterId.isNotEmpty ? ' • Encounter $encounterId' : ''}.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_spawnErrorMessage(error))));
+    } finally {
+      if (mounted) {
+        setState(() => _spawningNearbyContent = false);
+      }
+    }
   }
 
   Future<void> _sendTestPush({int delaySeconds = 0}) async {
@@ -247,7 +302,11 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                     runSpacing: 8,
                     children: [
                       FilledButton.tonalIcon(
-                        onPressed: (_loading || _requesting || _sendingTestPush)
+                        onPressed:
+                            (_loading ||
+                                _requesting ||
+                                _sendingTestPush ||
+                                _spawningNearbyContent)
                             ? null
                             : () => _sendTestPush(),
                         icon: _sendingTestPush
@@ -262,11 +321,34 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                         label: const Text('Send test push now'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: (_loading || _requesting || _sendingTestPush)
+                        onPressed:
+                            (_loading ||
+                                _requesting ||
+                                _sendingTestPush ||
+                                _spawningNearbyContent)
                             ? null
                             : () => _sendTestPush(delaySeconds: 10),
                         icon: const Icon(Icons.timer_outlined),
                         label: const Text('Send test push in 10s'),
+                      ),
+                      FilledButton.icon(
+                        onPressed:
+                            (_loading ||
+                                _requesting ||
+                                _sendingTestPush ||
+                                _spawningNearbyContent)
+                            ? null
+                            : _spawnNearbyScenarioAndMonster,
+                        icon: _spawningNearbyContent
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.auto_awesome_outlined),
+                        label: const Text('Generate nearby scenario + monster'),
                       ),
                     ],
                   ),

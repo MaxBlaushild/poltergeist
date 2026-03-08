@@ -10,6 +10,47 @@ import '../constants/api_constants.dart';
 import 'api_client.dart';
 import 'notification_permission_service.dart';
 
+class InAppPushEvent {
+  InAppPushEvent({
+    required this.type,
+    required this.title,
+    required this.body,
+    required this.data,
+    this.openedFromNotification = false,
+  });
+
+  final String type;
+  final String title;
+  final String body;
+  final Map<String, String> data;
+  final bool openedFromNotification;
+}
+
+class PartySubmissionResultEnvelope {
+  PartySubmissionResultEnvelope({
+    required this.id,
+    required this.type,
+    required this.data,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String type;
+  final Map<String, dynamic> data;
+  final DateTime? createdAt;
+
+  factory PartySubmissionResultEnvelope.fromJson(Map<String, dynamic> json) {
+    return PartySubmissionResultEnvelope(
+      id: json['id']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+      data: json['data'] is Map
+          ? Map<String, dynamic>.from(json['data'] as Map)
+          : <String, dynamic>{},
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
+    );
+  }
+}
+
 class PushNotificationService {
   PushNotificationService(this._apiClient);
 
@@ -23,8 +64,17 @@ class PushNotificationService {
   bool _firebaseInitAttempted = false;
   bool _firebaseReady = false;
   bool _tokenRefreshListenerAttached = false;
+  bool _foregroundListenerAttached = false;
+  bool _openedListenerAttached = false;
+  bool _initialMessageHandled = false;
   String? _activeUserId;
   StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _openedMessageSubscription;
+  final StreamController<InAppPushEvent> _inAppEventController =
+      StreamController<InAppPushEvent>.broadcast();
+
+  Stream<InAppPushEvent> get inAppEvents => _inAppEventController.stream;
 
   Future<bool> registerDeviceTokenForUser(
     String? userId, {
@@ -54,6 +104,7 @@ class PushNotificationService {
     final previousUserId = prefs.getString(_registeredUserIdKey);
     if (!force && previousToken == token && previousUserId == trimmedUserID) {
       _attachTokenRefreshListener();
+      _attachForegroundMessageListener();
       return true;
     }
 
@@ -63,7 +114,22 @@ class PushNotificationService {
       updateLocalCache: true,
     );
     _attachTokenRefreshListener();
+    _attachForegroundMessageListener();
     return true;
+  }
+
+  Future<void> initializeForegroundMessageHandling() async {
+    final permission = await _permissionService.getPermissionState();
+    if (permission != NotificationPermissionState.granted) {
+      return;
+    }
+    final firebaseReady = await _ensureFirebaseReady();
+    if (!firebaseReady) {
+      return;
+    }
+    _attachForegroundMessageListener();
+    _attachOpenedMessageListener();
+    await _emitInitialMessageIfPresent();
   }
 
   Future<bool> _ensureFirebaseReady() async {
@@ -157,6 +223,26 @@ class PushNotificationService {
     return response;
   }
 
+  Future<List<PartySubmissionResultEnvelope>>
+  getPendingPartySubmissionResults() async {
+    final raw = await _apiClient.get<List<dynamic>>(
+      ApiConstants.partySubmissionPendingResultsEndpoint,
+    );
+    final out = <PartySubmissionResultEnvelope>[];
+    for (final entry in raw) {
+      if (entry is Map<String, dynamic>) {
+        out.add(PartySubmissionResultEnvelope.fromJson(entry));
+      } else if (entry is Map) {
+        out.add(
+          PartySubmissionResultEnvelope.fromJson(
+            Map<String, dynamic>.from(entry),
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
   void _attachTokenRefreshListener() {
     if (_tokenRefreshListenerAttached) return;
     _tokenRefreshListenerAttached = true;
@@ -179,6 +265,57 @@ class PushNotificationService {
         });
   }
 
+  void _attachForegroundMessageListener() {
+    if (_foregroundListenerAttached) return;
+    _foregroundListenerAttached = true;
+    _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+      (message) => _handleMessage(message, openedFromNotification: false),
+    );
+  }
+
+  void _attachOpenedMessageListener() {
+    if (_openedListenerAttached) return;
+    _openedListenerAttached = true;
+    _openedMessageSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+      (message) => _handleMessage(message, openedFromNotification: true),
+    );
+  }
+
+  Future<void> _emitInitialMessageIfPresent() async {
+    if (_initialMessageHandled) {
+      return;
+    }
+    _initialMessageHandled = true;
+    try {
+      final initialMessage = await FirebaseMessaging.instance
+          .getInitialMessage();
+      if (initialMessage == null) return;
+      _handleMessage(initialMessage, openedFromNotification: true);
+    } catch (_) {}
+  }
+
+  void _handleMessage(
+    RemoteMessage message, {
+    required bool openedFromNotification,
+  }) {
+    final data = message.data.map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
+    final type = (data['type'] ?? '').trim();
+    final title = (message.notification?.title ?? '').trim();
+    final body = (message.notification?.body ?? '').trim();
+
+    _inAppEventController.add(
+      InAppPushEvent(
+        type: type,
+        title: title,
+        body: body,
+        data: data,
+        openedFromNotification: openedFromNotification,
+      ),
+    );
+  }
+
   String _platformLabel() {
     if (kIsWeb) return 'web';
     switch (defaultTargetPlatform) {
@@ -198,5 +335,12 @@ class PushNotificationService {
     _tokenRefreshSubscription?.cancel();
     _tokenRefreshSubscription = null;
     _tokenRefreshListenerAttached = false;
+    _foregroundMessageSubscription?.cancel();
+    _foregroundMessageSubscription = null;
+    _foregroundListenerAttached = false;
+    _openedMessageSubscription?.cancel();
+    _openedMessageSubscription = null;
+    _openedListenerAttached = false;
+    _inAppEventController.close();
   }
 }

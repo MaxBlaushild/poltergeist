@@ -472,6 +472,9 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/monsterBattleInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectMonsterBattleInvite))
 	r.POST("/sonar/device-tokens", middleware.WithAuthenticationWithoutLocation(s.authClient, s.registerDeviceToken))
 	r.POST("/sonar/push/test", middleware.WithAuthenticationWithoutLocation(s.authClient, s.sendTestPushToCurrentUser))
+	r.GET("/sonar/partySubmissions/status", middleware.WithAuthenticationWithoutLocation(s.authClient, s.getPartySubmissionStatus))
+	r.GET("/sonar/partySubmissionResults/pending", middleware.WithAuthenticationWithoutLocation(s.authClient, s.getPendingPartySubmissionResults))
+	r.POST("/sonar/settings/spawn-nearby-content", middleware.WithAuthentication(s.authClient, s.livenessClient, s.spawnNearbyScenarioAndMonster))
 	r.POST("/sonar/monsters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonster))
 	r.PUT("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonster))
 	r.POST("/sonar/monsters/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterImage))
@@ -4545,23 +4548,23 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		return
 	}
 
-	placeCount := 8
+	placeCount := 0
 	if requestBody.PlaceCount != nil {
 		placeCount = *requestBody.PlaceCount
 	}
-	monsterCount := 6
+	monsterCount := 0
 	if requestBody.MonsterCount != nil {
 		monsterCount = *requestBody.MonsterCount
 	}
-	inputEncounterCount := 6
+	inputEncounterCount := 0
 	if requestBody.InputEncounterCount != nil {
 		inputEncounterCount = *requestBody.InputEncounterCount
 	}
-	optionEncounterCount := 6
+	optionEncounterCount := 0
 	if requestBody.OptionEncounterCount != nil {
 		optionEncounterCount = *requestBody.OptionEncounterCount
 	}
-	treasureChestCount := 6
+	treasureChestCount := 0
 	if requestBody.TreasureChestCount != nil {
 		treasureChestCount = *requestBody.TreasureChestCount
 	}
@@ -9349,6 +9352,17 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "challenge not found"})
 		return
 	}
+
+	partyID, participants, err := s.resolvePartySubmissionParticipants(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	participantIDs := []uuid.UUID{user.ID}
+	if len(participants) > 0 {
+		participantIDs = partySubmissionParticipantIDs(participants)
+	}
+
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -9397,6 +9411,86 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	textSubmission := requestBody.TextSubmission
 	if strings.TrimSpace(textSubmission) == "" && strings.TrimSpace(requestBody.VideoSubmissionUrl) != "" {
 		textSubmission = fmt.Sprintf("Video submission URL: %s", requestBody.VideoSubmissionUrl)
+	}
+
+	partySubmissionCompleted := false
+	partyLockAcquired := false
+	partyLockSubmittedAt := time.Now().UTC()
+	if partyID != nil {
+		lockState, acquired, err := s.acquirePartySubmissionLock(
+			ctx,
+			*partyID,
+			partySubmissionContentTypeChallenge,
+			challengeID,
+			user.ID,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !acquired {
+			payload := partySubmissionStatusPayloadFromLock(lockState, lockState != nil)
+			if lockState != nil && lockState.Status == partySubmissionStatusCompleted {
+				payload["error"] = "challenge already resolved by your party"
+			} else {
+				payload["error"] = "challenge submission already in progress for your party"
+			}
+			ctx.JSON(http.StatusConflict, payload)
+			return
+		}
+		partyLockAcquired = true
+		if lockState != nil {
+			partyLockSubmittedAt = lockState.SubmittedAt
+		}
+		defer func() {
+			if partySubmissionCompleted || !partyLockAcquired {
+				return
+			}
+			if err := s.releasePartySubmissionLock(
+				context.Background(),
+				*partyID,
+				partySubmissionContentTypeChallenge,
+				challengeID,
+			); err != nil {
+				log.Printf(
+					"[party-submission][challenge] failed to release lock challenge=%s party=%s err=%v",
+					challengeID,
+					*partyID,
+					err,
+				)
+			}
+		}()
+	}
+
+	completePartySubmission := func(payload map[string]interface{}) {
+		if partyID == nil || !partyLockAcquired {
+			return
+		}
+		partySubmissionCompleted = true
+		if err := s.markPartySubmissionLockCompleted(
+			ctx,
+			*partyID,
+			partySubmissionContentTypeChallenge,
+			challengeID,
+			user.ID,
+			partyLockSubmittedAt,
+		); err != nil {
+			log.Printf(
+				"[party-submission][challenge] failed to mark lock complete challenge=%s party=%s err=%v",
+				challengeID,
+				*partyID,
+				err,
+			)
+		}
+		s.queuePartySubmissionResultsForParty(
+			ctx,
+			participantIDs,
+			&user.ID,
+			partySubmissionContentTypeChallenge,
+			challengeID,
+			"challengeOutcome",
+			payload,
+		)
 	}
 
 	judgement, err := s.judgeClient.JudgeFreeform(ctx, judge.FreeformJudgeSubmissionRequest{
@@ -9493,16 +9587,22 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		scoreValue := score
 		difficultyValue := difficulty
 		combinedValue := combinedScore
-		ctx.JSON(http.StatusOK, gameengine.SubmissionResult{
-			Successful:     false,
-			Reason:         reason,
-			QuestCompleted: false,
-			Score:          &scoreValue,
-			Difficulty:     &difficultyValue,
-			CombinedScore:  &combinedValue,
-			StatTags:       statTags,
-			StatValues:     statValues,
-		})
+		response := map[string]interface{}{
+			"successful":       false,
+			"reason":           reason,
+			"questCompleted":   false,
+			"score":            scoreValue,
+			"difficulty":       difficultyValue,
+			"combinedScore":    combinedValue,
+			"statTags":         statTags,
+			"statValues":       statValues,
+			"rewardExperience": 0,
+			"rewardGold":       0,
+			"itemsAwarded":     []models.ItemAwarded{},
+			"spellsAwarded":    []models.SpellAwarded{},
+		}
+		completePartySubmission(response)
+		ctx.JSON(http.StatusOK, response)
 		return
 	}
 
@@ -9552,8 +9652,9 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 	if challenge.Proficiency != nil {
 		proficiencies = append(proficiencies, strings.TrimSpace(*challenge.Proficiency))
 	}
-	itemsAwarded, spellsAwarded, err := s.awardScenarioRewards(
+	itemsAwarded, spellsAwarded, err := s.awardScenarioRewardsToParticipants(
 		ctx,
+		participantIDs,
 		user.ID,
 		rewardExperience,
 		rewardGold,
@@ -9566,7 +9667,7 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
+	response := map[string]interface{}{
 		"successful":       true,
 		"reason":           successReason,
 		"questCompleted":   false,
@@ -9579,7 +9680,9 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		"rewardGold":       rewardGold,
 		"itemsAwarded":     itemsAwarded,
 		"spellsAwarded":    spellsAwarded,
-	})
+	}
+	completePartySubmission(response)
+	ctx.JSON(http.StatusOK, response)
 }
 
 func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
@@ -14902,14 +15005,29 @@ func (s *server) performScenario(ctx *gin.Context) {
 	scenarioRewardMode := models.NormalizeRewardMode(string(scenario.RewardMode))
 	scenarioRandomRewardSize := models.NormalizeRandomRewardSize(string(scenario.RandomRewardSize))
 
-	existingAttempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, user.ID, scenarioID)
+	partyID, participants, err := s.resolvePartySubmissionParticipants(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if existingAttempt != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario already resolved"})
-		return
+	participantIDs := []uuid.UUID{user.ID}
+	if len(participants) > 0 {
+		participantIDs = partySubmissionParticipantIDs(participants)
+	}
+	for _, participantID := range participantIDs {
+		existingAttempt, err := s.dbClient.Scenario().FindAttemptByUserAndScenario(ctx, participantID, scenarioID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if existingAttempt != nil {
+			if participantID == user.ID {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenario already resolved"})
+			} else {
+				ctx.JSON(http.StatusConflict, gin.H{"error": "scenario already resolved by your party"})
+			}
+			return
+		}
 	}
 
 	userLat, userLng, err := s.getUserLatLng(ctx, user.ID)
@@ -14929,6 +15047,86 @@ func (s *server) performScenario(ctx *gin.Context) {
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	partySubmissionCompleted := false
+	partyLockAcquired := false
+	partyLockSubmittedAt := time.Now().UTC()
+	if partyID != nil {
+		lockState, acquired, err := s.acquirePartySubmissionLock(
+			ctx,
+			*partyID,
+			partySubmissionContentTypeScenario,
+			scenarioID,
+			user.ID,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !acquired {
+			payload := partySubmissionStatusPayloadFromLock(lockState, lockState != nil)
+			if lockState != nil && lockState.Status == partySubmissionStatusCompleted {
+				payload["error"] = "scenario already resolved by your party"
+			} else {
+				payload["error"] = "scenario submission already in progress for your party"
+			}
+			ctx.JSON(http.StatusConflict, payload)
+			return
+		}
+		partyLockAcquired = true
+		if lockState != nil {
+			partyLockSubmittedAt = lockState.SubmittedAt
+		}
+		defer func() {
+			if partySubmissionCompleted || !partyLockAcquired {
+				return
+			}
+			if err := s.releasePartySubmissionLock(
+				context.Background(),
+				*partyID,
+				partySubmissionContentTypeScenario,
+				scenarioID,
+			); err != nil {
+				log.Printf(
+					"[party-submission][scenario] failed to release lock scenario=%s party=%s err=%v",
+					scenarioID,
+					*partyID,
+					err,
+				)
+			}
+		}()
+	}
+
+	completePartySubmission := func(payload map[string]interface{}) {
+		if partyID == nil || !partyLockAcquired {
+			return
+		}
+		partySubmissionCompleted = true
+		if err := s.markPartySubmissionLockCompleted(
+			ctx,
+			*partyID,
+			partySubmissionContentTypeScenario,
+			scenarioID,
+			user.ID,
+			partyLockSubmittedAt,
+		); err != nil {
+			log.Printf(
+				"[party-submission][scenario] failed to mark lock complete scenario=%s party=%s err=%v",
+				scenarioID,
+				*partyID,
+				err,
+			)
+		}
+		s.queuePartySubmissionResultsForParty(
+			ctx,
+			participantIDs,
+			&user.ID,
+			partySubmissionContentTypeScenario,
+			scenarioID,
+			"scenarioOutcome",
+			payload,
+		)
 	}
 
 	roll, err := rollScenarioDie()
@@ -15047,8 +15245,9 @@ func (s *server) performScenario(ctx *gin.Context) {
 			rewardItems = randomRewardPlanToScenarioItems(plan)
 			rewardSpells = []scenarioRewardSpell{}
 		}
-		itemsAwarded, spellsAwarded, err = s.awardScenarioRewards(
+		itemsAwarded, spellsAwarded, err = s.awardScenarioRewardsToParticipants(
 			ctx,
+			participantIDs,
 			user.ID,
 			rewardExperience,
 			rewardGold,
@@ -15108,30 +15307,32 @@ func (s *server) performScenario(ctx *gin.Context) {
 		outcomeText = "Success. Your plan holds."
 	}
 
-	attempt := &models.UserScenarioAttempt{
-		UserID:            user.ID,
-		ScenarioID:        scenario.ID,
-		ScenarioOptionID:  scenarioOptionID,
-		FreeformResponse:  freeformResponse,
-		Roll:              roll,
-		StatTag:           statTag,
-		StatValue:         statValue,
-		ProficienciesUsed: models.StringArray(proficiencies),
-		ProficiencyBonus:  proficiencyBonus,
-		CreativityBonus:   creativityBonus,
-		Threshold:         threshold,
-		TotalScore:        totalScore,
-		Successful:        success,
-		Reasoning:         &reason,
-		RewardExperience:  rewardExperience,
-		RewardGold:        rewardGold,
-	}
-	if err := s.dbClient.Scenario().CreateAttempt(ctx, attempt); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	for _, participantID := range participantIDs {
+		attempt := &models.UserScenarioAttempt{
+			UserID:            participantID,
+			ScenarioID:        scenario.ID,
+			ScenarioOptionID:  scenarioOptionID,
+			FreeformResponse:  freeformResponse,
+			Roll:              roll,
+			StatTag:           statTag,
+			StatValue:         statValue,
+			ProficienciesUsed: models.StringArray(proficiencies),
+			ProficiencyBonus:  proficiencyBonus,
+			CreativityBonus:   creativityBonus,
+			Threshold:         threshold,
+			TotalScore:        totalScore,
+			Successful:        success,
+			Reasoning:         &reason,
+			RewardExperience:  rewardExperience,
+			RewardGold:        rewardGold,
+		}
+		if err := s.dbClient.Scenario().CreateAttempt(ctx, attempt); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
-	ctx.JSON(http.StatusOK, scenarioPerformResponse{
+	response := scenarioPerformResponse{
 		Successful:             success,
 		Reason:                 reason,
 		OutcomeText:            outcomeText,
@@ -15155,5 +15356,26 @@ func (s *server) performScenario(ctx *gin.Context) {
 		RewardGold:             rewardGold,
 		ItemsAwarded:           itemsAwarded,
 		SpellsAwarded:          spellsAwarded,
-	})
+	}
+	if partyID != nil && partyLockAcquired {
+		payload := map[string]interface{}{
+			"successful":       response.Successful,
+			"reason":           response.Reason,
+			"outcomeText":      response.OutcomeText,
+			"scenarioId":       response.ScenarioID.String(),
+			"rewardExperience": response.RewardExperience,
+			"rewardGold":       response.RewardGold,
+			"itemsAwarded":     response.ItemsAwarded,
+			"spellsAwarded":    response.SpellsAwarded,
+		}
+		raw, err := json.Marshal(response)
+		if err != nil {
+			log.Printf("[party-submission][scenario] failed to marshal response scenario=%s err=%v", scenario.ID, err)
+		} else if err := json.Unmarshal(raw, &payload); err != nil {
+			log.Printf("[party-submission][scenario] failed to encode payload scenario=%s err=%v", scenario.ID, err)
+		}
+		completePartySubmission(payload)
+	}
+
+	ctx.JSON(http.StatusOK, response)
 }

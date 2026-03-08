@@ -1,0 +1,2 @@
+DELETE FROM users
+WHERE phone_number IN ('+14407858475', '+12025550101');

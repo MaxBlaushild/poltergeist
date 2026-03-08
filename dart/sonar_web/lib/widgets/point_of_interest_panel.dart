@@ -86,6 +86,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   bool _justUnlocked = false;
   String? _error;
   bool _isDescriptionExpanded = false;
+  int _challengePageIndex = 0;
   bool _loadingTelescope = false;
   bool _usingTelescope = false;
   bool _telescopeChecked = false;
@@ -105,6 +106,11 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
   @override
   void didUpdateWidget(covariant PointOfInterestPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.pointOfInterest.id != widget.pointOfInterest.id ||
+        _challengeIdSignature(oldWidget.linkedChallenges) !=
+            _challengeIdSignature(widget.linkedChallenges)) {
+      _challengePageIndex = 0;
+    }
     if (oldWidget.hasDiscovered != widget.hasDiscovered ||
         oldWidget.pointOfInterest.id != widget.pointOfInterest.id) {
       _telescopeChecked = false;
@@ -114,6 +120,9 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
       _maybeLoadTelescope();
     }
   }
+
+  String _challengeIdSignature(List<Challenge> challenges) =>
+      challenges.map((challenge) => challenge.id).join('|');
 
   Future<void> _maybeLoadTelescope() async {
     if (_telescopeChecked || widget.hasDiscovered) return;
@@ -1241,15 +1250,22 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
         : ((poi.thumbnailUrl != null && poi.thumbnailUrl!.isNotEmpty)
               ? poi.thumbnailUrl!
               : _placeholderImageUrl);
+    final location = context.watch<LocationProvider>().location;
+    final poiLat = double.tryParse(poi.lat);
+    final poiLng = double.tryParse(poi.lng);
+    final distanceToPoi = location != null && poiLat != null && poiLng != null
+        ? _haversineMeters(
+            location.latitude,
+            location.longitude,
+            poiLat,
+            poiLng,
+          )
+        : null;
+    final canViewNearbyContent =
+        distanceToPoi != null && distanceToPoi <= _unlockRadiusMeters;
     final tags = poi.tags;
     final characters = poi.characters;
-    final questChallengeIds = <String>{
-      if (widget.questNode != null)
-        ...widget.questNode!.challenges.map((challenge) => challenge.id),
-    };
-    final linkedChallenges = widget.linkedChallenges
-        .where((challenge) => !questChallengeIds.contains(challenge.id))
-        .toList();
+    final linkedChallenges = widget.linkedChallenges;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -1340,167 +1356,6 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (widget.quest != null && widget.questNode != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.amber.shade200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Quest Objective',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 6),
-                          ...widget.questNode!.challenges.map(
-                            (c) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                '• ${c.question}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          FilledButton(
-                            onPressed: _showQuestSubmissionModal,
-                            child: Text('Quest: ${widget.quest!.name}'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (linkedChallenges.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: Theme.of(context).dividerColor,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            linkedChallenges.length == 1
-                                ? 'Challenge at this location'
-                                : 'Challenges at this location',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          ...linkedChallenges.map((challenge) {
-                            final location = context
-                                .watch<LocationProvider>()
-                                .location;
-                            final mystery =
-                                location == null ||
-                                _haversineMeters(
-                                      location.latitude,
-                                      location.longitude,
-                                      challenge.latitude,
-                                      challenge.longitude,
-                                    ) >
-                                    _unlockRadiusMeters;
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    mystery
-                                        ? 'Mysterious Challenge'
-                                        : challenge.question,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (mystery)
-                                    Text(
-                                      'Move within ${_unlockRadiusMeters.round()} m to reveal this challenge.',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    )
-                                  else ...[
-                                    Text(
-                                      'Difficulty: ${challenge.difficulty}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
-                                    if (challenge.description.trim().isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          challenge.description.trim(),
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.bodySmall,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                  ],
-                                  if (widget.onChallengeTap != null) ...[
-                                    const SizedBox(height: 8),
-                                    OutlinedButton(
-                                      onPressed: () =>
-                                          widget.onChallengeTap!(challenge),
-                                      child: const Text('Open challenge'),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (tags.isNotEmpty) ...[
-                    Text(
-                      'Tags',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.8),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: tags
-                          .map(
-                            (t) => Chip(
-                              label: Text(
-                                _formatTagName(t.name),
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   if (poi.description != null &&
                       poi.description!.isNotEmpty) ...[
                     GestureDetector(
@@ -1549,7 +1404,176 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (characters.isNotEmpty) ...[
+                  if (!canViewNearbyContent) ...[
+                    _buildProximityLockedTreatment(
+                      context,
+                      distanceMeters: distanceToPoi,
+                      actionLabel: "view this location's details",
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (canViewNearbyContent &&
+                      widget.quest != null &&
+                      widget.questNode != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quest Objective',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 6),
+                          ...widget.questNode!.challenges.map(
+                            (c) => Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                '• ${c.question}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          FilledButton(
+                            onPressed: _showQuestSubmissionModal,
+                            child: Text('Quest: ${widget.quest!.name}'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (canViewNearbyContent && linkedChallenges.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            linkedChallenges.length > 1
+                                ? 'CHALLENGES'
+                                : 'CHALLENGE',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Builder(
+                            builder: (context) {
+                              final currentIndex = math.min(
+                                _challengePageIndex,
+                                linkedChallenges.length - 1,
+                              );
+                              final challenge = linkedChallenges[currentIndex];
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    challenge.question,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                  if (widget.onChallengeTap != null) ...[
+                                    const SizedBox(height: 8),
+                                    OutlinedButton(
+                                      onPressed: () =>
+                                          widget.onChallengeTap!(challenge),
+                                      child: const Text('Submit answer'),
+                                    ),
+                                  ],
+                                  if (linkedChallenges.length > 1) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          onPressed: currentIndex > 0
+                                              ? () => setState(
+                                                  () => _challengePageIndex--,
+                                                )
+                                              : null,
+                                          icon: const Icon(Icons.chevron_left),
+                                          tooltip: 'Previous challenge',
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            '${currentIndex + 1} / ${linkedChallenges.length}',
+                                            textAlign: TextAlign.center,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          onPressed:
+                                              currentIndex <
+                                                  linkedChallenges.length - 1
+                                              ? () => setState(
+                                                  () => _challengePageIndex++,
+                                                )
+                                              : null,
+                                          icon: const Icon(Icons.chevron_right),
+                                          tooltip: 'Next challenge',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (canViewNearbyContent && tags.isNotEmpty) ...[
+                    Text(
+                      'Tags',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: tags
+                          .map(
+                            (t) => Chip(
+                              label: Text(
+                                _formatTagName(t.name),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (canViewNearbyContent && characters.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
                       'Patrons',
@@ -1664,6 +1688,30 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildProximityLockedTreatment(
+    BuildContext context, {
+    required double? distanceMeters,
+    required String actionLabel,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Move within ${_unlockRadiusMeters.round()} m to $actionLabel.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (distanceMeters != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              'You are ${distanceMeters.round()} m away.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
     );
   }
 }

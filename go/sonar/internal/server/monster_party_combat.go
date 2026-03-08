@@ -70,8 +70,15 @@ func (s *server) findActiveMonsterBattleForUser(
 
 func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *models.MonsterBattle) error {
 	if battle == nil {
+		log.Printf("[party-combat][invite] skipped: battle is nil")
 		return nil
 	}
+	log.Printf(
+		"[party-combat][invite] initializing battle=%s initiator=%s monster=%s",
+		battle.ID,
+		battle.UserID,
+		battle.MonsterID,
+	)
 	now := time.Now()
 	if err := s.dbClient.MonsterBattleParticipant().CreateOrUpdate(ctx, &models.MonsterBattleParticipant{
 		BattleID:    battle.ID,
@@ -84,6 +91,13 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 
 	initiator, err := s.dbClient.User().FindByID(ctx, battle.UserID)
 	if err != nil || initiator == nil || initiator.PartyID == nil {
+		log.Printf(
+			"[party-combat][invite] no-party-flow battle=%s initiator=%s err=%v partySet=%t",
+			battle.ID,
+			battle.UserID,
+			err,
+			initiator != nil && initiator.PartyID != nil,
+		)
 		battle.State = string(models.MonsterBattleStateActive)
 		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
 	}
@@ -93,9 +107,19 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 		return err
 	}
 	if len(partyMembers) == 0 {
+		log.Printf(
+			"[party-combat][invite] no eligible party members battle=%s initiator=%s",
+			battle.ID,
+			battle.UserID,
+		)
 		battle.State = string(models.MonsterBattleStateActive)
 		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
 	}
+	log.Printf(
+		"[party-combat][invite] evaluating party members battle=%s count=%d",
+		battle.ID,
+		len(partyMembers),
+	)
 
 	monster, err := s.dbClient.Monster().FindByID(ctx, battle.MonsterID)
 	if err != nil {
@@ -105,18 +129,46 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 	inviteCount := 0
 	for _, member := range partyMembers {
 		isActive, err := s.livenessClient.HasRecentLocation(ctx, member.ID)
-		if err != nil || !isActive {
+		if err != nil {
+			log.Printf(
+				"[party-combat][invite] skipped member=%s battle=%s reason=active-check-error err=%v",
+				member.ID,
+				battle.ID,
+				err,
+			)
+			continue
+		}
+		if !isActive {
+			log.Printf(
+				"[party-combat][invite] skipped member=%s battle=%s reason=not-active",
+				member.ID,
+				battle.ID,
+			)
 			continue
 		}
 
 		memberLat, memberLng, err := s.getUserLatLng(ctx, member.ID)
-		if err != nil {
-			continue
-		}
-
-		distanceMeters := util.HaversineDistance(memberLat, memberLng, monster.Latitude, monster.Longitude)
-		if distanceMeters > monsterBattlePartyInviteRadiusMeters {
-			continue
+		if err == nil {
+			distanceMeters := util.HaversineDistance(memberLat, memberLng, monster.Latitude, monster.Longitude)
+			if distanceMeters > monsterBattlePartyInviteRadiusMeters {
+				log.Printf(
+					"[party-combat][invite] skipped member=%s battle=%s reason=too-far distance=%.2fm max=%.2fm",
+					member.ID,
+					battle.ID,
+					distanceMeters,
+					monsterBattlePartyInviteRadiusMeters,
+				)
+				continue
+			}
+		} else {
+			// If we know the member is active but cannot read precise location,
+			// fail open so combat waits for a response instead of silently bypassing party flow.
+			log.Printf(
+				"[party-combat][invite] fallback-invite member=%s battle=%s reason=location-unavailable err=%v",
+				member.ID,
+				battle.ID,
+				err,
+			)
 		}
 
 		invite := &models.MonsterBattleInvite{
@@ -128,16 +180,38 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 			ExpiresAt:     now.Add(monsterBattleInviteTTL),
 		}
 		if err := s.dbClient.MonsterBattleInvite().Create(ctx, invite); err != nil {
+			log.Printf(
+				"[party-combat][invite] failed create member=%s battle=%s err=%v",
+				member.ID,
+				battle.ID,
+				err,
+			)
 			continue
 		}
 		inviteCount += 1
+		log.Printf(
+			"[party-combat][invite] created member=%s battle=%s invite=%s expiresAt=%s",
+			member.ID,
+			battle.ID,
+			invite.ID,
+			invite.ExpiresAt.UTC().Format(time.RFC3339),
+		)
 		s.createMonsterBattleInviteActivity(ctx, invite, monster, initiator)
 		s.sendMonsterBattleInvitePush(ctx, invite, monster, initiator)
 	}
 
 	if inviteCount == 0 {
+		log.Printf(
+			"[party-combat][invite] no invites created battle=%s; state set active",
+			battle.ID,
+		)
 		battle.State = string(models.MonsterBattleStateActive)
 	} else {
+		log.Printf(
+			"[party-combat][invite] invites created battle=%s count=%d; waiting on responses",
+			battle.ID,
+			inviteCount,
+		)
 		battle.State = string(models.MonsterBattleStatePendingPartyResponses)
 	}
 	return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)

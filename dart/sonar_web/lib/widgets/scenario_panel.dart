@@ -36,6 +36,9 @@ class _ScenarioPanelState extends State<ScenarioPanel>
     with SingleTickerProviderStateMixin {
   bool _loading = false;
   bool _rolling = false;
+  bool _partySubmissionStatusLoading = true;
+  bool _partySubmissionLocked = false;
+  String? _partySubmissionStatus;
   String? _error;
   String _responseText = '';
   bool _attemptedLocally = false;
@@ -44,6 +47,7 @@ class _ScenarioPanelState extends State<ScenarioPanel>
   late final Animation<double> _diceTilt;
   late final Animation<double> _dicePulse;
   Timer? _rollTicker;
+  Timer? _partyStatusPollTicker;
   int _rollingValue = 1;
   final math.Random _rng = math.Random();
 
@@ -60,11 +64,16 @@ class _ScenarioPanelState extends State<ScenarioPanel>
     );
     _diceTilt = Tween<double>(begin: -0.09, end: 0.09).animate(curved);
     _dicePulse = Tween<double>(begin: 0.96, end: 1.06).animate(curved);
+    unawaited(_refreshPartySubmissionStatus());
+    _partyStatusPollTicker = Timer.periodic(const Duration(seconds: 3), (_) {
+      unawaited(_refreshPartySubmissionStatus(silent: true));
+    });
   }
 
   @override
   void dispose() {
     _rollTicker?.cancel();
+    _partyStatusPollTicker?.cancel();
     _diceController.dispose();
     super.dispose();
   }
@@ -98,6 +107,30 @@ class _ScenarioPanelState extends State<ScenarioPanel>
     return 'Failed to perform scenario.';
   }
 
+  Future<void> _refreshPartySubmissionStatus({bool silent = false}) async {
+    if (!mounted) return;
+    if (!silent) {
+      setState(() => _partySubmissionStatusLoading = true);
+    }
+    try {
+      final status = await context.read<PoiService>().getPartySubmissionStatus(
+        contentType: 'scenario',
+        contentId: widget.scenario.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _partySubmissionLocked = status.locked;
+        _partySubmissionStatus = status.status;
+        _partySubmissionStatusLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _partySubmissionStatusLoading = false;
+      });
+    }
+  }
+
   void _startRollAnimation() {
     _rollTicker?.cancel();
     _diceController.repeat(reverse: true);
@@ -129,6 +162,14 @@ class _ScenarioPanelState extends State<ScenarioPanel>
 
   Future<void> _perform({String? optionId}) async {
     if (_loading || _attempted) return;
+    if (_partySubmissionLocked) {
+      setState(() {
+        _error = _partySubmissionStatus?.toLowerCase() == 'completed'
+            ? 'A party member already resolved this scenario.'
+            : 'A party member is already submitting this scenario.';
+      });
+      return;
+    }
 
     if (widget.scenario.openEnded && _responseText.trim().isEmpty) {
       setState(() => _error = 'Write your response first.');
@@ -353,6 +394,26 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                             style: theme.textTheme.bodyMedium,
                           ),
                         )
+                      else if (_partySubmissionLocked)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceVariant.withOpacity(
+                              0.45,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: theme.colorScheme.outline.withOpacity(0.2),
+                            ),
+                          ),
+                          child: Text(
+                            (_partySubmissionStatus ?? '').toLowerCase() ==
+                                    'completed'
+                                ? 'A party member already resolved this scenario.'
+                                : 'A party member is submitting this scenario now.',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        )
                       else if (widget.scenario.openEnded) ...[
                         TextField(
                           minLines: 3,
@@ -367,7 +428,9 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                         ),
                         const SizedBox(height: 12),
                         FilledButton(
-                          onPressed: _loading ? null : () => _perform(),
+                          onPressed: (_loading || _partySubmissionStatusLoading)
+                              ? null
+                              : () => _perform(),
                           child: Text(
                             _loading ? 'Resolving…' : 'Resolve Scenario',
                           ),
@@ -375,7 +438,8 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                       ] else ...[
                         for (final option in widget.scenario.options) ...[
                           FilledButton.tonal(
-                            onPressed: _loading
+                            onPressed:
+                                (_loading || _partySubmissionStatusLoading)
                                 ? null
                                 : () => _perform(optionId: option.id),
                             child: Align(

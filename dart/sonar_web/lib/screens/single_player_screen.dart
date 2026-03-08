@@ -3,6 +3,7 @@ import 'dart:math' show Point;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -168,6 +169,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _hasAnimatedToUserLocation = false;
   QuestLogProvider? _questLogProvider;
   MapFocusProvider? _mapFocusProvider;
+  CompletedTaskProvider? _completedTaskProvider;
+  Map<String, dynamic>? _lastHandledCompletionModal;
   Timer? _questGlowTimer;
   bool _isQuestGlowPulsing = false;
   Timer? _questPoiPulseTimer;
@@ -217,6 +220,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _questLogProvider?.addListener(_onQuestLogChanged);
       _mapFocusProvider = context.read<MapFocusProvider>();
       _mapFocusProvider?.addListener(_onMapFocusRequest);
+      _completedTaskProvider = context.read<CompletedTaskProvider>();
+      _completedTaskProvider?.addListener(_onCompletedTaskModalChanged);
+      _onCompletedTaskModalChanged();
       _updateSelectedZoneFromLocation();
       _requestQuestLogIfReady();
       context.read<ActivityFeedProvider>().refresh();
@@ -251,6 +257,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
     try {
       _mapFocusProvider?.removeListener(_onMapFocusRequest);
+    } catch (_) {}
+    try {
+      _completedTaskProvider?.removeListener(_onCompletedTaskModalChanged);
     } catch (_) {}
     super.dispose();
   }
@@ -296,6 +305,40 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     _requestQuestLogIfReady(force: true);
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
+  }
+
+  void _onCompletedTaskModalChanged() {
+    final provider = _completedTaskProvider;
+    if (!mounted || provider == null) return;
+    final modal = provider.currentModal;
+    if (modal == null || identical(modal, _lastHandledCompletionModal)) {
+      return;
+    }
+    _lastHandledCompletionModal = modal;
+    unawaited(_reconcileMapFromCompletionModal(modal));
+  }
+
+  Future<void> _reconcileMapFromCompletionModal(
+    Map<String, dynamic> modal,
+  ) async {
+    final type = modal['type']?.toString().trim() ?? '';
+    final rawData = modal['data'];
+    final data = rawData is Map
+        ? Map<String, dynamic>.from(rawData)
+        : const <String, dynamic>{};
+
+    switch (type) {
+      case 'scenarioOutcome':
+        final scenarioId = data['scenarioId']?.toString().trim() ?? '';
+        if (scenarioId.isEmpty) return;
+        await _removeScenarioLocally(
+          scenarioId,
+          performedScenarioId: scenarioId,
+        );
+        return;
+      default:
+        return;
+    }
   }
 
   String _defeatedMonstersPrefsKey(String userId) {
@@ -913,8 +956,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (challengeId.isNotEmpty) {
       final challenge = _challengeById(challengeId);
       if (challenge != null) {
-        _flyToLocation(challenge.latitude, challenge.longitude);
-        _pulsePoi(challenge.latitude, challenge.longitude);
+        final anchor = _challengeProximityAnchor(challenge);
+        _flyToLocation(anchor.latitude, anchor.longitude);
+        _pulsePoi(anchor.latitude, anchor.longitude);
         return;
       }
     }
@@ -1271,13 +1315,35 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _isChallengeMystery(Challenge challenge) {
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
+    final anchor = _challengeProximityAnchor(challenge);
     final distance = _distanceMeters(
       location.latitude,
       location.longitude,
-      challenge.latitude,
-      challenge.longitude,
+      anchor.latitude,
+      anchor.longitude,
     );
     return distance > kProximityUnlockRadiusMeters;
+  }
+
+  LatLng _challengeProximityAnchor(Challenge challenge) {
+    final poiId = challenge.pointOfInterestId?.trim() ?? '';
+    if (poiId.isNotEmpty) {
+      for (final poi in _pois) {
+        if (poi.id != poiId) continue;
+        final lat = double.tryParse(poi.lat);
+        final lng = double.tryParse(poi.lng);
+        if (lat != null &&
+            lng != null &&
+            lat.isFinite &&
+            lng.isFinite &&
+            lat.abs() <= 90 &&
+            lng.abs() <= 180) {
+          return LatLng(lat, lng);
+        }
+        break;
+      }
+    }
+    return LatLng(challenge.latitude, challenge.longitude);
   }
 
   Scenario? _scenarioById(String id) {
@@ -1316,6 +1382,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     return null;
   }
+
+  String _challengeImageHeroTag(String challengeId) =>
+      'challenge-image-$challengeId';
 
   bool _isChallengeRepresentedByPoi(Challenge challenge) {
     final poiId = challenge.pointOfInterestId?.trim() ?? '';
@@ -2475,7 +2544,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           Navigator.of(context).pop();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _showChallengePanel(challenge);
+            final activeQuestEntry = _activeQuestNodeForChallenge(challenge.id);
+            if (activeQuestEntry != null) {
+              _showStandaloneQuestChallengeSubmissionModal(
+                activeQuestEntry.key,
+                activeQuestEntry.value,
+                challenge,
+              );
+            } else {
+              _showStandaloneChallengeSubmissionModal(challenge);
+            }
           });
         },
         onQuestSubmissionState: _setQuestSubmissionOverlay,
@@ -4025,7 +4103,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     String title,
     QuestNode node, {
     String? standaloneChallengeId,
+    String? challengeImageHeroTag,
   }) async {
+    final parentContext = context;
     final textController = TextEditingController();
     CapturedImage? capturedImage;
     PlatformFile? capturedVideo;
@@ -4074,6 +4154,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                             (c) => c.id == selectedChallengeId,
                             orElse: () => node.challenges.first,
                           ));
+              final selectedChallengeHeroTag = selectedChallenge == null
+                  ? null
+                  : (challengeImageHeroTag ??
+                        _challengeImageHeroTag(selectedChallenge.id));
               final statValues = context.watch<CharacterStatsProvider>().stats;
               final statTags = (selectedChallenge?.statTags ?? const [])
                   .map((tag) => tag.trim().toLowerCase())
@@ -4124,16 +4208,19 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                       (selectedChallenge.imageUrl.isNotEmpty ||
                           selectedChallenge.thumbnailUrl.isNotEmpty)) ...[
                     const SizedBox(height: 10),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        selectedChallenge.thumbnailUrl.isNotEmpty
-                            ? selectedChallenge.thumbnailUrl
-                            : selectedChallenge.imageUrl,
-                        fit: BoxFit.cover,
-                        height: 140,
-                        width: double.infinity,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    Hero(
+                      tag: selectedChallengeHeroTag!,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          selectedChallenge.thumbnailUrl.isNotEmpty
+                              ? selectedChallenge.thumbnailUrl
+                              : selectedChallenge.imageUrl,
+                          fit: BoxFit.cover,
+                          height: 220,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
                       ),
                     ),
                   ],
@@ -4350,6 +4437,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               );
                               return;
                             }
+                            if (standaloneChallengeId != null) {
+                              try {
+                                final status = await poiService
+                                    .getPartySubmissionStatus(
+                                      contentType: 'challenge',
+                                      contentId: standaloneChallengeId,
+                                    );
+                                if (status.locked) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        status.isCompleted
+                                            ? 'A party member already resolved this challenge.'
+                                            : 'A party member is already submitting this challenge.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                              } catch (_) {}
+                            }
                             final startedAt = DateTime.now();
                             setModalState(() => uploadingSubmission = true);
                             Navigator.of(context).pop();
@@ -4482,26 +4591,57 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               }
                               videoSubmissionUrl = url.split('?').first;
                             }
-                            final resp = standaloneChallengeId == null
-                                ? await questLogProvider
-                                      .submitQuestNodeChallenge(
-                                        node.id,
-                                        questNodeChallengeId:
-                                            selectedChallengeId,
-                                        textSubmission: isTextSubmission
-                                            ? trimmedText
-                                            : null,
-                                        imageSubmissionUrl: imageSubmissionUrl,
-                                        videoSubmissionUrl: videoSubmissionUrl,
-                                      )
-                                : await poiService.submitChallenge(
-                                    standaloneChallengeId,
-                                    textSubmission: isTextSubmission
-                                        ? trimmedText
-                                        : null,
-                                    imageSubmissionUrl: imageSubmissionUrl,
-                                    videoSubmissionUrl: videoSubmissionUrl,
-                                  );
+                            late final Map<String, dynamic> resp;
+                            try {
+                              resp = standaloneChallengeId == null
+                                  ? await questLogProvider
+                                        .submitQuestNodeChallenge(
+                                          node.id,
+                                          questNodeChallengeId:
+                                              selectedChallengeId,
+                                          textSubmission: isTextSubmission
+                                              ? trimmedText
+                                              : null,
+                                          imageSubmissionUrl:
+                                              imageSubmissionUrl,
+                                          videoSubmissionUrl:
+                                              videoSubmissionUrl,
+                                        )
+                                  : await poiService.submitChallenge(
+                                      standaloneChallengeId,
+                                      textSubmission: isTextSubmission
+                                          ? trimmedText
+                                          : null,
+                                      imageSubmissionUrl: imageSubmissionUrl,
+                                      videoSubmissionUrl: videoSubmissionUrl,
+                                    );
+                            } catch (error) {
+                              final elapsed = DateTime.now().difference(
+                                startedAt,
+                              );
+                              if (elapsed < const Duration(milliseconds: 700)) {
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 700),
+                                );
+                              }
+                              var message = 'Submission failed.';
+                              if (error is DioException &&
+                                  error.response?.data is Map) {
+                                final data = Map<String, dynamic>.from(
+                                  error.response!.data as Map,
+                                );
+                                final apiMessage =
+                                    data['error']?.toString().trim() ?? '';
+                                if (apiMessage.isNotEmpty) {
+                                  message = apiMessage;
+                                }
+                              }
+                              _setQuestSubmissionOverlay(
+                                QuestSubmissionOverlayPhase.failure,
+                                message: message,
+                              );
+                              return;
+                            }
                             final elapsed = DateTime.now().difference(
                               startedAt,
                             );
@@ -4545,6 +4685,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                               statTags: statTags,
                               statValues: statValues,
                             );
+                            if (standaloneChallengeId != null &&
+                                mounted &&
+                                parentContext.mounted) {
+                              parentContext
+                                  .read<CompletedTaskProvider>()
+                                  .showModal(
+                                    'challengeOutcome',
+                                    data: Map<String, dynamic>.from(resp),
+                                  );
+                            }
                           },
                     child: const Text('Submit'),
                   ),
@@ -5656,19 +5806,55 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _showChallengePanel(Challenge challenge) {
     final activeQuestEntry = _activeQuestNodeForChallenge(challenge.id);
     final questName = activeQuestEntry?.key.name;
+    final anchor = _challengeProximityAnchor(challenge);
     final location = context.read<LocationProvider>().location;
     final distance = location == null
         ? null
         : _distanceMeters(
             location.latitude,
             location.longitude,
-            challenge.latitude,
-            challenge.longitude,
+            anchor.latitude,
+            anchor.longitude,
           );
     final withinRange =
         distance != null && distance <= kProximityUnlockRadiusMeters;
     final mysteryState = !withinRange;
     final canSubmit = !mysteryState;
+    var partySubmissionStatusLoading = !mysteryState;
+    var partySubmissionLocked = false;
+    String? partySubmissionStatus;
+    var statusPollingStarted = false;
+    var sheetClosed = false;
+    Timer? statusPollTimer;
+
+    Future<void> refreshPartySubmissionStatus(
+      StateSetter setSheetState, {
+      bool silent = false,
+    }) async {
+      if (mysteryState || sheetClosed) return;
+      if (!silent) {
+        setSheetState(() => partySubmissionStatusLoading = true);
+      }
+      try {
+        final status = await context
+            .read<PoiService>()
+            .getPartySubmissionStatus(
+              contentType: 'challenge',
+              contentId: challenge.id,
+            );
+        if (sheetClosed) return;
+        setSheetState(() {
+          partySubmissionLocked = status.locked;
+          partySubmissionStatus = status.status;
+          partySubmissionStatusLoading = false;
+        });
+      } catch (_) {
+        if (sheetClosed) return;
+        setSheetState(() {
+          partySubmissionStatusLoading = false;
+        });
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -5680,137 +5866,189 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       ),
       builder: (sheetContext) {
         final theme = Theme.of(sheetContext);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            if (!statusPollingStarted && !mysteryState) {
+              statusPollingStarted = true;
+              unawaited(
+                refreshPartySubmissionStatus(setModalState, silent: false),
+              );
+              statusPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+                unawaited(
+                  refreshPartySubmissionStatus(setModalState, silent: true),
+                );
+              });
+            }
+
+            final lockedByParty = partySubmissionLocked;
+            final submitEnabled =
+                canSubmit && !partySubmissionStatusLoading && !lockedByParty;
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      mysteryState ? 'Mysterious Challenge' : 'Challenge',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          mysteryState ? 'Mysterious Challenge' : 'Challenge',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Hero(
+                      tag: _challengeImageHeroTag(challenge.id),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: Image.network(
+                            mysteryState
+                                ? _challengeMysteryImageUrl
+                                : (challenge.thumbnailUrl.isNotEmpty
+                                      ? challenge.thumbnailUrl
+                                      : challenge.imageUrl),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => mysteryState
+                                ? Image.network(
+                                    _legacyMysteryImageUrl,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Container(
+                                      color: theme.colorScheme.surfaceVariant,
+                                      child: const Icon(
+                                        Icons.auto_awesome_outlined,
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    color: theme.colorScheme.surfaceVariant,
+                                    child: const Icon(
+                                      Icons.auto_awesome_outlined,
+                                    ),
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      icon: const Icon(Icons.close),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (distance != null)
+                          _MiniInfoChip(
+                            icon: Icons.place_outlined,
+                            label: '${distance.round()} m away',
+                          ),
+                        _MiniInfoChip(
+                          icon: Icons.shield_outlined,
+                          label:
+                              'Need ${kProximityUnlockRadiusMeters.round()} m',
+                        ),
+                        if (!mysteryState)
+                          _MiniInfoChip(
+                            icon: Icons.edit_note_outlined,
+                            label: challenge.submissionType.toUpperCase(),
+                          ),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Image.network(
-                      mysteryState
-                          ? _challengeMysteryImageUrl
-                          : (challenge.thumbnailUrl.isNotEmpty
-                                ? challenge.thumbnailUrl
-                                : challenge.imageUrl),
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => mysteryState
-                          ? Image.network(
-                              _legacyMysteryImageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Container(
-                                color: theme.colorScheme.surfaceVariant,
-                                child: const Icon(Icons.auto_awesome_outlined),
-                              ),
-                            )
-                          : Container(
-                              color: theme.colorScheme.surfaceVariant,
-                              child: const Icon(Icons.auto_awesome_outlined),
-                            ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    if (distance != null)
-                      _MiniInfoChip(
-                        icon: Icons.place_outlined,
-                        label: '${distance.round()} m away',
+                    const SizedBox(height: 12),
+                    if (mysteryState)
+                      Text(
+                        'This challenge remains a mystery until you are close enough to investigate.',
+                        style: theme.textTheme.bodyMedium,
+                      )
+                    else ...[
+                      Text(
+                        challenge.question,
+                        style: theme.textTheme.bodyLarge,
                       ),
-                    _MiniInfoChip(
-                      icon: Icons.shield_outlined,
-                      label: 'Need ${kProximityUnlockRadiusMeters.round()} m',
-                    ),
-                    if (!mysteryState)
-                      _MiniInfoChip(
-                        icon: Icons.edit_note_outlined,
-                        label: challenge.submissionType.toUpperCase(),
+                      if (challenge.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          challenge.description.trim(),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Text(
+                        'Difficulty: ${challenge.difficulty}',
+                        style: theme.textTheme.bodySmall,
                       ),
+                      if (lockedByParty) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          (partySubmissionStatus ?? '').toLowerCase() ==
+                                  'completed'
+                              ? 'A party member already resolved this challenge.'
+                              : 'A party member is submitting this challenge now.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                    if (!mysteryState) ...[
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: submitEnabled
+                            ? () async {
+                                if (activeQuestEntry != null) {
+                                  await _showStandaloneQuestChallengeSubmissionModal(
+                                    activeQuestEntry.key,
+                                    activeQuestEntry.value,
+                                    challenge,
+                                    challengeImageHeroTag:
+                                        _challengeImageHeroTag(challenge.id),
+                                  );
+                                } else {
+                                  await _showStandaloneChallengeSubmissionModal(
+                                    challenge,
+                                    challengeImageHeroTag:
+                                        _challengeImageHeroTag(challenge.id),
+                                  );
+                                }
+                                if (!sheetContext.mounted) return;
+                                Navigator.of(sheetContext).pop();
+                              }
+                            : null,
+                        child: Text(
+                          activeQuestEntry == null
+                              ? 'Submit Challenge'
+                              : 'Submit for quest: $questName',
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 12),
-                if (mysteryState)
-                  Text(
-                    'This challenge remains a mystery until you are close enough to investigate.',
-                    style: theme.textTheme.bodyMedium,
-                  )
-                else ...[
-                  Text(challenge.question, style: theme.textTheme.bodyLarge),
-                  if (challenge.description.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      challenge.description.trim(),
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Text(
-                    'Difficulty: ${challenge.difficulty}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-                if (!mysteryState) ...[
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: canSubmit
-                        ? () {
-                            Navigator.of(sheetContext).pop();
-                            if (activeQuestEntry != null) {
-                              _showStandaloneQuestChallengeSubmissionModal(
-                                activeQuestEntry.key,
-                                activeQuestEntry.value,
-                                challenge,
-                              );
-                            } else {
-                              _showStandaloneChallengeSubmissionModal(
-                                challenge,
-                              );
-                            }
-                          }
-                        : null,
-                    child: Text(
-                      activeQuestEntry == null
-                          ? 'Submit Challenge'
-                          : 'Submit for quest: $questName',
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() {
+      sheetClosed = true;
+      statusPollTimer?.cancel();
+    });
   }
 
   Future<void> _showStandaloneQuestChallengeSubmissionModal(
     Quest quest,
     QuestNode node,
-    Challenge challenge,
-  ) {
+    Challenge challenge, {
+    String? challengeImageHeroTag,
+  }) {
     final submissionType = challenge.submissionType.trim().isNotEmpty
         ? challenge.submissionType
         : node.submissionType;
@@ -5829,6 +6067,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           id: challenge.id,
           tier: 0,
           question: challenge.question,
+          imageUrl: challenge.imageUrl,
+          thumbnailUrl: challenge.thumbnailUrl,
           reward: challenge.reward,
           inventoryItemId: challenge.inventoryItemId,
           difficulty: challenge.difficulty,
@@ -5837,10 +6077,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         ),
       ],
     );
-    return _showQuestNodeSubmissionModal(quest.name, syntheticNode);
+    return _showQuestNodeSubmissionModal(
+      quest.name,
+      syntheticNode,
+      challengeImageHeroTag: challengeImageHeroTag,
+    );
   }
 
-  Future<void> _showStandaloneChallengeSubmissionModal(Challenge challenge) {
+  Future<void> _showStandaloneChallengeSubmissionModal(
+    Challenge challenge, {
+    String? challengeImageHeroTag,
+  }) {
     final submissionType = challenge.submissionType.trim().isNotEmpty
         ? challenge.submissionType
         : QuestNode.submissionTypePhoto;
@@ -5868,6 +6115,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       'Challenge',
       syntheticNode,
       standaloneChallengeId: challenge.id,
+      challengeImageHeroTag: challengeImageHeroTag,
     );
   }
 
@@ -5876,7 +6124,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      useSafeArea: true,
+      useSafeArea: false,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -5897,19 +6145,32 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   Future<void> _startMonsterBattle(
     MonsterEncounter monster,
-    BuildContext parentContext,
-  ) async {
+    BuildContext parentContext, {
+    bool isPartyBattle = false,
+  }) async {
     final result = await showDialog<MonsterBattleResult>(
       context: parentContext,
       useRootNavigator: true,
       barrierDismissible: false,
-      builder: (_) => MonsterBattleDialog(encounter: monster),
+      builder: (_) =>
+          MonsterBattleDialog(encounter: monster, isPartyBattle: isPartyBattle),
     );
     if (!mounted || result == null) return;
     final statsProvider = context.read<CharacterStatsProvider>();
 
+    if (result.outcome == MonsterBattleOutcome.escaped) {
+      await statsProvider.setHealthAndManaTo(
+        health: result.playerHealthRemaining,
+        mana: result.playerManaRemaining,
+      );
+      return;
+    }
+
     if (result.outcome == MonsterBattleOutcome.victory) {
-      await statsProvider.setHealthTo(result.playerHealthRemaining);
+      await statsProvider.setHealthAndManaTo(
+        health: result.playerHealthRemaining,
+        mana: result.playerManaRemaining,
+      );
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {
@@ -5921,25 +6182,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _refreshMonsterSymbols();
       if (!mounted || !parentContext.mounted) return;
 
-      final itemTotals = <String, int>{};
+      final itemTotals = <int, Map<String, dynamic>>{};
       for (final enemy in monster.monsters) {
         for (final reward in enemy.itemRewards) {
-          final key = reward.inventoryItemName.isNotEmpty
-              ? reward.inventoryItemName
-              : 'Item #${reward.inventoryItemId}';
-          itemTotals[key] =
-              (itemTotals[key] ?? 0) +
-              (reward.quantity > 0 ? reward.quantity : 1);
+          final quantity = reward.quantity > 0 ? reward.quantity : 1;
+          final entry = itemTotals.putIfAbsent(reward.inventoryItemId, () {
+            return <String, dynamic>{
+              'id': reward.inventoryItemId,
+              'name': reward.inventoryItemName.isNotEmpty
+                  ? reward.inventoryItemName
+                  : 'Item #${reward.inventoryItemId}',
+              'imageUrl': reward.inventoryItemImageUrl,
+              'quantity': 0,
+            };
+          });
+          entry['quantity'] = (entry['quantity'] as int) + quantity;
+          if ((entry['imageUrl'] as String).isEmpty &&
+              reward.inventoryItemImageUrl.isNotEmpty) {
+            entry['imageUrl'] = reward.inventoryItemImageUrl;
+          }
         }
       }
-      final itemsAwarded = itemTotals.entries
-          .map(
-            (entry) => <String, dynamic>{
-              'name': entry.key,
-              'quantity': entry.value,
-            },
-          )
-          .toList();
+      final itemsAwarded = itemTotals.values.toList();
       parentContext.read<CompletedTaskProvider>().showModal(
         'monsterBattleVictory',
         data: {
@@ -5952,7 +6216,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
 
-    await statsProvider.setHealthToOne();
+    await statsProvider.setHealthAndManaTo(
+      health: 1,
+      mana: result.playerManaRemaining,
+    );
     if (!mounted || !parentContext.mounted) return;
     parentContext.read<CompletedTaskProvider>().showModal(
       'monsterBattleDefeat',

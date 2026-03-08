@@ -595,6 +595,10 @@ func promptNormalizeSpellProgressionBand(levelBand int) int {
 	return best
 }
 
+func promptSpellProgressionTargetLevelForBand(levelBand int) int {
+	return promptNormalizeSpellProgressionBand(levelBand)
+}
+
 func promptInferSpellProgressionBand(spell *models.Spell) int {
 	if spell == nil {
 		return 25
@@ -1320,17 +1324,18 @@ func buildPromptSpellProgressionVariant(
 	usedNames map[string]struct{},
 	abilityType models.SpellAbilityType,
 ) *models.Spell {
+	targetLevel := promptSpellProgressionTargetLevelForBand(targetBand)
 	primaryEffect := promptSpellProgressionPrimaryEffectType(seed)
 	theme := promptSpellProgressionTheme(seed)
-	bandTerm := promptSpellProgressionBandTerm(primaryEffect, targetBand, abilityType)
+	bandTerm := promptSpellProgressionBandTerm(primaryEffect, targetLevel, abilityType)
 	name := reserveGeneratedAbilityName(
 		fmt.Sprintf("%s %s", theme, bandTerm),
 		string(abilityType),
-		targetBand,
+		targetLevel,
 		usedNames,
 	)
-	effects := buildPromptScaledSpellProgressionEffects(seed.Effects, seedBand, targetBand, abilityType)
-	manaCost := promptScaleSpellProgressionManaCost(promptMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetBand, abilityType)
+	effects := buildPromptScaledSpellProgressionEffects(seed.Effects, seedBand, targetLevel, abilityType)
+	manaCost := promptScaleSpellProgressionManaCost(promptMaxInt(seed.ManaCost, 1), primaryEffect, seedBand, targetLevel, abilityType)
 	if abilityType == models.SpellAbilityTypeTechnique {
 		manaCost = 0
 	}
@@ -1347,7 +1352,7 @@ func buildPromptSpellProgressionVariant(
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		ImageGenerationError:  &emptyError,
 		AbilityType:           abilityType,
-		AbilityLevel:          targetBand,
+		AbilityLevel:          targetLevel,
 		EffectText:            buildPromptSpellProgressionEffectText(effects),
 		SchoolOfMagic:         strings.TrimSpace(seed.SchoolOfMagic),
 		ManaCost:              manaCost,
