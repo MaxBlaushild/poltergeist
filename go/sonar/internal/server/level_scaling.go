@@ -42,6 +42,37 @@ func (s *server) currentUserLevel(ctx context.Context, userID uuid.UUID) (int, e
 	return normalizeScaledLevel(userLevel.Level), nil
 }
 
+func (s *server) currentPartyMaxLevel(
+	ctx context.Context,
+	user *models.User,
+) (int, error) {
+	if user == nil {
+		return 1, nil
+	}
+	maxLevel, err := s.currentUserLevel(ctx, user.ID)
+	if err != nil {
+		return 0, err
+	}
+	if user.PartyID == nil || *user.PartyID == uuid.Nil {
+		return maxLevel, nil
+	}
+
+	partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
+	if err != nil {
+		return 0, err
+	}
+	for _, member := range partyMembers {
+		memberLevel, err := s.currentUserLevel(ctx, member.ID)
+		if err != nil {
+			return 0, err
+		}
+		if memberLevel > maxLevel {
+			maxLevel = memberLevel
+		}
+	}
+	return maxLevel, nil
+}
+
 func scenarioDifficultyForUserLevel(scenario *models.Scenario, userLevel int) int {
 	if scenario == nil {
 		return 0

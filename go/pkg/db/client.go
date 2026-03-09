@@ -40,6 +40,7 @@ type client struct {
 	userSpellHandle                   *userSpellHandler
 	inventoryItemHandle               *inventoryItemHandler
 	newUserStarterConfigHandle        *newUserStarterConfigHandle
+	tutorialHandle                    *tutorialHandle
 	auditItemHandle                   *auditItemHandler
 	imageGenerationHandle             *imageGenerationHandle
 	outfitProfileGenerationHandle     *outfitProfileGenerationHandle
@@ -184,6 +185,7 @@ func NewClient(cfg ClientConfig) (DbClient, error) {
 		userSpellHandle:                   &userSpellHandler{db: db},
 		inventoryItemHandle:               &inventoryItemHandler{db: db},
 		newUserStarterConfigHandle:        &newUserStarterConfigHandle{db: db},
+		tutorialHandle:                    &tutorialHandle{db: db},
 		auditItemHandle:                   &auditItemHandler{db: db},
 		imageGenerationHandle:             &imageGenerationHandle{db: db},
 		outfitProfileGenerationHandle:     &outfitProfileGenerationHandle{db: db},
@@ -456,6 +458,10 @@ func (c *client) InventoryItem() InventoryItemHandle {
 
 func (c *client) NewUserStarterConfig() NewUserStarterConfigHandle {
 	return c.newUserStarterConfigHandle
+}
+
+func (c *client) Tutorial() TutorialHandle {
+	return c.tutorialHandle
 }
 
 func (c *client) PointOfInterestChallenge() PointOfInterestChallengeHandle {

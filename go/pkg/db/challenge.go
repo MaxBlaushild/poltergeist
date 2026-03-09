@@ -2,12 +2,14 @@ package db
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type challengeHandle struct {
@@ -15,7 +17,11 @@ type challengeHandle struct {
 }
 
 func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
-	return h.db.WithContext(ctx).Preload("Zone").Preload("PointOfInterest")
+	return h.db.WithContext(ctx).
+		Preload("Zone").
+		Preload("PointOfInterest").
+		Preload("ItemChoiceRewards").
+		Preload("ItemChoiceRewards.InventoryItem")
 }
 
 func (h *challengeHandle) Create(ctx context.Context, challenge *models.Challenge) error {
@@ -141,4 +147,57 @@ func (h *challengeHandle) FindDueRecurring(ctx context.Context, asOf time.Time, 
 		return nil, err
 	}
 	return challenges, nil
+}
+
+func (h *challengeHandle) ReplaceItemChoiceRewards(ctx context.Context, challengeID uuid.UUID, rewards []models.ChallengeItemChoiceReward) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("challenge_id = ?", challengeID).Delete(&models.ChallengeItemChoiceReward{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, reward := range rewards {
+			reward.ID = uuid.New()
+			reward.ChallengeID = challengeID
+			reward.CreatedAt = now
+			reward.UpdatedAt = now
+			if err := tx.Create(&reward).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (h *challengeHandle) UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error {
+	now := time.Now()
+	record := models.UserChallengeItemChoicePending{
+		ID:          uuid.New(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		UserID:      userID,
+		ChallengeID: challengeID,
+	}
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}, {Name: "challenge_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{"updated_at": now}),
+		}).
+		Create(&record).Error
+}
+
+func (h *challengeHandle) FindItemChoicePendingByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeItemChoicePending, error) {
+	var pending models.UserChallengeItemChoicePending
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ? AND challenge_id = ?", userID, challengeID).
+		First(&pending).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &pending, nil
+}
+
+func (h *challengeHandle) DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.UserChallengeItemChoicePending{}, "id = ?", id).Error
 }

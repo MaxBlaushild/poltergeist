@@ -9,6 +9,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type scenarioHandle struct {
@@ -135,10 +136,14 @@ func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("Options").
 		Preload("Options.ItemRewards").
 		Preload("Options.ItemRewards.InventoryItem").
+		Preload("Options.ItemChoiceRewards").
+		Preload("Options.ItemChoiceRewards.InventoryItem").
 		Preload("Options.SpellRewards").
 		Preload("Options.SpellRewards.Spell").
 		Preload("ItemRewards").
 		Preload("ItemRewards.InventoryItem").
+		Preload("ItemChoiceRewards").
+		Preload("ItemChoiceRewards.InventoryItem").
 		Preload("SpellRewards").
 		Preload("SpellRewards.Spell")
 }
@@ -261,6 +266,9 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 		if err := tx.Where("scenario_option_id IN (?)", optionIDs).Delete(&models.ScenarioOptionItemReward{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("scenario_option_id IN (?)", optionIDs).Delete(&models.ScenarioOptionItemChoiceReward{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("scenario_option_id IN (?)", optionIDs).Delete(&models.ScenarioOptionSpellReward{}).Error; err != nil {
 			return err
 		}
@@ -291,6 +299,15 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 					return err
 				}
 			}
+			for _, reward := range option.ItemChoiceRewards {
+				reward.ID = uuid.New()
+				reward.ScenarioOptionID = option.ID
+				reward.CreatedAt = now
+				reward.UpdatedAt = now
+				if err := tx.Create(&reward).Error; err != nil {
+					return err
+				}
+			}
 			for _, reward := range option.SpellRewards {
 				reward.ID = uuid.New()
 				reward.ScenarioOptionID = option.ID
@@ -308,6 +325,25 @@ func (h *scenarioHandle) ReplaceOptions(ctx context.Context, scenarioID uuid.UUI
 func (h *scenarioHandle) ReplaceItemRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemReward) error {
 	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioItemReward{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for _, reward := range rewards {
+			reward.ID = uuid.New()
+			reward.ScenarioID = scenarioID
+			reward.CreatedAt = now
+			reward.UpdatedAt = now
+			if err := tx.Create(&reward).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (h *scenarioHandle) ReplaceItemChoiceRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemChoiceReward) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("scenario_id = ?", scenarioID).Delete(&models.ScenarioItemChoiceReward{}).Error; err != nil {
 			return err
 		}
 		now := time.Now()
@@ -366,9 +402,53 @@ func (h *scenarioHandle) CreateAttempt(ctx context.Context, attempt *models.User
 	return h.db.WithContext(ctx).Create(attempt).Error
 }
 
+func (h *scenarioHandle) UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID, scenarioOptionID *uuid.UUID) error {
+	now := time.Now()
+	record := models.UserScenarioItemChoicePending{
+		ID:               uuid.New(),
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		UserID:           userID,
+		ScenarioID:       scenarioID,
+		ScenarioOptionID: scenarioOptionID,
+	}
+	return h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "user_id"}, {Name: "scenario_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"updated_at":         now,
+				"scenario_option_id": scenarioOptionID,
+			}),
+		}).
+		Create(&record).Error
+}
+
+func (h *scenarioHandle) FindItemChoicePendingByUserAndScenario(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) (*models.UserScenarioItemChoicePending, error) {
+	var pending models.UserScenarioItemChoicePending
+	if err := h.db.WithContext(ctx).
+		Where("user_id = ? AND scenario_id = ?", userID, scenarioID).
+		First(&pending).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &pending, nil
+}
+
+func (h *scenarioHandle) DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error {
+	return h.db.WithContext(ctx).Delete(&models.UserScenarioItemChoicePending{}, "id = ?", id).Error
+}
+
 func (h *scenarioHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	scenarios, err := h.FindAll(ctx)
-	if err != nil {
+	query := h.preloadBase(ctx)
+	if userID == nil {
+		query = query.Where("owner_user_id IS NULL")
+	} else {
+		query = query.Where("(owner_user_id IS NULL OR owner_user_id = ?)", *userID)
+	}
+	var scenarios []models.Scenario
+	if err := query.Find(&scenarios).Error; err != nil {
 		return nil, nil, err
 	}
 	attempted := map[uuid.UUID]bool{}
@@ -390,8 +470,14 @@ func (h *scenarioHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid
 }
 
 func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	scenarios, err := h.FindByZoneID(ctx, zoneID)
-	if err != nil {
+	query := h.preloadBase(ctx).Where("zone_id = ?", zoneID)
+	if userID == nil {
+		query = query.Where("owner_user_id IS NULL")
+	} else {
+		query = query.Where("(owner_user_id IS NULL OR owner_user_id = ?)", *userID)
+	}
+	var scenarios []models.Scenario
+	if err := query.Find(&scenarios).Error; err != nil {
 		return nil, nil, err
 	}
 	attempted := map[uuid.UUID]bool{}
@@ -413,8 +499,16 @@ func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 }
 
 func (h *scenarioHandle) FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	scenarios, err := h.FindByZoneIDExcludingQuestNodes(ctx, zoneID)
-	if err != nil {
+	query := h.preloadBase(ctx).
+		Where("zone_id = ?", zoneID).
+		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.scenario_id = scenarios.id)")
+	if userID == nil {
+		query = query.Where("owner_user_id IS NULL")
+	} else {
+		query = query.Where("(owner_user_id IS NULL OR owner_user_id = ?)", *userID)
+	}
+	var scenarios []models.Scenario
+	if err := query.Find(&scenarios).Error; err != nil {
 		return nil, nil, err
 	}
 	attempted := map[uuid.UUID]bool{}

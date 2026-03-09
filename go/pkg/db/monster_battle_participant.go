@@ -70,6 +70,16 @@ func (h *monsterBattleParticipantHandler) FindByBattleID(
 	return participants, nil
 }
 
+func (h *monsterBattleParticipantHandler) DeleteByBattleAndUser(
+	ctx context.Context,
+	battleID uuid.UUID,
+	userID uuid.UUID,
+) error {
+	return h.db.WithContext(ctx).
+		Where("battle_id = ? AND user_id = ?", battleID, userID).
+		Delete(&models.MonsterBattleParticipant{}).Error
+}
+
 func (h *monsterBattleParticipantHandler) DeleteAllForBattleID(
 	ctx context.Context,
 	battleID uuid.UUID,

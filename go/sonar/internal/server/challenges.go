@@ -27,25 +27,26 @@ var challengeValidStatTags = map[string]struct{}{
 }
 
 type challengeUpsertRequest struct {
-	ZoneID              string   `json:"zoneId"`
-	PointOfInterestID   string   `json:"pointOfInterestId"`
-	Latitude            float64  `json:"latitude"`
-	Longitude           float64  `json:"longitude"`
-	Question            string   `json:"question"`
-	Description         string   `json:"description"`
-	ImageURL            string   `json:"imageUrl"`
-	ThumbnailURL        string   `json:"thumbnailUrl"`
-	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
-	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
-	RewardMode          string   `json:"rewardMode"`
-	RandomRewardSize    string   `json:"randomRewardSize"`
-	RewardExperience    int      `json:"rewardExperience"`
-	Reward              int      `json:"reward"`
-	InventoryItemID     *int     `json:"inventoryItemId"`
-	SubmissionType      string   `json:"submissionType"`
-	Difficulty          int      `json:"difficulty"`
-	StatTags            []string `json:"statTags"`
-	Proficiency         string   `json:"proficiency"`
+	ZoneID              string                      `json:"zoneId"`
+	PointOfInterestID   string                      `json:"pointOfInterestId"`
+	Latitude            float64                     `json:"latitude"`
+	Longitude           float64                     `json:"longitude"`
+	Question            string                      `json:"question"`
+	Description         string                      `json:"description"`
+	ImageURL            string                      `json:"imageUrl"`
+	ThumbnailURL        string                      `json:"thumbnailUrl"`
+	ScaleWithUserLevel  bool                        `json:"scaleWithUserLevel"`
+	RecurrenceFrequency *string                     `json:"recurrenceFrequency"`
+	RewardMode          string                      `json:"rewardMode"`
+	RandomRewardSize    string                      `json:"randomRewardSize"`
+	RewardExperience    int                         `json:"rewardExperience"`
+	Reward              int                         `json:"reward"`
+	InventoryItemID     *int                        `json:"inventoryItemId"`
+	ItemChoiceRewards   []scenarioRewardItemPayload `json:"itemChoiceRewards"`
+	SubmissionType      string                      `json:"submissionType"`
+	Difficulty          int                         `json:"difficulty"`
+	StatTags            []string                    `json:"statTags"`
+	Proficiency         string                      `json:"proficiency"`
 }
 
 type challengeGenerationJobRequest struct {
@@ -77,24 +78,24 @@ func parseChallengeStatTags(raw []string) models.StringArray {
 	return out
 }
 
-func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUpsertRequest) (*models.Challenge, error) {
+func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUpsertRequest) (*models.Challenge, []models.ChallengeItemChoiceReward, error) {
 	zoneID, err := uuid.Parse(strings.TrimSpace(body.ZoneID))
 	if err != nil {
-		return nil, fmt.Errorf("invalid zoneId")
+		return nil, nil, fmt.Errorf("invalid zoneId")
 	}
 	question := strings.TrimSpace(body.Question)
 	if question == "" {
-		return nil, fmt.Errorf("question is required")
+		return nil, nil, fmt.Errorf("question is required")
 	}
 	description := strings.TrimSpace(body.Description)
 	if body.RewardExperience < 0 {
-		return nil, fmt.Errorf("rewardExperience must be zero or greater")
+		return nil, nil, fmt.Errorf("rewardExperience must be zero or greater")
 	}
 	if body.Reward < 0 {
-		return nil, fmt.Errorf("reward must be zero or greater")
+		return nil, nil, fmt.Errorf("reward must be zero or greater")
 	}
 	if body.Difficulty < 0 {
-		return nil, fmt.Errorf("difficulty must be zero or greater")
+		return nil, nil, fmt.Errorf("difficulty must be zero or greater")
 	}
 
 	submissionTypeRaw := strings.TrimSpace(body.SubmissionType)
@@ -103,7 +104,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	}
 	submissionType := models.QuestNodeSubmissionType(submissionTypeRaw)
 	if !submissionType.IsValid() {
-		return nil, fmt.Errorf("invalid submissionType")
+		return nil, nil, fmt.Errorf("invalid submissionType")
 	}
 
 	proficiency := strings.TrimSpace(body.Proficiency)
@@ -118,7 +119,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	}
 	pointOfInterestID, err := parseStandalonePointOfInterestID(body.PointOfInterestID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
 		ctx,
@@ -128,13 +129,30 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		body.Longitude,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	itemChoiceRewards := make([]models.ChallengeItemChoiceReward, 0, len(body.ItemChoiceRewards))
+	for _, reward := range body.ItemChoiceRewards {
+		if reward.InventoryItemID == 0 || reward.Quantity <= 0 {
+			return nil, nil, fmt.Errorf("itemChoiceRewards require inventoryItemId and positive quantity")
+		}
+		itemChoiceRewards = append(itemChoiceRewards, models.ChallengeItemChoiceReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	if len(itemChoiceRewards) == 1 {
+		return nil, nil, fmt.Errorf("itemChoiceRewards must include at least 2 options when provided")
 	}
 	rewardMode := models.NormalizeRewardMode(body.RewardMode)
 	if strings.TrimSpace(body.RewardMode) == "" {
-		if body.RewardExperience > 0 || body.Reward > 0 || body.InventoryItemID != nil {
+		if body.RewardExperience > 0 || body.Reward > 0 || body.InventoryItemID != nil || len(itemChoiceRewards) > 0 {
 			rewardMode = models.RewardModeExplicit
 		}
+	}
+	if rewardMode == models.RewardModeRandom && len(itemChoiceRewards) > 0 {
+		return nil, nil, fmt.Errorf("itemChoiceRewards require explicit rewardMode")
 	}
 	randomRewardSize := models.NormalizeRandomRewardSize(body.RandomRewardSize)
 
@@ -158,7 +176,7 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		StatTags:           parseChallengeStatTags(body.StatTags),
 		Proficiency:        proficiencyPtr,
 	}
-	return challenge, nil
+	return challenge, itemChoiceRewards, nil
 }
 
 func (s *server) getChallenges(ctx *gin.Context) {
@@ -245,7 +263,7 @@ func (s *server) createChallenge(ctx *gin.Context) {
 		return
 	}
 
-	challenge, err := s.parseChallengeUpsertRequest(ctx, requestBody)
+	challenge, itemChoiceRewards, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
 		return
@@ -268,7 +286,16 @@ func (s *server) createChallenge(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusCreated, challenge)
+	if err := s.dbClient.Challenge().ReplaceItemChoiceRewards(ctx, challenge.ID, itemChoiceRewards); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	created, err := s.dbClient.Challenge().FindByID(ctx, challenge.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusCreated, created)
 }
 
 func (s *server) updateChallenge(ctx *gin.Context) {
@@ -303,7 +330,7 @@ func (s *server) updateChallenge(ctx *gin.Context) {
 		return
 	}
 
-	updates, err := s.parseChallengeUpsertRequest(ctx, requestBody)
+	updates, itemChoiceRewards, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
 		return
@@ -324,6 +351,10 @@ func (s *server) updateChallenge(ctx *gin.Context) {
 	updates.UpdatedAt = time.Now()
 
 	if err := s.dbClient.Challenge().Update(ctx, challengeID, updates); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.Challenge().ReplaceItemChoiceRewards(ctx, challengeID, itemChoiceRewards); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

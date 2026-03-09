@@ -1,0 +1,3181 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../models/inventory_item.dart';
+import '../models/monster.dart';
+import '../models/spell.dart';
+import '../providers/auth_provider.dart';
+import '../providers/character_stats_provider.dart';
+import '../providers/party_provider.dart';
+import '../services/inventory_service.dart';
+import '../services/poi_service.dart';
+import 'paper_texture.dart';
+
+enum MonsterBattleOutcome { victory, defeat, escaped }
+
+enum _BattleMenuView { root, spells, techniques, items }
+
+class MonsterBattleResult {
+  const MonsterBattleResult({
+    required this.outcome,
+    required this.playerHealthRemaining,
+    required this.playerManaRemaining,
+  });
+
+  final MonsterBattleOutcome outcome;
+  final int playerHealthRemaining;
+  final int playerManaRemaining;
+}
+
+class _BattleItemChoice {
+  const _BattleItemChoice({
+    required this.ownedInventoryItemId,
+    required this.name,
+    required this.healthDelta,
+    required this.manaDelta,
+    required this.revivePartyMemberHealth,
+    required this.reviveAllDownedPartyMembersHealth,
+    required this.quantity,
+  });
+
+  final String ownedInventoryItemId;
+  final String name;
+  final int healthDelta;
+  final int manaDelta;
+  final int revivePartyMemberHealth;
+  final int reviveAllDownedPartyMembersHealth;
+  final int quantity;
+
+  _BattleItemChoice copyWith({int? quantity}) => _BattleItemChoice(
+    ownedInventoryItemId: ownedInventoryItemId,
+    name: name,
+    healthDelta: healthDelta,
+    manaDelta: manaDelta,
+    revivePartyMemberHealth: revivePartyMemberHealth,
+    reviveAllDownedPartyMembersHealth: reviveAllDownedPartyMembersHealth,
+    quantity: quantity ?? this.quantity,
+  );
+}
+
+class _EncounterEnemyState {
+  _EncounterEnemyState({required this.monster, required this.currentHealth});
+
+  final Monster monster;
+  int currentHealth;
+
+  int get maxHealth => math.max(1, monster.maxHealth);
+  bool get isDefeated => currentHealth <= 0;
+}
+
+class _TurnOrderEntry {
+  const _TurnOrderEntry({
+    required this.iconUrl,
+    required this.currentHealth,
+    required this.maxHealth,
+    required this.label,
+    required this.fallbackIcon,
+    this.userId,
+    this.allyIndex,
+    this.enemyIndex,
+    this.isSelf = false,
+  });
+
+  final String iconUrl;
+  final int currentHealth;
+  final int maxHealth;
+  final String label;
+  final IconData fallbackIcon;
+  final String? userId;
+  final int? allyIndex;
+  final int? enemyIndex;
+  final bool isSelf;
+
+  bool get isEnemy => enemyIndex != null;
+  bool get isAlly => allyIndex != null;
+  bool get isDefeated => currentHealth <= 0;
+}
+
+class _PartyAllyState {
+  _PartyAllyState({
+    required this.userId,
+    required this.name,
+    required this.iconUrl,
+    required this.level,
+    required this.currentHealth,
+    required this.maxHealth,
+    required this.currentMana,
+    required this.maxMana,
+    required this.isSelf,
+  });
+
+  final String userId;
+  String name;
+  String iconUrl;
+  int level;
+  int currentHealth;
+  int maxHealth;
+  int currentMana;
+  int maxMana;
+  final bool isSelf;
+}
+
+class MonsterBattleDialog extends StatefulWidget {
+  const MonsterBattleDialog({
+    super.key,
+    required this.encounter,
+    this.isPartyBattle = false,
+    this.battleMonsterId,
+    this.battleId,
+  });
+
+  final MonsterEncounter encounter;
+  final bool isPartyBattle;
+  final String? battleMonsterId;
+  final String? battleId;
+
+  @override
+  State<MonsterBattleDialog> createState() => _MonsterBattleDialogState();
+}
+
+class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
+  final math.Random _random = math.Random();
+  final List<String> _battleLog = <String>[];
+
+  late final String _playerName;
+  late final int _playerLevel;
+  late final Map<String, int> _playerStats;
+  late final List<Spell> _spells;
+  late final List<Spell> _techniques;
+  late final int _playerMaxHealth;
+  late final int _playerMaxMana;
+  late int _playerHealth;
+  late int _playerMana;
+  late final List<_EncounterEnemyState> _enemies;
+  int _activeEnemyIndex = 0;
+  int? _actingEnemyIndex;
+  late final String _playerFrontSpriteUrl;
+  late final String _playerBackSpriteUrl;
+  late final bool _hasTrueBackSprite;
+  List<_BattleItemChoice> _items = const [];
+
+  _BattleMenuView _menuView = _BattleMenuView.root;
+  String? _selectedCommandKey;
+  bool _loadingItems = false;
+  bool _playerTurn = true;
+  bool _busy = false;
+  bool _battleOver = false;
+  double _monsterShakeDx = 0;
+  double _playerShakeDx = 0;
+  Color? _monsterFlashTint;
+  Color? _playerFlashTint;
+  String? _monsterFloatText;
+  String? _playerFloatText;
+  Color _monsterFloatColor = const Color(0xFF8C2F39);
+  Color _playerFloatColor = const Color(0xFF8C2F39);
+  int _monsterFxNonce = 0;
+  int _playerFxNonce = 0;
+  Timer? _partyBattleSyncTimer;
+  String? _partyBattleMonsterId;
+  String? _partyBattleId;
+  bool _partyBattleSyncInFlight = false;
+  String _selfUserId = '';
+  int _activeAllyIndex = 0;
+  final List<_PartyAllyState> _partyAllies = <_PartyAllyState>[];
+  final Set<String> _activePartyParticipantIds = <String>{};
+  final Map<String, DateTime> _partyAllyFetchedAt = <String, DateTime>{};
+  List<_TurnOrderEntry> _partyTurnOrder = const [];
+  int _partyTurnIndex = 0;
+  bool _partyMonsterTurnInFlight = false;
+  bool _partyRemoteTurnSignal = false;
+  int _lastPartyMonsterHealthDeficit = -1;
+  int _pendingLocalDamage = 0;
+  bool _partySelfResourceSyncInFlight = false;
+
+  bool _isBattleStatusNotFoundError(Object error) {
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      return code == 404 || code == 410;
+    }
+    return false;
+  }
+
+  String _extractApiErrorMessage(Object error, {required String fallback}) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map) {
+        final apiMessage = data['error']?.toString().trim() ?? '';
+        if (apiMessage.isNotEmpty) {
+          return apiMessage;
+        }
+      }
+      final dioMessage = error.message?.trim() ?? '';
+      if (dioMessage.isNotEmpty) {
+        return dioMessage;
+      }
+    }
+    return fallback;
+  }
+
+  Future<void> _finishAfterBattleStatusGone() async {
+    if (_battleOver) return;
+    if (_aliveEnemies.isEmpty) {
+      await _finishBattle(
+        MonsterBattleOutcome.victory,
+        _enemies.length == 1
+            ? 'Your party defeated ${_enemies.first.monster.name}!'
+            : 'Your party won the battle.',
+      );
+      return;
+    }
+    if (_allPartyMembersDefeated() || _playerHealth <= 0) {
+      await _finishBattle(
+        MonsterBattleOutcome.defeat,
+        'Your party has been defeated.',
+      );
+      return;
+    }
+    await _finishBattle(MonsterBattleOutcome.escaped, 'Party battle ended.');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final statsProvider = context.read<CharacterStatsProvider>();
+    final authProvider = context.read<AuthProvider>();
+    final user = authProvider.user;
+    _selfUserId = (user?.id ?? '').trim();
+    _playerName = user?.username.trim().isNotEmpty == true
+        ? '@${user!.username.trim()}'
+        : (user?.name.trim().isNotEmpty == true ? user!.name.trim() : 'You');
+    _playerLevel = statsProvider.level;
+    _playerStats = statsProvider.stats;
+    _spells = statsProvider.spells;
+    _techniques = statsProvider.techniques;
+    _playerMaxHealth = math.max(1, statsProvider.maxHealth);
+    _playerMaxMana = math.max(0, statsProvider.maxMana);
+    _playerHealth = math.max(0, statsProvider.health);
+    _playerMana = math.max(0, statsProvider.mana);
+    final encounterMonsters = widget.encounter.monsters.isNotEmpty
+        ? widget.encounter.monsters
+        : widget.encounter.members
+              .map((member) => member.monster)
+              .where((monster) => monster.id.isNotEmpty)
+              .toList(growable: false);
+    _enemies = encounterMonsters
+        .take(9)
+        .map(
+          (monster) => _EncounterEnemyState(
+            monster: monster,
+            currentHealth: math.max(1, monster.maxHealth),
+          ),
+        )
+        .toList(growable: false);
+    if (_enemies.isEmpty) {
+      _enemies.add(
+        _EncounterEnemyState(
+          monster: const Monster(
+            id: '',
+            name: 'Unknown Monster',
+            zoneId: '',
+            latitude: 0,
+            longitude: 0,
+          ),
+          currentHealth: 1,
+        ),
+      );
+    }
+    _activeEnemyIndex = 0;
+    _ensureSelectedEnemyIsAlive();
+    _actingEnemyIndex = null;
+    _playerFrontSpriteUrl = (user?.profilePictureUrl ?? '').trim();
+    _playerBackSpriteUrl = (user?.backProfilePictureUrl ?? '').trim();
+    _hasTrueBackSprite = _playerBackSpriteUrl.isNotEmpty;
+    _selectedCommandKey = 'root:Attack';
+    if (_enemies.length == 1) {
+      _battleLog.add('A wild ${_enemies.first.monster.name} appears!');
+    } else {
+      _battleLog.add('A hostile group of ${_enemies.length} monsters appears!');
+    }
+    _battleLog.add('Choose a command.');
+    if (widget.isPartyBattle) {
+      _playerTurn = false;
+      _ensureSelfPartyAlly();
+      _seedPartyAlliesFromPartyProvider();
+      final battleId = (widget.battleId ?? '').trim();
+      if (battleId.isNotEmpty) {
+        _partyBattleId = battleId;
+      }
+      final monsterId = (widget.battleMonsterId ?? _enemies.first.monster.id)
+          .trim();
+      if (monsterId.isNotEmpty) {
+        _partyBattleMonsterId = monsterId;
+        _partyBattleSyncTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          unawaited(_syncPartyBattleState());
+        });
+        unawaited(_syncPartyBattleState());
+      }
+    }
+    unawaited(_loadItemChoices());
+  }
+
+  @override
+  void dispose() {
+    _partyBattleSyncTimer?.cancel();
+    _partyBattleSyncTimer = null;
+    super.dispose();
+  }
+
+  bool get _canAct =>
+      _playerTurn && !_busy && !_battleOver && _playerHealth > 0;
+
+  List<_EncounterEnemyState> get _aliveEnemies =>
+      _enemies.where((enemy) => !enemy.isDefeated).toList(growable: false);
+
+  int? _firstAliveEnemyIndex() {
+    for (var i = 0; i < _enemies.length; i++) {
+      if (!_enemies[i].isDefeated) return i;
+    }
+    return null;
+  }
+
+  int? _resolveTargetEnemyIndex([int? preferredIndex]) {
+    if (preferredIndex != null &&
+        preferredIndex >= 0 &&
+        preferredIndex < _enemies.length &&
+        !_enemies[preferredIndex].isDefeated) {
+      return preferredIndex;
+    }
+    return _firstAliveEnemyIndex();
+  }
+
+  void _ensureSelectedEnemyIsAlive() {
+    final resolved = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    if (resolved != null) {
+      _activeEnemyIndex = resolved;
+    }
+  }
+
+  _EncounterEnemyState? get _activeEnemy {
+    final resolved = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    if (resolved == null) return null;
+    return _enemies[resolved];
+  }
+
+  bool _allPartyMembersDefeated() {
+    if (!widget.isPartyBattle) {
+      return _playerHealth <= 0;
+    }
+    if (_partyAllies.isEmpty) {
+      return _playerHealth <= 0;
+    }
+    final trackedUserIDs = <String>{};
+    if (_activePartyParticipantIds.isNotEmpty) {
+      trackedUserIDs.addAll(_activePartyParticipantIds);
+    } else {
+      for (final ally in _partyAllies) {
+        trackedUserIDs.add(ally.userId);
+      }
+    }
+    if (trackedUserIDs.isEmpty && _selfUserId.isNotEmpty) {
+      trackedUserIDs.add(_selfUserId);
+    }
+    var foundTrackedParticipant = false;
+    for (final ally in _partyAllies) {
+      if (!trackedUserIDs.contains(ally.userId)) {
+        continue;
+      }
+      foundTrackedParticipant = true;
+      if (ally.currentHealth > 0) return false;
+    }
+    if (!foundTrackedParticipant) {
+      return _playerHealth <= 0;
+    }
+    return true;
+  }
+
+  String _turnActorKey(_TurnOrderEntry entry) {
+    if (entry.isEnemy) {
+      return 'monster:${entry.enemyIndex ?? -1}';
+    }
+    return 'user:${entry.userId ?? ''}';
+  }
+
+  bool _isTurnEntryAlive(_TurnOrderEntry entry) {
+    if (entry.isEnemy) {
+      final index = entry.enemyIndex;
+      if (index == null || index < 0 || index >= _enemies.length) return false;
+      return !_enemies[index].isDefeated;
+    }
+    final userId = (entry.userId ?? '').trim();
+    if (userId.isEmpty) return false;
+    final allyIndex = _partyAllies.indexWhere((ally) => ally.userId == userId);
+    if (allyIndex < 0) return false;
+    return _partyAllies[allyIndex].currentHealth > 0;
+  }
+
+  _TurnOrderEntry? _currentPartyTurnEntry() {
+    if (!widget.isPartyBattle || _partyTurnOrder.isEmpty) return null;
+    final total = _partyTurnOrder.length;
+    if (_partyTurnIndex < 0 || _partyTurnIndex >= total) {
+      _partyTurnIndex = 0;
+    }
+    for (var i = 0; i < total; i++) {
+      final idx = (_partyTurnIndex + i) % total;
+      final candidate = _partyTurnOrder[idx];
+      if (_isTurnEntryAlive(candidate)) {
+        _partyTurnIndex = idx;
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  bool _isPartySelfTurn() {
+    final current = _currentPartyTurnEntry();
+    return current?.isSelf == true;
+  }
+
+  bool _isPartyMonsterTurn() {
+    final current = _currentPartyTurnEntry();
+    return current?.isEnemy == true;
+  }
+
+  bool _isPartyOtherUserTurn() {
+    final current = _currentPartyTurnEntry();
+    return current != null && current.isAlly && !current.isSelf;
+  }
+
+  void _advancePartyTurn() {
+    if (!widget.isPartyBattle || _partyTurnOrder.isEmpty) return;
+    final total = _partyTurnOrder.length;
+    var next = (_partyTurnIndex + 1) % total;
+    for (var i = 0; i < total; i++) {
+      final candidate = _partyTurnOrder[next];
+      if (_isTurnEntryAlive(candidate)) {
+        _partyTurnIndex = next;
+        return;
+      }
+      next = (next + 1) % total;
+    }
+  }
+
+  void _refreshPartyTurnFlag({bool announce = true}) {
+    if (!widget.isPartyBattle) return;
+    final wasSelfTurn = _playerTurn;
+    final isSelfTurn = !_battleOver && _isPartySelfTurn() && _playerHealth > 0;
+    _playerTurn = isSelfTurn;
+    if (announce && !wasSelfTurn && isSelfTurn && !_busy) {
+      _battleLog.add('Your turn. Choose a command.');
+    }
+  }
+
+  Future<void> _runPartyMonsterTurn() async {
+    if (!widget.isPartyBattle || _battleOver || _partyMonsterTurnInFlight) {
+      return;
+    }
+    final currentTurn = _currentPartyTurnEntry();
+    if (currentTurn == null || !currentTurn.isEnemy) {
+      return;
+    }
+    final enemyIndex =
+        currentTurn.enemyIndex ??
+        _resolveTargetEnemyIndex(_activeEnemyIndex) ??
+        0;
+    if (enemyIndex < 0 || enemyIndex >= _enemies.length) {
+      return;
+    }
+    final enemy = _enemies[enemyIndex];
+    if (enemy.isDefeated) {
+      return;
+    }
+
+    _partyMonsterTurnInFlight = true;
+    setState(() {
+      _busy = true;
+      _actingEnemyIndex = enemyIndex;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+    if (!mounted || _battleOver) {
+      _partyMonsterTurnInFlight = false;
+      return;
+    }
+
+    final damage = _monsterAttackDamage(enemy.monster);
+    final weaponName = enemy.monster.weaponInventoryItemName.trim().isNotEmpty
+        ? enemy.monster.weaponInventoryItemName.trim()
+        : 'its weapon';
+    setState(() {
+      if (_playerHealth > 0) {
+        _playerHealth = math.max(0, _playerHealth - damage);
+        _battleLog.add(
+          '${enemy.monster.name} attacks with $weaponName for $damage damage.',
+        );
+      } else {
+        _battleLog.add('${enemy.monster.name} attacks your party.');
+      }
+      _syncSelfAllyFromLocalResources();
+    });
+    unawaited(_syncPartySelfResourcesToBackend());
+    if (_playerHealth > 0) {
+      unawaited(
+        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
+      );
+    }
+
+    if (_allPartyMembersDefeated() && !_battleOver) {
+      _partyMonsterTurnInFlight = false;
+      await _finishBattle(
+        MonsterBattleOutcome.defeat,
+        'Your party has been defeated.',
+      );
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    if (!mounted || _battleOver) {
+      _partyMonsterTurnInFlight = false;
+      return;
+    }
+    setState(() {
+      _actingEnemyIndex = null;
+      _busy = false;
+      _selectedCommandKey = 'root:Attack';
+      _advancePartyTurn();
+      _refreshPartyTurnFlag();
+      if (_playerHealth <= 0) {
+        _battleLog.add('You are down. Waiting for your party...');
+      }
+    });
+    _partyMonsterTurnInFlight = false;
+  }
+
+  int _parseIntValue(dynamic raw, {int fallback = 0}) {
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '') ?? fallback;
+  }
+
+  String _userDisplayNameFromRaw(Map<String, dynamic> raw) {
+    final username = (raw['username']?.toString() ?? '').trim();
+    if (username.isNotEmpty) return '@$username';
+    final name = (raw['name']?.toString() ?? '').trim();
+    if (name.isNotEmpty) return name;
+    return 'Party Member';
+  }
+
+  String _shortTurnLabel(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '?';
+    return trimmed.length <= 10 ? trimmed : '${trimmed.substring(0, 9)}…';
+  }
+
+  _PartyAllyState? get _activeAlly {
+    if (!widget.isPartyBattle || _partyAllies.isEmpty) return null;
+    if (_activeAllyIndex < 0 || _activeAllyIndex >= _partyAllies.length) {
+      _activeAllyIndex = 0;
+    }
+    return _partyAllies[_activeAllyIndex];
+  }
+
+  void _ensureSelfPartyAlly() {
+    if (!widget.isPartyBattle) return;
+    if (_selfUserId.isEmpty) return;
+    final existing = _partyAllies.indexWhere(
+      (ally) => ally.userId == _selfUserId,
+    );
+    if (existing >= 0) {
+      final self = _partyAllies[existing];
+      self.name = _playerName;
+      self.iconUrl = _playerFrontSpriteUrl;
+      self.level = _playerLevel;
+      self.maxHealth = _playerMaxHealth;
+      self.currentHealth = _playerHealth;
+      self.maxMana = _playerMaxMana;
+      self.currentMana = _playerMana;
+      return;
+    }
+    _partyAllies.insert(
+      0,
+      _PartyAllyState(
+        userId: _selfUserId,
+        name: _playerName,
+        iconUrl: _playerFrontSpriteUrl,
+        level: _playerLevel,
+        currentHealth: _playerHealth,
+        maxHealth: _playerMaxHealth,
+        currentMana: _playerMana,
+        maxMana: _playerMaxMana,
+        isSelf: true,
+      ),
+    );
+    _activeAllyIndex = 0;
+  }
+
+  void _seedPartyAlliesFromPartyProvider() {
+    if (!widget.isPartyBattle) return;
+    final provider = context.read<PartyProvider>();
+    final party = provider.party;
+    if (party == null) return;
+
+    final users = <Map<String, dynamic>>[
+      party.leader.toJson(),
+      ...party.members.map((member) => member.toJson()),
+    ];
+    for (final raw in users) {
+      final id = (raw['id']?.toString() ?? '').trim();
+      if (id.isEmpty) continue;
+      final existing = _partyAllies.indexWhere((ally) => ally.userId == id);
+      if (existing < 0) {
+        _partyAllies.add(
+          _PartyAllyState(
+            userId: id,
+            name: _userDisplayNameFromRaw(raw),
+            iconUrl: (raw['profilePictureUrl']?.toString() ?? '').trim(),
+            level: id == _selfUserId ? _playerLevel : 1,
+            currentHealth: id == _selfUserId ? _playerHealth : 0,
+            maxHealth: id == _selfUserId ? _playerMaxHealth : 1,
+            currentMana: id == _selfUserId ? _playerMana : 0,
+            maxMana: id == _selfUserId ? _playerMaxMana : 0,
+            isSelf: id == _selfUserId,
+          ),
+        );
+        continue;
+      }
+      if (id == _selfUserId) continue;
+      final ally = _partyAllies[existing];
+      ally.name = _userDisplayNameFromRaw(raw);
+      final icon = (raw['profilePictureUrl']?.toString() ?? '').trim();
+      if (icon.isNotEmpty) {
+        ally.iconUrl = icon;
+      }
+    }
+  }
+
+  void _syncSelfAllyFromLocalResources() {
+    if (!widget.isPartyBattle || _selfUserId.isEmpty) return;
+    final existing = _partyAllies.indexWhere(
+      (ally) => ally.userId == _selfUserId,
+    );
+    if (existing < 0) return;
+    final self = _partyAllies[existing];
+    self.level = _playerLevel;
+    self.name = _playerName;
+    self.iconUrl = _playerFrontSpriteUrl;
+    self.currentHealth = _playerHealth;
+    self.maxHealth = _playerMaxHealth;
+    self.currentMana = _playerMana;
+    self.maxMana = _playerMaxMana;
+  }
+
+  Future<void> _syncPartySelfResourcesToBackend() async {
+    if (!widget.isPartyBattle ||
+        _selfUserId.isEmpty ||
+        _partySelfResourceSyncInFlight ||
+        !mounted) {
+      return;
+    }
+    _partySelfResourceSyncInFlight = true;
+    try {
+      final statsProvider = context.read<CharacterStatsProvider>();
+      await statsProvider.setHealthAndManaTo(
+        health: _playerHealth.clamp(0, _playerMaxHealth).toInt(),
+        mana: _playerMana.clamp(0, _playerMaxMana).toInt(),
+      );
+    } catch (_) {
+      // Keep combat flow local if backend resource sync fails.
+    } finally {
+      _partySelfResourceSyncInFlight = false;
+    }
+  }
+
+  Future<void> _endSharedPartyBattleOnServer() async {
+    if (!widget.isPartyBattle) return;
+    final monsterId = (_partyBattleMonsterId ?? '').trim();
+    if (monsterId.isEmpty) return;
+    try {
+      final poiService = context.read<PoiService>();
+      await poiService.endMonsterBattle(monsterId);
+    } catch (_) {
+      // Best-effort: battle may already be ended by another participant.
+    }
+  }
+
+  Future<void> _syncPartyParticipantsFromStatus(
+    Map<String, dynamic> status,
+  ) async {
+    if (!widget.isPartyBattle) return;
+    _ensureSelfPartyAlly();
+    _seedPartyAlliesFromPartyProvider();
+
+    final participantsRaw = status['participants'];
+    if (participantsRaw is! List) return;
+    final activeParticipantIDs = <String>{};
+    final now = DateTime.now();
+    final idsToRefresh = <String>[];
+    if (_selfUserId.isNotEmpty) {
+      final selfFetchedAt = _partyAllyFetchedAt[_selfUserId];
+      if (selfFetchedAt == null ||
+          now.difference(selfFetchedAt) >= const Duration(seconds: 2)) {
+        idsToRefresh.add(_selfUserId);
+      }
+    }
+    for (final raw in participantsRaw) {
+      final mapped = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map
+                ? Map<String, dynamic>.from(raw)
+                : const <String, dynamic>{});
+      final userId = (mapped['userId']?.toString() ?? '').trim();
+      if (userId.isEmpty || userId == _selfUserId) continue;
+      activeParticipantIDs.add(userId);
+      final existing = _partyAllies.indexWhere((ally) => ally.userId == userId);
+      if (existing < 0) {
+        _partyAllies.add(
+          _PartyAllyState(
+            userId: userId,
+            name: 'Party Member',
+            iconUrl: '',
+            level: 1,
+            currentHealth: 0,
+            maxHealth: 1,
+            currentMana: 0,
+            maxMana: 0,
+            isSelf: false,
+          ),
+        );
+      }
+      final fetchedAt = _partyAllyFetchedAt[userId];
+      if (fetchedAt == null ||
+          now.difference(fetchedAt) >= const Duration(seconds: 2)) {
+        idsToRefresh.add(userId);
+      }
+    }
+    if (_selfUserId.isNotEmpty) {
+      activeParticipantIDs.add(_selfUserId);
+    }
+
+    final uniqueRefreshIDs = idsToRefresh.toSet().toList(growable: false);
+    if (uniqueRefreshIDs.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _activePartyParticipantIds
+          ..clear()
+          ..addAll(activeParticipantIDs);
+        for (final ally in _partyAllies) {
+          if (ally.isSelf) continue;
+          if (_activePartyParticipantIds.contains(ally.userId)) continue;
+          ally.currentHealth = 0;
+          ally.currentMana = 0;
+        }
+      });
+      return;
+    }
+    final poiService = context.read<PoiService>();
+    final profiles = await Future.wait(
+      uniqueRefreshIDs.map((userId) async {
+        try {
+          final profile = await poiService.getUserCharacterProfile(userId);
+          return <String, dynamic>{'userId': userId, 'profile': profile};
+        } catch (_) {
+          return <String, dynamic>{'userId': userId, 'profile': null};
+        }
+      }),
+    );
+    if (!mounted) return;
+    setState(() {
+      _activePartyParticipantIds
+        ..clear()
+        ..addAll(activeParticipantIDs);
+      for (final entry in profiles) {
+        final userId = (entry['userId']?.toString() ?? '').trim();
+        if (userId.isEmpty) continue;
+        _partyAllyFetchedAt[userId] = now;
+        final profileRaw = entry['profile'];
+        if (profileRaw is Map<String, dynamic>) {
+          _upsertPartyAllyFromProfile(profileRaw);
+        } else if (profileRaw is Map) {
+          _upsertPartyAllyFromProfile(Map<String, dynamic>.from(profileRaw));
+        }
+      }
+      for (final ally in _partyAllies) {
+        if (ally.isSelf) continue;
+        if (_activePartyParticipantIds.contains(ally.userId)) continue;
+        ally.currentHealth = 0;
+        ally.currentMana = 0;
+      }
+    });
+  }
+
+  void _upsertPartyAllyFromProfile(Map<String, dynamic> profile) {
+    final userRaw = profile['user'];
+    final statsRaw = profile['stats'];
+    if (userRaw is! Map && userRaw is! Map<String, dynamic>) return;
+    if (statsRaw is! Map && statsRaw is! Map<String, dynamic>) return;
+    final user = userRaw is Map<String, dynamic>
+        ? userRaw
+        : Map<String, dynamic>.from(userRaw as Map);
+    final stats = statsRaw is Map<String, dynamic>
+        ? statsRaw
+        : Map<String, dynamic>.from(statsRaw as Map);
+
+    final userId = (user['id']?.toString() ?? '').trim();
+    if (userId.isEmpty) return;
+    final existing = _partyAllies.indexWhere((ally) => ally.userId == userId);
+    if (existing < 0) return;
+
+    final ally = _partyAllies[existing];
+    final prevHealth = ally.currentHealth;
+    final prevMana = ally.currentMana;
+    ally.name = _userDisplayNameFromRaw(user);
+    final icon = (user['profilePictureUrl']?.toString() ?? '').trim();
+    if (icon.isNotEmpty) {
+      ally.iconUrl = icon;
+    }
+    ally.level = _parseIntValue(stats['level'], fallback: ally.level);
+    ally.maxHealth = math.max(
+      1,
+      _parseIntValue(stats['maxHealth'], fallback: ally.maxHealth),
+    );
+    ally.currentHealth = _parseIntValue(
+      stats['health'],
+      fallback: ally.currentHealth,
+    ).clamp(0, ally.maxHealth).toInt();
+    ally.maxMana = math.max(
+      0,
+      _parseIntValue(stats['maxMana'], fallback: ally.maxMana),
+    );
+    ally.currentMana = _parseIntValue(
+      stats['mana'],
+      fallback: ally.currentMana,
+    ).clamp(0, ally.maxMana).toInt();
+
+    if (ally.isSelf) {
+      _playerHealth = ally.currentHealth;
+      _playerMana = ally.currentMana;
+      return;
+    }
+    if (prevHealth != ally.currentHealth) {
+      final delta = ally.currentHealth - prevHealth;
+      _partyRemoteTurnSignal = true;
+      if (delta > 0) {
+        _battleLog.add('${ally.name} recovers $delta HP.');
+      } else {
+        _battleLog.add(
+          '${ally.name} takes ${delta.abs()} damage from battle effects.',
+        );
+      }
+    }
+    if (prevMana != ally.currentMana) {
+      final delta = ally.currentMana - prevMana;
+      _partyRemoteTurnSignal = true;
+      if (delta > 0) {
+        _battleLog.add('${ally.name} recovers $delta MP.');
+      } else {
+        _battleLog.add('${ally.name} spends ${delta.abs()} MP.');
+      }
+    }
+  }
+
+  void _updatePartyTurnOrderFromStatus(Map<String, dynamic> status) {
+    if (!widget.isPartyBattle) return;
+    final turnOrderRaw = status['turnOrder'];
+    if (turnOrderRaw is! List || turnOrderRaw.isEmpty) return;
+    final currentTurn = _currentPartyTurnEntry();
+    final currentKey = currentTurn == null ? '' : _turnActorKey(currentTurn);
+
+    final entries = <_TurnOrderEntry>[];
+    for (final raw in turnOrderRaw) {
+      final mapped = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map
+                ? Map<String, dynamic>.from(raw)
+                : const <String, dynamic>{});
+      final entityType = (mapped['entityType']?.toString() ?? '')
+          .trim()
+          .toLowerCase();
+      if (entityType == 'user') {
+        final userId = (mapped['userId']?.toString() ?? '').trim();
+        if (userId.isEmpty) continue;
+        final allyIndex = _partyAllies.indexWhere(
+          (ally) => ally.userId == userId,
+        );
+        if (allyIndex < 0) continue;
+        final ally = _partyAllies[allyIndex];
+        entries.add(
+          _TurnOrderEntry(
+            iconUrl: ally.iconUrl,
+            currentHealth: ally.currentHealth,
+            maxHealth: ally.maxHealth,
+            label: _shortTurnLabel(ally.name),
+            fallbackIcon: Icons.person,
+            userId: userId,
+            allyIndex: allyIndex,
+            isSelf: ally.isSelf,
+          ),
+        );
+        continue;
+      }
+      if (entityType == 'monster') {
+        final monsterId = (mapped['monsterId']?.toString() ?? '').trim();
+        var enemyIndex = -1;
+        if (monsterId.isNotEmpty) {
+          enemyIndex = _enemies.indexWhere(
+            (enemy) => enemy.monster.id == monsterId,
+          );
+        }
+        if (enemyIndex < 0) {
+          enemyIndex = _resolveTargetEnemyIndex(_activeEnemyIndex) ?? 0;
+        }
+        if (enemyIndex < 0 || enemyIndex >= _enemies.length) continue;
+        final enemy = _enemies[enemyIndex];
+        entries.add(
+          _TurnOrderEntry(
+            iconUrl: enemy.monster.thumbnailUrl.isNotEmpty
+                ? enemy.monster.thumbnailUrl
+                : enemy.monster.imageUrl,
+            currentHealth: enemy.currentHealth,
+            maxHealth: enemy.maxHealth,
+            label: _shortTurnLabel(enemy.monster.name),
+            fallbackIcon: Icons.pets,
+            enemyIndex: enemyIndex,
+          ),
+        );
+      }
+    }
+    if (entries.isNotEmpty) {
+      _partyTurnOrder = entries;
+      if (currentKey.isNotEmpty) {
+        final preserved = entries.indexWhere(
+          (entry) => _turnActorKey(entry) == currentKey,
+        );
+        if (preserved >= 0) {
+          _partyTurnIndex = preserved;
+        }
+      }
+      if (_partyTurnIndex < 0 || _partyTurnIndex >= _partyTurnOrder.length) {
+        _partyTurnIndex = 0;
+      }
+    }
+  }
+
+  Future<void> _syncPartyBattleState() async {
+    if (!widget.isPartyBattle || _battleOver || _partyBattleSyncInFlight) {
+      return;
+    }
+    final battleId = (_partyBattleId ?? '').trim();
+    final monsterId = _partyBattleMonsterId;
+    if ((monsterId == null || monsterId.isEmpty) && battleId.isEmpty) return;
+    _partyBattleSyncInFlight = true;
+    try {
+      final poiService = context.read<PoiService>();
+      final status = battleId.isNotEmpty
+          ? await poiService.getMonsterBattleStatusById(battleId)
+          : await poiService.getMonsterBattleStatus(monsterId!);
+      if (!mounted || _battleOver) return;
+      await _syncPartyParticipantsFromStatus(status);
+      if (!mounted || _battleOver) return;
+      final battleRaw = status['battle'];
+      final battle = battleRaw is Map<String, dynamic>
+          ? battleRaw
+          : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+      final deficit = _parseIntValue(battle?['monsterHealthDeficit']);
+      final endedAtRaw = (battle?['endedAt']?.toString() ?? '').trim();
+      if (_enemies.isNotEmpty) {
+        final primaryEnemy = _enemies.first;
+        final nextHealth = math.max(0, primaryEnemy.maxHealth - deficit);
+        setState(() {
+          _syncSelfAllyFromLocalResources();
+          _updatePartyTurnOrderFromStatus(status);
+          if (_lastPartyMonsterHealthDeficit >= 0 &&
+              deficit > _lastPartyMonsterHealthDeficit) {
+            final rawDelta = deficit - _lastPartyMonsterHealthDeficit;
+            final attributedToLocal = math.min(_pendingLocalDamage, rawDelta);
+            _pendingLocalDamage -= attributedToLocal;
+            final remoteDelta = rawDelta - attributedToLocal;
+            if (remoteDelta > 0) {
+              _partyRemoteTurnSignal = true;
+              _battleLog.add(
+                'A party member hits ${primaryEnemy.monster.name} for $remoteDelta damage.',
+              );
+            }
+          }
+          _lastPartyMonsterHealthDeficit = deficit;
+          if (primaryEnemy.currentHealth != nextHealth) {
+            primaryEnemy.currentHealth = nextHealth;
+            _ensureSelectedEnemyIsAlive();
+          }
+          _updatePartyTurnOrderFromStatus(status);
+          _syncSelfAllyFromLocalResources();
+          if (_activeAllyIndex < 0 || _activeAllyIndex >= _partyAllies.length) {
+            _activeAllyIndex = 0;
+          }
+          if (_isPartyOtherUserTurn() && _partyRemoteTurnSignal) {
+            _advancePartyTurn();
+            _partyRemoteTurnSignal = false;
+          }
+          _refreshPartyTurnFlag();
+        });
+        if (nextHealth <= 0 && !_battleOver) {
+          await _finishBattle(
+            MonsterBattleOutcome.victory,
+            'Your party defeated ${primaryEnemy.monster.name}!',
+          );
+          return;
+        }
+        if (_allPartyMembersDefeated() && !_battleOver) {
+          await _finishBattle(
+            MonsterBattleOutcome.defeat,
+            'Your party has been defeated.',
+          );
+          return;
+        }
+        if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
+          await _runPartyMonsterTurn();
+          if (_battleOver) return;
+        }
+      }
+      if (endedAtRaw.isNotEmpty && !_battleOver) {
+        final didWin = _aliveEnemies.isEmpty;
+        final didLose = _allPartyMembersDefeated() || _playerHealth <= 0;
+        if (didWin) {
+          await _finishBattle(
+            MonsterBattleOutcome.victory,
+            _enemies.length == 1
+                ? 'Your party defeated ${_enemies.first.monster.name}!'
+                : 'Your party won the battle.',
+          );
+        } else if (didLose) {
+          await _finishBattle(
+            MonsterBattleOutcome.defeat,
+            'Your party has been defeated.',
+          );
+        } else {
+          await _finishBattle(
+            MonsterBattleOutcome.escaped,
+            'Party battle ended.',
+          );
+        }
+      }
+    } catch (error) {
+      if (!mounted || _battleOver) return;
+      if (_isBattleStatusNotFoundError(error)) {
+        await _finishAfterBattleStatusGone();
+      }
+    } finally {
+      _partyBattleSyncInFlight = false;
+    }
+  }
+
+  Future<void> _reportPartyBattleDamage(int damage) async {
+    if (!widget.isPartyBattle || damage <= 0 || _battleOver) return;
+    final battleId = (_partyBattleId ?? '').trim();
+    final monsterId = _partyBattleMonsterId;
+    if ((monsterId == null || monsterId.isEmpty) && battleId.isEmpty) return;
+    try {
+      _pendingLocalDamage += damage;
+      final poiService = context.read<PoiService>();
+      if (battleId.isNotEmpty) {
+        await poiService.applyMonsterBattleDamageById(battleId, damage);
+      } else {
+        await poiService.applyMonsterBattleDamage(monsterId!, damage);
+      }
+      await _syncPartyBattleState();
+    } catch (_) {
+      // Keep combat moving locally if the sync request fails.
+    }
+  }
+
+  String get _monsterSpriteUrl {
+    final enemy = _activeEnemy;
+    if (enemy == null) return '';
+    return enemy.monster.thumbnailUrl.isNotEmpty
+        ? enemy.monster.thumbnailUrl
+        : enemy.monster.imageUrl;
+  }
+
+  String get _playerSpriteUrl =>
+      _hasTrueBackSprite ? _playerBackSpriteUrl : _playerFrontSpriteUrl;
+
+  String _spriteForAlly(_PartyAllyState? ally) {
+    if (ally == null) return _playerSpriteUrl;
+    if (ally.isSelf) return _playerSpriteUrl;
+    return ally.iconUrl;
+  }
+
+  List<_TurnOrderEntry> _currentTurnOrder() {
+    if (widget.isPartyBattle && _partyTurnOrder.isNotEmpty) {
+      return _partyTurnOrder;
+    }
+    final selfAllyIndex = widget.isPartyBattle
+        ? _partyAllies.indexWhere((ally) => ally.isSelf)
+        : -1;
+    final entries = <_TurnOrderEntry>[
+      _TurnOrderEntry(
+        iconUrl: _playerFrontSpriteUrl,
+        currentHealth: _playerHealth,
+        maxHealth: _playerMaxHealth,
+        label: _shortTurnLabel(_playerName),
+        fallbackIcon: Icons.person,
+        userId: _selfUserId,
+        allyIndex: selfAllyIndex >= 0 ? selfAllyIndex : null,
+        isSelf: true,
+      ),
+    ];
+    for (var i = 0; i < _enemies.length; i++) {
+      final enemy = _enemies[i];
+      if (enemy.isDefeated) continue;
+      entries.add(
+        _TurnOrderEntry(
+          iconUrl: enemy.monster.thumbnailUrl.isNotEmpty
+              ? enemy.monster.thumbnailUrl
+              : enemy.monster.imageUrl,
+          currentHealth: enemy.currentHealth,
+          maxHealth: enemy.maxHealth,
+          label: _shortTurnLabel(enemy.monster.name),
+          fallbackIcon: Icons.pets,
+          enemyIndex: i,
+        ),
+      );
+    }
+    if (entries.length <= 1) return entries;
+
+    var currentIndex = 0;
+    if (!_playerTurn && _actingEnemyIndex != null) {
+      currentIndex = entries.indexWhere(
+        (entry) => entry.enemyIndex == _actingEnemyIndex,
+      );
+      if (currentIndex < 0) currentIndex = 0;
+    }
+    if (currentIndex <= 0) return entries;
+    return <_TurnOrderEntry>[
+      ...entries.sublist(currentIndex),
+      ...entries.sublist(0, currentIndex),
+    ];
+  }
+
+  bool _isCurrentTurnEntry(_TurnOrderEntry entry) {
+    if (widget.isPartyBattle) {
+      final current = _currentPartyTurnEntry();
+      if (current == null) return false;
+      if (entry.isEnemy && current.isEnemy) {
+        return entry.enemyIndex == current.enemyIndex;
+      }
+      if (entry.isAlly && current.isAlly) {
+        return (entry.userId ?? '') == (current.userId ?? '');
+      }
+      return false;
+    }
+    if (_playerTurn) return entry.isSelf;
+    if (!entry.isEnemy) return false;
+    return entry.enemyIndex != null && entry.enemyIndex == _actingEnemyIndex;
+  }
+
+  void _shiftActiveEnemy(int direction) {
+    final aliveIndexes = <int>[];
+    for (var i = 0; i < _enemies.length; i++) {
+      if (!_enemies[i].isDefeated) {
+        aliveIndexes.add(i);
+      }
+    }
+    if (aliveIndexes.length <= 1) {
+      _ensureSelectedEnemyIsAlive();
+      return;
+    }
+
+    final currentIndex =
+        _resolveTargetEnemyIndex(_activeEnemyIndex) ?? aliveIndexes.first;
+    final currentPosition = aliveIndexes.indexOf(currentIndex);
+    final safePosition = currentPosition < 0 ? 0 : currentPosition;
+    final shiftedPosition = (safePosition + direction) % aliveIndexes.length;
+    setState(() {
+      _activeEnemyIndex = aliveIndexes[shiftedPosition];
+    });
+  }
+
+  void _shiftActiveAlly(int direction) {
+    if (!widget.isPartyBattle || _partyAllies.length <= 1) return;
+    final safeLength = _partyAllies.length;
+    final shifted = (_activeAllyIndex + direction) % safeLength;
+    setState(() {
+      _activeAllyIndex = shifted < 0 ? shifted + safeLength : shifted;
+    });
+  }
+
+  int _rollDamage(int minDamage, int maxDamage) {
+    final minValue = math.max(1, minDamage);
+    final maxValue = math.max(minValue, maxDamage);
+    if (maxValue <= minValue) return minValue;
+    return minValue + _random.nextInt(maxValue - minValue + 1);
+  }
+
+  bool _isTechnique(Spell ability) =>
+      ability.abilityType.toLowerCase() == 'technique';
+
+  bool _isDamageEffect(String effectType) {
+    final normalized = effectType.trim().toLowerCase();
+    return normalized.contains('damage') ||
+        normalized.contains('harm') ||
+        normalized.contains('attack');
+  }
+
+  bool _isAllEnemiesDamageEffect(String effectType) {
+    final normalized = effectType.trim().toLowerCase();
+    return normalized == 'deal_damage_all_enemies' ||
+        normalized.contains('all_enemies') ||
+        normalized.contains('all enemies') ||
+        normalized.contains('aoe') ||
+        normalized.contains('area_damage');
+  }
+
+  bool _isHealingEffect(String effectType) {
+    final normalized = effectType.trim().toLowerCase();
+    return normalized.contains('restore_life') ||
+        normalized.contains('heal') ||
+        normalized.contains('revive');
+  }
+
+  int _playerAttackDamage() {
+    final strength =
+        _playerStats['strength'] ?? CharacterStatsProvider.baseStatValue;
+    final dexterity =
+        _playerStats['dexterity'] ?? CharacterStatsProvider.baseStatValue;
+    final minDamage = math.max<int>(1, _playerLevel + (strength / 4).floor());
+    final maxDamage = math.max<int>(
+      minDamage,
+      minDamage + math.max<int>(1, (dexterity / 3).floor()),
+    );
+    return _rollDamage(minDamage, maxDamage);
+  }
+
+  int _monsterAttackDamage(Monster monster) {
+    final swipes = math.max(1, monster.attackSwipesPerAttack);
+    var totalDamage = 0;
+    for (var i = 0; i < swipes; i++) {
+      totalDamage += _rollDamage(
+        monster.attackDamageMin,
+        monster.attackDamageMax,
+      );
+    }
+    return math.max(1, totalDamage);
+  }
+
+  int _abilityDamage(Spell ability) {
+    final damageEffects = ability.effects
+        .where((effect) => _isDamageEffect(effect.type))
+        .toList(growable: false);
+    final healEffects = ability.effects
+        .where((effect) => _isHealingEffect(effect.type))
+        .toList(growable: false);
+
+    final explicitDamage = damageEffects.fold<int>(
+      0,
+      (sum, effect) => sum + math.max(0, effect.amount),
+    );
+    if (damageEffects.isNotEmpty) {
+      return explicitDamage + math.max(0, _playerLevel ~/ 3);
+    }
+    if (healEffects.isNotEmpty) {
+      return 0;
+    }
+
+    final intelligence =
+        _playerStats['intelligence'] ?? CharacterStatsProvider.baseStatValue;
+    final wisdom =
+        _playerStats['wisdom'] ?? CharacterStatsProvider.baseStatValue;
+    final minDamage = math.max<int>(
+      1,
+      _playerLevel + ((intelligence + wisdom) ~/ 6),
+    );
+    final maxDamage = math.max<int>(
+      minDamage,
+      minDamage + math.max<int>(2, ability.manaCost),
+    );
+    return _rollDamage(minDamage, maxDamage);
+  }
+
+  int _explicitAbilityDamageByTargeting(
+    Spell ability, {
+    required bool allEnemies,
+  }) {
+    final damageEffects = ability.effects
+        .where((effect) {
+          if (!_isDamageEffect(effect.type)) return false;
+          final isAllEnemiesEffect = _isAllEnemiesDamageEffect(effect.type);
+          return allEnemies ? isAllEnemiesEffect : !isAllEnemiesEffect;
+        })
+        .toList(growable: false);
+    if (damageEffects.isEmpty) return 0;
+
+    final explicitDamage = damageEffects.fold<int>(
+      0,
+      (sum, effect) => sum + math.max(0, effect.amount),
+    );
+    return explicitDamage + math.max(0, _playerLevel ~/ 3);
+  }
+
+  int _abilityHealing(Spell ability) {
+    return ability.effects
+        .where((effect) => _isHealingEffect(effect.type))
+        .fold<int>(0, (sum, effect) => sum + math.max(0, effect.amount));
+  }
+
+  Future<void> _loadItemChoices() async {
+    setState(() {
+      _loadingItems = true;
+    });
+    try {
+      final inventoryService = context.read<InventoryService>();
+      final ownedFuture = inventoryService.getOwnedInventoryItems();
+      final itemsFuture = inventoryService.getInventoryItems();
+      final owned = await ownedFuture;
+      final allItems = await itemsFuture;
+      if (!mounted) return;
+
+      final itemById = <int, InventoryItem>{
+        for (final item in allItems) item.id: item,
+      };
+      final choices = <_BattleItemChoice>[];
+      for (final entry in owned) {
+        if (entry.quantity <= 0) continue;
+        final item = itemById[entry.inventoryItemId];
+        if (item == null) continue;
+        if (item.consumeHealthDelta == 0 &&
+            item.consumeManaDelta == 0 &&
+            item.consumeRevivePartyMemberHealth <= 0 &&
+            item.consumeReviveAllDownedPartyMembersHealth <= 0) {
+          continue;
+        }
+        choices.add(
+          _BattleItemChoice(
+            ownedInventoryItemId: entry.id,
+            name: item.name,
+            healthDelta: item.consumeHealthDelta,
+            manaDelta: item.consumeManaDelta,
+            revivePartyMemberHealth: item.consumeRevivePartyMemberHealth,
+            reviveAllDownedPartyMembersHealth:
+                item.consumeReviveAllDownedPartyMembersHealth,
+            quantity: entry.quantity,
+          ),
+        );
+      }
+
+      setState(() {
+        _items = choices;
+        _loadingItems = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _items = const [];
+        _loadingItems = false;
+      });
+    }
+  }
+
+  void _openMenu(_BattleMenuView view, {String? selectedCommandKey}) {
+    setState(() {
+      _menuView = view;
+      if (selectedCommandKey != null) {
+        _selectedCommandKey = selectedCommandKey;
+      }
+    });
+  }
+
+  Future<void> _playSpriteFx({
+    required bool targetMonster,
+    required int amount,
+    required bool healing,
+  }) async {
+    if (amount <= 0 || !mounted) return;
+
+    final flashTint = healing
+        ? const Color(0x6647A86C)
+        : const Color(0x66AA3A49);
+    final floatText = '${healing ? '+' : '-'}$amount';
+    final floatColor = healing
+        ? const Color(0xFF2B7A4B)
+        : const Color(0xFF8C2F39);
+
+    if (targetMonster) {
+      _monsterFxNonce += 1;
+      final nonce = _monsterFxNonce;
+      setState(() {
+        _monsterFlashTint = flashTint;
+        _monsterFloatText = floatText;
+        _monsterFloatColor = floatColor;
+      });
+
+      if (!healing) {
+        for (final offset in const [8.0, -8.0, 6.0, -6.0, 0.0]) {
+          if (!mounted || _monsterFxNonce != nonce) return;
+          setState(() {
+            _monsterShakeDx = offset;
+          });
+          await Future<void>.delayed(const Duration(milliseconds: 55));
+        }
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!mounted || _monsterFxNonce != nonce) return;
+      setState(() {
+        _monsterFlashTint = null;
+        _monsterFloatText = null;
+        _monsterShakeDx = 0;
+      });
+      return;
+    }
+
+    _playerFxNonce += 1;
+    final nonce = _playerFxNonce;
+    setState(() {
+      _playerFlashTint = flashTint;
+      _playerFloatText = floatText;
+      _playerFloatColor = floatColor;
+    });
+
+    if (!healing) {
+      for (final offset in const [8.0, -8.0, 6.0, -6.0, 0.0]) {
+        if (!mounted || _playerFxNonce != nonce) return;
+        setState(() {
+          _playerShakeDx = offset;
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 55));
+      }
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    if (!mounted || _playerFxNonce != nonce) return;
+    setState(() {
+      _playerFlashTint = null;
+      _playerFloatText = null;
+      _playerShakeDx = 0;
+    });
+  }
+
+  Future<void> _resolvePlayerAction({
+    required String message,
+    required int damageToMonster,
+    int damageToAllEnemies = 0,
+    int? targetEnemyIndex,
+    int playerHealthDelta = 0,
+    int playerManaDelta = 0,
+    int? allyTargetIndex,
+    int allyHealthDelta = 0,
+    int allyManaDelta = 0,
+  }) async {
+    if (!_canAct) return;
+
+    final resolvedTargetIndex = _resolveTargetEnemyIndex(targetEnemyIndex);
+    final targetEnemy = resolvedTargetIndex == null
+        ? null
+        : _enemies[resolvedTargetIndex];
+    var targetName = 'the enemy';
+    if (damageToAllEnemies > 0) {
+      for (final enemy in _enemies) {
+        if (enemy.isDefeated) continue;
+        enemy.currentHealth = math.max(
+          0,
+          enemy.currentHealth - damageToAllEnemies,
+        );
+      }
+    }
+    if (targetEnemy != null && !targetEnemy.isDefeated) {
+      targetName = targetEnemy.monster.name;
+      if (damageToMonster > 0) {
+        targetEnemy.currentHealth = math.max(
+          0,
+          targetEnemy.currentHealth - damageToMonster,
+        );
+      }
+    }
+    _ensureSelectedEnemyIsAlive();
+
+    setState(() {
+      _busy = true;
+      _menuView = _BattleMenuView.root;
+      _selectedCommandKey = 'root:Attack';
+      _playerHealth = (_playerHealth + playerHealthDelta)
+          .clamp(0, _playerMaxHealth)
+          .toInt();
+      _playerMana = (_playerMana + playerManaDelta)
+          .clamp(0, _playerMaxMana)
+          .toInt();
+      if (widget.isPartyBattle &&
+          allyTargetIndex != null &&
+          allyTargetIndex >= 0 &&
+          allyTargetIndex < _partyAllies.length &&
+          (allyHealthDelta != 0 || allyManaDelta != 0)) {
+        final ally = _partyAllies[allyTargetIndex];
+        ally.currentHealth = (ally.currentHealth + allyHealthDelta)
+            .clamp(0, ally.maxHealth)
+            .toInt();
+        ally.currentMana = (ally.currentMana + allyManaDelta)
+            .clamp(0, ally.maxMana)
+            .toInt();
+        if (ally.isSelf) {
+          _playerHealth = ally.currentHealth;
+          _playerMana = ally.currentMana;
+        }
+      }
+      _syncSelfAllyFromLocalResources();
+      if (damageToMonster > 0 && damageToAllEnemies <= 0) {
+        _battleLog.add('$message (Target: $targetName).');
+      } else {
+        _battleLog.add(message);
+      }
+    });
+    unawaited(_syncPartySelfResourcesToBackend());
+    final sharedDamage =
+        (math.max(0, damageToMonster) + math.max(0, damageToAllEnemies))
+            .toInt();
+    if (sharedDamage > 0 && widget.isPartyBattle) {
+      await _reportPartyBattleDamage(sharedDamage);
+      if (!mounted || _battleOver) return;
+    }
+    final monsterFxAmount = math.max(damageToMonster, damageToAllEnemies);
+    if (monsterFxAmount > 0) {
+      unawaited(
+        _playSpriteFx(
+          targetMonster: true,
+          amount: monsterFxAmount,
+          healing: false,
+        ),
+      );
+    }
+    if (playerHealthDelta != 0) {
+      unawaited(
+        _playSpriteFx(
+          targetMonster: false,
+          amount: playerHealthDelta.abs(),
+          healing: playerHealthDelta > 0,
+        ),
+      );
+    }
+    if (widget.isPartyBattle &&
+        allyTargetIndex != null &&
+        allyTargetIndex >= 0 &&
+        allyTargetIndex < _partyAllies.length &&
+        _partyAllies[allyTargetIndex].isSelf &&
+        allyHealthDelta != 0) {
+      unawaited(
+        _playSpriteFx(
+          targetMonster: false,
+          amount: allyHealthDelta.abs(),
+          healing: allyHealthDelta > 0,
+        ),
+      );
+    }
+
+    if (!widget.isPartyBattle && _aliveEnemies.isEmpty) {
+      await _finishBattle(
+        MonsterBattleOutcome.victory,
+        _enemies.length == 1
+            ? 'You defeated ${_enemies.first.monster.name}!'
+            : 'You defeated the entire encounter!',
+      );
+      return;
+    }
+    if (widget.isPartyBattle && _aliveEnemies.isEmpty) {
+      await _finishBattle(
+        MonsterBattleOutcome.victory,
+        _enemies.length == 1
+            ? 'Your party defeated ${_enemies.first.monster.name}!'
+            : 'Your party defeated the entire encounter!',
+      );
+      return;
+    }
+
+    if (widget.isPartyBattle) {
+      setState(() {
+        _busy = false;
+        _actingEnemyIndex = null;
+        _selectedCommandKey = 'root:Attack';
+        _advancePartyTurn();
+        _refreshPartyTurnFlag();
+      });
+      if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
+        await _runPartyMonsterTurn();
+      }
+      return;
+    }
+
+    setState(() {
+      _playerTurn = false;
+      _actingEnemyIndex = _firstAliveEnemyIndex();
+    });
+    await _monsterTurn();
+  }
+
+  Future<void> _monsterTurn() async {
+    await Future<void>.delayed(const Duration(milliseconds: 420));
+    if (!mounted || _battleOver) return;
+    setState(() {
+      _actingEnemyIndex = _firstAliveEnemyIndex();
+    });
+    for (var i = 0; i < _enemies.length; i++) {
+      final enemy = _enemies[i];
+      if (enemy.isDefeated) continue;
+
+      final damage = _monsterAttackDamage(enemy.monster);
+      final weaponName = enemy.monster.weaponInventoryItemName.trim().isNotEmpty
+          ? enemy.monster.weaponInventoryItemName.trim()
+          : 'its weapon';
+
+      setState(() {
+        _actingEnemyIndex = i;
+        _playerHealth = math.max(0, _playerHealth - damage);
+        _syncSelfAllyFromLocalResources();
+        _battleLog.add(
+          '${enemy.monster.name} attacks with $weaponName for $damage damage.',
+        );
+      });
+      unawaited(
+        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
+      );
+
+      if (_playerHealth <= 0) {
+        if (widget.isPartyBattle && !_allPartyMembersDefeated()) {
+          setState(() {
+            _actingEnemyIndex = null;
+            _busy = false;
+            _playerTurn = false;
+            _selectedCommandKey = 'root:Attack';
+            _battleLog.add('You are down. Waiting for your party...');
+          });
+          return;
+        }
+        await _finishBattle(
+          MonsterBattleOutcome.defeat,
+          widget.isPartyBattle
+              ? 'Your party has been defeated.'
+              : 'You were defeated by ${enemy.monster.name}.',
+        );
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!mounted || _battleOver) return;
+    }
+
+    setState(() {
+      _actingEnemyIndex = null;
+      _busy = false;
+      _playerTurn = _playerHealth > 0;
+      _ensureSelectedEnemyIsAlive();
+      _selectedCommandKey = 'root:Attack';
+      _battleLog.add(
+        _playerHealth > 0
+            ? 'Your turn. Choose a command.'
+            : 'You are down. Waiting for your party...',
+      );
+    });
+  }
+
+  Future<void> _finishBattle(
+    MonsterBattleOutcome outcome,
+    String summary,
+  ) async {
+    if (_battleOver) return;
+    if (widget.isPartyBattle && outcome == MonsterBattleOutcome.defeat) {
+      await _endSharedPartyBattleOnServer();
+    }
+    _partyBattleSyncTimer?.cancel();
+    _partyBattleSyncTimer = null;
+    setState(() {
+      _battleOver = true;
+      _busy = false;
+      _battleLog.add(summary);
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 650));
+    if (!mounted) return;
+    Navigator.of(context).pop(
+      MonsterBattleResult(
+        outcome: outcome,
+        playerHealthRemaining: _playerHealth,
+        playerManaRemaining: _playerMana,
+      ),
+    );
+  }
+
+  Future<int?> _pickSingleTargetEnemyIndex({
+    required String actionLabel,
+  }) async {
+    final aliveEntries = _enemies
+        .asMap()
+        .entries
+        .where((entry) => !entry.value.isDefeated)
+        .toList(growable: false);
+    if (aliveEntries.isEmpty) return null;
+    if (aliveEntries.length == 1) return aliveEntries.first.key;
+
+    final initialTarget = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text('Choose target for $actionLabel'),
+          content: SizedBox(
+            width: 360,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: aliveEntries.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final entry = aliveEntries[index];
+                  final enemyIndex = entry.key;
+                  final enemy = entry.value;
+                  final isSelected = enemyIndex == initialTarget;
+                  final imageUrl = enemy.monster.thumbnailUrl.isNotEmpty
+                      ? enemy.monster.thumbnailUrl
+                      : enemy.monster.imageUrl;
+                  return InkWell(
+                    onTap: () => Navigator.of(dialogContext).pop(enemyIndex),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFB5872F).withValues(alpha: 0.14)
+                            : theme.colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFB5872F)
+                              : theme.colorScheme.outline.withValues(
+                                  alpha: 0.55,
+                                ),
+                          width: isSelected ? 1.8 : 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: imageUrl.isNotEmpty
+                                  ? Image.network(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) => Icon(
+                                            Icons.pets,
+                                            size: 22,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    )
+                                  : Icon(
+                                      Icons.pets,
+                                      size: 22,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              enemy.monster.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${enemy.currentHealth}/${enemy.maxHealth}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || selected == null) return selected;
+    setState(() {
+      _activeEnemyIndex = selected;
+    });
+    return selected;
+  }
+
+  Future<int?> _pickSingleTargetAllyIndex({required String actionLabel}) async {
+    if (!widget.isPartyBattle || _partyAllies.isEmpty) return null;
+    if (_partyAllies.length == 1) return 0;
+
+    final initialTarget =
+        (_activeAllyIndex >= 0 && _activeAllyIndex < _partyAllies.length)
+        ? _activeAllyIndex
+        : 0;
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return AlertDialog(
+          title: Text('Choose ally for $actionLabel'),
+          content: SizedBox(
+            width: 360,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: _partyAllies.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                itemBuilder: (context, index) {
+                  final ally = _partyAllies[index];
+                  final isSelected = index == initialTarget;
+                  return InkWell(
+                    onTap: () => Navigator.of(dialogContext).pop(index),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? const Color(0xFFB5872F).withValues(alpha: 0.14)
+                            : theme.colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFB5872F)
+                              : theme.colorScheme.outline.withValues(
+                                  alpha: 0.55,
+                                ),
+                          width: isSelected ? 1.8 : 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: ally.iconUrl.isNotEmpty
+                                  ? Image.network(
+                                      ally.iconUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) => Icon(
+                                            Icons.person,
+                                            size: 22,
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
+                                    )
+                                  : Icon(
+                                      Icons.person,
+                                      size: 22,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              ally.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${ally.currentHealth}/${ally.maxHealth}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || selected == null) return selected;
+    setState(() {
+      _activeAllyIndex = selected;
+    });
+    return selected;
+  }
+
+  Future<void> _attack() async {
+    if (!_canAct) return;
+    int? targetIndex;
+    if (_aliveEnemies.length > 1) {
+      targetIndex = await _pickSingleTargetEnemyIndex(actionLabel: 'Attack');
+      if (!mounted || !_canAct || targetIndex == null) return;
+    } else {
+      targetIndex = _resolveTargetEnemyIndex(_activeEnemyIndex);
+    }
+    if (targetIndex == null) return;
+    final target = _enemies[targetIndex];
+    final damage = _playerAttackDamage();
+    await _resolvePlayerAction(
+      message: '$_playerName attacks ${target.monster.name} for $damage damage',
+      damageToMonster: damage,
+      targetEnemyIndex: targetIndex,
+    );
+  }
+
+  Future<void> _useAbility(Spell ability) async {
+    if (!_canAct) return;
+    final manaCost = _isTechnique(ability) ? 0 : math.max(0, ability.manaCost);
+    if (manaCost > _playerMana) {
+      setState(() {
+        _battleLog.add('Not enough mana for ${ability.name}.');
+        _menuView = _BattleMenuView.root;
+      });
+      return;
+    }
+
+    final singleTargetDamage = _explicitAbilityDamageByTargeting(
+      ability,
+      allEnemies: false,
+    );
+    final allEnemiesDamage = _explicitAbilityDamageByTargeting(
+      ability,
+      allEnemies: true,
+    );
+    final hasStructuredEffects = ability.effects.isNotEmpty;
+    final fallbackDamage = singleTargetDamage == 0 && allEnemiesDamage == 0
+        ? (hasStructuredEffects ? 0 : _abilityDamage(ability))
+        : 0;
+    final damage = singleTargetDamage > 0 ? singleTargetDamage : fallbackDamage;
+    final healing = _abilityHealing(ability);
+    final isSupportAbility =
+        widget.isPartyBattle && damage <= 0 && allEnemiesDamage <= 0;
+    final targetedSupportAmount = ability.effects
+        .where((effect) {
+          final type = effect.type.trim().toLowerCase();
+          return type == 'restore_life_party_member' ||
+              type == 'revive_party_member';
+        })
+        .fold<int>(0, (sum, effect) => sum + math.max(0, effect.amount));
+    final requiresSupportTarget = isSupportAbility && targetedSupportAmount > 0;
+    final parts = <String>['$_playerName uses ${ability.name}'];
+    if (damage > 0) parts.add('dealing $damage damage');
+    if (allEnemiesDamage > 0) {
+      parts.add('dealing $allEnemiesDamage damage to all enemies');
+    }
+    if (healing > 0) {
+      parts.add('restoring $healing HP');
+    }
+    int? targetIndex;
+    int? allyTargetIndex;
+    String? allyTargetName;
+    if (damage > 0) {
+      if (allEnemiesDamage == 0 && _aliveEnemies.length > 1) {
+        targetIndex = await _pickSingleTargetEnemyIndex(
+          actionLabel: ability.name,
+        );
+        if (!mounted || !_canAct || targetIndex == null) return;
+      } else {
+        targetIndex = _resolveTargetEnemyIndex(_activeEnemyIndex);
+      }
+    }
+    if (isSupportAbility) {
+      if (requiresSupportTarget && _partyAllies.length > 1) {
+        allyTargetIndex = await _pickSingleTargetAllyIndex(
+          actionLabel: ability.name,
+        );
+        if (!mounted || !_canAct || allyTargetIndex == null) return;
+      } else if (requiresSupportTarget) {
+        allyTargetIndex = _partyAllies.isEmpty ? null : 0;
+      }
+      if (allyTargetIndex != null &&
+          allyTargetIndex >= 0 &&
+          allyTargetIndex < _partyAllies.length) {
+        allyTargetName = _partyAllies[allyTargetIndex].name;
+        parts.add('on $allyTargetName');
+      }
+      final targetUserId =
+          (requiresSupportTarget &&
+              allyTargetIndex != null &&
+              allyTargetIndex >= 0 &&
+              allyTargetIndex < _partyAllies.length)
+          ? _partyAllies[allyTargetIndex].userId
+          : '';
+      if (targetUserId.isNotEmpty && ability.id.trim().isNotEmpty) {
+        final statsProvider = context.read<CharacterStatsProvider>();
+        final error = _isTechnique(ability)
+            ? await statsProvider.castTechnique(
+                ability.id,
+                targetUserId: targetUserId,
+              )
+            : await statsProvider.castSpell(
+                ability.id,
+                targetUserId: targetUserId,
+              );
+        if (error != null && error.trim().isNotEmpty) {
+          setState(() {
+            _battleLog.add(error.trim());
+            _menuView = _BattleMenuView.root;
+          });
+          return;
+        }
+        _playerHealth = math.max(0, statsProvider.health);
+        _playerMana = math.max(0, statsProvider.mana);
+        _syncSelfAllyFromLocalResources();
+      }
+    }
+    await _resolvePlayerAction(
+      message: parts.join(', '),
+      damageToMonster: damage,
+      damageToAllEnemies: allEnemiesDamage,
+      targetEnemyIndex: targetIndex,
+      playerHealthDelta: isSupportAbility ? 0 : healing,
+      playerManaDelta: isSupportAbility ? 0 : -manaCost,
+      allyTargetIndex: allyTargetIndex,
+      allyHealthDelta: isSupportAbility ? healing : 0,
+    );
+  }
+
+  Future<void> _useItem(_BattleItemChoice item) async {
+    if (!_canAct) return;
+    if (item.quantity <= 0) {
+      setState(() {
+        _battleLog.add('${item.name} is out of stock.');
+        _menuView = _BattleMenuView.root;
+      });
+      return;
+    }
+
+    final parts = <String>['$_playerName uses ${item.name}'];
+    final canTargetAlly =
+        widget.isPartyBattle &&
+        _partyAllies.length > 1 &&
+        (item.healthDelta > 0 ||
+            item.manaDelta > 0 ||
+            item.revivePartyMemberHealth > 0);
+    int? allyTargetIndex;
+    if (canTargetAlly) {
+      allyTargetIndex = await _pickSingleTargetAllyIndex(
+        actionLabel: item.name,
+      );
+      if (!mounted || !_canAct || allyTargetIndex == null) return;
+      if (allyTargetIndex >= 0 && allyTargetIndex < _partyAllies.length) {
+        parts.add('on ${_partyAllies[allyTargetIndex].name}');
+      }
+    } else if (widget.isPartyBattle &&
+        item.revivePartyMemberHealth > 0 &&
+        _partyAllies.isNotEmpty) {
+      allyTargetIndex = 0;
+    }
+    final itemTargetUserId =
+        (widget.isPartyBattle &&
+            allyTargetIndex != null &&
+            allyTargetIndex >= 0 &&
+            allyTargetIndex < _partyAllies.length)
+        ? _partyAllies[allyTargetIndex].userId
+        : null;
+
+    try {
+      final inventoryService = context.read<InventoryService>();
+      await inventoryService.useItem(
+        item.ownedInventoryItemId,
+        targetUserId: itemTargetUserId,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _battleLog.add(
+          _extractApiErrorMessage(
+            error,
+            fallback: 'Failed to use ${item.name}.',
+          ),
+        );
+        _menuView = _BattleMenuView.root;
+      });
+      return;
+    }
+
+    final index = _items.indexWhere(
+      (entry) => entry.ownedInventoryItemId == item.ownedInventoryItemId,
+    );
+    if (index >= 0) {
+      final next = item.quantity - 1;
+      setState(() {
+        _items = [
+          ..._items.sublist(0, index),
+          _items[index].copyWith(quantity: next),
+          ..._items.sublist(index + 1),
+        ];
+      });
+    }
+    if (item.healthDelta != 0) {
+      final hpLabel = item.healthDelta > 0
+          ? 'restoring ${item.healthDelta} HP'
+          : 'losing ${item.healthDelta.abs()} HP';
+      parts.add(hpLabel);
+    }
+    if (item.manaDelta != 0) {
+      final manaLabel = item.manaDelta > 0
+          ? 'restoring ${item.manaDelta} MP'
+          : 'losing ${item.manaDelta.abs()} MP';
+      parts.add(manaLabel);
+    }
+    var playerHealthDelta = allyTargetIndex == null ? item.healthDelta : 0;
+    var allyHealthDelta = allyTargetIndex != null ? item.healthDelta : 0;
+    if (item.revivePartyMemberHealth > 0 &&
+        item.reviveAllDownedPartyMembersHealth <= 0 &&
+        allyTargetIndex != null &&
+        allyTargetIndex >= 0 &&
+        allyTargetIndex < _partyAllies.length) {
+      final ally = _partyAllies[allyTargetIndex];
+      if (ally.currentHealth <= 0) {
+        final reviveTo = item.revivePartyMemberHealth
+            .clamp(0, ally.maxHealth)
+            .toInt();
+        if (reviveTo > 0) {
+          parts.add('reviving ${ally.name} to $reviveTo HP');
+          if (allyTargetIndex == 0 && ally.isSelf) {
+            playerHealthDelta += reviveTo;
+          } else {
+            allyHealthDelta += reviveTo;
+          }
+        }
+      }
+    }
+    if (item.reviveAllDownedPartyMembersHealth > 0 &&
+        widget.isPartyBattle &&
+        _partyAllies.isNotEmpty) {
+      final revivedNames = <String>[];
+      final reviveTo = item.reviveAllDownedPartyMembersHealth;
+      for (final ally in _partyAllies) {
+        if (ally.currentHealth > 0) continue;
+        final revivedHp = reviveTo.clamp(0, ally.maxHealth).toInt();
+        if (revivedHp <= 0) continue;
+        ally.currentHealth = revivedHp;
+        if (ally.isSelf) {
+          _playerHealth = revivedHp;
+        }
+        revivedNames.add(ally.name);
+      }
+      if (revivedNames.isNotEmpty) {
+        parts.add(
+          'reviving all downed party members to '
+          '${item.reviveAllDownedPartyMembersHealth} HP',
+        );
+        _syncSelfAllyFromLocalResources();
+      }
+    }
+    await _resolvePlayerAction(
+      message: '${parts.join(', ')}.',
+      damageToMonster: 0,
+      playerHealthDelta: playerHealthDelta,
+      playerManaDelta: allyTargetIndex == null ? item.manaDelta : 0,
+      allyTargetIndex: allyTargetIndex,
+      allyHealthDelta: allyHealthDelta,
+      allyManaDelta: allyTargetIndex != null ? item.manaDelta : 0,
+    );
+  }
+
+  Future<void> _escape() async {
+    if (!_canAct) return;
+    if (widget.isPartyBattle) {
+      final monsterId = (_partyBattleMonsterId ?? '').trim();
+      if (monsterId.isNotEmpty) {
+        try {
+          final poiService = context.read<PoiService>();
+          await poiService.escapeMonsterBattle(monsterId);
+        } catch (_) {
+          // Best-effort: local escape should still close the dialog.
+        }
+      }
+    }
+    await _finishBattle(
+      MonsterBattleOutcome.escaped,
+      widget.isPartyBattle
+          ? 'You escaped. Your party remains engaged in the fight.'
+          : 'You escaped from the encounter.',
+    );
+  }
+
+  Widget _buildHealthBar({
+    required ThemeData theme,
+    required String label,
+    required int current,
+    required int max,
+    required Color color,
+  }) {
+    final safeMax = math.max(1, max);
+    final value = (current / safeMax).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '$current/$safeMax',
+              textAlign: TextAlign.right,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 8,
+            backgroundColor: color.withValues(alpha: 0.2),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusPanel({
+    required ThemeData theme,
+    required String name,
+    required int level,
+    required int currentHp,
+    required int maxHp,
+    int? currentMana,
+    int? maxMana,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outline, width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text('Lv.$level', style: theme.textTheme.labelLarge),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildHealthBar(
+            theme: theme,
+            label: 'HP',
+            current: currentHp,
+            max: maxHp,
+            color: const Color(0xFF8C2F39),
+          ),
+          if (currentMana != null && maxMana != null) ...[
+            const SizedBox(height: 8),
+            _buildHealthBar(
+              theme: theme,
+              label: 'MP',
+              current: currentMana,
+              max: maxMana,
+              color: const Color(0xFF355C7D),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTurnOrderStrip(ThemeData theme) {
+    final entries = _currentTurnOrder();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outline, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: entries
+                  .map((entry) {
+                    final isCurrent = _isCurrentTurnEntry(entry);
+                    final isSelectedEnemy =
+                        entry.enemyIndex != null &&
+                        entry.enemyIndex == _activeEnemyIndex &&
+                        !entry.isDefeated;
+                    final isSelectedAlly =
+                        entry.allyIndex != null &&
+                        entry.allyIndex == _activeAllyIndex;
+                    final onTap = _battleOver
+                        ? null
+                        : () {
+                            setState(() {
+                              if (entry.enemyIndex != null &&
+                                  !entry.isDefeated) {
+                                _activeEnemyIndex = entry.enemyIndex!;
+                              }
+                              if (entry.allyIndex != null) {
+                                _activeAllyIndex = entry.allyIndex!;
+                              }
+                            });
+                          };
+                    return InkWell(
+                      onTap: onTap,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 72,
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+                        decoration: BoxDecoration(
+                          color: isCurrent
+                              ? const Color(0xFFB5872F).withValues(alpha: 0.16)
+                              : isSelectedEnemy
+                              ? const Color(0xFFB5872F).withValues(alpha: 0.1)
+                              : isSelectedAlly
+                              ? const Color(0xFF4E9B7D).withValues(alpha: 0.16)
+                              : theme.colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isCurrent || isSelectedEnemy
+                                ? const Color(0xFFB5872F)
+                                : isSelectedAlly
+                                ? const Color(0xFF4E9B7D)
+                                : theme.colorScheme.outline.withValues(
+                                    alpha: 0.55,
+                                  ),
+                            width: isCurrent
+                                ? 2
+                                : (isSelectedEnemy || isSelectedAlly
+                                      ? 1.8
+                                      : 1.1),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            SizedBox(
+                              width: 38,
+                              height: 38,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: entry.iconUrl.isNotEmpty
+                                    ? Image.network(
+                                        entry.iconUrl,
+                                        fit: BoxFit.cover,
+                                        color: entry.isDefeated
+                                            ? theme.colorScheme.onSurface
+                                                  .withValues(alpha: 0.55)
+                                            : null,
+                                        colorBlendMode: entry.isDefeated
+                                            ? BlendMode.saturation
+                                            : null,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Icon(
+                                                  entry.fallbackIcon,
+                                                  size: 24,
+                                                ),
+                                      )
+                                    : Icon(entry.fallbackIcon, size: 24),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              entry.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${entry.currentHealth}/${entry.maxHealth}',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpriteBox({
+    required ThemeData theme,
+    required String imageUrl,
+    required IconData fallbackIcon,
+    required double size,
+    Color? flashTint,
+    bool flipHorizontally = false,
+  }) {
+    final child = imageUrl.isNotEmpty
+        ? Image.network(
+            imageUrl,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallbackIcon, size: 84),
+          )
+        : Icon(fallbackIcon, size: 84);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.6),
+            width: 2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: flipHorizontally
+                    ? Transform.flip(flipX: true, child: child)
+                    : child,
+              ),
+              if (flashTint != null)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: flashTint,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingFxLabel({
+    required String text,
+    required Color color,
+    required int nonce,
+  }) {
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<String>('fx-$nonce-$text'),
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 520),
+      builder: (context, value, child) {
+        final opacity = (1 - (value * 0.95)).clamp(0.0, 1.0);
+        final yOffset = -26.0 * value;
+        return Transform.translate(
+          offset: Offset(0, yOffset),
+          child: Opacity(opacity: opacity, child: child),
+        );
+      },
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+          shadows: const [
+            Shadow(
+              blurRadius: 3,
+              color: Color(0x66000000),
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpriteStage({
+    required ThemeData theme,
+    required String imageUrl,
+    required IconData fallbackIcon,
+    required double size,
+    required double shakeDx,
+    required Color? flashTint,
+    required String? floatingText,
+    required Color floatingTextColor,
+    required int fxNonce,
+    bool flipHorizontally = false,
+  }) {
+    final stageWidth = size + 28;
+    final stageHeight = size + 34;
+    return SizedBox(
+      width: stageWidth,
+      height: stageHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.bottomCenter,
+        children: [
+          Positioned(
+            bottom: 2,
+            child: Container(
+              width: size * 0.72,
+              height: size * 0.16,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 10,
+            child: Transform.translate(
+              offset: Offset(shakeDx, 0),
+              child: _buildSpriteBox(
+                theme: theme,
+                imageUrl: imageUrl,
+                fallbackIcon: fallbackIcon,
+                size: size,
+                flashTint: flashTint,
+                flipHorizontally: flipHorizontally,
+              ),
+            ),
+          ),
+          if (floatingText != null)
+            Positioned(
+              top: -4,
+              child: _buildFloatingFxLabel(
+                text: floatingText,
+                color: floatingTextColor,
+                nonce: fxNonce,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnemyCycleChevron({
+    required ThemeData theme,
+    required IconData icon,
+    required VoidCallback? onPressed,
+  }) {
+    final enabled = onPressed != null;
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: enabled
+            ? theme.colorScheme.surface.withValues(alpha: 0.9)
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: enabled
+              ? const Color(0xFFB5872F).withValues(alpha: 0.8)
+              : theme.colorScheme.outline.withValues(alpha: 0.55),
+          width: enabled ? 1.6 : 1.2,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 5,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: onPressed,
+        icon: Icon(
+          icon,
+          size: 18,
+          color: enabled
+              ? theme.colorScheme.onSurface
+              : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+        ),
+        padding: EdgeInsets.zero,
+        splashRadius: 16,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
+  }
+
+  Widget _buildEnemyStageWithChevrons({
+    required ThemeData theme,
+    required double spriteSize,
+  }) {
+    final canCycle = !_battleOver && _aliveEnemies.length > 1;
+    final stageWidth = spriteSize + 28;
+    final stageHeight = spriteSize + 34;
+    return SizedBox(
+      width: stageWidth,
+      height: stageHeight,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          _buildSpriteStage(
+            theme: theme,
+            imageUrl: _monsterSpriteUrl,
+            fallbackIcon: Icons.pets,
+            size: spriteSize,
+            shakeDx: _monsterShakeDx,
+            flashTint: _monsterFlashTint,
+            floatingText: _monsterFloatText,
+            floatingTextColor: _monsterFloatColor,
+            fxNonce: _monsterFxNonce,
+            flipHorizontally: true,
+          ),
+          Positioned(
+            left: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_left,
+              onPressed: canCycle ? () => _shiftActiveEnemy(-1) : null,
+            ),
+          ),
+          Positioned(
+            right: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_right,
+              onPressed: canCycle ? () => _shiftActiveEnemy(1) : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAllyStageWithChevrons({
+    required ThemeData theme,
+    required double spriteSize,
+    required _PartyAllyState? activeAlly,
+  }) {
+    final canCycle =
+        !_battleOver && widget.isPartyBattle && _partyAllies.length > 1;
+    final stageWidth = spriteSize + 28;
+    final stageHeight = spriteSize + 34;
+    final spriteUrl = _spriteForAlly(activeAlly);
+    final shouldFlip = activeAlly?.isSelf == true
+        ? (!_hasTrueBackSprite && spriteUrl.isNotEmpty)
+        : false;
+    return SizedBox(
+      width: stageWidth,
+      height: stageHeight,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          _buildSpriteStage(
+            theme: theme,
+            imageUrl: spriteUrl,
+            fallbackIcon: Icons.person,
+            size: spriteSize,
+            shakeDx: _playerShakeDx,
+            flashTint: _playerFlashTint,
+            floatingText: _playerFloatText,
+            floatingTextColor: _playerFloatColor,
+            fxNonce: _playerFxNonce,
+            flipHorizontally: shouldFlip,
+          ),
+          Positioned(
+            left: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_left,
+              onPressed: canCycle ? () => _shiftActiveAlly(-1) : null,
+            ),
+          ),
+          Positioned(
+            right: 2,
+            child: _buildEnemyCycleChevron(
+              theme: theme,
+              icon: Icons.chevron_right,
+              onPressed: canCycle ? () => _shiftActiveAlly(1) : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBattlefield(ThemeData theme) {
+    final activeEnemy = _activeEnemy;
+    final activeEnemyName = activeEnemy?.monster.name ?? widget.encounter.name;
+    final activeEnemyLevel = activeEnemy?.monster.level ?? 1;
+    final activeEnemyHp = activeEnemy?.currentHealth ?? 0;
+    final activeEnemyMaxHp = activeEnemy?.maxHealth ?? 1;
+    final activeAlly = _activeAlly;
+    final allyName = activeAlly?.name ?? _playerName;
+    final allyLevel = activeAlly?.level ?? _playerLevel;
+    final allyCurrentHp = activeAlly?.currentHealth ?? _playerHealth;
+    final allyMaxHp = activeAlly?.maxHealth ?? _playerMaxHealth;
+    final allyCurrentMana = activeAlly?.currentMana ?? _playerMana;
+    final allyMaxMana = activeAlly?.maxMana ?? _playerMaxMana;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFEDE2C4), Color(0xFFD7C39F)],
+        ),
+        border: Border.all(color: theme.colorScheme.outline, width: 2),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final battlefieldWidth = constraints.maxWidth;
+          final spriteSize = (battlefieldWidth * 0.38).clamp(145.0, 235.0);
+          var statusWidth = (battlefieldWidth * 0.45).clamp(160.0, 300.0);
+          final minGap = 24.0;
+          final maxStatusWidth = battlefieldWidth - spriteSize - minGap;
+          if (statusWidth > maxStatusWidth) {
+            statusWidth = maxStatusWidth.clamp(140.0, 300.0);
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: statusWidth,
+                      child: _buildStatusPanel(
+                        theme: theme,
+                        name: activeEnemyName,
+                        level: activeEnemyLevel,
+                        currentHp: activeEnemyHp,
+                        maxHp: activeEnemyMaxHp,
+                      ),
+                    ),
+                    const Spacer(),
+                    _buildEnemyStageWithChevrons(
+                      theme: theme,
+                      spriteSize: spriteSize,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildAllyStageWithChevrons(
+                      theme: theme,
+                      spriteSize: spriteSize,
+                      activeAlly: activeAlly,
+                    ),
+                    const Spacer(),
+                    SizedBox(
+                      width: statusWidth,
+                      child: _buildStatusPanel(
+                        theme: theme,
+                        name: allyName,
+                        level: allyLevel,
+                        currentHp: allyCurrentHp,
+                        maxHp: allyMaxHp,
+                        currentMana: allyCurrentMana,
+                        maxMana: allyMaxMana,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLogPanel(ThemeData theme) {
+    String chipText;
+    Color chipColor;
+    if (_battleOver) {
+      chipText = 'Battle Over';
+      chipColor = theme.colorScheme.secondary;
+    } else if (widget.isPartyBattle) {
+      final turn = _currentPartyTurnEntry();
+      if (turn == null) {
+        chipText = 'Syncing Turn';
+        chipColor = theme.colorScheme.primary;
+      } else if (turn.isSelf) {
+        chipText = 'Your Turn';
+        chipColor = const Color(0xFF2B7A4B);
+      } else if (turn.isEnemy) {
+        chipText = 'Monster Turn';
+        chipColor = const Color(0xFF8C2F39);
+      } else {
+        chipText = 'Party Turn';
+        chipColor = theme.colorScheme.primary;
+      }
+    } else if (_playerTurn) {
+      chipText = 'Your Turn';
+      chipColor = const Color(0xFF2B7A4B);
+    } else {
+      chipText = 'Enemy Turn';
+      chipColor = const Color(0xFF8C2F39);
+    }
+
+    return Container(
+      width: double.infinity,
+      height: 138,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.outline, width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: chipColor.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: chipColor.withValues(alpha: 0.5)),
+              ),
+              child: Text(
+                chipText,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: chipColor,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: _battleLog.isEmpty
+                ? Text('...', style: theme.textTheme.bodyMedium)
+                : ListView.builder(
+                    reverse: true,
+                    itemCount: _battleLog.length,
+                    itemBuilder: (context, index) {
+                      final message = _battleLog[_battleLog.length - 1 - index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(message, style: theme.textTheme.bodyMedium),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommandButton({
+    required BuildContext context,
+    required String label,
+    required String commandKey,
+    required VoidCallback? onPressed,
+  }) {
+    final selected = _selectedCommandKey == commandKey;
+    final theme = Theme.of(context);
+    return OutlinedButton(
+      onPressed: onPressed == null
+          ? null
+          : () {
+              setState(() {
+                _selectedCommandKey = commandKey;
+              });
+              onPressed();
+            },
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        backgroundColor: selected
+            ? theme.colorScheme.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        side: BorderSide(
+          color: selected
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outline,
+          width: selected ? 2.0 : 1.4,
+        ),
+      ),
+      child: Text(label),
+    );
+  }
+
+  Widget _buildChoiceList({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return SizedBox(
+      height: 138,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _openMenu(
+                        _BattleMenuView.root,
+                        selectedCommandKey: 'root:Attack',
+                      ),
+                child: const Text('Back'),
+              ),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: children.isEmpty
+                ? const Center(child: Text('No options available.'))
+                : ListView.separated(
+                    itemCount: children.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 6),
+                    itemBuilder: (context, index) => children[index],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommandMenu(ThemeData theme) {
+    switch (_menuView) {
+      case _BattleMenuView.root:
+        return SizedBox(
+          height: 138,
+          child: GridView.count(
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 2.1,
+            children: [
+              _buildCommandButton(
+                context: context,
+                label: 'Attack',
+                commandKey: 'root:Attack',
+                onPressed: _canAct ? _attack : null,
+              ),
+              _buildCommandButton(
+                context: context,
+                label: 'Spell',
+                commandKey: 'root:Spell',
+                onPressed: _canAct
+                    ? () => _openMenu(
+                        _BattleMenuView.spells,
+                        selectedCommandKey: 'spell:0',
+                      )
+                    : null,
+              ),
+              _buildCommandButton(
+                context: context,
+                label: 'Technique',
+                commandKey: 'root:Technique',
+                onPressed: _canAct
+                    ? () => _openMenu(
+                        _BattleMenuView.techniques,
+                        selectedCommandKey: 'technique:0',
+                      )
+                    : null,
+              ),
+              _buildCommandButton(
+                context: context,
+                label: _loadingItems ? 'Item (Loading...)' : 'Item',
+                commandKey: 'root:Item',
+                onPressed: _canAct && !_loadingItems
+                    ? () => _openMenu(
+                        _BattleMenuView.items,
+                        selectedCommandKey: 'item:0',
+                      )
+                    : null,
+              ),
+              _buildCommandButton(
+                context: context,
+                label: 'Escape',
+                commandKey: 'root:Escape',
+                onPressed: _canAct ? _escape : null,
+              ),
+            ],
+          ),
+        );
+      case _BattleMenuView.spells:
+        return _buildChoiceList(
+          title: 'Spells',
+          children: _spells
+              .asMap()
+              .entries
+              .map((entry) {
+                final index = entry.key;
+                final spell = entry.value;
+                return _buildCommandButton(
+                  context: context,
+                  label: '${spell.name} (${spell.manaCost} MP)',
+                  commandKey: 'spell:$index',
+                  onPressed: _canAct ? () => _useAbility(spell) : null,
+                );
+              })
+              .toList(growable: false),
+        );
+      case _BattleMenuView.techniques:
+        return _buildChoiceList(
+          title: 'Techniques',
+          children: _techniques
+              .asMap()
+              .entries
+              .map((entry) {
+                final index = entry.key;
+                final technique = entry.value;
+                return _buildCommandButton(
+                  context: context,
+                  label: technique.name,
+                  commandKey: 'technique:$index',
+                  onPressed: _canAct ? () => _useAbility(technique) : null,
+                );
+              })
+              .toList(growable: false),
+        );
+      case _BattleMenuView.items:
+        final availableItems = _items
+            .where((item) => item.quantity > 0)
+            .toList(growable: false);
+        return _buildChoiceList(
+          title: 'Items',
+          children: availableItems
+              .asMap()
+              .entries
+              .map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                return _buildCommandButton(
+                  context: context,
+                  label:
+                      '${item.name} x${item.quantity}${item.healthDelta != 0 ? ' | HP ${item.healthDelta > 0 ? '+' : ''}${item.healthDelta}' : ''}${item.manaDelta != 0 ? ' | MP ${item.manaDelta > 0 ? '+' : ''}${item.manaDelta}' : ''}',
+                  commandKey: 'item:$index',
+                  onPressed: _canAct ? () => _useItem(item) : null,
+                );
+              })
+              .toList(growable: false),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return PopScope(
+      canPop: false,
+      child: SizedBox.expand(
+        child: Material(
+          color: Colors.transparent,
+          child: PaperSheet(
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildTurnOrderStrip(theme),
+                          const SizedBox(height: 8),
+                          _buildBattlefield(theme),
+                          const SizedBox(height: 8),
+                          _buildLogPanel(theme),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 158,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: theme.colorScheme.outline,
+                                width: 2,
+                              ),
+                            ),
+                            child: _buildCommandMenu(theme),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

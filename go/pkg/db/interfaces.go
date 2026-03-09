@@ -37,6 +37,7 @@ type DbClient interface {
 	UserSpell() UserSpellHandle
 	InventoryItem() InventoryItemHandle
 	NewUserStarterConfig() NewUserStarterConfigHandle
+	Tutorial() TutorialHandle
 	AuditItem() AuditItemHandle
 	ImageGeneration() ImageGenerationHandle
 	OutfitProfileGeneration() OutfitProfileGenerationHandle
@@ -412,6 +413,22 @@ type NewUserStarterConfigHandle interface {
 	ApplyToUser(ctx context.Context, userID uuid.UUID) error
 }
 
+type TutorialHandle interface {
+	GetConfig(ctx context.Context) (*models.TutorialConfig, error)
+	UpsertConfig(ctx context.Context, config *models.TutorialConfig) (*models.TutorialConfig, error)
+	InitializeForNewUser(ctx context.Context, userID uuid.UUID) error
+	FindStateByUserID(ctx context.Context, userID uuid.UUID) (*models.UserTutorialState, error)
+	ActivateForUser(
+		ctx context.Context,
+		userID uuid.UUID,
+		scenario *models.Scenario,
+		options []models.ScenarioOption,
+		itemRewards []models.ScenarioItemReward,
+		spellRewards []models.ScenarioSpellReward,
+	) (*models.UserTutorialState, *models.Scenario, error)
+	MarkCompleted(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) error
+}
+
 type AuditItemHandle interface {
 	Create(ctx context.Context, matchID *uuid.UUID, userID *uuid.UUID, message string) error
 	GetAuditItemsForMatch(ctx context.Context, matchID uuid.UUID) ([]*models.AuditItem, error)
@@ -643,6 +660,7 @@ type MonsterBattleHandle interface {
 type MonsterBattleParticipantHandle interface {
 	CreateOrUpdate(ctx context.Context, participant *models.MonsterBattleParticipant) error
 	FindByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterBattleParticipant, error)
+	DeleteByBattleAndUser(ctx context.Context, battleID uuid.UUID, userID uuid.UUID) error
 	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
 }
 
@@ -988,6 +1006,10 @@ type ChallengeHandle interface {
 	IsLinkedToQuestNode(ctx context.Context, id uuid.UUID) (bool, error)
 	FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.Challenge) error
+	ReplaceItemChoiceRewards(ctx context.Context, challengeID uuid.UUID, rewards []models.ChallengeItemChoiceReward) error
+	UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) error
+	FindItemChoicePendingByUserAndChallenge(ctx context.Context, userID uuid.UUID, challengeID uuid.UUID) (*models.UserChallengeItemChoicePending, error)
+	DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
@@ -1002,9 +1024,13 @@ type ScenarioHandle interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceOptions(ctx context.Context, scenarioID uuid.UUID, options []models.ScenarioOption) error
 	ReplaceItemRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemReward) error
+	ReplaceItemChoiceRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioItemChoiceReward) error
 	ReplaceSpellRewards(ctx context.Context, scenarioID uuid.UUID, rewards []models.ScenarioSpellReward) error
 	FindAttemptByUserAndScenario(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) (*models.UserScenarioAttempt, error)
 	CreateAttempt(ctx context.Context, attempt *models.UserScenarioAttempt) error
+	UpsertItemChoicePending(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID, scenarioOptionID *uuid.UUID) error
+	FindItemChoicePendingByUserAndScenario(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) (*models.UserScenarioItemChoicePending, error)
+	DeleteItemChoicePending(ctx context.Context, id uuid.UUID) error
 	FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)
 	FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error)

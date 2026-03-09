@@ -14,6 +14,8 @@ type Scenario struct {
 	UpdatedAt                 time.Time                      `json:"updatedAt"`
 	ZoneID                    uuid.UUID                      `json:"zoneId"`
 	Zone                      Zone                           `json:"zone"`
+	OwnerUserID               *uuid.UUID                     `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
+	OwnerUser                 *User                          `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
 	PointOfInterestID         *uuid.UUID                     `json:"pointOfInterestId,omitempty" gorm:"column:point_of_interest_id;type:uuid"`
 	PointOfInterest           *PointOfInterest               `json:"pointOfInterest,omitempty" gorm:"foreignKey:PointOfInterestID"`
 	Latitude                  float64                        `json:"latitude"`
@@ -46,7 +48,9 @@ type Scenario struct {
 	SuccessStatuses           ScenarioFailureStatusTemplates `json:"successStatuses" gorm:"column:success_statuses;type:jsonb"`
 	Options                   []ScenarioOption               `json:"options" gorm:"foreignKey:ScenarioID"`
 	ItemRewards               []ScenarioItemReward           `json:"itemRewards" gorm:"foreignKey:ScenarioID"`
+	ItemChoiceRewards         []ScenarioItemChoiceReward     `json:"itemChoiceRewards" gorm:"foreignKey:ScenarioID"`
 	SpellRewards              []ScenarioSpellReward          `json:"spellRewards" gorm:"foreignKey:ScenarioID"`
+	Ephemeral                 bool                           `json:"ephemeral" gorm:"column:ephemeral"`
 }
 
 func (s *Scenario) TableName() string {

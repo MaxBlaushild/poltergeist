@@ -152,8 +152,19 @@ func (h *inventoryItemHandler) DeleteAllForUser(ctx context.Context, userID uuid
 
 // CRUD methods for inventory items
 func (h *inventoryItemHandler) CreateInventoryItem(ctx context.Context, item *models.InventoryItem) error {
-	if item != nil && item.ItemLevel <= 0 {
-		item.ItemLevel = 1
+	if item != nil {
+		if item.ItemLevel <= 0 {
+			item.ItemLevel = 1
+		}
+		if item.ConsumeStatusesToRemove == nil {
+			item.ConsumeStatusesToRemove = models.StringArray{}
+		}
+		if item.ConsumeSpellIDs == nil {
+			item.ConsumeSpellIDs = models.StringArray{}
+		}
+		if item.InternalTags == nil {
+			item.InternalTags = models.StringArray{}
+		}
 	}
 	return h.db.WithContext(ctx).Create(item).Error
 }
@@ -179,6 +190,15 @@ func (h *inventoryItemHandler) FindAllInventoryItems(ctx context.Context) ([]mod
 func (h *inventoryItemHandler) UpdateInventoryItem(ctx context.Context, id int, updates map[string]interface{}) error {
 	if updates == nil {
 		return nil
+	}
+	if value, exists := updates["consume_statuses_to_remove"]; exists && value == nil {
+		updates["consume_statuses_to_remove"] = models.StringArray{}
+	}
+	if value, exists := updates["consume_spell_ids"]; exists && value == nil {
+		updates["consume_spell_ids"] = models.StringArray{}
+	}
+	if value, exists := updates["internal_tags"]; exists && value == nil {
+		updates["internal_tags"] = models.StringArray{}
 	}
 	updates["updated_at"] = time.Now()
 	return h.db.WithContext(ctx).Model(&models.InventoryItem{}).Where("id = ?", id).Updates(updates).Error

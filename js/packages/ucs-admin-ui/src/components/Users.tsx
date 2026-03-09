@@ -13,6 +13,33 @@ type UserCharacterProfileResponse = {
   stats?: Partial<AdminCharacterStats>;
 };
 
+type UserProfilePlaceholderResponse = {
+  thumbnailUrl?: string;
+  status?: string;
+  exists?: boolean;
+  requestedAt?: string;
+  lastModified?: string;
+  appliedUserCount?: number;
+};
+
+const defaultUserPlaceholderPrompt =
+  'A polished fantasy RPG profile portrait avatar. Head-and-shoulders, centered composition, expressive face, clean background, no text, no logos, game-ready artwork.';
+
+const placeholderStatusClassName = (status?: string) => {
+  switch ((status || '').trim()) {
+    case 'completed':
+      return 'bg-emerald-600';
+    case 'queued':
+      return 'bg-amber-500';
+    case 'in_progress':
+      return 'bg-blue-600';
+    case 'failed':
+      return 'bg-rose-600';
+    default:
+      return 'bg-gray-500';
+  }
+};
+
 export const Users = () => {
   const { apiClient } = useAPI();
   const [users, setUsers] = useState<User[]>([]);
@@ -54,6 +81,67 @@ export const Users = () => {
   const [resourceSubmitting, setResourceSubmitting] = useState(false);
   const [resourceMessage, setResourceMessage] = useState<string | null>(null);
   const [resourceMessageKind, setResourceMessageKind] = useState<'success' | 'error' | null>(null);
+  const [profilePlaceholderPrompt, setProfilePlaceholderPrompt] = useState(defaultUserPlaceholderPrompt);
+  const [profilePlaceholderStatus, setProfilePlaceholderStatus] = useState('unknown');
+  const [profilePlaceholderUrl, setProfilePlaceholderUrl] = useState('');
+  const [profilePlaceholderExists, setProfilePlaceholderExists] = useState(false);
+  const [profilePlaceholderRequestedAt, setProfilePlaceholderRequestedAt] = useState<string | null>(null);
+  const [profilePlaceholderLastModified, setProfilePlaceholderLastModified] = useState<string | null>(null);
+  const [profilePlaceholderMessage, setProfilePlaceholderMessage] = useState<string | null>(null);
+  const [profilePlaceholderError, setProfilePlaceholderError] = useState<string | null>(null);
+  const [profilePlaceholderBusy, setProfilePlaceholderBusy] = useState(false);
+  const [profilePlaceholderStatusLoading, setProfilePlaceholderStatusLoading] = useState(false);
+  const [profilePlaceholderPreviewNonce, setProfilePlaceholderPreviewNonce] = useState(0);
+
+  const applyUsersResponse = React.useCallback((nextUsers: User[]) => {
+    setUsers(nextUsers);
+    setFilteredUsers(nextUsers);
+    setSelectedUser((prev) =>
+      prev ? nextUsers.find((user) => user.id === prev.id) ?? prev : prev
+    );
+  }, []);
+
+  const refreshProfilePlaceholderStatus = React.useCallback(
+    async (showMessage = false) => {
+      try {
+        setProfilePlaceholderStatusLoading(true);
+        setProfilePlaceholderError(null);
+        const response = await apiClient.get<UserProfilePlaceholderResponse>(
+          '/sonar/admin/users/profile-picture-placeholder/status'
+        );
+        const url = (response?.thumbnailUrl || '').trim();
+        if (url) {
+          setProfilePlaceholderUrl(url);
+        }
+        setProfilePlaceholderStatus((response?.status || 'unknown').trim() || 'unknown');
+        setProfilePlaceholderExists(Boolean(response?.exists));
+        setProfilePlaceholderRequestedAt(response?.requestedAt || null);
+        setProfilePlaceholderLastModified(response?.lastModified || null);
+        setProfilePlaceholderPreviewNonce(Date.now());
+        if ((response?.appliedUserCount || 0) > 0) {
+          const refreshedUsers = await apiClient.get<User[]>('/sonar/users');
+          applyUsersResponse(refreshedUsers);
+        }
+        if (showMessage) {
+          setProfilePlaceholderMessage('Profile placeholder status refreshed.');
+        } else if ((response?.appliedUserCount || 0) > 0) {
+          setProfilePlaceholderMessage(
+            `Generated placeholder applied to ${response?.appliedUserCount} user${response?.appliedUserCount === 1 ? '' : 's'} without profile images.`
+          );
+        }
+      } catch (error) {
+        console.error('Error loading profile placeholder status:', error);
+        setProfilePlaceholderError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load profile placeholder status.'
+        );
+      } finally {
+        setProfilePlaceholderStatusLoading(false);
+      }
+    },
+    [apiClient, applyUsersResponse]
+  );
 
   useEffect(() => {
     fetchUsers();
@@ -71,11 +159,28 @@ export const Users = () => {
     }
   }, [searchQuery, users]);
 
+  useEffect(() => {
+    void refreshProfilePlaceholderStatus();
+  }, [refreshProfilePlaceholderStatus]);
+
+  useEffect(() => {
+    if (
+      profilePlaceholderStatus !== 'queued' &&
+      profilePlaceholderStatus !== 'in_progress'
+    ) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshProfilePlaceholderStatus();
+    }, 4000);
+    return () => window.clearInterval(interval);
+  }, [profilePlaceholderStatus, refreshProfilePlaceholderStatus]);
+
   const fetchUsers = async () => {
     try {
       const response = await apiClient.get<User[]>('/sonar/users');
-      setUsers(response);
-      setFilteredUsers(response);
+      applyUsersResponse(response);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -285,6 +390,35 @@ export const Users = () => {
     await adjustResources(healthAmount, manaAmount, 'Resources restored.');
   };
 
+  const generateProfilePlaceholder = async () => {
+    const prompt = profilePlaceholderPrompt.trim();
+    if (!prompt) {
+      setProfilePlaceholderError('Prompt is required.');
+      return;
+    }
+
+    try {
+      setProfilePlaceholderBusy(true);
+      setProfilePlaceholderError(null);
+      setProfilePlaceholderMessage(null);
+      await apiClient.post<UserProfilePlaceholderResponse>(
+        '/sonar/admin/users/profile-picture-placeholder',
+        { prompt }
+      );
+      setProfilePlaceholderMessage('Profile placeholder queued for generation.');
+      await refreshProfilePlaceholderStatus();
+    } catch (error) {
+      console.error('Error generating profile placeholder:', error);
+      setProfilePlaceholderError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate profile placeholder.'
+      );
+    } finally {
+      setProfilePlaceholderBusy(false);
+    }
+  };
+
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
     
@@ -472,6 +606,10 @@ export const Users = () => {
     return <div className="p-4">Loading...</div>;
   }
 
+  const usersWithoutProfilePicturesCount = users.filter(
+    (user) => !user.profilePictureUrl?.trim()
+  ).length;
+
   return (
     <div className="p-4">
       <h1 className="text-3xl font-bold mb-6">User Management</h1>
@@ -519,6 +657,110 @@ export const Users = () => {
               Delete Users Without Usernames ({getUsersWithoutUsernames().length})
             </button>
           )}
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Default Profile Placeholder</h2>
+            <p className="text-sm text-gray-600">
+              Applies the generated S3 image to every user whose profile image is blank.
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Users without profile images: {usersWithoutProfilePicturesCount}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void refreshProfilePlaceholderStatus(true)}
+              disabled={profilePlaceholderStatusLoading}
+              className={`px-3 py-2 rounded text-white ${
+                profilePlaceholderStatusLoading
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gray-600 hover:bg-gray-700'
+              }`}
+            >
+              {profilePlaceholderStatusLoading ? 'Refreshing...' : 'Refresh Status'}
+            </button>
+            <button
+              onClick={generateProfilePlaceholder}
+              disabled={profilePlaceholderBusy || profilePlaceholderStatusLoading}
+              className={`px-3 py-2 rounded text-white ${
+                profilePlaceholderBusy || profilePlaceholderStatusLoading
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-violet-600 hover:bg-violet-700'
+              }`}
+            >
+              {profilePlaceholderBusy ? 'Working...' : 'Generate Placeholder'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-lg border border-gray-200 p-4 space-y-4">
+          <div className="flex flex-wrap items-start gap-4">
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Generated Preview</p>
+              {profilePlaceholderExists ? (
+                <img
+                  src={`${profilePlaceholderUrl}?v=${profilePlaceholderPreviewNonce}`}
+                  alt="Generated profile placeholder preview"
+                  className="w-24 h-24 object-cover rounded-lg border bg-gray-50"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-lg border bg-gray-50 text-xs text-gray-500 flex items-center justify-center text-center px-2">
+                  No generated placeholder
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-[220px] flex-1">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold text-white ${placeholderStatusClassName(
+                    profilePlaceholderStatus
+                  )}`}
+                >
+                  {profilePlaceholderStatus || 'unknown'}
+                </span>
+                <span className="text-xs text-gray-500 break-all">
+                  {profilePlaceholderUrl || 'No generated S3 object yet'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Requested:{' '}
+                {profilePlaceholderRequestedAt
+                  ? new Date(profilePlaceholderRequestedAt).toLocaleString()
+                  : 'never'}
+                {' · '}
+                Last updated:{' '}
+                {profilePlaceholderLastModified
+                  ? new Date(profilePlaceholderLastModified).toLocaleString()
+                  : 'unknown'}
+              </p>
+            </div>
+          </div>
+
+          <label className="block text-sm font-medium text-gray-700">
+            Generation Prompt
+            <textarea
+              value={profilePlaceholderPrompt}
+              onChange={(event) => setProfilePlaceholderPrompt(event.target.value)}
+              placeholder="Prompt used to generate the shared user placeholder portrait."
+              className="mt-1 min-h-[96px] w-full rounded-lg border border-gray-300 px-3 py-2"
+            />
+          </label>
+
+          {profilePlaceholderMessage ? (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {profilePlaceholderMessage}
+            </div>
+          ) : null}
+          {profilePlaceholderError ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {profilePlaceholderError}
+            </div>
+          ) : null}
         </div>
       </div>
 

@@ -45,6 +45,7 @@ import { Challenges } from './components/Challenges.tsx';
 import Spells from './components/Spells.tsx';
 import Monsters from './components/Monsters.tsx';
 import HealingFountains from './components/HealingFountains.tsx';
+import Tutorial from './components/Tutorial.tsx';
 
 function onlyAuthenticated({ request }: LoaderFunctionArgs) {
   if (!localStorage.getItem('token')) {
@@ -93,6 +94,7 @@ const Navigation = () => {
         <Link to="/spells" className="text-white hover:text-gray-300">Spells</Link>
         <Link to="/monsters" className="text-white hover:text-gray-300">Monsters</Link>
         <Link to="/starter-config" className="text-white hover:text-gray-300">Starter Config</Link>
+        <Link to="/tutorial" className="text-white hover:text-gray-300">Tutorial</Link>
         <Link to="/treasure-chests" className="text-white hover:text-gray-300">Treasure Chests</Link>
         <Link to="/healing-fountains" className="text-white hover:text-gray-300">Healing Fountains</Link>
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
@@ -209,6 +211,11 @@ const router = createBrowserRouter([
       {
         path: "/starter-config",
         element: <NewUserStarterConfig />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/tutorial",
+        element: <Tutorial />,
         loader: onlyAuthenticated,
       },
       {
