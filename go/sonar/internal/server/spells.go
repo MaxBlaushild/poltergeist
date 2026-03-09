@@ -897,7 +897,9 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 		case models.SpellEffectTypeDealDamage,
 			models.SpellEffectTypeDealDamageAllEnemies,
 			models.SpellEffectTypeRestoreLifePartyMember,
-			models.SpellEffectTypeRestoreLifeAllParty:
+			models.SpellEffectTypeRestoreLifeAllParty,
+			models.SpellEffectTypeRevivePartyMember,
+			models.SpellEffectTypeReviveAllDownedParty:
 			if amount <= 0 {
 				return nil, fmt.Errorf("effects[%d].amount must be greater than 0", index)
 			}
@@ -2295,6 +2297,45 @@ func (s *server) applySpellHealToUser(
 	return restoreAmount, currentHealth, maxHealth, nil
 }
 
+func (s *server) applySpellReviveToUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	amount int,
+) (restored int, health int, maxHealth int, err error) {
+	if amount <= 0 {
+		return 0, 0, 0, nil
+	}
+
+	stats, maxHealth, _, currentHealth, _, err := s.getScenarioResourceState(ctx, userID)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	if currentHealth > 0 {
+		return 0, currentHealth, maxHealth, nil
+	}
+	if stats.HealthDeficit <= 0 {
+		return 0, currentHealth, maxHealth, nil
+	}
+
+	restoreAmount := amount
+	if restoreAmount > stats.HealthDeficit {
+		restoreAmount = stats.HealthDeficit
+	}
+	if restoreAmount <= 0 {
+		return 0, currentHealth, maxHealth, nil
+	}
+
+	if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -restoreAmount, 0); err != nil {
+		return 0, 0, 0, err
+	}
+
+	currentHealth += restoreAmount
+	if currentHealth > maxHealth {
+		currentHealth = maxHealth
+	}
+	return restoreAmount, currentHealth, maxHealth, nil
+}
+
 func filterUserSpellsByType(
 	userSpells []models.UserSpell,
 	abilityType models.SpellAbilityType,
@@ -2352,6 +2393,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 
 	targetHealAmount := 0
 	groupHealAmount := 0
+	targetReviveAmount := 0
+	groupReviveAmount := 0
 	statusesToApply := models.ScenarioFailureStatusTemplates{}
 	statusNamesToRemove := make([]string, 0)
 	for _, effect := range spellToCast.Effects {
@@ -2364,6 +2407,14 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			if effect.Amount > 0 {
 				groupHealAmount += effect.Amount
 			}
+		case models.SpellEffectTypeRevivePartyMember:
+			if effect.Amount > 0 {
+				targetReviveAmount += effect.Amount
+			}
+		case models.SpellEffectTypeReviveAllDownedParty:
+			if effect.Amount > 0 {
+				groupReviveAmount += effect.Amount
+			}
 		case models.SpellEffectTypeApplyBeneficialStatus:
 			statusesToApply = append(statusesToApply, effect.StatusesToApply...)
 		case models.SpellEffectTypeRemoveDetrimental:
@@ -2373,7 +2424,11 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	statusesToRemove := normalizeSpellStatusNames(statusNamesToRemove)
 	hasStatusEffects := len(statusesToApply) > 0 || len(statusesToRemove) > 0
 
-	if targetHealAmount <= 0 && groupHealAmount <= 0 && !hasStatusEffects {
+	if targetHealAmount <= 0 &&
+		groupHealAmount <= 0 &&
+		targetReviveAmount <= 0 &&
+		groupReviveAmount <= 0 &&
+		!hasStatusEffects {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "this ability has no castable effect"})
 		return
 	}
@@ -2394,8 +2449,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		}
 		hasTargetUserID = true
 	}
-	if targetHealAmount > 0 && !hasTargetUserID {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId is required for targeted heal abilities"})
+	if (targetHealAmount > 0 || targetReviveAmount > 0) && !hasTargetUserID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetUserId is required for targeted heal or revive abilities"})
 		return
 	}
 
@@ -2445,7 +2500,11 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	allowedTargets := map[uuid.UUID]bool{
 		user.ID: true,
 	}
-	if targetHealAmount > 0 || groupHealAmount > 0 || hasTargetUserID {
+	if targetHealAmount > 0 ||
+		groupHealAmount > 0 ||
+		targetReviveAmount > 0 ||
+		groupReviveAmount > 0 ||
+		hasTargetUserID {
 		if monsterBattle != nil {
 			participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, monsterBattle.ID)
 			if err != nil {
@@ -2505,8 +2564,46 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			healByUser[recipientID] += groupHealAmount
 		}
 	}
+	reviveByUser := map[uuid.UUID]int{}
+	if targetReviveAmount > 0 {
+		reviveByUser[targetUserID] += targetReviveAmount
+	}
+	if groupReviveAmount > 0 {
+		for recipientID := range allowedTargets {
+			reviveByUser[recipientID] += groupReviveAmount
+		}
+	}
 
 	heals := []castSpellHealResult{}
+	healResultIndexByUser := map[uuid.UUID]int{}
+	upsertHealResult := func(result castSpellHealResult) {
+		if existingIndex, exists := healResultIndexByUser[result.UserID]; exists {
+			existing := heals[existingIndex]
+			existing.Restored += result.Restored
+			existing.Health = result.Health
+			existing.MaxHealth = result.MaxHealth
+			heals[existingIndex] = existing
+			return
+		}
+		healResultIndexByUser[result.UserID] = len(heals)
+		heals = append(heals, result)
+	}
+	for recipientID, totalRevive := range reviveByUser {
+		restored, health, maxHealth, err := s.applySpellReviveToUser(ctx, recipientID, totalRevive)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if restored <= 0 {
+			continue
+		}
+		upsertHealResult(castSpellHealResult{
+			UserID:    recipientID,
+			Restored:  restored,
+			Health:    health,
+			MaxHealth: maxHealth,
+		})
+	}
 	for recipientID, totalHeal := range healByUser {
 		restored, health, maxHealth, err := s.applySpellHealToUser(ctx, recipientID, totalHeal)
 		if err != nil {
@@ -2516,7 +2613,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		if restored <= 0 {
 			continue
 		}
-		heals = append(heals, castSpellHealResult{
+		upsertHealResult(castSpellHealResult{
 			UserID:    recipientID,
 			Restored:  restored,
 			Health:    health,

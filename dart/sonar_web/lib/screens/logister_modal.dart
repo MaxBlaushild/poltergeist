@@ -159,6 +159,19 @@ class _LogisterFormState extends State<_LogisterForm> {
     if (!hasFile && !hasUsername) return;
     setState(() => _loading = true);
     try {
+      if (widget.auth.isDryRunRegistrationActive) {
+        await widget.auth.logout();
+        if (!mounted) return;
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Dry-run registration complete. No user was saved.'),
+          ),
+        );
+        widget.onSkip();
+        return;
+      }
+
       String? profilePictureUrl;
       if (_pickedFile != null && _pickedFile!.bytes != null) {
         final user = widget.auth.user;

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -29,27 +31,50 @@ class CelebrationModalManager extends StatelessWidget {
             ? Colors.red.shade400
             : Colors.amber.shade700;
 
-        return Dialog(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _titleFor(type, data),
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: titleColor,
-                    fontWeight: FontWeight.bold,
-                  ),
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: 1),
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+          builder: (context, value, child) {
+            return Opacity(
+              opacity: value,
+              child: Transform.translate(
+                offset: Offset(0, 20 * (1 - value)),
+                child: Transform.scale(
+                  scale: 0.96 + (0.04 * value),
+                  child: child,
                 ),
-                const SizedBox(height: 16),
-                _contentFor(type, data, context),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () => provider.clearModal(),
-                  child: const Text('OK'),
+              ),
+            );
+          },
+          child: Dialog(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 560,
+                maxHeight: MediaQuery.of(context).size.height * 0.82,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _titleFor(type, data),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: titleColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _contentFor(type, data, context),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => provider.clearModal(),
+                      child: const Text('OK'),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -314,351 +339,7 @@ class CelebrationModalManager extends StatelessWidget {
           ],
         );
       case 'scenarioOutcome':
-        final successful = data['successful'] == true;
-        final outcomeText = (data['outcomeText'] as String?)?.trim() ?? '';
-        final reason = (data['reason'] as String?)?.trim() ?? '';
-        final roll = (data['roll'] as num?)?.toInt() ?? 0;
-        final statTag = (data['statTag'] as String?)?.trim() ?? '';
-        final statValue = (data['statValue'] as num?)?.toInt() ?? 0;
-        final proficiencyBonus =
-            (data['proficiencyBonus'] as num?)?.toInt() ?? 0;
-        final creativityBonus = (data['creativityBonus'] as num?)?.toInt() ?? 0;
-        final totalScore = (data['totalScore'] as num?)?.toInt() ?? 0;
-        final threshold = (data['threshold'] as num?)?.toInt() ?? 0;
-        final rewardExperience =
-            (data['rewardExperience'] as num?)?.toInt() ?? 0;
-        final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
-        final failureHealthDrained =
-            (data['failureHealthDrained'] as num?)?.toInt() ?? 0;
-        final failureManaDrained =
-            (data['failureManaDrained'] as num?)?.toInt() ?? 0;
-        final failureStatusesApplied =
-            (data['failureStatusesApplied'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList() ??
-            const [];
-        final successHealthRestored =
-            (data['successHealthRestored'] as num?)?.toInt() ?? 0;
-        final successManaRestored =
-            (data['successManaRestored'] as num?)?.toInt() ?? 0;
-        final successStatusesApplied =
-            (data['successStatusesApplied'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList() ??
-            const [];
-        final itemsAwarded =
-            (data['itemsAwarded'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList() ??
-            const [];
-        final spellsAwarded =
-            (data['spellsAwarded'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList() ??
-            const [];
-        final statLabel = statTag.isEmpty
-            ? 'Stat'
-            : '${statTag[0].toUpperCase()}${statTag.substring(1)}';
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              outcomeText.isNotEmpty
-                  ? outcomeText
-                  : (successful
-                        ? 'Your approach succeeds.'
-                        : 'Your approach falls short.'),
-              style: Theme.of(context).textTheme.bodyLarge,
-            ),
-            if (reason.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(reason, style: Theme.of(context).textTheme.bodySmall),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              'Roll Math',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '$roll (d20) + $statValue ($statLabel) + $proficiencyBonus (Proficiency) + $creativityBonus (Creativity) = $totalScore',
-            ),
-            Text('Target: $threshold'),
-            const SizedBox(height: 10),
-            Text(
-              successful ? 'Outcome: Success' : 'Outcome: Failure',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            if (successful &&
-                (successHealthRestored > 0 ||
-                    successManaRestored > 0 ||
-                    successStatusesApplied.isNotEmpty)) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.green.withOpacity(0.22)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Success Effects',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.green.shade700,
-                      ),
-                    ),
-                    if (successHealthRestored > 0) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.favorite,
-                            size: 16,
-                            color: Colors.red.shade600,
-                          ),
-                          const SizedBox(width: 6),
-                          Text('+$successHealthRestored Health'),
-                        ],
-                      ),
-                    ],
-                    if (successManaRestored > 0) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.auto_fix_high,
-                            size: 16,
-                            color: Colors.blue.shade600,
-                          ),
-                          const SizedBox(width: 6),
-                          Text('+$successManaRestored Mana'),
-                        ],
-                      ),
-                    ],
-                    for (final status in successStatusesApplied) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.hourglass_bottom,
-                            size: 16,
-                            color: Colors.green.shade700,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  status['name']
-                                              ?.toString()
-                                              .trim()
-                                              .isNotEmpty ==
-                                          true
-                                      ? status['name'].toString().trim()
-                                      : 'Status Applied',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                if ((status['durationSeconds'] as num?)
-                                            ?.toInt() !=
-                                        null &&
-                                    (status['durationSeconds'] as num?)
-                                            ?.toInt() !=
-                                        0)
-                                  Text(
-                                    '${(status['durationSeconds'] as num?)!.toInt()}s',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                if ((status['description'] as String?)
-                                        ?.trim()
-                                        .isNotEmpty ==
-                                    true)
-                                  Text(
-                                    (status['description'] as String).trim(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                if ((status['effect'] as String?)
-                                        ?.trim()
-                                        .isNotEmpty ==
-                                    true)
-                                  Text(
-                                    (status['effect'] as String).trim(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-            if (!successful &&
-                (failureHealthDrained > 0 ||
-                    failureManaDrained > 0 ||
-                    failureStatusesApplied.isNotEmpty)) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.red.withOpacity(0.22)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Failure Penalties',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.red.shade700,
-                      ),
-                    ),
-                    if (failureHealthDrained > 0) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.favorite,
-                            size: 16,
-                            color: Colors.red.shade600,
-                          ),
-                          const SizedBox(width: 6),
-                          Text('-$failureHealthDrained Health'),
-                        ],
-                      ),
-                    ],
-                    if (failureManaDrained > 0) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.auto_fix_high,
-                            size: 16,
-                            color: Colors.blue.shade600,
-                          ),
-                          const SizedBox(width: 6),
-                          Text('-$failureManaDrained Mana'),
-                        ],
-                      ),
-                    ],
-                    for (final status in failureStatusesApplied) ...[
-                      const SizedBox(height: 6),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.hourglass_bottom,
-                            size: 16,
-                            color: Colors.orange.shade700,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  status['name']
-                                              ?.toString()
-                                              .trim()
-                                              .isNotEmpty ==
-                                          true
-                                      ? status['name'].toString().trim()
-                                      : 'Status Applied',
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(fontWeight: FontWeight.w700),
-                                ),
-                                if ((status['durationSeconds'] as num?)
-                                            ?.toInt() !=
-                                        null &&
-                                    (status['durationSeconds'] as num?)
-                                            ?.toInt() !=
-                                        0)
-                                  Text(
-                                    '${(status['durationSeconds'] as num?)!.toInt()}s',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                if ((status['description'] as String?)
-                                        ?.trim()
-                                        .isNotEmpty ==
-                                    true)
-                                  Text(
-                                    (status['description'] as String).trim(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                if ((status['effect'] as String?)
-                                        ?.trim()
-                                        .isNotEmpty ==
-                                    true)
-                                  Text(
-                                    (status['effect'] as String).trim(),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-            if (rewardExperience > 0 ||
-                rewardGold > 0 ||
-                itemsAwarded.isNotEmpty ||
-                spellsAwarded.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Rewards',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              _buildRewardSection(
-                context,
-                experience: rewardExperience,
-                gold: rewardGold,
-                items: itemsAwarded,
-                spells: spellsAwarded,
-              ),
-            ],
-          ],
-        );
+        return _buildScenarioOutcomeContent(context, data);
       case 'monsterBattleVictory':
         final monsterName =
             (data['monsterName'] as String?)?.trim() ?? 'Monster';
@@ -703,6 +384,539 @@ class CelebrationModalManager extends StatelessWidget {
       default:
         return const Text('Task completed!');
     }
+  }
+
+  Widget _buildScenarioOutcomeContent(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
+    final theme = Theme.of(context);
+    final successful = data['successful'] == true;
+    final scenarioPrompt = (data['scenarioPrompt'] as String?)?.trim() ?? '';
+    final outcomeText = (data['outcomeText'] as String?)?.trim() ?? '';
+    final reason = (data['reason'] as String?)?.trim() ?? '';
+    final roll = (data['roll'] as num?)?.toInt() ?? 0;
+    final statTag = (data['statTag'] as String?)?.trim() ?? '';
+    final statValue = (data['statValue'] as num?)?.toInt() ?? 0;
+    final proficiencies =
+        (data['proficiencies'] as List<dynamic>?)
+            ?.map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList() ??
+        const <String>[];
+    final proficiencyBonus = (data['proficiencyBonus'] as num?)?.toInt() ?? 0;
+    final creativityBonus = (data['creativityBonus'] as num?)?.toInt() ?? 0;
+    final totalScore = (data['totalScore'] as num?)?.toInt() ?? 0;
+    final threshold = (data['threshold'] as num?)?.toInt() ?? 0;
+    final rewardExperience = (data['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+    final failureHealthDrained =
+        (data['failureHealthDrained'] as num?)?.toInt() ?? 0;
+    final failureManaDrained =
+        (data['failureManaDrained'] as num?)?.toInt() ?? 0;
+    final failureStatusesApplied =
+        (data['failureStatusesApplied'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const [];
+    final successHealthRestored =
+        (data['successHealthRestored'] as num?)?.toInt() ?? 0;
+    final successManaRestored =
+        (data['successManaRestored'] as num?)?.toInt() ?? 0;
+    final successStatusesApplied =
+        (data['successStatusesApplied'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const [];
+    final itemsAwarded =
+        (data['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const [];
+    final spellsAwarded =
+        (data['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList() ??
+        const [];
+
+    final statLabel = _formatStatLabel(statTag);
+    final delta = totalScore - threshold;
+    final progressValue = threshold <= 0
+        ? 1.0
+        : (totalScore / math.max(1, threshold)).clamp(0.0, 1.0).toDouble();
+    final accentColor = successful
+        ? Colors.green.shade700
+        : Colors.red.shade700;
+    final accentTint = successful
+        ? Colors.green.withValues(alpha: 0.12)
+        : Colors.red.withValues(alpha: 0.12);
+    final segments = <_ScenarioScoreSegment>[
+      _ScenarioScoreSegment(
+        label: 'Roll',
+        caption: 'The d20 decides the swing.',
+        icon: Icons.casino_rounded,
+        value: roll,
+        color: Colors.deepPurple.shade400,
+      ),
+      _ScenarioScoreSegment(
+        label: statLabel,
+        caption: 'Your core stat carries the plan.',
+        icon: Icons.fitness_center_rounded,
+        value: statValue,
+        color: theme.colorScheme.primary,
+      ),
+      _ScenarioScoreSegment(
+        label: 'Proficiency',
+        caption: proficiencies.isEmpty
+            ? 'Training applied to this attempt.'
+            : 'Boosted by ${proficiencies.join(', ')}.',
+        icon: Icons.workspace_premium_rounded,
+        value: proficiencyBonus,
+        color: Colors.teal.shade600,
+      ),
+      _ScenarioScoreSegment(
+        label: 'Creativity',
+        caption: 'Bonus for a clever angle.',
+        icon: Icons.lightbulb_rounded,
+        value: creativityBonus,
+        color: Colors.amber.shade700,
+      ),
+    ];
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 16 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: successful
+                    ? [Colors.green.shade50, Colors.teal.shade50]
+                    : [Colors.red.shade50, Colors.orange.shade50],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: accentColor.withValues(alpha: 0.22)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: accentTint,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        successful
+                            ? Icons.emoji_events_rounded
+                            : Icons.shield_outlined,
+                        color: accentColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            outcomeText.isNotEmpty
+                                ? outcomeText
+                                : (successful
+                                      ? 'Your approach succeeds.'
+                                      : 'Your approach falls short.'),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: accentColor,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            successful
+                                ? 'You cleared the target by ${delta.abs()} points.'
+                                : 'You missed the target by ${delta.abs()} points.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                if (scenarioPrompt.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    scenarioPrompt,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(reason, style: theme.textTheme.bodySmall),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'How your score came together',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Your final score blends the d20 roll with your stat, training, and any creativity bonus.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Total',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '$totalScore / $threshold',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: accentColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: progressValue),
+                  duration: const Duration(milliseconds: 650),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 10,
+                        value: value,
+                        backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                        valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  successful
+                      ? 'Target met. Extra points become a clean margin of success.'
+                      : 'Target not met. Another ${delta.abs()} points would have pushed this over the line.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < segments.length; i++) ...[
+            _buildScenarioScoreSegmentCard(context, segments[i], index: i),
+            if (i != segments.length - 1) const SizedBox(height: 10),
+          ],
+          if (successful &&
+              (successHealthRestored > 0 ||
+                  successManaRestored > 0 ||
+                  successStatusesApplied.isNotEmpty)) ...[
+            const SizedBox(height: 14),
+            _buildScenarioImpactSection(
+              context,
+              title: 'Success Effects',
+              color: Colors.green.shade700,
+              backgroundColor: Colors.green.withValues(alpha: 0.08),
+              borderColor: Colors.green.withValues(alpha: 0.22),
+              healthDelta: successHealthRestored,
+              manaDelta: successManaRestored,
+              statuses: successStatusesApplied,
+            ),
+          ],
+          if (!successful &&
+              (failureHealthDrained > 0 ||
+                  failureManaDrained > 0 ||
+                  failureStatusesApplied.isNotEmpty)) ...[
+            const SizedBox(height: 14),
+            _buildScenarioImpactSection(
+              context,
+              title: 'Failure Penalties',
+              color: Colors.red.shade700,
+              backgroundColor: Colors.red.withValues(alpha: 0.08),
+              borderColor: Colors.red.withValues(alpha: 0.22),
+              healthDelta: -failureHealthDrained,
+              manaDelta: -failureManaDrained,
+              statuses: failureStatusesApplied,
+              statusColor: Colors.orange.shade700,
+            ),
+          ],
+          if (rewardExperience > 0 ||
+              rewardGold > 0 ||
+              itemsAwarded.isNotEmpty ||
+              spellsAwarded.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Rewards',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildRewardSection(
+              context,
+              experience: rewardExperience,
+              gold: rewardGold,
+              items: itemsAwarded,
+              spells: spellsAwarded,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScenarioScoreSegmentCard(
+    BuildContext context,
+    _ScenarioScoreSegment segment, {
+    required int index,
+  }) {
+    final theme = Theme.of(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: Duration(milliseconds: 280 + (index * 70)),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: segment.color.withValues(alpha: 0.16)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: segment.color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(segment.icon, color: segment.color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          segment.label,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _formatSignedValue(segment.value),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: segment.color,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    segment.caption,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScenarioImpactSection(
+    BuildContext context, {
+    required String title,
+    required Color color,
+    required Color backgroundColor,
+    required Color borderColor,
+    required int healthDelta,
+    required int manaDelta,
+    required List<Map<String, dynamic>> statuses,
+    Color? statusColor,
+  }) {
+    final theme = Theme.of(context);
+    final resolvedStatusColor = statusColor ?? color;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          if (healthDelta != 0) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.favorite, size: 16, color: Colors.red.shade600),
+                const SizedBox(width: 6),
+                Text('${_formatSignedValue(healthDelta)} Health'),
+              ],
+            ),
+          ],
+          if (manaDelta != 0) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  Icons.auto_fix_high,
+                  size: 16,
+                  color: Colors.blue.shade600,
+                ),
+                const SizedBox(width: 6),
+                Text('${_formatSignedValue(manaDelta)} Mana'),
+              ],
+            ),
+          ],
+          for (final status in statuses) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.hourglass_bottom,
+                  size: 16,
+                  color: resolvedStatusColor,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        status['name']?.toString().trim().isNotEmpty == true
+                            ? status['name'].toString().trim()
+                            : 'Status Applied',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if ((status['durationSeconds'] as num?)?.toInt()
+                          case final duration? when duration != 0)
+                        Text('$duration s', style: theme.textTheme.bodySmall),
+                      if ((status['description'] as String?)
+                              ?.trim()
+                              .isNotEmpty ==
+                          true)
+                        Text(
+                          (status['description'] as String).trim(),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      if ((status['effect'] as String?)?.trim().isNotEmpty ==
+                          true)
+                        Text(
+                          (status['effect'] as String).trim(),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatStatLabel(String statTag) {
+    if (statTag.isEmpty) return 'Stat';
+    return '${statTag[0].toUpperCase()}${statTag.substring(1)}';
+  }
+
+  String _formatSignedValue(int value) {
+    return value > 0 ? '+$value' : '$value';
   }
 
   Widget _buildRewardSection(
@@ -849,4 +1063,20 @@ class CelebrationModalManager extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ScenarioScoreSegment {
+  const _ScenarioScoreSegment({
+    required this.label,
+    required this.caption,
+    required this.icon,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String caption;
+  final IconData icon;
+  final int value;
+  final Color color;
 }

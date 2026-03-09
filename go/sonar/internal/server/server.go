@@ -405,7 +405,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/partyInvites/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptPartyInvite))
 	r.POST("/sonar/partyInvites/reject", middleware.WithAuthentication(s.authClient, s.livenessClient, s.rejectPartyInvite))
 	r.GET("/sonar/username/validate", s.validateUsername)
-	r.GET("/sonar/users/search", s.searchUsers)
+	r.GET("/sonar/users/search", middleware.WithAuthentication(s.authClient, s.livenessClient, s.searchUsers))
 	r.GET("/sonar/users/byUsername/:username", s.getUserByUsername)
 	r.GET("/sonar/characters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacters))
 	r.GET("/sonar/characters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacter))
@@ -465,6 +465,10 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterEncounter))
 	r.GET("/sonar/zones/:id/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterEncountersForZone))
 	r.POST("/sonar/monsters/:id/battle/start", middleware.WithAuthentication(s.authClient, s.livenessClient, s.startMonsterBattle))
+	r.GET("/sonar/monsters/:id/battle/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterBattleStatus))
+	r.POST("/sonar/monsters/:id/battle/damage", middleware.WithAuthentication(s.authClient, s.livenessClient, s.applyMonsterBattleDamage))
+	r.GET("/sonar/monster-battles/:id/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterBattleStatusByID))
+	r.POST("/sonar/monster-battles/:id/damage", middleware.WithAuthentication(s.authClient, s.livenessClient, s.applyMonsterBattleDamageByID))
 	r.POST("/sonar/monsters/:id/battle/turn", middleware.WithAuthentication(s.authClient, s.livenessClient, s.advanceMonsterBattleTurn))
 	r.POST("/sonar/monsters/:id/battle/end", middleware.WithAuthentication(s.authClient, s.livenessClient, s.endMonsterBattle))
 	r.GET("/sonar/monsterBattleInvites", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterBattleInvites))
@@ -1200,7 +1204,17 @@ func (s *server) setProfile(ctx *gin.Context) {
 }
 
 func (s *server) searchUsers(ctx *gin.Context) {
-	query := ctx.Query("query")
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid user"})
+		return
+	}
+
+	query := strings.TrimSpace(ctx.Query("query"))
+	if query == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "query parameter is required"})
+		return
+	}
 
 	users, err := s.dbClient.User().FindLikeByUsername(ctx, query)
 	if err != nil {
@@ -1208,7 +1222,34 @@ func (s *server) searchUsers(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, users)
+	friends, err := s.dbClient.Friend().FindAllFriends(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	excludedUserIDs := map[uuid.UUID]struct{}{
+		user.ID: {},
+	}
+
+	for _, friend := range friends {
+		excludedUserIDs[friend.ID] = struct{}{}
+	}
+
+	filteredUsers := make([]*models.User, 0, len(users))
+	for _, foundUser := range users {
+		if foundUser == nil || foundUser.ID == uuid.Nil {
+			continue
+		}
+
+		if _, excluded := excludedUserIDs[foundUser.ID]; excluded {
+			continue
+		}
+
+		filteredUsers = append(filteredUsers, foundUser)
+	}
+
+	ctx.JSON(http.StatusOK, filteredUsers)
 }
 
 func (s *server) getUserByUsername(ctx *gin.Context) {
@@ -1306,6 +1347,40 @@ func (s *server) createFriendInvite(ctx *gin.Context) {
 		return
 	}
 
+	if requestBody.InviteeID == uuid.Nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid invitee"})
+		return
+	}
+
+	if requestBody.InviteeID == user.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot invite yourself"})
+		return
+	}
+
+	exists, err := s.dbClient.Friend().Exists(ctx, user.ID, requestBody.InviteeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if exists {
+		ctx.JSON(http.StatusConflict, gin.H{"error": "already friends"})
+		return
+	}
+
+	invites, err := s.dbClient.FriendInvite().FindAllInvites(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, invite := range invites {
+		if invite.InviterID == requestBody.InviteeID || invite.InviteeID == requestBody.InviteeID {
+			ctx.JSON(http.StatusConflict, gin.H{"error": "friend invite already exists"})
+			return
+		}
+	}
+
 	invite, err := s.dbClient.FriendInvite().Create(ctx, user.ID, requestBody.InviteeID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1343,9 +1418,17 @@ func (s *server) acceptFriendInvite(ctx *gin.Context) {
 		return
 	}
 
-	if _, err = s.dbClient.Friend().Create(ctx, invite.InviterID, user.ID); err != nil {
+	exists, err := s.dbClient.Friend().Exists(ctx, invite.InviterID, user.ID)
+	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if !exists {
+		if _, err = s.dbClient.Friend().Create(ctx, invite.InviterID, user.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	if err = s.dbClient.FriendInvite().Delete(ctx, requestBody.InviteID); err != nil {
@@ -7059,36 +7142,38 @@ func (s *server) getInventoryItem(ctx *gin.Context) {
 
 func (s *server) createInventoryItem(ctx *gin.Context) {
 	var requestBody struct {
-		Name                    string                         `json:"name" binding:"required"`
-		ImageURL                string                         `json:"imageUrl"`
-		FlavorText              string                         `json:"flavorText"`
-		EffectText              string                         `json:"effectText"`
-		RarityTier              string                         `json:"rarityTier" binding:"required"`
-		IsCaptureType           bool                           `json:"isCaptureType"`
-		UnlockTier              *int                           `json:"unlockTier"`
-		ItemLevel               *int                           `json:"itemLevel"`
-		EquipSlot               *string                        `json:"equipSlot"`
-		StrengthMod             int                            `json:"strengthMod"`
-		DexterityMod            int                            `json:"dexterityMod"`
-		ConstitutionMod         int                            `json:"constitutionMod"`
-		IntelligenceMod         int                            `json:"intelligenceMod"`
-		WisdomMod               int                            `json:"wisdomMod"`
-		CharismaMod             int                            `json:"charismaMod"`
-		HandItemCategory        *string                        `json:"handItemCategory"`
-		Handedness              *string                        `json:"handedness"`
-		DamageMin               *int                           `json:"damageMin"`
-		DamageMax               *int                           `json:"damageMax"`
-		DamageAffinity          *string                        `json:"damageAffinity"`
-		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
-		BlockPercentage         *int                           `json:"blockPercentage"`
-		DamageBlocked           *int                           `json:"damageBlocked"`
-		SpellDamageBonusPercent *int                           `json:"spellDamageBonusPercent"`
-		ConsumeHealthDelta      int                            `json:"consumeHealthDelta"`
-		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
-		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
-		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
-		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
-		InternalTags            []string                       `json:"internalTags"`
+		Name                                     string                         `json:"name" binding:"required"`
+		ImageURL                                 string                         `json:"imageUrl"`
+		FlavorText                               string                         `json:"flavorText"`
+		EffectText                               string                         `json:"effectText"`
+		RarityTier                               string                         `json:"rarityTier" binding:"required"`
+		IsCaptureType                            bool                           `json:"isCaptureType"`
+		UnlockTier                               *int                           `json:"unlockTier"`
+		ItemLevel                                *int                           `json:"itemLevel"`
+		EquipSlot                                *string                        `json:"equipSlot"`
+		StrengthMod                              int                            `json:"strengthMod"`
+		DexterityMod                             int                            `json:"dexterityMod"`
+		ConstitutionMod                          int                            `json:"constitutionMod"`
+		IntelligenceMod                          int                            `json:"intelligenceMod"`
+		WisdomMod                                int                            `json:"wisdomMod"`
+		CharismaMod                              int                            `json:"charismaMod"`
+		HandItemCategory                         *string                        `json:"handItemCategory"`
+		Handedness                               *string                        `json:"handedness"`
+		DamageMin                                *int                           `json:"damageMin"`
+		DamageMax                                *int                           `json:"damageMax"`
+		DamageAffinity                           *string                        `json:"damageAffinity"`
+		SwipesPerAttack                          *int                           `json:"swipesPerAttack"`
+		BlockPercentage                          *int                           `json:"blockPercentage"`
+		DamageBlocked                            *int                           `json:"damageBlocked"`
+		SpellDamageBonusPercent                  *int                           `json:"spellDamageBonusPercent"`
+		ConsumeHealthDelta                       int                            `json:"consumeHealthDelta"`
+		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
+		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
+		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
+		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
+		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
+		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
+		InternalTags                             []string                       `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -7155,36 +7240,38 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	}
 
 	item := &models.InventoryItem{
-		Name:                    requestBody.Name,
-		ImageURL:                requestBody.ImageURL,
-		FlavorText:              requestBody.FlavorText,
-		EffectText:              requestBody.EffectText,
-		RarityTier:              requestBody.RarityTier,
-		IsCaptureType:           requestBody.IsCaptureType,
-		UnlockTier:              requestBody.UnlockTier,
-		ItemLevel:               itemLevel,
-		EquipSlot:               equipSlot,
-		StrengthMod:             requestBody.StrengthMod,
-		DexterityMod:            requestBody.DexterityMod,
-		ConstitutionMod:         requestBody.ConstitutionMod,
-		IntelligenceMod:         requestBody.IntelligenceMod,
-		WisdomMod:               requestBody.WisdomMod,
-		CharismaMod:             requestBody.CharismaMod,
-		HandItemCategory:        handAttrs.HandItemCategory,
-		Handedness:              handAttrs.Handedness,
-		DamageMin:               handAttrs.DamageMin,
-		DamageMax:               handAttrs.DamageMax,
-		DamageAffinity:          handAttrs.DamageAffinity,
-		SwipesPerAttack:         handAttrs.SwipesPerAttack,
-		BlockPercentage:         handAttrs.BlockPercentage,
-		DamageBlocked:           handAttrs.DamageBlocked,
-		SpellDamageBonusPercent: handAttrs.SpellDamageBonusPercent,
-		ConsumeHealthDelta:      requestBody.ConsumeHealthDelta,
-		ConsumeManaDelta:        requestBody.ConsumeManaDelta,
-		ConsumeStatusesToAdd:    consumeStatusesToAdd,
-		ConsumeStatusesToRemove: consumeStatusesToRemove,
-		ConsumeSpellIDs:         consumeSpellIDs,
-		InternalTags:            internalTags,
+		Name:                                     requestBody.Name,
+		ImageURL:                                 requestBody.ImageURL,
+		FlavorText:                               requestBody.FlavorText,
+		EffectText:                               requestBody.EffectText,
+		RarityTier:                               requestBody.RarityTier,
+		IsCaptureType:                            requestBody.IsCaptureType,
+		UnlockTier:                               requestBody.UnlockTier,
+		ItemLevel:                                itemLevel,
+		EquipSlot:                                equipSlot,
+		StrengthMod:                              requestBody.StrengthMod,
+		DexterityMod:                             requestBody.DexterityMod,
+		ConstitutionMod:                          requestBody.ConstitutionMod,
+		IntelligenceMod:                          requestBody.IntelligenceMod,
+		WisdomMod:                                requestBody.WisdomMod,
+		CharismaMod:                              requestBody.CharismaMod,
+		HandItemCategory:                         handAttrs.HandItemCategory,
+		Handedness:                               handAttrs.Handedness,
+		DamageMin:                                handAttrs.DamageMin,
+		DamageMax:                                handAttrs.DamageMax,
+		DamageAffinity:                           handAttrs.DamageAffinity,
+		SwipesPerAttack:                          handAttrs.SwipesPerAttack,
+		BlockPercentage:                          handAttrs.BlockPercentage,
+		DamageBlocked:                            handAttrs.DamageBlocked,
+		SpellDamageBonusPercent:                  handAttrs.SpellDamageBonusPercent,
+		ConsumeHealthDelta:                       requestBody.ConsumeHealthDelta,
+		ConsumeManaDelta:                         requestBody.ConsumeManaDelta,
+		ConsumeRevivePartyMemberHealth:           requestBody.ConsumeRevivePartyMemberHealth,
+		ConsumeReviveAllDownedPartyMembersHealth: requestBody.ConsumeReviveAllDownedPartyMembersHealth,
+		ConsumeStatusesToAdd:                     consumeStatusesToAdd,
+		ConsumeStatusesToRemove:                  consumeStatusesToRemove,
+		ConsumeSpellIDs:                          consumeSpellIDs,
+		InternalTags:                             internalTags,
 		ImageGenerationStatus: func() string {
 			if requestBody.ImageURL != "" {
 				return models.InventoryImageGenerationStatusComplete
@@ -7962,39 +8049,49 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 		statusesToAdd := scaleConsumableStatuses(sourceItem.ConsumeStatusesToAdd, powerScale, durationScale)
 		consumeHealthDelta := scaleConsumableValue(sourceItem.ConsumeHealthDelta, powerScale)
 		consumeManaDelta := scaleConsumableValue(sourceItem.ConsumeManaDelta, powerScale)
+		consumeRevivePartyMemberHealth := scaleConsumableValue(sourceItem.ConsumeRevivePartyMemberHealth, powerScale)
+		if consumeRevivePartyMemberHealth < 0 {
+			consumeRevivePartyMemberHealth = 0
+		}
+		consumeReviveAllDownedPartyMembersHealth := scaleConsumableValue(sourceItem.ConsumeReviveAllDownedPartyMembersHealth, powerScale)
+		if consumeReviveAllDownedPartyMembersHealth < 0 {
+			consumeReviveAllDownedPartyMembersHealth = 0
+		}
 
 		item := &models.InventoryItem{
-			Name:                    itemName,
-			ImageURL:                "",
-			FlavorText:              buildConsumableQualityFlavorText(baseName, quality),
-			EffectText:              buildConsumableQualityEffectText(baseName, quality, consumeHealthDelta, consumeManaDelta, statusesToAdd, sourceItem.ConsumeStatusesToRemove),
-			RarityTier:              selectConsumableQualityRarity(sourceItem.RarityTier, quality.DefaultRarity),
-			IsCaptureType:           false,
-			SellValue:               scaleConsumableOptionalInt(sourceItem.SellValue, powerScale),
-			UnlockTier:              scaleConsumableOptionalInt(sourceItem.UnlockTier, math.Max(1.0, powerScale*0.5)),
-			ItemLevel:               quality.LevelMin,
-			EquipSlot:               nil,
-			StrengthMod:             0,
-			DexterityMod:            0,
-			ConstitutionMod:         0,
-			IntelligenceMod:         0,
-			WisdomMod:               0,
-			CharismaMod:             0,
-			HandItemCategory:        nil,
-			Handedness:              nil,
-			DamageMin:               nil,
-			DamageMax:               nil,
-			SwipesPerAttack:         nil,
-			BlockPercentage:         nil,
-			DamageBlocked:           nil,
-			SpellDamageBonusPercent: nil,
-			ConsumeHealthDelta:      consumeHealthDelta,
-			ConsumeManaDelta:        consumeManaDelta,
-			ConsumeStatusesToAdd:    statusesToAdd,
-			ConsumeStatusesToRemove: sourceItem.ConsumeStatusesToRemove,
-			ConsumeSpellIDs:         sourceItem.ConsumeSpellIDs,
-			InternalTags:            append(models.StringArray{}, sourceItem.InternalTags...),
-			ImageGenerationStatus:   models.InventoryImageGenerationStatusQueued,
+			Name:                                     itemName,
+			ImageURL:                                 "",
+			FlavorText:                               buildConsumableQualityFlavorText(baseName, quality),
+			EffectText:                               buildConsumableQualityEffectText(baseName, quality, consumeHealthDelta, consumeManaDelta, consumeRevivePartyMemberHealth, consumeReviveAllDownedPartyMembersHealth, statusesToAdd, sourceItem.ConsumeStatusesToRemove),
+			RarityTier:                               selectConsumableQualityRarity(sourceItem.RarityTier, quality.DefaultRarity),
+			IsCaptureType:                            false,
+			SellValue:                                scaleConsumableOptionalInt(sourceItem.SellValue, powerScale),
+			UnlockTier:                               scaleConsumableOptionalInt(sourceItem.UnlockTier, math.Max(1.0, powerScale*0.5)),
+			ItemLevel:                                quality.LevelMin,
+			EquipSlot:                                nil,
+			StrengthMod:                              0,
+			DexterityMod:                             0,
+			ConstitutionMod:                          0,
+			IntelligenceMod:                          0,
+			WisdomMod:                                0,
+			CharismaMod:                              0,
+			HandItemCategory:                         nil,
+			Handedness:                               nil,
+			DamageMin:                                nil,
+			DamageMax:                                nil,
+			SwipesPerAttack:                          nil,
+			BlockPercentage:                          nil,
+			DamageBlocked:                            nil,
+			SpellDamageBonusPercent:                  nil,
+			ConsumeHealthDelta:                       consumeHealthDelta,
+			ConsumeManaDelta:                         consumeManaDelta,
+			ConsumeRevivePartyMemberHealth:           consumeRevivePartyMemberHealth,
+			ConsumeReviveAllDownedPartyMembersHealth: consumeReviveAllDownedPartyMembersHealth,
+			ConsumeStatusesToAdd:                     statusesToAdd,
+			ConsumeStatusesToRemove:                  sourceItem.ConsumeStatusesToRemove,
+			ConsumeSpellIDs:                          sourceItem.ConsumeSpellIDs,
+			InternalTags:                             append(models.StringArray{}, sourceItem.InternalTags...),
+			ImageGenerationStatus:                    models.InventoryImageGenerationStatusQueued,
 		}
 
 		if err := s.dbClient.InventoryItem().CreateInventoryItem(ctx, item); err != nil {
@@ -8025,6 +8122,9 @@ func inventoryItemHasConsumableEffects(item *models.InventoryItem) bool {
 		return false
 	}
 	if item.ConsumeHealthDelta != 0 || item.ConsumeManaDelta != 0 {
+		return true
+	}
+	if item.ConsumeRevivePartyMemberHealth > 0 || item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
 		return true
 	}
 	if len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0 || len(item.ConsumeSpellIDs) > 0 {
@@ -8128,6 +8228,8 @@ func buildConsumableQualityEffectText(
 	quality consumableQualityConfig,
 	healthDelta int,
 	manaDelta int,
+	revivePartyMemberHealth int,
+	reviveAllDownedPartyMembersHealth int,
 	statuses models.ScenarioFailureStatusTemplates,
 	statusesToRemove []string,
 ) string {
@@ -8137,6 +8239,12 @@ func buildConsumableQualityEffectText(
 	}
 	if manaDelta != 0 {
 		effects = append(effects, fmt.Sprintf("Mana %+d", manaDelta))
+	}
+	if revivePartyMemberHealth > 0 {
+		effects = append(effects, fmt.Sprintf("Revive one party member to %d HP", revivePartyMemberHealth))
+	}
+	if reviveAllDownedPartyMembersHealth > 0 {
+		effects = append(effects, fmt.Sprintf("Revive all downed party members to %d HP", reviveAllDownedPartyMembersHealth))
 	}
 	if len(statuses) > 0 {
 		effects = append(effects, fmt.Sprintf("Bestows %d scaled status effect(s)", len(statuses)))
@@ -8952,36 +9060,38 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Name                    string                         `json:"name"`
-		ImageURL                string                         `json:"imageUrl"`
-		FlavorText              string                         `json:"flavorText"`
-		EffectText              string                         `json:"effectText"`
-		RarityTier              string                         `json:"rarityTier"`
-		IsCaptureType           bool                           `json:"isCaptureType"`
-		UnlockTier              *int                           `json:"unlockTier"`
-		ItemLevel               *int                           `json:"itemLevel"`
-		EquipSlot               *string                        `json:"equipSlot"`
-		StrengthMod             int                            `json:"strengthMod"`
-		DexterityMod            int                            `json:"dexterityMod"`
-		ConstitutionMod         int                            `json:"constitutionMod"`
-		IntelligenceMod         int                            `json:"intelligenceMod"`
-		WisdomMod               int                            `json:"wisdomMod"`
-		CharismaMod             int                            `json:"charismaMod"`
-		HandItemCategory        *string                        `json:"handItemCategory"`
-		Handedness              *string                        `json:"handedness"`
-		DamageMin               *int                           `json:"damageMin"`
-		DamageMax               *int                           `json:"damageMax"`
-		DamageAffinity          *string                        `json:"damageAffinity"`
-		SwipesPerAttack         *int                           `json:"swipesPerAttack"`
-		BlockPercentage         *int                           `json:"blockPercentage"`
-		DamageBlocked           *int                           `json:"damageBlocked"`
-		SpellDamageBonusPercent *int                           `json:"spellDamageBonusPercent"`
-		ConsumeHealthDelta      int                            `json:"consumeHealthDelta"`
-		ConsumeManaDelta        int                            `json:"consumeManaDelta"`
-		ConsumeStatusesToAdd    []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
-		ConsumeStatusesToRemove []string                       `json:"consumeStatusesToRemove"`
-		ConsumeSpellIDs         []string                       `json:"consumeSpellIds"`
-		InternalTags            []string                       `json:"internalTags"`
+		Name                                     string                         `json:"name"`
+		ImageURL                                 string                         `json:"imageUrl"`
+		FlavorText                               string                         `json:"flavorText"`
+		EffectText                               string                         `json:"effectText"`
+		RarityTier                               string                         `json:"rarityTier"`
+		IsCaptureType                            bool                           `json:"isCaptureType"`
+		UnlockTier                               *int                           `json:"unlockTier"`
+		ItemLevel                                *int                           `json:"itemLevel"`
+		EquipSlot                                *string                        `json:"equipSlot"`
+		StrengthMod                              int                            `json:"strengthMod"`
+		DexterityMod                             int                            `json:"dexterityMod"`
+		ConstitutionMod                          int                            `json:"constitutionMod"`
+		IntelligenceMod                          int                            `json:"intelligenceMod"`
+		WisdomMod                                int                            `json:"wisdomMod"`
+		CharismaMod                              int                            `json:"charismaMod"`
+		HandItemCategory                         *string                        `json:"handItemCategory"`
+		Handedness                               *string                        `json:"handedness"`
+		DamageMin                                *int                           `json:"damageMin"`
+		DamageMax                                *int                           `json:"damageMax"`
+		DamageAffinity                           *string                        `json:"damageAffinity"`
+		SwipesPerAttack                          *int                           `json:"swipesPerAttack"`
+		BlockPercentage                          *int                           `json:"blockPercentage"`
+		DamageBlocked                            *int                           `json:"damageBlocked"`
+		SpellDamageBonusPercent                  *int                           `json:"spellDamageBonusPercent"`
+		ConsumeHealthDelta                       int                            `json:"consumeHealthDelta"`
+		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
+		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
+		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
+		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
+		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
+		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
+		InternalTags                             []string                       `json:"internalTags"`
 	}
 
 	if err := ctx.Bind(&requestBody); err != nil {
@@ -9051,36 +9161,38 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"name":                       requestBody.Name,
-		"image_url":                  requestBody.ImageURL,
-		"flavor_text":                requestBody.FlavorText,
-		"effect_text":                requestBody.EffectText,
-		"rarity_tier":                requestBody.RarityTier,
-		"is_capture_type":            requestBody.IsCaptureType,
-		"unlock_tier":                requestBody.UnlockTier,
-		"item_level":                 itemLevel,
-		"equip_slot":                 equipSlot,
-		"strength_mod":               requestBody.StrengthMod,
-		"dexterity_mod":              requestBody.DexterityMod,
-		"constitution_mod":           requestBody.ConstitutionMod,
-		"intelligence_mod":           requestBody.IntelligenceMod,
-		"wisdom_mod":                 requestBody.WisdomMod,
-		"charisma_mod":               requestBody.CharismaMod,
-		"hand_item_category":         handAttrs.HandItemCategory,
-		"handedness":                 handAttrs.Handedness,
-		"damage_min":                 handAttrs.DamageMin,
-		"damage_max":                 handAttrs.DamageMax,
-		"damage_affinity":            handAttrs.DamageAffinity,
-		"swipes_per_attack":          handAttrs.SwipesPerAttack,
-		"block_percentage":           handAttrs.BlockPercentage,
-		"damage_blocked":             handAttrs.DamageBlocked,
-		"spell_damage_bonus_percent": handAttrs.SpellDamageBonusPercent,
-		"consume_health_delta":       requestBody.ConsumeHealthDelta,
-		"consume_mana_delta":         requestBody.ConsumeManaDelta,
-		"consume_statuses_to_add":    consumeStatusesToAdd,
-		"consume_statuses_to_remove": consumeStatusesToRemove,
-		"consume_spell_ids":          consumeSpellIDs,
-		"internal_tags":              internalTags,
+		"name":                               requestBody.Name,
+		"image_url":                          requestBody.ImageURL,
+		"flavor_text":                        requestBody.FlavorText,
+		"effect_text":                        requestBody.EffectText,
+		"rarity_tier":                        requestBody.RarityTier,
+		"is_capture_type":                    requestBody.IsCaptureType,
+		"unlock_tier":                        requestBody.UnlockTier,
+		"item_level":                         itemLevel,
+		"equip_slot":                         equipSlot,
+		"strength_mod":                       requestBody.StrengthMod,
+		"dexterity_mod":                      requestBody.DexterityMod,
+		"constitution_mod":                   requestBody.ConstitutionMod,
+		"intelligence_mod":                   requestBody.IntelligenceMod,
+		"wisdom_mod":                         requestBody.WisdomMod,
+		"charisma_mod":                       requestBody.CharismaMod,
+		"hand_item_category":                 handAttrs.HandItemCategory,
+		"handedness":                         handAttrs.Handedness,
+		"damage_min":                         handAttrs.DamageMin,
+		"damage_max":                         handAttrs.DamageMax,
+		"damage_affinity":                    handAttrs.DamageAffinity,
+		"swipes_per_attack":                  handAttrs.SwipesPerAttack,
+		"block_percentage":                   handAttrs.BlockPercentage,
+		"damage_blocked":                     handAttrs.DamageBlocked,
+		"spell_damage_bonus_percent":         handAttrs.SpellDamageBonusPercent,
+		"consume_health_delta":               requestBody.ConsumeHealthDelta,
+		"consume_mana_delta":                 requestBody.ConsumeManaDelta,
+		"consume_revive_party_member_health": requestBody.ConsumeRevivePartyMemberHealth,
+		"consume_revive_all_downed_party_members_health": requestBody.ConsumeReviveAllDownedPartyMembersHealth,
+		"consume_statuses_to_add":                        consumeStatusesToAdd,
+		"consume_statuses_to_remove":                     consumeStatusesToRemove,
+		"consume_spell_ids":                              consumeSpellIDs,
+		"internal_tags":                                  internalTags,
 	}
 
 	if requestBody.ImageURL != "" {

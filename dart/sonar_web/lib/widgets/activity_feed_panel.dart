@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/activity_feed.dart';
@@ -158,6 +159,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
 
   Widget _monsterBattleInviteActions(BuildContext context, ActivityFeed a) {
     final inviteId = _stringField(a.data, 'inviteId').trim();
+    final monsterId = _stringField(a.data, 'monsterId').trim();
+    final battleId = _stringField(a.data, 'battleId').trim();
     if (inviteId.isEmpty) return const SizedBox.shrink();
     final expiresAtRaw = _stringField(a.data, 'expiresAt').trim();
     final expiresAt = DateTime.tryParse(expiresAtRaw);
@@ -185,6 +188,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                 : () => _respondToMonsterBattleInvite(
                     context,
                     inviteId,
+                    monsterId: monsterId,
+                    battleId: battleId,
                     accept: false,
                   ),
             child: const Text('Decline'),
@@ -196,6 +201,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
                 : () => _respondToMonsterBattleInvite(
                     context,
                     inviteId,
+                    monsterId: monsterId,
+                    battleId: battleId,
                     accept: true,
                   ),
             child: const Text('Join'),
@@ -216,6 +223,8 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
   Future<void> _respondToMonsterBattleInvite(
     BuildContext context,
     String inviteId, {
+    required String monsterId,
+    required String battleId,
     required bool accept,
   }) async {
     setState(() {
@@ -224,7 +233,32 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
     try {
       final partyProvider = context.read<PartyProvider>();
       if (accept) {
-        await partyProvider.acceptMonsterBattleInvite(inviteId);
+        final response = await partyProvider.acceptMonsterBattleInvite(
+          inviteId,
+        );
+        final resolvedBattleId = _stringFromBattleDetail(response, 'id').trim();
+        final resolvedMonsterId = _stringFromBattleDetail(
+          response,
+          'monsterId',
+        ).trim();
+        final trimmedMonsterId = resolvedMonsterId.isNotEmpty
+            ? resolvedMonsterId
+            : monsterId.trim();
+        final trimmedBattleId = resolvedBattleId.isNotEmpty
+            ? resolvedBattleId
+            : battleId.trim();
+        if (trimmedMonsterId.isNotEmpty && context.mounted) {
+          final targetUri = Uri(
+            path: '/single-player',
+            queryParameters: {
+              'joinMonsterId': trimmedMonsterId,
+              'partyBattle': '1',
+              'inviteId': inviteId,
+              if (trimmedBattleId.isNotEmpty) 'battleId': trimmedBattleId,
+            },
+          );
+          context.go(targetUri.toString());
+        }
       } else {
         await partyProvider.rejectMonsterBattleInvite(inviteId);
       }
@@ -249,6 +283,17 @@ class _ActivityFeedPanelState extends State<ActivityFeedPanel> {
     final mm = local.minute.toString().padLeft(2, '0');
     final suffix = local.hour >= 12 ? 'PM' : 'AM';
     return '${local.month}/${local.day}/${local.year} $hh:$mm $suffix';
+  }
+
+  String _stringFromBattleDetail(Map<String, dynamic> detail, String key) {
+    final battleRaw = detail['battle'];
+    if (battleRaw is Map<String, dynamic>) {
+      return battleRaw[key]?.toString() ?? '';
+    }
+    if (battleRaw is Map) {
+      return Map<String, dynamic>.from(battleRaw)[key]?.toString() ?? '';
+    }
+    return '';
   }
 
   void _markVisibleUnseen(ActivityFeedProvider feed) {

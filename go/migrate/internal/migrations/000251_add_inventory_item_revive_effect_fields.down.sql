@@ -1,0 +1,3 @@
+ALTER TABLE inventory_items
+DROP COLUMN IF EXISTS consume_revive_party_member_health,
+DROP COLUMN IF EXISTS consume_revive_all_downed_party_members_health;

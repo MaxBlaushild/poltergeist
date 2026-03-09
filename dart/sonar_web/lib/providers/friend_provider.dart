@@ -12,12 +12,15 @@ class FriendProvider with ChangeNotifier {
   List<User> _friends = [];
   List<FriendInvite> _friendInvites = [];
   List<User> _searchResults = [];
-  bool _loading = false;
+  final bool _loading = false;
+  bool _hasLoadedFriendInvites = false;
+  String _searchQuery = '';
 
   List<User> get friends => _friends;
   List<FriendInvite> get friendInvites => _friendInvites;
   List<User> get searchResults => _searchResults;
   bool get loading => _loading;
+  bool get hasLoadedFriendInvites => _hasLoadedFriendInvites;
 
   Future<void> fetchFriends() async {
     try {
@@ -34,6 +37,7 @@ class FriendProvider with ChangeNotifier {
     } catch (_) {
       _friendInvites = [];
     }
+    _hasLoadedFriendInvites = true;
     notifyListeners();
   }
 
@@ -42,13 +46,18 @@ class FriendProvider with ChangeNotifier {
   }
 
   Future<void> searchForFriends(String query) async {
-    if (query.trim().isEmpty) {
+    _searchQuery = query.trim();
+    if (_searchQuery.isEmpty) {
       _searchResults = [];
       notifyListeners();
       return;
     }
+    await _refreshSearchResults();
+  }
+
+  Future<void> _refreshSearchResults() async {
     try {
-      _searchResults = await _friendService.searchUsers(query);
+      _searchResults = await _friendService.searchUsers(_searchQuery);
     } catch (_) {
       _searchResults = [];
     }
@@ -58,23 +67,27 @@ class FriendProvider with ChangeNotifier {
   Future<void> createFriendInvite(String inviteeId) async {
     await _friendService.createFriendInvite(inviteeId);
     await fetchFriendInvites();
-    notifyListeners();
+    await _refreshSearchResults();
   }
 
   Future<void> acceptFriendInvite(String inviteId) async {
     await _friendService.acceptFriendInvite(inviteId);
     _friendInvites = _friendInvites.where((i) => i.id != inviteId).toList();
     await fetchFriends();
-    notifyListeners();
+    await fetchFriendInvites();
+    await _refreshSearchResults();
   }
 
   Future<void> deleteFriendInvite(String inviteId) async {
     await _friendService.deleteFriendInvite(inviteId);
     _friendInvites = _friendInvites.where((i) => i.id != inviteId).toList();
     notifyListeners();
+    await fetchFriendInvites();
+    await _refreshSearchResults();
   }
 
   void clearSearch() {
+    _searchQuery = '';
     _searchResults = [];
     notifyListeners();
   }
@@ -82,6 +95,8 @@ class FriendProvider with ChangeNotifier {
   void clear() {
     _friends = [];
     _friendInvites = [];
+    _hasLoadedFriendInvites = false;
+    _searchQuery = '';
     _searchResults = [];
     notifyListeners();
   }

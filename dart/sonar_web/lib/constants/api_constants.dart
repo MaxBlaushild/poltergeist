@@ -33,6 +33,18 @@ class ApiConstants {
       '/sonar/monsterBattleInvites/accept';
   static const String monsterBattleInvitesRejectEndpoint =
       '/sonar/monsterBattleInvites/reject';
+  static String monsterBattleStartEndpoint(String monsterId) =>
+      '/sonar/monsters/$monsterId/battle/start';
+  static String monsterBattleStatusEndpoint(String monsterId) =>
+      '/sonar/monsters/$monsterId/battle/status';
+  static String monsterBattleDamageEndpoint(String monsterId) =>
+      '/sonar/monsters/$monsterId/battle/damage';
+  static String monsterBattleEndEndpoint(String monsterId) =>
+      '/sonar/monsters/$monsterId/battle/end';
+  static String monsterBattleStatusByIdEndpoint(String battleId) =>
+      '/sonar/monster-battles/$battleId/status';
+  static String monsterBattleDamageByIdEndpoint(String battleId) =>
+      '/sonar/monster-battles/$battleId/damage';
   static const String deviceTokensEndpoint = '/sonar/device-tokens';
   static const String pushTestEndpoint = '/sonar/push/test';
   static const String partySubmissionStatusEndpoint =

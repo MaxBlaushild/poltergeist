@@ -16,6 +16,8 @@ const (
 	SpellEffectTypeDealDamageAllEnemies   SpellEffectType = "deal_damage_all_enemies"
 	SpellEffectTypeRestoreLifePartyMember SpellEffectType = "restore_life_party_member"
 	SpellEffectTypeRestoreLifeAllParty    SpellEffectType = "restore_life_all_party_members"
+	SpellEffectTypeRevivePartyMember      SpellEffectType = "revive_party_member"
+	SpellEffectTypeReviveAllDownedParty   SpellEffectType = "revive_all_downed_party_members"
 	SpellEffectTypeApplyBeneficialStatus  SpellEffectType = "apply_beneficial_statuses"
 	SpellEffectTypeRemoveDetrimental      SpellEffectType = "remove_detrimental_statuses"
 )

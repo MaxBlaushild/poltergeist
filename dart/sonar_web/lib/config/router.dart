@@ -49,9 +49,16 @@ GoRouter createRouter({Listenable? refreshListenable}) {
       ),
       ShellRoute(
         navigatorKey: shellNavigatorKey,
-        builder: (context, state, child) => LayoutShell(child: child),
+        builder: (context, state, child) =>
+            LayoutShell(routeUri: state.uri, child: child),
         routes: [
-          GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+          GoRoute(
+            path: '/',
+            builder: (context, state) => HomeScreen(
+              key: ValueKey(state.uri.toString()),
+              from: state.uri.queryParameters['from'],
+            ),
+          ),
           GoRoute(
             path: '/single-player',
             pageBuilder: (_, state) =>

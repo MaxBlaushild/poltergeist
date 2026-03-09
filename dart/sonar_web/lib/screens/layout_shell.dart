@@ -26,9 +26,10 @@ import '../widgets/settings_tab_content.dart';
 import 'user_character_screen.dart';
 
 class LayoutShell extends StatefulWidget {
-  const LayoutShell({super.key, required this.child});
+  const LayoutShell({super.key, required this.child, required this.routeUri});
 
   final Widget child;
+  final Uri routeUri;
 
   @override
   State<LayoutShell> createState() => _LayoutShellState();
@@ -39,7 +40,9 @@ class _LayoutShellState extends State<LayoutShell> {
   final _sideDrawerKey = GlobalKey<_SideDrawerState>();
   StreamSubscription<InAppPushEvent>? _pushEventSubscription;
   bool _drainingPartySubmissionResults = false;
+  bool _monsterBattleInviteModalOpen = false;
   int? _pendingDrawerTabIndex;
+  String? _lastHandledDrawerRequest;
 
   @override
   void initState() {
@@ -47,7 +50,19 @@ class _LayoutShellState extends State<LayoutShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_initializeForegroundInviteToasts());
+      _consumeRouteDrawerIntent();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant LayoutShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.routeUri.toString() != widget.routeUri.toString()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _consumeRouteDrawerIntent();
+      });
+    }
   }
 
   @override
@@ -85,6 +100,8 @@ class _LayoutShellState extends State<LayoutShell> {
 
     if (type == 'monster_battle_invite') {
       unawaited(context.read<ActivityFeedProvider>().refresh());
+      unawaited(_showMonsterBattleInviteModal(event));
+      return;
     }
     if (type == 'party_invite') {
       if (event.openedFromNotification) {
@@ -126,7 +143,7 @@ class _LayoutShellState extends State<LayoutShell> {
       // Continue to party tab even if invite refresh fails.
     }
     if (!mounted) return;
-    _openDrawerForPushType('party_invite');
+    _navigateToDrawerIntent('party');
   }
 
   Future<void> _openFriendsDestination() async {
@@ -136,7 +153,104 @@ class _LayoutShellState extends State<LayoutShell> {
       // Continue to friends tab even if refresh fails.
     }
     if (!mounted) return;
-    _openDrawerForPushType('friend_invite');
+    _navigateToDrawerIntent('friends');
+  }
+
+  Future<void> _showMonsterBattleInviteModal(InAppPushEvent event) async {
+    if (!mounted || _monsterBattleInviteModalOpen) return;
+    final inviteId = (event.data['inviteId'] ?? '').trim();
+    final monsterId = (event.data['monsterId'] ?? '').trim();
+    final battleId = (event.data['battleId'] ?? '').trim();
+    if (inviteId.isEmpty) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('You received a party combat invite.')),
+      );
+      return;
+    }
+
+    _monsterBattleInviteModalOpen = true;
+    String? choice;
+    try {
+      choice = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text(_toastTitleFor(event)),
+            content: Text(
+              event.body.trim().isNotEmpty
+                  ? event.body.trim()
+                  : 'A party member invited you to join combat.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop('decline'),
+                child: const Text('Decline'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop('join'),
+                child: const Text('Join'),
+              ),
+            ],
+          );
+        },
+      );
+      if (!mounted || choice == null) return;
+      final partyProvider = context.read<PartyProvider>();
+      if (choice == 'join') {
+        final response = await partyProvider.acceptMonsterBattleInvite(
+          inviteId,
+        );
+        final resolvedBattleId =
+            _stringFromBattleDetail(response, 'id').trim().isNotEmpty
+            ? _stringFromBattleDetail(response, 'id').trim()
+            : battleId;
+        final resolvedMonsterId =
+            _stringFromBattleDetail(response, 'monsterId').trim().isNotEmpty
+            ? _stringFromBattleDetail(response, 'monsterId').trim()
+            : monsterId;
+        if (resolvedMonsterId.isEmpty) {
+          throw StateError(
+            'Invite accepted, but battle monster could not be resolved.',
+          );
+        }
+        if (!mounted) return;
+        final targetUri = Uri(
+          path: '/single-player',
+          queryParameters: {
+            'joinMonsterId': resolvedMonsterId,
+            'partyBattle': '1',
+            'inviteId': inviteId,
+            if (resolvedBattleId.isNotEmpty) 'battleId': resolvedBattleId,
+          },
+        );
+        context.go(targetUri.toString());
+      } else if (choice == 'decline') {
+        await partyProvider.rejectMonsterBattleInvite(inviteId);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Invite response failed: $error')),
+      );
+    } finally {
+      _monsterBattleInviteModalOpen = false;
+    }
+  }
+
+  String _stringFromBattleDetail(Map<String, dynamic> detail, String key) {
+    final battleRaw = detail['battle'];
+    if (battleRaw is Map<String, dynamic>) {
+      return battleRaw[key]?.toString() ?? '';
+    }
+    if (battleRaw is Map) {
+      return Map<String, dynamic>.from(battleRaw)[key]?.toString() ?? '';
+    }
+    return '';
   }
 
   String _toastTitleFor(InAppPushEvent event) {
@@ -194,7 +308,49 @@ class _LayoutShellState extends State<LayoutShell> {
 
   void _openDrawerForPushType(String type) {
     _pendingDrawerTabIndex = _tabForPushType(type);
-    _scaffoldKey.currentState?.openEndDrawer();
+    _openDrawer();
+  }
+
+  void _openDrawer() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scaffoldKey.currentState?.openEndDrawer();
+    });
+  }
+
+  void _navigateToDrawerIntent(String tab) {
+    final currentUri = GoRouterState.of(context).uri;
+    final currentPath = currentUri.path;
+    final targetUri = Uri(
+      path: '/single-player',
+      queryParameters: {'drawer': tab},
+    );
+
+    if (currentPath == '/single-player' &&
+        currentUri.queryParameters['drawer'] == tab) {
+      _pendingDrawerTabIndex = _tabForDrawerName(tab);
+      _openDrawer();
+      return;
+    }
+
+    if (currentPath == '/single-player') {
+      context.go(targetUri.toString());
+      return;
+    }
+
+    context.go(targetUri.toString());
+  }
+
+  void _consumeRouteDrawerIntent() {
+    final drawerTab = widget.routeUri.queryParameters['drawer']?.trim();
+    if (drawerTab == null || drawerTab.isEmpty) return;
+
+    final requestKey = widget.routeUri.toString();
+    if (_lastHandledDrawerRequest == requestKey) return;
+    _lastHandledDrawerRequest = requestKey;
+
+    _pendingDrawerTabIndex = _tabForDrawerName(drawerTab);
+    _openDrawer();
   }
 
   int _tabForPushType(String type) {
@@ -206,6 +362,18 @@ class _LayoutShellState extends State<LayoutShell> {
         return _SideDrawerState._friendsTab;
       case 'party_submission_result':
       case 'monster_battle_invite':
+      default:
+        return _SideDrawerState._characterTab;
+    }
+  }
+
+  int _tabForDrawerName(String drawerTab) {
+    switch (drawerTab) {
+      case 'party':
+        return _SideDrawerState._partyTab;
+      case 'friends':
+        return _SideDrawerState._friendsTab;
+      case 'character':
       default:
         return _SideDrawerState._characterTab;
     }

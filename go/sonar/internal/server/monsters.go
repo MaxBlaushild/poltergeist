@@ -2121,6 +2121,91 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, response)
 }
 
+func (s *server) getMonsterBattleStatus(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	monsterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+
+	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
+		return
+	}
+	log.Printf(
+		"[party-combat][status-by-monster] user=%s monster=%s battle=%s",
+		user.ID,
+		monsterID,
+		battle.ID,
+	)
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (s *server) getMonsterBattleStatusByID(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	battleID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid battle ID"})
+		return
+	}
+
+	battle, err := s.dbClient.MonsterBattle().FindByID(ctx, battleID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil || battle.EndedAt != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "battle not found"})
+		return
+	}
+	canAccess, err := s.userCanAccessMonsterBattle(ctx, user.ID, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !canAccess {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "not a battle participant"})
+		return
+	}
+	log.Printf("[party-combat][status-by-id] user=%s battle=%s", user.ID, battle.ID)
+
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
 func (s *server) endMonsterBattle(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -2157,6 +2242,195 @@ func (s *server) endMonsterBattle(ctx *gin.Context) {
 	battle.LastActivityAt = endedAt
 
 	ctx.JSON(http.StatusOK, monsterBattleResponseFrom(battle))
+}
+
+func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	monsterID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
+		return
+	}
+	if _, err := s.dbClient.Monster().FindByID(ctx, monsterID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var requestBody struct {
+		Damage int `json:"damage"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Damage <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damage must be positive"})
+		return
+	}
+
+	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "no active battle for this monster"})
+		return
+	}
+	log.Printf(
+		"[party-combat][damage-by-monster] user=%s monster=%s battle=%s damage=%d",
+		user.ID,
+		monsterID,
+		battle.ID,
+		requestBody.Damage,
+	)
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle.State != string(models.MonsterBattleStateActive) {
+		detail, detailErr := s.monsterBattleDetailResponse(ctx, battle)
+		if detailErr != nil {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "battle is waiting for party invite responses",
+			})
+			return
+		}
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error":  "battle is waiting for party invite responses",
+			"battle": detail,
+		})
+		return
+	}
+
+	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, requestBody.Damage); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle, err = s.dbClient.MonsterBattle().FindByID(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"battle":        monsterBattleResponseFrom(battle),
+		"battleDetail":  battleDetail,
+		"appliedDamage": requestBody.Damage,
+	})
+}
+
+func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	battleID, err := uuid.Parse(ctx.Param("id"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid battle ID"})
+		return
+	}
+
+	var requestBody struct {
+		Damage int `json:"damage"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.Damage <= 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damage must be positive"})
+		return
+	}
+
+	battle, err := s.dbClient.MonsterBattle().FindByID(ctx, battleID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle == nil || battle.EndedAt != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "battle not found"})
+		return
+	}
+	canAccess, err := s.userCanAccessMonsterBattle(ctx, user.ID, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !canAccess {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "not a battle participant"})
+		return
+	}
+	log.Printf(
+		"[party-combat][damage-by-id] user=%s battle=%s damage=%d",
+		user.ID,
+		battle.ID,
+		requestBody.Damage,
+	)
+
+	if battle, err = s.refreshMonsterBattleInviteState(ctx, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle.State != string(models.MonsterBattleStateActive) {
+		detail, detailErr := s.monsterBattleDetailResponse(ctx, battle)
+		if detailErr != nil {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "battle is waiting for party invite responses",
+			})
+			return
+		}
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error":  "battle is waiting for party invite responses",
+			"battle": detail,
+		})
+		return
+	}
+
+	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, requestBody.Damage); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle, err = s.dbClient.MonsterBattle().FindByID(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"battle":        monsterBattleResponseFrom(battle),
+		"battleDetail":  battleDetail,
+		"appliedDamage": requestBody.Damage,
+	})
 }
 
 func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {

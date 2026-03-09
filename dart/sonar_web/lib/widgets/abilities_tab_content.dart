@@ -17,6 +17,9 @@ class AbilitiesTabContent extends StatefulWidget {
 class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
   static const String _targetedHealEffectType = 'restore_life_party_member';
   static const String _groupHealEffectType = 'restore_life_all_party_members';
+  static const String _targetedReviveEffectType = 'revive_party_member';
+  static const String _groupReviveEffectType =
+      'revive_all_downed_party_members';
 
   final Map<String, String> _selectedTargetByAbility = {};
   String? _castingAbilityId;
@@ -44,6 +47,24 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
   int _groupHealAmount(Spell ability) {
     return ability.effects
         .where((effect) => effect.type == _groupHealEffectType)
+        .fold<int>(
+          0,
+          (sum, effect) => sum + (effect.amount > 0 ? effect.amount : 0),
+        );
+  }
+
+  int _targetedReviveAmount(Spell ability) {
+    return ability.effects
+        .where((effect) => effect.type == _targetedReviveEffectType)
+        .fold<int>(
+          0,
+          (sum, effect) => sum + (effect.amount > 0 ? effect.amount : 0),
+        );
+  }
+
+  int _groupReviveAmount(Spell ability) {
+    return ability.effects
+        .where((effect) => effect.type == _groupReviveEffectType)
         .fold<int>(
           0,
           (sum, effect) => sum + (effect.amount > 0 ? effect.amount : 0),
@@ -116,7 +137,8 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
     return Column(
       children: abilities.map((ability) {
         final selectedTarget = _selectedTargetByAbility[ability.id];
-        final requiresTarget = _targetedHealAmount(ability) > 0;
+        final requiresTarget =
+            _targetedHealAmount(ability) + _targetedReviveAmount(ability) > 0;
         final fallbackTarget = targets.isNotEmpty ? targets.first.id : null;
         final isSelectedValid =
             selectedTarget != null &&
@@ -134,6 +156,8 @@ class _AbilitiesTabContentState extends State<AbilitiesTabContent> {
           displayName: _displayName,
           targetedHealAmount: _targetedHealAmount(ability),
           groupHealAmount: _groupHealAmount(ability),
+          targetedReviveAmount: _targetedReviveAmount(ability),
+          groupReviveAmount: _groupReviveAmount(ability),
           onTargetChanged: requiresTarget
               ? (value) {
                   setState(() {
@@ -276,6 +300,8 @@ class _AbilityRow extends StatelessWidget {
     required this.displayName,
     required this.targetedHealAmount,
     required this.groupHealAmount,
+    required this.targetedReviveAmount,
+    required this.groupReviveAmount,
     required this.onCast,
     this.onTargetChanged,
   });
@@ -289,28 +315,31 @@ class _AbilityRow extends StatelessWidget {
   final String Function(User user) displayName;
   final int targetedHealAmount;
   final int groupHealAmount;
+  final int targetedReviveAmount;
+  final int groupReviveAmount;
   final VoidCallback onCast;
   final ValueChanged<String?>? onTargetChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasTargetedHeal = targetedHealAmount > 0;
-    final hasGroupHeal = groupHealAmount > 0;
-    final isHealingAbility = hasTargetedHeal || hasGroupHeal;
+    final hasTargetedSupport =
+        targetedHealAmount > 0 || targetedReviveAmount > 0;
+    final hasGroupSupport = groupHealAmount > 0 || groupReviveAmount > 0;
+    final isSupportAbility = hasTargetedSupport || hasGroupSupport;
     final hasEnoughMana = isTechnique || mana >= ability.manaCost;
     final hasValidTarget =
-        !hasTargetedHeal || (selectedTargetId ?? '').isNotEmpty;
+        !hasTargetedSupport || (selectedTargetId ?? '').isNotEmpty;
     final canCast =
-        isHealingAbility && hasEnoughMana && hasValidTarget && !casting;
+        isSupportAbility && hasEnoughMana && hasValidTarget && !casting;
 
     final castLabel = casting
         ? 'Casting...'
-        : hasTargetedHeal && !hasGroupHeal
-        ? 'Use Targeted Heal'
-        : !hasTargetedHeal && hasGroupHeal
-        ? 'Use Group Heal'
-        : 'Use Heal';
+        : hasTargetedSupport && !hasGroupSupport
+        ? 'Use Targeted Support'
+        : !hasTargetedSupport && hasGroupSupport
+        ? 'Use Group Support'
+        : 'Use Support';
 
     return Container(
       width: double.infinity,
@@ -368,28 +397,28 @@ class _AbilityRow extends StatelessWidget {
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
-                if (!isHealingAbility) ...[
+                if (!isSupportAbility) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Casting is only available for healing abilities here.',
+                    'Casting is only available for support abilities here.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
-                if (isHealingAbility) ...[
+                if (isSupportAbility) ...[
                   const SizedBox(height: 8),
                   Opacity(
                     opacity: hasEnoughMana ? 1.0 : 0.55,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (hasTargetedHeal)
+                        if (hasTargetedSupport)
                           DropdownButtonFormField<String>(
                             value: selectedTargetId,
                             isDense: true,
                             decoration: const InputDecoration(
-                              labelText: 'Heal target',
+                              labelText: 'Target teammate',
                               border: OutlineInputBorder(),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -404,7 +433,7 @@ class _AbilityRow extends StatelessWidget {
                             }).toList(),
                             onChanged: hasEnoughMana ? onTargetChanged : null,
                           ),
-                        if (hasTargetedHeal) const SizedBox(height: 8),
+                        if (hasTargetedSupport) const SizedBox(height: 8),
                         FilledButton(
                           onPressed: canCast ? onCast : null,
                           child: Text(castLabel),

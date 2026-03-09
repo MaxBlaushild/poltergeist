@@ -26,6 +26,8 @@ type InventoryConsumeStatus = {
 type InventoryItemRecord = InventoryItem & {
   consumeHealthDelta?: number;
   consumeManaDelta?: number;
+  consumeRevivePartyMemberHealth?: number;
+  consumeReviveAllDownedPartyMembersHealth?: number;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];
@@ -337,6 +339,14 @@ const consumeSummary = (
     const value = item.consumeManaDelta ?? 0;
     details.push(`Mana on use: ${value > 0 ? '+' : ''}${value}`);
   }
+  if ((item.consumeRevivePartyMemberHealth ?? 0) > 0) {
+    details.push(`Revive one party member to ${item.consumeRevivePartyMemberHealth} HP`);
+  }
+  if ((item.consumeReviveAllDownedPartyMembersHealth ?? 0) > 0) {
+    details.push(
+      `Revive all downed party members to ${item.consumeReviveAllDownedPartyMembersHealth} HP`
+    );
+  }
   if ((item.consumeStatusesToAdd?.length ?? 0) > 0) {
     details.push(`Adds statuses: ${item.consumeStatusesToAdd?.map((status) => status.name).join(', ')}`);
   }
@@ -356,6 +366,8 @@ const consumeSummary = (
 const hasConsumableEffects = (item: InventoryItemRecord) => {
   if ((item.consumeHealthDelta ?? 0) !== 0) return true;
   if ((item.consumeManaDelta ?? 0) !== 0) return true;
+  if ((item.consumeRevivePartyMemberHealth ?? 0) > 0) return true;
+  if ((item.consumeReviveAllDownedPartyMembersHealth ?? 0) > 0) return true;
   if ((item.consumeStatusesToAdd?.length ?? 0) > 0) return true;
   if ((item.consumeStatusesToRemove?.length ?? 0) > 0) return true;
   if ((item.consumeSpellIds?.length ?? 0) > 0) return true;
@@ -474,6 +486,8 @@ export const InventoryItems = () => {
     spellDamageBonusPercent: undefined as number | undefined,
     consumeHealthDelta: 0,
     consumeManaDelta: 0,
+    consumeRevivePartyMemberHealth: 0,
+    consumeReviveAllDownedPartyMembersHealth: 0,
     consumeStatusesToAdd: [] as InventoryConsumeStatus[],
     consumeStatusesToRemove: [] as string[],
     consumeSpellIds: [] as string[],
@@ -589,6 +603,8 @@ export const InventoryItems = () => {
       spellDamageBonusPercent: undefined,
       consumeHealthDelta: 0,
       consumeManaDelta: 0,
+      consumeRevivePartyMemberHealth: 0,
+      consumeReviveAllDownedPartyMembersHealth: 0,
       consumeStatusesToAdd: [],
       consumeStatusesToRemove: [],
       consumeSpellIds: [],
@@ -1261,6 +1277,9 @@ export const InventoryItems = () => {
       spellDamageBonusPercent: item.spellDamageBonusPercent ?? undefined,
       consumeHealthDelta: item.consumeHealthDelta ?? 0,
       consumeManaDelta: item.consumeManaDelta ?? 0,
+      consumeRevivePartyMemberHealth: item.consumeRevivePartyMemberHealth ?? 0,
+      consumeReviveAllDownedPartyMembersHealth:
+        item.consumeReviveAllDownedPartyMembersHealth ?? 0,
       consumeStatusesToAdd: (item.consumeStatusesToAdd ?? []).map((status) =>
         normalizeConsumeStatus(status)
       ),
@@ -1360,6 +1379,8 @@ export const InventoryItems = () => {
     { value: 'spellDamageBonusPercent', label: 'Spell Bonus %' },
     { value: 'consumeHealthDelta', label: 'Use Health Delta' },
     { value: 'consumeManaDelta', label: 'Use Mana Delta' },
+    { value: 'consumeRevivePartyMemberHealth', label: 'Revive One HP' },
+    { value: 'consumeReviveAllDownedPartyMembersHealth', label: 'Revive All HP' },
     { value: 'consumeSpellIds', label: 'Use Grants Spells' },
     { value: 'createdAt', label: 'Created At' },
     { value: 'updatedAt', label: 'Updated At' },
@@ -1407,6 +1428,8 @@ export const InventoryItems = () => {
         item.spellDamageBonusPercent?.toString(),
         item.consumeHealthDelta?.toString(),
         item.consumeManaDelta?.toString(),
+        item.consumeRevivePartyMemberHealth?.toString(),
+        item.consumeReviveAllDownedPartyMembersHealth?.toString(),
         item.consumeStatusesToAdd?.map((status) => status.name).join(' '),
         item.consumeStatusesToRemove?.join(' '),
         item.consumeSpellIds?.map((spellID) => spellNamesByID.get(spellID) ?? spellID).join(' '),
@@ -2386,7 +2409,7 @@ export const InventoryItems = () => {
                 Consume Effects
               </label>
               <small style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '10px' }}>
-                Positive values restore resources. Negative values drain resources.
+                Positive deltas restore resources. Revive values set HP when reviving.
               </small>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', marginBottom: '12px' }}>
@@ -2410,6 +2433,36 @@ export const InventoryItems = () => {
                     onChange={(e) => setFormData({
                       ...formData,
                       consumeManaDelta: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>
+                    Revive Party Member HP
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.consumeRevivePartyMemberHealth}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      consumeRevivePartyMemberHealth: parseInt(e.target.value, 10) || 0,
+                    })}
+                    style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px' }}>
+                    Revive All Downed HP
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={formData.consumeReviveAllDownedPartyMembersHealth}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      consumeReviveAllDownedPartyMembersHealth: parseInt(e.target.value, 10) || 0,
                     })}
                     style={{ width: '100%', padding: '6px', border: '1px solid #ccc', borderRadius: '4px' }}
                   />

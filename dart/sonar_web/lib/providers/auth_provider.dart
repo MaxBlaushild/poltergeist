@@ -19,6 +19,7 @@ class AuthProvider with ChangeNotifier {
   String? get error => _error;
   bool get isWaitingForVerificationCode => _isWaitingForVerificationCode;
   bool get isAuthenticated => _user != null;
+  bool get isDryRunRegistrationActive => _auth.isDryRunRegistrationActive;
 
   Future<void> _init() async {
     _user = await _auth.verifyToken();
@@ -70,8 +71,14 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> updateProfile({String? username, String? profilePictureUrl}) async {
-    await _auth.updateProfile(username: username, profilePictureUrl: profilePictureUrl);
+  Future<void> updateProfile({
+    String? username,
+    String? profilePictureUrl,
+  }) async {
+    await _auth.updateProfile(
+      username: username,
+      profilePictureUrl: profilePictureUrl,
+    );
     _user = await _auth.whoami();
     notifyListeners();
   }

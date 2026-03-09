@@ -17,11 +17,16 @@ class FriendsTabContent extends StatefulWidget {
 }
 
 class _FriendsTabContentState extends State<FriendsTabContent> {
-  final _searchController = TextEditingController();
+  static const int _friendsPageSize = 10;
+
+  final _friendFilterController = TextEditingController();
+  final _inviteSearchController = TextEditingController();
   bool _friendsExpanded = true;
-  bool _receivedExpanded = true;
-  bool _sentExpanded = true;
-  bool _searchExpanded = true;
+  bool _receivedExpanded = false;
+  bool _sentExpanded = false;
+  bool _searchExpanded = false;
+  bool _inviteExpansionInitialized = false;
+  int _friendsPage = 0;
   final Set<String> _accepting = {};
   final Set<String> _rejecting = {};
   final Set<String> _sending = {};
@@ -37,7 +42,8 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _friendFilterController.dispose();
+    _inviteSearchController.dispose();
     super.dispose();
   }
 
@@ -74,6 +80,23 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
     context.go('/character/${target.id}');
   }
 
+  void _initializeInviteExpansions({
+    required bool hasLoadedInvites,
+    required bool hasReceivedInvites,
+    required bool hasSentInvites,
+  }) {
+    if (_inviteExpansionInitialized || !hasLoadedInvites) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _inviteExpansionInitialized) return;
+      setState(() {
+        _receivedExpanded = hasReceivedInvites;
+        _sentExpanded = hasSentInvites;
+        _inviteExpansionInitialized = true;
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<AuthProvider, FriendProvider>(
@@ -92,6 +115,32 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
         final sent = fp.friendInvites
             .where((i) => i.inviterId == user.id)
             .toList();
+        final friendFilter = _friendFilterController.text.trim().toLowerCase();
+        final filteredFriends =
+            fp.friends.where((friend) {
+              if (friendFilter.isEmpty) return true;
+              return friend.username.toLowerCase().contains(friendFilter);
+            }).toList()..sort(
+              (a, b) =>
+                  a.username.toLowerCase().compareTo(b.username.toLowerCase()),
+            );
+        final friendsPageCount = filteredFriends.isEmpty
+            ? 1
+            : (filteredFriends.length / _friendsPageSize).ceil();
+        final currentFriendsPage = _friendsPage.clamp(0, friendsPageCount - 1);
+        final pageStart = filteredFriends.isEmpty
+            ? 0
+            : currentFriendsPage * _friendsPageSize;
+        final pageEnd = filteredFriends.isEmpty
+            ? 0
+            : (pageStart + _friendsPageSize).clamp(0, filteredFriends.length);
+        final paginatedFriends = filteredFriends.sublist(pageStart, pageEnd);
+
+        _initializeInviteExpansions(
+          hasLoadedInvites: fp.hasLoadedFriendInvites,
+          hasReceivedInvites: received.isNotEmpty,
+          hasSentInvites: sent.isNotEmpty,
+        );
 
         return SingleChildScrollView(
           primary: false,
@@ -105,29 +154,99 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                 title: 'Friends',
                 subtitle: '(${fp.friends.length})',
                 expanded: _friendsExpanded,
-                onToggle: () => setState(() => _friendsExpanded = !_friendsExpanded),
-                child: fp.friends.isEmpty
-                    ? const _Empty(message: 'No friends yet')
-                    : Column(
-                        children: fp.friends
-                            .map((f) => _FriendTile(
-                                  friend: f,
-                                  onViewProfile: () =>
-                                      _openCharacterProfile(context, f),
-                                ))
-                            .toList(),
-                      ),
-              ),
-              _section(
-                context,
-                title: 'Find Friends',
-                expanded: _searchExpanded,
-                onToggle: () => setState(() => _searchExpanded = !_searchExpanded),
+                onToggle: () =>
+                    setState(() => _friendsExpanded = !_friendsExpanded),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     TextField(
-                      controller: _searchController,
+                      controller: _friendFilterController,
+                      decoration: const InputDecoration(
+                        hintText: 'Filter by username...',
+                        prefixIcon: Icon(Icons.filter_list),
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setState(() => _friendsPage = 0),
+                    ),
+                    const SizedBox(height: 12),
+                    if (fp.friends.isEmpty)
+                      const _Empty(message: 'No friends yet')
+                    else if (filteredFriends.isEmpty)
+                      const _Empty(message: 'No friends match that username')
+                    else ...[
+                      Column(
+                        children: paginatedFriends
+                            .map(
+                              (f) => _FriendTile(
+                                friend: f,
+                                onViewProfile: () =>
+                                    _openCharacterProfile(context, f),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            'Showing ${pageStart + 1}-$pageEnd of ${filteredFriends.length}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: currentFriendsPage == 0
+                                ? null
+                                : () => setState(
+                                    () => _friendsPage = currentFriendsPage - 1,
+                                  ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 28,
+                              height: 28,
+                            ),
+                            icon: const Icon(Icons.chevron_left),
+                            tooltip: 'Previous page',
+                          ),
+                          Text('${currentFriendsPage + 1}/$friendsPageCount'),
+                          IconButton(
+                            onPressed:
+                                currentFriendsPage >= friendsPageCount - 1
+                                ? null
+                                : () => setState(
+                                    () => _friendsPage = currentFriendsPage + 1,
+                                  ),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 28,
+                              height: 28,
+                            ),
+                            icon: const Icon(Icons.chevron_right),
+                            tooltip: 'Next page',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              _section(
+                context,
+                title: 'Invite Friends',
+                expanded: _searchExpanded,
+                onToggle: () =>
+                    setState(() => _searchExpanded = !_searchExpanded),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: _inviteSearchController,
                       decoration: const InputDecoration(
                         hintText: 'Search by username...',
                         prefixIcon: Icon(Icons.search),
@@ -135,32 +254,39 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                       ),
                       onChanged: (q) => fp.searchForFriends(q),
                     ),
-                    if (_searchController.text.trim().isNotEmpty) ...[
+                    if (_inviteSearchController.text.trim().isNotEmpty) ...[
                       const SizedBox(height: 12),
                       fp.searchResults.isEmpty
-                          ? const _Empty(message: 'No users found')
+                          ? const _Empty(message: 'No eligible users found')
                           : Column(
                               children: fp.searchResults
-                                  .map((u) => _SearchResultTile(
-                                        user: u,
-                                        currentUserId: user.id,
-                                        friends: fp.friends,
-                                        sending: _sending.contains(u.id),
-                                        onViewProfile: () =>
-                                            _openCharacterProfile(context, u),
-                                        onInvite: () async {
-                                          setState(
-                                              () => _sending.add(u.id));
-                                          try {
-                                            await fp.createFriendInvite(u.id);
-                                          } finally {
-                                            if (mounted) {
-                                              setState(
-                                                  () => _sending.remove(u.id));
-                                            }
+                                  .map(
+                                    (u) => _SearchResultTile(
+                                      user: u,
+                                      currentUserId: user.id,
+                                      friends: fp.friends,
+                                      hasPendingInvite: fp.friendInvites.any(
+                                        (invite) =>
+                                            invite.inviterId == u.id ||
+                                            invite.inviteeId == u.id,
+                                      ),
+                                      sending: _sending.contains(u.id),
+                                      onViewProfile: () =>
+                                          _openCharacterProfile(context, u),
+                                      onInvite: () async {
+                                        setState(() => _sending.add(u.id));
+                                        try {
+                                          await fp.createFriendInvite(u.id);
+                                        } finally {
+                                          if (mounted) {
+                                            setState(
+                                              () => _sending.remove(u.id),
+                                            );
                                           }
-                                        },
-                                      ))
+                                        }
+                                      },
+                                    ),
+                                  )
                                   .toList(),
                             ),
                     ],
@@ -178,34 +304,36 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                     ? const _Empty(message: 'No pending invites')
                     : Column(
                         children: received
-                            .map((i) => _FriendInviteTile(
-                                  invite: i,
-                                  received: true,
-                                  accepting: _accepting.contains(i.id),
-                                  rejecting: _rejecting.contains(i.id),
-                                  onViewProfile: () =>
-                                      _openCharacterProfile(context, i.inviter),
-                                  onAccept: () async {
-                                    setState(() => _accepting.add(i.id));
-                                    try {
-                                      await fp.acceptFriendInvite(i.id);
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _accepting.remove(i.id));
-                                      }
+                            .map(
+                              (i) => _FriendInviteTile(
+                                invite: i,
+                                received: true,
+                                accepting: _accepting.contains(i.id),
+                                rejecting: _rejecting.contains(i.id),
+                                onViewProfile: () =>
+                                    _openCharacterProfile(context, i.inviter),
+                                onAccept: () async {
+                                  setState(() => _accepting.add(i.id));
+                                  try {
+                                    await fp.acceptFriendInvite(i.id);
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _accepting.remove(i.id));
                                     }
-                                  },
-                                  onReject: () async {
-                                    setState(() => _rejecting.add(i.id));
-                                    try {
-                                      await fp.deleteFriendInvite(i.id);
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _rejecting.remove(i.id));
-                                      }
+                                  }
+                                },
+                                onReject: () async {
+                                  setState(() => _rejecting.add(i.id));
+                                  try {
+                                    await fp.deleteFriendInvite(i.id);
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _rejecting.remove(i.id));
                                     }
-                                  },
-                                ))
+                                  }
+                                },
+                              ),
+                            )
                             .toList(),
                       ),
               ),
@@ -219,25 +347,27 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                     ? const _Empty(message: 'No sent invites')
                     : Column(
                         children: sent
-                            .map((i) => _FriendInviteTile(
-                                  invite: i,
-                                  received: false,
-                                  accepting: false,
-                                  rejecting: _rejecting.contains(i.id),
-                                  onViewProfile: () =>
-                                      _openCharacterProfile(context, i.invitee),
-                                  onAccept: () {},
-                                  onReject: () async {
-                                    setState(() => _rejecting.add(i.id));
-                                    try {
-                                      await fp.deleteFriendInvite(i.id);
-                                    } finally {
-                                      if (mounted) {
-                                        setState(() => _rejecting.remove(i.id));
-                                      }
+                            .map(
+                              (i) => _FriendInviteTile(
+                                invite: i,
+                                received: false,
+                                accepting: false,
+                                rejecting: _rejecting.contains(i.id),
+                                onViewProfile: () =>
+                                    _openCharacterProfile(context, i.invitee),
+                                onAccept: () {},
+                                onReject: () async {
+                                  setState(() => _rejecting.add(i.id));
+                                  try {
+                                    await fp.deleteFriendInvite(i.id);
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _rejecting.remove(i.id));
                                     }
-                                  },
-                                ))
+                                  }
+                                },
+                              ),
+                            )
                             .toList(),
                       ),
               ),
@@ -260,7 +390,7 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
   }) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final isSearch = title == 'Find Friends';
+    final isSearch = title == 'Invite Friends';
     final badgeColor = isSearch ? scheme.secondary : scheme.primary;
     final badgeTextColor = isSearch ? scheme.onSecondary : scheme.onPrimary;
 
@@ -282,7 +412,10 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
               onTap: onToggle,
               borderRadius: BorderRadius.circular(16),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -309,7 +442,9 @@ class _FriendsTabContentState extends State<FriendsTabContent> {
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: badgeColor,
                                 borderRadius: BorderRadius.circular(12),
@@ -427,6 +562,7 @@ class _SearchResultTile extends StatelessWidget {
     required this.user,
     required this.currentUserId,
     required this.friends,
+    required this.hasPendingInvite,
     required this.sending,
     required this.onViewProfile,
     required this.onInvite,
@@ -435,6 +571,7 @@ class _SearchResultTile extends StatelessWidget {
   final User user;
   final String currentUserId;
   final List<User> friends;
+  final bool hasPendingInvite;
   final bool sending;
   final VoidCallback onViewProfile;
   final VoidCallback onInvite;
@@ -494,6 +631,14 @@ class _SearchResultTile extends StatelessWidget {
               'Friends',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.secondary,
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else if (hasPendingInvite)
+            Text(
+              'Pending',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.primary,
                 fontWeight: FontWeight.w700,
               ),
             )

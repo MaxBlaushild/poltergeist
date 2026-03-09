@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
@@ -82,6 +83,38 @@ func (s *server) CreateFriendInvite(ctx *gin.Context) {
 			"error": "cannot invite yourself",
 		})
 		return
+	}
+
+	areFriends, err := s.dbClient.Friend().Exists(ctx, user.ID, inviteeID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if areFriends {
+		ctx.JSON(http.StatusConflict, gin.H{
+			"error": "already friends",
+		})
+		return
+	}
+
+	existingInvites, err := s.dbClient.FriendInvite().FindAllInvites(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	for _, existingInvite := range existingInvites {
+		if existingInvite.InviterID == inviteeID || existingInvite.InviteeID == inviteeID {
+			ctx.JSON(http.StatusConflict, gin.H{
+				"error": "friend invite already exists",
+			})
+			return
+		}
 	}
 
 	invite, err := s.dbClient.FriendInvite().Create(ctx, user.ID, inviteeID)
@@ -213,7 +246,7 @@ func (s *server) DeleteFriendInvite(ctx *gin.Context) {
 }
 
 func (s *server) SearchUsers(ctx *gin.Context) {
-	_, err := s.GetAuthenticatedUser(ctx)
+	user, err := s.GetAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
@@ -221,7 +254,7 @@ func (s *server) SearchUsers(ctx *gin.Context) {
 		return
 	}
 
-	query := ctx.Query("query")
+	query := strings.TrimSpace(ctx.Query("query"))
 	if query == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "query parameter is required",
@@ -237,12 +270,50 @@ func (s *server) SearchUsers(ctx *gin.Context) {
 		return
 	}
 
-	// Filter out invalid users (similar to sonar)
-	filteredUsers := make([]models.User, 0)
-	for _, user := range users {
-		if user.ID != uuid.Nil {
-			filteredUsers = append(filteredUsers, *user)
+	friends, err := s.dbClient.Friend().FindAllFriends(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	invites, err := s.dbClient.FriendInvite().FindAllInvites(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	excludedUserIDs := map[uuid.UUID]struct{}{
+		user.ID: {},
+	}
+
+	for _, friend := range friends {
+		excludedUserIDs[friend.ID] = struct{}{}
+	}
+
+	for _, invite := range invites {
+		if invite.InviterID == user.ID {
+			excludedUserIDs[invite.InviteeID] = struct{}{}
+			continue
 		}
+
+		excludedUserIDs[invite.InviterID] = struct{}{}
+	}
+
+	filteredUsers := make([]models.User, 0)
+	for _, foundUser := range users {
+		if foundUser == nil || foundUser.ID == uuid.Nil {
+			continue
+		}
+
+		if _, excluded := excludedUserIDs[foundUser.ID]; excluded {
+			continue
+		}
+
+		filteredUsers = append(filteredUsers, *foundUser)
 	}
 
 	ctx.JSON(http.StatusOK, filteredUsers)

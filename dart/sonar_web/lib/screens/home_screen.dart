@@ -9,7 +9,9 @@ import '../services/media_service.dart';
 import 'logister_modal.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.from});
+
+  final String? from;
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +28,7 @@ class HomeScreen extends StatelessWidget {
                 if (auth.isAuthenticated) {
                   return const SizedBox.shrink(); // redirect handles navigation
                 }
-                return _HomeContent();
+                return _HomeContent(from: from);
               },
             ),
           ),
@@ -37,6 +39,10 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _HomeContent extends StatefulWidget {
+  const _HomeContent({this.from});
+
+  final String? from;
+
   @override
   State<_HomeContent> createState() => _HomeContentState();
 }
@@ -46,8 +52,9 @@ class _HomeContentState extends State<_HomeContent> {
 
   @override
   Widget build(BuildContext context) {
-    final from = Uri.base.queryParameters['from'];
-    final shouldShowLogister = _showLogister || (from != null && from.isNotEmpty);
+    final from = widget.from;
+    final shouldShowLogister =
+        _showLogister || (from != null && from.isNotEmpty);
 
     if (shouldShowLogister) {
       final mediaService = context.read<MediaService>();
@@ -94,10 +101,10 @@ class _HomeContentState extends State<_HomeContent> {
                     child: Text(
                       'Unclaimed Streets',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            letterSpacing: 3,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.primary,
-                          ),
+                        letterSpacing: 3,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.primary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -106,9 +113,9 @@ class _HomeContentState extends State<_HomeContent> {
                     child: Text(
                       'Step into the uncharted and map what the world hides.',
                       style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onBackground,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onBackground,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -117,9 +124,9 @@ class _HomeContentState extends State<_HomeContent> {
                     child: Text(
                       'Explore real landscapes, uncover mythic locations, and grow your strength with every quest. Unclaimed Streets guides your crew through discoveries that feel grounded, mysterious, and alive.',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: colorScheme.onBackground.withOpacity(0.8),
-                            height: 1.4,
-                          ),
+                        color: colorScheme.onBackground.withOpacity(0.8),
+                        height: 1.4,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -206,10 +213,7 @@ class _LandingBackground extends StatelessWidget {
           right: -120,
           child: _GlowOrb(
             size: 360,
-            colors: [
-              colorScheme.primary.withOpacity(0.25),
-              Colors.transparent,
-            ],
+            colors: [colorScheme.primary.withOpacity(0.25), Colors.transparent],
           ),
         ),
         Positioned(
@@ -217,10 +221,7 @@ class _LandingBackground extends StatelessWidget {
           left: -140,
           child: _GlowOrb(
             size: 380,
-            colors: [
-              colorScheme.tertiary.withOpacity(0.2),
-              Colors.transparent,
-            ],
+            colors: [colorScheme.tertiary.withOpacity(0.2), Colors.transparent],
           ),
         ),
         Positioned(
@@ -240,10 +241,7 @@ class _LandingBackground extends StatelessWidget {
 }
 
 class _GlowOrb extends StatelessWidget {
-  const _GlowOrb({
-    required this.size,
-    required this.colors,
-  });
+  const _GlowOrb({required this.size, required this.colors});
 
   final double size;
   final List<Color> colors;
@@ -255,9 +253,7 @@ class _GlowOrb extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: colors,
-        ),
+        gradient: RadialGradient(colors: colors),
       ),
     );
   }
@@ -313,16 +309,16 @@ class _HeroStat extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: colorScheme.onSurface,
-                      ),
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.7),
-                      ),
+                    color: colorScheme.onSurface.withOpacity(0.7),
+                  ),
                 ),
               ],
             ),
@@ -355,22 +351,22 @@ class _ExpeditionCallout extends StatelessWidget {
           ),
         ],
       ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'The expedition begins with your signal.',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface,
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'The expedition begins with your signal.',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
             'Claim your route, connect with your crew, and set your sights on the next quest chain.',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.75),
-                ),
+              color: colorScheme.onSurface.withOpacity(0.75),
+            ),
           ),
           const SizedBox(height: 20),
           Row(
@@ -420,16 +416,16 @@ class _ExpeditionDossier extends StatelessWidget {
         children: [
           Text(
             'Expedition dossier',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
             'Your crew is ready. Confirm your signal to unlock the world map, quest log, and strength track.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.72),
-                ),
+              color: colorScheme.onSurface.withOpacity(0.72),
+            ),
           ),
           const SizedBox(height: 16),
           _DossierItem(
@@ -492,15 +488,15 @@ class _DossierItem extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
               ),
               Text(
                 description,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.7),
-                    ),
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                ),
               ),
             ],
           ),
@@ -556,16 +552,16 @@ class _QuestCard extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurface,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             description,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurface.withOpacity(0.75),
-                ),
+              color: colorScheme.onSurface.withOpacity(0.75),
+            ),
           ),
         ],
       ),
@@ -589,9 +585,9 @@ class _ExpeditionSteps extends StatelessWidget {
         children: [
           Text(
             'Launch sequence',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
           const _ExpeditionStep(
@@ -659,16 +655,16 @@ class _ExpeditionStep extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
               Text(
                 description,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.7),
-                    ),
+                  color: colorScheme.onSurface.withOpacity(0.7),
+                ),
               ),
             ],
           ),

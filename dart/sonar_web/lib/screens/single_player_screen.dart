@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -201,6 +202,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   final List<Timer> _questSubmissionRevealTimers = [];
   final TrackedQuestsOverlayController _trackedQuestsController =
       TrackedQuestsOverlayController();
+  String? _lastHandledMonsterBattleIntent;
+  bool _handlingMonsterBattleIntent = false;
 
   @override
   void initState() {
@@ -4781,6 +4784,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final routeUri = GoRouterState.of(context).uri;
+    _consumeMonsterBattleRouteIntent(routeUri);
     final loc = context.watch<LocationProvider>().location;
     final discoveries = context.watch<DiscoveriesProvider>();
     final questLog = context.watch<QuestLogProvider>();
@@ -6124,7 +6129,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      useSafeArea: false,
+      useSafeArea: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -6143,18 +6148,371 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     );
   }
 
+  String _primaryMonsterIdForEncounter(MonsterEncounter encounter) {
+    for (final monster in encounter.monsters) {
+      final id = monster.id.trim();
+      if (id.isNotEmpty) return id;
+    }
+    for (final member in encounter.members) {
+      final id = member.monster.id.trim();
+      if (id.isNotEmpty) return id;
+    }
+    return '';
+  }
+
+  void _consumeMonsterBattleRouteIntent(Uri routeUri) {
+    final joinMonsterId =
+        routeUri.queryParameters['joinMonsterId']?.trim() ?? '';
+    final battleId = routeUri.queryParameters['battleId']?.trim() ?? '';
+    final isPartyBattle = routeUri.queryParameters['partyBattle'] == '1';
+    if (!isPartyBattle) return;
+    if (joinMonsterId.isEmpty && battleId.isEmpty) return;
+    if (_handlingMonsterBattleIntent) return;
+    final requestKey = routeUri.toString();
+    if (_lastHandledMonsterBattleIntent == requestKey) return;
+    _lastHandledMonsterBattleIntent = requestKey;
+    _handlingMonsterBattleIntent = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _handlingMonsterBattleIntent = false;
+        return;
+      }
+      unawaited(_launchMonsterBattleFromRouteIntent(joinMonsterId, battleId));
+    });
+  }
+
+  Future<void> _launchMonsterBattleFromRouteIntent(
+    String joinMonsterId,
+    String battleId,
+  ) async {
+    try {
+      _clearMonsterBattleRouteIntentFromUri();
+      final poiService = context.read<PoiService>();
+      var resolvedMonsterId = joinMonsterId.trim();
+      final trimmedBattleId = battleId.trim();
+      if (resolvedMonsterId.isEmpty && trimmedBattleId.isNotEmpty) {
+        final detail = await poiService.getMonsterBattleStatusById(
+          trimmedBattleId,
+        );
+        resolvedMonsterId = _stringFromBattleDetail(detail, 'monsterId').trim();
+      }
+      if (resolvedMonsterId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not join battle: battle target not found.'),
+            ),
+          );
+        }
+        return;
+      }
+      final encounter = await _resolveMonsterEncounterForInvite(
+        resolvedMonsterId,
+      );
+      if (encounter == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not join battle: encounter not found.'),
+            ),
+          );
+        }
+        return;
+      }
+      if (!mounted) return;
+      await _startMonsterBattle(
+        encounter,
+        context,
+        isPartyBattle: true,
+        skipStartRequest: true,
+        battleId: trimmedBattleId.isEmpty ? null : trimmedBattleId,
+      );
+    } finally {
+      _handlingMonsterBattleIntent = false;
+    }
+  }
+
+  String _stringFromBattleDetail(Map<String, dynamic> detail, String key) {
+    final battleRaw = detail['battle'];
+    if (battleRaw is Map<String, dynamic>) {
+      return battleRaw[key]?.toString() ?? '';
+    }
+    if (battleRaw is Map) {
+      return Map<String, dynamic>.from(battleRaw)[key]?.toString() ?? '';
+    }
+    return '';
+  }
+
+  void _clearMonsterBattleRouteIntentFromUri() {
+    final uri = GoRouterState.of(context).uri;
+    final hasIntentParams =
+        uri.queryParameters.containsKey('joinMonsterId') ||
+        uri.queryParameters.containsKey('partyBattle') ||
+        uri.queryParameters.containsKey('inviteId') ||
+        uri.queryParameters.containsKey('battleId');
+    if (!hasIntentParams) return;
+    final query = Map<String, String>.from(uri.queryParameters);
+    query.remove('joinMonsterId');
+    query.remove('partyBattle');
+    query.remove('inviteId');
+    query.remove('battleId');
+    final cleaned = Uri(
+      path: uri.path,
+      queryParameters: query.isEmpty ? null : query,
+    );
+    if (cleaned.toString() == uri.toString()) return;
+    context.replace(cleaned.toString());
+  }
+
+  Future<MonsterEncounter?> _resolveMonsterEncounterForInvite(
+    String battleMonsterId,
+  ) async {
+    final localEncounter =
+        _monsterEncounterByMemberMonsterId(battleMonsterId) ??
+        _monsterById(battleMonsterId);
+    if (localEncounter != null) return localEncounter;
+
+    final poiService = context.read<PoiService>();
+    final encounter = await poiService.getMonsterEncounterById(battleMonsterId);
+    if (encounter != null) return encounter;
+
+    final monster = await poiService.getMonsterById(battleMonsterId);
+    if (monster == null) return null;
+    return MonsterEncounter(
+      id: monster.id,
+      name: '${monster.name} Encounter',
+      description: monster.description,
+      imageUrl: monster.imageUrl,
+      thumbnailUrl: monster.thumbnailUrl,
+      zoneId: monster.zoneId,
+      latitude: monster.latitude,
+      longitude: monster.longitude,
+      monsterCount: 1,
+      members: [MonsterEncounterMember(slot: 1, monster: monster)],
+      monsters: [monster],
+    );
+  }
+
+  bool _battleWaitingOnInvites(Map<String, dynamic> battleDetail) {
+    final pendingRaw = battleDetail['pendingResponses'];
+    var pendingResponses = 0;
+    if (pendingRaw is num) {
+      pendingResponses = pendingRaw.toInt();
+    } else {
+      pendingResponses = int.tryParse(pendingRaw?.toString() ?? '') ?? 0;
+    }
+
+    final battleRaw = battleDetail['battle'];
+    final battle = battleRaw is Map<String, dynamic>
+        ? battleRaw
+        : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+    final state = (battle?['state']?.toString() ?? '').trim();
+    return pendingResponses > 0 || state == 'pending_party_responses';
+  }
+
+  bool _isPartyBattleDetail(Map<String, dynamic> battleDetail) {
+    final pendingRaw = battleDetail['pendingResponses'];
+    final pendingResponses = pendingRaw is num
+        ? pendingRaw.toInt()
+        : int.tryParse(pendingRaw?.toString() ?? '') ?? 0;
+    if (pendingResponses > 0) return true;
+
+    final invitesRaw = battleDetail['invites'];
+    if (invitesRaw is List && invitesRaw.isNotEmpty) return true;
+
+    final participantsRaw = battleDetail['participants'];
+    if (participantsRaw is List && participantsRaw.length > 1) return true;
+
+    return false;
+  }
+
+  Future<bool> _waitForPartyBattleReady(
+    BuildContext parentContext,
+    String battleMonsterId,
+    Map<String, dynamic> initialBattleDetail,
+    String? battleId,
+  ) async {
+    if (!_battleWaitingOnInvites(initialBattleDetail)) {
+      return true;
+    }
+    final poiService = context.read<PoiService>();
+    final deadline = DateTime.now().add(const Duration(seconds: 75));
+    var latestDetail = initialBattleDetail;
+    var waitingModalVisible = false;
+    unawaited(
+      showDialog<void>(
+        context: parentContext,
+        useRootNavigator: true,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          waitingModalVisible = true;
+          return PopScope(
+            canPop: false,
+            child: const AlertDialog(
+              title: Text('Waiting For Party'),
+              content: SizedBox(
+                width: 300,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 14),
+                    Text(
+                      'Combat will start after all party invites are accepted, declined, or expire.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+
+    try {
+      while (mounted && parentContext.mounted) {
+        if (!_battleWaitingOnInvites(latestDetail)) {
+          return true;
+        }
+        if (DateTime.now().isAfter(deadline)) {
+          return false;
+        }
+        await Future<void>.delayed(const Duration(seconds: 2));
+        latestDetail = (battleId != null && battleId.trim().isNotEmpty)
+            ? await poiService.getMonsterBattleStatusById(battleId.trim())
+            : await poiService.getMonsterBattleStatus(battleMonsterId);
+      }
+      return false;
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 404) {
+        return false;
+      }
+      rethrow;
+    } finally {
+      if (waitingModalVisible && mounted && parentContext.mounted) {
+        final navigator = Navigator.of(parentContext, rootNavigator: true);
+        if (navigator.canPop()) {
+          navigator.pop();
+        }
+      }
+    }
+  }
+
   Future<void> _startMonsterBattle(
     MonsterEncounter monster,
     BuildContext parentContext, {
     bool isPartyBattle = false,
+    bool skipStartRequest = false,
+    String? battleId,
   }) async {
-    final result = await showDialog<MonsterBattleResult>(
-      context: parentContext,
-      useRootNavigator: true,
-      barrierDismissible: false,
-      builder: (_) =>
-          MonsterBattleDialog(encounter: monster, isPartyBattle: isPartyBattle),
-    );
+    final battleMonsterId = _primaryMonsterIdForEncounter(monster);
+    if (battleMonsterId.isEmpty) {
+      if (mounted && parentContext.mounted) {
+        ScaffoldMessenger.of(parentContext).showSnackBar(
+          const SnackBar(
+            content: Text('Could not start battle: monster id missing.'),
+          ),
+        );
+      }
+      return;
+    }
+
+    final poiService = context.read<PoiService>();
+    Map<String, dynamic> battleDetail = const {};
+    var resolvedBattleId = battleId?.trim() ?? '';
+    var effectivePartyBattle = isPartyBattle;
+    try {
+      if (skipStartRequest) {
+        battleDetail = resolvedBattleId.isNotEmpty
+            ? await poiService.getMonsterBattleStatusById(resolvedBattleId)
+            : await poiService.getMonsterBattleStatus(battleMonsterId);
+      } else {
+        battleDetail = await poiService.startMonsterBattle(battleMonsterId);
+      }
+      final battleRaw = battleDetail['battle'];
+      final battle = battleRaw is Map<String, dynamic>
+          ? battleRaw
+          : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+      final fetchedBattleId = (battle?['id']?.toString() ?? '').trim();
+      if (fetchedBattleId.isNotEmpty) {
+        resolvedBattleId = fetchedBattleId;
+      }
+      if (_isPartyBattleDetail(battleDetail)) {
+        effectivePartyBattle = true;
+      }
+    } catch (error) {
+      var message = 'Could not start battle.';
+      if (error is DioException && error.response?.data is Map) {
+        final data = Map<String, dynamic>.from(error.response!.data as Map);
+        final apiMessage = data['error']?.toString().trim() ?? '';
+        if (apiMessage.isNotEmpty) {
+          message = apiMessage;
+        }
+      }
+      if (mounted && parentContext.mounted) {
+        ScaffoldMessenger.of(
+          parentContext,
+        ).showSnackBar(SnackBar(content: Text(message)));
+      }
+      return;
+    }
+
+    bool readyForCombat;
+    try {
+      readyForCombat = await _waitForPartyBattleReady(
+        parentContext,
+        battleMonsterId,
+        battleDetail,
+        resolvedBattleId.isNotEmpty ? resolvedBattleId : null,
+      );
+    } catch (_) {
+      if (mounted && parentContext.mounted) {
+        ScaffoldMessenger.of(parentContext).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify party battle readiness.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (!readyForCombat) {
+      if (mounted && parentContext.mounted) {
+        ScaffoldMessenger.of(parentContext).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Party battle did not become ready. Try joining again.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    MonsterBattleResult? result;
+    try {
+      result = await showDialog<MonsterBattleResult>(
+        context: parentContext,
+        useRootNavigator: true,
+        useSafeArea: false,
+        barrierDismissible: false,
+        builder: (_) => MonsterBattleDialog(
+          encounter: monster,
+          isPartyBattle: effectivePartyBattle,
+          battleMonsterId: battleMonsterId,
+          battleId: resolvedBattleId.isNotEmpty ? resolvedBattleId : null,
+        ),
+      );
+    } finally {
+      if (!effectivePartyBattle) {
+        try {
+          await poiService.endMonsterBattle(battleMonsterId);
+        } catch (error) {
+          debugPrint('Failed to end server monster battle: $error');
+        }
+      }
+    }
+
     if (!mounted || result == null) return;
     final statsProvider = context.read<CharacterStatsProvider>();
 

@@ -3,7 +3,8 @@ class ApiConstants {
   static const String baseUrl = 'https://api.unclaimedstreets.com';
 
   // Authenticator endpoints
-  static const String verificationCodeEndpoint = '/authenticator/text/verification-code';
+  static const String verificationCodeEndpoint =
+      '/authenticator/text/verification-code';
   static const String verifyTokenEndpoint = '/authenticator/token/verify';
 
   // Travel Angels endpoints
@@ -12,45 +13,60 @@ class ApiConstants {
   static const String whoamiEndpoint = '/travel-angels/whoami';
   static const String levelEndpoint = '/travel-angels/level';
   static const String documentsEndpoint = '/travel-angels/documents';
-  static String updateDocumentEndpoint(String documentId) => '$documentsEndpoint/$documentId';
-  static const String friendsDocumentsEndpoint = '/travel-angels/documents/friends';
+  static String updateDocumentEndpoint(String documentId) =>
+      '$documentsEndpoint/$documentId';
+  static const String friendsDocumentsEndpoint =
+      '/travel-angels/documents/friends';
   static const String parseDocumentEndpoint = '/travel-angels/documents/parse';
 
   // Google Drive endpoints
-  static const String googleDriveStatusEndpoint = '/travel-angels/google-drive/status';
-  static const String googleDriveAuthEndpoint = '/travel-angels/google-drive/auth';
-  static const String googleDriveRevokeEndpoint = '/travel-angels/google-drive/revoke';
-  static const String googleDriveFilesEndpoint = '/travel-angels/google-drive/files';
-  static const String googleDriveImportDocumentEndpoint = '/travel-angels/google-drive/documents/import';
+  static const String googleDriveStatusEndpoint =
+      '/travel-angels/google-drive/status';
+  static const String googleDriveAuthEndpoint =
+      '/travel-angels/google-drive/auth';
+  static const String googleDriveRevokeEndpoint =
+      '/travel-angels/google-drive/revoke';
+  static const String googleDriveFilesEndpoint =
+      '/travel-angels/google-drive/files';
+  static const String googleDriveImportDocumentEndpoint =
+      '/travel-angels/google-drive/documents/import';
 
   // Friend endpoints
   static const String friendsEndpoint = '/travel-angels/friends';
   static const String friendInvitesEndpoint = '/travel-angels/friend-invites';
-  static const String createFriendInviteEndpoint = '/travel-angels/friend-invites/create';
-  static const String acceptFriendInviteEndpoint = '/travel-angels/friend-invites/accept';
-  static String deleteFriendInviteEndpoint(String inviteId) => '/travel-angels/friend-invites/$inviteId';
-  static String searchUsersEndpoint(String query) => '/travel-angels/users/search?query=$query';
+  static const String createFriendInviteEndpoint =
+      '/travel-angels/friend-invites/create';
+  static const String acceptFriendInviteEndpoint =
+      '/travel-angels/friend-invites/accept';
+  static String deleteFriendInviteEndpoint(String inviteId) =>
+      '/travel-angels/friend-invites/$inviteId';
+  static String searchUsersEndpoint(String query) =>
+      '/travel-angels/users/search?query=${Uri.encodeQueryComponent(query)}';
 
   // Media endpoints
-  static const String presignedUploadUrlEndpoint = '/travel-angels/media/uploadUrl';
+  static const String presignedUploadUrlEndpoint =
+      '/travel-angels/media/uploadUrl';
 
   // Trending destinations endpoint
-  static const String trendingDestinationsEndpoint = '/travel-angels/trending-destinations';
-  static const String quickDecisionRequestsEndpoint = '/travel-angels/quick-decision-requests';
+  static const String trendingDestinationsEndpoint =
+      '/travel-angels/trending-destinations';
+  static const String quickDecisionRequestsEndpoint =
+      '/travel-angels/quick-decision-requests';
   static const String communityPollsEndpoint = '/travel-angels/community-polls';
   static const String profileEndpoint = '/travel-angels/profile';
-  static String validateUsernameEndpoint(String username) => '/travel-angels/users/validate-username?username=$username';
+  static String validateUsernameEndpoint(String username) =>
+      '/travel-angels/users/validate-username?username=$username';
 
   // Credits endpoints
   static const String creditsEndpoint = '/travel-angels/credits';
-  static const String purchaseCreditsEndpoint = '/travel-angels/credits/purchase';
+  static const String purchaseCreditsEndpoint =
+      '/travel-angels/credits/purchase';
   static const String creditsWebhookEndpoint = '/travel-angels/credits/webhook';
 
   // Location endpoints
-  static String locationSearchEndpoint(String query) => '/travel-angels/location/search?q=${Uri.encodeComponent(query)}';
+  static String locationSearchEndpoint(String query) =>
+      '/travel-angels/location/search?q=${Uri.encodeComponent(query)}';
 
   // App name for verification code requests
   static const String appName = 'travel-angels';
 }
-
-

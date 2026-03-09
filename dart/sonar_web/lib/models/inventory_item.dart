@@ -25,6 +25,8 @@ class InventoryItem {
   final int? spellDamageBonusPercent;
   final int consumeHealthDelta;
   final int consumeManaDelta;
+  final int consumeRevivePartyMemberHealth;
+  final int consumeReviveAllDownedPartyMembersHealth;
   final List<InventoryConsumeStatus> consumeStatusesToAdd;
   final List<String> consumeStatusesToRemove;
   final List<String> consumeSpellIds;
@@ -56,6 +58,8 @@ class InventoryItem {
     this.spellDamageBonusPercent,
     this.consumeHealthDelta = 0,
     this.consumeManaDelta = 0,
+    this.consumeRevivePartyMemberHealth = 0,
+    this.consumeReviveAllDownedPartyMembersHealth = 0,
     this.consumeStatusesToAdd = const [],
     this.consumeStatusesToRemove = const [],
     this.consumeSpellIds = const [],
@@ -90,6 +94,11 @@ class InventoryItem {
           ?.toInt(),
       consumeHealthDelta: (json['consumeHealthDelta'] as num?)?.toInt() ?? 0,
       consumeManaDelta: (json['consumeManaDelta'] as num?)?.toInt() ?? 0,
+      consumeRevivePartyMemberHealth:
+          (json['consumeRevivePartyMemberHealth'] as num?)?.toInt() ?? 0,
+      consumeReviveAllDownedPartyMembersHealth:
+          (json['consumeReviveAllDownedPartyMembersHealth'] as num?)?.toInt() ??
+          0,
       consumeStatusesToAdd:
           (json['consumeStatusesToAdd'] as List<dynamic>?)
               ?.map(

@@ -188,6 +188,65 @@ class PoiService {
     return map;
   }
 
+  Future<Map<String, dynamic>> startMonsterBattle(String monsterId) async {
+    final raw = await _api.post<dynamic>(
+      ApiConstants.monsterBattleStartEndpoint(monsterId),
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> getMonsterBattleStatus(String monsterId) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      ApiConstants.monsterBattleStatusEndpoint(monsterId),
+    );
+    return raw;
+  }
+
+  Future<Map<String, dynamic>> endMonsterBattle(String monsterId) async {
+    final raw = await _api.post<dynamic>(
+      ApiConstants.monsterBattleEndEndpoint(monsterId),
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> applyMonsterBattleDamage(
+    String monsterId,
+    int damage,
+  ) async {
+    final raw = await _api.post<dynamic>(
+      ApiConstants.monsterBattleDamageEndpoint(monsterId),
+      data: {'damage': damage},
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> getMonsterBattleStatusById(
+    String battleId,
+  ) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      ApiConstants.monsterBattleStatusByIdEndpoint(battleId),
+    );
+    return raw;
+  }
+
+  Future<Map<String, dynamic>> applyMonsterBattleDamageById(
+    String battleId,
+    int damage,
+  ) async {
+    final raw = await _api.post<dynamic>(
+      ApiConstants.monsterBattleDamageByIdEndpoint(battleId),
+      data: {'damage': damage},
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
+  Future<Map<String, dynamic>> getUserCharacterProfile(String userId) async {
+    final raw = await _api.get<Map<String, dynamic>>(
+      ApiConstants.userCharacterEndpoint(userId),
+    );
+    return raw;
+  }
+
   Future<PartySubmissionStatus> getPartySubmissionStatus({
     required String contentType,
     required String contentId,

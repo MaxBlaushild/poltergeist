@@ -52,6 +52,8 @@ export type InventoryItem = {
   spellDamageBonusPercent?: number | null;
   consumeHealthDelta?: number;
   consumeManaDelta?: number;
+  consumeRevivePartyMemberHealth?: number;
+  consumeReviveAllDownedPartyMembersHealth?: number;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];

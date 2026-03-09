@@ -79,8 +79,10 @@ class PartyProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> acceptMonsterBattleInvite(String inviteId) async {
-    await _partyService.acceptMonsterBattleInvite(inviteId);
+  Future<Map<String, dynamic>> acceptMonsterBattleInvite(
+    String inviteId,
+  ) async {
+    return _partyService.acceptMonsterBattleInvite(inviteId);
   }
 
   Future<void> rejectMonsterBattleInvite(String inviteId) async {

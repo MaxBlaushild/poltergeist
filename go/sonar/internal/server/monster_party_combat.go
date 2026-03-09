@@ -58,14 +58,52 @@ func (s *server) findActiveMonsterBattleForUser(
 	userID uuid.UUID,
 	monsterID uuid.UUID,
 ) (*models.MonsterBattle, error) {
-	battle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monsterID)
+	ownerBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, userID, monsterID)
 	if err != nil {
 		return nil, err
 	}
-	if battle != nil {
-		return battle, nil
+	participantBattle, err := s.dbClient.MonsterBattle().FindActiveByParticipantAndMonster(ctx, userID, monsterID)
+	if err != nil {
+		return nil, err
 	}
-	return s.dbClient.MonsterBattle().FindActiveByParticipantAndMonster(ctx, userID, monsterID)
+
+	if ownerBattle == nil {
+		return participantBattle, nil
+	}
+	if participantBattle == nil {
+		return ownerBattle, nil
+	}
+	if participantBattle.StartedAt.After(ownerBattle.StartedAt) {
+		return participantBattle, nil
+	}
+	if ownerBattle.StartedAt.After(participantBattle.StartedAt) {
+		return ownerBattle, nil
+	}
+	// Prefer participant battle on ties so accepted party invites route to shared combat.
+	return participantBattle, nil
+}
+
+func (s *server) userCanAccessMonsterBattle(
+	ctx context.Context,
+	userID uuid.UUID,
+	battle *models.MonsterBattle,
+) (bool, error) {
+	if battle == nil {
+		return false, nil
+	}
+	if battle.UserID == userID {
+		return true, nil
+	}
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		return false, err
+	}
+	for _, participant := range participants {
+		if participant.UserID == userID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *models.MonsterBattle) error {
@@ -741,6 +779,29 @@ func (s *server) respondToMonsterBattleInvite(ctx *gin.Context, status string) {
 	}
 
 	if status == string(models.MonsterBattleInviteStatusAccepted) {
+		ownerBattle, err := s.dbClient.MonsterBattle().FindActiveByUserAndMonster(ctx, user.ID, invite.MonsterID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if ownerBattle != nil && ownerBattle.ID != invite.BattleID {
+			if err := s.dbClient.MonsterStatus().DeleteAllForBattleID(ctx, ownerBattle.ID); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			if err := s.dbClient.MonsterBattle().End(ctx, ownerBattle.ID, now); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			log.Printf(
+				"[party-combat][invite] ended conflicting owner battle user=%s monster=%s oldBattle=%s invitedBattle=%s",
+				user.ID,
+				invite.MonsterID,
+				ownerBattle.ID,
+				invite.BattleID,
+			)
+		}
+
 		if err := s.dbClient.MonsterBattleParticipant().CreateOrUpdate(ctx, &models.MonsterBattleParticipant{
 			BattleID:    invite.BattleID,
 			UserID:      user.ID,
@@ -762,5 +823,14 @@ func (s *server) respondToMonsterBattleInvite(ctx *gin.Context, status string) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	log.Printf(
+		"[party-combat][invite] response user=%s invite=%s status=%s battle=%s pending=%d participants=%d",
+		user.ID,
+		invite.ID,
+		status,
+		invite.BattleID,
+		detail.PendingResponses,
+		len(detail.Participants),
+	)
 	ctx.JSON(http.StatusOK, detail)
 }

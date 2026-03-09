@@ -27,9 +27,10 @@ type Quartermaster interface {
 }
 
 type UseItemMetadata struct {
-	PointOfInterestID uuid.UUID `json:"pointOfInterestId"`
-	TargetTeamID      uuid.UUID `json:"targetTeamId"`
-	ChallengeID       uuid.UUID `json:"challengeId"`
+	PointOfInterestID uuid.UUID  `json:"pointOfInterestId"`
+	TargetTeamID      uuid.UUID  `json:"targetTeamId"`
+	ChallengeID       uuid.UUID  `json:"challengeId"`
+	TargetUserID      *uuid.UUID `json:"targetUserId,omitempty"`
 }
 
 func NewClient(db db.DbClient) Quartermaster {
@@ -120,7 +121,7 @@ func (c *client) UseItem(ctx context.Context, ownedInventoryItemID uuid.UUID, me
 	}
 
 	if hasConfiguredConsumeEffect {
-		if err := c.applyConfiguredConsumeEffects(ctx, *ownedInventoryItem, item); err != nil {
+		if err := c.applyConfiguredConsumeEffects(ctx, *ownedInventoryItem, item, metadata); err != nil {
 			return err
 		}
 	}
@@ -144,6 +145,9 @@ func inventoryItemHasConfiguredConsumeEffects(item *models.InventoryItem) bool {
 	if item.ConsumeHealthDelta != 0 || item.ConsumeManaDelta != 0 {
 		return true
 	}
+	if item.ConsumeRevivePartyMemberHealth > 0 || item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
+		return true
+	}
 	return len(item.ConsumeStatusesToAdd) > 0 || len(item.ConsumeStatusesToRemove) > 0 || len(item.ConsumeSpellIDs) > 0
 }
 
@@ -151,6 +155,7 @@ func (c *client) applyConfiguredConsumeEffects(
 	ctx context.Context,
 	ownedInventoryItem models.OwnedInventoryItem,
 	item *models.InventoryItem,
+	metadata *UseItemMetadata,
 ) error {
 	if item == nil || ownedInventoryItem.UserID == nil {
 		return nil
@@ -159,6 +164,33 @@ func (c *client) applyConfiguredConsumeEffects(
 	userID := *ownedInventoryItem.UserID
 	if err := c.applyConfiguredConsumeResourceEffects(ctx, userID, item.ConsumeHealthDelta, item.ConsumeManaDelta); err != nil {
 		return err
+	}
+	if item.ConsumeRevivePartyMemberHealth > 0 {
+		targetUserID := userID
+		if metadata != nil && metadata.TargetUserID != nil {
+			targetUserID = *metadata.TargetUserID
+		}
+		allowedTarget, err := c.isAllowedPartyReviveTarget(ctx, userID, targetUserID)
+		if err != nil {
+			return err
+		}
+		if !allowedTarget {
+			return errors.New("target user is not in your party")
+		}
+		if err := c.applyConfiguredConsumeReviveEffect(ctx, targetUserID, item.ConsumeRevivePartyMemberHealth); err != nil {
+			return err
+		}
+	}
+	if item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
+		recipientIDs, err := c.partyReviveRecipientIDs(ctx, userID)
+		if err != nil {
+			return err
+		}
+		for _, recipientID := range recipientIDs {
+			if err := c.applyConfiguredConsumeReviveEffect(ctx, recipientID, item.ConsumeReviveAllDownedPartyMembersHealth); err != nil {
+				return err
+			}
+		}
 	}
 
 	if len(item.ConsumeStatusesToRemove) > 0 {
@@ -208,6 +240,91 @@ func (c *client) applyConfiguredConsumeEffects(
 	}
 
 	return nil
+}
+
+func (c *client) applyConfiguredConsumeReviveEffect(
+	ctx context.Context,
+	userID uuid.UUID,
+	reviveHealth int,
+) error {
+	if reviveHealth <= 0 {
+		return nil
+	}
+
+	stats, err := c.db.UserCharacterStats().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	equipmentBonuses, err := c.db.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return err
+	}
+	statusBonuses, err := c.db.UserStatus().GetActiveStatBonuses(ctx, userID)
+	if err != nil {
+		return err
+	}
+	totalBonuses := equipmentBonuses.Add(statusBonuses)
+	_, _, currentHealth, _ := deriveResourceState(stats, totalBonuses)
+	if currentHealth > 0 || stats.HealthDeficit <= 0 {
+		return nil
+	}
+
+	restore := minInt(reviveHealth, stats.HealthDeficit)
+	if restore <= 0 {
+		return nil
+	}
+	_, err = c.db.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -restore, 0)
+	return err
+}
+
+func (c *client) isAllowedPartyReviveTarget(
+	ctx context.Context,
+	ownerUserID uuid.UUID,
+	targetUserID uuid.UUID,
+) (bool, error) {
+	if ownerUserID == targetUserID {
+		return true, nil
+	}
+	owner, err := c.db.User().FindByID(ctx, ownerUserID)
+	if err != nil {
+		return false, err
+	}
+	if owner == nil || owner.PartyID == nil {
+		return false, nil
+	}
+	partyMembers, err := c.db.User().FindPartyMembers(ctx, ownerUserID)
+	if err != nil {
+		return false, err
+	}
+	for _, member := range partyMembers {
+		if member.ID == targetUserID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *client) partyReviveRecipientIDs(
+	ctx context.Context,
+	ownerUserID uuid.UUID,
+) ([]uuid.UUID, error) {
+	owner, err := c.db.User().FindByID(ctx, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	if owner == nil || owner.PartyID == nil {
+		return []uuid.UUID{ownerUserID}, nil
+	}
+	partyMembers, err := c.db.User().FindPartyMembers(ctx, ownerUserID)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, 0, len(partyMembers)+1)
+	ids = append(ids, ownerUserID)
+	for _, member := range partyMembers {
+		ids = append(ids, member.ID)
+	}
+	return ids, nil
 }
 
 func (c *client) applyConfiguredConsumeResourceEffects(

@@ -67,11 +67,12 @@ class PartyService {
     );
   }
 
-  Future<void> acceptMonsterBattleInvite(String inviteId) async {
-    await _api.post<dynamic>(
+  Future<Map<String, dynamic>> acceptMonsterBattleInvite(String inviteId) async {
+    final raw = await _api.post<dynamic>(
       ApiConstants.monsterBattleInvitesAcceptEndpoint,
       data: {'inviteID': inviteId},
     );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
   Future<void> rejectMonsterBattleInvite(String inviteId) async {

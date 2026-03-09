@@ -275,14 +275,17 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                                   _legacyMysteryImageUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Container(
-                                    color: theme.colorScheme.surfaceVariant,
+                                    color: theme
+                                        .colorScheme
+                                        .surfaceContainerHighest,
                                     child: const Icon(
                                       Icons.auto_awesome_outlined,
                                     ),
                                   ),
                                 )
                               : Container(
-                                  color: theme.colorScheme.surfaceVariant,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
                                   child: const Icon(
                                     Icons.auto_awesome_outlined,
                                   ),
@@ -332,12 +335,15 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                                   vertical: 10,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceVariant
-                                      .withOpacity(0.45),
+                                  color: theme
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.45),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: theme.colorScheme.outline
-                                        .withOpacity(0.24),
+                                    color: theme.colorScheme.outline.withValues(
+                                      alpha: 0.24,
+                                    ),
                                   ),
                                 ),
                                 child: Row(
@@ -379,12 +385,13 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(
-                              0.45,
-                            ),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.45),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: theme.colorScheme.outline.withOpacity(0.2),
+                              color: theme.colorScheme.outline.withValues(
+                                alpha: 0.2,
+                              ),
                             ),
                           ),
                           child: Text(
@@ -398,12 +405,13 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceVariant.withOpacity(
-                              0.45,
-                            ),
+                            color: theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.45),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: theme.colorScheme.outline.withOpacity(0.2),
+                              color: theme.colorScheme.outline.withValues(
+                                alpha: 0.2,
+                              ),
                             ),
                           ),
                           child: Text(
@@ -463,18 +471,111 @@ class _ScenarioPanelState extends State<ScenarioPanel>
                     ],
                     if (_result != null) ...[
                       const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _result!.successful
-                              ? const Color(0xFFDEEED8)
-                              : const Color(0xFFF2DFDD),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Roll ${_result!.roll} + stat ${_result!.statValue} + proficiency ${_result!.proficiencyBonus} + creativity ${_result!.creativityBonus} = ${_result!.totalScore} (need ${_result!.threshold})',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                      TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 320),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) {
+                          return Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, 10 * (1 - value)),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: _result!.successful
+                                ? const Color(0xFFDEEED8)
+                                : const Color(0xFFF2DFDD),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color:
+                                  (_result!.successful
+                                          ? Colors.green.shade200
+                                          : Colors.red.shade200)
+                                      .withValues(alpha: 0.8),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    _result!.successful
+                                        ? Icons.emoji_events_rounded
+                                        : Icons.analytics_outlined,
+                                    color: _result!.successful
+                                        ? Colors.green.shade800
+                                        : Colors.red.shade800,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _result!.successful
+                                          ? 'You cleared the check by ${(_result!.totalScore - _result!.threshold).abs()} points.'
+                                          : 'You were ${(_result!.threshold - _result!.totalScore).abs()} points short.',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Score breakdown',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _ScoreBreakdownChip(
+                                    icon: Icons.casino_rounded,
+                                    label: 'Roll',
+                                    value: _result!.roll,
+                                  ),
+                                  _ScoreBreakdownChip(
+                                    icon: Icons.fitness_center_rounded,
+                                    label: _formatStatLabel(_result!.statTag),
+                                    value: _result!.statValue,
+                                  ),
+                                  _ScoreBreakdownChip(
+                                    icon: Icons.workspace_premium_rounded,
+                                    label: 'Proficiency',
+                                    value: _result!.proficiencyBonus,
+                                  ),
+                                  _ScoreBreakdownChip(
+                                    icon: Icons.lightbulb_rounded,
+                                    label: 'Creativity',
+                                    value: _result!.creativityBonus,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Total ${_result!.totalScore} vs target ${_result!.threshold}',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Your score combines the roll, the chosen stat, training, and any creativity bonus.',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -502,7 +603,7 @@ class _Chip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.6),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -515,4 +616,49 @@ class _Chip extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ScoreBreakdownChip extends StatelessWidget {
+  const _ScoreBreakdownChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            '$label ${value > 0 ? '+' : ''}$value',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatStatLabel(String statTag) {
+  if (statTag.isEmpty) return 'Stat';
+  return '${statTag[0].toUpperCase()}${statTag.substring(1)}';
 }
