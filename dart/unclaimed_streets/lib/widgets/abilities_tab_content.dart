@@ -340,6 +340,7 @@ class _AbilityRow extends StatelessWidget {
         : !hasTargetedSupport && hasGroupSupport
         ? 'Use Group Support'
         : 'Use Support';
+    final cooldownTurns = ability.cooldownTurns < 0 ? 0 : ability.cooldownTurns;
 
     return Container(
       width: double.infinity,
@@ -384,8 +385,19 @@ class _AbilityRow extends StatelessWidget {
                 if (ability.schoolOfMagic.trim().isNotEmpty)
                   Text(
                     isTechnique
-                        ? '${ability.schoolOfMagic} · Technique'
+                        ? cooldownTurns > 0
+                              ? '${ability.schoolOfMagic} · Technique · Cooldown $cooldownTurns turn${cooldownTurns == 1 ? '' : 's'}'
+                              : '${ability.schoolOfMagic} · Technique'
                         : '${ability.schoolOfMagic} · Mana ${ability.manaCost}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                if (isTechnique &&
+                    ability.schoolOfMagic.trim().isEmpty &&
+                    cooldownTurns > 0)
+                  Text(
+                    'Cooldown $cooldownTurns turn${cooldownTurns == 1 ? '' : 's'}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

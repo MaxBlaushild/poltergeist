@@ -63,8 +63,11 @@ class _PartyTabContentState extends State<PartyTabContent> {
     fp.fetchFriends();
     final memberIds = members.map((m) => m.id).toSet();
     final pendingIds = invites
-        .map((invite) =>
-            invite.inviterId == currentUserId ? invite.inviteeId : invite.inviterId)
+        .map(
+          (invite) => invite.inviterId == currentUserId
+              ? invite.inviteeId
+              : invite.inviterId,
+        )
         .toSet();
     final blockedIds = <String>{...memberIds, ...pendingIds, currentUserId};
     final searchController = TextEditingController();
@@ -133,8 +136,8 @@ class _PartyTabContentState extends State<PartyTabContent> {
                               .where((u) => !blockedIds.contains(u.id))
                               .where((u) {
                                 if (q.isEmpty) return true;
-                                final haystack =
-                                    '${u.username} ${u.name}'.toLowerCase();
+                                final haystack = '${u.username} ${u.name}'
+                                    .toLowerCase();
                                 return haystack.contains(q);
                               })
                               .toList();
@@ -164,8 +167,9 @@ class _PartyTabContentState extends State<PartyTabContent> {
                                   color: scheme.surfaceContainerHighest,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    side:
-                                        BorderSide(color: scheme.outlineVariant),
+                                    side: BorderSide(
+                                      color: scheme.outlineVariant,
+                                    ),
                                   ),
                                   child: ListTile(
                                     leading: CircleAvatar(
@@ -173,8 +177,8 @@ class _PartyTabContentState extends State<PartyTabContent> {
                                       backgroundColor: scheme.surfaceVariant,
                                       backgroundImage:
                                           u.profilePictureUrl.isNotEmpty
-                                              ? NetworkImage(u.profilePictureUrl)
-                                              : null,
+                                          ? NetworkImage(u.profilePictureUrl)
+                                          : null,
                                       child: u.profilePictureUrl.isEmpty
                                           ? Icon(
                                               Icons.person,
@@ -193,7 +197,8 @@ class _PartyTabContentState extends State<PartyTabContent> {
                                           ? null
                                           : () async {
                                               setState(
-                                                  () => inviting.add(u.id));
+                                                () => inviting.add(u.id),
+                                              );
                                               try {
                                                 await party.inviteToParty(u);
                                                 if (!ctx.mounted) return;
@@ -203,8 +208,9 @@ class _PartyTabContentState extends State<PartyTabContent> {
                                                 });
                                               } finally {
                                                 if (ctx.mounted) {
-                                                  setState(() =>
-                                                      inviting.remove(u.id));
+                                                  setState(
+                                                    () => inviting.remove(u.id),
+                                                  );
                                                 }
                                               }
                                             },
@@ -239,7 +245,7 @@ class _PartyTabContentState extends State<PartyTabContent> {
     User target,
     String currentUserId,
   ) {
-    if (target.id.isEmpty || target.id == currentUserId) return;
+    if (target.id.isEmpty) return;
     final callback = widget.onViewProfile;
     if (callback != null) {
       callback(target);
@@ -261,7 +267,9 @@ class _PartyTabContentState extends State<PartyTabContent> {
           );
         }
 
-        if (party.loading && party.party == null && party.partyInvites.isEmpty) {
+        if (party.loading &&
+            party.party == null &&
+            party.partyInvites.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(24),
             child: Center(child: CircularProgressIndicator()),
@@ -281,7 +289,13 @@ class _PartyTabContentState extends State<PartyTabContent> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (receivedInvites.isNotEmpty)
-              _partyInvitesSection(context, party, receivedInvites, true, user.id),
+              _partyInvitesSection(
+                context,
+                party,
+                receivedInvites,
+                true,
+                user.id,
+              ),
             if (party.party != null)
               _currentPartySection(context, party, user, isLeader),
             if (party.party == null)
@@ -290,11 +304,11 @@ class _PartyTabContentState extends State<PartyTabContent> {
                 onCreate: () => _showInviteToPartyDialog(
                   context,
                   party,
-              const [],
-              party.partyInvites,
-              user.id,
-            ),
-          ),
+                  const [],
+                  party.partyInvites,
+                  user.id,
+                ),
+              ),
             if (sentInvites.isNotEmpty)
               _sentInvitesSection(context, party, sentInvites, user.id),
             const SizedBox(height: 24),
@@ -320,17 +334,19 @@ class _PartyTabContentState extends State<PartyTabContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: invites
-            .map((invite) => _PartyInviteTile(
-                  invite: invite,
-                  received: received,
-                  onViewProfile: () => _openCharacterProfile(
-                    context,
-                    received ? invite.inviter : invite.invitee,
-                    currentUserId,
-                  ),
-                  onAccept: () => party.acceptPartyInvite(invite.id),
-                  onReject: () => party.rejectPartyInvite(invite.id),
-                ))
+            .map(
+              (invite) => _PartyInviteTile(
+                invite: invite,
+                received: received,
+                onViewProfile: () => _openCharacterProfile(
+                  context,
+                  received ? invite.inviter : invite.invitee,
+                  currentUserId,
+                ),
+                onAccept: () => party.acceptPartyInvite(invite.id),
+                onReject: () => party.rejectPartyInvite(invite.id),
+              ),
+            )
             .toList(),
       ),
     );
@@ -374,7 +390,10 @@ class _PartyTabContentState extends State<PartyTabContent> {
                   if (isLeader) ...[
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: scheme.tertiary,
                         borderRadius: BorderRadius.circular(8),
@@ -403,9 +422,8 @@ class _PartyTabContentState extends State<PartyTabContent> {
               isCurrentUser: isCurrentUser,
               canPromote: isLeader && !isCurrentUser && !isMemberLeader,
               promoting: _promotingMemberId == member.id,
-              onViewProfile: isCurrentUser
-                  ? null
-                  : () => _openCharacterProfile(context, member, user.id),
+              onViewProfile: () =>
+                  _openCharacterProfile(context, member, user.id),
               onPromote: () async {
                 setState(() => _promotingMemberId = member.id);
                 try {
@@ -534,22 +552,25 @@ class _PartyTabContentState extends State<PartyTabContent> {
       title: 'Pending Invites',
       badge: invites.length,
       expanded: _sentInvitesExpanded,
-      onToggle: () => setState(() => _sentInvitesExpanded = !_sentInvitesExpanded),
+      onToggle: () =>
+          setState(() => _sentInvitesExpanded = !_sentInvitesExpanded),
       accent: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: invites
-            .map((invite) => _PartyInviteTile(
-                  invite: invite,
-                  received: false,
-                  onViewProfile: () => _openCharacterProfile(
-                    context,
-                    invite.invitee,
-                    currentUserId,
-                  ),
-                  onAccept: () {},
-                  onReject: () => party.rejectPartyInvite(invite.id),
-                ))
+            .map(
+              (invite) => _PartyInviteTile(
+                invite: invite,
+                received: false,
+                onViewProfile: () => _openCharacterProfile(
+                  context,
+                  invite.invitee,
+                  currentUserId,
+                ),
+                onAccept: () {},
+                onReject: () => party.rejectPartyInvite(invite.id),
+              ),
+            )
             .toList(),
       ),
     );
@@ -598,7 +619,10 @@ class _AccordionSection extends StatelessWidget {
               onTap: onToggle,
               borderRadius: BorderRadius.circular(16),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Icon(
@@ -616,7 +640,10 @@ class _AccordionSection extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: accentColor,
                         borderRadius: BorderRadius.circular(12),
@@ -634,7 +661,8 @@ class _AccordionSection extends StatelessWidget {
               ),
             ),
             if (expanded) Divider(height: 1, color: scheme.outlineVariant),
-            if (expanded) Padding(padding: const EdgeInsets.all(12), child: child),
+            if (expanded)
+              Padding(padding: const EdgeInsets.all(12), child: child),
           ],
         ),
       ),
@@ -712,10 +740,7 @@ class _PartyInviteTile extends StatelessWidget {
               tooltip: 'Decline',
             ),
           ] else
-            TextButton(
-              onPressed: onReject,
-              child: const Text('Cancel'),
-            ),
+            TextButton(onPressed: onReject, child: const Text('Cancel')),
         ],
       ),
     );
@@ -843,11 +868,7 @@ class _UserAvatar extends StatelessWidget {
           ? NetworkImage(user.profilePictureUrl)
           : null,
       child: user.profilePictureUrl.isEmpty
-          ? Icon(
-              Icons.person,
-              size: size * 0.5,
-              color: scheme.onSurfaceVariant,
-            )
+          ? Icon(Icons.person, size: size * 0.5, color: scheme.onSurfaceVariant)
           : null,
     );
   }

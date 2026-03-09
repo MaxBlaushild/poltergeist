@@ -8,7 +8,9 @@ import '../services/push_notification_service.dart';
 import '../services/poi_service.dart';
 
 class SettingsTabContent extends StatefulWidget {
-  const SettingsTabContent({super.key});
+  const SettingsTabContent({super.key, this.onTriggerTutorialTest});
+
+  final VoidCallback? onTriggerTutorialTest;
 
   @override
   State<SettingsTabContent> createState() => _SettingsTabContentState();
@@ -24,6 +26,7 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
   bool _requesting = false;
   bool _sendingTestPush = false;
   bool _spawningNearbyContent = false;
+  bool _triggeringTutorial = false;
 
   @override
   void initState() {
@@ -218,6 +221,21 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
     }
   }
 
+  Future<void> _triggerTutorialTest() async {
+    setState(() => _triggeringTutorial = true);
+    try {
+      widget.onTriggerTutorialTest?.call();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Replaying tutorial on single player.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _triggeringTutorial = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -306,7 +324,8 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                             (_loading ||
                                 _requesting ||
                                 _sendingTestPush ||
-                                _spawningNearbyContent)
+                                _spawningNearbyContent ||
+                                _triggeringTutorial)
                             ? null
                             : () => _sendTestPush(),
                         icon: _sendingTestPush
@@ -325,7 +344,8 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                             (_loading ||
                                 _requesting ||
                                 _sendingTestPush ||
-                                _spawningNearbyContent)
+                                _spawningNearbyContent ||
+                                _triggeringTutorial)
                             ? null
                             : () => _sendTestPush(delaySeconds: 10),
                         icon: const Icon(Icons.timer_outlined),
@@ -336,7 +356,8 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                             (_loading ||
                                 _requesting ||
                                 _sendingTestPush ||
-                                _spawningNearbyContent)
+                                _spawningNearbyContent ||
+                                _triggeringTutorial)
                             ? null
                             : _spawnNearbyScenarioAndMonster,
                         icon: _spawningNearbyContent
@@ -349,6 +370,26 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                               )
                             : const Icon(Icons.auto_awesome_outlined),
                         label: const Text('Generate nearby scenario + monster'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed:
+                            (_loading ||
+                                _requesting ||
+                                _sendingTestPush ||
+                                _spawningNearbyContent ||
+                                _triggeringTutorial)
+                            ? null
+                            : _triggerTutorialTest,
+                        icon: _triggeringTutorial
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.menu_book_outlined),
+                        label: const Text('Replay tutorial'),
                       ),
                     ],
                   ),

@@ -37,6 +37,7 @@ import '../providers/completed_task_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/quest_filter_provider.dart';
 import '../providers/tags_provider.dart';
+import '../providers/tutorial_replay_provider.dart';
 import '../providers/zone_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/party_provider.dart';
@@ -212,6 +213,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialStatusChecked = false;
   bool _tutorialDialogVisible = false;
   bool _tutorialActivationInFlight = false;
+  bool _tutorialReplayPending = false;
+  int _lastTutorialReplayRequestCount = 0;
 
   @override
   void initState() {
@@ -233,12 +236,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _mapFocusProvider?.addListener(_onMapFocusRequest);
       _completedTaskProvider = context.read<CompletedTaskProvider>();
       _completedTaskProvider?.addListener(_onCompletedTaskModalChanged);
+      context.read<TutorialReplayProvider>().addListener(
+        _onTutorialReplayRequested,
+      );
       _onCompletedTaskModalChanged();
       _updateSelectedZoneFromLocation();
       _requestQuestLogIfReady();
       context.read<ActivityFeedProvider>().refresh();
       unawaited(context.read<PartyProvider>().fetchParty());
       unawaited(_loadTutorialStatus(force: true));
+      _onTutorialReplayRequested();
     });
   }
 
@@ -273,6 +280,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     } catch (_) {}
     try {
       _completedTaskProvider?.removeListener(_onCompletedTaskModalChanged);
+    } catch (_) {}
+    try {
+      context.read<TutorialReplayProvider>().removeListener(
+        _onTutorialReplayRequested,
+      );
     } catch (_) {}
     super.dispose();
   }
@@ -320,6 +332,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(_restoreDefeatedMonsterIds(refreshMap: true));
     unawaited(_restoreDiscoveredCharacterIds(refreshMap: true));
     unawaited(context.read<PartyProvider>().fetchParty());
+    unawaited(_loadTutorialStatus(force: true));
+  }
+
+  void _onTutorialReplayRequested() {
+    if (!mounted) return;
+    final provider = context.read<TutorialReplayProvider>();
+    final requestCount = provider.requestCount;
+    if (requestCount == _lastTutorialReplayRequestCount) return;
+    _lastTutorialReplayRequestCount = requestCount;
+    _tutorialReplayPending = true;
     unawaited(_loadTutorialStatus(force: true));
   }
 
@@ -1155,6 +1177,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _tutorialStatus = status;
         _tutorialStatusChecked = true;
       });
+      if (_tutorialReplayPending &&
+          (status == null ||
+              status.character == null ||
+              status.dialogue.isEmpty)) {
+        _tutorialReplayPending = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tutorial is not configured yet.')),
+        );
+      }
     } finally {
       _tutorialStatusLoading = false;
     }
@@ -1167,18 +1198,23 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       return;
     }
     final status = _tutorialStatus;
-    if (status == null ||
-        !status.showWelcomeDialogue ||
-        status.character == null ||
-        status.dialogue.isEmpty) {
+    if (status == null || status.character == null || status.dialogue.isEmpty) {
+      return;
+    }
+    if (!status.showWelcomeDialogue && !_tutorialReplayPending) {
       return;
     }
     final location = context.read<LocationProvider>().location;
     if (location == null) return;
-    unawaited(_showTutorialWelcomeDialog(status));
+    unawaited(
+      _showTutorialWelcomeDialog(status, forceReplay: _tutorialReplayPending),
+    );
   }
 
-  Future<void> _showTutorialWelcomeDialog(TutorialStatus status) async {
+  Future<void> _showTutorialWelcomeDialog(
+    TutorialStatus status, {
+    bool forceReplay = false,
+  }) async {
     final character = status.character;
     if (character == null ||
         status.dialogue.isEmpty ||
@@ -1220,7 +1256,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               finalStepLabel: 'Begin',
               onClose: () async {
                 Navigator.of(dialogContext).pop();
-                await _activateTutorialScenario(status);
+                await _activateTutorialScenario(
+                  status,
+                  forceReplay: forceReplay,
+                );
               },
             ),
           );
@@ -1233,7 +1272,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  Future<void> _activateTutorialScenario(TutorialStatus status) async {
+  Future<void> _activateTutorialScenario(
+    TutorialStatus status, {
+    bool forceReplay = false,
+  }) async {
     if (!mounted || _tutorialActivationInFlight) return;
 
     setState(() {
@@ -1242,7 +1284,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     });
 
     try {
-      final scenario = await context.read<PoiService>().activateTutorial();
+      final scenario = await context.read<PoiService>().activateTutorial(
+        force: forceReplay,
+      );
       if (!mounted) return;
       if (scenario == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1255,6 +1299,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
 
       setState(() {
+        _tutorialReplayPending = false;
         _scenarios = [
           scenario,
           ..._scenarios.where((item) => item.id != scenario.id),
@@ -4943,17 +4988,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         overlayButtonSize * overlayButtonCount +
         overlayButtonSpacing * (overlayButtonCount - 1);
     final authUser = context.watch<AuthProvider>().user;
-    final party = context.watch<PartyProvider>().party;
-    final hasPartyMapStrip = (() {
-      if (authUser == null || party == null) return false;
-      final memberIds = <String>{
-        if (authUser.id.isNotEmpty) authUser.id,
-        ...party.members
-            .where((member) => member.id.isNotEmpty)
-            .map((member) => member.id),
-      };
-      return memberIds.length > 1;
-    })();
+    context.watch<PartyProvider>().party;
+    final hasPartyMapStrip = authUser != null;
     final hasTrackedQuestOverlay = questLog.quests.any(
       (quest) => questLog.trackedQuestIds.contains(quest.id),
     );

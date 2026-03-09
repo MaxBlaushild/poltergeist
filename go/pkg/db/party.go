@@ -117,44 +117,43 @@ func (h *partyHandle) SetLeaderAdmin(ctx context.Context, partyID uuid.UUID, lea
 }
 
 func (h *partyHandle) LeaveParty(ctx context.Context, user *models.User) error {
-	var party models.Party
-	if err := h.db.WithContext(ctx).Where("id = ?", user.PartyID).First(&party).Error; err != nil {
-		return err
-	}
+	partyID := user.PartyID
 
-	if party.LeaderID == user.ID {
-		partyMembers := []models.User{}
-		if err := h.db.WithContext(ctx).Where("party_id = ?", user.PartyID).Find(&partyMembers).Error; err != nil {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var party models.Party
+		if err := tx.Where("id = ?", partyID).First(&party).Error; err != nil {
 			return err
 		}
 
-		var remainingMembers []models.User
+		var partyMembers []models.User
+		if err := tx.Where("party_id = ?", partyID).Find(&partyMembers).Error; err != nil {
+			return err
+		}
+
+		remainingMembers := make([]models.User, 0, len(partyMembers))
 		for _, member := range partyMembers {
-			if member.ID != user.ID {
-				remainingMembers = append(remainingMembers, member)
+			if member.ID == user.ID {
+				continue
 			}
+			remainingMembers = append(remainingMembers, member)
 		}
 
-		if len(remainingMembers) == 0 {
-			// Clear the user's party ID first
-			if err := h.db.WithContext(ctx).Model(user).Update("party_id", nil).Error; err != nil {
+		if len(remainingMembers) <= 1 {
+			if err := tx.Model(&models.User{}).Where("party_id = ?", partyID).Update("party_id", nil).Error; err != nil {
 				return err
 			}
-			// Now delete the party
-			if err := h.db.WithContext(ctx).Where("id = ?", user.PartyID).Delete(&models.Party{}).Error; err != nil {
+			return tx.Where("id = ?", partyID).Delete(&models.Party{}).Error
+		}
+
+		if party.LeaderID == user.ID {
+			newLeader := remainingMembers[rand.Intn(len(remainingMembers))]
+			if err := tx.Model(&models.Party{}).Where("id = ?", partyID).Update("leader_id", newLeader.ID).Error; err != nil {
 				return err
 			}
-			return nil
 		}
 
-		newLeader := remainingMembers[rand.Intn(len(remainingMembers))]
-		if err := h.db.WithContext(ctx).Model(&models.Party{}).Where("id = ?", user.PartyID).Update("leader_id", newLeader.ID).Error; err != nil {
-			return err
-		}
-	}
-
-	// Clear the user's party ID when leaving
-	return h.db.WithContext(ctx).Model(user).Update("party_id", nil).Error
+		return tx.Model(&models.User{}).Where("id = ?", user.ID).Update("party_id", nil).Error
+	})
 }
 
 func (h *partyHandle) AddMember(ctx context.Context, partyID uuid.UUID, userID uuid.UUID) error {

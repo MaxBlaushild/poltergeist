@@ -833,10 +833,6 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final rarityAccent = inventoryItem == null
         ? null
         : _rarityAccentColor(inventoryItem.rarityTier);
-    final combatSummary = inventoryItem == null
-        ? null
-        : _equipmentCombatSummary(inventoryItem);
-
     void handleTap() {
       if (entry == null || inventoryItem == null) return;
       OwnedInventoryItem? owned;
@@ -913,17 +909,6 @@ class _InventoryPanelState extends State<InventoryPanel> {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  if (combatSummary != null) const SizedBox(height: 2),
-                  if (combatSummary != null)
-                    Text(
-                      combatSummary,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -1042,7 +1027,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    _slotLabel(equipped.slot),
+                    'Equipped',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
@@ -1455,33 +1440,6 @@ class _InventoryPanelState extends State<InventoryPanel> {
       );
     }
     return chips;
-  }
-
-  String? _equipmentCombatSummary(InventoryItem inv) {
-    final parts = <String>[];
-    if (inv.damageMin != null && inv.damageMax != null) {
-      final swipes = inv.swipesPerAttack != null && inv.swipesPerAttack! > 0
-          ? inv.swipesPerAttack!
-          : 1;
-      parts.add(
-        'DMG ${inv.damageMin}-${inv.damageMax} · $swipes swipe${swipes == 1 ? '' : 's'}',
-      );
-    }
-    if (inv.blockPercentage != null && inv.blockPercentage! > 0) {
-      var block = 'Block ${inv.blockPercentage}%';
-      if (inv.damageBlocked != null && inv.damageBlocked! > 0) {
-        block = '$block up to ${inv.damageBlocked}';
-      }
-      parts.add(block);
-    } else if (inv.damageBlocked != null && inv.damageBlocked! > 0) {
-      parts.add('Block ${inv.damageBlocked}');
-    }
-    if (inv.spellDamageBonusPercent != null &&
-        inv.spellDamageBonusPercent! > 0) {
-      parts.add('Spell +${inv.spellDamageBonusPercent}%');
-    }
-    if (parts.isEmpty) return null;
-    return parts.join(' · ');
   }
 
   String _formatHandCategory(String value) {

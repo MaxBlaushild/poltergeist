@@ -1,20 +1,28 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/models"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 )
 
 const tutorialScenarioFallbackImageURL = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png"
 
 type tutorialOptionPayload struct {
-	OptionText string `json:"optionText"`
-	StatTag    string `json:"statTag"`
+	OptionText       string                       `json:"optionText"`
+	StatTag          string                       `json:"statTag"`
+	Difficulty       int                          `json:"difficulty"`
+	RewardExperience int                          `json:"rewardExperience"`
+	RewardGold       int                          `json:"rewardGold"`
+	ItemRewards      []scenarioRewardItemPayload  `json:"itemRewards"`
+	SpellRewards     []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
 type tutorialConfigRequest struct {
@@ -36,6 +44,14 @@ type tutorialStatusResponse struct {
 	ScenarioID          *uuid.UUID        `json:"scenarioId,omitempty"`
 	Character           *models.Character `json:"character,omitempty"`
 	Dialogue            []string          `json:"dialogue"`
+}
+
+type activateTutorialRequest struct {
+	Force bool `json:"force"`
+}
+
+type generateTutorialImageRequest struct {
+	ScenarioPrompt string `json:"scenarioPrompt"`
 }
 
 func (s *server) getTutorialConfig(ctx *gin.Context) {
@@ -60,6 +76,14 @@ func (s *server) updateTutorialConfig(ctx *gin.Context) {
 		return
 	}
 
+	existing, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	config.ImageGenerationStatus = existing.ImageGenerationStatus
+	config.ImageGenerationError = existing.ImageGenerationError
+
 	updated, err := s.dbClient.Tutorial().UpsertConfig(ctx, config)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -68,10 +92,83 @@ func (s *server) updateTutorialConfig(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, updated)
 }
 
+func (s *server) generateTutorialImage(ctx *gin.Context) {
+	if _, err := s.getAuthenticatedUser(ctx); err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	if s.asyncClient == nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "image generation is not configured"})
+		return
+	}
+
+	var requestBody generateTutorialImageRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scenarioPrompt := strings.TrimSpace(requestBody.ScenarioPrompt)
+	if scenarioPrompt == "" {
+		config, err := s.dbClient.Tutorial().GetConfig(ctx)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		scenarioPrompt = strings.TrimSpace(config.ScenarioPrompt)
+	}
+	if scenarioPrompt == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "scenarioPrompt is required"})
+		return
+	}
+
+	config, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	config.ImageGenerationStatus = models.TutorialImageGenerationStatusQueued
+	config.ImageGenerationError = nil
+	updated, err := s.dbClient.Tutorial().UpsertConfig(ctx, config)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	payloadBytes, err := json.Marshal(jobs.GenerateTutorialImageTaskPayload{
+		ScenarioPrompt: scenarioPrompt,
+	})
+	if err != nil {
+		errMsg := err.Error()
+		updated.ImageGenerationStatus = models.TutorialImageGenerationStatusFailed
+		updated.ImageGenerationError = &errMsg
+		_, _ = s.dbClient.Tutorial().UpsertConfig(ctx, updated)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.GenerateTutorialImageTaskType, payloadBytes)); err != nil {
+		errMsg := err.Error()
+		updated.ImageGenerationStatus = models.TutorialImageGenerationStatusFailed
+		updated.ImageGenerationError = &errMsg
+		_, _ = s.dbClient.Tutorial().UpsertConfig(ctx, updated)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusAccepted, updated)
+}
+
 func (s *server) getTutorialStatus(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	config, err := s.dbClient.Tutorial().GetConfig(ctx)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -83,14 +180,9 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 	if state == nil {
 		ctx.JSON(http.StatusOK, tutorialStatusResponse{
 			ShowWelcomeDialogue: false,
-			Dialogue:            []string{},
+			Character:           config.Character,
+			Dialogue:            append([]string{}, config.Dialogue...),
 		})
-		return
-	}
-
-	config, err := s.dbClient.Tutorial().GetConfig(ctx)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -110,6 +202,12 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 }
 
 func (s *server) activateTutorial(ctx *gin.Context) {
+	var requestBody activateTutorialRequest
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -123,6 +221,10 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 	}
 	if !config.IsConfigured() || config.Character == nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "tutorial is not configured"})
+		return
+	}
+	if err := s.dbClient.Tutorial().InitializeForNewUser(ctx, user.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -149,14 +251,14 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		imageURL = tutorialScenarioFallbackImageURL
 	}
 
-	itemRewards, optionItemRewards := tutorialScenarioItemRewards(config.ItemRewards)
-	spellRewards, optionSpellRewards := tutorialScenarioSpellRewards(config.SpellRewards)
+	fallbackOptionItemRewards := tutorialScenarioItemRewards(config.ItemRewards)
+	fallbackOptionSpellRewards := tutorialScenarioSpellRewards(config.SpellRewards)
 	options := tutorialScenarioOptions(
 		config.Options,
 		config.RewardExperience,
 		config.RewardGold,
-		optionItemRewards,
-		optionSpellRewards,
+		fallbackOptionItemRewards,
+		fallbackOptionSpellRewards,
 	)
 
 	state, scenario, err := s.dbClient.Tutorial().ActivateForUser(
@@ -174,13 +276,15 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 			ScaleWithUserLevel: false,
 			RewardMode:         models.RewardModeExplicit,
 			Difficulty:         0,
-			RewardExperience:   config.RewardExperience,
-			RewardGold:         config.RewardGold,
+			RewardExperience:   0,
+			RewardGold:         0,
 			OpenEnded:          false,
+			SuccessRewardMode:  models.ScenarioSuccessRewardModeIndividual,
 		},
 		options,
-		itemRewards,
-		spellRewards,
+		nil,
+		nil,
+		requestBody.Force,
 	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -244,9 +348,26 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 		if !ok {
 			return nil, fmt.Errorf("options[%d].statTag is invalid", idx)
 		}
+		rewardExperience := option.RewardExperience
+		if rewardExperience < 0 {
+			rewardExperience = 0
+		}
+		rewardGold := option.RewardGold
+		if rewardGold < 0 {
+			rewardGold = 0
+		}
+		difficulty := option.Difficulty
+		if difficulty < 0 {
+			difficulty = 0
+		}
 		config.Options = append(config.Options, models.TutorialScenarioOption{
-			OptionText: optionText,
-			StatTag:    statTag,
+			OptionText:       optionText,
+			StatTag:          statTag,
+			Difficulty:       difficulty,
+			RewardExperience: rewardExperience,
+			RewardGold:       rewardGold,
+			ItemRewards:      parseTutorialItemRewardPayloads(option.ItemRewards),
+			SpellRewards:     parseTutorialSpellRewardPayloads(option.SpellRewards),
 		})
 	}
 
@@ -283,64 +404,93 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	return config, nil
 }
 
-func tutorialScenarioItemRewards(input []models.TutorialItemReward) ([]models.ScenarioItemReward, []models.ScenarioItemReward) {
-	scenarioRewards := make([]models.ScenarioItemReward, 0, len(input))
-	optionRewards := make([]models.ScenarioItemReward, 0, len(input))
+func tutorialScenarioItemRewards(input []models.TutorialItemReward) []models.ScenarioOptionItemReward {
+	optionRewards := make([]models.ScenarioOptionItemReward, 0, len(input))
 	for _, reward := range input {
-		scenarioRewards = append(scenarioRewards, models.ScenarioItemReward{
-			InventoryItemID: reward.InventoryItemID,
-			Quantity:        reward.Quantity,
-		})
-		optionRewards = append(optionRewards, models.ScenarioItemReward{
+		optionRewards = append(optionRewards, models.ScenarioOptionItemReward{
 			InventoryItemID: reward.InventoryItemID,
 			Quantity:        reward.Quantity,
 		})
 	}
-	return scenarioRewards, optionRewards
+	return optionRewards
 }
 
-func tutorialScenarioSpellRewards(input []models.TutorialSpellReward) ([]models.ScenarioSpellReward, []models.ScenarioSpellReward) {
-	scenarioRewards := make([]models.ScenarioSpellReward, 0, len(input))
-	optionRewards := make([]models.ScenarioSpellReward, 0, len(input))
+func tutorialScenarioSpellRewards(input []models.TutorialSpellReward) []models.ScenarioOptionSpellReward {
+	optionRewards := make([]models.ScenarioOptionSpellReward, 0, len(input))
 	for _, reward := range input {
 		spellID, err := uuid.Parse(strings.TrimSpace(reward.SpellID))
 		if err != nil {
 			continue
 		}
-		scenarioRewards = append(scenarioRewards, models.ScenarioSpellReward{
-			SpellID: spellID,
-		})
-		optionRewards = append(optionRewards, models.ScenarioSpellReward{
+		optionRewards = append(optionRewards, models.ScenarioOptionSpellReward{
 			SpellID: spellID,
 		})
 	}
-	return scenarioRewards, optionRewards
+	return optionRewards
 }
 
 func tutorialScenarioOptions(
 	input []models.TutorialScenarioOption,
-	rewardExperience int,
-	rewardGold int,
-	itemRewards []models.ScenarioItemReward,
-	spellRewards []models.ScenarioSpellReward,
+	fallbackRewardExperience int,
+	fallbackRewardGold int,
+	itemRewards []models.ScenarioOptionItemReward,
+	spellRewards []models.ScenarioOptionSpellReward,
 ) []models.ScenarioOption {
 	options := make([]models.ScenarioOption, 0, len(input))
 	for _, option := range input {
+		difficulty := option.Difficulty
+		rewardExperience := option.RewardExperience
+		rewardGold := option.RewardGold
+		optionItemRewards := tutorialScenarioOptionItemRewards(option.ItemRewards)
+		optionSpellRewards := tutorialScenarioOptionSpellRewards(option.SpellRewards)
+		if tutorialOptionUsesLegacySharedRewards(option) {
+			rewardExperience = fallbackRewardExperience
+			rewardGold = fallbackRewardGold
+			optionItemRewards = cloneScenarioOptionItemRewards(itemRewards)
+			optionSpellRewards = cloneScenarioOptionSpellRewards(spellRewards)
+		}
 		options = append(options, models.ScenarioOption{
 			OptionText:       option.OptionText,
 			SuccessText:      "You step out ready for what comes next.",
 			FailureText:      "You hesitate, and the moment slips away.",
 			StatTag:          option.StatTag,
+			Difficulty:       &difficulty,
 			RewardExperience: rewardExperience,
 			RewardGold:       rewardGold,
-			ItemRewards:      cloneScenarioOptionItemRewards(itemRewards),
-			SpellRewards:     cloneScenarioOptionSpellRewards(spellRewards),
+			ItemRewards:      optionItemRewards,
+			SpellRewards:     optionSpellRewards,
 		})
 	}
 	return options
 }
 
-func cloneScenarioOptionItemRewards(input []models.ScenarioItemReward) []models.ScenarioOptionItemReward {
+func parseTutorialItemRewardPayloads(input []scenarioRewardItemPayload) []models.TutorialItemReward {
+	out := make([]models.TutorialItemReward, 0, len(input))
+	for _, reward := range input {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		out = append(out, models.TutorialItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func parseTutorialSpellRewardPayloads(input []scenarioRewardSpellPayload) []models.TutorialSpellReward {
+	out := make([]models.TutorialSpellReward, 0, len(input))
+	for _, reward := range input {
+		spellID := strings.TrimSpace(reward.SpellID)
+		if spellID == "" {
+			continue
+		}
+		out = append(out, models.TutorialSpellReward{SpellID: spellID})
+	}
+	return out
+}
+
+func tutorialScenarioOptionItemRewards(input []models.TutorialItemReward) []models.ScenarioOptionItemReward {
 	out := make([]models.ScenarioOptionItemReward, 0, len(input))
 	for _, reward := range input {
 		out = append(out, models.ScenarioOptionItemReward{
@@ -351,7 +501,39 @@ func cloneScenarioOptionItemRewards(input []models.ScenarioItemReward) []models.
 	return out
 }
 
-func cloneScenarioOptionSpellRewards(input []models.ScenarioSpellReward) []models.ScenarioOptionSpellReward {
+func tutorialScenarioOptionSpellRewards(input []models.TutorialSpellReward) []models.ScenarioOptionSpellReward {
+	out := make([]models.ScenarioOptionSpellReward, 0, len(input))
+	for _, reward := range input {
+		spellID, err := uuid.Parse(strings.TrimSpace(reward.SpellID))
+		if err != nil {
+			continue
+		}
+		out = append(out, models.ScenarioOptionSpellReward{
+			SpellID: spellID,
+		})
+	}
+	return out
+}
+
+func tutorialOptionUsesLegacySharedRewards(option models.TutorialScenarioOption) bool {
+	return option.RewardExperience == 0 &&
+		option.RewardGold == 0 &&
+		len(option.ItemRewards) == 0 &&
+		len(option.SpellRewards) == 0
+}
+
+func cloneScenarioOptionItemRewards(input []models.ScenarioOptionItemReward) []models.ScenarioOptionItemReward {
+	out := make([]models.ScenarioOptionItemReward, 0, len(input))
+	for _, reward := range input {
+		out = append(out, models.ScenarioOptionItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func cloneScenarioOptionSpellRewards(input []models.ScenarioOptionSpellReward) []models.ScenarioOptionSpellReward {
 	out := make([]models.ScenarioOptionSpellReward, 0, len(input))
 	for _, reward := range input {
 		out = append(out, models.ScenarioOptionSpellReward{

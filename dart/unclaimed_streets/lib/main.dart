@@ -31,6 +31,7 @@ import 'providers/discoveries_provider.dart';
 import 'providers/inventory_modal_provider.dart';
 import 'providers/log_provider.dart';
 import 'providers/tags_provider.dart';
+import 'providers/tutorial_replay_provider.dart';
 import 'providers/quest_log_provider.dart';
 import 'providers/quest_filter_provider.dart';
 import 'providers/zone_provider.dart';
@@ -83,6 +84,7 @@ class SonarApp extends StatelessWidget {
     final discoveriesProvider = DiscoveriesProvider(poiService, authProvider);
     final mapFocusProvider = MapFocusProvider();
     final userLevelProvider = UserLevelProvider(userLevelService, authProvider);
+    final tutorialReplayProvider = TutorialReplayProvider();
 
     apiClient.setOnAuthError(() {
       authProvider.logout();
@@ -139,6 +141,9 @@ class SonarApp extends StatelessWidget {
           value: discoveriesProvider,
         ),
         ChangeNotifierProvider<MapFocusProvider>.value(value: mapFocusProvider),
+        ChangeNotifierProvider<TutorialReplayProvider>.value(
+          value: tutorialReplayProvider,
+        ),
         ChangeNotifierProvider<UserLevelProvider>.value(
           value: userLevelProvider,
         ),

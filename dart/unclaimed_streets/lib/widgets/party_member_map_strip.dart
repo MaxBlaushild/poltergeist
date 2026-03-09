@@ -236,15 +236,14 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
     return Consumer3<AuthProvider, PartyProvider, CharacterStatsProvider>(
       builder: (context, auth, partyProvider, statsProvider, _) {
         final currentUser = auth.user;
-        final party = partyProvider.party;
-        if (currentUser == null || party == null) {
+        if (currentUser == null) {
           return const SizedBox.shrink();
         }
 
-        final members = _combinedMembers(currentUser, party);
-        if (members.length <= 1) {
-          return const SizedBox.shrink();
-        }
+        final party = partyProvider.party;
+        final members = party == null
+            ? <User>[currentUser]
+            : _combinedMembers(currentUser, party);
 
         _scheduleProfileSync(members, currentUser.id);
 
@@ -255,9 +254,32 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
           statsProvider,
           currentUser.id,
         );
-        final containerWidth = _expanded ? 360.0 : 102.0;
+        final extraMembers = members.skip(1).toList(growable: false);
+        final hasExpandableParty = extraMembers.isNotEmpty;
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        const tileWidth = 58.0;
+        const tileGap = 10.0;
+        const toggleGap = 2.0;
+        const toggleWidth = 26.0;
+        const horizontalPadding = 12.0;
+        final closedWidth =
+            tileWidth +
+            (hasExpandableParty ? toggleGap + toggleWidth : 0.0) +
+            horizontalPadding;
+        final expandedWidth =
+            tileWidth * members.length +
+            tileGap * extraMembers.length +
+            (hasExpandableParty ? toggleGap + toggleWidth : 0.0) +
+            horizontalPadding;
+        final maxAllowedWidth = (screenWidth - 32.0).clamp(
+          closedWidth,
+          expandedWidth,
+        );
+        final containerWidth = _expanded && hasExpandableParty
+            ? maxAllowedWidth
+            : closedWidth;
         return ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
+          constraints: BoxConstraints(maxWidth: maxAllowedWidth),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 240),
             curve: Curves.easeInOut,
@@ -275,7 +297,7 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
               ],
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 physics: _expanded
@@ -285,7 +307,7 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
                   children: [
                     _PartyMemberThumbnail(
                       member: currentMember,
-                      isLeader: currentMember.id == party.leaderId,
+                      isLeader: currentMember.id == party?.leaderId,
                       isCurrentUser: true,
                       isLoading: false,
                       resources: currentMemberResources,
@@ -295,43 +317,53 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
                         currentUser.id,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    _AccordionToggleButton(
-                      expanded: _expanded,
-                      onTap: _toggleExpanded,
-                    ),
                     AnimatedCrossFade(
                       firstChild: const SizedBox.shrink(),
                       secondChild: Row(
                         children: [
                           const SizedBox(width: 10),
-                          for (final member in members.skip(1)) ...[
+                          for (
+                            var index = 0;
+                            index < extraMembers.length;
+                            index++
+                          ) ...[
                             _PartyMemberThumbnail(
-                              member: member,
-                              isLeader: member.id == party.leaderId,
+                              member: extraMembers[index],
+                              isLeader:
+                                  extraMembers[index].id == party?.leaderId,
                               isCurrentUser: false,
-                              isLoading: _loadingProfileIds.contains(member.id),
+                              isLoading: _loadingProfileIds.contains(
+                                extraMembers[index].id,
+                              ),
                               resources: _resourcesForMember(
-                                member,
+                                extraMembers[index],
                                 statsProvider,
                                 currentUser.id,
                               ),
                               onTap: () => _openMemberProfile(
                                 context,
-                                member,
+                                extraMembers[index],
                                 currentUser.id,
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            if (index < extraMembers.length - 1)
+                              const SizedBox(width: 10),
                           ],
                         ],
                       ),
-                      crossFadeState: _expanded
+                      crossFadeState: _expanded && hasExpandableParty
                           ? CrossFadeState.showSecond
                           : CrossFadeState.showFirst,
                       duration: const Duration(milliseconds: 180),
                       sizeCurve: Curves.easeInOut,
                     ),
+                    if (hasExpandableParty) ...[
+                      const SizedBox(width: 2),
+                      _AccordionToggleButton(
+                        expanded: _expanded,
+                        onTap: _toggleExpanded,
+                      ),
+                    ],
                   ],
                 ),
               ),

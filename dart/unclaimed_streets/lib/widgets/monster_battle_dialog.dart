@@ -194,6 +194,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _lastPartyMonsterHealthDeficit = -1;
   int _pendingLocalDamage = 0;
   bool _partySelfResourceSyncInFlight = false;
+  final Map<String, int> _techniqueAvailableOnTurn = <String, int>{};
+  int _selfTurnSequence = 0;
 
   bool _isBattleStatusNotFoundError(Object error) {
     if (error is DioException) {
@@ -318,6 +320,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         });
         unawaited(_syncPartyBattleState());
       }
+    }
+    if (!widget.isPartyBattle && _playerTurn) {
+      _beginSelfTurn();
     }
     unawaited(_loadItemChoices());
   }
@@ -449,6 +454,44 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return current != null && current.isAlly && !current.isSelf;
   }
 
+  void _beginSelfTurn() {
+    _selfTurnSequence += 1;
+  }
+
+  int _techniqueCooldownRemaining(Spell technique) {
+    final id = technique.id.trim();
+    if (id.isEmpty) return 0;
+    final availableOnTurn = _techniqueAvailableOnTurn[id];
+    if (availableOnTurn == null) return 0;
+    return math.max(0, availableOnTurn - _selfTurnSequence);
+  }
+
+  bool _isTechniqueOnCooldown(Spell technique) =>
+      _techniqueCooldownRemaining(technique) > 0;
+
+  void _setTechniqueCooldown(Spell technique) {
+    final id = technique.id.trim();
+    if (id.isEmpty) return;
+    final cooldownTurns = math.max(0, technique.cooldownTurns);
+    if (cooldownTurns <= 0) {
+      _techniqueAvailableOnTurn.remove(id);
+      return;
+    }
+    _techniqueAvailableOnTurn[id] = _selfTurnSequence + cooldownTurns + 1;
+  }
+
+  String _formatTechniqueLabel(Spell technique) {
+    final remaining = _techniqueCooldownRemaining(technique);
+    if (remaining > 0) {
+      return '${technique.name} (${remaining}t)';
+    }
+    final cooldownTurns = math.max(0, technique.cooldownTurns);
+    if (cooldownTurns > 0) {
+      return '${technique.name} (CD ${cooldownTurns}t)';
+    }
+    return technique.name;
+  }
+
   void _advancePartyTurn() {
     if (!widget.isPartyBattle || _partyTurnOrder.isEmpty) return;
     final total = _partyTurnOrder.length;
@@ -468,6 +511,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final wasSelfTurn = _playerTurn;
     final isSelfTurn = !_battleOver && _isPartySelfTurn() && _playerHealth > 0;
     _playerTurn = isSelfTurn;
+    if (!wasSelfTurn && isSelfTurn) {
+      _beginSelfTurn();
+    }
     if (announce && !wasSelfTurn && isSelfTurn && !_busy) {
       _battleLog.add('Your turn. Choose a command.');
     }
@@ -1661,9 +1707,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
 
     setState(() {
+      final wasPlayerTurn = _playerTurn;
       _actingEnemyIndex = null;
       _busy = false;
       _playerTurn = _playerHealth > 0;
+      if (!wasPlayerTurn && _playerTurn) {
+        _beginSelfTurn();
+      }
       _ensureSelectedEnemyIsAlive();
       _selectedCommandKey = 'root:Attack';
       _battleLog.add(
@@ -1958,6 +2008,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   Future<void> _useAbility(Spell ability) async {
     if (!_canAct) return;
+    if (_isTechnique(ability) && _isTechniqueOnCooldown(ability)) {
+      final remaining = _techniqueCooldownRemaining(ability);
+      setState(() {
+        _battleLog.add(
+          '${ability.name} is on cooldown for $remaining more turn${remaining == 1 ? '' : 's'}.',
+        );
+        _menuView = _BattleMenuView.root;
+      });
+      return;
+    }
     final manaCost = _isTechnique(ability) ? 0 : math.max(0, ability.manaCost);
     if (manaCost > _playerMana) {
       setState(() {
@@ -2056,6 +2116,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         _playerMana = math.max(0, statsProvider.mana);
         _syncSelfAllyFromLocalResources();
       }
+    }
+    if (_isTechnique(ability)) {
+      _setTechniqueCooldown(ability);
     }
     await _resolvePlayerAction(
       message: parts.join(', '),
@@ -3091,11 +3154,14 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               .map((entry) {
                 final index = entry.key;
                 final technique = entry.value;
+                final onCooldown = _isTechniqueOnCooldown(technique);
                 return _buildCommandButton(
                   context: context,
-                  label: technique.name,
+                  label: _formatTechniqueLabel(technique),
                   commandKey: 'technique:$index',
-                  onPressed: _canAct ? () => _useAbility(technique) : null,
+                  onPressed: _canAct && !onCooldown
+                      ? () => _useAbility(technique)
+                      : null,
                 );
               })
               .toList(growable: false),

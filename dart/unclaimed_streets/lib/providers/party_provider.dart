@@ -20,12 +20,31 @@ class PartyProvider with ChangeNotifier {
   bool get loading => _loading;
   Object? get error => _error;
 
+  bool _isSoloParty(Party party) {
+    final memberIds = <String>{};
+    if (party.leader.id.isNotEmpty) {
+      memberIds.add(party.leader.id);
+    }
+    for (final member in party.members) {
+      if (member.id.isNotEmpty) {
+        memberIds.add(member.id);
+      }
+    }
+    return memberIds.length <= 1;
+  }
+
   Future<void> fetchParty() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      _party = await _partyService.getParty();
+      final party = await _partyService.getParty();
+      if (party != null && _isSoloParty(party)) {
+        await _partyService.leaveParty();
+        _party = null;
+      } else {
+        _party = party;
+      }
     } catch (e) {
       _party = null;
       _error = e;

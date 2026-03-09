@@ -232,10 +232,11 @@ class PoiService {
     }
   }
 
-  Future<Scenario?> activateTutorial() async {
+  Future<Scenario?> activateTutorial({bool force = false}) async {
     try {
       final raw = await _api.post<Map<String, dynamic>>(
         '/sonar/tutorial/activate',
+        data: {'force': force},
       );
       return Scenario.fromJson(raw);
     } catch (_) {

@@ -46,6 +46,7 @@ export interface Spell {
     iconUrl: string;
     abilityType?: 'spell' | 'technique' | string;
     abilityLevel?: number;
+    cooldownTurns?: number;
     imageGenerationStatus?: string;
     imageGenerationError?: string | null;
     effectText: string;

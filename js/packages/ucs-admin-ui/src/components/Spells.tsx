@@ -32,6 +32,7 @@ type SpellFormState = {
   iconUrl: string;
   abilityType: 'spell' | 'technique';
   abilityLevel: string;
+  cooldownTurns: string;
   effectText: string;
   schoolOfMagic: string;
   manaCost: string;
@@ -140,6 +141,7 @@ const emptyForm = (): SpellFormState => ({
   iconUrl: '',
   abilityType: 'spell',
   abilityLevel: '1',
+  cooldownTurns: '0',
   effectText: '',
   schoolOfMagic: '',
   manaCost: '0',
@@ -153,9 +155,14 @@ const parseIntSafe = (value: string, fallback = 0): number => {
 
 const DEFAULT_BULK_ABILITY_COUNT = '8';
 
-const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => {
+const buildSuggestedBulkEffectCounts = (
+  total: number
+): BulkEffectCountsForm => {
   const clamped = Math.max(1, total);
-  const weightedTypes: Array<{ key: keyof BulkEffectCountsPayload; weight: number }> = [
+  const weightedTypes: Array<{
+    key: keyof BulkEffectCountsPayload;
+    weight: number;
+  }> = [
     { key: 'dealDamage', weight: 35 },
     { key: 'dealDamageAllEnemies', weight: 15 },
     { key: 'restoreLifePartyMember', weight: 18 },
@@ -163,7 +170,10 @@ const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => 
     { key: 'applyBeneficialStatuses', weight: 12 },
     { key: 'removeDetrimentalStatuses', weight: 10 },
   ];
-  const totalWeight = weightedTypes.reduce((sum, entry) => sum + entry.weight, 0);
+  const totalWeight = weightedTypes.reduce(
+    (sum, entry) => sum + entry.weight,
+    0
+  );
   const entries = weightedTypes.map((entry) => ({
     key: entry.key,
     count: Math.floor((clamped * entry.weight) / totalWeight),
@@ -197,13 +207,30 @@ const buildSuggestedBulkEffectCounts = (total: number): BulkEffectCountsForm => 
   };
 };
 
-const parseBulkEffectCounts = (counts: BulkEffectCountsForm): BulkEffectCountsPayload => ({
+const parseBulkEffectCounts = (
+  counts: BulkEffectCountsForm
+): BulkEffectCountsPayload => ({
   dealDamage: Math.max(0, parseIntSafe(counts.dealDamage, 0)),
-  dealDamageAllEnemies: Math.max(0, parseIntSafe(counts.dealDamageAllEnemies, 0)),
-  restoreLifePartyMember: Math.max(0, parseIntSafe(counts.restoreLifePartyMember, 0)),
-  restoreLifeAllPartyMembers: Math.max(0, parseIntSafe(counts.restoreLifeAllPartyMembers, 0)),
-  applyBeneficialStatuses: Math.max(0, parseIntSafe(counts.applyBeneficialStatuses, 0)),
-  removeDetrimentalStatuses: Math.max(0, parseIntSafe(counts.removeDetrimentalStatuses, 0)),
+  dealDamageAllEnemies: Math.max(
+    0,
+    parseIntSafe(counts.dealDamageAllEnemies, 0)
+  ),
+  restoreLifePartyMember: Math.max(
+    0,
+    parseIntSafe(counts.restoreLifePartyMember, 0)
+  ),
+  restoreLifeAllPartyMembers: Math.max(
+    0,
+    parseIntSafe(counts.restoreLifeAllPartyMembers, 0)
+  ),
+  applyBeneficialStatuses: Math.max(
+    0,
+    parseIntSafe(counts.applyBeneficialStatuses, 0)
+  ),
+  removeDetrimentalStatuses: Math.max(
+    0,
+    parseIntSafe(counts.removeDetrimentalStatuses, 0)
+  ),
 });
 
 const parseStatusTemplate = (
@@ -249,7 +276,9 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     spell.effects?.length > 0
       ? spell.effects.map((effect) => {
           const rawType = (effect.type || '').toString().trim().toLowerCase();
-          const isKnown = knownEffectTypes.includes(rawType as (typeof knownEffectTypes)[number]);
+          const isKnown = knownEffectTypes.includes(
+            rawType as (typeof knownEffectTypes)[number]
+          );
           return {
             type: isKnown ? rawType : '__custom__',
             customType: isKnown ? '' : rawType,
@@ -285,9 +314,16 @@ const formFromSpell = (spell: Spell): SpellFormState => {
     iconUrl: spell.iconUrl ?? '',
     abilityType: spell.abilityType === 'technique' ? 'technique' : 'spell',
     abilityLevel: String(Math.max(1, spell.abilityLevel ?? 1)),
+    cooldownTurns: String(
+      spell.abilityType === 'technique'
+        ? Math.max(0, spell.cooldownTurns ?? 0)
+        : 0
+    ),
     effectText: spell.effectText ?? '',
     schoolOfMagic: spell.schoolOfMagic ?? '',
-    manaCost: String(spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)),
+    manaCost: String(
+      spell.abilityType === 'technique' ? 0 : (spell.manaCost ?? 0)
+    ),
     effects,
   };
 };
@@ -313,7 +349,7 @@ const payloadFromForm = (form: SpellFormState) => {
       amount: parseIntSafe(effect.amount, 0),
       damageAffinity:
         effectType === 'deal_damage' || effectType === 'deal_damage_all_enemies'
-          ? (effect.damageAffinity?.trim().toLowerCase() || 'physical')
+          ? effect.damageAffinity?.trim().toLowerCase() || 'physical'
           : undefined,
       statusesToApply,
       statusesToRemove,
@@ -327,9 +363,14 @@ const payloadFromForm = (form: SpellFormState) => {
     iconUrl: form.iconUrl.trim(),
     abilityType: form.abilityType,
     abilityLevel: Math.max(1, parseIntSafe(form.abilityLevel, 1)),
+    cooldownTurns:
+      form.abilityType === 'technique'
+        ? Math.max(0, parseIntSafe(form.cooldownTurns, 0))
+        : 0,
     effectText: form.effectText.trim(),
     schoolOfMagic: form.schoolOfMagic.trim(),
-    manaCost: form.abilityType === 'technique' ? 0 : parseIntSafe(form.manaCost, 0),
+    manaCost:
+      form.abilityType === 'technique' ? 0 : parseIntSafe(form.manaCost, 0),
     effects,
   };
 };
@@ -339,8 +380,11 @@ export const Spells = () => {
 
   const [loading, setLoading] = useState(true);
   const [spells, setSpells] = useState<Spell[]>([]);
-  const [generatingIconSpellId, setGeneratingIconSpellId] = useState<string | null>(null);
-  const [generatingProgressionSpellId, setGeneratingProgressionSpellId] = useState<string | null>(null);
+  const [generatingIconSpellId, setGeneratingIconSpellId] = useState<
+    string | null
+  >(null);
+  const [generatingProgressionSpellId, setGeneratingProgressionSpellId] =
+    useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -349,42 +393,59 @@ export const Spells = () => {
   const [form, setForm] = useState<SpellFormState>(emptyForm());
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [bulkAbilityCount, setBulkAbilityCount] = useState(DEFAULT_BULK_ABILITY_COUNT);
-  const [bulkAbilityTargetLevel, setBulkAbilityTargetLevel] = useState('25');
-  const [bulkAbilityType, setBulkAbilityType] = useState<'spell' | 'technique'>('spell');
-  const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
-  const [bulkAbilityJob, setBulkAbilityJob] = useState<BulkAbilityStatus | null>(null);
-  const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
-  const [bulkAbilityMessage, setBulkAbilityMessage] = useState<string | null>(null);
-  const [bulkEffectCounts, setBulkEffectCounts] = useState<BulkEffectCountsForm>(
-    buildSuggestedBulkEffectCounts(parseIntSafe(DEFAULT_BULK_ABILITY_COUNT, 8))
+  const [bulkAbilityCount, setBulkAbilityCount] = useState(
+    DEFAULT_BULK_ABILITY_COUNT
   );
+  const [bulkAbilityTargetLevel, setBulkAbilityTargetLevel] = useState('25');
+  const [bulkAbilityType, setBulkAbilityType] = useState<'spell' | 'technique'>(
+    'spell'
+  );
+  const [bulkAbilityBusy, setBulkAbilityBusy] = useState(false);
+  const [bulkAbilityJob, setBulkAbilityJob] =
+    useState<BulkAbilityStatus | null>(null);
+  const [bulkAbilityError, setBulkAbilityError] = useState<string | null>(null);
+  const [bulkAbilityMessage, setBulkAbilityMessage] = useState<string | null>(
+    null
+  );
+  const [bulkEffectCounts, setBulkEffectCounts] =
+    useState<BulkEffectCountsForm>(
+      buildSuggestedBulkEffectCounts(
+        parseIntSafe(DEFAULT_BULK_ABILITY_COUNT, 8)
+      )
+    );
   const [progressionPrompt, setProgressionPrompt] = useState('');
   const [progressionPromptAbilityType, setProgressionPromptAbilityType] =
     useState<'spell' | 'technique'>('spell');
   const [progressionPromptBusy, setProgressionPromptBusy] = useState(false);
-  const [progressionPromptError, setProgressionPromptError] = useState<string | null>(null);
-  const [progressionPromptMessage, setProgressionPromptMessage] = useState<string | null>(null);
+  const [progressionPromptError, setProgressionPromptError] = useState<
+    string | null
+  >(null);
+  const [progressionPromptMessage, setProgressionPromptMessage] = useState<
+    string | null
+  >(null);
   const [progressionPromptJob, setProgressionPromptJob] =
     useState<PromptSpellProgressionStatus | null>(null);
 
-  const load = useCallback(async (suppressLoading = false) => {
-    try {
-      if (!suppressLoading) {
-        setLoading(true);
+  const load = useCallback(
+    async (suppressLoading = false) => {
+      try {
+        if (!suppressLoading) {
+          setLoading(true);
+        }
+        setError(null);
+        const response = await apiClient.get<Spell[]>('/sonar/spells');
+        setSpells(Array.isArray(response) ? response : []);
+      } catch (err) {
+        console.error('Failed to load spells', err);
+        setError('Failed to load spells.');
+      } finally {
+        if (!suppressLoading) {
+          setLoading(false);
+        }
       }
-      setError(null);
-      const response = await apiClient.get<Spell[]>('/sonar/spells');
-      setSpells(Array.isArray(response) ? response : []);
-    } catch (err) {
-      console.error('Failed to load spells', err);
-      setError('Failed to load spells.');
-    } finally {
-      if (!suppressLoading) {
-        setLoading(false);
-      }
-    }
-  }, [apiClient]);
+    },
+    [apiClient]
+  );
 
   useEffect(() => {
     void load();
@@ -458,7 +519,10 @@ export const Spells = () => {
       const effects = [...prev.effects];
       effects[effectIndex] = {
         ...effects[effectIndex],
-        statusesToApply: [...effects[effectIndex].statusesToApply, emptyStatusTemplate()],
+        statusesToApply: [
+          ...effects[effectIndex].statusesToApply,
+          emptyStatusTemplate(),
+        ],
       };
       return { ...prev, effects };
     });
@@ -473,7 +537,10 @@ export const Spells = () => {
       const effects = [...prev.effects];
       const statuses = [...effects[effectIndex].statusesToApply];
       statuses[statusIndex] = { ...statuses[statusIndex], ...next };
-      effects[effectIndex] = { ...effects[effectIndex], statusesToApply: statuses };
+      effects[effectIndex] = {
+        ...effects[effectIndex],
+        statusesToApply: statuses,
+      };
       return { ...prev, effects };
     });
   };
@@ -483,7 +550,9 @@ export const Spells = () => {
       const effects = [...prev.effects];
       effects[effectIndex] = {
         ...effects[effectIndex],
-        statusesToApply: effects[effectIndex].statusesToApply.filter((_, index) => index !== statusIndex),
+        statusesToApply: effects[effectIndex].statusesToApply.filter(
+          (_, index) => index !== statusIndex
+        ),
       };
       return { ...prev, effects };
     });
@@ -498,8 +567,13 @@ export const Spells = () => {
       }
 
       if (editingSpell) {
-        const updated = await apiClient.put<Spell>(`/sonar/spells/${editingSpell.id}`, payload);
-        setSpells((prev) => prev.map((spell) => (spell.id === updated.id ? updated : spell)));
+        const updated = await apiClient.put<Spell>(
+          `/sonar/spells/${editingSpell.id}`,
+          payload
+        );
+        setSpells((prev) =>
+          prev.map((spell) => (spell.id === updated.id ? updated : spell))
+        );
       } else {
         const created = await apiClient.post<Spell>('/sonar/spells', payload);
         setSpells((prev) => [created, ...prev]);
@@ -507,7 +581,8 @@ export const Spells = () => {
       closeModal();
     } catch (err) {
       console.error('Failed to save spell', err);
-      const message = err instanceof Error ? err.message : 'Failed to save spell.';
+      const message =
+        err instanceof Error ? err.message : 'Failed to save spell.';
       alert(message);
     }
   };
@@ -527,8 +602,13 @@ export const Spells = () => {
   const handleGenerateIcon = async (spell: Spell) => {
     try {
       setGeneratingIconSpellId(spell.id);
-      const updated = await apiClient.post<Spell>(`/sonar/spells/${spell.id}/generate-icon`, {});
-      setSpells((prev) => prev.map((current) => (current.id === spell.id ? updated : current)));
+      const updated = await apiClient.post<Spell>(
+        `/sonar/spells/${spell.id}/generate-icon`,
+        {}
+      );
+      setSpells((prev) =>
+        prev.map((current) => (current.id === spell.id ? updated : current))
+      );
     } catch (err) {
       console.error('Failed to generate spell icon', err);
       alert('Failed to queue spell icon generation.');
@@ -544,18 +624,25 @@ export const Spells = () => {
         `/sonar/spells/${spell.id}/generate-progression`,
         {}
       );
-      const createdCount = typeof result?.createdCount === 'number' ? result.createdCount : 0;
+      const createdCount =
+        typeof result?.createdCount === 'number' ? result.createdCount : 0;
       if (createdCount > 0) {
-        setBulkAbilityMessage(`Generated ${createdCount} progression spell(s) from ${spell.name}.`);
+        setBulkAbilityMessage(
+          `Generated ${createdCount} progression spell(s) from ${spell.name}.`
+        );
       } else {
-        setBulkAbilityMessage(`No missing progression bands for ${spell.name}.`);
+        setBulkAbilityMessage(
+          `No missing progression bands for ${spell.name}.`
+        );
       }
       setBulkAbilityError(null);
       await load(true);
     } catch (err) {
       console.error('Failed to generate spell progression', err);
       setBulkAbilityError(
-        err instanceof Error ? err.message : 'Failed to generate spell progression.'
+        err instanceof Error
+          ? err.message
+          : 'Failed to generate spell progression.'
       );
     } finally {
       setGeneratingProgressionSpellId(null);
@@ -579,7 +666,8 @@ export const Spells = () => {
         } else if (status.status === 'failed') {
           setBulkAbilityBusy(false);
           setBulkAbilityError(
-            status.error || `Failed to generate ${status.abilityType === 'technique' ? 'techniques' : 'spells'}.`
+            status.error ||
+              `Failed to generate ${status.abilityType === 'technique' ? 'techniques' : 'spells'}.`
           );
         }
       } catch (err) {
@@ -596,14 +684,11 @@ export const Spells = () => {
           abilityType === 'technique'
             ? `/sonar/techniques/progression-generate/${jobId}/status`
             : `/sonar/spells/progression-generate/${jobId}/status`;
-        const status = await apiClient.get<PromptSpellProgressionStatus>(
-          path
-        );
+        const status = await apiClient.get<PromptSpellProgressionStatus>(path);
         setProgressionPromptJob(status);
-        const resolvedType =
-          (status.abilityType === 'technique' ? 'technique' : 'spell') as
-            | 'spell'
-            | 'technique';
+        const resolvedType = (
+          status.abilityType === 'technique' ? 'technique' : 'spell'
+        ) as 'spell' | 'technique';
         if (status.status === 'completed') {
           setProgressionPromptBusy(false);
           setProgressionPromptError(null);
@@ -619,7 +704,10 @@ export const Spells = () => {
           );
         }
       } catch (err) {
-        console.error('Failed to refresh spell progression prompt job status', err);
+        console.error(
+          'Failed to refresh spell progression prompt job status',
+          err
+        );
       }
     },
     [apiClient, load]
@@ -651,10 +739,9 @@ export const Spells = () => {
         path,
         { prompt: trimmedPrompt, abilityType }
       );
-      const resolvedType =
-        (response.abilityType === 'technique' ? 'technique' : abilityType) as
-          | 'spell'
-          | 'technique';
+      const resolvedType = (
+        response.abilityType === 'technique' ? 'technique' : abilityType
+      ) as 'spell' | 'technique';
       setProgressionPromptJob({ ...response, abilityType: resolvedType });
       if (response.status === 'completed') {
         setProgressionPromptBusy(false);
@@ -692,7 +779,10 @@ export const Spells = () => {
       return;
     }
     const effectCounts = parseBulkEffectCounts(bulkEffectCounts);
-    const totalConfiguredCount = Object.values(effectCounts).reduce((sum, value) => sum + value, 0);
+    const totalConfiguredCount = Object.values(effectCounts).reduce(
+      (sum, value) => sum + value,
+      0
+    );
     if (totalConfiguredCount !== count) {
       setBulkAbilityError(`Effect counts must add up to ${count}.`);
       return;
@@ -791,8 +881,13 @@ export const Spells = () => {
     }
     const interval = window.setInterval(() => {
       const abilityType =
-        progressionPromptJob.abilityType === 'technique' ? 'technique' : 'spell';
-      void refreshProgressionPromptJobStatus(progressionPromptJob.jobId, abilityType);
+        progressionPromptJob.abilityType === 'technique'
+          ? 'technique'
+          : 'spell';
+      void refreshProgressionPromptJobStatus(
+        progressionPromptJob.jobId,
+        abilityType
+      );
     }, 3000);
     return () => window.clearInterval(interval);
   }, [progressionPromptJob, refreshProgressionPromptJobStatus]);
@@ -804,7 +899,9 @@ export const Spells = () => {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h1 className="qa-card-title">Spells & Techniques</h1>
-              <p className="text-sm text-gray-600">Manage ability definitions and effect payloads.</p>
+              <p className="text-sm text-gray-600">
+                Manage ability definitions and effect payloads.
+              </p>
             </div>
             <div className="flex flex-wrap items-end gap-2">
               <label className="text-xs text-gray-600">
@@ -838,7 +935,9 @@ export const Spells = () => {
                   className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
                   value={bulkAbilityType}
                   onChange={(e) =>
-                    setBulkAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
+                    setBulkAbilityType(
+                      e.target.value === 'technique' ? 'technique' : 'spell'
+                    )
                   }
                 >
                   <option value="spell">Spells</option>
@@ -866,7 +965,10 @@ export const Spells = () => {
                 max={100}
                 value={bulkEffectCounts.dealDamage}
                 onChange={(e) =>
-                  setBulkEffectCounts((prev) => ({ ...prev, dealDamage: e.target.value }))
+                  setBulkEffectCounts((prev) => ({
+                    ...prev,
+                    dealDamage: e.target.value,
+                  }))
                 }
                 className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
               />
@@ -953,17 +1055,21 @@ export const Spells = () => {
             </label>
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            Configure exact counts per effect type. Total configured must equal the bulk count.
+            Configure exact counts per effect type. Total configured must equal
+            the bulk count.
           </p>
           <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
             <span>
-              Configured: {configuredEffectCountTotal}/{Number.parseInt(bulkAbilityCount, 10) || 0}
+              Configured: {configuredEffectCountTotal}/
+              {Number.parseInt(bulkAbilityCount, 10) || 0}
             </span>
             <button
               className="qa-btn qa-btn-secondary"
               onClick={() =>
                 setBulkEffectCounts(
-                  buildSuggestedBulkEffectCounts(Math.max(1, Number.parseInt(bulkAbilityCount, 10) || 1))
+                  buildSuggestedBulkEffectCounts(
+                    Math.max(1, Number.parseInt(bulkAbilityCount, 10) || 1)
+                  )
                 )
               }
               disabled={bulkAbilityBusy}
@@ -977,16 +1083,22 @@ export const Spells = () => {
                 {bulkAbilityJob.status.replace('_', ' ')}
               </span>
               <span>
-                Type: {bulkAbilityJob.abilityType === 'technique' ? 'Technique' : 'Spell'}
+                Type:{' '}
+                {bulkAbilityJob.abilityType === 'technique'
+                  ? 'Technique'
+                  : 'Spell'}
               </span>
               {typeof bulkAbilityJob.targetLevel === 'number' ? (
                 <span>Target Level: {bulkAbilityJob.targetLevel}</span>
               ) : null}
               <span>
-                Progress: {bulkAbilityJob.createdCount}/{bulkAbilityJob.totalCount}
+                Progress: {bulkAbilityJob.createdCount}/
+                {bulkAbilityJob.totalCount}
               </span>
               <span>Job: {bulkAbilityJob.jobId}</span>
-              {bulkAbilityJob.updatedAt ? <span>Updated: {bulkAbilityJob.updatedAt}</span> : null}
+              {bulkAbilityJob.updatedAt ? (
+                <span>Updated: {bulkAbilityJob.updatedAt}</span>
+              ) : null}
             </div>
           )}
           <div className="mt-4 border-t border-gray-200 pt-4">
@@ -994,7 +1106,8 @@ export const Spells = () => {
               Generate Full Progression From Prompt
             </div>
             <p className="mt-1 text-xs text-gray-600">
-              Describe one idea and generate linked level bands (10/25/50/70) for spells or techniques.
+              Describe one idea and generate linked level bands (10/25/50/70)
+              for spells or techniques.
             </p>
             <div className="mt-2">
               <label className="text-xs text-gray-600">
@@ -1003,7 +1116,9 @@ export const Spells = () => {
                   className="mt-1 rounded-md border border-gray-300 px-2 py-2 text-sm"
                   value={progressionPromptAbilityType}
                   onChange={(e) =>
-                    setProgressionPromptAbilityType(e.target.value === 'technique' ? 'technique' : 'spell')
+                    setProgressionPromptAbilityType(
+                      e.target.value === 'technique' ? 'technique' : 'spell'
+                    )
                   }
                   disabled={progressionPromptBusy}
                 >
@@ -1037,20 +1152,28 @@ export const Spells = () => {
               {progressionPromptJob ? (
                 <span className="text-xs text-gray-600">
                   Job {progressionPromptJob.jobId} ·{' '}
-                  {(progressionPromptJob.abilityType === 'technique' ? 'Technique' : 'Spell')} ·{' '}
-                  {progressionPromptJob.status.replace('_', ' ')}
+                  {progressionPromptJob.abilityType === 'technique'
+                    ? 'Technique'
+                    : 'Spell'}{' '}
+                  · {progressionPromptJob.status.replace('_', ' ')}
                 </span>
               ) : null}
             </div>
             {progressionPromptMessage ? (
-              <p className="mt-2 text-sm text-emerald-700">{progressionPromptMessage}</p>
+              <p className="mt-2 text-sm text-emerald-700">
+                {progressionPromptMessage}
+              </p>
             ) : null}
             {progressionPromptError ? (
-              <p className="mt-2 text-sm text-red-700">{progressionPromptError}</p>
+              <p className="mt-2 text-sm text-red-700">
+                {progressionPromptError}
+              </p>
             ) : null}
           </div>
           {bulkAbilityMessage ? (
-            <p className="mt-2 text-sm text-emerald-700">{bulkAbilityMessage}</p>
+            <p className="mt-2 text-sm text-emerald-700">
+              {bulkAbilityMessage}
+            </p>
           ) : null}
           {bulkAbilityError ? (
             <p className="mt-2 text-sm text-red-700">{bulkAbilityError}</p>
@@ -1083,31 +1206,54 @@ export const Spells = () => {
                       <div className="text-lg font-semibold">{spell.name}</div>
                       <div className="text-sm text-gray-600">
                         {(spell.abilityType ?? 'spell') === 'technique'
-                          ? `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Technique`
+                          ? `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Technique${(spell.cooldownTurns ?? 0) > 0 ? ` · Cooldown ${spell.cooldownTurns}t` : ''}`
                           : `${spell.schoolOfMagic} · Lvl ${Math.max(1, spell.abilityLevel ?? 1)} · Mana ${spell.manaCost}`}
                       </div>
                       <div className="text-xs text-gray-500 mt-1">
-                        Icon Status: {formatGenerationStatus(spell.imageGenerationStatus)}
+                        Icon Status:{' '}
+                        {formatGenerationStatus(spell.imageGenerationStatus)}
                       </div>
                       {progressionLink ? (
                         <div className="text-xs text-gray-500 mt-1">
-                          Spell Progression: {progressionLink.progression?.name ?? progressionLink.progressionId} ·
-                          {' '}Level Band {progressionLink.levelBand}
+                          Spell Progression:{' '}
+                          {progressionLink.progression?.name ??
+                            progressionLink.progressionId}{' '}
+                          · Level Band {progressionLink.levelBand}
                         </div>
                       ) : null}
-                      {spell.imageGenerationStatus === 'failed' && spell.imageGenerationError ? (
-                        <div className="text-xs text-red-600 mt-1">Error: {spell.imageGenerationError}</div>
+                      {spell.imageGenerationStatus === 'failed' &&
+                      spell.imageGenerationError ? (
+                        <div className="text-xs text-red-600 mt-1">
+                          Error: {spell.imageGenerationError}
+                        </div>
                       ) : null}
                     </div>
                     {spell.iconUrl ? (
-                      <img src={spell.iconUrl} alt={spell.name} className="w-12 h-12 rounded-md object-cover border" />
+                      <img
+                        src={spell.iconUrl}
+                        alt={spell.name}
+                        className="w-12 h-12 rounded-md object-cover border"
+                      />
                     ) : null}
                   </div>
-                  {spell.description ? <p className="text-sm text-gray-700 mt-3">{spell.description}</p> : null}
-                  {spell.effectText ? <p className="text-sm text-gray-700 mt-2">{spell.effectText}</p> : null}
-                  <div className="text-xs text-gray-500 mt-2">Effects: {spell.effects?.length ?? 0}</div>
+                  {spell.description ? (
+                    <p className="text-sm text-gray-700 mt-3">
+                      {spell.description}
+                    </p>
+                  ) : null}
+                  {spell.effectText ? (
+                    <p className="text-sm text-gray-700 mt-2">
+                      {spell.effectText}
+                    </p>
+                  ) : null}
+                  <div className="text-xs text-gray-500 mt-2">
+                    Effects: {spell.effects?.length ?? 0}
+                  </div>
                   <div className="flex items-center gap-2 mt-4">
-                    <button className="qa-btn qa-btn-secondary" onClick={() => openEdit(spell)}>
+                    <button
+                      className="qa-btn qa-btn-secondary"
+                      onClick={() => openEdit(spell)}
+                    >
                       Edit
                     </button>
                     <button
@@ -1115,10 +1261,14 @@ export const Spells = () => {
                       onClick={() => handleGenerateIcon(spell)}
                       disabled={
                         generatingIconSpellId === spell.id ||
-                        ['queued', 'in_progress'].includes(spell.imageGenerationStatus || '')
+                        ['queued', 'in_progress'].includes(
+                          spell.imageGenerationStatus || ''
+                        )
                       }
                     >
-                      {generatingIconSpellId === spell.id ? 'Queueing...' : 'Generate Icon'}
+                      {generatingIconSpellId === spell.id
+                        ? 'Queueing...'
+                        : 'Generate Icon'}
                     </button>
                     <button
                       className="qa-btn qa-btn-secondary"
@@ -1128,9 +1278,14 @@ export const Spells = () => {
                         (spell.abilityType ?? 'spell') === 'technique'
                       }
                     >
-                      {generatingProgressionSpellId === spell.id ? 'Generating...' : 'Generate Level Bands'}
+                      {generatingProgressionSpellId === spell.id
+                        ? 'Generating...'
+                        : 'Generate Level Bands'}
                     </button>
-                    <button className="qa-btn qa-btn-danger" onClick={() => setDeleteId(spell.id)}>
+                    <button
+                      className="qa-btn qa-btn-danger"
+                      onClick={() => setDeleteId(spell.id)}
+                    >
                       Delete
                     </button>
                   </div>
@@ -1145,9 +1300,14 @@ export const Spells = () => {
             <div className="bg-white w-full max-w-5xl rounded-lg shadow-lg max-h-[92vh] overflow-y-auto">
               <div className="p-5 border-b flex items-center justify-between">
                 <h2 className="text-xl font-semibold">
-                  {editingSpell ? `Edit ${editingSpell.name}` : 'Create Ability'}
+                  {editingSpell
+                    ? `Edit ${editingSpell.name}`
+                    : 'Create Ability'}
                 </h2>
-                <button className="text-gray-600 hover:text-gray-900" onClick={closeModal}>
+                <button
+                  className="text-gray-600 hover:text-gray-900"
+                  onClick={closeModal}
+                >
                   Close
                 </button>
               </div>
@@ -1159,7 +1319,9 @@ export const Spells = () => {
                     <input
                       className="w-full border rounded-md p-2"
                       value={form.name}
-                      onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, name: e.target.value }))
+                      }
                     />
                   </label>
                   <label className="text-sm">
@@ -1168,7 +1330,10 @@ export const Spells = () => {
                       className="w-full border rounded-md p-2"
                       value={form.schoolOfMagic}
                       onChange={(e) =>
-                        setForm((prev) => ({ ...prev, schoolOfMagic: e.target.value }))
+                        setForm((prev) => ({
+                          ...prev,
+                          schoolOfMagic: e.target.value,
+                        }))
                       }
                     />
                   </label>
@@ -1177,7 +1342,12 @@ export const Spells = () => {
                     <input
                       className="w-full border rounded-md p-2"
                       value={form.iconUrl}
-                      onChange={(e) => setForm((prev) => ({ ...prev, iconUrl: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          iconUrl: e.target.value,
+                        }))
+                      }
                     />
                   </label>
                   <label className="text-sm">
@@ -1188,8 +1358,18 @@ export const Spells = () => {
                       onChange={(e) =>
                         setForm((prev) => ({
                           ...prev,
-                          abilityType: e.target.value === 'technique' ? 'technique' : 'spell',
-                          manaCost: e.target.value === 'technique' ? '0' : prev.manaCost,
+                          abilityType:
+                            e.target.value === 'technique'
+                              ? 'technique'
+                              : 'spell',
+                          manaCost:
+                            e.target.value === 'technique'
+                              ? '0'
+                              : prev.manaCost,
+                          cooldownTurns:
+                            e.target.value === 'technique'
+                              ? prev.cooldownTurns
+                              : '0',
                         }))
                       }
                     >
@@ -1205,7 +1385,28 @@ export const Spells = () => {
                       min={0}
                       value={form.manaCost}
                       disabled={form.abilityType === 'technique'}
-                      onChange={(e) => setForm((prev) => ({ ...prev, manaCost: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          manaCost: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-sm">
+                    Technique Cooldown Turns
+                    <input
+                      className="w-full border rounded-md p-2"
+                      type="number"
+                      min={0}
+                      value={form.cooldownTurns}
+                      disabled={form.abilityType !== 'technique'}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          cooldownTurns: e.target.value,
+                        }))
+                      }
                     />
                   </label>
                   <label className="text-sm">
@@ -1230,7 +1431,12 @@ export const Spells = () => {
                   <textarea
                     className="w-full border rounded-md p-2 min-h-[84px]"
                     value={form.description}
-                    onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
                   />
                 </label>
 
@@ -1239,21 +1445,33 @@ export const Spells = () => {
                   <textarea
                     className="w-full border rounded-md p-2 min-h-[84px]"
                     value={form.effectText}
-                    onChange={(e) => setForm((prev) => ({ ...prev, effectText: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        effectText: e.target.value,
+                      }))
+                    }
                   />
                 </label>
 
                 <div className="border rounded-md p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="font-semibold">Effects</div>
-                    <button className="qa-btn qa-btn-secondary" type="button" onClick={addEffect}>
+                    <button
+                      className="qa-btn qa-btn-secondary"
+                      type="button"
+                      onClick={addEffect}
+                    >
                       Add Effect
                     </button>
                   </div>
 
                   <div className="space-y-3">
                     {form.effects.map((effect, effectIndex) => (
-                      <div key={effectIndex} className="border rounded-md p-3 bg-gray-50">
+                      <div
+                        key={effectIndex}
+                        className="border rounded-md p-3 bg-gray-50"
+                      >
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
                           <label className="text-sm">
                             Effect Type
@@ -1306,7 +1524,8 @@ export const Spells = () => {
                             />
                           </label>
                           {normalizeEffectType(effect) === 'deal_damage' ||
-                          normalizeEffectType(effect) === 'deal_damage_all_enemies' ? (
+                          normalizeEffectType(effect) ===
+                            'deal_damage_all_enemies' ? (
                             <label className="text-sm">
                               Damage Affinity
                               <select
@@ -1358,7 +1577,9 @@ export const Spells = () => {
 
                         <div className="border rounded-md p-3 bg-white">
                           <div className="flex items-center justify-between mb-2">
-                            <div className="font-medium text-sm">Statuses to Apply</div>
+                            <div className="font-medium text-sm">
+                              Statuses to Apply
+                            </div>
                             <button
                               type="button"
                               className="qa-btn qa-btn-secondary"
@@ -1369,107 +1590,148 @@ export const Spells = () => {
                           </div>
 
                           <div className="space-y-3">
-                            {effect.statusesToApply.map((status, statusIndex) => (
-                              <div key={statusIndex} className="border rounded-md p-3 bg-gray-50">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                  <label className="text-xs">
-                                    Name
-                                    <input
-                                      className="w-full border rounded-md p-1.5"
-                                      value={status.name}
-                                      onChange={(e) =>
-                                        updateEffectStatus(effectIndex, statusIndex, {
-                                          name: e.target.value,
-                                        })
+                            {effect.statusesToApply.map(
+                              (status, statusIndex) => (
+                                <div
+                                  key={statusIndex}
+                                  className="border rounded-md p-3 bg-gray-50"
+                                >
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <label className="text-xs">
+                                      Name
+                                      <input
+                                        className="w-full border rounded-md p-1.5"
+                                        value={status.name}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              name: e.target.value,
+                                            }
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-xs">
+                                      Duration (seconds)
+                                      <input
+                                        className="w-full border rounded-md p-1.5"
+                                        type="number"
+                                        min={1}
+                                        value={status.durationSeconds}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              durationSeconds: e.target.value,
+                                            }
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-xs md:col-span-2">
+                                      Description
+                                      <input
+                                        className="w-full border rounded-md p-1.5"
+                                        value={status.description}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              description: e.target.value,
+                                            }
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-xs md:col-span-2">
+                                      Effect
+                                      <input
+                                        className="w-full border rounded-md p-1.5"
+                                        value={status.effect}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              effect: e.target.value,
+                                            }
+                                          )
+                                        }
+                                      />
+                                    </label>
+                                    <label className="text-xs inline-flex items-center gap-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={status.positive}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              positive: e.target.checked,
+                                            }
+                                          )
+                                        }
+                                      />
+                                      Positive
+                                    </label>
+                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:col-span-2">
+                                      {[
+                                        ['strengthMod', 'STR'],
+                                        ['dexterityMod', 'DEX'],
+                                        ['constitutionMod', 'CON'],
+                                        ['intelligenceMod', 'INT'],
+                                        ['wisdomMod', 'WIS'],
+                                        ['charismaMod', 'CHA'],
+                                      ].map(([key, label]) => (
+                                        <label
+                                          className="text-[11px]"
+                                          key={key}
+                                        >
+                                          {label}
+                                          <input
+                                            className="w-full border rounded-md p-1"
+                                            type="number"
+                                            value={
+                                              status[
+                                                key as keyof SpellStatusTemplateForm
+                                              ] as string
+                                            }
+                                            onChange={(e) =>
+                                              updateEffectStatus(
+                                                effectIndex,
+                                                statusIndex,
+                                                {
+                                                  [key]: e.target.value,
+                                                }
+                                              )
+                                            }
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="mt-2">
+                                    <button
+                                      type="button"
+                                      className="qa-btn qa-btn-danger"
+                                      onClick={() =>
+                                        removeEffectStatus(
+                                          effectIndex,
+                                          statusIndex
+                                        )
                                       }
-                                    />
-                                  </label>
-                                  <label className="text-xs">
-                                    Duration (seconds)
-                                    <input
-                                      className="w-full border rounded-md p-1.5"
-                                      type="number"
-                                      min={1}
-                                      value={status.durationSeconds}
-                                      onChange={(e) =>
-                                        updateEffectStatus(effectIndex, statusIndex, {
-                                          durationSeconds: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label className="text-xs md:col-span-2">
-                                    Description
-                                    <input
-                                      className="w-full border rounded-md p-1.5"
-                                      value={status.description}
-                                      onChange={(e) =>
-                                        updateEffectStatus(effectIndex, statusIndex, {
-                                          description: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label className="text-xs md:col-span-2">
-                                    Effect
-                                    <input
-                                      className="w-full border rounded-md p-1.5"
-                                      value={status.effect}
-                                      onChange={(e) =>
-                                        updateEffectStatus(effectIndex, statusIndex, {
-                                          effect: e.target.value,
-                                        })
-                                      }
-                                    />
-                                  </label>
-                                  <label className="text-xs inline-flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      checked={status.positive}
-                                      onChange={(e) =>
-                                        updateEffectStatus(effectIndex, statusIndex, {
-                                          positive: e.target.checked,
-                                        })
-                                      }
-                                    />
-                                    Positive
-                                  </label>
-                                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:col-span-2">
-                                    {[
-                                      ['strengthMod', 'STR'],
-                                      ['dexterityMod', 'DEX'],
-                                      ['constitutionMod', 'CON'],
-                                      ['intelligenceMod', 'INT'],
-                                      ['wisdomMod', 'WIS'],
-                                      ['charismaMod', 'CHA'],
-                                    ].map(([key, label]) => (
-                                      <label className="text-[11px]" key={key}>
-                                        {label}
-                                        <input
-                                          className="w-full border rounded-md p-1"
-                                          type="number"
-                                          value={status[key as keyof SpellStatusTemplateForm] as string}
-                                          onChange={(e) =>
-                                            updateEffectStatus(effectIndex, statusIndex, {
-                                              [key]: e.target.value,
-                                            })
-                                          }
-                                        />
-                                      </label>
-                                    ))}
+                                    >
+                                      Remove Status
+                                    </button>
                                   </div>
                                 </div>
-                                <div className="mt-2">
-                                  <button
-                                    type="button"
-                                    className="qa-btn qa-btn-danger"
-                                    onClick={() => removeEffectStatus(effectIndex, statusIndex)}
-                                  >
-                                    Remove Status
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                              )
+                            )}
                           </div>
                         </div>
 
@@ -1489,7 +1751,10 @@ export const Spells = () => {
               </div>
 
               <div className="p-5 border-t flex items-center justify-end gap-2">
-                <button className="qa-btn qa-btn-secondary" onClick={closeModal}>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  onClick={closeModal}
+                >
                   Cancel
                 </button>
                 <button className="qa-btn qa-btn-primary" onClick={save}>
@@ -1504,12 +1769,20 @@ export const Spells = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-5">
               <h3 className="text-lg font-semibold mb-2">Delete Spell?</h3>
-              <p className="text-sm text-gray-700 mb-4">This action cannot be undone.</p>
+              <p className="text-sm text-gray-700 mb-4">
+                This action cannot be undone.
+              </p>
               <div className="flex justify-end gap-2">
-                <button className="qa-btn qa-btn-secondary" onClick={() => setDeleteId(null)}>
+                <button
+                  className="qa-btn qa-btn-secondary"
+                  onClick={() => setDeleteId(null)}
+                >
                   Cancel
                 </button>
-                <button className="qa-btn qa-btn-danger" onClick={confirmDelete}>
+                <button
+                  className="qa-btn qa-btn-danger"
+                  onClick={confirmDelete}
+                >
                   Delete
                 </button>
               </div>

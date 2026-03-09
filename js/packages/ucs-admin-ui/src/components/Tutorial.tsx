@@ -7,12 +7,6 @@ type SelectOption = {
   label: string;
 };
 
-type TutorialOptionRow = {
-  id: string;
-  optionText: string;
-  statTag: string;
-};
-
 type TutorialItemRewardRow = {
   id: string;
   inventoryItemId: string;
@@ -24,16 +18,39 @@ type TutorialSpellRewardRow = {
   spellId: string;
 };
 
+type TutorialOptionRow = {
+  id: string;
+  optionText: string;
+  statTag: string;
+  difficulty: number;
+  rewardExperience: number;
+  rewardGold: number;
+  itemRewards: TutorialItemRewardRow[];
+  spellRewards: TutorialSpellRewardRow[];
+};
+
+type TutorialOptionResponse = {
+  optionText?: string;
+  statTag?: string;
+  difficulty?: number;
+  rewardExperience?: number;
+  rewardGold?: number;
+  itemRewards?: Array<{ inventoryItemId?: number; quantity?: number }>;
+  spellRewards?: Array<{ spellId?: string }>;
+};
+
 type TutorialConfigResponse = {
   characterId?: string | null;
   dialogue?: string[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
+  imageGenerationStatus?: string;
+  imageGenerationError?: string | null;
   rewardExperience?: number;
   rewardGold?: number;
-  options?: Array<{ optionText?: string; statTag?: string }>;
-  itemRewards?: Array<{ inventoryItemId: number; quantity: number }>;
-  spellRewards?: Array<{ spellId: string }>;
+  options?: TutorialOptionResponse[];
+  itemRewards?: Array<{ inventoryItemId?: number; quantity?: number }>;
+  spellRewards?: Array<{ spellId?: string }>;
 };
 
 const statTagOptions: SelectOption[] = [
@@ -47,12 +64,6 @@ const statTagOptions: SelectOption[] = [
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const makeOptionRow = (optionText = '', statTag = 'strength'): TutorialOptionRow => ({
-  id: createId(),
-  optionText,
-  statTag,
-});
-
 const makeItemRewardRow = (inventoryItemId = '', quantity = 1): TutorialItemRewardRow => ({
   id: createId(),
   inventoryItemId,
@@ -63,6 +74,48 @@ const makeSpellRewardRow = (spellId = ''): TutorialSpellRewardRow => ({
   id: createId(),
   spellId,
 });
+
+const makeOptionRow = ({
+  optionText = '',
+  statTag = 'strength',
+  difficulty = 0,
+  rewardExperience = 0,
+  rewardGold = 0,
+  itemRewards = [],
+  spellRewards = [],
+}: Partial<Omit<TutorialOptionRow, 'id'>> = {}): TutorialOptionRow => ({
+  id: createId(),
+  optionText,
+  statTag,
+  difficulty,
+  rewardExperience,
+  rewardGold,
+  itemRewards,
+  spellRewards,
+});
+
+const toItemRewardRows = (
+  input: Array<{ inventoryItemId?: number; quantity?: number }> | undefined,
+) =>
+  Array.isArray(input)
+    ? input
+        .filter((reward) => (reward.inventoryItemId ?? 0) > 0 && (reward.quantity ?? 0) > 0)
+        .map((reward) => makeItemRewardRow(String(reward.inventoryItemId), reward.quantity ?? 1))
+    : [];
+
+const toSpellRewardRows = (input: Array<{ spellId?: string }> | undefined) =>
+  Array.isArray(input)
+    ? input
+        .map((reward) => (reward.spellId ?? '').trim())
+        .filter(Boolean)
+        .map((spellId) => makeSpellRewardRow(spellId))
+    : [];
+
+const optionNeedsLegacySharedRewards = (option: TutorialOptionResponse) =>
+  (option.rewardExperience ?? 0) === 0 &&
+  (option.rewardGold ?? 0) === 0 &&
+  (!Array.isArray(option.itemRewards) || option.itemRewards.length === 0) &&
+  (!Array.isArray(option.spellRewards) || option.spellRewards.length === 0);
 
 const SearchableSelect = ({
   label,
@@ -137,6 +190,7 @@ export const Tutorial = () => {
   const { inventoryItems } = useInventory();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -145,11 +199,11 @@ export const Tutorial = () => {
   const [dialogue, setDialogue] = useState<string[]>([]);
   const [scenarioPrompt, setScenarioPrompt] = useState('');
   const [scenarioImageUrl, setScenarioImageUrl] = useState('');
-  const [rewardExperience, setRewardExperience] = useState(0);
-  const [rewardGold, setRewardGold] = useState(0);
+  const [imageGenerationStatus, setImageGenerationStatus] = useState('none');
+  const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
   const [options, setOptions] = useState<TutorialOptionRow[]>([]);
-  const [itemRewards, setItemRewards] = useState<TutorialItemRewardRow[]>([]);
-  const [spellRewards, setSpellRewards] = useState<TutorialSpellRewardRow[]>([]);
+  const imageGenerationActive =
+    imageGenerationStatus === 'queued' || imageGenerationStatus === 'in_progress';
 
   useEffect(() => {
     const load = async () => {
@@ -161,36 +215,55 @@ export const Tutorial = () => {
           apiClient.get<Spell[]>('/sonar/spells'),
         ]);
 
+        const sharedItemRewards = toItemRewardRows(config.itemRewards);
+        const sharedSpellRewards = toSpellRewardRows(config.spellRewards);
+        const sharedRewardExperience =
+          typeof config.rewardExperience === 'number' ? config.rewardExperience : 0;
+        const sharedRewardGold = typeof config.rewardGold === 'number' ? config.rewardGold : 0;
+
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
         setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
         setCharacterId(config.characterId ?? '');
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
         setScenarioPrompt(config.scenarioPrompt ?? '');
         setScenarioImageUrl(config.scenarioImageUrl ?? '');
-        setRewardExperience(typeof config.rewardExperience === 'number' ? config.rewardExperience : 0);
-        setRewardGold(typeof config.rewardGold === 'number' ? config.rewardGold : 0);
+        setImageGenerationStatus((config.imageGenerationStatus ?? 'none').trim() || 'none');
+        setImageGenerationError((config.imageGenerationError ?? '').trim() || null);
         setOptions(
           Array.isArray(config.options) && config.options.length > 0
-            ? config.options.map((option) =>
-                makeOptionRow(option.optionText ?? '', option.statTag ?? 'strength'),
-              )
+            ? config.options.map((option) => {
+                const useLegacySharedRewards = optionNeedsLegacySharedRewards(option);
+                return makeOptionRow({
+                  optionText: option.optionText ?? '',
+                  statTag: option.statTag ?? 'strength',
+                  difficulty: Math.max(0, option.difficulty ?? 0),
+                  rewardExperience: useLegacySharedRewards
+                    ? sharedRewardExperience
+                    : Math.max(0, option.rewardExperience ?? 0),
+                  rewardGold: useLegacySharedRewards
+                    ? sharedRewardGold
+                    : Math.max(0, option.rewardGold ?? 0),
+                  itemRewards: useLegacySharedRewards
+                    ? sharedItemRewards.map((reward) =>
+                        makeItemRewardRow(reward.inventoryItemId, reward.quantity),
+                      )
+                    : toItemRewardRows(option.itemRewards),
+                  spellRewards: useLegacySharedRewards
+                    ? sharedSpellRewards.map((reward) => makeSpellRewardRow(reward.spellId))
+                    : toSpellRewardRows(option.spellRewards),
+                });
+              })
             : [
-                makeOptionRow('I reach for my sword and check it out.', 'strength'),
-                makeOptionRow('I reach for my shield and check it out.', 'constitution'),
-                makeOptionRow('I reach for my spellbook and check it out.', 'intelligence'),
+                makeOptionRow({ optionText: 'I reach for my sword and check it out.', statTag: 'strength' }),
+                makeOptionRow({
+                  optionText: 'I reach for my shield and check it out.',
+                  statTag: 'constitution',
+                }),
+                makeOptionRow({
+                  optionText: 'I reach for my spellbook and check it out.',
+                  statTag: 'intelligence',
+                }),
               ],
-        );
-        setItemRewards(
-          Array.isArray(config.itemRewards)
-            ? config.itemRewards.map((reward) =>
-                makeItemRewardRow(String(reward.inventoryItemId), reward.quantity ?? 1),
-              )
-            : [],
-        );
-        setSpellRewards(
-          Array.isArray(config.spellRewards)
-            ? config.spellRewards.map((reward) => makeSpellRewardRow(reward.spellId ?? ''))
-            : [],
         );
       } catch (error) {
         console.error('Failed to load tutorial config', error);
@@ -203,6 +276,25 @@ export const Tutorial = () => {
 
     load();
   }, [apiClient]);
+
+  useEffect(() => {
+    if (imageGenerationStatus !== 'queued' && imageGenerationStatus !== 'in_progress') {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(async () => {
+      try {
+        const config = await apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial');
+        setScenarioImageUrl(config.scenarioImageUrl ?? '');
+        setImageGenerationStatus((config.imageGenerationStatus ?? 'none').trim() || 'none');
+        setImageGenerationError((config.imageGenerationError ?? '').trim() || null);
+      } catch (error) {
+        console.error('Failed to refresh tutorial image generation status', error);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(intervalId);
+  }, [apiClient, imageGenerationStatus]);
 
   const characterOptions = useMemo(
     () =>
@@ -247,20 +339,88 @@ export const Tutorial = () => {
     setOptions((prev) => prev.filter((option) => option.id !== id));
   };
 
-  const updateItemReward = (id: string, updates: Partial<TutorialItemRewardRow>) => {
-    setItemRewards((prev) => prev.map((reward) => (reward.id === id ? { ...reward, ...updates } : reward)));
+  const addOptionItemReward = (optionId: string) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? { ...option, itemRewards: [...option.itemRewards, makeItemRewardRow()] }
+          : option,
+      ),
+    );
   };
 
-  const removeItemReward = (id: string) => {
-    setItemRewards((prev) => prev.filter((reward) => reward.id !== id));
+  const updateOptionItemReward = (
+    optionId: string,
+    rewardId: string,
+    updates: Partial<TutorialItemRewardRow>,
+  ) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? {
+              ...option,
+              itemRewards: option.itemRewards.map((reward) =>
+                reward.id === rewardId ? { ...reward, ...updates } : reward,
+              ),
+            }
+          : option,
+      ),
+    );
   };
 
-  const updateSpellReward = (id: string, updates: Partial<TutorialSpellRewardRow>) => {
-    setSpellRewards((prev) => prev.map((reward) => (reward.id === id ? { ...reward, ...updates } : reward)));
+  const removeOptionItemReward = (optionId: string, rewardId: string) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? {
+              ...option,
+              itemRewards: option.itemRewards.filter((reward) => reward.id !== rewardId),
+            }
+          : option,
+      ),
+    );
   };
 
-  const removeSpellReward = (id: string) => {
-    setSpellRewards((prev) => prev.filter((reward) => reward.id !== id));
+  const addOptionSpellReward = (optionId: string) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? { ...option, spellRewards: [...option.spellRewards, makeSpellRewardRow()] }
+          : option,
+      ),
+    );
+  };
+
+  const updateOptionSpellReward = (
+    optionId: string,
+    rewardId: string,
+    updates: Partial<TutorialSpellRewardRow>,
+  ) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? {
+              ...option,
+              spellRewards: option.spellRewards.map((reward) =>
+                reward.id === rewardId ? { ...reward, ...updates } : reward,
+              ),
+            }
+          : option,
+      ),
+    );
+  };
+
+  const removeOptionSpellReward = (optionId: string, rewardId: string) => {
+    setOptions((prev) =>
+      prev.map((option) =>
+        option.id === optionId
+          ? {
+              ...option,
+              spellRewards: option.spellRewards.filter((reward) => reward.id !== rewardId),
+            }
+          : option,
+      ),
+    );
   };
 
   const handleSave = async () => {
@@ -274,23 +434,28 @@ export const Tutorial = () => {
         dialogue: dialogue.map((line) => line.trim()).filter(Boolean),
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
-        rewardExperience: Math.max(0, rewardExperience),
-        rewardGold: Math.max(0, rewardGold),
+        rewardExperience: 0,
+        rewardGold: 0,
+        itemRewards: [],
+        spellRewards: [],
         options: options
           .map((option) => ({
             optionText: option.optionText.trim(),
             statTag: option.statTag,
+            difficulty: Math.max(0, option.difficulty),
+            rewardExperience: Math.max(0, option.rewardExperience),
+            rewardGold: Math.max(0, option.rewardGold),
+            itemRewards: option.itemRewards
+              .filter((reward) => reward.inventoryItemId && reward.quantity > 0)
+              .map((reward) => ({
+                inventoryItemId: Number.parseInt(reward.inventoryItemId, 10),
+                quantity: reward.quantity,
+              })),
+            spellRewards: option.spellRewards
+              .filter((reward) => reward.spellId)
+              .map((reward) => ({ spellId: reward.spellId })),
           }))
           .filter((option) => option.optionText),
-        itemRewards: itemRewards
-          .filter((reward) => reward.inventoryItemId && reward.quantity > 0)
-          .map((reward) => ({
-            inventoryItemId: Number.parseInt(reward.inventoryItemId, 10),
-            quantity: reward.quantity,
-          })),
-        spellRewards: spellRewards
-          .filter((reward) => reward.spellId)
-          .map((reward) => ({ spellId: reward.spellId })),
       });
 
       setStatusMessage('Tutorial config saved.');
@@ -304,9 +469,40 @@ export const Tutorial = () => {
     }
   };
 
+  const handleGenerateScenarioImage = async () => {
+    const prompt = scenarioPrompt.trim();
+    if (!prompt) {
+      setStatusMessage('Enter a scenario prompt before generating an image.');
+      setStatusKind('error');
+      return;
+    }
+
+    try {
+      setGeneratingImage(true);
+      setStatusMessage(null);
+      setStatusKind(null);
+
+      const response = await apiClient.post<TutorialConfigResponse>(
+        '/sonar/admin/tutorial/generate-image',
+        { scenarioPrompt: prompt },
+      );
+      setScenarioImageUrl(response.scenarioImageUrl ?? '');
+      setImageGenerationStatus((response.imageGenerationStatus ?? 'queued').trim() || 'queued');
+      setImageGenerationError((response.imageGenerationError ?? '').trim() || null);
+      setStatusMessage('Tutorial scenario image generation queued.');
+      setStatusKind('success');
+    } catch (error) {
+      console.error('Failed to generate tutorial scenario image', error);
+      setStatusMessage('Failed to generate tutorial scenario image.');
+      setStatusKind('error');
+    } finally {
+      setGeneratingImage(false);
+    }
+  };
+
   return (
     <div className="px-4 py-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Tutorial</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -408,41 +604,65 @@ export const Tutorial = () => {
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700">Scenario Image URL</label>
-                  <input
-                    type="text"
-                    value={scenarioImageUrl}
-                    onChange={(event) => setScenarioImageUrl(event.target.value)}
-                    placeholder="https://..."
-                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Reward Experience</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={rewardExperience}
-                    onChange={(event) => setRewardExperience(Number.parseInt(event.target.value || '0', 10))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Reward Gold</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={rewardGold}
-                    onChange={(event) => setRewardGold(Number.parseInt(event.target.value || '0', 10))}
-                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  />
+                  <div className="mt-1 flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 md:flex-row">
+                      <input
+                        type="text"
+                        value={scenarioImageUrl}
+                        onChange={(event) => setScenarioImageUrl(event.target.value)}
+                        placeholder="https://..."
+                        className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateScenarioImage}
+                        disabled={generatingImage || imageGenerationActive || saving}
+                        className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {generatingImage || imageGenerationActive ? 'Generating…' : 'Generate Image'}
+                      </button>
+                    </div>
+                    <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">Preview</span>
+                        <span className="text-xs text-gray-500">
+                          {imageGenerationStatus === 'queued'
+                            ? 'Queued'
+                            : imageGenerationStatus === 'in_progress'
+                              ? 'Generating…'
+                              : imageGenerationStatus === 'failed'
+                                ? 'Failed'
+                                : imageGenerationStatus === 'complete'
+                                  ? 'Ready'
+                                  : 'Idle'}
+                        </span>
+                      </div>
+                      {scenarioImageUrl.trim() ? (
+                        <img
+                          src={scenarioImageUrl.trim()}
+                          alt="Tutorial scenario preview"
+                          className="max-h-72 w-full rounded-md border border-gray-200 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-48 items-center justify-center rounded-md border border-dashed border-gray-300 bg-white text-sm text-gray-500">
+                          No tutorial image yet.
+                        </div>
+                      )}
+                      {imageGenerationError && (
+                        <p className="mt-2 text-xs text-rose-600">{imageGenerationError}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-6 flex flex-col gap-3">
+              <div className="mt-6 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-medium text-gray-800">Scenario Options</h3>
-                    <p className="text-xs text-gray-500">Each option maps to a stat check.</p>
+                    <p className="text-xs text-gray-500">
+                      Each option has its own stat check and reward bundle.
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -453,135 +673,186 @@ export const Tutorial = () => {
                   </button>
                 </div>
 
-                {options.map((option) => (
-                  <div key={option.id} className="grid gap-3 rounded-md border border-gray-200 bg-gray-50 p-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-                    <input
-                      type="text"
-                      value={option.optionText}
-                      onChange={(event) => updateOption(option.id, { optionText: event.target.value })}
-                      placeholder="Option text"
-                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                    <select
-                      value={option.statTag}
-                      onChange={(event) => updateOption(option.id, { statTag: event.target.value })}
-                      className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                    >
-                      {statTagOptions.map((statTag) => (
-                        <option key={statTag.value} value={statTag.value}>
-                          {statTag.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => removeOption(option.id)}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-800">Item Rewards</h3>
-                      <p className="text-xs text-gray-500">Granted on success for any option.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setItemRewards((prev) => [...prev, makeItemRewardRow()])}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Add Item
-                    </button>
-                  </div>
-
-                  {itemRewards.length === 0 && (
-                    <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-                      No item rewards configured.
-                    </div>
-                  )}
-
-                  {itemRewards.map((reward) => (
-                    <div key={reward.id} className="rounded-md border border-gray-200 bg-gray-50 p-3">
-                      <SearchableSelect
-                        label="Inventory Item"
-                        placeholder="Search item name…"
-                        options={itemOptions}
-                        value={reward.inventoryItemId}
-                        onChange={(value) => updateItemReward(reward.id, { inventoryItemId: value })}
+                {options.map((option, index) => (
+                  <div key={option.id} className="rounded-md border border-gray-200 bg-gray-50 p-4">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                      <input
+                        type="text"
+                        value={option.optionText}
+                        onChange={(event) => updateOption(option.id, { optionText: event.target.value })}
+                        placeholder={`Option ${index + 1} text`}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                       />
-                      <div className="mt-3 flex items-end gap-3">
-                        <div className="flex-1">
-                          <label className="block text-sm font-medium text-gray-700">Quantity</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={reward.quantity}
-                            onChange={(event) =>
-                              updateItemReward(reward.id, {
-                                quantity: Number.parseInt(event.target.value || '1', 10),
-                              })
-                            }
-                            className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeItemReward(reward.id)}
-                          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-800">Spell Rewards</h3>
-                      <p className="text-xs text-gray-500">Granted on success for any option.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSpellRewards((prev) => [...prev, makeSpellRewardRow()])}
-                      className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Add Spell
-                    </button>
-                  </div>
-
-                  {spellRewards.length === 0 && (
-                    <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-                      No spell rewards configured.
-                    </div>
-                  )}
-
-                  {spellRewards.map((reward) => (
-                    <div key={reward.id} className="rounded-md border border-gray-200 bg-gray-50 p-3">
-                      <SearchableSelect
-                        label="Spell"
-                        placeholder="Search spell name…"
-                        options={spellOptions}
-                        value={reward.spellId}
-                        onChange={(value) => updateSpellReward(reward.id, { spellId: value })}
-                      />
+                      <select
+                        value={option.statTag}
+                        onChange={(event) => updateOption(option.id, { statTag: event.target.value })}
+                        className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                      >
+                        {statTagOptions.map((statTag) => (
+                          <option key={statTag.value} value={statTag.value}>
+                            {statTag.label}
+                          </option>
+                        ))}
+                      </select>
                       <button
                         type="button"
-                        onClick={() => removeSpellReward(reward.id)}
-                        className="mt-3 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                        onClick={() => removeOption(option.id)}
+                        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
                       >
                         Remove
                       </button>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <label className="text-sm">
+                        <span className="block font-medium text-gray-700">Difficulty</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={option.difficulty}
+                          onChange={(event) =>
+                            updateOption(option.id, {
+                              difficulty: Number.parseInt(event.target.value || '0', 10),
+                            })
+                          }
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                      </label>
+                      <label className="text-sm">
+                        <span className="block font-medium text-gray-700">Reward Experience</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={option.rewardExperience}
+                          onChange={(event) =>
+                            updateOption(option.id, {
+                              rewardExperience: Number.parseInt(event.target.value || '0', 10),
+                            })
+                          }
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                      </label>
+                      <label className="text-sm">
+                        <span className="block font-medium text-gray-700">Reward Gold</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={option.rewardGold}
+                          onChange={(event) =>
+                            updateOption(option.id, {
+                              rewardGold: Number.parseInt(event.target.value || '0', 10),
+                            })
+                          }
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-800">Item Rewards</h4>
+                            <p className="text-xs text-gray-500">Granted when this option succeeds.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => addOptionItemReward(option.id)}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Add Item
+                          </button>
+                        </div>
+
+                        {option.itemRewards.length === 0 && (
+                          <div className="rounded-md border border-dashed border-gray-300 bg-white px-3 py-4 text-sm text-gray-500">
+                            No item rewards configured.
+                          </div>
+                        )}
+
+                        {option.itemRewards.map((reward) => (
+                          <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                            <SearchableSelect
+                              label="Inventory Item"
+                              placeholder="Search item name…"
+                              options={itemOptions}
+                              value={reward.inventoryItemId}
+                              onChange={(value) =>
+                                updateOptionItemReward(option.id, reward.id, { inventoryItemId: value })
+                              }
+                            />
+                            <div className="mt-3 flex items-end gap-3">
+                              <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={reward.quantity}
+                                  onChange={(event) =>
+                                    updateOptionItemReward(option.id, reward.id, {
+                                      quantity: Number.parseInt(event.target.value || '1', 10),
+                                    })
+                                  }
+                                  className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeOptionItemReward(option.id, reward.id)}
+                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-800">Spell Rewards</h4>
+                            <p className="text-xs text-gray-500">Granted when this option succeeds.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => addOptionSpellReward(option.id)}
+                            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Add Spell
+                          </button>
+                        </div>
+
+                        {option.spellRewards.length === 0 && (
+                          <div className="rounded-md border border-dashed border-gray-300 bg-white px-3 py-4 text-sm text-gray-500">
+                            No spell rewards configured.
+                          </div>
+                        )}
+
+                        {option.spellRewards.map((reward) => (
+                          <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                            <SearchableSelect
+                              label="Spell"
+                              placeholder="Search spell name…"
+                              options={spellOptions}
+                              value={reward.spellId}
+                              onChange={(value) =>
+                                updateOptionSpellReward(option.id, reward.id, { spellId: value })
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeOptionSpellReward(option.id, reward.id)}
+                              className="mt-3 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -601,7 +872,7 @@ export const Tutorial = () => {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || generatingImage}
                 className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? 'Saving…' : 'Save Tutorial'}

@@ -425,6 +425,7 @@ type TutorialHandle interface {
 		options []models.ScenarioOption,
 		itemRewards []models.ScenarioItemReward,
 		spellRewards []models.ScenarioSpellReward,
+		force bool,
 	) (*models.UserTutorialState, *models.Scenario, error)
 	MarkCompleted(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) error
 }

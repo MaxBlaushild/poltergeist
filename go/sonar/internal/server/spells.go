@@ -38,6 +38,7 @@ type spellUpsertRequest struct {
 	IconURL       string               `json:"iconUrl"`
 	AbilityType   string               `json:"abilityType"`
 	AbilityLevel  *int                 `json:"abilityLevel"`
+	CooldownTurns int                  `json:"cooldownTurns"`
 	EffectText    string               `json:"effectText"`
 	SchoolOfMagic string               `json:"schoolOfMagic"`
 	ManaCost      int                  `json:"manaCost"`
@@ -969,9 +970,14 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest, defaultAbility
 	if abilityLevel < 1 {
 		return nil, fmt.Errorf("abilityLevel must be 1 or greater")
 	}
+	if body.CooldownTurns < 0 {
+		return nil, fmt.Errorf("cooldownTurns must be zero or greater")
+	}
 	manaCost := body.ManaCost
+	cooldownTurns := 0
 	if abilityType == models.SpellAbilityTypeTechnique {
 		manaCost = 0
+		cooldownTurns = body.CooldownTurns
 	}
 
 	effects, err := s.parseSpellEffects(body.Effects)
@@ -986,6 +992,7 @@ func (s *server) parseSpellUpsertRequest(body spellUpsertRequest, defaultAbility
 		ImageGenerationStatus: models.SpellImageGenerationStatusNone,
 		AbilityType:           abilityType,
 		AbilityLevel:          abilityLevel,
+		CooldownTurns:         cooldownTurns,
 		EffectText:            strings.TrimSpace(body.EffectText),
 		SchoolOfMagic:         schoolOfMagic,
 		ManaCost:              manaCost,
@@ -1864,11 +1871,12 @@ func (s *server) updateSpellWithBoundRequest(
 	}
 
 	if err := s.dbClient.Spell().Update(ctx, spellID, map[string]interface{}{
-		"name":          spell.Name,
-		"description":   spell.Description,
-		"icon_url":      spell.IconURL,
-		"ability_type":  spell.AbilityType,
-		"ability_level": spell.AbilityLevel,
+		"name":           spell.Name,
+		"description":    spell.Description,
+		"icon_url":       spell.IconURL,
+		"ability_type":   spell.AbilityType,
+		"ability_level":  spell.AbilityLevel,
+		"cooldown_turns": spell.CooldownTurns,
 		"image_generation_status": func() string {
 			if spell.IconURL != "" {
 				return models.SpellImageGenerationStatusComplete

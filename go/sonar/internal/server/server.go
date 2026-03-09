@@ -277,6 +277,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PUT("/sonar/admin/new-user-starter-config", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateNewUserStarterConfig))
 	r.GET("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTutorialConfig))
 	r.PUT("/sonar/admin/tutorial", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTutorialConfig))
+	r.POST("/sonar/admin/tutorial/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateTutorialImage))
 	r.POST("/sonar/admin/useOutfitItem", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminUseOutfitItem))
 	r.POST("/sonar/admin/users/:id/statuses", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateUserStatus))
 	r.POST("/sonar/admin/users/:id/resources", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminAdjustUserResources))

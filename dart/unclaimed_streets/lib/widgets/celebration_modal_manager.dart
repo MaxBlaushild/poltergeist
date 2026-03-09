@@ -418,9 +418,7 @@ class CelebrationModalManager extends StatelessWidget {
     final theme = Theme.of(context);
     final successful = data['successful'] == true;
     final scenarioId = data['scenarioId']?.toString().trim() ?? '';
-    final scenarioPrompt = (data['scenarioPrompt'] as String?)?.trim() ?? '';
     final outcomeText = (data['outcomeText'] as String?)?.trim() ?? '';
-    final reason = (data['reason'] as String?)?.trim() ?? '';
     final roll = (data['roll'] as num?)?.toInt() ?? 0;
     final statTag = (data['statTag'] as String?)?.trim() ?? '';
     final statValue = (data['statValue'] as num?)?.toInt() ?? 0;
@@ -476,7 +474,6 @@ class CelebrationModalManager extends StatelessWidget {
         const [];
 
     final statLabel = _formatStatLabel(statTag);
-    final delta = totalScore - threshold;
     final progressValue = threshold <= 0
         ? 1.0
         : (totalScore / math.max(1, threshold)).clamp(0.0, 1.0).toDouble();
@@ -586,53 +583,15 @@ class CelebrationModalManager extends StatelessWidget {
                               color: accentColor,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            successful
-                                ? 'You cleared the target by ${delta.abs()} points.'
-                                : 'You missed the target by ${delta.abs()} points.',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
-                if (scenarioPrompt.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    scenarioPrompt,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(reason, style: theme.textTheme.bodySmall),
-                ],
               ],
             ),
           ),
           const SizedBox(height: 16),
-          Text(
-            'How your score came together',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Your final score blends the d20 roll with your stat, training, and any creativity bonus.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -656,7 +615,7 @@ class CelebrationModalManager extends StatelessWidget {
                     ),
                     const Spacer(),
                     Text(
-                      '$totalScore / $threshold',
+                      'Scored $totalScore / Needed $threshold',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                         color: accentColor,
@@ -681,23 +640,65 @@ class CelebrationModalManager extends StatelessWidget {
                     );
                   },
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  successful
-                      ? 'Target met. Extra points become a clean margin of success.'
-                      : 'Target not met. Another ${delta.abs()} points would have pushed this over the line.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          for (var i = 0; i < segments.length; i++) ...[
-            _buildScenarioScoreSegmentCard(context, segments[i], index: i),
-            if (i != segments.length - 1) const SizedBox(height: 10),
-          ],
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Theme(
+              data: theme.copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 2,
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                iconColor: theme.colorScheme.onSurfaceVariant,
+                collapsedIconColor: theme.colorScheme.onSurfaceVariant,
+                title: Text(
+                  'Score Breakdown',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  'See how the final total was built.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cardWidth = constraints.maxWidth >= 520
+                          ? (constraints.maxWidth - 10) / 2
+                          : constraints.maxWidth;
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (var i = 0; i < segments.length; i++)
+                            _buildScenarioScoreSegmentCard(
+                              context,
+                              segments[i],
+                              index: i,
+                              width: cardWidth,
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
           if (successful &&
               (successHealthRestored > 0 ||
                   successManaRestored > 0 ||
@@ -777,6 +778,7 @@ class CelebrationModalManager extends StatelessWidget {
     BuildContext context,
     _ScenarioScoreSegment segment, {
     required int index,
+    required double width,
   }) {
     final theme = Theme.of(context);
     return TweenAnimationBuilder<double>(
@@ -793,8 +795,8 @@ class CelebrationModalManager extends StatelessWidget {
         );
       },
       child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(16),
@@ -814,33 +816,37 @@ class CelebrationModalManager extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           segment.label,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      Text(
-                        _formatSignedValue(segment.value),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: segment.color,
+                        const SizedBox(height: 3),
+                        Text(
+                          segment.caption,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(width: 12),
                   Text(
-                    segment.caption,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    _formatSignedValue(segment.value),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: segment.color,
                     ),
                   ),
                 ],

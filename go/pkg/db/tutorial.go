@@ -70,6 +70,7 @@ func (h *tutorialHandle) ActivateForUser(
 	options []models.ScenarioOption,
 	itemRewards []models.ScenarioItemReward,
 	spellRewards []models.ScenarioSpellReward,
+	force bool,
 ) (*models.UserTutorialState, *models.Scenario, error) {
 	var activatedState *models.UserTutorialState
 	var activatedScenario *models.Scenario
@@ -80,12 +81,21 @@ func (h *tutorialHandle) ActivateForUser(
 			Where("user_id = ?", userID).
 			First(&state).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
+				now := time.Now()
+				state = models.UserTutorialState{
+					UserID:    userID,
+					CreatedAt: now,
+					UpdatedAt: now,
+				}
+				if err := tx.Create(&state).Error; err != nil {
+					return err
+				}
+			} else {
+				return err
 			}
-			return err
 		}
 
-		if state.CompletedAt != nil {
+		if state.CompletedAt != nil && !force {
 			activatedState = &state
 			if state.TutorialScenarioID != nil {
 				existing, err := (&scenarioHandle{db: tx}).FindByID(ctx, *state.TutorialScenarioID)
@@ -96,7 +106,7 @@ func (h *tutorialHandle) ActivateForUser(
 			return nil
 		}
 
-		if state.TutorialScenarioID != nil {
+		if state.TutorialScenarioID != nil && !force {
 			existing, err := (&scenarioHandle{db: tx}).FindByID(ctx, *state.TutorialScenarioID)
 			if err == nil && existing != nil {
 				activatedState = &state
@@ -113,7 +123,7 @@ func (h *tutorialHandle) ActivateForUser(
 		if err := scenario.SetGeometry(scenario.Latitude, scenario.Longitude); err != nil {
 			return err
 		}
-		if err := tx.Create(scenario).Error; err != nil {
+		if err := tx.Omit(clause.Associations).Create(scenario).Error; err != nil {
 			return err
 		}
 
@@ -126,7 +136,7 @@ func (h *tutorialHandle) ActivateForUser(
 			if option.Proficiencies == nil {
 				option.Proficiencies = models.StringArray{}
 			}
-			if err := tx.Create(&option).Error; err != nil {
+			if err := tx.Omit(clause.Associations).Create(&option).Error; err != nil {
 				return err
 			}
 
@@ -171,12 +181,14 @@ func (h *tutorialHandle) ActivateForUser(
 
 		state.TutorialScenarioID = &scenario.ID
 		state.ActivatedAt = &now
+		state.CompletedAt = nil
 		state.UpdatedAt = now
 		if err := tx.Model(&models.UserTutorialState{}).
 			Where("user_id = ?", userID).
 			Updates(map[string]interface{}{
 				"tutorial_scenario_id": scenario.ID,
 				"activated_at":         now,
+				"completed_at":         nil,
 				"updated_at":           now,
 			}).Error; err != nil {
 			return err
@@ -218,13 +230,14 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	}
 
 	created := models.TutorialConfig{
-		ID:               1,
-		Dialogue:         []string{},
-		ScenarioPrompt:   "You hear a commotion outside of your door.",
-		ScenarioImageURL: "",
-		Options:          []models.TutorialScenarioOption{},
-		ItemRewards:      []models.TutorialItemReward{},
-		SpellRewards:     []models.TutorialSpellReward{},
+		ID:                    1,
+		Dialogue:              []string{},
+		ScenarioPrompt:        "You hear a commotion outside of your door.",
+		ScenarioImageURL:      "",
+		ImageGenerationStatus: models.TutorialImageGenerationStatusNone,
+		Options:               []models.TutorialScenarioOption{},
+		ItemRewards:           []models.TutorialItemReward{},
+		SpellRewards:          []models.TutorialSpellReward{},
 	}
 	if err := db.WithContext(ctx).Create(&created).Error; err != nil {
 		return nil, err

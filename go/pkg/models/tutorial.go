@@ -11,8 +11,13 @@ import (
 )
 
 type TutorialScenarioOption struct {
-	OptionText string `json:"optionText"`
-	StatTag    string `json:"statTag"`
+	OptionText       string                `json:"optionText"`
+	StatTag          string                `json:"statTag"`
+	Difficulty       int                   `json:"difficulty"`
+	RewardExperience int                   `json:"rewardExperience"`
+	RewardGold       int                   `json:"rewardGold"`
+	ItemRewards      []TutorialItemReward  `json:"itemRewards"`
+	SpellRewards     []TutorialSpellReward `json:"spellRewards"`
 }
 
 type TutorialItemReward struct {
@@ -25,24 +30,34 @@ type TutorialSpellReward struct {
 }
 
 type TutorialConfig struct {
-	ID               int                      `gorm:"primaryKey" json:"id"`
-	CharacterID      *uuid.UUID               `json:"characterId"`
-	Character        *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
-	DialogueJSON     datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	Dialogue         []string                 `gorm:"-" json:"dialogue"`
-	ScenarioPrompt   string                   `json:"scenarioPrompt"`
-	ScenarioImageURL string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
-	OptionsJSON      datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
-	Options          []TutorialScenarioOption `gorm:"-" json:"options"`
-	RewardExperience int                      `gorm:"column:reward_experience" json:"rewardExperience"`
-	RewardGold       int                      `gorm:"column:reward_gold" json:"rewardGold"`
-	ItemRewardsJSON  datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	ItemRewards      []TutorialItemReward     `gorm:"-" json:"itemRewards"`
-	SpellRewardsJSON datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	SpellRewards     []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
-	CreatedAt        time.Time                `json:"createdAt"`
-	UpdatedAt        time.Time                `json:"updatedAt"`
+	ID                    int                      `gorm:"primaryKey" json:"id"`
+	CharacterID           *uuid.UUID               `json:"characterId"`
+	Character             *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
+	DialogueJSON          datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	Dialogue              []string                 `gorm:"-" json:"dialogue"`
+	ScenarioPrompt        string                   `json:"scenarioPrompt"`
+	ScenarioImageURL      string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
+	ImageGenerationStatus string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
+	ImageGenerationError  *string                  `gorm:"column:image_generation_error" json:"imageGenerationError,omitempty"`
+	OptionsJSON           datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
+	Options               []TutorialScenarioOption `gorm:"-" json:"options"`
+	RewardExperience      int                      `gorm:"column:reward_experience" json:"rewardExperience"`
+	RewardGold            int                      `gorm:"column:reward_gold" json:"rewardGold"`
+	ItemRewardsJSON       datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	ItemRewards           []TutorialItemReward     `gorm:"-" json:"itemRewards"`
+	SpellRewardsJSON      datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	SpellRewards          []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
+	CreatedAt             time.Time                `json:"createdAt"`
+	UpdatedAt             time.Time                `json:"updatedAt"`
 }
+
+const (
+	TutorialImageGenerationStatusNone       = "none"
+	TutorialImageGenerationStatusQueued     = "queued"
+	TutorialImageGenerationStatusInProgress = "in_progress"
+	TutorialImageGenerationStatusComplete   = "complete"
+	TutorialImageGenerationStatusFailed     = "failed"
+)
 
 func (TutorialConfig) TableName() string {
 	return "tutorial_configs"
@@ -79,31 +94,31 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 		if text == "" || statTag == "" {
 			continue
 		}
+		itemRewards := normalizeTutorialItemRewards(option.ItemRewards)
+		spellRewards := normalizeTutorialSpellRewards(option.SpellRewards)
+		if option.RewardExperience < 0 {
+			option.RewardExperience = 0
+		}
+		if option.RewardGold < 0 {
+			option.RewardGold = 0
+		}
+		if option.Difficulty < 0 {
+			option.Difficulty = 0
+		}
 		options = append(options, TutorialScenarioOption{
-			OptionText: text,
-			StatTag:    statTag,
+			OptionText:       text,
+			StatTag:          statTag,
+			Difficulty:       option.Difficulty,
+			RewardExperience: option.RewardExperience,
+			RewardGold:       option.RewardGold,
+			ItemRewards:      itemRewards,
+			SpellRewards:     spellRewards,
 		})
 	}
 	c.Options = options
 
-	itemRewards := make([]TutorialItemReward, 0, len(c.ItemRewards))
-	for _, reward := range c.ItemRewards {
-		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
-			continue
-		}
-		itemRewards = append(itemRewards, reward)
-	}
-	c.ItemRewards = itemRewards
-
-	spellRewards := make([]TutorialSpellReward, 0, len(c.SpellRewards))
-	for _, reward := range c.SpellRewards {
-		spellID := strings.TrimSpace(reward.SpellID)
-		if spellID == "" {
-			continue
-		}
-		spellRewards = append(spellRewards, TutorialSpellReward{SpellID: spellID})
-	}
-	c.SpellRewards = spellRewards
+	c.ItemRewards = normalizeTutorialItemRewards(c.ItemRewards)
+	c.SpellRewards = normalizeTutorialSpellRewards(c.SpellRewards)
 
 	if err := assignTutorialJSON(&c.DialogueJSON, c.Dialogue); err != nil {
 		return err
@@ -119,6 +134,18 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 	c.ScenarioPrompt = strings.TrimSpace(c.ScenarioPrompt)
 	c.ScenarioImageURL = strings.TrimSpace(c.ScenarioImageURL)
+	c.ImageGenerationStatus = strings.TrimSpace(c.ImageGenerationStatus)
+	if c.ImageGenerationStatus == "" {
+		c.ImageGenerationStatus = TutorialImageGenerationStatusNone
+	}
+	if c.ImageGenerationError != nil {
+		trimmed := strings.TrimSpace(*c.ImageGenerationError)
+		if trimmed == "" {
+			c.ImageGenerationError = nil
+		} else {
+			c.ImageGenerationError = &trimmed
+		}
+	}
 	if c.RewardExperience < 0 {
 		c.RewardExperience = 0
 	}
@@ -146,6 +173,14 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	}
 	if c.Options == nil {
 		c.Options = []TutorialScenarioOption{}
+	}
+	for i := range c.Options {
+		if c.Options[i].ItemRewards == nil {
+			c.Options[i].ItemRewards = []TutorialItemReward{}
+		}
+		if c.Options[i].SpellRewards == nil {
+			c.Options[i].SpellRewards = []TutorialSpellReward{}
+		}
 	}
 	if c.ItemRewards == nil {
 		c.ItemRewards = []TutorialItemReward{}
@@ -194,4 +229,27 @@ func parseTutorialJSON[T any](raw datatypes.JSON, target *[]T) error {
 		return nil
 	}
 	return json.Unmarshal(raw, target)
+}
+
+func normalizeTutorialItemRewards(input []TutorialItemReward) []TutorialItemReward {
+	rewards := make([]TutorialItemReward, 0, len(input))
+	for _, reward := range input {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		rewards = append(rewards, reward)
+	}
+	return rewards
+}
+
+func normalizeTutorialSpellRewards(input []TutorialSpellReward) []TutorialSpellReward {
+	rewards := make([]TutorialSpellReward, 0, len(input))
+	for _, reward := range input {
+		spellID := strings.TrimSpace(reward.SpellID)
+		if spellID == "" {
+			continue
+		}
+		rewards = append(rewards, TutorialSpellReward{SpellID: spellID})
+	}
+	return rewards
 }

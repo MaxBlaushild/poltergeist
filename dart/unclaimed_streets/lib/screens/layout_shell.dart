@@ -15,6 +15,7 @@ import '../providers/map_focus_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
 import '../services/push_notification_service.dart';
+import '../providers/tutorial_replay_provider.dart';
 import '../widgets/abilities_tab_content.dart';
 import '../widgets/character_tab_content.dart';
 import '../widgets/friends_tab_content.dart';
@@ -379,6 +380,17 @@ class _LayoutShellState extends State<LayoutShell> {
     context.go(targetUri.toString());
   }
 
+  void _triggerTutorialTest() {
+    _scaffoldKey.currentState?.closeEndDrawer();
+    if (widget.routeUri.path != '/single-player') {
+      context.go('/single-player');
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<TutorialReplayProvider>().requestReplay();
+    });
+  }
+
   void _consumeRouteDrawerIntent() {
     final drawerTab = widget.routeUri.queryParameters['drawer']?.trim();
     if (drawerTab == null || drawerTab.isEmpty) return;
@@ -462,7 +474,10 @@ class _LayoutShellState extends State<LayoutShell> {
           }
           _sideDrawerKey.currentState?.handleDrawerOpened();
         },
-        endDrawer: _SideDrawer(key: _sideDrawerKey),
+        endDrawer: _SideDrawer(
+          key: _sideDrawerKey,
+          onTriggerTutorialTest: _triggerTutorialTest,
+        ),
         body: LayoutShellDrawerController(
           openCharacter: _openCharacterDrawer,
           openProfile: _openCharacterProfileDrawer,
@@ -574,7 +589,7 @@ class _LayoutHeader extends StatelessWidget {
               ),
               const Spacer(),
               if (auth.user != null)
-                _UserAvatar(auth: auth)
+                const _DrawerMenuTrigger()
               else if (!auth.loading)
                 TextButton(
                   onPressed: () => context.go(
@@ -590,13 +605,12 @@ class _LayoutHeader extends StatelessWidget {
   }
 }
 
-class _UserAvatar extends StatelessWidget {
-  const _UserAvatar({required this.auth});
-
-  final AuthProvider auth;
+class _DrawerMenuTrigger extends StatelessWidget {
+  const _DrawerMenuTrigger();
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final hasUnspentPoints = context
         .watch<CharacterStatsProvider>()
         .hasUnspentPoints;
@@ -607,19 +621,13 @@ class _UserAvatar extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.grey.shade300,
-            backgroundImage:
-                auth.user?.profilePictureUrl != null &&
-                    auth.user!.profilePictureUrl.isNotEmpty
-                ? NetworkImage(auth.user!.profilePictureUrl)
-                : null,
-            child:
-                auth.user?.profilePictureUrl == null ||
-                    auth.user!.profilePictureUrl.isEmpty
-                ? const Icon(Icons.person)
-                : null,
+          Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              Icons.menu_rounded,
+              color: theme.colorScheme.onSurface,
+              size: 28,
+            ),
           ),
           if (hasUnspentPoints)
             Positioned(
@@ -649,7 +657,9 @@ class _UserAvatar extends StatelessWidget {
 }
 
 class _SideDrawer extends StatefulWidget {
-  const _SideDrawer({super.key});
+  const _SideDrawer({super.key, required this.onTriggerTutorialTest});
+
+  final VoidCallback onTriggerTutorialTest;
 
   @override
   State<_SideDrawer> createState() => _SideDrawerState();
@@ -884,10 +894,12 @@ class _SideDrawerState extends State<_SideDrawer> {
                               ? const ReputationTabContent(
                                   key: ValueKey('reputation'),
                                 )
-                              : const Align(
+                              : Align(
                                   alignment: Alignment.topCenter,
                                   child: SettingsTabContent(
                                     key: ValueKey('settings'),
+                                    onTriggerTutorialTest:
+                                        widget.onTriggerTutorialTest,
                                   ),
                                 ),
                         ),
