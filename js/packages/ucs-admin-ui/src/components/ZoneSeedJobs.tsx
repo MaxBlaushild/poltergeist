@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone } from '@poltergeist/types';
 
@@ -53,6 +53,23 @@ type ZoneSeedJob = {
   draft?: ZoneSeedDraft;
 };
 
+type ZoneSeedDraftPayload = {
+  placeCount: number;
+  monsterCount: number;
+  inputEncounterCount: number;
+  optionEncounterCount: number;
+  treasureChestCount: number;
+  healingFountainCount: number;
+  requiredPlaceTags: string[];
+  shopkeeperItemTags: string[];
+};
+
+type BulkQueueZoneSeedJobsResponse = {
+  queuedCount: number;
+  requestedZoneCount: number;
+  jobs: ZoneSeedJob[];
+};
+
 const statusBadgeClass = (status: string) => {
   switch (status) {
     case 'queued':
@@ -81,6 +98,48 @@ const formatDate = (value?: string) => {
   return parsed.toLocaleString();
 };
 
+const buildSeedDraftPayload = (params: {
+  placeCount: string;
+  monsterCount: string;
+  inputEncounterCount: string;
+  optionEncounterCount: string;
+  treasureChestCount: string;
+  healingFountainCount: string;
+  requiredPlaceTags: string[];
+  shopkeeperItemTags: string[];
+}): { payload?: ZoneSeedDraftPayload; error?: string } => {
+  const placeCount = Number.parseInt(params.placeCount, 10);
+  const monsterCount = Number.parseInt(params.monsterCount, 10);
+  const inputEncounterCount = Number.parseInt(params.inputEncounterCount, 10);
+  const optionEncounterCount = Number.parseInt(params.optionEncounterCount, 10);
+  const treasureChestCount = Number.parseInt(params.treasureChestCount, 10);
+  const healingFountainCount = Number.parseInt(params.healingFountainCount, 10);
+
+  if (
+    Number.isNaN(placeCount) ||
+    Number.isNaN(monsterCount) ||
+    Number.isNaN(inputEncounterCount) ||
+    Number.isNaN(optionEncounterCount) ||
+    Number.isNaN(treasureChestCount) ||
+    Number.isNaN(healingFountainCount)
+  ) {
+    return { error: 'Counts must be integers.' };
+  }
+
+  return {
+    payload: {
+      placeCount,
+      monsterCount,
+      inputEncounterCount,
+      optionEncounterCount,
+      treasureChestCount,
+      healingFountainCount,
+      requiredPlaceTags: params.requiredPlaceTags,
+      shopkeeperItemTags: params.shopkeeperItemTags,
+    },
+  };
+};
+
 export const ZoneSeedJobs = () => {
   const { apiClient } = useAPI();
   const { zones, refreshZones } = useZoneContext();
@@ -89,6 +148,7 @@ export const ZoneSeedJobs = () => {
   const [jobs, setJobs] = useState<ZoneSeedJob[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
+  const [creatingBulkDrafts, setCreatingBulkDrafts] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -105,6 +165,8 @@ export const ZoneSeedJobs = () => {
   const [showRequiredTagSuggestions, setShowRequiredTagSuggestions] = useState(false);
   const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
   const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
+  const [bulkZoneQuery, setBulkZoneQuery] = useState('');
+  const [bulkZoneCount, setBulkZoneCount] = useState('5');
 
   const knownPlaceTags = useMemo(
     () => [
@@ -150,32 +212,59 @@ export const ZoneSeedJobs = () => {
   const [showDraftZoneSuggestions, setShowDraftZoneSuggestions] = useState(false);
   const [filterZoneQuery, setFilterZoneQuery] = useState('');
   const [showFilterZoneSuggestions, setShowFilterZoneSuggestions] = useState(false);
+  const sortedZones = useMemo(
+    () => [...zones].sort((left, right) => left.name.localeCompare(right.name)),
+    [zones]
+  );
 
   const selectedZone = useMemo<Zone | undefined>(() => {
-    return zones.find((zone) => zone.id === draftZoneId);
-  }, [zones, draftZoneId]);
+    return sortedZones.find((zone) => zone.id === draftZoneId);
+  }, [sortedZones, draftZoneId]);
+
+  const draftZoneSuggestions = useMemo(() => {
+    const query = draftZoneQuery.toLowerCase();
+    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+  }, [sortedZones, draftZoneQuery]);
+
+  const filterZoneSuggestions = useMemo(() => {
+    const query = filterZoneQuery.toLowerCase();
+    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+  }, [sortedZones, filterZoneQuery]);
+
+  const bulkRequestedZoneCount = useMemo(() => {
+    const parsed = Number.parseInt(bulkZoneCount, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      return 0;
+    }
+    return parsed;
+  }, [bulkZoneCount]);
+
+  const bulkMatchingZones = useMemo(() => {
+    const query = bulkZoneQuery.trim().toLowerCase();
+    if (!query) {
+      return sortedZones;
+    }
+    return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
+  }, [sortedZones, bulkZoneQuery]);
+
+  const bulkTargetZones = useMemo(() => {
+    if (bulkRequestedZoneCount <= 0) {
+      return [];
+    }
+    return bulkMatchingZones.slice(0, bulkRequestedZoneCount);
+  }, [bulkMatchingZones, bulkRequestedZoneCount]);
 
   useEffect(() => {
-    if (zones.length === 0) {
+    if (sortedZones.length === 0) {
       refreshZones();
       return;
     }
-    if (!draftZoneId && zones.length > 0) {
-      setDraftZoneId(zones[0].id);
+    if (!draftZoneId && sortedZones.length > 0) {
+      setDraftZoneId(sortedZones[0].id);
     }
-  }, [zones, draftZoneId, refreshZones]);
+  }, [sortedZones, draftZoneId, refreshZones]);
 
-  useEffect(() => {
-    fetchJobs(jobFilterZoneId || undefined);
-  }, [jobFilterZoneId]);
-
-  useEffect(() => {
-    if (selectedZone?.name) {
-      setDraftZoneQuery(selectedZone.name);
-    }
-  }, [selectedZone]);
-
-  const fetchJobs = async (zoneId?: string) => {
+  const fetchJobs = useCallback(async (zoneId?: string) => {
     setLoadingJobs(true);
     setError(null);
     try {
@@ -190,28 +279,35 @@ export const ZoneSeedJobs = () => {
     } finally {
       setLoadingJobs(false);
     }
-  };
+  }, [apiClient]);
+
+  useEffect(() => {
+    fetchJobs(jobFilterZoneId || undefined);
+  }, [fetchJobs, jobFilterZoneId]);
+
+  useEffect(() => {
+    if (selectedZone?.name) {
+      setDraftZoneQuery(selectedZone.name);
+    }
+  }, [selectedZone]);
 
   const handleCreateDraft = async () => {
     if (!draftZoneId) {
       setError('Please select a zone.');
       return;
     }
-    const places = Number.parseInt(placeCount, 10);
-    const monsters = Number.parseInt(monsterCount, 10);
-    const inputEncounters = Number.parseInt(inputEncounterCount, 10);
-    const optionEncounters = Number.parseInt(optionEncounterCount, 10);
-    const treasureChests = Number.parseInt(treasureChestCount, 10);
-    const healingFountains = Number.parseInt(healingFountainCount, 10);
-    if (
-      Number.isNaN(places) ||
-      Number.isNaN(monsters) ||
-      Number.isNaN(inputEncounters) ||
-      Number.isNaN(optionEncounters) ||
-      Number.isNaN(treasureChests) ||
-      Number.isNaN(healingFountains)
-    ) {
-      setError('Counts must be integers.');
+    const { payload, error: payloadError } = buildSeedDraftPayload({
+      placeCount,
+      monsterCount,
+      inputEncounterCount,
+      optionEncounterCount,
+      treasureChestCount,
+      healingFountainCount,
+      requiredPlaceTags,
+      shopkeeperItemTags,
+    });
+    if (!payload) {
+      setError(payloadError ?? 'Counts must be integers.');
       return;
     }
     setCreatingDraft(true);
@@ -220,16 +316,7 @@ export const ZoneSeedJobs = () => {
     try {
       const created = await apiClient.post<ZoneSeedJob>(
         `/sonar/admin/zones/${draftZoneId}/seed-draft`,
-        {
-          placeCount: places,
-          monsterCount: monsters,
-          inputEncounterCount: inputEncounters,
-          optionEncounterCount: optionEncounters,
-          treasureChestCount: treasureChests,
-          healingFountainCount: healingFountains,
-          requiredPlaceTags,
-          shopkeeperItemTags,
-        }
+        payload
       );
       setJobs((prev) => [created, ...prev]);
       setSuccess('Draft queued successfully.');
@@ -238,6 +325,58 @@ export const ZoneSeedJobs = () => {
       setError('Failed to queue zone seed draft.');
     } finally {
       setCreatingDraft(false);
+    }
+  };
+
+  const handleBulkCreateDrafts = async () => {
+    if (bulkRequestedZoneCount <= 0) {
+      setError('Bulk zone count must be greater than zero.');
+      return;
+    }
+    if (bulkTargetZones.length === 0) {
+      setError('No zones match the current bulk filter.');
+      return;
+    }
+
+    const { payload, error: payloadError } = buildSeedDraftPayload({
+      placeCount,
+      monsterCount,
+      inputEncounterCount,
+      optionEncounterCount,
+      treasureChestCount,
+      healingFountainCount,
+      requiredPlaceTags,
+      shopkeeperItemTags,
+    });
+    if (!payload) {
+      setError(payloadError ?? 'Counts must be integers.');
+      return;
+    }
+
+    setCreatingBulkDrafts(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const response = await apiClient.post<BulkQueueZoneSeedJobsResponse>(
+        '/sonar/admin/zone-seed-jobs/bulk-queue',
+        {
+          zoneIds: bulkTargetZones.map((zone) => zone.id),
+          ...payload,
+        }
+      );
+      setJobs((prev) => [...response.jobs, ...prev]);
+      if (response.queuedCount === response.requestedZoneCount) {
+        setSuccess(`Queued ${response.queuedCount} zone seed draft jobs.`);
+      } else {
+        setSuccess(
+          `Queued ${response.queuedCount} zone seed draft jobs from ${response.requestedZoneCount} requested zones.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to bulk queue drafts', err);
+      setError('Failed to bulk queue zone seed drafts.');
+    } finally {
+      setCreatingBulkDrafts(false);
     }
   };
 
@@ -376,13 +515,9 @@ export const ZoneSeedJobs = () => {
               }}
               placeholder="Type to filter zones..."
             />
-            {showDraftZoneSuggestions && zones.length > 0 && (
+            {showDraftZoneSuggestions && draftZoneSuggestions.length > 0 && (
               <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
-                {zones
-                  .filter((zone) =>
-                    zone.name.toLowerCase().includes(draftZoneQuery.toLowerCase())
-                  )
-                  .map((zone) => (
+                {draftZoneSuggestions.map((zone) => (
                     <button
                       type="button"
                       key={zone.id}
@@ -395,7 +530,7 @@ export const ZoneSeedJobs = () => {
                     >
                       {zone.name}
                     </button>
-                  ))}
+                ))}
               </div>
             )}
           </div>
@@ -597,6 +732,54 @@ export const ZoneSeedJobs = () => {
           >
             {creatingDraft ? 'Queuing...' : 'Create draft'}
           </button>
+          <div className="mt-6 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Bulk queue</h3>
+                <p className="text-xs text-gray-500">
+                  Queue this same seed configuration across the first N zones matching a filter.
+                </p>
+              </div>
+              <div className="w-24">
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Zones
+                </label>
+                <input
+                  className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                  value={bulkZoneCount}
+                  onChange={(e) => setBulkZoneCount(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Zone filter
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                value={bulkZoneQuery}
+                onChange={(e) => setBulkZoneQuery(e.target.value)}
+                placeholder="Optional name filter..."
+              />
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Matching zones: {bulkMatchingZones.length}. Targeting {bulkTargetZones.length}
+              {bulkRequestedZoneCount > 0 ? ` of requested ${bulkRequestedZoneCount}` : ''}.
+            </p>
+            {bulkTargetZones.length > 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                Preview: {bulkTargetZones.slice(0, 5).map((zone) => zone.name).join(', ')}
+                {bulkTargetZones.length > 5 ? ` +${bulkTargetZones.length - 5} more` : ''}
+              </p>
+            )}
+            <button
+              className="mt-4 w-full rounded bg-slate-800 px-4 py-2 text-white hover:bg-slate-700 disabled:opacity-60"
+              onClick={handleBulkCreateDrafts}
+              disabled={creatingBulkDrafts || bulkTargetZones.length === 0}
+            >
+              {creatingBulkDrafts ? 'Queuing bulk drafts...' : `Queue for ${bulkTargetZones.length} zones`}
+            </button>
+          </div>
         </div>
 
         <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
@@ -618,7 +801,7 @@ export const ZoneSeedJobs = () => {
                 onBlur={() => setTimeout(() => setShowFilterZoneSuggestions(false), 120)}
                 placeholder="Filter by zone (optional)..."
               />
-              {showFilterZoneSuggestions && zones.length > 0 && (
+              {showFilterZoneSuggestions && filterZoneSuggestions.length > 0 && (
                 <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
                   <button
                     type="button"
@@ -631,11 +814,7 @@ export const ZoneSeedJobs = () => {
                   >
                     All zones
                   </button>
-                  {zones
-                    .filter((zone) =>
-                      zone.name.toLowerCase().includes(filterZoneQuery.toLowerCase())
-                    )
-                    .map((zone) => (
+                  {filterZoneSuggestions.map((zone) => (
                       <button
                         type="button"
                         key={zone.id}
@@ -648,7 +827,7 @@ export const ZoneSeedJobs = () => {
                       >
                         {zone.name}
                       </button>
-                    ))}
+                  ))}
                 </div>
               )}
             </div>

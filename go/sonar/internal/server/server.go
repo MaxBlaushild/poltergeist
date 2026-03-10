@@ -306,6 +306,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneImport))
 	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
 	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
+	r.POST("/sonar/admin/zone-seed-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/approve", middleware.WithAuthentication(s.authClient, s.livenessClient, s.approveZoneSeedJob))
@@ -4629,21 +4630,50 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		return
 	}
 
-	var requestBody struct {
-		PlaceCount           *int     `json:"placeCount"`
-		MonsterCount         *int     `json:"monsterCount"`
-		InputEncounterCount  *int     `json:"inputEncounterCount"`
-		OptionEncounterCount *int     `json:"optionEncounterCount"`
-		TreasureChestCount   *int     `json:"treasureChestCount"`
-		HealingFountainCount *int     `json:"healingFountainCount"`
-		RequiredPlaceTags    []string `json:"requiredPlaceTags"`
-		ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
-	}
+	var requestBody zoneSeedDraftRequest
 	if err := ctx.ShouldBindJSON(&requestBody); err != nil && err != io.EOF {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	settings, err := normalizeZoneSeedDraftRequest(requestBody)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, settings)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, job)
+}
+
+type zoneSeedDraftRequest struct {
+	PlaceCount           *int     `json:"placeCount"`
+	MonsterCount         *int     `json:"monsterCount"`
+	InputEncounterCount  *int     `json:"inputEncounterCount"`
+	OptionEncounterCount *int     `json:"optionEncounterCount"`
+	TreasureChestCount   *int     `json:"treasureChestCount"`
+	HealingFountainCount *int     `json:"healingFountainCount"`
+	RequiredPlaceTags    []string `json:"requiredPlaceTags"`
+	ShopkeeperItemTags   []string `json:"shopkeeperItemTags"`
+}
+
+type normalizedZoneSeedDraftRequest struct {
+	PlaceCount           int
+	MonsterCount         int
+	InputEncounterCount  int
+	OptionEncounterCount int
+	TreasureChestCount   int
+	HealingFountainCount int
+	RequiredPlaceTags    []string
+	ShopkeeperItemTags   []string
+}
+
+func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalizedZoneSeedDraftRequest, error) {
 	placeCount := 0
 	if requestBody.PlaceCount != nil {
 		placeCount = *requestBody.PlaceCount
@@ -4700,15 +4730,34 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 	}
 
 	if placeCount < 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 || healingFountainCount < 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "placeCount, monsterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater"})
-		return
+		return nil, fmt.Errorf("placeCount, monsterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater")
 	}
 	if placeCount > 0 && len(requiredPlaceTags) > placeCount {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "requiredPlaceTags cannot exceed placeCount"})
-		return
+		return nil, fmt.Errorf("requiredPlaceTags cannot exceed placeCount")
 	}
 	if placeCount == 0 {
 		requiredPlaceTags = []string{}
+	}
+
+	return &normalizedZoneSeedDraftRequest{
+		PlaceCount:           placeCount,
+		MonsterCount:         monsterCount,
+		InputEncounterCount:  inputEncounterCount,
+		OptionEncounterCount: optionEncounterCount,
+		TreasureChestCount:   treasureChestCount,
+		HealingFountainCount: healingFountainCount,
+		RequiredPlaceTags:    requiredPlaceTags,
+		ShopkeeperItemTags:   shopkeeperItemTags,
+	}, nil
+}
+
+func (s *server) createAndEnqueueZoneSeedJob(
+	ctx context.Context,
+	zoneID uuid.UUID,
+	settings *normalizedZoneSeedDraftRequest,
+) (*models.ZoneSeedJob, error) {
+	if settings == nil {
+		return nil, fmt.Errorf("zone seed settings are required")
 	}
 
 	job := &models.ZoneSeedJob{
@@ -4717,37 +4766,101 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 		UpdatedAt:            time.Now(),
 		ZoneID:               zoneID,
 		Status:               models.ZoneSeedStatusQueued,
-		PlaceCount:           placeCount,
+		PlaceCount:           settings.PlaceCount,
 		CharacterCount:       0,
 		QuestCount:           0,
 		MainQuestCount:       0,
-		MonsterCount:         monsterCount,
-		InputEncounterCount:  inputEncounterCount,
-		OptionEncounterCount: optionEncounterCount,
-		TreasureChestCount:   treasureChestCount,
-		HealingFountainCount: healingFountainCount,
-		RequiredPlaceTags:    models.StringArray(requiredPlaceTags),
-		ShopkeeperItemTags:   models.StringArray(shopkeeperItemTags),
+		MonsterCount:         settings.MonsterCount,
+		InputEncounterCount:  settings.InputEncounterCount,
+		OptionEncounterCount: settings.OptionEncounterCount,
+		TreasureChestCount:   settings.TreasureChestCount,
+		HealingFountainCount: settings.HealingFountainCount,
+		RequiredPlaceTags:    models.StringArray(settings.RequiredPlaceTags),
+		ShopkeeperItemTags:   models.StringArray(settings.ShopkeeperItemTags),
 	}
 	if err := s.dbClient.ZoneSeedJob().Create(ctx, job); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
 
 	payload, err := json.Marshal(jobs.SeedZoneDraftTaskPayload{
 		JobID: job.ID,
 	})
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		return nil, err
 	}
 
 	if _, err := s.asyncClient.Enqueue(asynq.NewTask(jobs.SeedZoneDraftTaskType, payload)); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return nil, err
+	}
+
+	return job, nil
+}
+
+func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
+	var requestBody struct {
+		ZoneIDs []string `json:"zoneIds"`
+		zoneSeedDraftRequest
+	}
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, job)
+	if len(requestBody.ZoneIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneIds array cannot be empty"})
+		return
+	}
+
+	settings, err := normalizeZoneSeedDraftRequest(requestBody.zoneSeedDraftRequest)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.ZoneIDs))
+	zoneIDs := make([]uuid.UUID, 0, len(requestBody.ZoneIDs))
+	for _, zoneIDStr := range requestBody.ZoneIDs {
+		zoneID, err := uuid.Parse(strings.TrimSpace(zoneIDStr))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid zone ID: %s", zoneIDStr)})
+			return
+		}
+		if _, ok := seen[zoneID]; ok {
+			continue
+		}
+		seen[zoneID] = struct{}{}
+		zoneIDs = append(zoneIDs, zoneID)
+	}
+	if len(zoneIDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "zoneIds array cannot be empty"})
+		return
+	}
+
+	createdJobs := make([]*models.ZoneSeedJob, 0, len(zoneIDs))
+	for _, zoneID := range zoneIDs {
+		zone, err := s.dbClient.Zone().FindByID(ctx, zoneID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if zone == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("zone not found: %s", zoneID)})
+			return
+		}
+
+		job, err := s.createAndEnqueueZoneSeedJob(ctx, zoneID, settings)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to queue zone %s: %v", zoneID, err)})
+			return
+		}
+		createdJobs = append(createdJobs, job)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"queuedCount":        len(createdJobs),
+		"requestedZoneCount": len(zoneIDs),
+		"jobs":               createdJobs,
+	})
 }
 
 func (s *server) getZoneSeedJobs(ctx *gin.Context) {

@@ -688,11 +688,22 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	}
 	battle.EndedAt = &endedAt
 	battle.LastActivityAt = endedAt
-	if monster.OwnerUserID != nil {
-		encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
-		if err != nil {
-			return nil, err
+	encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
+	if err != nil {
+		return nil, err
+	}
+	if encounter != nil {
+		for _, participant := range participants {
+			if err := s.dbClient.UserMonsterEncounterVictory().Upsert(
+				ctx,
+				participant.UserID,
+				encounter.ID,
+			); err != nil {
+				return nil, err
+			}
 		}
+	}
+	if monster.OwnerUserID != nil {
 		if encounter != nil {
 			if err := s.dbClient.Tutorial().MarkMonsterCompleted(ctx, battle.UserID, encounter.ID); err != nil {
 				return nil, err

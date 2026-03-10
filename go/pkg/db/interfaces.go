@@ -103,6 +103,7 @@ type DbClient interface {
 	MonsterTemplate() MonsterTemplateHandle
 	Monster() MonsterHandle
 	MonsterEncounter() MonsterEncounterHandle
+	UserMonsterEncounterVictory() UserMonsterEncounterVictoryHandle
 	MonsterBattle() MonsterBattleHandle
 	MonsterBattleParticipant() MonsterBattleParticipantHandle
 	MonsterBattleInvite() MonsterBattleInviteHandle
@@ -1079,6 +1080,11 @@ type MonsterEncounterHandle interface {
 	Update(ctx context.Context, id uuid.UUID, updates *models.MonsterEncounter) error
 	Delete(ctx context.Context, id uuid.UUID) error
 	ReplaceMembers(ctx context.Context, encounterID uuid.UUID, members []models.MonsterEncounterMember) error
+}
+
+type UserMonsterEncounterVictoryHandle interface {
+	Upsert(ctx context.Context, userID uuid.UUID, encounterID uuid.UUID) error
+	FindEncounterIDsByUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) ([]uuid.UUID, error)
 }
 
 type MonsterTemplateHandle interface {

@@ -381,6 +381,7 @@ class _LayoutShellState extends State<LayoutShell> {
   void _openInventoryDrawer() {
     _pendingDrawerTabIndex = _SideDrawerState._inventoryTab;
     _pendingProfileUser = null;
+    _sideDrawerKey.currentState?.showInventoryTab();
     _openDrawer();
   }
 
@@ -742,6 +743,20 @@ class _SideDrawerState extends State<_SideDrawer> {
   int _tabIndex = 0;
   User? _profileUser;
 
+  @override
+  void didUpdateWidget(covariant _SideDrawer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final tutorialStarted =
+        oldWidget.inventoryTutorialSession == null &&
+        widget.inventoryTutorialSession != null;
+    if (tutorialStarted && _tabIndex != _inventoryTab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _selectTab(_inventoryTab);
+      });
+    }
+  }
+
   void handleDrawerOpened() {
     _refreshCharacterStatsIfVisible();
   }
@@ -816,6 +831,10 @@ class _SideDrawerState extends State<_SideDrawer> {
 
   void showCharacterTab() {
     _selectTab(_characterTab);
+  }
+
+  void showInventoryTab() {
+    _selectTab(_inventoryTab);
   }
 
   void _closeProfile() {

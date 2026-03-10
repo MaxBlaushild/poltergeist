@@ -1851,6 +1851,16 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	defeatedEncounterIDs, err := s.dbClient.UserMonsterEncounterVictory().
+		FindEncounterIDsByUserAndZone(ctx, user.ID, zoneID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defeatedSet := make(map[uuid.UUID]struct{}, len(defeatedEncounterIDs))
+	for _, encounterID := range defeatedEncounterIDs {
+		defeatedSet[encounterID] = struct{}{}
+	}
 	userLevel, err := s.currentPartyMaxLevel(ctx, user)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1859,6 +1869,9 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
+		if _, defeated := defeatedSet[encounters[i].ID]; defeated {
+			continue
+		}
 		if !monsterEncounterVisibleToUser(user.ID, &encounters[i]) {
 			continue
 		}
