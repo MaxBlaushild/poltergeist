@@ -148,6 +148,10 @@ func (h *scenarioHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("SpellRewards.Spell")
 }
 
+func (h *scenarioHandle) visibleQuery(ctx context.Context) *gorm.DB {
+	return h.preloadBase(ctx).Where("retired_at IS NULL")
+}
+
 func (h *scenarioHandle) Create(ctx context.Context, scenario *models.Scenario) error {
 	scenario.ID = uuid.New()
 	scenario.CreatedAt = time.Now()
@@ -169,7 +173,7 @@ func (h *scenarioHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.Sc
 
 func (h *scenarioHandle) FindAll(ctx context.Context) ([]models.Scenario, error) {
 	var scenarios []models.Scenario
-	if err := h.preloadBase(ctx).Find(&scenarios).Error; err != nil {
+	if err := h.visibleQuery(ctx).Find(&scenarios).Error; err != nil {
 		return nil, err
 	}
 	return scenarios, nil
@@ -177,7 +181,7 @@ func (h *scenarioHandle) FindAll(ctx context.Context) ([]models.Scenario, error)
 
 func (h *scenarioHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error) {
 	var scenarios []models.Scenario
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Find(&scenarios).Error; err != nil {
 		return nil, err
@@ -187,7 +191,7 @@ func (h *scenarioHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]
 
 func (h *scenarioHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Scenario, error) {
 	var scenarios []models.Scenario
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.scenario_id = scenarios.id)").
 		Find(&scenarios).Error; err != nil {
@@ -216,6 +220,7 @@ func (h *scenarioHandle) Update(ctx context.Context, id uuid.UUID, updates *mode
 		"recurring_scenario_id":        updates.RecurringScenarioID,
 		"recurrence_frequency":         updates.RecurrenceFrequency,
 		"next_recurrence_at":           updates.NextRecurrenceAt,
+		"retired_at":                   updates.RetiredAt,
 		"reward_mode":                  updates.RewardMode,
 		"random_reward_size":           updates.RandomRewardSize,
 		"difficulty":                   updates.Difficulty,
@@ -248,6 +253,7 @@ func (h *scenarioHandle) Delete(ctx context.Context, id uuid.UUID) error {
 func (h *scenarioHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Scenario, error) {
 	var scenarios []models.Scenario
 	query := h.db.WithContext(ctx).
+		Where("retired_at IS NULL").
 		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
 		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
 		Order("next_recurrence_at ASC")
@@ -441,7 +447,7 @@ func (h *scenarioHandle) DeleteItemChoicePending(ctx context.Context, id uuid.UU
 }
 
 func (h *scenarioHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	query := h.preloadBase(ctx)
+	query := h.visibleQuery(ctx)
 	if userID == nil {
 		query = query.Where("owner_user_id IS NULL")
 	} else {
@@ -470,7 +476,7 @@ func (h *scenarioHandle) FindAllWithUserStatus(ctx context.Context, userID *uuid
 }
 
 func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	query := h.preloadBase(ctx).Where("zone_id = ?", zoneID)
+	query := h.visibleQuery(ctx).Where("zone_id = ?", zoneID)
 	if userID == nil {
 		query = query.Where("owner_user_id IS NULL")
 	} else {
@@ -488,7 +494,7 @@ func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 	var attempts []models.UserScenarioAttempt
 	if err := h.db.WithContext(ctx).
 		Select("scenario_id").
-		Where("user_id = ? AND scenario_id IN (?)", *userID, h.db.Model(&models.Scenario{}).Select("id").Where("zone_id = ?", zoneID)).
+		Where("user_id = ? AND scenario_id IN (?)", *userID, h.db.Model(&models.Scenario{}).Select("id").Where("zone_id = ? AND retired_at IS NULL", zoneID)).
 		Find(&attempts).Error; err != nil {
 		return nil, nil, err
 	}
@@ -499,7 +505,7 @@ func (h *scenarioHandle) FindByZoneIDWithUserStatus(ctx context.Context, zoneID 
 }
 
 func (h *scenarioHandle) FindByZoneIDWithUserStatusExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID, userID *uuid.UUID) ([]models.Scenario, map[uuid.UUID]bool, error) {
-	query := h.preloadBase(ctx).
+	query := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.scenario_id = scenarios.id)")
 	if userID == nil {

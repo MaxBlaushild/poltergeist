@@ -23,6 +23,7 @@ type MonsterEncounter struct {
 	RecurringMonsterEncounterID *uuid.UUID               `json:"recurringMonsterEncounterId,omitempty" gorm:"column:recurring_monster_encounter_id;type:uuid"`
 	RecurrenceFrequency         *string                  `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`
 	NextRecurrenceAt            *time.Time               `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
+	RetiredAt                   *time.Time               `json:"retiredAt,omitempty" gorm:"column:retired_at"`
 	ZoneID                      uuid.UUID                `json:"zoneId" gorm:"column:zone_id"`
 	Zone                        Zone                     `json:"zone"`
 	Latitude                    float64                  `json:"latitude"`

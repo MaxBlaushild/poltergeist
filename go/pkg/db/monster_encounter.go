@@ -31,6 +31,10 @@ func (h *monsterEncounterHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("Members.Monster.ItemRewards.InventoryItem")
 }
 
+func (h *monsterEncounterHandle) visibleQuery(ctx context.Context) *gorm.DB {
+	return h.preloadBase(ctx).Where("retired_at IS NULL")
+}
+
 func (h *monsterEncounterHandle) Create(ctx context.Context, encounter *models.MonsterEncounter) error {
 	now := time.Now()
 	if encounter.ID == uuid.Nil {
@@ -59,7 +63,7 @@ func (h *monsterEncounterHandle) FindByID(
 
 func (h *monsterEncounterHandle) FindAll(ctx context.Context) ([]models.MonsterEncounter, error) {
 	var encounters []models.MonsterEncounter
-	if err := h.preloadBase(ctx).Order("name ASC").Find(&encounters).Error; err != nil {
+	if err := h.visibleQuery(ctx).Order("name ASC").Find(&encounters).Error; err != nil {
 		return nil, err
 	}
 	return encounters, nil
@@ -70,7 +74,7 @@ func (h *monsterEncounterHandle) FindByZoneID(
 	zoneID uuid.UUID,
 ) ([]models.MonsterEncounter, error) {
 	var encounters []models.MonsterEncounter
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Order("name ASC").
 		Find(&encounters).Error; err != nil {
@@ -84,7 +88,7 @@ func (h *monsterEncounterHandle) FindByZoneIDExcludingQuestNodes(
 	zoneID uuid.UUID,
 ) ([]models.MonsterEncounter, error) {
 	var encounters []models.MonsterEncounter
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.monster_encounter_id = monster_encounters.id)").
 		Order("name ASC").
@@ -101,6 +105,7 @@ func (h *monsterEncounterHandle) FindDueRecurring(
 ) ([]models.MonsterEncounter, error) {
 	var encounters []models.MonsterEncounter
 	query := h.db.WithContext(ctx).
+		Where("retired_at IS NULL").
 		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
 		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
 		Order("next_recurrence_at ASC")
@@ -152,6 +157,7 @@ func (h *monsterEncounterHandle) Update(
 		"recurring_monster_encounter_id": updates.RecurringMonsterEncounterID,
 		"recurrence_frequency":           updates.RecurrenceFrequency,
 		"next_recurrence_at":             updates.NextRecurrenceAt,
+		"retired_at":                     updates.RetiredAt,
 		"zone_id":                        updates.ZoneID,
 		"latitude":                       updates.Latitude,
 		"longitude":                      updates.Longitude,

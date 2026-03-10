@@ -24,6 +24,10 @@ func (h *challengeHandle) preloadBase(ctx context.Context) *gorm.DB {
 		Preload("ItemChoiceRewards.InventoryItem")
 }
 
+func (h *challengeHandle) visibleQuery(ctx context.Context) *gorm.DB {
+	return h.preloadBase(ctx).Where("retired_at IS NULL")
+}
+
 func (h *challengeHandle) Create(ctx context.Context, challenge *models.Challenge) error {
 	if challenge != nil {
 		if strings.TrimSpace(string(challenge.RewardMode)) == "" {
@@ -52,7 +56,7 @@ func (h *challengeHandle) FindByID(ctx context.Context, id uuid.UUID) (*models.C
 
 func (h *challengeHandle) FindAll(ctx context.Context) ([]models.Challenge, error) {
 	var challenges []models.Challenge
-	if err := h.preloadBase(ctx).Find(&challenges).Error; err != nil {
+	if err := h.visibleQuery(ctx).Find(&challenges).Error; err != nil {
 		return nil, err
 	}
 	return challenges, nil
@@ -60,7 +64,7 @@ func (h *challengeHandle) FindAll(ctx context.Context) ([]models.Challenge, erro
 
 func (h *challengeHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error) {
 	var challenges []models.Challenge
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Find(&challenges).Error; err != nil {
 		return nil, err
@@ -70,7 +74,7 @@ func (h *challengeHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID) ([
 
 func (h *challengeHandle) FindByZoneIDExcludingQuestNodes(ctx context.Context, zoneID uuid.UUID) ([]models.Challenge, error) {
 	var challenges []models.Challenge
-	if err := h.preloadBase(ctx).
+	if err := h.visibleQuery(ctx).
 		Where("zone_id = ?", zoneID).
 		Where("NOT EXISTS (SELECT 1 FROM quest_nodes qn WHERE qn.challenge_id = challenges.id)").
 		Find(&challenges).Error; err != nil {
@@ -116,6 +120,7 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		"recurring_challenge_id": updates.RecurringChallengeID,
 		"recurrence_frequency":   updates.RecurrenceFrequency,
 		"next_recurrence_at":     updates.NextRecurrenceAt,
+		"retired_at":             updates.RetiredAt,
 		"reward_mode":            updates.RewardMode,
 		"random_reward_size":     updates.RandomRewardSize,
 		"reward_experience":      updates.RewardExperience,
@@ -137,6 +142,7 @@ func (h *challengeHandle) Delete(ctx context.Context, id uuid.UUID) error {
 func (h *challengeHandle) FindDueRecurring(ctx context.Context, asOf time.Time, limit int) ([]models.Challenge, error) {
 	var challenges []models.Challenge
 	query := h.db.WithContext(ctx).
+		Where("retired_at IS NULL").
 		Where("recurrence_frequency IS NOT NULL AND recurrence_frequency <> ''").
 		Where("next_recurrence_at IS NOT NULL AND next_recurrence_at <= ?", asOf).
 		Order("next_recurrence_at ASC")

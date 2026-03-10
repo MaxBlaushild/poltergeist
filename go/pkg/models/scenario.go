@@ -28,6 +28,7 @@ type Scenario struct {
 	RecurringScenarioID       *uuid.UUID                     `json:"recurringScenarioId,omitempty" gorm:"column:recurring_scenario_id;type:uuid"`
 	RecurrenceFrequency       *string                        `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`
 	NextRecurrenceAt          *time.Time                     `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
+	RetiredAt                 *time.Time                     `json:"retiredAt,omitempty" gorm:"column:retired_at"`
 	RewardMode                RewardMode                     `json:"rewardMode" gorm:"column:reward_mode"`
 	RandomRewardSize          RandomRewardSize               `json:"randomRewardSize" gorm:"column:random_reward_size"`
 	Difficulty                int                            `json:"difficulty"`

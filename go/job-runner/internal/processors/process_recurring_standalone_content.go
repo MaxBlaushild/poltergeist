@@ -195,6 +195,7 @@ func (p *ProcessRecurringStandaloneContentProcessor) processScenario(
 	scenario.RecurringScenarioID = recurringID
 	scenario.RecurrenceFrequency = nil
 	scenario.NextRecurrenceAt = nil
+	scenario.RetiredAt = &now
 	scenario.UpdatedAt = now
 	if err := p.dbClient.Scenario().Update(ctx, scenario.ID, scenario); err != nil {
 		log.Printf("Failed to clear recurrence fields for scenario %s: %v", scenario.ID, err)
@@ -271,6 +272,7 @@ func (p *ProcessRecurringStandaloneContentProcessor) processChallenge(
 	challenge.RecurringChallengeID = recurringID
 	challenge.RecurrenceFrequency = nil
 	challenge.NextRecurrenceAt = nil
+	challenge.RetiredAt = &now
 	challenge.UpdatedAt = now
 	if err := p.dbClient.Challenge().Update(ctx, challenge.ID, challenge); err != nil {
 		log.Printf("Failed to clear recurrence fields for challenge %s: %v", challenge.ID, err)
@@ -351,6 +353,7 @@ func (p *ProcessRecurringStandaloneContentProcessor) processMonsterEncounter(
 	encounter.RecurringMonsterEncounterID = recurringID
 	encounter.RecurrenceFrequency = nil
 	encounter.NextRecurrenceAt = nil
+	encounter.RetiredAt = &now
 	encounter.UpdatedAt = now
 	if err := p.dbClient.MonsterEncounter().Update(ctx, encounter.ID, encounter); err != nil {
 		log.Printf("Failed to clear recurrence fields for monster encounter %s: %v", encounter.ID, err)
