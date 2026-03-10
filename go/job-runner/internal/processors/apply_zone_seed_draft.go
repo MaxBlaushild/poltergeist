@@ -289,6 +289,11 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 		location := p.randomLocationForZone(zone, locations)
 		leadTemplate := templates[rand.Intn(len(templates))]
 		memberCount := zoneSeedEncounterMemberCount()
+		now := time.Now()
+		recurringID, recurrenceFrequency, nextRecurrenceAt, err := zoneSeedDefaultRecurrence(now)
+		if err != nil {
+			return fmt.Errorf("failed to calculate monster encounter recurrence: %w", err)
+		}
 
 		encounterName := zoneSeedEncounterName(strings.TrimSpace(leadTemplate.Name), memberCount)
 		encounterDescription := zoneSeedEncounterDescription(strings.TrimSpace(leadTemplate.Description), memberCount)
@@ -299,17 +304,20 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 		}
 
 		encounter := &models.MonsterEncounter{
-			ID:                 uuid.New(),
-			CreatedAt:          time.Now(),
-			UpdatedAt:          time.Now(),
-			Name:               encounterName,
-			Description:        encounterDescription,
-			ImageURL:           encounterImageURL,
-			ThumbnailURL:       encounterThumbnailURL,
-			ScaleWithUserLevel: true,
-			ZoneID:             zone.ID,
-			Latitude:           location.Latitude,
-			Longitude:          location.Longitude,
+			ID:                          uuid.New(),
+			CreatedAt:                   now,
+			UpdatedAt:                   now,
+			Name:                        encounterName,
+			Description:                 encounterDescription,
+			ImageURL:                    encounterImageURL,
+			ThumbnailURL:                encounterThumbnailURL,
+			ScaleWithUserLevel:          true,
+			RecurringMonsterEncounterID: &recurringID,
+			RecurrenceFrequency:         &recurrenceFrequency,
+			NextRecurrenceAt:            &nextRecurrenceAt,
+			ZoneID:                      zone.ID,
+			Latitude:                    location.Latitude,
+			Longitude:                   location.Longitude,
 		}
 		if err := p.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
 			return fmt.Errorf("failed to create monster encounter %d/%d: %w", i+1, encounterCount, err)
@@ -391,17 +399,27 @@ func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
 		lng := loc.Longitude
 		latitude = &lat
 		longitude = &lng
+		now := time.Now()
+		recurringID, recurrenceFrequency, nextRecurrenceAt, err := zoneSeedDefaultRecurrence(now)
+		if err != nil {
+			log.Printf("Failed to calculate scenario recurrence (openEnded=%t): %v", openEnded, err)
+			failed++
+			continue
+		}
 
 		job := &models.ScenarioGenerationJob{
-			ID:                 uuid.New(),
-			CreatedAt:          time.Now(),
-			UpdatedAt:          time.Now(),
-			ZoneID:             zoneID,
-			Status:             models.ScenarioGenerationStatusQueued,
-			OpenEnded:          openEnded,
-			ScaleWithUserLevel: scaleWithUserLevel,
-			Latitude:           latitude,
-			Longitude:          longitude,
+			ID:                  uuid.New(),
+			CreatedAt:           now,
+			UpdatedAt:           now,
+			ZoneID:              zoneID,
+			Status:              models.ScenarioGenerationStatusQueued,
+			OpenEnded:           openEnded,
+			ScaleWithUserLevel:  scaleWithUserLevel,
+			Latitude:            latitude,
+			Longitude:           longitude,
+			RecurringScenarioID: &recurringID,
+			RecurrenceFrequency: &recurrenceFrequency,
+			NextRecurrenceAt:    &nextRecurrenceAt,
 		}
 		if err := p.dbClient.ScenarioGenerationJob().Create(ctx, job); err != nil {
 			log.Printf("Failed to create scenario generation job (openEnded=%t): %v", openEnded, err)
@@ -488,22 +506,29 @@ func (p *ApplyZoneSeedDraftProcessor) seedStandaloneChallengesForPOIs(
 		}
 
 		now := time.Now()
+		recurringID, recurrenceFrequency, nextRecurrenceAt, err := zoneSeedDefaultRecurrence(now)
+		if err != nil {
+			return fmt.Errorf("failed to calculate challenge recurrence: %w", err)
+		}
 		challenge := &models.Challenge{
-			ID:                 uuid.New(),
-			CreatedAt:          now,
-			UpdatedAt:          now,
-			ZoneID:             zone.ID,
-			PointOfInterestID:  &poi.ID,
-			Latitude:           lat,
-			Longitude:          lng,
-			Question:           strings.TrimSpace(question),
-			Description:        strings.TrimSpace(description),
-			SubmissionType:     submissionType,
-			Difficulty:         clampQuestDifficulty(difficulty),
-			ScaleWithUserLevel: true,
-			RewardMode:         models.RewardModeRandom,
-			RandomRewardSize:   models.RandomRewardSizeSmall,
-			StatTags:           statTags,
+			ID:                   uuid.New(),
+			CreatedAt:            now,
+			UpdatedAt:            now,
+			ZoneID:               zone.ID,
+			PointOfInterestID:    &poi.ID,
+			Latitude:             lat,
+			Longitude:            lng,
+			Question:             strings.TrimSpace(question),
+			Description:          strings.TrimSpace(description),
+			SubmissionType:       submissionType,
+			Difficulty:           clampQuestDifficulty(difficulty),
+			ScaleWithUserLevel:   true,
+			RecurringChallengeID: &recurringID,
+			RecurrenceFrequency:  &recurrenceFrequency,
+			NextRecurrenceAt:     &nextRecurrenceAt,
+			RewardMode:           models.RewardModeRandom,
+			RandomRewardSize:     models.RandomRewardSizeSmall,
+			StatTags:             statTags,
 		}
 		if err := p.dbClient.Challenge().Create(ctx, challenge); err != nil {
 			return err

@@ -23,6 +23,9 @@ type ScenarioGenerationJob struct {
 	ScaleWithUserLevel  bool       `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
 	Latitude            *float64   `json:"latitude,omitempty"`
 	Longitude           *float64   `json:"longitude,omitempty"`
+	RecurringScenarioID *uuid.UUID `json:"recurringScenarioId,omitempty" gorm:"column:recurring_scenario_id;type:uuid"`
+	RecurrenceFrequency *string    `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`
+	NextRecurrenceAt    *time.Time `json:"nextRecurrenceAt,omitempty" gorm:"column:next_recurrence_at"`
 	GeneratedScenarioID *uuid.UUID `json:"generatedScenarioId,omitempty" gorm:"column:generated_scenario_id;type:uuid"`
 	ErrorMessage        *string    `json:"errorMessage,omitempty"`
 }
