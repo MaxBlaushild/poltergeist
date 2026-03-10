@@ -159,6 +159,10 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := s.dbClient.Tutorial().RecordEquippedItem(ctx, user.ID, item.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	equipment, err := s.buildEquipmentResponse(ctx, user.ID)
 	if err != nil {

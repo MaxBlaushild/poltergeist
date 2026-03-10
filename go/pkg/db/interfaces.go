@@ -427,7 +427,25 @@ type TutorialHandle interface {
 		spellRewards []models.ScenarioSpellReward,
 		force bool,
 	) (*models.UserTutorialState, *models.Scenario, error)
-	MarkCompleted(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) error
+	MarkScenarioResolved(
+		ctx context.Context,
+		userID uuid.UUID,
+		scenarioID uuid.UUID,
+		selectedOptionID *uuid.UUID,
+		requiredEquipItemIDs []int,
+		requiredUseItemIDs []int,
+	) error
+	RecordEquippedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
+	RecordUsedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error
+	ActivateMonsterForUser(
+		ctx context.Context,
+		userID uuid.UUID,
+		encounter *models.MonsterEncounter,
+		members []models.MonsterEncounterMember,
+		monsters []models.Monster,
+	) (*models.UserTutorialState, *models.MonsterEncounter, error)
+	MarkCompleted(ctx context.Context, userID uuid.UUID) error
+	MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error
 }
 
 type AuditItemHandle interface {
@@ -453,6 +471,7 @@ type OutfitProfileGenerationHandle interface {
 	Create(ctx context.Context, gen *models.OutfitProfileGeneration) error
 	FindByID(ctx context.Context, id uuid.UUID) (*models.OutfitProfileGeneration, error)
 	FindByOwnedInventoryItemID(ctx context.Context, ownedItemID uuid.UUID) (*models.OutfitProfileGeneration, error)
+	HasCompletedGenerationForUser(ctx context.Context, userID uuid.UUID) (bool, error)
 	Update(ctx context.Context, id uuid.UUID, updates *models.OutfitProfileGeneration) error
 }
 

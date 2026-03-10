@@ -68,6 +68,7 @@ import '../widgets/used_item_modal.dart';
 import '../widgets/zone_widget.dart';
 import '../widgets/paper_texture.dart';
 import '../widgets/party_member_map_strip.dart';
+import 'layout_shell.dart';
 
 const _chestImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
@@ -215,6 +216,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _tutorialActivationInFlight = false;
   bool _tutorialReplayPending = false;
   int _lastTutorialReplayRequestCount = 0;
+  String? _tutorialFocusedScenarioId;
+  String? _tutorialFocusedMonsterEncounterId;
+  bool _tutorialNormalPinsRevealInProgress = false;
+  bool _tutorialLoadoutPendingAfterCompletionModal = false;
+  bool _tutorialRevealPendingAfterCompletionModal = false;
+  bool _tutorialWelcomeOverlayVisible = false;
+  double _tutorialWelcomeOverlayOpacity = 0.0;
 
   @override
   void initState() {
@@ -314,6 +322,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _refreshScenarioVisibilityForLocationChange() {
     if (_styleLoaded && _mapController != null && _markersAdded) {
       _scenarioVisibilityRefreshPending = false;
+      if (_isTutorialMapFocusActive) {
+        unawaited(
+          (() async {
+            await _refreshScenarioSymbols();
+            await _refreshMonsterSymbols();
+            await _refreshChallengeSymbols();
+          })(),
+        );
+        return;
+      }
       unawaited(
         (() async {
           await _refreshScenarioSymbols();
@@ -345,11 +363,256 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     unawaited(_loadTutorialStatus(force: true));
   }
 
+  bool get _isTutorialMapFocusActive =>
+      !_tutorialNormalPinsRevealInProgress &&
+      ((_tutorialFocusedScenarioId?.trim().isNotEmpty ?? false) ||
+          (_tutorialFocusedMonsterEncounterId?.trim().isNotEmpty ?? false) ||
+          (_tutorialStatus?.isLoadoutStep ?? false));
+
+  bool _isTutorialFocusedScenarioId(String scenarioId) {
+    final focusedId = _tutorialFocusedScenarioId?.trim() ?? '';
+    return focusedId.isNotEmpty && focusedId == scenarioId.trim();
+  }
+
+  bool _isTutorialFocusedMonsterEncounterId(String encounterId) {
+    final focusedId = _tutorialFocusedMonsterEncounterId?.trim() ?? '';
+    return focusedId.isNotEmpty && focusedId == encounterId.trim();
+  }
+
+  double _mapMarkerStartingOpacity(double targetOpacity) {
+    if (_tutorialNormalPinsRevealInProgress && !_isTutorialMapFocusActive) {
+      return 0.0;
+    }
+    return targetOpacity;
+  }
+
+  Future<void> _rebuildMapPins() async {
+    if (!_styleLoaded || _mapController == null) return;
+    if (mounted) {
+      setState(() => _markersAdded = false);
+    } else {
+      _markersAdded = false;
+    }
+    await _addPoiMarkers();
+  }
+
+  Future<void> _ensureTutorialScenarioLoaded(TutorialStatus? status) async {
+    if (status == null || !status.hasActiveScenario) return;
+    final scenarioId = status.scenarioId?.trim() ?? '';
+    if (scenarioId.isEmpty) return;
+    final alreadyLoaded = _scenarios.any(
+      (scenario) => scenario.id == scenarioId,
+    );
+    if (alreadyLoaded) return;
+    final scenario = await context.read<PoiService>().getScenarioById(
+      scenarioId,
+    );
+    if (!mounted || scenario == null) return;
+    setState(() {
+      _scenarios = [
+        scenario,
+        ..._scenarios.where((item) => item.id != scenario.id),
+      ];
+    });
+  }
+
+  Future<void> _ensureTutorialMonsterLoaded(TutorialStatus? status) async {
+    if (status == null || !status.hasActiveMonsterEncounter) return;
+    final encounterId = status.monsterEncounterId?.trim() ?? '';
+    if (encounterId.isEmpty) return;
+    final alreadyLoaded = _monsters.any(
+      (encounter) => encounter.id == encounterId,
+    );
+    if (alreadyLoaded) return;
+    final encounter = await context.read<PoiService>().getMonsterEncounterById(
+      encounterId,
+    );
+    if (!mounted || encounter == null) return;
+    setState(() {
+      _monsters = [
+        encounter,
+        ..._monsters.where((item) => item.id != encounter.id),
+      ];
+    });
+  }
+
+  Future<void> _syncTutorialMapModeFromStatus(TutorialStatus? status) async {
+    final nextFocusedScenarioId = status != null && status.hasActiveScenario
+        ? status.scenarioId?.trim() ?? ''
+        : '';
+    final nextFocusedMonsterEncounterId =
+        status != null && status.hasActiveMonsterEncounter
+        ? status.monsterEncounterId?.trim() ?? ''
+        : '';
+    final previousFocusedScenarioId = _tutorialFocusedScenarioId?.trim() ?? '';
+    final previousFocusedMonsterEncounterId =
+        _tutorialFocusedMonsterEncounterId?.trim() ?? '';
+    if (nextFocusedScenarioId == previousFocusedScenarioId &&
+        nextFocusedMonsterEncounterId == previousFocusedMonsterEncounterId) {
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _tutorialFocusedScenarioId = nextFocusedScenarioId.isEmpty
+            ? null
+            : nextFocusedScenarioId;
+        _tutorialFocusedMonsterEncounterId =
+            nextFocusedMonsterEncounterId.isEmpty
+            ? null
+            : nextFocusedMonsterEncounterId;
+      });
+    } else {
+      _tutorialFocusedScenarioId = nextFocusedScenarioId.isEmpty
+          ? null
+          : nextFocusedScenarioId;
+      _tutorialFocusedMonsterEncounterId = nextFocusedMonsterEncounterId.isEmpty
+          ? null
+          : nextFocusedMonsterEncounterId;
+    }
+    await _rebuildMapPins();
+    if (nextFocusedMonsterEncounterId.isNotEmpty &&
+        nextFocusedMonsterEncounterId != previousFocusedMonsterEncounterId) {
+      final encounter = _monsters.firstWhere(
+        (entry) => entry.id == nextFocusedMonsterEncounterId,
+        orElse: () => const MonsterEncounter(
+          id: '',
+          name: '',
+          zoneId: '',
+          latitude: 0,
+          longitude: 0,
+        ),
+      );
+      if (encounter.id.isNotEmpty) {
+        _flyToLocation(encounter.latitude, encounter.longitude);
+        unawaited(_pulsePoi(encounter.latitude, encounter.longitude));
+      }
+    }
+  }
+
+  void _syncTutorialInventorySession(TutorialStatus? status) {
+    final drawerController = LayoutShellDrawerController.maybeOf(context);
+    if (drawerController == null) return;
+    if (status == null || !status.isLoadoutStep) {
+      drawerController.stopInventoryTutorial();
+      return;
+    }
+    drawerController.startInventoryTutorial(
+      InventoryTutorialSession(
+        dialogue: status.loadoutDialogue,
+        requiredEquipItemIds: status.requiredEquipItemIds,
+        completedEquipItemIds: status.completedEquipItemIds,
+        requiredUseItemIds: status.requiredUseItemIds,
+        completedUseItemIds: status.completedUseItemIds,
+        onProgressChanged: () => _loadTutorialStatus(force: true),
+      ),
+    );
+  }
+
+  Future<void> _beginTutorialNormalPinsReveal() async {
+    if (!mounted) return;
+    setState(() {
+      _tutorialFocusedScenarioId = null;
+      _tutorialFocusedMonsterEncounterId = null;
+      _tutorialNormalPinsRevealInProgress = true;
+      _tutorialWelcomeOverlayVisible = true;
+      _tutorialWelcomeOverlayOpacity = 0.0;
+    });
+    await _loadTutorialStatus(force: true);
+    await _rebuildMapPins();
+    await _runTutorialWelcomeOverlaySequence();
+  }
+
+  Future<void> _beginTutorialLoadoutStep() async {
+    if (!mounted) return;
+    await _loadTutorialStatus(force: true);
+    if (!mounted) return;
+    final status = _tutorialStatus;
+    if (status?.isLoadoutStep ?? false) {
+      setState(() {
+        _tutorialFocusedScenarioId = null;
+        _tutorialFocusedMonsterEncounterId = null;
+      });
+      await _rebuildMapPins();
+      return;
+    }
+    if (status?.hasActiveMonsterEncounter ?? false) {
+      await _rebuildMapPins();
+      return;
+    }
+    if (status?.isCompleted ?? false) {
+      await _beginTutorialNormalPinsReveal();
+    }
+  }
+
+  Future<void> _runTutorialWelcomeOverlaySequence() async {
+    if (!mounted) return;
+    const fadeInSteps = 5;
+    for (var i = 1; i <= fadeInSteps; i++) {
+      if (!mounted) return;
+      setState(() => _tutorialWelcomeOverlayOpacity = i / fadeInSteps);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+
+    final c = _mapController;
+    if (c == null || !_styleLoaded) {
+      setState(() {
+        _tutorialWelcomeOverlayVisible = false;
+        _tutorialWelcomeOverlayOpacity = 0.0;
+        _tutorialNormalPinsRevealInProgress = false;
+      });
+      return;
+    }
+
+    final questPoiIds = _currentQuestPoiIdsForFilter(
+      context.read<QuestLogProvider>(),
+    );
+    final discoveries = context.read<DiscoveriesProvider>();
+    final mapContentPoiIds = _buildPoiIdsWithMapContent();
+    const fadeOutSteps = 16;
+    for (var i = 0; i <= fadeOutSteps; i++) {
+      if (!mounted || !_tutorialNormalPinsRevealInProgress) return;
+      final progress = i / fadeOutSteps;
+      setState(() => _tutorialWelcomeOverlayOpacity = 1.0 - progress);
+      await _updateNormalPinOpacities(
+        c,
+        progress,
+        questPoiIds: questPoiIds,
+        discoveries: discoveries,
+        mapContentPoiIds: mapContentPoiIds,
+      );
+      if (i != fadeOutSteps) {
+        await Future<void>.delayed(const Duration(milliseconds: 90));
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _tutorialWelcomeOverlayVisible = false;
+      _tutorialWelcomeOverlayOpacity = 0.0;
+      _tutorialNormalPinsRevealInProgress = false;
+    });
+    _ensureQuestPoiPulseTimer();
+  }
+
   void _onCompletedTaskModalChanged() {
     final provider = _completedTaskProvider;
     if (!mounted || provider == null) return;
     final modal = provider.currentModal;
-    if (modal == null || identical(modal, _lastHandledCompletionModal)) {
+    if (modal == null) {
+      _lastHandledCompletionModal = null;
+      if (_tutorialLoadoutPendingAfterCompletionModal) {
+        _tutorialLoadoutPendingAfterCompletionModal = false;
+        unawaited(_beginTutorialLoadoutStep());
+      }
+      if (_tutorialRevealPendingAfterCompletionModal) {
+        _tutorialRevealPendingAfterCompletionModal = false;
+        unawaited(_beginTutorialNormalPinsReveal());
+      }
+      return;
+    }
+    if (identical(modal, _lastHandledCompletionModal)) {
       return;
     }
     _lastHandledCompletionModal = modal;
@@ -369,10 +632,27 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       case 'scenarioOutcome':
         final scenarioId = data['scenarioId']?.toString().trim() ?? '';
         if (scenarioId.isEmpty) return;
+        final wasTutorialScenario = _isTutorialFocusedScenarioId(scenarioId);
         await _removeScenarioLocally(
           scenarioId,
           performedScenarioId: scenarioId,
         );
+        if (wasTutorialScenario) {
+          _tutorialLoadoutPendingAfterCompletionModal = true;
+        }
+        return;
+      case 'monsterBattleVictory':
+        final encounterId = data['monsterEncounterId']?.toString().trim() ?? '';
+        if (encounterId.isEmpty) return;
+        final wasTutorialMonster = _isTutorialFocusedMonsterEncounterId(
+          encounterId,
+        );
+        if (!wasTutorialMonster) return;
+        setState(() {
+          _tutorialFocusedMonsterEncounterId = null;
+          _monsters.removeWhere((item) => item.id == encounterId);
+        });
+        _tutorialRevealPendingAfterCompletionModal = true;
         return;
       default:
         return;
@@ -1177,6 +1457,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _tutorialStatus = status;
         _tutorialStatusChecked = true;
       });
+      await _ensureTutorialScenarioLoaded(status);
+      await _ensureTutorialMonsterLoaded(status);
+      await _syncTutorialMapModeFromStatus(status);
+      _syncTutorialInventorySession(status);
       if (_tutorialReplayPending &&
           (status == null ||
               status.character == null ||
@@ -1300,14 +1584,20 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
 
       setState(() {
         _tutorialReplayPending = false;
+        _tutorialFocusedScenarioId = scenario.id;
+        _tutorialFocusedMonsterEncounterId = null;
+        _tutorialNormalPinsRevealInProgress = false;
+        _tutorialLoadoutPendingAfterCompletionModal = false;
+        _tutorialRevealPendingAfterCompletionModal = false;
         _scenarios = [
           scenario,
           ..._scenarios.where((item) => item.id != scenario.id),
         ];
       });
-      await _refreshScenarioSymbols();
+      await _rebuildMapPins();
       if (!mounted) return;
-      _showScenarioPanel(scenario);
+      _flyToLocation(scenario.latitude, scenario.longitude);
+      unawaited(_pulsePoi(scenario.latitude, scenario.longitude));
       unawaited(_loadTutorialStatus(force: true));
     } finally {
       if (mounted) {
@@ -1451,6 +1741,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _challenges = challenges;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
+        if (_isTutorialMapFocusActive || _tutorialNormalPinsRevealInProgress) {
+          await _rebuildMapPins();
+          return;
+        }
         await _refreshTreasureChestSymbols();
         await _refreshHealingFountainSymbols();
         await _refreshScenarioSymbols();
@@ -1469,6 +1763,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _challenges = [];
         });
         if (_styleLoaded && _mapController != null && _markersAdded) {
+          if (_isTutorialMapFocusActive ||
+              _tutorialNormalPinsRevealInProgress) {
+            await _rebuildMapPins();
+            return;
+          }
           await _refreshTreasureChestSymbols();
           await _refreshHealingFountainSymbols();
           await _refreshScenarioSymbols();
@@ -1541,6 +1840,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Scenario? _scenarioById(String id) {
     for (final scenario in _scenarios) {
       if (scenario.id == id) return scenario;
+    }
+    return null;
+  }
+
+  PointOfInterest? _poiById(String id) {
+    for (final poi in _pois) {
+      if (poi.id == id) return poi;
     }
     return null;
   }
@@ -1676,6 +1982,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
     await _loadScenarioMysteryThumbnail(c);
+    final visibleScenarios = _isTutorialMapFocusActive
+        ? _scenarios
+              .where((scenario) => _isTutorialFocusedScenarioId(scenario.id))
+              .toList()
+        : _scenarios;
 
     // Remove untracked/duplicate scenario symbols that can appear due to
     // overlapping async refresh calls.
@@ -1692,6 +2003,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
     if (duplicateOrOrphanSymbols.isNotEmpty) {
+      for (final symbol in duplicateOrOrphanSymbols) {
+        _setQuestPoiHighlight(symbol, false);
+      }
       try {
         await c.removeSymbols(duplicateOrOrphanSymbols);
       } catch (_) {}
@@ -1721,9 +2035,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    final desiredIds = _scenarios.map((scenario) => scenario.id).toSet();
+    final desiredIds = visibleScenarios.map((scenario) => scenario.id).toSet();
     for (final entry in _scenarioSymbolById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
+        _setQuestPoiHighlight(entry.value, false);
         try {
           await c.removeSymbols([entry.value]);
         } catch (_) {}
@@ -1748,19 +2063,22 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioMysteryThumbnailBytes != null &&
         _scenarioMysteryThumbnailAdded;
 
-    for (final scenario in _scenarios) {
+    for (final scenario in visibleScenarios) {
       final mystery = _isScenarioMystery(scenario);
       final isCurrentQuestScenario = _isCurrentQuestScenario(scenario.id);
+      final isTutorialScenario = _isTutorialFocusedScenarioId(scenario.id);
+      final shouldPulseLikeQuest = isCurrentQuestScenario || isTutorialScenario;
       final existingSymbol = _scenarioSymbolById[scenario.id];
       final existingCircle = _scenarioCircleById[scenario.id];
       final needsRefresh =
           _scenarioCircleMystery[scenario.id] != mystery ||
           existingSymbol == null ||
-          _scenarioQuestObjective[scenario.id] != isCurrentQuestScenario;
+          _scenarioQuestObjective[scenario.id] != shouldPulseLikeQuest;
 
       if (canUseImages) {
         if (needsRefresh) {
           if (existingSymbol != null) {
+            _setQuestPoiHighlight(existingSymbol, false);
             try {
               await c.removeSymbols([existingSymbol]);
             } catch (_) {}
@@ -1789,8 +2107,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(scenario.latitude, scenario.longitude),
               iconImage: imageId,
               iconSize: 0.74,
-              iconHaloColor: isCurrentQuestScenario ? '#e1b12c' : '#000000',
-              iconHaloWidth: isCurrentQuestScenario ? 1.15 : 0.75,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
+              iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+              iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
               iconAnchor: 'center',
             ),
             {'type': 'scenario', 'id': scenario.id},
@@ -1798,13 +2117,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           if (!mounted) return;
           _scenarioSymbols.add(symbol);
           _scenarioSymbolById[scenario.id] = symbol;
+          _setQuestPoiHighlight(symbol, shouldPulseLikeQuest);
           _scenarioCircleMystery[scenario.id] = mystery;
-          _scenarioQuestObjective[scenario.id] = isCurrentQuestScenario;
+          _scenarioQuestObjective[scenario.id] = shouldPulseLikeQuest;
         }
         continue;
       }
 
       if (existingSymbol != null) {
+        _setQuestPoiHighlight(existingSymbol, false);
         try {
           await c.removeSymbols([existingSymbol]);
         } catch (_) {}
@@ -1825,7 +2146,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           CircleOptions(
             geometry: LatLng(scenario.latitude, scenario.longitude),
             circleRadius: 23,
-            circleColor: isCurrentQuestScenario
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
+            circleColor: shouldPulseLikeQuest
                 ? '#e1b12c'
                 : (mystery ? '#5a5560' : '#4f8cff'),
             circleStrokeWidth: 2,
@@ -1837,7 +2159,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _scenarioCircles.add(circle);
         _scenarioCircleById[scenario.id] = circle;
         _scenarioCircleMystery[scenario.id] = mystery;
-        _scenarioQuestObjective[scenario.id] = isCurrentQuestScenario;
+        _scenarioQuestObjective[scenario.id] = shouldPulseLikeQuest;
       }
     }
   }
@@ -1881,6 +2203,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
     await _loadMonsterMysteryThumbnail(c);
+    final visibleMonsters = _isTutorialMapFocusActive
+        ? _monsters
+              .where(
+                (encounter) =>
+                    _tutorialFocusedMonsterEncounterId?.trim().isNotEmpty ==
+                        true
+                    ? _isTutorialFocusedMonsterEncounterId(encounter.id)
+                    : false,
+              )
+              .toList()
+        : _monsters;
 
     // Remove untracked/duplicate monster symbols that can appear due to
     // overlapping async refresh calls.
@@ -1926,7 +2259,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    final desiredIds = _monsters.map((monster) => monster.id).toSet();
+    final desiredIds = visibleMonsters.map((monster) => monster.id).toSet();
     for (final entry in _monsterSymbolById.entries.toList()) {
       if (!desiredIds.contains(entry.key)) {
         try {
@@ -1946,8 +2279,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     }
 
-    for (final monster in _monsters) {
+    for (final monster in visibleMonsters) {
       final isCurrentQuestMonster = _isCurrentQuestMonster(monster.id);
+      final isTutorialMonster = _isTutorialFocusedMonsterEncounterId(
+        monster.id,
+      );
       final mystery = _isMonsterMystery(monster);
       String? symbolImageId;
       if (mystery) {
@@ -1989,8 +2325,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(monster.latitude, monster.longitude),
               iconImage: symbolImageId,
               iconSize: 0.78,
-              iconHaloColor: isCurrentQuestMonster ? '#e1b12c' : '#000000',
-              iconHaloWidth: isCurrentQuestMonster ? 1.15 : 0.75,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
+              iconHaloColor: (isCurrentQuestMonster || isTutorialMonster)
+                  ? '#e1b12c'
+                  : '#000000',
+              iconHaloWidth: (isCurrentQuestMonster || isTutorialMonster)
+                  ? 1.15
+                  : 0.75,
               iconAnchor: 'center',
             ),
             {'type': 'monster', 'id': monster.id},
@@ -2005,8 +2346,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               SymbolOptions(
                 geometry: LatLng(monster.latitude, monster.longitude),
                 iconImage: symbolImageId,
-                iconHaloColor: isCurrentQuestMonster ? '#e1b12c' : '#000000',
-                iconHaloWidth: isCurrentQuestMonster ? 1.15 : 0.75,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: (isCurrentQuestMonster || isTutorialMonster)
+                    ? '#e1b12c'
+                    : '#000000',
+                iconHaloWidth: (isCurrentQuestMonster || isTutorialMonster)
+                    ? 1.15
+                    : 0.75,
               ),
             );
           } catch (_) {}
@@ -2035,7 +2381,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         CircleOptions(
           geometry: LatLng(monster.latitude, monster.longitude),
           circleRadius: 24,
-          circleColor: isCurrentQuestMonster
+          circleOpacity: _mapMarkerStartingOpacity(1.0),
+          circleColor: (isCurrentQuestMonster || isTutorialMonster)
               ? '#e1b12c'
               : (mystery ? '#5a5560' : '#b63f3f'),
           circleStrokeWidth: 2,
@@ -2270,6 +2617,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(challenge.latitude, challenge.longitude),
               iconImage: symbolImageId,
               iconSize: 0.74,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: iconHaloColor,
               iconHaloWidth: iconHaloWidth,
               iconAnchor: 'center',
@@ -2286,6 +2634,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               SymbolOptions(
                 geometry: LatLng(challenge.latitude, challenge.longitude),
                 iconImage: symbolImageId,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
                 iconHaloColor: iconHaloColor,
                 iconHaloWidth: iconHaloWidth,
               ),
@@ -2313,6 +2662,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           CircleOptions(
             geometry: LatLng(challenge.latitude, challenge.longitude),
             circleRadius: 20,
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
             circleColor: circleColor,
             circleStrokeWidth: 2,
             circleStrokeColor: '#ffffff',
@@ -2328,6 +2678,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             existingCircle,
             CircleOptions(
               geometry: LatLng(challenge.latitude, challenge.longitude),
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: circleColor,
             ),
           );
@@ -2855,6 +3206,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
     _markersAdded = true;
     final markerGeneration = ++_poiMarkerGeneration;
+    final tutorialMapFocused = _isTutorialMapFocusActive;
     debugPrint(
       'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} fountains=${_healingFountains.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
     );
@@ -3044,6 +3396,15 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         } catch (_) {}
       }
 
+      if (tutorialMapFocused) {
+        await _refreshScenarioSymbols();
+        await _refreshMonsterSymbols();
+        await _refreshChallengeSymbols();
+        _ensureQuestPoiPulseTimer();
+        debugPrint('SinglePlayer: _addPoiMarkers done (tutorial focus)');
+        return;
+      }
+
       for (final ch in _characters) {
         final points = ch.locations
             .map((loc) => LatLng(loc.latitude, loc.longitude))
@@ -3091,6 +3452,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 geometry: point,
                 iconImage: versionedId,
                 iconSize: _standardMarkerThumbnailSize,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
                 iconHaloColor: '#000000',
                 iconHaloWidth: 0.75,
                 iconAnchor: 'center',
@@ -3109,6 +3471,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             CircleOptions(
               geometry: point,
               circleRadius: 30,
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: '#ff8833',
               circleStrokeWidth: 2,
               circleStrokeColor: '#ffffff',
@@ -3125,6 +3488,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(tc.latitude, tc.longitude),
               iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
               iconSize: 0.75,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: '#000000',
               iconHaloWidth: 0.75,
               iconAnchor: 'center',
@@ -3139,6 +3503,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             CircleOptions(
               geometry: LatLng(tc.latitude, tc.longitude),
               circleRadius: 24,
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
               circleStrokeWidth: 2,
               circleStrokeColor: '#ffffff',
@@ -3211,11 +3576,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 iconHaloColor: '#000000',
                 iconHaloWidth: isQuestCurrent ? 0.0 : 0.75,
                 iconHaloBlur: 0.0,
-                iconOpacity: _poiMarkerOpacity(
-                  poi,
-                  isQuestCurrent: isQuestCurrent,
-                  undiscovered: undiscovered,
-                  mapContentPoiIds: mapContentPoiIds,
+                iconOpacity: _mapMarkerStartingOpacity(
+                  _poiMarkerOpacity(
+                    poi,
+                    isQuestCurrent: isQuestCurrent,
+                    undiscovered: undiscovered,
+                    mapContentPoiIds: mapContentPoiIds,
+                  ),
                 ),
                 iconAnchor: 'center',
                 zIndex: 2,
@@ -3232,11 +3599,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(lat, lng),
               circleRadius: 24,
               circleColor: '#3388ff',
-              circleOpacity: _poiMarkerOpacity(
-                poi,
-                isQuestCurrent: isQuestCurrent,
-                undiscovered: undiscovered,
-                mapContentPoiIds: mapContentPoiIds,
+              circleOpacity: _mapMarkerStartingOpacity(
+                _poiMarkerOpacity(
+                  poi,
+                  isQuestCurrent: isQuestCurrent,
+                  undiscovered: undiscovered,
+                  mapContentPoiIds: mapContentPoiIds,
+                ),
               ),
               circleStrokeWidth: 2,
               circleStrokeColor: isQuestCurrent ? '#f5c542' : '#ffffff',
@@ -3261,7 +3630,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         await _addPoiSymbolsBatched(c, markerGeneration, poiSymbolRequests);
       }
       if (poiImageUpdates.isNotEmpty) {
-        unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
+        if (_tutorialNormalPinsRevealInProgress) {
+          await _loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates);
+        } else {
+          unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
+        }
       }
       if (_scenarioVisibilityRefreshPending) {
         _scenarioVisibilityRefreshPending = false;
@@ -3393,11 +3766,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             iconHaloColor: '#000000',
             iconHaloWidth: isQuestCurrentNow ? 0.0 : 0.75,
             iconHaloBlur: 0.0,
-            iconOpacity: _poiMarkerOpacity(
-              result.update.poi,
-              isQuestCurrent: isQuestCurrentNow,
-              undiscovered: result.update.undiscovered,
-              mapContentPoiIds: mapContentPoiIds,
+            iconOpacity: _mapMarkerStartingOpacity(
+              _poiMarkerOpacity(
+                result.update.poi,
+                isQuestCurrent: isQuestCurrentNow,
+                undiscovered: result.update.undiscovered,
+                mapContentPoiIds: mapContentPoiIds,
+              ),
             ),
             iconAnchor: 'center',
             zIndex: 2,
@@ -3425,11 +3800,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           iconHaloColor: '#000000',
           iconHaloWidth: isQuestCurrentNow ? 0.0 : 0.75,
           iconHaloBlur: 0.0,
-          iconOpacity: _poiMarkerOpacity(
-            result.update.poi,
-            isQuestCurrent: isQuestCurrentNow,
-            undiscovered: result.update.undiscovered,
-            mapContentPoiIds: mapContentPoiIds,
+          iconOpacity: _mapMarkerStartingOpacity(
+            _poiMarkerOpacity(
+              result.update.poi,
+              isQuestCurrent: isQuestCurrentNow,
+              undiscovered: result.update.undiscovered,
+              mapContentPoiIds: mapContentPoiIds,
+            ),
           ),
           iconAnchor: 'center',
           zIndex: 2,
@@ -3513,6 +3890,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(tc.latitude, tc.longitude),
               iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
               iconSize: 0.75,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: '#000000',
               iconHaloWidth: 0.75,
               iconAnchor: 'center',
@@ -3526,7 +3904,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           try {
             await c.updateSymbol(
               existing,
-              SymbolOptions(geometry: LatLng(tc.latitude, tc.longitude)),
+              SymbolOptions(
+                geometry: LatLng(tc.latitude, tc.longitude),
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+              ),
             );
           } catch (_) {}
         }
@@ -3547,6 +3928,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             CircleOptions(
               geometry: LatLng(tc.latitude, tc.longitude),
               circleRadius: 24,
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: opened ? '#888888' : '#ffcc00',
               circleStrokeWidth: 2,
               circleStrokeColor: '#ffffff',
@@ -3628,6 +4010,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               geometry: LatLng(fountain.latitude, fountain.longitude),
               iconImage: imageId,
               iconSize: 0.8,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
               iconHaloColor: effectiveHaloColor,
               iconHaloWidth: 1.0,
               iconAnchor: 'center',
@@ -3644,6 +4027,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               SymbolOptions(
                 geometry: LatLng(fountain.latitude, fountain.longitude),
                 iconImage: imageId,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
                 iconHaloColor: effectiveHaloColor,
                 iconHaloWidth: 1.0,
               ),
@@ -3668,6 +4052,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           CircleOptions(
             geometry: LatLng(fountain.latitude, fountain.longitude),
             circleRadius: 20,
+            circleOpacity: _mapMarkerStartingOpacity(1.0),
             circleColor: circleColor,
             circleStrokeWidth: 2,
             circleStrokeColor: '#ffffff',
@@ -3683,6 +4068,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             existingCircle,
             CircleOptions(
               geometry: LatLng(fountain.latitude, fountain.longitude),
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
               circleColor: circleColor,
             ),
           );
@@ -3969,6 +4355,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   void _ensureQuestPoiPulseTimer() {
+    if (_tutorialNormalPinsRevealInProgress) {
+      _questPoiPulseTimer?.cancel();
+      _questPoiPulseTimer = null;
+      return;
+    }
     if (_questPoiHighlightSymbols.isEmpty) {
       _questPoiPulseTimer?.cancel();
       _questPoiPulseTimer = null;
@@ -4252,6 +4643,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _pulseQuestPoiBorders() async {
+    if (_tutorialNormalPinsRevealInProgress) return;
     if (_isQuestPoiPulseActive) return;
     if (_questPoiHighlightSymbols.isEmpty) return;
     final c = _mapController;
@@ -4269,6 +4661,62 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       }
     } catch (_) {}
     _isQuestPoiPulseActive = false;
+  }
+
+  Future<void> _updateNormalPinOpacities(
+    MapLibreMapController c,
+    double progress, {
+    required Set<String> questPoiIds,
+    required DiscoveriesProvider discoveries,
+    required Set<String> mapContentPoiIds,
+  }) async {
+    for (final entry in _poiSymbolById.entries) {
+      final poiId = entry.key;
+      final poi = _poiById(poiId);
+      if (poi == null) continue;
+      final isQuestCurrent = questPoiIds.contains(poi.id);
+      final undiscovered = !discoveries.hasDiscovered(poi.id);
+      final targetOpacity = _poiMarkerOpacity(
+        poi,
+        isQuestCurrent: isQuestCurrent,
+        undiscovered: undiscovered,
+        mapContentPoiIds: mapContentPoiIds,
+      );
+      try {
+        await c.updateSymbol(
+          entry.value,
+          SymbolOptions(iconOpacity: targetOpacity * progress),
+        );
+      } catch (_) {}
+    }
+
+    Future<void> updateSymbolOpacity(Iterable<Symbol> symbols) async {
+      for (final symbol in symbols) {
+        try {
+          await c.updateSymbol(symbol, SymbolOptions(iconOpacity: progress));
+        } catch (_) {}
+      }
+    }
+
+    Future<void> updateCircleOpacity(Map<String, Circle> circles) async {
+      for (final circle in circles.values) {
+        try {
+          await c.updateCircle(circle, CircleOptions(circleOpacity: progress));
+        } catch (_) {}
+      }
+    }
+
+    await updateSymbolOpacity(_characterSymbols);
+    await updateSymbolOpacity(_chestSymbolById.values);
+    await updateCircleOpacity(_chestCircleById);
+    await updateSymbolOpacity(_healingFountainSymbolById.values);
+    await updateCircleOpacity(_healingFountainCircleById);
+    await updateSymbolOpacity(_scenarioSymbolById.values);
+    await updateCircleOpacity(_scenarioCircleById);
+    await updateSymbolOpacity(_monsterSymbolById.values);
+    await updateCircleOpacity(_monsterCircleById);
+    await updateSymbolOpacity(_challengeSymbolById.values);
+    await updateCircleOpacity(_challengeCircleById);
   }
 
   bool _isInsidePolygon(
@@ -5755,11 +6203,101 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 ),
               ),
             ),
+          if (_tutorialWelcomeOverlayVisible)
+            Positioned.fill(child: _buildTutorialWelcomeOverlay(context)),
           const CelebrationModalManager(),
           const NewItemModal(),
           const UsedItemModal(),
           // Shop and dialogue are opened from the character panel.
         ],
+      ),
+    );
+  }
+
+  Widget _buildTutorialWelcomeOverlay(BuildContext context) {
+    final theme = Theme.of(context);
+    return IgnorePointer(
+      ignoring: false,
+      child: Opacity(
+        opacity: _tutorialWelcomeOverlayOpacity.clamp(0.0, 1.0),
+        child: Container(
+          color: const Color(0xFF19140D).withValues(alpha: 0.58),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 360),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: PaperTexture(
+                  borderRadius: BorderRadius.circular(28),
+                  opacity: 0.12,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(28, 30, 28, 26),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8EFD8).withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: const Color(0xFFD2B26C).withValues(alpha: 0.9),
+                        width: 1.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 24,
+                          offset: Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 62,
+                          height: 62,
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFFF5C542,
+                            ).withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFFD4A72C),
+                              width: 1.4,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.explore_rounded,
+                            color: Color(0xFF8C5A14),
+                            size: 30,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Welcome to Unclaimed Streets',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.cinzelDecorative(
+                            textStyle: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF3D2B13),
+                              height: 1.15,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'The streets are open to you now. Make your mark.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: const Color(0xFF5F4A28),
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -6772,6 +7310,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       parentContext.read<CompletedTaskProvider>().showModal(
         'monsterBattleVictory',
         data: {
+          'monsterEncounterId': monster.id,
           'monsterName': monster.name,
           'rewardExperience': monster.totalRewardExperience,
           'rewardGold': monster.totalRewardGold,
@@ -6908,6 +7447,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             parentContext.read<CompletedTaskProvider>().showModal(
               'scenarioOutcome',
               data: {
+                'scenarioId': result.scenarioId,
                 'scenarioPrompt': scenario.prompt,
                 'successful': result.successful,
                 'outcomeText': outcomeText,

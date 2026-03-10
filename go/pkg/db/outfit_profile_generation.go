@@ -36,6 +36,17 @@ func (h *outfitProfileGenerationHandle) FindByOwnedInventoryItemID(ctx context.C
 	return &gen, nil
 }
 
+func (h *outfitProfileGenerationHandle) HasCompletedGenerationForUser(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var count int64
+	if err := h.db.WithContext(ctx).
+		Model(&models.OutfitProfileGeneration{}).
+		Where("user_id = ? AND status = ?", userID, models.OutfitGenerationStatusComplete).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (h *outfitProfileGenerationHandle) Update(ctx context.Context, id uuid.UUID, updates *models.OutfitProfileGeneration) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()

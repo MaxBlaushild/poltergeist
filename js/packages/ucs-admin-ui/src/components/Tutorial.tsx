@@ -42,10 +42,15 @@ type TutorialOptionResponse = {
 type TutorialConfigResponse = {
   characterId?: string | null;
   dialogue?: string[];
+  loadoutDialogue?: string[];
   scenarioPrompt?: string;
   scenarioImageUrl?: string;
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
+  monsterEncounterId?: string | null;
+  monsterRewardExperience?: number;
+  monsterRewardGold?: number;
+  monsterItemRewards?: Array<{ inventoryItemId?: number; quantity?: number }>;
   rewardExperience?: number;
   rewardGold?: number;
   options?: TutorialOptionResponse[];
@@ -195,13 +200,19 @@ export const Tutorial = () => {
   const [statusKind, setStatusKind] = useState<'success' | 'error' | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
+  const [monsterEncounters, setMonsterEncounters] = useState<Array<{ id: string; name: string }>>([]);
   const [characterId, setCharacterId] = useState('');
   const [dialogue, setDialogue] = useState<string[]>([]);
+  const [loadoutDialogue, setLoadoutDialogue] = useState<string[]>([]);
   const [scenarioPrompt, setScenarioPrompt] = useState('');
   const [scenarioImageUrl, setScenarioImageUrl] = useState('');
   const [imageGenerationStatus, setImageGenerationStatus] = useState('none');
   const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
   const [options, setOptions] = useState<TutorialOptionRow[]>([]);
+  const [monsterEncounterId, setMonsterEncounterId] = useState('');
+  const [monsterRewardExperience, setMonsterRewardExperience] = useState(0);
+  const [monsterRewardGold, setMonsterRewardGold] = useState(0);
+  const [monsterItemRewards, setMonsterItemRewards] = useState<TutorialItemRewardRow[]>([]);
   const imageGenerationActive =
     imageGenerationStatus === 'queued' || imageGenerationStatus === 'in_progress';
 
@@ -209,10 +220,11 @@ export const Tutorial = () => {
     const load = async () => {
       try {
         setLoading(true);
-        const [config, loadedCharacters, loadedSpells] = await Promise.all([
+        const [config, loadedCharacters, loadedSpells, loadedMonsterEncounters] = await Promise.all([
           apiClient.get<TutorialConfigResponse>('/sonar/admin/tutorial'),
           apiClient.get<Character[]>('/sonar/characters'),
           apiClient.get<Spell[]>('/sonar/spells'),
+          apiClient.get<Array<{ id: string; name: string }>>('/sonar/monster-encounters'),
         ]);
 
         const sharedItemRewards = toItemRewardRows(config.itemRewards);
@@ -223,12 +235,20 @@ export const Tutorial = () => {
 
         setCharacters(Array.isArray(loadedCharacters) ? loadedCharacters : []);
         setSpells(Array.isArray(loadedSpells) ? loadedSpells : []);
+        setMonsterEncounters(Array.isArray(loadedMonsterEncounters) ? loadedMonsterEncounters : []);
         setCharacterId(config.characterId ?? '');
         setDialogue(Array.isArray(config.dialogue) ? config.dialogue : []);
+        setLoadoutDialogue(Array.isArray(config.loadoutDialogue) ? config.loadoutDialogue : []);
         setScenarioPrompt(config.scenarioPrompt ?? '');
         setScenarioImageUrl(config.scenarioImageUrl ?? '');
         setImageGenerationStatus((config.imageGenerationStatus ?? 'none').trim() || 'none');
         setImageGenerationError((config.imageGenerationError ?? '').trim() || null);
+        setMonsterEncounterId(config.monsterEncounterId ?? '');
+        setMonsterRewardExperience(
+          typeof config.monsterRewardExperience === 'number' ? config.monsterRewardExperience : 0,
+        );
+        setMonsterRewardGold(typeof config.monsterRewardGold === 'number' ? config.monsterRewardGold : 0);
+        setMonsterItemRewards(toItemRewardRows(config.monsterItemRewards));
         setOptions(
           Array.isArray(config.options) && config.options.length > 0
             ? config.options.map((option) => {
@@ -323,12 +343,31 @@ export const Tutorial = () => {
     [spells],
   );
 
+  const monsterEncounterOptions = useMemo(
+    () =>
+      monsterEncounters.map((encounter) => ({
+        value: encounter.id,
+        label: encounter.name,
+      })),
+    [monsterEncounters],
+  );
+
   const updateDialogueLine = (index: number, value: string) => {
     setDialogue((prev) => prev.map((line, lineIndex) => (lineIndex === index ? value : line)));
   };
 
   const removeDialogueLine = (index: number) => {
     setDialogue((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
+  };
+
+  const updateLoadoutDialogueLine = (index: number, value: string) => {
+    setLoadoutDialogue((prev) =>
+      prev.map((line, lineIndex) => (lineIndex === index ? value : line)),
+    );
+  };
+
+  const removeLoadoutDialogueLine = (index: number) => {
+    setLoadoutDialogue((prev) => prev.filter((_, lineIndex) => lineIndex !== index));
   };
 
   const updateOption = (id: string, updates: Partial<TutorialOptionRow>) => {
@@ -423,6 +462,20 @@ export const Tutorial = () => {
     );
   };
 
+  const addMonsterItemReward = () => {
+    setMonsterItemRewards((prev) => [...prev, makeItemRewardRow()]);
+  };
+
+  const updateMonsterItemReward = (rewardId: string, updates: Partial<TutorialItemRewardRow>) => {
+    setMonsterItemRewards((prev) =>
+      prev.map((reward) => (reward.id === rewardId ? { ...reward, ...updates } : reward)),
+    );
+  };
+
+  const removeMonsterItemReward = (rewardId: string) => {
+    setMonsterItemRewards((prev) => prev.filter((reward) => reward.id !== rewardId));
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -432,8 +485,18 @@ export const Tutorial = () => {
       await apiClient.put('/sonar/admin/tutorial', {
         characterId: characterId || null,
         dialogue: dialogue.map((line) => line.trim()).filter(Boolean),
+        loadoutDialogue: loadoutDialogue.map((line) => line.trim()).filter(Boolean),
         scenarioPrompt: scenarioPrompt.trim(),
         scenarioImageUrl: scenarioImageUrl.trim(),
+        monsterEncounterId: monsterEncounterId || null,
+        monsterRewardExperience: Math.max(0, monsterRewardExperience),
+        monsterRewardGold: Math.max(0, monsterRewardGold),
+        monsterItemRewards: monsterItemRewards
+          .filter((reward) => reward.inventoryItemId && reward.quantity > 0)
+          .map((reward) => ({
+            inventoryItemId: Number.parseInt(reward.inventoryItemId, 10),
+            quantity: reward.quantity,
+          })),
         rewardExperience: 0,
         rewardGold: 0,
         itemRewards: [],
@@ -850,6 +913,163 @@ export const Tutorial = () => {
                           </div>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">Loadout Step</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  After the scenario rewards are granted, the player is pushed into inventory until
+                  they equip their new gear and use the rewarded spellbook.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-800">Dialogue Lines</h3>
+                    <p className="text-xs text-gray-500">
+                      Shown while the inventory drawer is forced open.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLoadoutDialogue((prev) => [...prev, ''])}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Add Line
+                  </button>
+                </div>
+
+                {loadoutDialogue.length === 0 && (
+                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
+                    No loadout dialogue configured.
+                  </div>
+                )}
+
+                {loadoutDialogue.map((line, index) => (
+                  <div key={`loadout-dialogue-${index}`} className="flex gap-3">
+                    <textarea
+                      value={line}
+                      onChange={(event) => updateLoadoutDialogueLine(index, event.target.value)}
+                      rows={2}
+                      className="block flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeLoadoutDialogueLine(index)}
+                      className="self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gray-200 p-4">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-gray-900">Tutorial Monster</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  When the loadout step is complete, the selected encounter is cloned at the
+                  player&apos;s location as a private tutorial fight.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="md:col-span-3">
+                  <SearchableSelect
+                    label="Monster Encounter"
+                    placeholder="Search encounter name…"
+                    options={monsterEncounterOptions}
+                    value={monsterEncounterId}
+                    onChange={setMonsterEncounterId}
+                  />
+                </div>
+                <label className="text-sm">
+                  <span className="block font-medium text-gray-700">Reward Experience</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={monsterRewardExperience}
+                    onChange={(event) =>
+                      setMonsterRewardExperience(Number.parseInt(event.target.value || '0', 10))
+                    }
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="text-sm">
+                  <span className="block font-medium text-gray-700">Reward Gold</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={monsterRewardGold}
+                    onChange={(event) =>
+                      setMonsterRewardGold(Number.parseInt(event.target.value || '0', 10))
+                    }
+                    className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-800">Item Rewards</h3>
+                    <p className="text-xs text-gray-500">
+                      If set, these override the encounter&apos;s default item rewards.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addMonsterItemReward}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Add Item
+                  </button>
+                </div>
+
+                {monsterItemRewards.length === 0 && (
+                  <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
+                    No monster item rewards configured.
+                  </div>
+                )}
+
+                {monsterItemRewards.map((reward) => (
+                  <div key={reward.id} className="rounded-md border border-gray-200 bg-white p-3">
+                    <SearchableSelect
+                      label="Inventory Item"
+                      placeholder="Search item name…"
+                      options={itemOptions}
+                      value={reward.inventoryItemId}
+                      onChange={(value) => updateMonsterItemReward(reward.id, { inventoryItemId: value })}
+                    />
+                    <div className="mt-3 flex items-end gap-3">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={reward.quantity}
+                          onChange={(event) =>
+                            updateMonsterItemReward(reward.id, {
+                              quantity: Number.parseInt(event.target.value || '1', 10),
+                            })
+                          }
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeMonsterItemReward(reward.id)}
+                        className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                 ))}

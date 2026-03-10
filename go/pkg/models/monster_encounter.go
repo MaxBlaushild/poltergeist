@@ -16,6 +16,9 @@ type MonsterEncounter struct {
 	Description                 string                   `json:"description"`
 	ImageURL                    string                   `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL                string                   `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	OwnerUserID                 *uuid.UUID               `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
+	OwnerUser                   *User                    `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
+	Ephemeral                   bool                     `json:"ephemeral" gorm:"column:ephemeral"`
 	ScaleWithUserLevel          bool                     `json:"scaleWithUserLevel" gorm:"column:scale_with_user_level"`
 	RecurringMonsterEncounterID *uuid.UUID               `json:"recurringMonsterEncounterId,omitempty" gorm:"column:recurring_monster_encounter_id;type:uuid"`
 	RecurrenceFrequency         *string                  `json:"recurrenceFrequency,omitempty" gorm:"column:recurrence_frequency"`

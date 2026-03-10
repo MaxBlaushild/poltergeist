@@ -1756,6 +1756,9 @@ func (s *server) getMonsters(ctx *gin.Context) {
 	}
 	response := make([]monsterResponse, 0, len(monsters))
 	for i := range monsters {
+		if !monsterVisibleToUser(user.ID, &monsters[i]) {
+			continue
+		}
 		entry, err := s.buildMonsterResponse(ctx, user.ID, &monsters[i])
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1812,6 +1815,10 @@ func (s *server) getMonsterEncounter(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !monsterEncounterVisibleToUser(user.ID, encounter) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster encounter not found"})
+		return
+	}
 	userLevel, err := s.currentPartyMaxLevel(ctx, user)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -1852,6 +1859,9 @@ func (s *server) getMonsterEncountersForZone(ctx *gin.Context) {
 
 	response := make([]monsterEncounterResponse, 0, len(encounters))
 	for i := range encounters {
+		if !monsterEncounterVisibleToUser(user.ID, &encounters[i]) {
+			continue
+		}
 		entry, err := s.monsterEncounterResponseFrom(ctx, user.ID, &encounters[i], userLevel, true)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2036,6 +2046,10 @@ func (s *server) getMonster(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if !monsterVisibleToUser(user.ID, monster) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
+		return
+	}
 	response, err := s.buildMonsterResponse(ctx, user.ID, monster)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2086,12 +2100,17 @@ func (s *server) startMonsterBattle(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid monster ID"})
 		return
 	}
-	if _, err := s.dbClient.Monster().FindByID(ctx, monsterID); err != nil {
+	monster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
 			return
 		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !monsterVisibleToUser(user.ID, monster) {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "monster not found"})
 		return
 	}
 

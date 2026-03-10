@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"gorm.io/gorm"
 )
 
 const tutorialScenarioFallbackImageURL = "https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png"
@@ -26,24 +28,36 @@ type tutorialOptionPayload struct {
 }
 
 type tutorialConfigRequest struct {
-	CharacterID      *string                      `json:"characterId"`
-	Dialogue         []string                     `json:"dialogue"`
-	ScenarioPrompt   string                       `json:"scenarioPrompt"`
-	ScenarioImageURL string                       `json:"scenarioImageUrl"`
-	Options          []tutorialOptionPayload      `json:"options"`
-	RewardExperience int                          `json:"rewardExperience"`
-	RewardGold       int                          `json:"rewardGold"`
-	ItemRewards      []scenarioRewardItemPayload  `json:"itemRewards"`
-	SpellRewards     []scenarioRewardSpellPayload `json:"spellRewards"`
+	CharacterID             *string                      `json:"characterId"`
+	Dialogue                []string                     `json:"dialogue"`
+	LoadoutDialogue         []string                     `json:"loadoutDialogue"`
+	ScenarioPrompt          string                       `json:"scenarioPrompt"`
+	ScenarioImageURL        string                       `json:"scenarioImageUrl"`
+	Options                 []tutorialOptionPayload      `json:"options"`
+	MonsterEncounterID      *string                      `json:"monsterEncounterId"`
+	MonsterRewardExperience int                          `json:"monsterRewardExperience"`
+	MonsterRewardGold       int                          `json:"monsterRewardGold"`
+	MonsterItemRewards      []scenarioRewardItemPayload  `json:"monsterItemRewards"`
+	RewardExperience        int                          `json:"rewardExperience"`
+	RewardGold              int                          `json:"rewardGold"`
+	ItemRewards             []scenarioRewardItemPayload  `json:"itemRewards"`
+	SpellRewards            []scenarioRewardSpellPayload `json:"spellRewards"`
 }
 
 type tutorialStatusResponse struct {
-	ShowWelcomeDialogue bool              `json:"showWelcomeDialogue"`
-	ActivatedAt         interface{}       `json:"activatedAt"`
-	CompletedAt         interface{}       `json:"completedAt"`
-	ScenarioID          *uuid.UUID        `json:"scenarioId,omitempty"`
-	Character           *models.Character `json:"character,omitempty"`
-	Dialogue            []string          `json:"dialogue"`
+	ShowWelcomeDialogue   bool              `json:"showWelcomeDialogue"`
+	Stage                 string            `json:"stage"`
+	ActivatedAt           interface{}       `json:"activatedAt"`
+	CompletedAt           interface{}       `json:"completedAt"`
+	ScenarioID            *uuid.UUID        `json:"scenarioId,omitempty"`
+	MonsterEncounterID    *uuid.UUID        `json:"monsterEncounterId,omitempty"`
+	Character             *models.Character `json:"character,omitempty"`
+	Dialogue              []string          `json:"dialogue"`
+	LoadoutDialogue       []string          `json:"loadoutDialogue"`
+	RequiredEquipItemIDs  []int             `json:"requiredEquipItemIds"`
+	CompletedEquipItemIDs []int             `json:"completedEquipItemIds"`
+	RequiredUseItemIDs    []int             `json:"requiredUseItemIds"`
+	CompletedUseItemIDs   []int             `json:"completedUseItemIds"`
 }
 
 type activateTutorialRequest struct {
@@ -179,25 +193,45 @@ func (s *server) getTutorialStatus(ctx *gin.Context) {
 	}
 	if state == nil {
 		ctx.JSON(http.StatusOK, tutorialStatusResponse{
-			ShowWelcomeDialogue: false,
-			Character:           config.Character,
-			Dialogue:            append([]string{}, config.Dialogue...),
+			ShowWelcomeDialogue:   false,
+			Stage:                 models.TutorialStageCompleted,
+			Character:             config.Character,
+			Dialogue:              append([]string{}, config.Dialogue...),
+			LoadoutDialogue:       append([]string{}, config.LoadoutDialogue...),
+			RequiredEquipItemIDs:  []int{},
+			CompletedEquipItemIDs: []int{},
+			RequiredUseItemIDs:    []int{},
+			CompletedUseItemIDs:   []int{},
 		})
 		return
 	}
 
-	showWelcomeDialogue := state.ActivatedAt == nil &&
+	state, err = s.maybeAdvanceTutorialProgress(ctx, user.ID, config, state)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	showWelcomeDialogue := state.Stage == models.TutorialStageWelcome &&
+		state.ActivatedAt == nil &&
 		state.CompletedAt == nil &&
 		config.IsConfigured() &&
 		config.Character != nil
 
 	ctx.JSON(http.StatusOK, tutorialStatusResponse{
-		ShowWelcomeDialogue: showWelcomeDialogue,
-		ActivatedAt:         state.ActivatedAt,
-		CompletedAt:         state.CompletedAt,
-		ScenarioID:          state.TutorialScenarioID,
-		Character:           config.Character,
-		Dialogue:            append([]string{}, config.Dialogue...),
+		ShowWelcomeDialogue:   showWelcomeDialogue,
+		Stage:                 state.Stage,
+		ActivatedAt:           state.ActivatedAt,
+		CompletedAt:           state.CompletedAt,
+		ScenarioID:            activeTutorialScenarioID(state),
+		MonsterEncounterID:    activeTutorialMonsterEncounterID(state),
+		Character:             config.Character,
+		Dialogue:              append([]string{}, config.Dialogue...),
+		LoadoutDialogue:       append([]string{}, config.LoadoutDialogue...),
+		RequiredEquipItemIDs:  append([]int{}, state.RequiredEquipItemIDs...),
+		CompletedEquipItemIDs: append([]int{}, state.CompletedEquipItemIDs...),
+		RequiredUseItemIDs:    append([]int{}, state.RequiredUseItemIDs...),
+		CompletedUseItemIDs:   append([]int{}, state.CompletedUseItemIDs...),
 	})
 }
 
@@ -311,14 +345,18 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 
 func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialConfig, error) {
 	config := &models.TutorialConfig{
-		Dialogue:         []string{},
-		ScenarioPrompt:   strings.TrimSpace(body.ScenarioPrompt),
-		ScenarioImageURL: strings.TrimSpace(body.ScenarioImageURL),
-		Options:          []models.TutorialScenarioOption{},
-		ItemRewards:      []models.TutorialItemReward{},
-		SpellRewards:     []models.TutorialSpellReward{},
-		RewardExperience: body.RewardExperience,
-		RewardGold:       body.RewardGold,
+		Dialogue:                []string{},
+		LoadoutDialogue:         []string{},
+		ScenarioPrompt:          strings.TrimSpace(body.ScenarioPrompt),
+		ScenarioImageURL:        strings.TrimSpace(body.ScenarioImageURL),
+		Options:                 []models.TutorialScenarioOption{},
+		MonsterItemRewards:      []models.TutorialItemReward{},
+		ItemRewards:             []models.TutorialItemReward{},
+		SpellRewards:            []models.TutorialSpellReward{},
+		MonsterRewardExperience: body.MonsterRewardExperience,
+		MonsterRewardGold:       body.MonsterRewardGold,
+		RewardExperience:        body.RewardExperience,
+		RewardGold:              body.RewardGold,
 	}
 
 	if body.CharacterID != nil {
@@ -336,6 +374,23 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
 			config.Dialogue = append(config.Dialogue, trimmed)
+		}
+	}
+	for _, line := range body.LoadoutDialogue {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			config.LoadoutDialogue = append(config.LoadoutDialogue, trimmed)
+		}
+	}
+
+	if body.MonsterEncounterID != nil {
+		trimmed := strings.TrimSpace(*body.MonsterEncounterID)
+		if trimmed != "" {
+			monsterEncounterID, err := uuid.Parse(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("monsterEncounterId must be a valid UUID")
+			}
+			config.MonsterEncounterID = &monsterEncounterID
 		}
 	}
 
@@ -377,6 +432,22 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	if config.RewardGold < 0 {
 		config.RewardGold = 0
 	}
+	if config.MonsterRewardExperience < 0 {
+		config.MonsterRewardExperience = 0
+	}
+	if config.MonsterRewardGold < 0 {
+		config.MonsterRewardGold = 0
+	}
+
+	for _, reward := range body.MonsterItemRewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		config.MonsterItemRewards = append(config.MonsterItemRewards, models.TutorialItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
 
 	for _, reward := range body.ItemRewards {
 		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
@@ -402,6 +473,85 @@ func parseTutorialConfigRequest(body tutorialConfigRequest) (*models.TutorialCon
 	}
 
 	return config, nil
+}
+
+func (s *server) maybeAdvanceTutorialProgress(
+	ctx *gin.Context,
+	userID uuid.UUID,
+	config *models.TutorialConfig,
+	state *models.UserTutorialState,
+) (*models.UserTutorialState, error) {
+	if state == nil {
+		return nil, nil
+	}
+	if state.Stage != models.TutorialStageLoadout || state.HasOutstandingLoadoutRequirements() {
+		return state, nil
+	}
+
+	if config == nil || config.MonsterEncounterID == nil {
+		if err := s.dbClient.Tutorial().MarkCompleted(ctx, userID); err != nil {
+			return nil, err
+		}
+		return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+	}
+
+	templateEncounter, err := s.dbClient.MonsterEncounter().FindByID(ctx, *config.MonsterEncounterID)
+	if err != nil || templateEncounter == nil {
+		if err == nil || errors.Is(err, gorm.ErrRecordNotFound) {
+			err = s.dbClient.Tutorial().MarkCompleted(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+		}
+		return nil, err
+	}
+
+	userLat, userLng, err := s.getUserLatLng(ctx, userID)
+	if err != nil {
+		return state, nil
+	}
+	zones, err := s.dbClient.Zone().FindAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	zone, err := selectZoneForCoordinates(zones, userLat, userLng)
+	if err != nil {
+		return nil, err
+	}
+
+	encounter, members, monsters := buildTutorialMonsterEncounter(
+		userID,
+		zone.ID,
+		userLat,
+		userLng,
+		templateEncounter,
+		config,
+	)
+	if _, _, err := s.dbClient.Tutorial().ActivateMonsterForUser(
+		ctx,
+		userID,
+		encounter,
+		members,
+		monsters,
+	); err != nil {
+		return nil, err
+	}
+	return s.dbClient.Tutorial().FindStateByUserID(ctx, userID)
+}
+
+func activeTutorialScenarioID(state *models.UserTutorialState) *uuid.UUID {
+	if state == nil || state.Stage != models.TutorialStageScenario {
+		return nil
+	}
+	return state.TutorialScenarioID
+}
+
+func activeTutorialMonsterEncounterID(state *models.UserTutorialState) *uuid.UUID {
+	if state == nil || state.Stage != models.TutorialStageMonster {
+		return nil
+	}
+	return state.TutorialMonsterEncounterID
 }
 
 func tutorialScenarioItemRewards(input []models.TutorialItemReward) []models.ScenarioOptionItemReward {
@@ -543,9 +693,180 @@ func cloneScenarioOptionSpellRewards(input []models.ScenarioOptionSpellReward) [
 	return out
 }
 
+func buildTutorialMonsterEncounter(
+	userID uuid.UUID,
+	zoneID uuid.UUID,
+	latitude float64,
+	longitude float64,
+	template *models.MonsterEncounter,
+	config *models.TutorialConfig,
+) (*models.MonsterEncounter, []models.MonsterEncounterMember, []models.Monster) {
+	ownerUserID := userID
+	encounter := &models.MonsterEncounter{
+		Name:               strings.TrimSpace(template.Name),
+		Description:        strings.TrimSpace(template.Description),
+		ImageURL:           strings.TrimSpace(template.ImageURL),
+		ThumbnailURL:       strings.TrimSpace(template.ThumbnailURL),
+		OwnerUserID:        &ownerUserID,
+		Ephemeral:          true,
+		ScaleWithUserLevel: template.ScaleWithUserLevel,
+		ZoneID:             zoneID,
+		Latitude:           latitude,
+		Longitude:          longitude,
+	}
+
+	useConfiguredRewards := tutorialMonsterRewardsConfigured(config)
+	members := make([]models.MonsterEncounterMember, 0, len(template.Members))
+	monsters := make([]models.Monster, 0, len(template.Members))
+	for index, member := range template.Members {
+		source := member.Monster
+		monster := models.Monster{
+			Name:                        strings.TrimSpace(source.Name),
+			Description:                 strings.TrimSpace(source.Description),
+			ImageURL:                    strings.TrimSpace(source.ImageURL),
+			ThumbnailURL:                strings.TrimSpace(source.ThumbnailURL),
+			OwnerUserID:                 &ownerUserID,
+			Ephemeral:                   true,
+			ZoneID:                      zoneID,
+			Latitude:                    latitude,
+			Longitude:                   longitude,
+			TemplateID:                  source.TemplateID,
+			DominantHandInventoryItemID: source.DominantHandInventoryItemID,
+			OffHandInventoryItemID:      source.OffHandInventoryItemID,
+			WeaponInventoryItemID:       source.WeaponInventoryItemID,
+			Level:                       source.Level,
+			RewardMode:                  models.RewardModeExplicit,
+			RandomRewardSize:            models.RandomRewardSizeSmall,
+			RewardExperience:            source.RewardExperience,
+			RewardGold:                  source.RewardGold,
+			ItemRewards:                 cloneMonsterItemRewards(source.ItemRewards),
+		}
+		if useConfiguredRewards {
+			if index == 0 {
+				monster.RewardExperience = maxInt(0, config.MonsterRewardExperience)
+				monster.RewardGold = maxInt(0, config.MonsterRewardGold)
+				monster.ItemRewards = tutorialMonsterItemRewards(config.MonsterItemRewards)
+			} else {
+				monster.RewardExperience = 0
+				monster.RewardGold = 0
+				monster.ItemRewards = []models.MonsterItemReward{}
+			}
+		}
+		monsters = append(monsters, monster)
+		members = append(members, models.MonsterEncounterMember{Slot: member.Slot})
+	}
+
+	return encounter, members, monsters
+}
+
+func tutorialMonsterRewardsConfigured(config *models.TutorialConfig) bool {
+	if config == nil {
+		return false
+	}
+	return config.MonsterRewardExperience > 0 ||
+		config.MonsterRewardGold > 0 ||
+		len(config.MonsterItemRewards) > 0
+}
+
+func tutorialMonsterItemRewards(input []models.TutorialItemReward) []models.MonsterItemReward {
+	rewards := make([]models.MonsterItemReward, 0, len(input))
+	for _, reward := range input {
+		rewards = append(rewards, models.MonsterItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func cloneMonsterItemRewards(input []models.MonsterItemReward) []models.MonsterItemReward {
+	rewards := make([]models.MonsterItemReward, 0, len(input))
+	for _, reward := range input {
+		rewards = append(rewards, models.MonsterItemReward{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return rewards
+}
+
+func (s *server) tutorialLoadoutRequirementItemIDs(
+	ctx *gin.Context,
+	rewards []scenarioRewardItem,
+) ([]int, []int, error) {
+	requiredEquipItemIDs := []int{}
+	requiredUseItemIDs := []int{}
+	seenEquip := map[int]struct{}{}
+	seenUse := map[int]struct{}{}
+
+	for _, reward := range rewards {
+		if reward.InventoryItemID <= 0 || reward.Quantity <= 0 {
+			continue
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, reward.InventoryItemID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if item == nil {
+			continue
+		}
+		equipSlot := ""
+		if item.EquipSlot != nil {
+			equipSlot = strings.TrimSpace(*item.EquipSlot)
+		}
+		if equipSlot != "" {
+			if _, ok := seenEquip[item.ID]; !ok {
+				seenEquip[item.ID] = struct{}{}
+				requiredEquipItemIDs = append(requiredEquipItemIDs, item.ID)
+			}
+		}
+		if inventoryItemHasConsumableEffects(item) {
+			if _, ok := seenUse[item.ID]; !ok {
+				seenUse[item.ID] = struct{}{}
+				requiredUseItemIDs = append(requiredUseItemIDs, item.ID)
+			}
+		}
+	}
+
+	return requiredEquipItemIDs, requiredUseItemIDs, nil
+}
+
+func cloneScenarioRewardItems(input []scenarioRewardItem) []scenarioRewardItem {
+	out := make([]scenarioRewardItem, 0, len(input))
+	for _, reward := range input {
+		out = append(out, scenarioRewardItem{
+			InventoryItemID: reward.InventoryItemID,
+			Quantity:        reward.Quantity,
+		})
+	}
+	return out
+}
+
+func cloneScenarioRewardSpells(input []scenarioRewardSpell) []scenarioRewardSpell {
+	out := make([]scenarioRewardSpell, 0, len(input))
+	for _, reward := range input {
+		out = append(out, scenarioRewardSpell{SpellID: reward.SpellID})
+	}
+	return out
+}
+
 func scenarioVisibleToUser(userID uuid.UUID, scenario *models.Scenario) bool {
 	if scenario == nil || scenario.OwnerUserID == nil {
 		return true
 	}
 	return *scenario.OwnerUserID == userID
+}
+
+func monsterVisibleToUser(userID uuid.UUID, monster *models.Monster) bool {
+	if monster == nil || monster.OwnerUserID == nil {
+		return true
+	}
+	return *monster.OwnerUserID == userID
+}
+
+func monsterEncounterVisibleToUser(userID uuid.UUID, encounter *models.MonsterEncounter) bool {
+	if encounter == nil || encounter.OwnerUserID == nil {
+		return true
+	}
+	return *encounter.OwnerUserID == userID
 }

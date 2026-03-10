@@ -148,8 +148,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late final String _playerName;
   late final int _playerLevel;
   late final Map<String, int> _playerStats;
-  late final List<Spell> _spells;
-  late final List<Spell> _techniques;
+  List<Spell> _spells = const [];
+  List<Spell> _techniques = const [];
   late final int _playerMaxHealth;
   late final int _playerMaxMana;
   late int _playerHealth;
@@ -324,6 +324,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     if (!widget.isPartyBattle && _playerTurn) {
       _beginSelfTurn();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_refreshBattleAbilities());
+    });
     unawaited(_loadItemChoices());
   }
 
@@ -336,6 +340,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   bool get _canAct =>
       _playerTurn && !_busy && !_battleOver && _playerHealth > 0;
+
+  Future<void> _refreshBattleAbilities() async {
+    final statsProvider = context.read<CharacterStatsProvider>();
+    await statsProvider.refresh(silent: true);
+    if (!mounted) return;
+    setState(() {
+      _spells = statsProvider.spells;
+      _techniques = statsProvider.techniques;
+    });
+  }
 
   List<_EncounterEnemyState> get _aliveEnemies =>
       _enemies.where((enemy) => !enemy.isDefeated).toList(growable: false);
@@ -478,18 +492,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       return;
     }
     _techniqueAvailableOnTurn[id] = _selfTurnSequence + cooldownTurns + 1;
-  }
-
-  String _formatTechniqueLabel(Spell technique) {
-    final remaining = _techniqueCooldownRemaining(technique);
-    if (remaining > 0) {
-      return '${technique.name} (${remaining}t)';
-    }
-    final cooldownTurns = math.max(0, technique.cooldownTurns);
-    if (cooldownTurns > 0) {
-      return '${technique.name} (CD ${cooldownTurns}t)';
-    }
-    return technique.name;
   }
 
   void _advancePartyTurn() {
@@ -1283,15 +1285,30 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         normalized.contains('revive');
   }
 
+  int _strengthDamageBonus() {
+    final strength =
+        _playerStats['strength'] ?? CharacterStatsProvider.baseStatValue;
+    return math.max(
+      0,
+      ((strength - CharacterStatsProvider.baseStatValue) / 2).floor(),
+    );
+  }
+
+  bool _isPhysicalTechnique(Spell ability) => _isTechnique(ability);
+
   int _playerAttackDamage() {
     final strength =
         _playerStats['strength'] ?? CharacterStatsProvider.baseStatValue;
     final dexterity =
         _playerStats['dexterity'] ?? CharacterStatsProvider.baseStatValue;
-    final minDamage = math.max<int>(1, _playerLevel + (strength / 4).floor());
+    final strengthBonus = _strengthDamageBonus();
+    final minDamage = math.max<int>(
+      1,
+      _playerLevel + (strength / 4).floor() + strengthBonus,
+    );
     final maxDamage = math.max<int>(
       minDamage,
-      minDamage + math.max<int>(1, (dexterity / 3).floor()),
+      minDamage + math.max<int>(1, (dexterity / 3).floor()) + strengthBonus,
     );
     return _rollDamage(minDamage, maxDamage);
   }
@@ -1321,10 +1338,19 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       (sum, effect) => sum + math.max(0, effect.amount),
     );
     if (damageEffects.isNotEmpty) {
-      return explicitDamage + math.max(0, _playerLevel ~/ 3);
+      final strengthBonus = _isPhysicalTechnique(ability)
+          ? _strengthDamageBonus()
+          : 0;
+      return explicitDamage +
+          math.max<int>(0, _playerLevel ~/ 3) +
+          strengthBonus;
     }
     if (healEffects.isNotEmpty) {
       return 0;
+    }
+
+    if (_isPhysicalTechnique(ability)) {
+      return _playerAttackDamage() + _strengthDamageBonus();
     }
 
     final intelligence =
@@ -1359,7 +1385,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       0,
       (sum, effect) => sum + math.max(0, effect.amount),
     );
-    return explicitDamage + math.max(0, _playerLevel ~/ 3);
+    final strengthBonus = _isPhysicalTechnique(ability)
+        ? _strengthDamageBonus()
+        : 0;
+    return explicitDamage + math.max<int>(0, _playerLevel ~/ 3) + strengthBonus;
   }
 
   int _abilityHealing(Spell ability) {
@@ -3000,9 +3029,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     required String label,
     required String commandKey,
     required VoidCallback? onPressed,
+    String? subtitle,
+    String? badgeLabel,
+    Color? badgeColor,
+    double? progress,
   }) {
     final selected = _selectedCommandKey == commandKey;
     final theme = Theme.of(context);
+    final normalizedProgress = progress?.clamp(0.0, 1.0).toDouble();
+    final resolvedBadgeColor = badgeColor ?? theme.colorScheme.primary;
     return OutlinedButton(
       onPressed: onPressed == null
           ? null
@@ -3024,7 +3059,70 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           width: selected ? 2.0 : 1.4,
         ),
       ),
-      child: Text(label),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (badgeLabel != null && badgeLabel.trim().isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: resolvedBadgeColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: resolvedBadgeColor.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    badgeLabel,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: resolvedBadgeColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (normalizedProgress != null) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: normalizedProgress,
+                minHeight: 5,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest
+                    .withValues(alpha: 0.9),
+                valueColor: AlwaysStoppedAnimation<Color>(resolvedBadgeColor),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -3155,10 +3253,29 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                 final index = entry.key;
                 final technique = entry.value;
                 final onCooldown = _isTechniqueOnCooldown(technique);
+                final remaining = _techniqueCooldownRemaining(technique);
+                final totalCooldown = math.max(0, technique.cooldownTurns);
+                final progress = totalCooldown <= 0
+                    ? null
+                    : (totalCooldown - remaining) / totalCooldown;
                 return _buildCommandButton(
                   context: context,
-                  label: _formatTechniqueLabel(technique),
+                  label: technique.name,
                   commandKey: 'technique:$index',
+                  subtitle: onCooldown
+                      ? '$remaining turn${remaining == 1 ? '' : 's'} remaining'
+                      : totalCooldown > 0
+                      ? 'Cooldown $totalCooldown turn${totalCooldown == 1 ? '' : 's'}'
+                      : null,
+                  badgeLabel: onCooldown
+                      ? 'Cooling'
+                      : totalCooldown > 0
+                      ? 'Ready'
+                      : null,
+                  badgeColor: onCooldown
+                      ? const Color(0xFF8C2F39)
+                      : const Color(0xFF2F6B3D),
+                  progress: progress,
                   onPressed: _canAct && !onCooldown
                       ? () => _useAbility(technique)
                       : null,

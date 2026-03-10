@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
+import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../services/notification_permission_service.dart';
@@ -392,6 +393,28 @@ class _SettingsTabContentState extends State<SettingsTabContent> {
                         label: const Text('Replay tutorial'),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Account',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed:
+                        (_loading ||
+                            _requesting ||
+                            _sendingTestPush ||
+                            _spawningNearbyContent ||
+                            _triggeringTutorial)
+                        ? null
+                        : () => context.go('/logout'),
+                    icon: const Icon(Icons.logout_rounded),
+                    label: const Text('Log out'),
                   ),
                 ],
               ),

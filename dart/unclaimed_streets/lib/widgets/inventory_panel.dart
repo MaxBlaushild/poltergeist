@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/outfit_generation.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../services/media_service.dart';
@@ -53,16 +54,39 @@ const _equipmentSlotLabels = <String, String>{
   'ring': 'Ring',
 };
 
+const _characterPlaceholderProfileUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
+const _loadingProfilePictureUrl =
+    'https://crew-profile-icons.s3.us-east-1.amazonaws.com/loading-image.gif';
+
 class InventoryPanel extends StatefulWidget {
-  const InventoryPanel({super.key, required this.onClose});
+  const InventoryPanel({
+    super.key,
+    required this.onClose,
+    this.closeLocked = false,
+    this.tutorialDialogue = const [],
+    this.requiredEquipItemIds = const [],
+    this.completedEquipItemIds = const [],
+    this.requiredUseItemIds = const [],
+    this.completedUseItemIds = const [],
+    this.onTutorialProgressChanged,
+  });
 
   final VoidCallback onClose;
+  final bool closeLocked;
+  final List<String> tutorialDialogue;
+  final List<int> requiredEquipItemIds;
+  final List<int> completedEquipItemIds;
+  final List<int> requiredUseItemIds;
+  final List<int> completedUseItemIds;
+  final Future<void> Function()? onTutorialProgressChanged;
 
   @override
   State<InventoryPanel> createState() => _InventoryPanelState();
 }
 
-class _InventoryPanelState extends State<InventoryPanel> {
+class _InventoryPanelState extends State<InventoryPanel>
+    with SingleTickerProviderStateMixin {
   static const String _dismissedOutfitStatusPrefsKey =
       'dismissed_outfit_statuses';
   static const int _pageSize = 12;
@@ -81,10 +105,15 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Timer? _outfitPoller;
   final Set<String> _dismissedOutfitStatuses = {};
   int _pageIndex = 0;
+  late final AnimationController _outfitPulseController;
 
   @override
   void initState() {
     super.initState();
+    _outfitPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
     _loadDismissedOutfitStatuses();
     _load();
   }
@@ -100,6 +129,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
       _persistDismissedOutfitStatuses();
     }
     _outfitPoller?.cancel();
+    _outfitPulseController.dispose();
     super.dispose();
   }
 
@@ -239,6 +269,18 @@ class _InventoryPanelState extends State<InventoryPanel> {
 
   String _slotLabel(String slot) {
     return _equipmentSlotLabels[slot] ?? slot;
+  }
+
+  bool _userNeedsPortrait(User? user) {
+    if (user == null) return true;
+    if (!user.hasCustomizedPortrait) return true;
+    final raw = user.profilePictureUrl.trim();
+    if (raw.isEmpty) return true;
+    final normalized = raw.toLowerCase();
+    return normalized == _characterPlaceholderProfileUrl ||
+        normalized == _loadingProfilePictureUrl ||
+        normalized.contains('character-undiscovered') ||
+        normalized.contains('loading-image');
   }
 
   Color? _rarityAccentColor(String rarityTier) {
@@ -465,6 +507,11 @@ class _InventoryPanelState extends State<InventoryPanel> {
       await context.read<CharacterStatsProvider>().refresh();
       if (!mounted) return;
       await _load();
+      if (!mounted) return;
+      final onTutorialProgressChanged = widget.onTutorialProgressChanged;
+      if (onTutorialProgressChanged != null) {
+        await onTutorialProgressChanged();
+      }
     } catch (e) {
       String message = e.toString();
       if (e is DioException) {
@@ -538,7 +585,14 @@ class _InventoryPanelState extends State<InventoryPanel> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      widget.onClose();
+      final onTutorialProgressChanged = widget.onTutorialProgressChanged;
+      if (onTutorialProgressChanged != null) {
+        await onTutorialProgressChanged();
+        if (!mounted) return;
+      }
+      if (!widget.closeLocked) {
+        widget.onClose();
+      }
     } catch (e) {
       String message = e.toString();
       if (e is DioException) {
@@ -582,6 +636,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (_showTutorialGuide(context)) ...[
+          _buildTutorialGuide(context),
+          const SizedBox(height: 12),
+        ],
         if (showDetail)
           Align(
             alignment: Alignment.centerLeft,
@@ -689,9 +747,103 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
+  bool _showTutorialGuide(BuildContext context) {
+    return widget.closeLocked ||
+        widget.tutorialDialogue.isNotEmpty ||
+        widget.requiredEquipItemIds.isNotEmpty ||
+        widget.requiredUseItemIds.isNotEmpty;
+  }
+
+  Widget _buildTutorialGuide(BuildContext context) {
+    final theme = Theme.of(context);
+    final equipNames = _tutorialRequirementNames(widget.requiredEquipItemIds);
+    final useNames = _tutorialRequirementNames(widget.requiredUseItemIds);
+    final remainingEquip = widget.requiredEquipItemIds
+        .where((id) => !widget.completedEquipItemIds.contains(id))
+        .toList(growable: false);
+    final remainingUse = widget.requiredUseItemIds
+        .where((id) => !widget.completedUseItemIds.contains(id))
+        .toList(growable: false);
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F1DC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD8B36B), width: 1.4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tutorial',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF6A4A14),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...widget.tutorialDialogue.map(
+            (line) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                line,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF4C3824),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ),
+          if (equipNames.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Equip: ${equipNames.join(', ')}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: remainingEquip.isEmpty
+                    ? const Color(0xFF2E7D32)
+                    : const Color(0xFF6A4A14),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (useNames.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Use: ${useNames.join(', ')}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: remainingUse.isEmpty
+                    ? const Color(0xFF2E7D32)
+                    : const Color(0xFF6A4A14),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<String> _tutorialRequirementNames(List<int> inventoryItemIds) {
+    final names = <String>[];
+    for (final id in inventoryItemIds) {
+      for (final item in _items) {
+        if (item.id != id) continue;
+        if (!names.contains(item.name)) {
+          names.add(item.name);
+        }
+        break;
+      }
+    }
+    return names;
+  }
+
   Widget _buildGrid(BuildContext context) {
     const crossAxisCount = 3;
     final theme = Theme.of(context);
+    final pulseOutfitItems = context.select<AuthProvider, bool>(
+      (auth) => _userNeedsPortrait(auth.user),
+    );
     final totalItems = _owned.length;
     final totalPages = totalItems == 0
         ? 1
@@ -707,7 +859,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildEquipmentSection(context),
+          _buildEquipmentSection(context, pulseOutfitItems: pulseOutfitItems),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -782,7 +934,12 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 if (inv == null) {
                   return _buildMissingItemCard(context);
                 }
-                return _buildFilledSlot(context, inv, o);
+                return _buildFilledSlot(
+                  context,
+                  inv,
+                  o,
+                  pulseForMissingProfilePicture: pulseOutfitItems,
+                );
               }).toList(),
             ),
           const SizedBox(height: 12),
@@ -791,7 +948,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
-  Widget _buildEquipmentSection(BuildContext context) {
+  Widget _buildEquipmentSection(
+    BuildContext context, {
+    required bool pulseOutfitItems,
+  }) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -818,14 +978,24 @@ class _InventoryPanelState extends State<InventoryPanel> {
           crossAxisCount: 2,
           childAspectRatio: 2.6,
           children: _equipmentSlots
-              .map((slot) => _buildEquipmentSlotCard(context, slot))
+              .map(
+                (slot) => _buildEquipmentSlotCard(
+                  context,
+                  slot,
+                  pulseOutfitItems: pulseOutfitItems,
+                ),
+              )
               .toList(),
         ),
       ],
     );
   }
 
-  Widget _buildEquipmentSlotCard(BuildContext context, String slot) {
+  Widget _buildEquipmentSlotCard(
+    BuildContext context,
+    String slot, {
+    required bool pulseOutfitItems,
+  }) {
     final theme = Theme.of(context);
     final entry = _equipmentBySlot[slot];
     final inventoryItem = entry?.inventoryItem;
@@ -833,6 +1003,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
     final rarityAccent = inventoryItem == null
         ? null
         : _rarityAccentColor(inventoryItem.rarityTier);
+    final shouldPulse =
+        pulseOutfitItems &&
+        inventoryItem != null &&
+        _isOutfitItem(inventoryItem);
     void handleTap() {
       if (entry == null || inventoryItem == null) return;
       OwnedInventoryItem? owned;
@@ -846,7 +1020,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
       _selectOwnedItem(owned, inventoryItem);
     }
 
-    return InkWell(
+    Widget child = InkWell(
       onTap: hasItem ? handleTap : null,
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -916,6 +1090,36 @@ class _InventoryPanelState extends State<InventoryPanel> {
         ),
       ),
     );
+
+    if (!shouldPulse) {
+      return child;
+    }
+
+    return AnimatedBuilder(
+      animation: _outfitPulseController,
+      child: child,
+      builder: (context, animatedChild) {
+        final pulse = Curves.easeInOut.transform(_outfitPulseController.value);
+        final glowOpacity = 0.24 + (pulse * 0.28);
+        final scale = 1.0 + (pulse * 0.038);
+        return Transform.scale(
+          scale: scale,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFF5C542).withValues(alpha: glowOpacity),
+                  blurRadius: 18 + (pulse * 14),
+                  spreadRadius: 2 + (pulse * 3),
+                ),
+              ],
+            ),
+            child: animatedChild,
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildMissingItemCard(BuildContext context) {
@@ -951,12 +1155,15 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Widget _buildFilledSlot(
     BuildContext context,
     InventoryItem inv,
-    OwnedInventoryItem owned,
-  ) {
+    OwnedInventoryItem owned, {
+    required bool pulseForMissingProfilePicture,
+  }) {
     final theme = Theme.of(context);
     final equipped = _equippedForOwned(owned);
     final rarityAccent = _rarityAccentColor(inv.rarityTier);
-    return InkWell(
+    final shouldPulse = pulseForMissingProfilePicture && _isOutfitItem(inv);
+
+    Widget child = InkWell(
       onTap: () {
         _selectOwnedItem(owned, inv);
       },
@@ -1064,6 +1271,36 @@ class _InventoryPanelState extends State<InventoryPanel> {
           ],
         ),
       ),
+    );
+
+    if (!shouldPulse) {
+      return child;
+    }
+
+    return AnimatedBuilder(
+      animation: _outfitPulseController,
+      child: child,
+      builder: (context, animatedChild) {
+        final pulse = Curves.easeInOut.transform(_outfitPulseController.value);
+        final glowOpacity = 0.26 + (pulse * 0.3);
+        final scale = 1.0 + (pulse * 0.048);
+        return Transform.scale(
+          scale: scale,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFF5C542).withValues(alpha: glowOpacity),
+                  blurRadius: 20 + (pulse * 16),
+                  spreadRadius: 2 + (pulse * 3.5),
+                ),
+              ],
+            ),
+            child: animatedChild,
+          ),
+        );
+      },
     );
   }
 

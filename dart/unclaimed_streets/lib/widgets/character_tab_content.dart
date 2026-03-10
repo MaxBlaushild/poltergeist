@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/character_stats.dart';
@@ -678,16 +677,6 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
                   ],
                 ),
               ),
-              if (canEdit) ...[
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    context.go('/logout');
-                  },
-                  child: const Text('Log out'),
-                ),
-              ],
             ],
           ),
         ),

@@ -98,17 +98,18 @@ class _PartyMemberMapStripState extends State<PartyMemberMapStrip> {
   }
 
   List<User> _combinedMembers(User currentUser, Party? party) {
-    if (party == null) return const <User>[];
+    if (party == null) return <User>[currentUser];
     final users = <User>[];
     final seenIds = <String>{};
+
+    if (currentUser.id.isNotEmpty) {
+      seenIds.add(currentUser.id);
+      users.add(currentUser);
+    }
 
     for (final member in party.members) {
       if (member.id.isEmpty || !seenIds.add(member.id)) continue;
       users.add(member);
-    }
-
-    if (currentUser.id.isNotEmpty && seenIds.add(currentUser.id)) {
-      users.insert(0, currentUser);
     }
 
     return users;

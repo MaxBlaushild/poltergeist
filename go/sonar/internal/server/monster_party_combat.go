@@ -163,6 +163,10 @@ func (s *server) initializeMonsterBattlePartyState(ctx context.Context, battle *
 	if err != nil {
 		return err
 	}
+	if monster.OwnerUserID != nil {
+		battle.State = string(models.MonsterBattleStateActive)
+		return s.dbClient.MonsterBattle().SetState(ctx, battle.ID, battle.State)
+	}
 
 	inviteCount := 0
 	for _, member := range partyMembers {
@@ -684,6 +688,17 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	}
 	battle.EndedAt = &endedAt
 	battle.LastActivityAt = endedAt
+	if monster.OwnerUserID != nil {
+		encounter, err := s.dbClient.MonsterEncounter().FindFirstByMonsterID(ctx, monster.ID)
+		if err != nil {
+			return nil, err
+		}
+		if encounter != nil {
+			if err := s.dbClient.Tutorial().MarkMonsterCompleted(ctx, battle.UserID, encounter.ID); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return battle, nil
 }
 

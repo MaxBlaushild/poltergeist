@@ -48,6 +48,57 @@ type ChallengeNodeOption = {
   question: string;
 };
 
+type MonsterRecord = {
+  id: string;
+  zoneId: string;
+  name: string;
+  level?: number;
+};
+
+type QuickCreateScenarioOptionForm = {
+  optionText: string;
+  statTag: string;
+  difficulty: string;
+  proficiencies: string;
+  successText: string;
+  failureText: string;
+};
+
+type QuickCreateScenarioForm = {
+  prompt: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  latitude: string;
+  longitude: string;
+  options: QuickCreateScenarioOptionForm[];
+};
+
+type QuickCreateChallengeForm = {
+  question: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  latitude: string;
+  longitude: string;
+  rewardExperience: string;
+  rewardGold: string;
+  submissionType: QuestNodeSubmissionType;
+  statTags: string[];
+  difficulty: string;
+  proficiency: string;
+};
+
+type QuickCreateMonsterEncounterForm = {
+  name: string;
+  description: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  latitude: string;
+  longitude: string;
+  scaleWithUserLevel: boolean;
+  monsterIds: string[];
+};
+
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 const emptyQuestForm = {
@@ -104,6 +155,55 @@ const emptyChallengeForm = {
   statTags: [] as string[],
   difficulty: 25,
   proficiency: '',
+};
+
+const createEmptyQuickScenarioOption = (): QuickCreateScenarioOptionForm => ({
+  optionText: '',
+  statTag: 'strength',
+  difficulty: '25',
+  proficiencies: '',
+  successText: '',
+  failureText: '',
+});
+
+const emptyQuickCreateScenarioForm = (): QuickCreateScenarioForm => ({
+  prompt: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  latitude: '',
+  longitude: '',
+  options: [createEmptyQuickScenarioOption()],
+});
+
+const emptyQuickCreateChallengeForm = (): QuickCreateChallengeForm => ({
+  question: '',
+  description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  latitude: '',
+  longitude: '',
+  rewardExperience: '0',
+  rewardGold: '0',
+  submissionType: 'photo',
+  statTags: [],
+  difficulty: '25',
+  proficiency: '',
+});
+
+const emptyQuickCreateMonsterEncounterForm = (): QuickCreateMonsterEncounterForm => ({
+  name: '',
+  description: '',
+  imageUrl: '',
+  thumbnailUrl: '',
+  latitude: '',
+  longitude: '',
+  scaleWithUserLevel: false,
+  monsterIds: [],
+});
+
+const parseIntSafe = (value: string, fallback = 0) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const questRecurrenceOptions = [
@@ -255,6 +355,7 @@ export const Quests = () => {
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [spells, setSpells] = useState<Spell[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioNodeOption[]>([]);
+  const [monsterRecords, setMonsterRecords] = useState<MonsterRecord[]>([]);
   const [monsterEncounters, setMonsterEncounters] = useState<MonsterNodeOption[]>([]);
   const [challenges, setChallenges] = useState<ChallengeNodeOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -278,6 +379,22 @@ export const Quests = () => {
   const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
   const [challengeDrafts, setChallengeDrafts] = useState<Record<string, typeof emptyChallengeForm>>({});
   const [challengeEdits, setChallengeEdits] = useState<Record<string, typeof emptyChallengeForm>>({});
+  const [quickCreateOpen, setQuickCreateOpen] = useState<Record<'scenario' | 'monster' | 'challenge', boolean>>({
+    scenario: false,
+    monster: false,
+    challenge: false,
+  });
+  const [quickCreateScenarioForm, setQuickCreateScenarioForm] = useState<QuickCreateScenarioForm>(
+    emptyQuickCreateScenarioForm()
+  );
+  const [quickCreateChallengeForm, setQuickCreateChallengeForm] = useState<QuickCreateChallengeForm>(
+    emptyQuickCreateChallengeForm()
+  );
+  const [quickCreateMonsterEncounterForm, setQuickCreateMonsterEncounterForm] =
+    useState<QuickCreateMonsterEncounterForm>(emptyQuickCreateMonsterEncounterForm());
+  const [quickCreateSubmitting, setQuickCreateSubmitting] = useState<
+    null | 'scenario' | 'monster' | 'challenge'
+  >(null);
   const [proficiencySearch, setProficiencySearch] = useState('');
   const [proficiencyOptions, setProficiencyOptions] = useState<string[]>([]);
   const [selectedPoiForModal, setSelectedPoiForModal] = useState<PointOfInterest | null>(null);
@@ -320,13 +437,24 @@ export const Quests = () => {
         apiClient.get<InventoryItem[]>('/sonar/inventory-items'),
         apiClient.get<Spell[]>('/sonar/spells'),
         apiClient.get<ScenarioNodeOption[]>('/sonar/scenarios'),
+        apiClient.get<MonsterRecord[]>('/sonar/monsters'),
         apiClient.get<MonsterNodeOption[]>('/sonar/monster-encounters'),
         apiClient.get<ChallengeNodeOption[]>('/sonar/challenges'),
       ]);
 
       if (!isMounted) return;
 
-      const [questsResult, poiResult, charactersResult, inventoryResult, spellsResult, scenariosResult, monstersResult, challengesResult] = results;
+      const [
+        questsResult,
+        poiResult,
+        charactersResult,
+        inventoryResult,
+        spellsResult,
+        scenariosResult,
+        monsterRecordsResult,
+        monstersResult,
+        challengesResult,
+      ] = results;
       if (questsResult.status === 'fulfilled') {
         setQuests(questsResult.value);
       } else {
@@ -362,6 +490,12 @@ export const Quests = () => {
         setScenarios(Array.isArray(scenariosResult.value) ? scenariosResult.value : []);
       } else {
         console.error('Failed to load scenarios', scenariosResult.reason);
+      }
+
+      if (monsterRecordsResult.status === 'fulfilled') {
+        setMonsterRecords(Array.isArray(monsterRecordsResult.value) ? monsterRecordsResult.value : []);
+      } else {
+        console.error('Failed to load monsters', monsterRecordsResult.reason);
       }
 
       if (monstersResult.status === 'fulfilled') {
@@ -869,6 +1003,11 @@ export const Quests = () => {
     }
     return filtered;
   }, [challenges, questForm.zoneId]);
+
+  const availableMonstersForQuickCreate = useMemo(() => {
+    if (!questForm.zoneId) return monsterRecords;
+    return monsterRecords.filter((monster) => monster.zoneId === questForm.zoneId);
+  }, [monsterRecords, questForm.zoneId]);
 
   const archetypeByPoiId = useMemo(() => {
     const result: Record<string, LocationArchetype> = {};
@@ -1714,6 +1853,228 @@ const handleRemoveQuestReward = (index: number) => {
     } catch (error) {
       console.error('Failed to create quest node', error);
       alert('Failed to create quest node.');
+    }
+  };
+
+  const toggleQuickCreate = (type: 'scenario' | 'monster' | 'challenge') => {
+    setQuickCreateOpen((prev) => ({ ...prev, [type]: !prev[type] }));
+  };
+
+  const handleAddQuickScenarioOption = () => {
+    setQuickCreateScenarioForm((prev) => ({
+      ...prev,
+      options: [...prev.options, createEmptyQuickScenarioOption()],
+    }));
+  };
+
+  const handleUpdateQuickScenarioOption = (
+    index: number,
+    updates: Partial<QuickCreateScenarioOptionForm>
+  ) => {
+    setQuickCreateScenarioForm((prev) => ({
+      ...prev,
+      options: prev.options.map((option, optionIndex) =>
+        optionIndex === index ? { ...option, ...updates } : option
+      ),
+    }));
+  };
+
+  const handleRemoveQuickScenarioOption = (index: number) => {
+    setQuickCreateScenarioForm((prev) => ({
+      ...prev,
+      options:
+        prev.options.length <= 1
+          ? prev.options
+          : prev.options.filter((_, optionIndex) => optionIndex !== index),
+    }));
+  };
+
+  const handleCreateStandaloneScenario = async () => {
+    if (!questForm.zoneId) {
+      alert('Select a zone for the quest before creating a scenario.');
+      return;
+    }
+    const latitude = Number.parseFloat(quickCreateScenarioForm.latitude);
+    const longitude = Number.parseFloat(quickCreateScenarioForm.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      alert('Scenario latitude and longitude are required.');
+      return;
+    }
+    const options = quickCreateScenarioForm.options
+      .map((option) => ({
+        optionText: option.optionText.trim(),
+        statTag: option.statTag,
+        proficiencies: option.proficiencies
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+        difficulty: parseIntSafe(option.difficulty, 0),
+        successText: option.successText.trim(),
+        failureText: option.failureText.trim(),
+        rewardExperience: 0,
+        rewardGold: 0,
+        itemRewards: [],
+        itemChoiceRewards: [],
+        spellRewards: [],
+      }))
+      .filter((option) => option.optionText.length > 0);
+    if (!quickCreateScenarioForm.prompt.trim() || !quickCreateScenarioForm.imageUrl.trim()) {
+      alert('Scenario prompt and image URL are required.');
+      return;
+    }
+    if (options.length === 0) {
+      alert('Add at least one scenario option.');
+      return;
+    }
+
+    setQuickCreateSubmitting('scenario');
+    try {
+      const created = await apiClient.post<ScenarioNodeOption & { attemptedByUser?: boolean }>(
+        '/sonar/scenarios',
+        {
+          zoneId: questForm.zoneId,
+          latitude,
+          longitude,
+          prompt: quickCreateScenarioForm.prompt.trim(),
+          imageUrl: quickCreateScenarioForm.imageUrl.trim(),
+          thumbnailUrl:
+            quickCreateScenarioForm.thumbnailUrl.trim() || quickCreateScenarioForm.imageUrl.trim(),
+          rewardMode: 'random',
+          randomRewardSize: 'small',
+          openEnded: false,
+          scaleWithUserLevel: false,
+          failurePenaltyMode: 'shared',
+          failureHealthDrainType: 'flat',
+          failureHealthDrainValue: 0,
+          failureManaDrainType: 'flat',
+          failureManaDrainValue: 0,
+          failureStatuses: [],
+          successRewardMode: 'shared',
+          successHealthRestoreType: 'flat',
+          successHealthRestoreValue: 0,
+          successManaRestoreType: 'flat',
+          successManaRestoreValue: 0,
+          successStatuses: [],
+          options,
+          itemRewards: [],
+          itemChoiceRewards: [],
+          spellRewards: [],
+        }
+      );
+      setScenarios((prev) => [created, ...prev]);
+      setNodeForm((prev) => ({ ...prev, scenarioId: created.id }));
+      setQuickCreateScenarioForm(emptyQuickCreateScenarioForm());
+      setQuickCreateOpen((prev) => ({ ...prev, scenario: false }));
+    } catch (error) {
+      console.error('Failed to create scenario', error);
+      alert(error instanceof Error ? error.message : 'Failed to create scenario.');
+    } finally {
+      setQuickCreateSubmitting(null);
+    }
+  };
+
+  const handleCreateStandaloneChallenge = async () => {
+    if (!questForm.zoneId) {
+      alert('Select a zone for the quest before creating a challenge.');
+      return;
+    }
+    const latitude = Number.parseFloat(quickCreateChallengeForm.latitude);
+    const longitude = Number.parseFloat(quickCreateChallengeForm.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      alert('Challenge latitude and longitude are required.');
+      return;
+    }
+    if (!quickCreateChallengeForm.question.trim()) {
+      alert('Challenge question is required.');
+      return;
+    }
+
+    setQuickCreateSubmitting('challenge');
+    try {
+      const created = await apiClient.post<ChallengeNodeOption>('/sonar/challenges', {
+        zoneId: questForm.zoneId,
+        latitude,
+        longitude,
+        question: quickCreateChallengeForm.question.trim(),
+        description: quickCreateChallengeForm.description.trim(),
+        imageUrl: quickCreateChallengeForm.imageUrl.trim(),
+        thumbnailUrl:
+          quickCreateChallengeForm.thumbnailUrl.trim() || quickCreateChallengeForm.imageUrl.trim(),
+        rewardMode: 'explicit',
+        randomRewardSize: 'small',
+        rewardExperience: parseIntSafe(quickCreateChallengeForm.rewardExperience, 0),
+        reward: parseIntSafe(quickCreateChallengeForm.rewardGold, 0),
+        submissionType: quickCreateChallengeForm.submissionType,
+        difficulty: parseIntSafe(quickCreateChallengeForm.difficulty, 0),
+        scaleWithUserLevel: false,
+        recurrenceFrequency: '',
+        statTags: quickCreateChallengeForm.statTags,
+        proficiency: quickCreateChallengeForm.proficiency.trim(),
+      });
+      setChallenges((prev) => [created, ...prev]);
+      setNodeForm((prev) => ({
+        ...prev,
+        challengeId: created.id,
+        submissionType: quickCreateChallengeForm.submissionType,
+      }));
+      setQuickCreateChallengeForm(emptyQuickCreateChallengeForm());
+      setQuickCreateOpen((prev) => ({ ...prev, challenge: false }));
+    } catch (error) {
+      console.error('Failed to create challenge', error);
+      alert(error instanceof Error ? error.message : 'Failed to create challenge.');
+    } finally {
+      setQuickCreateSubmitting(null);
+    }
+  };
+
+  const handleCreateMonsterEncounter = async () => {
+    if (!questForm.zoneId) {
+      alert('Select a zone for the quest before creating a monster encounter.');
+      return;
+    }
+    const latitude = Number.parseFloat(quickCreateMonsterEncounterForm.latitude);
+    const longitude = Number.parseFloat(quickCreateMonsterEncounterForm.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      alert('Monster encounter latitude and longitude are required.');
+      return;
+    }
+    if (!quickCreateMonsterEncounterForm.name.trim()) {
+      alert('Monster encounter name is required.');
+      return;
+    }
+    if (quickCreateMonsterEncounterForm.monsterIds.length === 0) {
+      alert('Select at least one monster for the encounter.');
+      return;
+    }
+
+    setQuickCreateSubmitting('monster');
+    try {
+      const created = await apiClient.post<MonsterNodeOption & { members?: { slot: number; monster: MonsterRecord }[] }>(
+        '/sonar/monster-encounters',
+        {
+          name: quickCreateMonsterEncounterForm.name.trim(),
+          description: quickCreateMonsterEncounterForm.description.trim(),
+          imageUrl: quickCreateMonsterEncounterForm.imageUrl.trim(),
+          thumbnailUrl:
+            quickCreateMonsterEncounterForm.thumbnailUrl.trim() ||
+            quickCreateMonsterEncounterForm.imageUrl.trim(),
+          scaleWithUserLevel: quickCreateMonsterEncounterForm.scaleWithUserLevel,
+          recurrenceFrequency: '',
+          zoneId: questForm.zoneId,
+          latitude,
+          longitude,
+          monsterIds: quickCreateMonsterEncounterForm.monsterIds,
+        }
+      );
+      setMonsterEncounters((prev) => [created, ...prev]);
+      setNodeForm((prev) => ({ ...prev, monsterEncounterId: created.id }));
+      setQuickCreateMonsterEncounterForm(emptyQuickCreateMonsterEncounterForm());
+      setQuickCreateOpen((prev) => ({ ...prev, monster: false }));
+    } catch (error) {
+      console.error('Failed to create monster encounter', error);
+      alert(error instanceof Error ? error.message : 'Failed to create monster encounter.');
+    } finally {
+      setQuickCreateSubmitting(null);
     }
   };
 
@@ -2813,7 +3174,16 @@ const handleRemoveQuestReward = (index: number) => {
                       </div>
                     ) : nodeForm.nodeType === 'scenario' ? (
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Scenario</label>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="block text-sm font-medium text-gray-700">Scenario</label>
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            onClick={() => toggleQuickCreate('scenario')}
+                          >
+                            {quickCreateOpen.scenario ? 'Hide Quick Create' : 'Create New Scenario'}
+                          </button>
+                        </div>
                         <select
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                           value={nodeForm.scenarioId}
@@ -2826,10 +3196,197 @@ const handleRemoveQuestReward = (index: number) => {
                             </option>
                           ))}
                         </select>
+                        {quickCreateOpen.scenario && (
+                          <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <label className="text-sm">
+                                Prompt
+                                <textarea
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  rows={3}
+                                  value={quickCreateScenarioForm.prompt}
+                                  onChange={(e) =>
+                                    setQuickCreateScenarioForm((prev) => ({ ...prev, prompt: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <div className="grid grid-cols-1 gap-3">
+                                <label className="text-sm">
+                                  Image URL
+                                  <input
+                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                    value={quickCreateScenarioForm.imageUrl}
+                                    onChange={(e) =>
+                                      setQuickCreateScenarioForm((prev) => ({ ...prev, imageUrl: e.target.value }))
+                                    }
+                                  />
+                                </label>
+                                <label className="text-sm">
+                                  Thumbnail URL
+                                  <input
+                                    className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                    value={quickCreateScenarioForm.thumbnailUrl}
+                                    onChange={(e) =>
+                                      setQuickCreateScenarioForm((prev) => ({
+                                        ...prev,
+                                        thumbnailUrl: e.target.value,
+                                      }))
+                                    }
+                                  />
+                                </label>
+                              </div>
+                              <label className="text-sm">
+                                Latitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateScenarioForm.latitude}
+                                  onChange={(e) =>
+                                    setQuickCreateScenarioForm((prev) => ({ ...prev, latitude: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Longitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateScenarioForm.longitude}
+                                  onChange={(e) =>
+                                    setQuickCreateScenarioForm((prev) => ({ ...prev, longitude: e.target.value }))
+                                  }
+                                />
+                              </label>
+                            </div>
+
+                            <div className="rounded-md border border-gray-200 p-3">
+                              <div className="mb-2 flex items-center justify-between">
+                                <div className="text-sm font-medium text-gray-700">Options</div>
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                                  onClick={handleAddQuickScenarioOption}
+                                >
+                                  Add Option
+                                </button>
+                              </div>
+                              <div className="space-y-3">
+                                {quickCreateScenarioForm.options.map((option, index) => (
+                                  <div key={`quick-scenario-option-${index}`} className="rounded-md border border-gray-200 p-3">
+                                    <div className="mb-2 flex items-center justify-between">
+                                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                        Option {index + 1}
+                                      </div>
+                                      {quickCreateScenarioForm.options.length > 1 && (
+                                        <button
+                                          type="button"
+                                          className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                          onClick={() => handleRemoveQuickScenarioOption(index)}
+                                        >
+                                          Remove
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      <label className="text-sm md:col-span-2">
+                                        Option Text
+                                        <input
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          value={option.optionText}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { optionText: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="text-sm">
+                                        Stat
+                                        <select
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          value={option.statTag}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { statTag: e.target.value })
+                                          }
+                                        >
+                                          {questStatOptions.map((stat) => (
+                                            <option key={stat.id} value={stat.id}>
+                                              {stat.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                      <label className="text-sm">
+                                        Difficulty
+                                        <input
+                                          type="number"
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          value={option.difficulty}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { difficulty: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="text-sm md:col-span-2">
+                                        Proficiencies
+                                        <input
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          placeholder="comma, separated, proficiencies"
+                                          value={option.proficiencies}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { proficiencies: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="text-sm">
+                                        Success Text
+                                        <textarea
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          rows={2}
+                                          value={option.successText}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { successText: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                      <label className="text-sm">
+                                        Failure Text
+                                        <textarea
+                                          className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                          rows={2}
+                                          value={option.failureText}
+                                          onChange={(e) =>
+                                            handleUpdateQuickScenarioOption(index, { failureText: e.target.value })
+                                          }
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                              onClick={handleCreateStandaloneScenario}
+                              disabled={quickCreateSubmitting === 'scenario'}
+                            >
+                              {quickCreateSubmitting === 'scenario' ? 'Creating Scenario...' : 'Create and Select Scenario'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : nodeForm.nodeType === 'monster' ? (
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Monster Encounter</label>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="block text-sm font-medium text-gray-700">Monster Encounter</label>
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            onClick={() => toggleQuickCreate('monster')}
+                          >
+                            {quickCreateOpen.monster ? 'Hide Quick Create' : 'Create New Encounter'}
+                          </button>
+                        </div>
                         <select
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                           value={nodeForm.monsterEncounterId}
@@ -2847,10 +3404,157 @@ const handleRemoveQuestReward = (index: number) => {
                             </option>
                           ))}
                         </select>
+                        {quickCreateOpen.monster && (
+                          <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <label className="text-sm">
+                                Name
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.name}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({ ...prev, name: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Description
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.description}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({
+                                      ...prev,
+                                      description: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Image URL
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.imageUrl}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({
+                                      ...prev,
+                                      imageUrl: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Thumbnail URL
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.thumbnailUrl}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({
+                                      ...prev,
+                                      thumbnailUrl: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Latitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.latitude}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({
+                                      ...prev,
+                                      latitude: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Longitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateMonsterEncounterForm.longitude}
+                                  onChange={(e) =>
+                                    setQuickCreateMonsterEncounterForm((prev) => ({
+                                      ...prev,
+                                      longitude: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <label className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={quickCreateMonsterEncounterForm.scaleWithUserLevel}
+                                onChange={(e) =>
+                                  setQuickCreateMonsterEncounterForm((prev) => ({
+                                    ...prev,
+                                    scaleWithUserLevel: e.target.checked,
+                                  }))
+                                }
+                              />
+                              Scale encounter with user level
+                            </label>
+                            <div>
+                              <div className="mb-2 text-sm font-medium text-gray-700">Monsters</div>
+                              <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-3">
+                                {availableMonstersForQuickCreate.length === 0 ? (
+                                  <div className="text-sm text-gray-500">No monsters available in this quest zone.</div>
+                                ) : (
+                                  availableMonstersForQuickCreate.map((monster) => {
+                                    const checked = quickCreateMonsterEncounterForm.monsterIds.includes(monster.id);
+                                    return (
+                                      <label key={monster.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={(e) => {
+                                            setQuickCreateMonsterEncounterForm((prev) => ({
+                                              ...prev,
+                                              monsterIds: e.target.checked
+                                                ? [...prev.monsterIds, monster.id]
+                                                : prev.monsterIds.filter((id) => id !== monster.id),
+                                            }));
+                                          }}
+                                        />
+                                        <span>{monster.name}</span>
+                                        {typeof monster.level === 'number' && (
+                                          <span className="text-xs text-gray-500">Lvl {monster.level}</span>
+                                        )}
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                              onClick={handleCreateMonsterEncounter}
+                              disabled={quickCreateSubmitting === 'monster'}
+                            >
+                              {quickCreateSubmitting === 'monster'
+                                ? 'Creating Encounter...'
+                                : 'Create and Select Encounter'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : nodeForm.nodeType === 'challenge' ? (
                       <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Challenge</label>
+                        <div className="flex items-center justify-between gap-3">
+                          <label className="block text-sm font-medium text-gray-700">Challenge</label>
+                          <button
+                            type="button"
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            onClick={() => toggleQuickCreate('challenge')}
+                          >
+                            {quickCreateOpen.challenge ? 'Hide Quick Create' : 'Create New Challenge'}
+                          </button>
+                        </div>
                         <select
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                           value={nodeForm.challengeId}
@@ -2863,6 +3567,185 @@ const handleRemoveQuestReward = (index: number) => {
                             </option>
                           ))}
                         </select>
+                        {quickCreateOpen.challenge && (
+                          <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <label className="text-sm md:col-span-2">
+                                Question
+                                <textarea
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  rows={2}
+                                  value={quickCreateChallengeForm.question}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({ ...prev, question: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm md:col-span-2">
+                                Description
+                                <textarea
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  rows={2}
+                                  value={quickCreateChallengeForm.description}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      description: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Image URL
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.imageUrl}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({ ...prev, imageUrl: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Thumbnail URL
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.thumbnailUrl}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      thumbnailUrl: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Latitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.latitude}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({ ...prev, latitude: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Longitude
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.longitude}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({ ...prev, longitude: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Submission Type
+                                <select
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.submissionType}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      submissionType: e.target.value as QuestNodeSubmissionType,
+                                    }))
+                                  }
+                                >
+                                  {questNodeSubmissionOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="text-sm">
+                                Difficulty
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.difficulty}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({ ...prev, difficulty: e.target.value }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Reward XP
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.rewardExperience}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      rewardExperience: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm">
+                                Reward Gold
+                                <input
+                                  type="number"
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.rewardGold}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      rewardGold: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="text-sm md:col-span-2">
+                                Proficiency
+                                <input
+                                  className="mt-1 block w-full rounded-md border border-gray-300 p-2"
+                                  value={quickCreateChallengeForm.proficiency}
+                                  onChange={(e) =>
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      proficiency: e.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <div>
+                              <div className="mb-2 text-sm font-medium text-gray-700">Stat Tags</div>
+                              <div className="flex flex-wrap gap-3">
+                                {questStatOptions.map((stat) => (
+                                  <label key={`quick-challenge-stat-${stat.id}`} className="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                      type="checkbox"
+                                      checked={quickCreateChallengeForm.statTags.includes(stat.id)}
+                                      onChange={(e) =>
+                                        setQuickCreateChallengeForm((prev) => ({
+                                          ...prev,
+                                          statTags: e.target.checked
+                                            ? [...prev.statTags, stat.id]
+                                            : prev.statTags.filter((tag) => tag !== stat.id),
+                                        }))
+                                      }
+                                    />
+                                    {stat.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                              onClick={handleCreateStandaloneChallenge}
+                              disabled={quickCreateSubmitting === 'challenge'}
+                            >
+                              {quickCreateSubmitting === 'challenge'
+                                ? 'Creating Challenge...'
+                                : 'Create and Select Challenge'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="md:col-span-2">

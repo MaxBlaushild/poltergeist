@@ -30,25 +30,33 @@ type TutorialSpellReward struct {
 }
 
 type TutorialConfig struct {
-	ID                    int                      `gorm:"primaryKey" json:"id"`
-	CharacterID           *uuid.UUID               `json:"characterId"`
-	Character             *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
-	DialogueJSON          datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
-	Dialogue              []string                 `gorm:"-" json:"dialogue"`
-	ScenarioPrompt        string                   `json:"scenarioPrompt"`
-	ScenarioImageURL      string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
-	ImageGenerationStatus string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
-	ImageGenerationError  *string                  `gorm:"column:image_generation_error" json:"imageGenerationError,omitempty"`
-	OptionsJSON           datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
-	Options               []TutorialScenarioOption `gorm:"-" json:"options"`
-	RewardExperience      int                      `gorm:"column:reward_experience" json:"rewardExperience"`
-	RewardGold            int                      `gorm:"column:reward_gold" json:"rewardGold"`
-	ItemRewardsJSON       datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	ItemRewards           []TutorialItemReward     `gorm:"-" json:"itemRewards"`
-	SpellRewardsJSON      datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
-	SpellRewards          []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
-	CreatedAt             time.Time                `json:"createdAt"`
-	UpdatedAt             time.Time                `json:"updatedAt"`
+	ID                      int                      `gorm:"primaryKey" json:"id"`
+	CharacterID             *uuid.UUID               `json:"characterId"`
+	Character               *Character               `json:"character,omitempty" gorm:"foreignKey:CharacterID"`
+	DialogueJSON            datatypes.JSON           `gorm:"column:dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	Dialogue                []string                 `gorm:"-" json:"dialogue"`
+	LoadoutDialogueJSON     datatypes.JSON           `gorm:"column:loadout_dialogue_json;type:jsonb;default:'[]'" json:"-"`
+	LoadoutDialogue         []string                 `gorm:"-" json:"loadoutDialogue"`
+	ScenarioPrompt          string                   `json:"scenarioPrompt"`
+	ScenarioImageURL        string                   `gorm:"column:scenario_image_url" json:"scenarioImageUrl"`
+	ImageGenerationStatus   string                   `gorm:"column:image_generation_status" json:"imageGenerationStatus"`
+	ImageGenerationError    *string                  `gorm:"column:image_generation_error" json:"imageGenerationError,omitempty"`
+	OptionsJSON             datatypes.JSON           `gorm:"column:options_json;type:jsonb;default:'[]'" json:"-"`
+	Options                 []TutorialScenarioOption `gorm:"-" json:"options"`
+	MonsterEncounterID      *uuid.UUID               `gorm:"column:monster_encounter_id;type:uuid" json:"monsterEncounterId"`
+	MonsterEncounter        *MonsterEncounter        `json:"monsterEncounter,omitempty" gorm:"foreignKey:MonsterEncounterID"`
+	MonsterRewardExperience int                      `gorm:"column:monster_reward_experience" json:"monsterRewardExperience"`
+	MonsterRewardGold       int                      `gorm:"column:monster_reward_gold" json:"monsterRewardGold"`
+	MonsterItemRewardsJSON  datatypes.JSON           `gorm:"column:monster_item_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	MonsterItemRewards      []TutorialItemReward     `gorm:"-" json:"monsterItemRewards"`
+	RewardExperience        int                      `gorm:"column:reward_experience" json:"rewardExperience"`
+	RewardGold              int                      `gorm:"column:reward_gold" json:"rewardGold"`
+	ItemRewardsJSON         datatypes.JSON           `gorm:"column:item_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	ItemRewards             []TutorialItemReward     `gorm:"-" json:"itemRewards"`
+	SpellRewardsJSON        datatypes.JSON           `gorm:"column:spell_rewards_json;type:jsonb;default:'[]'" json:"-"`
+	SpellRewards            []TutorialSpellReward    `gorm:"-" json:"spellRewards"`
+	CreatedAt               time.Time                `json:"createdAt"`
+	UpdatedAt               time.Time                `json:"updatedAt"`
 }
 
 const (
@@ -59,6 +67,14 @@ const (
 	TutorialImageGenerationStatusFailed     = "failed"
 )
 
+const (
+	TutorialStageWelcome   = "welcome"
+	TutorialStageScenario  = "scenario"
+	TutorialStageLoadout   = "loadout"
+	TutorialStageMonster   = "monster"
+	TutorialStageCompleted = "completed"
+)
+
 func (TutorialConfig) TableName() string {
 	return "tutorial_configs"
 }
@@ -67,8 +83,14 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.Dialogue == nil {
 		c.Dialogue = []string{}
 	}
+	if c.LoadoutDialogue == nil {
+		c.LoadoutDialogue = []string{}
+	}
 	if c.Options == nil {
 		c.Options = []TutorialScenarioOption{}
+	}
+	if c.MonsterItemRewards == nil {
+		c.MonsterItemRewards = []TutorialItemReward{}
 	}
 	if c.ItemRewards == nil {
 		c.ItemRewards = []TutorialItemReward{}
@@ -86,6 +108,16 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 		dialogue = append(dialogue, trimmed)
 	}
 	c.Dialogue = dialogue
+
+	loadoutDialogue := make([]string, 0, len(c.LoadoutDialogue))
+	for _, line := range c.LoadoutDialogue {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		loadoutDialogue = append(loadoutDialogue, trimmed)
+	}
+	c.LoadoutDialogue = loadoutDialogue
 
 	options := make([]TutorialScenarioOption, 0, len(c.Options))
 	for _, option := range c.Options {
@@ -117,13 +149,20 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	}
 	c.Options = options
 
+	c.MonsterItemRewards = normalizeTutorialItemRewards(c.MonsterItemRewards)
 	c.ItemRewards = normalizeTutorialItemRewards(c.ItemRewards)
 	c.SpellRewards = normalizeTutorialSpellRewards(c.SpellRewards)
 
 	if err := assignTutorialJSON(&c.DialogueJSON, c.Dialogue); err != nil {
 		return err
 	}
+	if err := assignTutorialJSON(&c.LoadoutDialogueJSON, c.LoadoutDialogue); err != nil {
+		return err
+	}
 	if err := assignTutorialJSON(&c.OptionsJSON, c.Options); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&c.MonsterItemRewardsJSON, c.MonsterItemRewards); err != nil {
 		return err
 	}
 	if err := assignTutorialJSON(&c.ItemRewardsJSON, c.ItemRewards); err != nil {
@@ -152,6 +191,12 @@ func (c *TutorialConfig) BeforeSave(tx *gorm.DB) error {
 	if c.RewardGold < 0 {
 		c.RewardGold = 0
 	}
+	if c.MonsterRewardExperience < 0 {
+		c.MonsterRewardExperience = 0
+	}
+	if c.MonsterRewardGold < 0 {
+		c.MonsterRewardGold = 0
+	}
 	return nil
 }
 
@@ -159,7 +204,13 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	if err := parseTutorialJSON(c.DialogueJSON, &c.Dialogue); err != nil {
 		return err
 	}
+	if err := parseTutorialJSON(c.LoadoutDialogueJSON, &c.LoadoutDialogue); err != nil {
+		return err
+	}
 	if err := parseTutorialJSON(c.OptionsJSON, &c.Options); err != nil {
+		return err
+	}
+	if err := parseTutorialJSON(c.MonsterItemRewardsJSON, &c.MonsterItemRewards); err != nil {
 		return err
 	}
 	if err := parseTutorialJSON(c.ItemRewardsJSON, &c.ItemRewards); err != nil {
@@ -171,6 +222,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 	if c.Dialogue == nil {
 		c.Dialogue = []string{}
 	}
+	if c.LoadoutDialogue == nil {
+		c.LoadoutDialogue = []string{}
+	}
 	if c.Options == nil {
 		c.Options = []TutorialScenarioOption{}
 	}
@@ -181,6 +235,9 @@ func (c *TutorialConfig) AfterFind(tx *gorm.DB) error {
 		if c.Options[i].SpellRewards == nil {
 			c.Options[i].SpellRewards = []TutorialSpellReward{}
 		}
+	}
+	if c.MonsterItemRewards == nil {
+		c.MonsterItemRewards = []TutorialItemReward{}
 	}
 	if c.ItemRewards == nil {
 		c.ItemRewards = []TutorialItemReward{}
@@ -200,18 +257,80 @@ func (c *TutorialConfig) IsConfigured() bool {
 }
 
 type UserTutorialState struct {
-	UserID             uuid.UUID  `gorm:"primaryKey" json:"userId"`
-	User               User       `json:"user"`
-	TutorialScenarioID *uuid.UUID `gorm:"column:tutorial_scenario_id;type:uuid" json:"tutorialScenarioId"`
-	TutorialScenario   *Scenario  `json:"tutorialScenario,omitempty" gorm:"foreignKey:TutorialScenarioID"`
-	ActivatedAt        *time.Time `json:"activatedAt"`
-	CompletedAt        *time.Time `json:"completedAt"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
+	UserID                     uuid.UUID         `gorm:"primaryKey" json:"userId"`
+	User                       User              `json:"user"`
+	Stage                      string            `gorm:"column:stage" json:"stage"`
+	TutorialScenarioID         *uuid.UUID        `gorm:"column:tutorial_scenario_id;type:uuid" json:"tutorialScenarioId"`
+	TutorialScenario           *Scenario         `json:"tutorialScenario,omitempty" gorm:"foreignKey:TutorialScenarioID"`
+	SelectedScenarioOptionID   *uuid.UUID        `gorm:"column:selected_scenario_option_id;type:uuid" json:"selectedScenarioOptionId"`
+	RequiredEquipItemIDsJSON   datatypes.JSON    `gorm:"column:required_equip_item_ids_json;type:jsonb;default:'[]'" json:"-"`
+	RequiredEquipItemIDs       []int             `gorm:"-" json:"requiredEquipItemIds"`
+	CompletedEquipItemIDsJSON  datatypes.JSON    `gorm:"column:completed_equip_item_ids_json;type:jsonb;default:'[]'" json:"-"`
+	CompletedEquipItemIDs      []int             `gorm:"-" json:"completedEquipItemIds"`
+	RequiredUseItemIDsJSON     datatypes.JSON    `gorm:"column:required_use_item_ids_json;type:jsonb;default:'[]'" json:"-"`
+	RequiredUseItemIDs         []int             `gorm:"-" json:"requiredUseItemIds"`
+	CompletedUseItemIDsJSON    datatypes.JSON    `gorm:"column:completed_use_item_ids_json;type:jsonb;default:'[]'" json:"-"`
+	CompletedUseItemIDs        []int             `gorm:"-" json:"completedUseItemIds"`
+	TutorialMonsterEncounterID *uuid.UUID        `gorm:"column:tutorial_monster_encounter_id;type:uuid" json:"tutorialMonsterEncounterId"`
+	TutorialMonsterEncounter   *MonsterEncounter `json:"tutorialMonsterEncounter,omitempty" gorm:"foreignKey:TutorialMonsterEncounterID"`
+	ActivatedAt                *time.Time        `json:"activatedAt"`
+	CompletedAt                *time.Time        `json:"completedAt"`
+	CreatedAt                  time.Time         `json:"createdAt"`
+	UpdatedAt                  time.Time         `json:"updatedAt"`
 }
 
 func (UserTutorialState) TableName() string {
 	return "user_tutorial_states"
+}
+
+func (s *UserTutorialState) BeforeSave(tx *gorm.DB) error {
+	s.Stage = normalizeTutorialStage(s.Stage)
+	s.RequiredEquipItemIDs = normalizeTutorialIntList(s.RequiredEquipItemIDs)
+	s.CompletedEquipItemIDs = normalizeTutorialIntList(s.CompletedEquipItemIDs)
+	s.RequiredUseItemIDs = normalizeTutorialIntList(s.RequiredUseItemIDs)
+	s.CompletedUseItemIDs = normalizeTutorialIntList(s.CompletedUseItemIDs)
+	if err := assignTutorialJSON(&s.RequiredEquipItemIDsJSON, s.RequiredEquipItemIDs); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&s.CompletedEquipItemIDsJSON, s.CompletedEquipItemIDs); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&s.RequiredUseItemIDsJSON, s.RequiredUseItemIDs); err != nil {
+		return err
+	}
+	if err := assignTutorialJSON(&s.CompletedUseItemIDsJSON, s.CompletedUseItemIDs); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *UserTutorialState) AfterFind(tx *gorm.DB) error {
+	if err := parseTutorialJSON(s.RequiredEquipItemIDsJSON, &s.RequiredEquipItemIDs); err != nil {
+		return err
+	}
+	if err := parseTutorialJSON(s.CompletedEquipItemIDsJSON, &s.CompletedEquipItemIDs); err != nil {
+		return err
+	}
+	if err := parseTutorialJSON(s.RequiredUseItemIDsJSON, &s.RequiredUseItemIDs); err != nil {
+		return err
+	}
+	if err := parseTutorialJSON(s.CompletedUseItemIDsJSON, &s.CompletedUseItemIDs); err != nil {
+		return err
+	}
+	s.Stage = normalizeTutorialStage(s.Stage)
+	s.RequiredEquipItemIDs = normalizeTutorialIntList(s.RequiredEquipItemIDs)
+	s.CompletedEquipItemIDs = normalizeTutorialIntList(s.CompletedEquipItemIDs)
+	s.RequiredUseItemIDs = normalizeTutorialIntList(s.RequiredUseItemIDs)
+	s.CompletedUseItemIDs = normalizeTutorialIntList(s.CompletedUseItemIDs)
+	return nil
+}
+
+func (s *UserTutorialState) HasOutstandingLoadoutRequirements() bool {
+	if s == nil {
+		return false
+	}
+	return len(tutorialIncompleteItems(s.RequiredEquipItemIDs, s.CompletedEquipItemIDs)) > 0 ||
+		len(tutorialIncompleteItems(s.RequiredUseItemIDs, s.CompletedUseItemIDs)) > 0
 }
 
 func assignTutorialJSON(target *datatypes.JSON, value interface{}) error {
@@ -252,4 +371,56 @@ func normalizeTutorialSpellRewards(input []TutorialSpellReward) []TutorialSpellR
 		rewards = append(rewards, TutorialSpellReward{SpellID: spellID})
 	}
 	return rewards
+}
+
+func normalizeTutorialStage(input string) string {
+	switch strings.TrimSpace(strings.ToLower(input)) {
+	case TutorialStageScenario:
+		return TutorialStageScenario
+	case TutorialStageLoadout:
+		return TutorialStageLoadout
+	case TutorialStageMonster:
+		return TutorialStageMonster
+	case TutorialStageCompleted:
+		return TutorialStageCompleted
+	default:
+		return TutorialStageWelcome
+	}
+}
+
+func normalizeTutorialIntList(input []int) []int {
+	if len(input) == 0 {
+		return []int{}
+	}
+	seen := map[int]struct{}{}
+	values := make([]int, 0, len(input))
+	for _, value := range input {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
+}
+
+func tutorialIncompleteItems(required []int, completed []int) []int {
+	if len(required) == 0 {
+		return []int{}
+	}
+	done := map[int]struct{}{}
+	for _, value := range completed {
+		done[value] = struct{}{}
+	}
+	remaining := make([]int, 0, len(required))
+	for _, value := range required {
+		if _, ok := done[value]; ok {
+			continue
+		}
+		remaining = append(remaining, value)
+	}
+	return remaining
 }

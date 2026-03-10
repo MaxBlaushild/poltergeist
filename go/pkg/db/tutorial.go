@@ -43,6 +43,7 @@ func (h *tutorialHandle) InitializeForNewUser(ctx context.Context, userID uuid.U
 		now := time.Now()
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.UserTutorialState{
 			UserID:    userID,
+			Stage:     models.TutorialStageWelcome,
 			CreatedAt: now,
 			UpdatedAt: now,
 		}).Error
@@ -53,6 +54,7 @@ func (h *tutorialHandle) FindStateByUserID(ctx context.Context, userID uuid.UUID
 	var state models.UserTutorialState
 	if err := h.db.WithContext(ctx).
 		Preload("TutorialScenario").
+		Preload("TutorialMonsterEncounter").
 		Where("user_id = ?", userID).
 		First(&state).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -76,42 +78,27 @@ func (h *tutorialHandle) ActivateForUser(
 	var activatedScenario *models.Scenario
 
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var state models.UserTutorialState
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ?", userID).
-			First(&state).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				now := time.Now()
-				state = models.UserTutorialState{
-					UserID:    userID,
-					CreatedAt: now,
-					UpdatedAt: now,
-				}
-				if err := tx.Create(&state).Error; err != nil {
-					return err
-				}
-			} else {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+
+		if force {
+			if err := h.clearTutorialContent(ctx, tx, state); err != nil {
 				return err
 			}
-		}
-
-		if state.CompletedAt != nil && !force {
-			activatedState = &state
-			if state.TutorialScenarioID != nil {
-				existing, err := (&scenarioHandle{db: tx}).FindByID(ctx, *state.TutorialScenarioID)
-				if err == nil {
-					activatedScenario = existing
-				}
-			}
-			return nil
-		}
-
-		if state.TutorialScenarioID != nil && !force {
-			existing, err := (&scenarioHandle{db: tx}).FindByID(ctx, *state.TutorialScenarioID)
-			if err == nil && existing != nil {
-				activatedState = &state
-				activatedScenario = existing
+		} else {
+			if state.CompletedAt != nil {
+				activatedState = state
 				return nil
+			}
+			if state.Stage == models.TutorialStageScenario && state.TutorialScenarioID != nil {
+				existing, err := (&scenarioHandle{db: tx}).FindByID(ctx, *state.TutorialScenarioID)
+				if err == nil && existing != nil {
+					activatedState = state
+					activatedScenario = existing
+					return nil
+				}
 			}
 		}
 
@@ -179,23 +166,22 @@ func (h *tutorialHandle) ActivateForUser(
 			}
 		}
 
+		state.Stage = models.TutorialStageScenario
 		state.TutorialScenarioID = &scenario.ID
+		state.SelectedScenarioOptionID = nil
+		state.RequiredEquipItemIDs = []int{}
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = []int{}
+		state.CompletedUseItemIDs = []int{}
+		state.TutorialMonsterEncounterID = nil
 		state.ActivatedAt = &now
 		state.CompletedAt = nil
 		state.UpdatedAt = now
-		if err := tx.Model(&models.UserTutorialState{}).
-			Where("user_id = ?", userID).
-			Updates(map[string]interface{}{
-				"tutorial_scenario_id": scenario.ID,
-				"activated_at":         now,
-				"completed_at":         nil,
-				"updated_at":           now,
-			}).Error; err != nil {
+		if err := tx.Save(state).Error; err != nil {
 			return err
 		}
 
-		stateCopy := state
-		activatedState = &stateCopy
+		activatedState = state
 		loadedScenario, err := (&scenarioHandle{db: tx}).FindByID(ctx, scenario.ID)
 		if err != nil {
 			return err
@@ -209,19 +195,216 @@ func (h *tutorialHandle) ActivateForUser(
 	return activatedState, activatedScenario, nil
 }
 
-func (h *tutorialHandle) MarkCompleted(ctx context.Context, userID uuid.UUID, scenarioID uuid.UUID) error {
+func (h *tutorialHandle) MarkScenarioResolved(
+	ctx context.Context,
+	userID uuid.UUID,
+	scenarioID uuid.UUID,
+	selectedOptionID *uuid.UUID,
+	requiredEquipItemIDs []int,
+	requiredUseItemIDs []int,
+) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.TutorialScenarioID == nil || *state.TutorialScenarioID != scenarioID {
+			return nil
+		}
+		state.Stage = models.TutorialStageLoadout
+		state.SelectedScenarioOptionID = selectedOptionID
+		state.RequiredEquipItemIDs = requiredEquipItemIDs
+		state.CompletedEquipItemIDs = []int{}
+		state.RequiredUseItemIDs = requiredUseItemIDs
+		state.CompletedUseItemIDs = []int{}
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) RecordEquippedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error {
+	return h.recordProgressItem(ctx, userID, inventoryItemID, true)
+}
+
+func (h *tutorialHandle) RecordUsedItem(ctx context.Context, userID uuid.UUID, inventoryItemID int) error {
+	return h.recordProgressItem(ctx, userID, inventoryItemID, false)
+}
+
+func (h *tutorialHandle) ActivateMonsterForUser(
+	ctx context.Context,
+	userID uuid.UUID,
+	encounter *models.MonsterEncounter,
+	members []models.MonsterEncounterMember,
+	monsters []models.Monster,
+) (*models.UserTutorialState, *models.MonsterEncounter, error) {
+	var activatedState *models.UserTutorialState
+	var activatedEncounter *models.MonsterEncounter
+
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.CompletedAt != nil {
+			activatedState = state
+			return nil
+		}
+		if state.Stage == models.TutorialStageMonster && state.TutorialMonsterEncounterID != nil {
+			existing, err := (&monsterEncounterHandle{db: tx}).FindByID(ctx, *state.TutorialMonsterEncounterID)
+			if err == nil && existing != nil {
+				activatedState = state
+				activatedEncounter = existing
+				return nil
+			}
+		}
+
+		now := time.Now()
+		createdMonsters := make([]models.Monster, 0, len(monsters))
+		for _, monster := range monsters {
+			monster.ID = uuid.New()
+			monster.CreatedAt = now
+			monster.UpdatedAt = now
+			if err := monster.SetGeometry(monster.Latitude, monster.Longitude); err != nil {
+				return err
+			}
+			rewards := monster.ItemRewards
+			monster.ItemRewards = nil
+			if err := tx.Omit(clause.Associations).Create(&monster).Error; err != nil {
+				return err
+			}
+			for _, reward := range rewards {
+				reward.ID = uuid.New()
+				reward.MonsterID = monster.ID
+				reward.CreatedAt = now
+				reward.UpdatedAt = now
+				if err := tx.Create(&reward).Error; err != nil {
+					return err
+				}
+			}
+			monster.ItemRewards = rewards
+			createdMonsters = append(createdMonsters, monster)
+		}
+
+		encounter.ID = uuid.New()
+		encounter.CreatedAt = now
+		encounter.UpdatedAt = now
+		if err := encounter.SetGeometry(encounter.Latitude, encounter.Longitude); err != nil {
+			return err
+		}
+		if err := tx.Omit(clause.Associations).Create(encounter).Error; err != nil {
+			return err
+		}
+
+		for index, member := range members {
+			member.ID = uuid.New()
+			member.CreatedAt = now
+			member.UpdatedAt = now
+			member.MonsterEncounterID = encounter.ID
+			if index < len(createdMonsters) {
+				member.MonsterID = createdMonsters[index].ID
+			}
+			if err := tx.Create(&member).Error; err != nil {
+				return err
+			}
+		}
+
+		state.Stage = models.TutorialStageMonster
+		state.TutorialMonsterEncounterID = &encounter.ID
+		state.UpdatedAt = now
+		if err := tx.Save(state).Error; err != nil {
+			return err
+		}
+
+		activatedState = state
+		loadedEncounter, err := (&monsterEncounterHandle{db: tx}).FindByID(ctx, encounter.ID)
+		if err != nil {
+			return err
+		}
+		activatedEncounter = loadedEncounter
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return activatedState, activatedEncounter, nil
+}
+
+func (h *tutorialHandle) MarkCompleted(ctx context.Context, userID uuid.UUID) error {
 	now := time.Now()
 	return h.db.WithContext(ctx).Model(&models.UserTutorialState{}).
-		Where("user_id = ? AND tutorial_scenario_id = ?", userID, scenarioID).
+		Where("user_id = ?", userID).
 		Updates(map[string]interface{}{
-			"completed_at": now,
-			"updated_at":   now,
+			"stage":                         models.TutorialStageCompleted,
+			"tutorial_scenario_id":          nil,
+			"tutorial_monster_encounter_id": nil,
+			"completed_at":                  now,
+			"updated_at":                    now,
 		}).Error
+}
+
+func (h *tutorialHandle) MarkMonsterCompleted(ctx context.Context, userID uuid.UUID, monsterEncounterID uuid.UUID) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.TutorialMonsterEncounterID == nil || *state.TutorialMonsterEncounterID != monsterEncounterID {
+			return nil
+		}
+		now := time.Now()
+		state.Stage = models.TutorialStageCompleted
+		state.CompletedAt = &now
+		state.TutorialScenarioID = nil
+		state.TutorialMonsterEncounterID = nil
+		state.UpdatedAt = now
+		return tx.Save(state).Error
+	})
+}
+
+func (h *tutorialHandle) recordProgressItem(
+	ctx context.Context,
+	userID uuid.UUID,
+	inventoryItemID int,
+	equip bool,
+) error {
+	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		state, err := h.getOrCreateStateLocked(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if state.Stage != models.TutorialStageLoadout {
+			return nil
+		}
+
+		updated := false
+		if equip {
+			if containsTutorialInt(state.RequiredEquipItemIDs, inventoryItemID) &&
+				!containsTutorialInt(state.CompletedEquipItemIDs, inventoryItemID) {
+				state.CompletedEquipItemIDs = append(state.CompletedEquipItemIDs, inventoryItemID)
+				updated = true
+			}
+		} else {
+			if containsTutorialInt(state.RequiredUseItemIDs, inventoryItemID) &&
+				!containsTutorialInt(state.CompletedUseItemIDs, inventoryItemID) {
+				state.CompletedUseItemIDs = append(state.CompletedUseItemIDs, inventoryItemID)
+				updated = true
+			}
+		}
+		if !updated {
+			return nil
+		}
+
+		state.UpdatedAt = time.Now()
+		return tx.Save(state).Error
+	})
 }
 
 func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*models.TutorialConfig, error) {
 	var config models.TutorialConfig
-	err := db.WithContext(ctx).Preload("Character").First(&config, 1).Error
+	err := db.WithContext(ctx).
+		Preload("Character").
+		Preload("MonsterEncounter").
+		First(&config, 1).Error
 	if err == nil {
 		return &config, nil
 	}
@@ -232,10 +415,12 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 	created := models.TutorialConfig{
 		ID:                    1,
 		Dialogue:              []string{},
+		LoadoutDialogue:       []string{"Equip your new gear and use the spellbook before you head back out."},
 		ScenarioPrompt:        "You hear a commotion outside of your door.",
 		ScenarioImageURL:      "",
 		ImageGenerationStatus: models.TutorialImageGenerationStatusNone,
 		Options:               []models.TutorialScenarioOption{},
+		MonsterItemRewards:    []models.TutorialItemReward{},
 		ItemRewards:           []models.TutorialItemReward{},
 		SpellRewards:          []models.TutorialSpellReward{},
 	}
@@ -243,4 +428,99 @@ func (h *tutorialHandle) getOrCreateConfig(ctx context.Context, db *gorm.DB) (*m
 		return nil, err
 	}
 	return h.getOrCreateConfig(ctx, db)
+}
+
+func (h *tutorialHandle) getOrCreateStateLocked(
+	ctx context.Context,
+	tx *gorm.DB,
+	userID uuid.UUID,
+) (*models.UserTutorialState, error) {
+	var state models.UserTutorialState
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ?", userID).
+		First(&state).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		now := time.Now()
+		state = models.UserTutorialState{
+			UserID:    userID,
+			Stage:     models.TutorialStageWelcome,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := tx.Create(&state).Error; err != nil {
+			return nil, err
+		}
+	}
+	return &state, nil
+}
+
+func (h *tutorialHandle) clearTutorialContent(
+	ctx context.Context,
+	tx *gorm.DB,
+	state *models.UserTutorialState,
+) error {
+	if state == nil {
+		return nil
+	}
+	if state.TutorialScenarioID != nil {
+		if err := tx.Delete(&models.Scenario{}, "id = ?", *state.TutorialScenarioID).Error; err != nil {
+			return err
+		}
+	}
+	if state.TutorialMonsterEncounterID != nil {
+		if err := h.deleteTutorialMonsterEncounter(ctx, tx, *state.TutorialMonsterEncounterID); err != nil {
+			return err
+		}
+	}
+	state.Stage = models.TutorialStageWelcome
+	state.TutorialScenarioID = nil
+	state.SelectedScenarioOptionID = nil
+	state.RequiredEquipItemIDs = []int{}
+	state.CompletedEquipItemIDs = []int{}
+	state.RequiredUseItemIDs = []int{}
+	state.CompletedUseItemIDs = []int{}
+	state.TutorialMonsterEncounterID = nil
+	state.CompletedAt = nil
+	state.ActivatedAt = nil
+	state.UpdatedAt = time.Now()
+	return tx.Save(state).Error
+}
+
+func (h *tutorialHandle) deleteTutorialMonsterEncounter(
+	ctx context.Context,
+	tx *gorm.DB,
+	encounterID uuid.UUID,
+) error {
+	var members []models.MonsterEncounterMember
+	if err := tx.WithContext(ctx).
+		Where("monster_encounter_id = ?", encounterID).
+		Find(&members).Error; err != nil {
+		return err
+	}
+	monsterIDs := make([]uuid.UUID, 0, len(members))
+	for _, member := range members {
+		if member.MonsterID != uuid.Nil {
+			monsterIDs = append(monsterIDs, member.MonsterID)
+		}
+	}
+	if err := tx.Delete(&models.MonsterEncounter{}, "id = ?", encounterID).Error; err != nil {
+		return err
+	}
+	if len(monsterIDs) > 0 {
+		if err := tx.Delete(&models.Monster{}, "id IN ?", monsterIDs).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func containsTutorialInt(values []int, target int) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

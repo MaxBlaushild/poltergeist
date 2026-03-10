@@ -16,6 +16,9 @@ type Monster struct {
 	Description                 string              `json:"description"`
 	ImageURL                    string              `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL                string              `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	OwnerUserID                 *uuid.UUID          `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
+	OwnerUser                   *User               `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
+	Ephemeral                   bool                `json:"ephemeral" gorm:"column:ephemeral"`
 	ZoneID                      uuid.UUID           `json:"zoneId" gorm:"column:zone_id"`
 	Zone                        Zone                `json:"zone"`
 	Latitude                    float64             `json:"latitude"`

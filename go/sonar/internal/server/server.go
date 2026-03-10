@@ -6864,6 +6864,14 @@ func (s *server) useItem(ctx *gin.Context) {
 		})
 		return
 	}
+	if ownedInventoryItem.UserID != nil {
+		if err := s.dbClient.Tutorial().RecordUsedItem(ctx, *ownedInventoryItem.UserID, inventoryItem.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+	}
 
 	if err := s.chatClient.AddUseItemMessage(ctx, *ownedInventoryItem, request); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -10632,6 +10640,15 @@ func (s *server) whoami(ctx *gin.Context) {
 		})
 		return
 	}
+
+	hasCustomizedPortrait, err := s.dbClient.OutfitProfileGeneration().HasCompletedGenerationForUser(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to determine portrait status",
+		})
+		return
+	}
+	user.HasCustomizedPortrait = hasCustomizedPortrait
 
 	ctx.JSON(http.StatusOK, user)
 }
@@ -15357,6 +15374,18 @@ func (s *server) performScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 		return
 	}
+	var tutorialState *models.UserTutorialState
+	isTutorialScenario := false
+	if scenario.OwnerUserID != nil {
+		tutorialState, err = s.dbClient.Tutorial().FindStateByUserID(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		isTutorialScenario = tutorialState != nil &&
+			tutorialState.TutorialScenarioID != nil &&
+			*tutorialState.TutorialScenarioID == scenario.ID
+	}
 	userLevel, err := s.currentUserLevel(ctx, user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -15515,6 +15544,10 @@ func (s *server) performScenario(ctx *gin.Context) {
 	var scenarioOptionID *uuid.UUID
 	var selectedOption *models.ScenarioOption
 	var freeformResponse *string
+	tutorialRewardExperience := 0
+	tutorialRewardGold := 0
+	tutorialRewardItems := []scenarioRewardItem{}
+	tutorialRewardSpells := []scenarioRewardSpell{}
 
 	if scenario.OpenEnded {
 		responseText := strings.TrimSpace(requestBody.ResponseText)
@@ -15572,6 +15605,10 @@ func (s *server) performScenario(ctx *gin.Context) {
 		}
 		scenarioOptionID = requestBody.ScenarioOptionID
 		selectedOption = option
+		tutorialRewardExperience = rewardExperience
+		tutorialRewardGold = rewardGold
+		tutorialRewardItems = cloneScenarioRewardItems(rewardItems)
+		tutorialRewardSpells = cloneScenarioRewardSpells(rewardSpells)
 	}
 
 	if threshold < 0 {
@@ -15679,6 +15716,25 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if isTutorialScenario && selectedOption != nil {
+			itemsAwarded, spellsAwarded, err = s.awardScenarioRewardsToParticipants(
+				ctx,
+				participantIDs,
+				user.ID,
+				tutorialRewardExperience,
+				tutorialRewardGold,
+				tutorialRewardItems,
+				tutorialRewardSpells,
+				proficiencies,
+			)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			rewardExperience = tutorialRewardExperience
+			rewardGold = tutorialRewardGold
+			rewardSpells = tutorialRewardSpells
+		}
 	}
 	if success && outcomeText == "" {
 		outcomeText = "Success. Your plan holds."
@@ -15708,8 +15764,23 @@ func (s *server) performScenario(ctx *gin.Context) {
 			return
 		}
 	}
-	if scenario.OwnerUserID != nil {
-		if err := s.dbClient.Tutorial().MarkCompleted(ctx, user.ID, scenario.ID); err != nil {
+	if isTutorialScenario {
+		requiredEquipItemIDs, requiredUseItemIDs, err := s.tutorialLoadoutRequirementItemIDs(
+			ctx,
+			tutorialRewardItems,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if err := s.dbClient.Tutorial().MarkScenarioResolved(
+			ctx,
+			user.ID,
+			scenario.ID,
+			scenarioOptionID,
+			requiredEquipItemIDs,
+			requiredUseItemIDs,
+		); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}

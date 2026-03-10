@@ -26,16 +26,40 @@ import '../widgets/reputation_tab_content.dart';
 import '../widgets/settings_tab_content.dart';
 import 'user_character_screen.dart';
 
+class InventoryTutorialSession {
+  const InventoryTutorialSession({
+    this.dialogue = const [],
+    this.requiredEquipItemIds = const [],
+    this.completedEquipItemIds = const [],
+    this.requiredUseItemIds = const [],
+    this.completedUseItemIds = const [],
+    this.onProgressChanged,
+  });
+
+  final List<String> dialogue;
+  final List<int> requiredEquipItemIds;
+  final List<int> completedEquipItemIds;
+  final List<int> requiredUseItemIds;
+  final List<int> completedUseItemIds;
+  final Future<void> Function()? onProgressChanged;
+}
+
 class LayoutShellDrawerController extends InheritedWidget {
   const LayoutShellDrawerController({
     super.key,
     required super.child,
     required this.openCharacter,
+    required this.openInventory,
     required this.openProfile,
+    required this.startInventoryTutorial,
+    required this.stopInventoryTutorial,
   });
 
   final VoidCallback openCharacter;
+  final VoidCallback openInventory;
   final ValueChanged<User> openProfile;
+  final ValueChanged<InventoryTutorialSession> startInventoryTutorial;
+  final VoidCallback stopInventoryTutorial;
 
   static LayoutShellDrawerController? maybeOf(BuildContext context) {
     return context
@@ -45,7 +69,10 @@ class LayoutShellDrawerController extends InheritedWidget {
   @override
   bool updateShouldNotify(LayoutShellDrawerController oldWidget) {
     return openCharacter != oldWidget.openCharacter ||
-        openProfile != oldWidget.openProfile;
+        openInventory != oldWidget.openInventory ||
+        openProfile != oldWidget.openProfile ||
+        startInventoryTutorial != oldWidget.startInventoryTutorial ||
+        stopInventoryTutorial != oldWidget.stopInventoryTutorial;
   }
 }
 
@@ -68,6 +95,7 @@ class _LayoutShellState extends State<LayoutShell> {
   int? _pendingDrawerTabIndex;
   User? _pendingProfileUser;
   String? _lastHandledDrawerRequest;
+  InventoryTutorialSession? _inventoryTutorialSession;
 
   @override
   void initState() {
@@ -350,6 +378,28 @@ class _LayoutShellState extends State<LayoutShell> {
     _openDrawer();
   }
 
+  void _openInventoryDrawer() {
+    _pendingDrawerTabIndex = _SideDrawerState._inventoryTab;
+    _pendingProfileUser = null;
+    _openDrawer();
+  }
+
+  void _startInventoryTutorial(InventoryTutorialSession session) {
+    setState(() {
+      _inventoryTutorialSession = session;
+    });
+    _openInventoryDrawer();
+  }
+
+  void _stopInventoryTutorial() {
+    setState(() {
+      _inventoryTutorialSession = null;
+    });
+    if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
+      _scaffoldKey.currentState?.closeEndDrawer();
+    }
+  }
+
   void _openCharacterProfileDrawer(User user) {
     _pendingDrawerTabIndex = _SideDrawerState._characterTab;
     _pendingProfileUser = user;
@@ -461,7 +511,12 @@ class _LayoutShellState extends State<LayoutShell> {
       child: Scaffold(
         key: _scaffoldKey,
         onEndDrawerChanged: (isOpened) {
-          if (!isOpened) return;
+          if (!isOpened) {
+            if (_inventoryTutorialSession != null) {
+              _openInventoryDrawer();
+            }
+            return;
+          }
           final pendingTab = _pendingDrawerTabIndex;
           if (pendingTab != null) {
             _sideDrawerKey.currentState?._selectTab(pendingTab);
@@ -477,10 +532,14 @@ class _LayoutShellState extends State<LayoutShell> {
         endDrawer: _SideDrawer(
           key: _sideDrawerKey,
           onTriggerTutorialTest: _triggerTutorialTest,
+          inventoryTutorialSession: _inventoryTutorialSession,
         ),
         body: LayoutShellDrawerController(
           openCharacter: _openCharacterDrawer,
+          openInventory: _openInventoryDrawer,
           openProfile: _openCharacterProfileDrawer,
+          startInventoryTutorial: _startInventoryTutorial,
+          stopInventoryTutorial: _stopInventoryTutorial,
           child: SafeArea(
             top: false,
             bottom: false,
@@ -657,9 +716,14 @@ class _DrawerMenuTrigger extends StatelessWidget {
 }
 
 class _SideDrawer extends StatefulWidget {
-  const _SideDrawer({super.key, required this.onTriggerTutorialTest});
+  const _SideDrawer({
+    super.key,
+    required this.onTriggerTutorialTest,
+    this.inventoryTutorialSession,
+  });
 
   final VoidCallback onTriggerTutorialTest;
+  final InventoryTutorialSession? inventoryTutorialSession;
 
   @override
   State<_SideDrawer> createState() => _SideDrawerState();
@@ -693,6 +757,9 @@ class _SideDrawerState extends State<_SideDrawer> {
   }
 
   void _selectTab(int index) {
+    if (widget.inventoryTutorialSession != null && index != _inventoryTab) {
+      return;
+    }
     final shouldRefreshQuestLog = index == _questLogTab;
     final shouldRefreshActivityFeed = index == _characterTab;
     final shouldRefreshCharacterStats =
@@ -858,6 +925,36 @@ class _SideDrawerState extends State<_SideDrawer> {
                               ? InventoryPanel(
                                   key: const ValueKey('inventory'),
                                   onClose: () => Navigator.of(context).pop(),
+                                  closeLocked:
+                                      widget.inventoryTutorialSession != null,
+                                  tutorialDialogue:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.dialogue ??
+                                      const [],
+                                  requiredEquipItemIds:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.requiredEquipItemIds ??
+                                      const [],
+                                  completedEquipItemIds:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.completedEquipItemIds ??
+                                      const [],
+                                  requiredUseItemIds:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.requiredUseItemIds ??
+                                      const [],
+                                  completedUseItemIds:
+                                      widget
+                                          .inventoryTutorialSession
+                                          ?.completedUseItemIds ??
+                                      const [],
+                                  onTutorialProgressChanged: widget
+                                      .inventoryTutorialSession
+                                      ?.onProgressChanged,
                                 )
                               : _tabIndex == _questLogTab
                               ? QuestLogPanel(
