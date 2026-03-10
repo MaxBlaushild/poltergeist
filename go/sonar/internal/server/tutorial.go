@@ -257,6 +257,16 @@ func (s *server) activateTutorial(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "tutorial is not configured"})
 		return
 	}
+	if requestBody.Force && config.MonsterEncounterID != nil {
+		if err := s.dbClient.UserMonsterEncounterVictory().Delete(
+			ctx,
+			user.ID,
+			*config.MonsterEncounterID,
+		); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	if err := s.dbClient.Tutorial().InitializeForNewUser(ctx, user.ID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

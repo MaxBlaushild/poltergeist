@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone, ZoneImport } from '@poltergeist/types';
-import { v4 as uuidv4 } from 'uuid';
 import { useNavigate } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -44,7 +43,7 @@ const parseBoundaryString = (boundary: string): [number, number][] => {
 };
 
 const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
-  if (points.length < 3) return [];
+  if (points.length < 3) return points.slice();
 
   const centroid = points.reduce(
     (acc, point) => [acc[0] + point[0] / points.length, acc[1] + point[1] / points.length],
@@ -95,14 +94,382 @@ const getZoneRing = (zone: Zone): [number, number][] => {
   return [];
 };
 
+const calculateBoundaryCenter = (points: [number, number][]) => {
+  const openPoints =
+    points.length > 1 &&
+    points[0][0] === points[points.length - 1][0] &&
+    points[0][1] === points[points.length - 1][1]
+      ? points.slice(0, -1)
+      : points;
+
+  if (openPoints.length === 0) {
+    return null;
+  }
+
+  const totals = openPoints.reduce(
+    (acc, point) => [acc[0] + point[0], acc[1] + point[1]],
+    [0, 0]
+  );
+
+  return {
+    longitude: totals[0] / openPoints.length,
+    latitude: totals[1] / openPoints.length,
+  };
+};
+
+type BoundaryEditorMapProps = {
+  center: [number, number];
+  boundaryPoints: [number, number][];
+  allZoneBoundaries: [number, number][][];
+  onMapClick: (lngLat: mapboxgl.LngLat) => void;
+  onClearBoundary: () => void;
+};
+
+const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
+  center,
+  boundaryPoints,
+  allZoneBoundaries,
+  onMapClick,
+  onClearBoundary,
+}) => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const markers = useRef<mapboxgl.Marker[]>([]);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const cleanupBoundary = () => {
+    if (!map.current) {
+      return;
+    }
+    if (map.current.getLayer('zone-create-boundary-outline')) {
+      map.current.removeLayer('zone-create-boundary-outline');
+    }
+    if (map.current.getLayer('zone-create-boundary')) {
+      map.current.removeLayer('zone-create-boundary');
+    }
+    if (map.current.getSource('zone-create-boundary')) {
+      map.current.removeSource('zone-create-boundary');
+    }
+  };
+
+  useEffect(() => {
+    if (mapContainer.current && !map.current) {
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center,
+        zoom: 12,
+        interactive: true,
+      });
+
+      map.current.on('load', () => {
+        setMapLoaded(true);
+      });
+    }
+
+    return () => {
+      cleanupBoundary();
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    map.current.flyTo({
+      center,
+      essential: true,
+    });
+  }, [center, mapLoaded]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
+    if (canvasContainer instanceof HTMLElement) {
+      canvasContainer.style.cursor = 'grab';
+    }
+
+    const handleClick = (event: mapboxgl.MapMouseEvent) => {
+      onMapClick(event.lngLat);
+    };
+
+    map.current.on('click', handleClick);
+    return () => {
+      map.current?.off('click', handleClick);
+    };
+  }, [mapLoaded, onMapClick]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    markers.current.forEach((marker) => marker.remove());
+    markers.current = [];
+
+    const sortedPoints = sortBoundaryPoints(boundaryPoints);
+    sortedPoints.forEach((point) => {
+      const marker = new mapboxgl.Marker({
+        color: '#DC2626',
+        draggable: false,
+      })
+        .setLngLat(point)
+        .addTo(map.current!);
+      markers.current.push(marker);
+    });
+  }, [boundaryPoints, mapLoaded]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    cleanupBoundary();
+
+    const sortedPoints = sortBoundaryPoints(boundaryPoints);
+    if (sortedPoints.length < 4) {
+      return;
+    }
+
+    map.current.addSource('zone-create-boundary', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'Polygon',
+          coordinates: [sortedPoints],
+        },
+      },
+    });
+
+    map.current.addLayer({
+      id: 'zone-create-boundary',
+      type: 'fill',
+      source: 'zone-create-boundary',
+      paint: {
+        'fill-color': '#DC2626',
+        'fill-opacity': 0.3,
+      },
+    });
+
+    map.current.addLayer({
+      id: 'zone-create-boundary-outline',
+      type: 'line',
+      source: 'zone-create-boundary',
+      paint: {
+        'line-color': '#DC2626',
+        'line-width': 2,
+      },
+    });
+  }, [boundaryPoints, mapLoaded]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    if (map.current.getLayer('zone-create-all-boundaries-outline')) {
+      map.current.removeLayer('zone-create-all-boundaries-outline');
+    }
+    if (map.current.getLayer('zone-create-all-boundaries')) {
+      map.current.removeLayer('zone-create-all-boundaries');
+    }
+    if (map.current.getSource('zone-create-all-boundaries')) {
+      map.current.removeSource('zone-create-all-boundaries');
+    }
+
+    const polygonFeatures = allZoneBoundaries
+      .map((points) => sortBoundaryPoints(points))
+      .filter((points) => points.length >= 4)
+      .map((points) => ({
+        type: 'Feature' as const,
+        properties: {},
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [points],
+        },
+      }));
+
+    if (polygonFeatures.length === 0) {
+      return;
+    }
+
+    map.current.addSource('zone-create-all-boundaries', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: polygonFeatures,
+      },
+    });
+
+    map.current.addLayer(
+      {
+        id: 'zone-create-all-boundaries',
+        type: 'fill',
+        source: 'zone-create-all-boundaries',
+        paint: {
+          'fill-color': '#2563EB',
+          'fill-opacity': 0.18,
+        },
+      },
+      map.current.getLayer('zone-create-boundary') ? 'zone-create-boundary' : undefined
+    );
+
+    map.current.addLayer(
+      {
+        id: 'zone-create-all-boundaries-outline',
+        type: 'line',
+        source: 'zone-create-all-boundaries',
+        paint: {
+          'line-color': '#2563EB',
+          'line-width': 2,
+        },
+      },
+      map.current.getLayer('zone-create-boundary-outline') ? 'zone-create-boundary-outline' : undefined
+    );
+
+    return () => {
+      if (!map.current) {
+        return;
+      }
+      if (map.current.getLayer('zone-create-all-boundaries-outline')) {
+        map.current.removeLayer('zone-create-all-boundaries-outline');
+      }
+      if (map.current.getLayer('zone-create-all-boundaries')) {
+        map.current.removeLayer('zone-create-all-boundaries');
+      }
+      if (map.current.getSource('zone-create-all-boundaries')) {
+        map.current.removeSource('zone-create-all-boundaries');
+      }
+    };
+  }, [allZoneBoundaries, mapLoaded, boundaryPoints]);
+
+  return (
+    <div style={{ marginBottom: '15px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Boundary</div>
+          <div style={{ fontSize: '12px', color: '#6b7280' }}>
+            Click on the map to add boundary points for the new zone.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={onClearBoundary}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              backgroundColor: '#fff',
+            }}
+          >
+            Clear Boundary
+          </button>
+          <button
+            type="button"
+            onClick={() => map.current?.zoomIn()}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              backgroundColor: '#fff',
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => map.current?.zoomOut()}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              backgroundColor: '#fff',
+            }}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!navigator.geolocation) {
+                setLocationError('Geolocation is not supported in this browser.');
+                return;
+              }
+              setIsLocating(true);
+              setLocationError(null);
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  setIsLocating(false);
+                  const { latitude, longitude } = pos.coords;
+                  map.current?.flyTo({
+                    center: [longitude, latitude],
+                    zoom: Math.max(map.current?.getZoom() ?? 12, 16),
+                    essential: true,
+                  });
+                },
+                (err) => {
+                  setIsLocating(false);
+                  setLocationError(err.message || 'Unable to fetch location.');
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
+              );
+            }}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              backgroundColor: '#fff',
+            }}
+            disabled={isLocating}
+          >
+            {isLocating ? '...' : 'My Location'}
+          </button>
+        </div>
+      </div>
+      <div
+        ref={mapContainer}
+        style={{
+          width: '100%',
+          height: '360px',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          border: '1px solid #d1d5db',
+        }}
+      />
+      <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+        {boundaryPoints.length} points added
+        {boundaryPoints.length < 3 ? '. Add at least 3 points to create the zone.' : '.'}
+      </div>
+      {locationError && (
+        <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '12px' }}>{locationError}</div>
+      )}
+    </div>
+  );
+};
+
 export const Zones = () => {
-  const { zones, createZone, deleteZone, refreshZones } = useZoneContext();
+  const { zones, deleteZone, refreshZones } = useZoneContext();
   const { apiClient } = useAPI();
   const [name, setName] = useState('');
-  const [latitude, setLatitude] = useState(0);
-  const [longitude, setLongitude] = useState(0);
   const [description, setDescription] = useState('');
   const [showCreateZone, setShowCreateZone] = useState(false);
+  const [createBoundaryPoints, setCreateBoundaryPoints] = useState<[number, number][]>([]);
+  const [createMapCenter, setCreateMapCenter] = useState<[number, number]>([-87.6298, 41.8781]);
+  const [createZoneError, setCreateZoneError] = useState<string | null>(null);
+  const [isCreatingZone, setIsCreatingZone] = useState(false);
   const [selectedMetro, setSelectedMetro] = useState('Chicago, Illinois');
   const [customMetro, setCustomMetro] = useState('');
   const [importJobs, setImportJobs] = useState<ZoneImport[]>([]);
@@ -118,6 +485,28 @@ export const Zones = () => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const handlersAttachedRef = useRef(false);
   const fitBoundsRef = useRef(false);
+
+  const openCreateZoneModal = () => {
+    const currentCenter = mapRef.current?.getCenter();
+    setCreateMapCenter(
+      currentCenter
+        ? [currentCenter.lng, currentCenter.lat]
+        : zones[0]
+          ? [zones[0].longitude, zones[0].latitude]
+          : [-87.6298, 41.8781]
+    );
+    setName('');
+    setDescription('');
+    setCreateBoundaryPoints([]);
+    setCreateZoneError(null);
+    setShowCreateZone(true);
+  };
+
+  const closeCreateZoneModal = () => {
+    setShowCreateZone(false);
+    setCreateZoneError(null);
+    setIsCreatingZone(false);
+  };
 
   const metroOptions = [
     'Atlanta, Georgia',
@@ -189,6 +578,51 @@ export const Zones = () => {
       setImportError('Failed to delete imported zones.');
     } finally {
       setDeletingImportId(null);
+    }
+  };
+
+  const handleCreateZone = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setCreateZoneError('Zone name is required.');
+      return;
+    }
+
+    if (createBoundaryPoints.length < 3) {
+      setCreateZoneError('Please add at least 3 boundary points.');
+      return;
+    }
+
+    const sortedBoundaryPoints = sortBoundaryPoints(createBoundaryPoints);
+    const center = calculateBoundaryCenter(sortedBoundaryPoints);
+    if (!center) {
+      setCreateZoneError('Unable to calculate the zone center from the boundary.');
+      return;
+    }
+
+    setCreateZoneError(null);
+    setIsCreatingZone(true);
+
+    try {
+      const createdZone = await apiClient.post<Zone>('/sonar/zones', {
+        name: trimmedName,
+        description,
+        latitude: center.latitude,
+        longitude: center.longitude,
+      });
+
+      await apiClient.post(`/sonar/zones/${createdZone.id}/boundary`, {
+        boundary: sortedBoundaryPoints.slice(0, -1),
+      });
+
+      await refreshZones();
+      closeCreateZoneModal();
+      navigate(`/zones/${createdZone.id}`);
+    } catch (error) {
+      console.error('Error creating zone:', error);
+      setCreateZoneError('Failed to create zone.');
+    } finally {
+      setIsCreatingZone(false);
     }
   };
 
@@ -387,6 +821,10 @@ export const Zones = () => {
       handlersAttachedRef.current = true;
     }
   }, [zones, navigate, mapLoaded]);
+
+  const allZoneBoundaries = zones
+    .map((zone) => getZoneRing(zone))
+    .filter((points) => points.length >= 4);
   
   return <div className="m-10">
     <h1 className='text-2xl font-bold'>Zones</h1>
@@ -549,9 +987,7 @@ export const Zones = () => {
     </div>
     <button
       className="bg-blue-500 text-white px-4 py-2 rounded-md"
-      onClick={() =>
-        setShowCreateZone(!showCreateZone)
-      }
+      onClick={openCreateZoneModal}
     >
       Create Zone
     </button>
@@ -571,7 +1007,9 @@ export const Zones = () => {
           backgroundColor: '#fff',
           padding: '20px',
           borderRadius: '8px',
-          width: '400px'
+          width: 'min(900px, calc(100vw - 40px))',
+          maxHeight: 'calc(100vh - 40px)',
+          overflowY: 'auto'
         }}>
           <h2>Create Zone</h2>
           <div style={{ marginBottom: '15px' }}>
@@ -603,38 +1041,23 @@ export const Zones = () => {
               }}
             />
           </div>
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>Latitude:</label>
-            <input
-              type="number"
-              value={latitude}
-              onChange={(e) => setLatitude(Number(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px' }}>Longitude:</label>
-            <input
-              type="number"
-              value={longitude}
-              onChange={(e) => setLongitude(Number(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '8px',
-                borderRadius: '4px',
-                border: '1px solid #ccc'
-              }}
-            />
-          </div>
+          <ZoneBoundaryEditorMap
+            center={createMapCenter}
+            boundaryPoints={createBoundaryPoints}
+            allZoneBoundaries={allZoneBoundaries}
+            onMapClick={(lngLat) => {
+              setCreateBoundaryPoints((prev) => [...prev, [lngLat.lng, lngLat.lat]]);
+            }}
+            onClearBoundary={() => setCreateBoundaryPoints([])}
+          />
+          {createZoneError && (
+            <div style={{ marginBottom: '15px', color: '#dc2626', fontSize: '14px' }}>
+              {createZoneError}
+            </div>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <button
-              onClick={() => setShowCreateZone(false)}
+              onClick={closeCreateZoneModal}
               style={{
                 padding: '8px 16px',
                 borderRadius: '4px',
@@ -645,18 +1068,7 @@ export const Zones = () => {
               Cancel
             </button>
             <button
-              onClick={() => {
-                createZone({
-                  id: uuidv4(),
-                  name,
-                  latitude,
-                  longitude,
-                  description,
-                  createdAt: new Date(),
-                  updatedAt: new Date()
-                });
-                setShowCreateZone(false);
-              }}
+              onClick={handleCreateZone}
               style={{
                 padding: '8px 16px',
                 borderRadius: '4px',
@@ -664,8 +1076,9 @@ export const Zones = () => {
                 backgroundColor: '#007bff',
                 color: '#fff'
               }}
+              disabled={isCreatingZone}
             >
-              Create
+              {isCreatingZone ? 'Creating...' : 'Create'}
             </button>
           </div>
         </div>

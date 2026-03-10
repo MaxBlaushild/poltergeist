@@ -1365,46 +1365,14 @@ export const Scenarios = () => {
 
     setBulkDeletingScenarios(true);
     try {
-      const results = await Promise.allSettled(
-        selectedIds.map((scenarioId) =>
-          apiClient.delete(`/sonar/scenarios/${scenarioId}`)
-        )
+      await apiClient.post('/sonar/scenarios/bulk-delete', { ids: selectedIds });
+      const deletedIds = new Set(selectedIds);
+      setRecords((prev) =>
+        prev.filter((record) => !deletedIds.has(record.id))
       );
-      const deletedIds = new Set<string>();
-      const failedIds: string[] = [];
-      results.forEach((result, index) => {
-        const scenarioId = selectedIds[index];
-        if (result.status === 'fulfilled') {
-          deletedIds.add(scenarioId);
-        } else {
-          console.error(
-            `Failed to delete scenario ${scenarioId}`,
-            result.reason
-          );
-          failedIds.push(scenarioId);
-        }
-      });
-
-      if (deletedIds.size > 0) {
-        setRecords((prev) =>
-          prev.filter((record) => !deletedIds.has(record.id))
-        );
-        setSelectedScenarioIds((prev) => {
-          const next = new Set(prev);
-          deletedIds.forEach((scenarioId) => next.delete(scenarioId));
-          return next;
-        });
-        if (editingId && deletedIds.has(editingId)) {
-          closeModal();
-        }
-      }
-
-      if (failedIds.length > 0) {
-        alert(
-          `Deleted ${deletedIds.size} scenario${deletedIds.size === 1 ? '' : 's'}, but failed to delete ${
-            failedIds.length
-          }. Check console for details.`
-        );
+      setSelectedScenarioIds(new Set());
+      if (editingId && deletedIds.has(editingId)) {
+        closeModal();
       }
     } catch (err) {
       console.error('Failed to bulk delete scenarios', err);

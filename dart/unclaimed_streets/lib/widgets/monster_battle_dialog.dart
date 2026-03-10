@@ -1136,6 +1136,19 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
   }
 
+  Future<void> _reportSoloBattleDamage(int damage) async {
+    if (widget.isPartyBattle || damage <= 0 || _battleOver) return;
+    final monsterId = (widget.battleMonsterId ?? _activeEnemy?.monster.id ?? '')
+        .trim();
+    if (monsterId.isEmpty) return;
+    try {
+      final poiService = context.read<PoiService>();
+      await poiService.applyMonsterBattleDamage(monsterId, damage);
+    } catch (_) {
+      // Keep local combat responsive if the server sync fails.
+    }
+  }
+
   String get _monsterSpriteUrl {
     final enemy = _activeEnemy;
     if (enemy == null) return '';
@@ -1606,8 +1619,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final sharedDamage =
         (math.max(0, damageToMonster) + math.max(0, damageToAllEnemies))
             .toInt();
-    if (sharedDamage > 0 && widget.isPartyBattle) {
-      await _reportPartyBattleDamage(sharedDamage);
+    if (sharedDamage > 0) {
+      if (widget.isPartyBattle) {
+        await _reportPartyBattleDamage(sharedDamage);
+      } else {
+        await _reportSoloBattleDamage(sharedDamage);
+      }
       if (!mounted || _battleOver) return;
     }
     final monsterFxAmount = math.max(damageToMonster, damageToAllEnemies);

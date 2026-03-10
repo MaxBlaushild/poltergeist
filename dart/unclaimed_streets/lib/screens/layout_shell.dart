@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
@@ -14,6 +16,8 @@ import '../providers/quest_log_provider.dart';
 import '../providers/map_focus_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/completed_task_provider.dart';
+import '../providers/zone_provider.dart';
+import '../services/feedback_service.dart';
 import '../services/push_notification_service.dart';
 import '../providers/tutorial_replay_provider.dart';
 import '../widgets/abilities_tab_content.dart';
@@ -88,14 +92,17 @@ class LayoutShell extends StatefulWidget {
 
 class _LayoutShellState extends State<LayoutShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final _sideDrawerKey = GlobalKey<_SideDrawerState>();
+  GlobalKey<_SideDrawerState> _sideDrawerKey = GlobalKey<_SideDrawerState>();
   StreamSubscription<InAppPushEvent>? _pushEventSubscription;
+  StreamSubscription<AccelerometerEvent>? _shakeSubscription;
   bool _drainingPartySubmissionResults = false;
   bool _monsterBattleInviteModalOpen = false;
+  bool _feedbackDialogOpen = false;
   int? _pendingDrawerTabIndex;
   User? _pendingProfileUser;
   String? _lastHandledDrawerRequest;
   InventoryTutorialSession? _inventoryTutorialSession;
+  DateTime? _lastFeedbackShakeAt;
 
   @override
   void initState() {
@@ -105,6 +112,7 @@ class _LayoutShellState extends State<LayoutShell> {
       unawaited(_initializeForegroundInviteToasts());
       _consumeRouteDrawerIntent();
     });
+    _initializeShakeFeedbackListener();
   }
 
   @override
@@ -122,7 +130,145 @@ class _LayoutShellState extends State<LayoutShell> {
   void dispose() {
     _pushEventSubscription?.cancel();
     _pushEventSubscription = null;
+    _shakeSubscription?.cancel();
+    _shakeSubscription = null;
     super.dispose();
+  }
+
+  void _initializeShakeFeedbackListener() {
+    _shakeSubscription?.cancel();
+    _shakeSubscription = accelerometerEventStream().listen((event) {
+      final magnitude = math.sqrt(
+        (event.x * event.x) + (event.y * event.y) + (event.z * event.z),
+      );
+      if (magnitude < 20) {
+        return;
+      }
+      final now = DateTime.now();
+      if (_feedbackDialogOpen) {
+        return;
+      }
+      if (_lastFeedbackShakeAt != null &&
+          now.difference(_lastFeedbackShakeAt!) <
+              const Duration(seconds: 4)) {
+        return;
+      }
+      _lastFeedbackShakeAt = now;
+      unawaited(_showShakeFeedbackDialog());
+    });
+  }
+
+  Future<void> _showShakeFeedbackDialog() async {
+    if (!mounted || _feedbackDialogOpen) return;
+    _feedbackDialogOpen = true;
+    final controller = TextEditingController();
+    String? errorText;
+    var submitting = false;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (dialogContext, setDialogState) {
+              Future<void> submit() async {
+                final message = controller.text.trim();
+                if (message.isEmpty) {
+                  setDialogState(() {
+                    errorText = 'Please add a little detail before submitting.';
+                  });
+                  return;
+                }
+
+                setDialogState(() {
+                  submitting = true;
+                  errorText = null;
+                });
+
+                try {
+                  await context.read<FeedbackService>().submit(
+                    message: message,
+                    route: widget.routeUri.toString(),
+                    zoneId: context.read<ZoneProvider>().selectedZone?.id,
+                  );
+                  if (!dialogContext.mounted) return;
+                  Navigator.of(dialogContext).pop();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Feedback submitted.'),
+                    ),
+                  );
+                } catch (_) {
+                  setDialogState(() {
+                    submitting = false;
+                    errorText = 'Failed to submit feedback.';
+                  });
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Send Feedback'),
+                content: SizedBox(
+                  width: 420,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'You shook the device. What should we know?',
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        maxLines: 5,
+                        minLines: 4,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          hintText: 'Describe the bug, rough steps, or what felt off.',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Route: ${widget.routeUri}',
+                        style: Theme.of(dialogContext).textTheme.bodySmall,
+                      ),
+                      if (context.read<ZoneProvider>().selectedZone != null)
+                        Text(
+                          'Zone: ${context.read<ZoneProvider>().selectedZone!.name}',
+                          style: Theme.of(dialogContext).textTheme.bodySmall,
+                        ),
+                      if (errorText != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          errorText!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: submitting
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: submitting ? null : submit,
+                    child: Text(submitting ? 'Submitting...' : 'Submit'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      controller.dispose();
+      _feedbackDialogOpen = false;
+    }
   }
 
   Future<void> _initializeForegroundInviteToasts() async {
@@ -387,18 +533,23 @@ class _LayoutShellState extends State<LayoutShell> {
 
   void _startInventoryTutorial(InventoryTutorialSession session) {
     setState(() {
+      if (_inventoryTutorialSession == null) {
+        _sideDrawerKey = GlobalKey<_SideDrawerState>();
+      }
       _inventoryTutorialSession = session;
     });
-    _openInventoryDrawer();
+    _pendingDrawerTabIndex = null;
+    _pendingProfileUser = null;
+    _openDrawer();
   }
 
   void _stopInventoryTutorial() {
     setState(() {
+      if (_inventoryTutorialSession != null) {
+        _sideDrawerKey = GlobalKey<_SideDrawerState>();
+      }
       _inventoryTutorialSession = null;
     });
-    if (_scaffoldKey.currentState?.isEndDrawerOpen ?? false) {
-      _scaffoldKey.currentState?.closeEndDrawer();
-    }
   }
 
   void _openCharacterProfileDrawer(User user) {
@@ -513,9 +664,6 @@ class _LayoutShellState extends State<LayoutShell> {
         key: _scaffoldKey,
         onEndDrawerChanged: (isOpened) {
           if (!isOpened) {
-            if (_inventoryTutorialSession != null) {
-              _openInventoryDrawer();
-            }
             return;
           }
           final pendingTab = _pendingDrawerTabIndex;
@@ -548,7 +696,7 @@ class _LayoutShellState extends State<LayoutShell> {
             right: false,
             child: Column(
               children: [
-                _LayoutHeader(),
+                const _LayoutHeader(),
                 Expanded(child: widget.child),
               ],
             ),
@@ -602,6 +750,8 @@ class _LogoutCleanerState extends State<_LogoutCleaner> {
 }
 
 class _LayoutHeader extends StatelessWidget {
+  const _LayoutHeader();
+
   @override
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
@@ -740,21 +890,12 @@ class _SideDrawerState extends State<_SideDrawer> {
   static const int _abilitiesTab = 6;
   static const int _settingsTab = 7;
 
-  int _tabIndex = 0;
+  int _tabIndex = _inventoryTab;
   User? _profileUser;
 
   @override
   void didUpdateWidget(covariant _SideDrawer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final tutorialStarted =
-        oldWidget.inventoryTutorialSession == null &&
-        widget.inventoryTutorialSession != null;
-    if (tutorialStarted && _tabIndex != _inventoryTab) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _selectTab(_inventoryTab);
-      });
-    }
   }
 
   void handleDrawerOpened() {
@@ -772,9 +913,6 @@ class _SideDrawerState extends State<_SideDrawer> {
   }
 
   void _selectTab(int index) {
-    if (widget.inventoryTutorialSession != null && index != _inventoryTab) {
-      return;
-    }
     final shouldRefreshQuestLog = index == _questLogTab;
     final shouldRefreshActivityFeed = index == _characterTab;
     final shouldRefreshCharacterStats =
@@ -875,6 +1013,12 @@ class _SideDrawerState extends State<_SideDrawer> {
                         runSpacing: 8,
                         children: [
                           _DrawerMenuButton(
+                            label: 'Inventory',
+                            icon: Icons.inventory_2,
+                            selected: _tabIndex == _inventoryTab,
+                            onTap: () => _selectTab(_inventoryTab),
+                          ),
+                          _DrawerMenuButton(
                             label: 'Character',
                             icon: Icons.person,
                             selected: _tabIndex == _characterTab,
@@ -885,12 +1029,6 @@ class _SideDrawerState extends State<_SideDrawer> {
                             icon: Icons.auto_fix_high,
                             selected: _tabIndex == _abilitiesTab,
                             onTap: () => _selectTab(_abilitiesTab),
-                          ),
-                          _DrawerMenuButton(
-                            label: 'Inventory',
-                            icon: Icons.inventory_2,
-                            selected: _tabIndex == _inventoryTab,
-                            onTap: () => _selectTab(_inventoryTab),
                           ),
                           _DrawerMenuButton(
                             label: 'Quest Log',

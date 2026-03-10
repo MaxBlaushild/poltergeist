@@ -470,6 +470,15 @@ func (h *tutorialHandle) clearTutorialContent(
 		}
 	}
 	if state.TutorialMonsterEncounterID != nil {
+		if err := tx.WithContext(ctx).
+			Where(
+				"user_id = ? AND monster_encounter_id = ?",
+				state.UserID,
+				*state.TutorialMonsterEncounterID,
+			).
+			Delete(&models.UserMonsterEncounterVictory{}).Error; err != nil {
+			return err
+		}
 		if err := h.deleteTutorialMonsterEncounter(ctx, tx, *state.TutorialMonsterEncounterID); err != nil {
 			return err
 		}

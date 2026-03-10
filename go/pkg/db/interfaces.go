@@ -126,6 +126,7 @@ type DbClient interface {
 	UserCertificate() UserCertificateHandle
 	SocialAccount() SocialAccountHandle
 	InsiderTrade() InsiderTradeHandle
+	FeedbackItem() FeedbackItemHandle
 	Exec(ctx context.Context, q string) error
 }
 
@@ -207,6 +208,11 @@ type InsiderTradeHandle interface {
 	Upsert(ctx context.Context, trade *models.InsiderTrade) (bool, error)
 	List(ctx context.Context, limit, offset int) ([]models.InsiderTrade, error)
 	LatestTradeTime(ctx context.Context) (*time.Time, error)
+}
+
+type FeedbackItemHandle interface {
+	Create(ctx context.Context, item *models.FeedbackItem) error
+	ListRecent(ctx context.Context, limit int) ([]models.FeedbackItem, error)
 }
 
 type PointOfInterestHandle interface {
@@ -1085,6 +1091,7 @@ type MonsterEncounterHandle interface {
 type UserMonsterEncounterVictoryHandle interface {
 	Upsert(ctx context.Context, userID uuid.UUID, encounterID uuid.UUID) error
 	FindEncounterIDsByUserAndZone(ctx context.Context, userID uuid.UUID, zoneID uuid.UUID) ([]uuid.UUID, error)
+	Delete(ctx context.Context, userID uuid.UUID, encounterID uuid.UUID) error
 }
 
 type MonsterTemplateHandle interface {

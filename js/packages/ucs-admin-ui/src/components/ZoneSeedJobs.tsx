@@ -167,6 +167,7 @@ export const ZoneSeedJobs = () => {
   const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
   const [bulkZoneQuery, setBulkZoneQuery] = useState('');
   const [bulkZoneCount, setBulkZoneCount] = useState('5');
+  const [bulkSelectAll, setBulkSelectAll] = useState(false);
 
   const knownPlaceTags = useMemo(
     () => [
@@ -216,6 +217,10 @@ export const ZoneSeedJobs = () => {
     () => [...zones].sort((left, right) => left.name.localeCompare(right.name)),
     [zones]
   );
+  const zoneNameById = useMemo(() => {
+    const entries = sortedZones.map((zone) => [zone.id, zone.name] as const);
+    return new Map(entries);
+  }, [sortedZones]);
 
   const selectedZone = useMemo<Zone | undefined>(() => {
     return sortedZones.find((zone) => zone.id === draftZoneId);
@@ -248,11 +253,14 @@ export const ZoneSeedJobs = () => {
   }, [sortedZones, bulkZoneQuery]);
 
   const bulkTargetZones = useMemo(() => {
+    if (bulkSelectAll) {
+      return bulkMatchingZones;
+    }
     if (bulkRequestedZoneCount <= 0) {
       return [];
     }
     return bulkMatchingZones.slice(0, bulkRequestedZoneCount);
-  }, [bulkMatchingZones, bulkRequestedZoneCount]);
+  }, [bulkMatchingZones, bulkRequestedZoneCount, bulkSelectAll]);
 
   useEffect(() => {
     if (sortedZones.length === 0) {
@@ -329,7 +337,7 @@ export const ZoneSeedJobs = () => {
   };
 
   const handleBulkCreateDrafts = async () => {
-    if (bulkRequestedZoneCount <= 0) {
+    if (!bulkSelectAll && bulkRequestedZoneCount <= 0) {
       setError('Bulk zone count must be greater than zero.');
       return;
     }
@@ -737,20 +745,30 @@ export const ZoneSeedJobs = () => {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Bulk queue</h3>
                 <p className="text-xs text-gray-500">
-                  Queue this same seed configuration across the first N zones matching a filter.
+                  Queue this same seed configuration across many zones at once.
                 </p>
               </div>
-              <div className="w-24">
-                <label className="block text-xs font-medium text-gray-500 mb-1">
-                  Zones
-                </label>
-                <input
-                  className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                  value={bulkZoneCount}
-                  onChange={(e) => setBulkZoneCount(e.target.value)}
-                />
-              </div>
+              {!bulkSelectAll && (
+                <div className="w-24">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Zones
+                  </label>
+                  <input
+                    className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                    value={bulkZoneCount}
+                    onChange={(e) => setBulkZoneCount(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
+            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={bulkSelectAll}
+                onChange={(e) => setBulkSelectAll(e.target.checked)}
+              />
+              Select all matching zones
+            </label>
             <div className="mt-3">
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Zone filter
@@ -764,7 +782,8 @@ export const ZoneSeedJobs = () => {
             </div>
             <p className="mt-2 text-xs text-gray-500">
               Matching zones: {bulkMatchingZones.length}. Targeting {bulkTargetZones.length}
-              {bulkRequestedZoneCount > 0 ? ` of requested ${bulkRequestedZoneCount}` : ''}.
+              {!bulkSelectAll && bulkRequestedZoneCount > 0 ? ` of requested ${bulkRequestedZoneCount}` : ''}
+              {bulkSelectAll ? ' with select all enabled.' : '.'}
             </p>
             {bulkTargetZones.length > 0 && (
               <p className="mt-2 text-xs text-gray-500">
@@ -839,6 +858,7 @@ export const ZoneSeedJobs = () => {
           ) : (
             <div className="space-y-4">
               {jobs.map((job) => {
+                const zoneName = zoneNameById.get(job.zoneId) || job.zoneId;
                 return (
                   <div
                     key={job.id}
@@ -849,6 +869,9 @@ export const ZoneSeedJobs = () => {
                       <h3 className="text-sm font-semibold text-gray-900">
                         Job {job.id.slice(0, 8)}
                       </h3>
+                      <p className="text-xs font-medium text-indigo-700">
+                        Zone: {zoneName}
+                      </p>
                       <p className="text-xs text-gray-500">
                         Created: {formatDate(job.createdAt)} | Updated: {formatDate(job.updatedAt)}
                       </p>

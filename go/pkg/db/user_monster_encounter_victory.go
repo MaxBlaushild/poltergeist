@@ -56,3 +56,13 @@ func (h *userMonsterEncounterVictoryHandle) FindEncounterIDsByUserAndZone(
 	}
 	return ids, nil
 }
+
+func (h *userMonsterEncounterVictoryHandle) Delete(
+	ctx context.Context,
+	userID uuid.UUID,
+	encounterID uuid.UUID,
+) error {
+	return h.db.WithContext(ctx).
+		Where("user_id = ? AND monster_encounter_id = ?", userID, encounterID).
+		Delete(&models.UserMonsterEncounterVictory{}).Error
+}

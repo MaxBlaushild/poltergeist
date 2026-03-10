@@ -244,6 +244,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/generations/complete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCompleteGenerationsForUser))
 	r.POST("/sonar/profilePicture", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfilePicture))
 	r.GET("/sonar/admin/insider-trades", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listInsiderTrades))
+	r.GET("/sonar/admin/feedback", middleware.WithAuthentication(s.authClient, s.livenessClient, s.listFeedbackItems))
 	r.GET("/sonar/admin/parties", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminListParties))
 	r.POST("/sonar/admin/parties", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminCreateParty))
 	r.GET("/sonar/admin/parties/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.adminGetParty))
@@ -440,6 +441,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/friendInvites/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteFriendInvite))
 	r.GET("/sonar/friends", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getFriends))
 	r.POST("/sonar/profile", middleware.WithAuthentication(s.authClient, s.livenessClient, s.setProfile))
+	r.POST("/sonar/feedback", middleware.WithAuthenticationWithoutLocation(s.authClient, s.submitFeedback))
 	r.GET("/sonar/activities", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getActivities))
 	r.POST("/sonar/activities/markAsSeen", middleware.WithAuthentication(s.authClient, s.livenessClient, s.markActivitiesAsSeen))
 	r.GET("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChests))
@@ -502,6 +504,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenario))
 	r.GET("/sonar/zones/:id/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenariosForZone))
 	r.POST("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenario))
+	r.POST("/sonar/scenarios/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteScenarios))
 	r.PUT("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenario))
 	r.POST("/sonar/scenarios/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioImage))
 	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
@@ -15441,7 +15444,7 @@ func (s *server) deleteScenario(ctx *gin.Context) {
 		return
 	}
 
-	if _, err := s.dbClient.Scenario().FindByID(ctx, scenarioID); err != nil {
+	if err := s.deleteScenarioByID(ctx, scenarioID); err != nil {
 		if stdErrors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "scenario not found"})
 			return
@@ -15449,12 +15452,81 @@ func (s *server) deleteScenario(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "scenario deleted successfully"})
+}
 
-	if err := s.dbClient.Scenario().Delete(ctx, scenarioID); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+func (s *server) bulkDeleteScenarios(ctx *gin.Context) {
+	var requestBody struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "scenario deleted successfully"})
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.IDs))
+	ids := make([]uuid.UUID, 0, len(requestBody.IDs))
+	for _, idStr := range requestBody.IDs {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid scenario ID: %s", idStr),
+			})
+			return
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	for _, id := range ids {
+		if err := s.deleteScenarioByID(ctx, id); err != nil {
+			if stdErrors.Is(err, gorm.ErrRecordNotFound) {
+				ctx.JSON(http.StatusNotFound, gin.H{
+					"error": fmt.Sprintf("scenario not found: %s", id.String()),
+				})
+				return
+			}
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to delete scenario %s: %s", id.String(), err.Error()),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("deleted %d scenario(s)", len(ids)),
+		"deleted": len(ids),
+		"ids":     ids,
+	})
+}
+
+func (s *server) deleteScenarioByID(ctx context.Context, scenarioID uuid.UUID) error {
+	existingScenario, err := s.dbClient.Scenario().FindByID(ctx, scenarioID)
+	if err != nil {
+		return err
+	}
+	if existingScenario == nil {
+		return gorm.ErrRecordNotFound
+	}
+
+	if err := s.dbClient.Scenario().Delete(ctx, scenarioID); err != nil {
+		return fmt.Errorf("failed to delete scenario: %w", err)
+	}
+	return nil
 }
 
 func (s *server) performScenario(ctx *gin.Context) {

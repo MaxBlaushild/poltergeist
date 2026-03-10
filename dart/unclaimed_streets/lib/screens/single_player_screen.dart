@@ -492,7 +492,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   void _syncTutorialInventorySession(TutorialStatus? status) {
     final drawerController = LayoutShellDrawerController.maybeOf(context);
     if (drawerController == null) return;
-    if (status == null || !status.isLoadoutStep) {
+    if (status == null) {
+      return;
+    }
+    if (!status.isLoadoutStep) {
       drawerController.stopInventoryTutorial();
       return;
     }
@@ -517,7 +520,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _tutorialWelcomeOverlayVisible = true;
       _tutorialWelcomeOverlayOpacity = 0.0;
     });
-    await _loadTutorialStatus(force: true);
+    await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
     await _rebuildMapPins();
     await _runTutorialWelcomeOverlaySequence();
   }
@@ -1442,7 +1445,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
-  Future<void> _loadTutorialStatus({bool force = false}) async {
+  Future<void> _loadTutorialStatus({
+    bool force = false,
+    bool preserveCompletedReveal = false,
+  }) async {
     if (!mounted || _tutorialStatusLoading) return;
     if (!force && _tutorialStatusChecked) {
       _maybeShowTutorialWelcome();
@@ -1460,6 +1466,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       await _ensureTutorialScenarioLoaded(status);
       await _ensureTutorialMonsterLoaded(status);
       await _syncTutorialMapModeFromStatus(status);
+      if (!preserveCompletedReveal) {
+        await _resetTutorialPresentationForInactiveStatus(status);
+      }
       _syncTutorialInventorySession(status);
       if (_tutorialReplayPending &&
           (status == null ||
@@ -1475,6 +1484,37 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     _maybeShowTutorialWelcome();
+  }
+
+  Future<void> _resetTutorialPresentationForInactiveStatus(
+    TutorialStatus? status,
+  ) async {
+    if (status == null) return;
+    final tutorialStillActive =
+        status.showWelcomeDialogue ||
+        status.hasActiveScenario ||
+        status.isLoadoutStep ||
+        status.hasActiveMonsterEncounter;
+    if (tutorialStillActive) return;
+
+    final hasStalePresentation =
+        (_tutorialFocusedScenarioId?.trim().isNotEmpty ?? false) ||
+        (_tutorialFocusedMonsterEncounterId?.trim().isNotEmpty ?? false) ||
+        _tutorialNormalPinsRevealInProgress ||
+        _tutorialWelcomeOverlayVisible ||
+        _tutorialWelcomeOverlayOpacity > 0.0;
+    if (!hasStalePresentation) return;
+
+    setState(() {
+      _tutorialFocusedScenarioId = null;
+      _tutorialFocusedMonsterEncounterId = null;
+      _tutorialNormalPinsRevealInProgress = false;
+      _tutorialWelcomeOverlayVisible = false;
+      _tutorialWelcomeOverlayOpacity = 0.0;
+      _tutorialLoadoutPendingAfterCompletionModal = false;
+      _tutorialRevealPendingAfterCompletionModal = false;
+    });
+    await _rebuildMapPins();
   }
 
   void _maybeShowTutorialWelcome() {
@@ -1578,7 +1618,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
             content: Text('Failed to start the tutorial scenario.'),
           ),
         );
-        await _loadTutorialStatus(force: true);
+        await _loadTutorialStatus(force: true, preserveCompletedReveal: true);
         return;
       }
 
@@ -1741,16 +1781,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         _challenges = challenges;
       });
       if (_styleLoaded && _mapController != null && _markersAdded) {
-        if (_isTutorialMapFocusActive || _tutorialNormalPinsRevealInProgress) {
-          await _rebuildMapPins();
-          return;
-        }
-        await _refreshTreasureChestSymbols();
-        await _refreshHealingFountainSymbols();
-        await _refreshScenarioSymbols();
-        await _refreshMonsterSymbols();
-        await _refreshChallengeSymbols();
-        await _refreshUndiscoveredPoiOpacitiesForZone();
+        await _rebuildMapPins();
       }
     } catch (e) {
       debugPrint('SinglePlayer: _loadTreasureChests/scenarios error: $e');
@@ -1763,17 +1794,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           _challenges = [];
         });
         if (_styleLoaded && _mapController != null && _markersAdded) {
-          if (_isTutorialMapFocusActive ||
-              _tutorialNormalPinsRevealInProgress) {
-            await _rebuildMapPins();
-            return;
-          }
-          await _refreshTreasureChestSymbols();
-          await _refreshHealingFountainSymbols();
-          await _refreshScenarioSymbols();
-          await _refreshMonsterSymbols();
-          await _refreshChallengeSymbols();
-          await _refreshUndiscoveredPoiOpacitiesForZone();
+          await _rebuildMapPins();
         }
       }
     }
@@ -3405,6 +3426,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         return;
       }
 
+      final selectedZone = context.read<ZoneProvider>().selectedZone;
       for (final ch in _characters) {
         final points = ch.locations
             .map((loc) => LatLng(loc.latitude, loc.longitude))
@@ -3414,6 +3436,21 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (points.isEmpty) continue;
 
         final hasDiscovered = _hasDiscoveredCharacter(ch);
+        final visiblePoints = hasDiscovered
+            ? points
+            : selectedZone == null
+            ? <LatLng>[]
+            : points
+                  .where(
+                    (point) =>
+                        _isPointInZone(
+                          selectedZone,
+                          point.latitude,
+                          point.longitude,
+                        ),
+                  )
+                  .toList();
+        if (visiblePoints.isEmpty) continue;
         final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
         final hasQuestAvailable = ch.hasAvailableQuest;
         Uint8List? markerBytes;
@@ -3446,7 +3483,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           try {
             await c.addImage(versionedId, markerBytes);
           } catch (_) {}
-          for (final point in points) {
+          for (final point in visiblePoints) {
             final sym = await c.addSymbol(
               SymbolOptions(
                 geometry: point,
@@ -3466,7 +3503,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           continue;
         }
 
-        for (final point in points) {
+        for (final point in visiblePoints) {
           await c.addCircle(
             CircleOptions(
               geometry: point,
@@ -7277,9 +7314,16 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
 
     if (result.outcome == MonsterBattleOutcome.victory) {
+      final wasTutorialMonster = _isTutorialFocusedMonsterEncounterId(
+        monster.id,
+      );
       setState(() {
         _defeatedMonsterIds.add(monster.id);
         _monsters.removeWhere((item) => item.id == monster.id);
+        if (wasTutorialMonster) {
+          _tutorialFocusedMonsterEncounterId = null;
+          _tutorialRevealPendingAfterCompletionModal = true;
+        }
       });
       await _persistDefeatedMonsterIds();
       await _refreshMonsterSymbols();

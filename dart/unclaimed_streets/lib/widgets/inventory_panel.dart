@@ -508,9 +508,15 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await _load();
       if (!mounted) return;
+      final shouldCloseAfterTutorialProgress =
+          _wouldCompleteTutorialAfterAction(equippedInventoryItemId: inv.id);
       final onTutorialProgressChanged = widget.onTutorialProgressChanged;
       if (onTutorialProgressChanged != null) {
         await onTutorialProgressChanged();
+        if (!mounted) return;
+      }
+      if (shouldCloseAfterTutorialProgress) {
+        widget.onClose();
       }
     } catch (e) {
       String message = e.toString();
@@ -585,12 +591,17 @@ class _InventoryPanelState extends State<InventoryPanel>
       if (!mounted) return;
       await _load();
       if (!mounted) return;
+      final item = _itemFor(owned);
+      final shouldCloseAfterTutorialProgress =
+          _wouldCompleteTutorialAfterAction(usedInventoryItemId: item?.id);
       final onTutorialProgressChanged = widget.onTutorialProgressChanged;
       if (onTutorialProgressChanged != null) {
         await onTutorialProgressChanged();
         if (!mounted) return;
       }
-      if (!widget.closeLocked) {
+      if (shouldCloseAfterTutorialProgress) {
+        widget.onClose();
+      } else if (!widget.closeLocked) {
         widget.onClose();
       }
     } catch (e) {
@@ -836,6 +847,36 @@ class _InventoryPanelState extends State<InventoryPanel>
       }
     }
     return names;
+  }
+
+  bool _wouldCompleteTutorialAfterAction({
+    int? equippedInventoryItemId,
+    int? usedInventoryItemId,
+  }) {
+    final hasTutorialRequirements =
+        widget.requiredEquipItemIds.isNotEmpty ||
+        widget.requiredUseItemIds.isNotEmpty;
+    if (!hasTutorialRequirements) {
+      return false;
+    }
+
+    final completedEquip = widget.completedEquipItemIds.toSet();
+    final completedUse = widget.completedUseItemIds.toSet();
+
+    if (equippedInventoryItemId != null &&
+        widget.requiredEquipItemIds.contains(equippedInventoryItemId)) {
+      completedEquip.add(equippedInventoryItemId);
+    }
+    if (usedInventoryItemId != null &&
+        widget.requiredUseItemIds.contains(usedInventoryItemId)) {
+      completedUse.add(usedInventoryItemId);
+    }
+
+    final equipDone = widget.requiredEquipItemIds.every(
+      completedEquip.contains,
+    );
+    final useDone = widget.requiredUseItemIds.every(completedUse.contains);
+    return equipDone && useDone;
   }
 
   Widget _buildGrid(BuildContext context) {

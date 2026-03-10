@@ -39,6 +39,7 @@ import { PointOfInterest } from './components/PointOfInterest.tsx';
 import { PointOfInterestEditor } from './components/PointOfInterestEditor.tsx';
 import { Quests } from './components/Quests.tsx';
 import { InsiderTrades } from './components/InsiderTrades.tsx';
+import Feedback from './components/Feedback.tsx';
 import ZoneSeedJobs from './components/ZoneSeedJobs.tsx';
 import { Scenarios } from './components/Scenarios.tsx';
 import { Challenges } from './components/Challenges.tsx';
@@ -100,6 +101,7 @@ const Navigation = () => {
         <Link to="/points-of-interest" className="text-white hover:text-gray-300">Points of Interest</Link>
         <Link to="/quests" className="text-white hover:text-gray-300">Quests</Link>
         <Link to="/insider-trades" className="text-white hover:text-gray-300">Insider Trades</Link>
+        <Link to="/feedback" className="text-white hover:text-gray-300">Feedback</Link>
         <Link to="/zone-seeding" className="text-white hover:text-gray-300">Zone Seeding</Link>
         <Link to="/scenarios" className="text-white hover:text-gray-300">Scenarios</Link>
         <Link to="/challenges" className="text-white hover:text-gray-300">Challenges</Link>
@@ -276,6 +278,11 @@ const router = createBrowserRouter([
       {
         path: "/insider-trades",
         element: <InsiderTrades />,
+        loader: onlyAuthenticated,
+      },
+      {
+        path: "/feedback",
+        element: <Feedback />,
         loader: onlyAuthenticated,
       },
       {
