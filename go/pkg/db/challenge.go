@@ -98,7 +98,7 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 	if updates == nil {
 		return nil
 	}
-	if err := updates.SetGeometry(updates.Latitude, updates.Longitude); err != nil {
+	if err := updates.SyncLocationGeometry(); err != nil {
 		return err
 	}
 	updates.RewardMode = models.NormalizeRewardMode(string(updates.RewardMode))
@@ -112,6 +112,7 @@ func (h *challengeHandle) Update(ctx context.Context, id uuid.UUID, updates *mod
 		"latitude":               updates.Latitude,
 		"longitude":              updates.Longitude,
 		"geometry":               updates.Geometry,
+		"polygon":                updates.Polygon,
 		"question":               updates.Question,
 		"description":            updates.Description,
 		"image_url":              updates.ImageURL,

@@ -10,6 +10,7 @@ type ChallengeRecord = {
   pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
+  polygonPoints?: [number, number][] | null;
   question: string;
   description: string;
   imageUrl: string;
@@ -30,9 +31,11 @@ type ChallengeRecord = {
 
 type ChallengeFormState = {
   zoneId: string;
+  locationMode: 'poi' | 'coordinates' | 'polygon';
   pointOfInterestId: string;
   latitude: string;
   longitude: string;
+  polygonPoints: string;
   question: string;
   description: string;
   imageUrl: string;
@@ -111,7 +114,8 @@ const SearchableSelect = ({
     const normalized = query.trim().toLowerCase();
     if (!normalized) return options;
     return options.filter((option) => {
-      const haystack = `${option.label} ${option.secondary ?? ''}`.toLowerCase();
+      const haystack =
+        `${option.label} ${option.secondary ?? ''}`.toLowerCase();
       return haystack.includes(normalized);
     });
   }, [options, query]);
@@ -142,7 +146,9 @@ const SearchableSelect = ({
       {open && !disabled ? (
         <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-gray-500">{noMatchesLabel}</div>
+            <div className="px-3 py-2 text-sm text-gray-500">
+              {noMatchesLabel}
+            </div>
           ) : (
             filtered.map((option) => (
               <button
@@ -156,9 +162,13 @@ const SearchableSelect = ({
                 }}
                 className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-indigo-50"
               >
-                <span className="font-medium text-gray-900">{option.label}</span>
+                <span className="font-medium text-gray-900">
+                  {option.label}
+                </span>
                 {option.secondary ? (
-                  <span className="text-xs text-gray-500">{option.secondary}</span>
+                  <span className="text-xs text-gray-500">
+                    {option.secondary}
+                  </span>
                 ) : null}
               </button>
             ))
@@ -217,11 +227,37 @@ const formatDate = (value?: string | null): string => {
   return parsed.toLocaleString();
 };
 
+const parsePolygonPoints = (input: string): [number, number][] | null => {
+  if (!input.trim()) return null;
+  try {
+    const parsed = JSON.parse(input);
+    if (!Array.isArray(parsed)) return null;
+    const points: [number, number][] = [];
+    for (const entry of parsed) {
+      if (!Array.isArray(entry) || entry.length < 2) return null;
+      const lng = Number(entry[0]);
+      const lat = Number(entry[1]);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+      points.push([lng, lat]);
+    }
+    return points.length >= 3 ? points : null;
+  } catch {
+    return null;
+  }
+};
+
+const formatPolygonPoints = (points?: [number, number][] | null): string => {
+  if (!points || points.length === 0) return '';
+  return JSON.stringify(points);
+};
+
 const emptyForm = (): ChallengeFormState => ({
   zoneId: '',
+  locationMode: 'coordinates',
   pointOfInterestId: '',
   latitude: '',
   longitude: '',
+  polygonPoints: '',
   question: '',
   description: '',
   imageUrl: '',
@@ -260,9 +296,16 @@ const challengeGenerationStatusBadgeClass = (status: string): string => {
 
 const formFromRecord = (record: ChallengeRecord): ChallengeFormState => ({
   zoneId: record.zoneId ?? '',
+  locationMode:
+    record.polygonPoints && record.polygonPoints.length >= 3
+      ? 'polygon'
+      : record.pointOfInterestId
+        ? 'poi'
+        : 'coordinates',
   pointOfInterestId: record.pointOfInterestId ?? '',
   latitude: String(record.latitude ?? ''),
   longitude: String(record.longitude ?? ''),
+  polygonPoints: formatPolygonPoints(record.polygonPoints),
   question: record.question ?? '',
   description: record.description ?? '',
   imageUrl: record.imageUrl ?? '',
@@ -544,7 +587,9 @@ export const Challenges = () => {
     ],
     [pointsOfInterestForGenerationZone]
   );
-  const hasSelectedPointOfInterest = form.pointOfInterestId.trim().length > 0;
+  const hasSelectedPointOfInterest =
+    form.locationMode === 'poi' && form.pointOfInterestId.trim().length > 0;
+  const isCoordinateMode = form.locationMode === 'coordinates';
 
   useEffect(() => {
     if (!showModal) return;
@@ -569,7 +614,9 @@ export const Challenges = () => {
 
   useEffect(() => {
     if (!generationJobs.length) return;
-    const zoneIds = Array.from(new Set(generationJobs.map((job) => job.zoneId)));
+    const zoneIds = Array.from(
+      new Set(generationJobs.map((job) => job.zoneId))
+    );
     zoneIds.forEach((zoneId) => {
       if (zoneId && !zonePointOfInterestMap[zoneId]) {
         void loadPointsOfInterestForZone(zoneId);
@@ -606,6 +653,7 @@ export const Challenges = () => {
   const setFormLocation = useCallback((latitude: number, longitude: number) => {
     setForm((prev) => ({
       ...prev,
+      locationMode: 'coordinates',
       pointOfInterestId: '',
       latitude: latitude.toFixed(6),
       longitude: longitude.toFixed(6),
@@ -633,7 +681,7 @@ export const Challenges = () => {
 
   useEffect(() => {
     if (!showModal) return;
-    if (hasSelectedPointOfInterest) return;
+    if (!isCoordinateMode || hasSelectedPointOfInterest) return;
     if (!mapContainerRef.current) return;
     if (!mapboxgl.accessToken) return;
     if (mapRef.current) return;
@@ -676,6 +724,7 @@ export const Challenges = () => {
     };
   }, [
     form.zoneId,
+    isCoordinateMode,
     hasSelectedPointOfInterest,
     setFormLocation,
     showModal,
@@ -684,7 +733,7 @@ export const Challenges = () => {
 
   useEffect(() => {
     if (!showModal) return;
-    if (hasSelectedPointOfInterest) return;
+    if (!isCoordinateMode || hasSelectedPointOfInterest) return;
     if (!mapRef.current) return;
 
     const lat = Number.parseFloat(form.latitude);
@@ -704,7 +753,13 @@ export const Challenges = () => {
     }
 
     mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
-  }, [form.latitude, form.longitude, hasSelectedPointOfInterest, showModal]);
+  }, [
+    form.latitude,
+    form.longitude,
+    hasSelectedPointOfInterest,
+    isCoordinateMode,
+    showModal,
+  ]);
 
   const handleQueueChallengeGeneration = async () => {
     if (!generationForm.zoneId) {
@@ -740,11 +795,24 @@ export const Challenges = () => {
   const save = async () => {
     try {
       const rewardMode = form.rewardMode;
+      const parsedPolygonPoints =
+        form.locationMode === 'polygon'
+          ? parsePolygonPoints(form.polygonPoints)
+          : null;
       const payload = {
         zoneId: form.zoneId.trim(),
-        pointOfInterestId: form.pointOfInterestId.trim(),
-        latitude: parseFloatSafe(form.latitude, 0),
-        longitude: parseFloatSafe(form.longitude, 0),
+        pointOfInterestId:
+          form.locationMode === 'poi' ? form.pointOfInterestId.trim() : '',
+        latitude:
+          form.locationMode === 'coordinates'
+            ? parseFloatSafe(form.latitude, 0)
+            : 0,
+        longitude:
+          form.locationMode === 'coordinates'
+            ? parseFloatSafe(form.longitude, 0)
+            : 0,
+        polygonPoints:
+          form.locationMode === 'polygon' ? parsedPolygonPoints : undefined,
         question: form.question.trim(),
         description: form.description.trim(),
         imageUrl: form.imageUrl.trim(),
@@ -772,7 +840,17 @@ export const Challenges = () => {
         alert('Zone and question are required.');
         return;
       }
-      if (!payload.pointOfInterestId) {
+      if (form.locationMode === 'poi' && !payload.pointOfInterestId) {
+        alert('Select a point of interest.');
+        return;
+      }
+      if (form.locationMode === 'polygon' && !parsedPolygonPoints) {
+        alert(
+          'Enter polygon points as JSON: [[lng,lat],[lng,lat],[lng,lat],...]'
+        );
+        return;
+      }
+      if (form.locationMode === 'coordinates') {
         const latitude = Number.parseFloat(form.latitude);
         const longitude = Number.parseFloat(form.longitude);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -1250,16 +1328,18 @@ export const Challenges = () => {
                     )}
                   </td>
                   <td className="p-2 border-b align-top">
-                    {record.pointOfInterestId
-                      ? `POI: ${
-                          allPointOfInterestNamesById.get(
-                            record.pointOfInterestId
-                          ) ?? record.pointOfInterestId
-                        }`
-                      : Number.isFinite(record.latitude) &&
-                          Number.isFinite(record.longitude)
-                        ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
-                        : 'n/a'}
+                    {record.polygonPoints && record.polygonPoints.length >= 3
+                      ? `Polygon (${record.polygonPoints.length} points)`
+                      : record.pointOfInterestId
+                        ? `POI: ${
+                            allPointOfInterestNamesById.get(
+                              record.pointOfInterestId
+                            ) ?? record.pointOfInterestId
+                          }`
+                        : Number.isFinite(record.latitude) &&
+                            Number.isFinite(record.longitude)
+                          ? `${record.latitude.toFixed(5)}, ${record.longitude.toFixed(5)}`
+                          : 'n/a'}
                   </td>
                   <td className="p-2 border-b align-top">
                     {record.thumbnailUrl || record.imageUrl ? (
@@ -1582,97 +1662,149 @@ export const Challenges = () => {
               </label>
 
               <label className="text-sm md:col-span-2">
-                Point of Interest (Optional)
+                Location Mode
                 <select
                   className="w-full border rounded-md p-2"
-                  value={form.pointOfInterestId}
+                  value={form.locationMode}
                   onChange={(event) => {
-                    const nextPointOfInterestId = event.target.value;
-                    if (!nextPointOfInterestId) {
-                      setForm((prev) => ({ ...prev, pointOfInterestId: '' }));
-                      return;
-                    }
-                    const selectedPoint = pointsOfInterestForFormZone.find(
-                      (point) => point.id === nextPointOfInterestId
-                    );
+                    const nextMode = event.target.value as
+                      | 'poi'
+                      | 'coordinates'
+                      | 'polygon';
                     setForm((prev) => ({
                       ...prev,
-                      pointOfInterestId: nextPointOfInterestId,
-                      latitude:
-                        selectedPoint?.latitude.toFixed(6) ?? prev.latitude,
-                      longitude:
-                        selectedPoint?.longitude.toFixed(6) ?? prev.longitude,
+                      locationMode: nextMode,
+                      pointOfInterestId:
+                        nextMode === 'poi' ? prev.pointOfInterestId : '',
+                      polygonPoints:
+                        nextMode === 'polygon' ? prev.polygonPoints : '',
                     }));
                   }}
                 >
-                  <option value="">Use standalone coordinates</option>
-                  {pointsOfInterestForFormZone.map((point) => (
-                    <option key={point.id} value={point.id}>
-                      {point.name}
-                    </option>
-                  ))}
+                  <option value="coordinates">Coordinates</option>
+                  <option value="poi">Point of Interest</option>
+                  <option value="polygon">Polygon Area</option>
                 </select>
-                {pointOfInterestLoadingByZone[form.zoneId] ? (
-                  <div className="text-xs text-gray-500 mt-1">
-                    Loading points of interest...
+              </label>
+
+              {form.locationMode === 'poi' ? (
+                <label className="text-sm md:col-span-2">
+                  Point of Interest
+                  <select
+                    className="w-full border rounded-md p-2"
+                    value={form.pointOfInterestId}
+                    onChange={(event) => {
+                      const nextPointOfInterestId = event.target.value;
+                      if (!nextPointOfInterestId) {
+                        setForm((prev) => ({ ...prev, pointOfInterestId: '' }));
+                        return;
+                      }
+                      const selectedPoint = pointsOfInterestForFormZone.find(
+                        (point) => point.id === nextPointOfInterestId
+                      );
+                      setForm((prev) => ({
+                        ...prev,
+                        pointOfInterestId: nextPointOfInterestId,
+                        latitude:
+                          selectedPoint?.latitude.toFixed(6) ?? prev.latitude,
+                        longitude:
+                          selectedPoint?.longitude.toFixed(6) ?? prev.longitude,
+                      }));
+                    }}
+                  >
+                    <option value="">Select point of interest</option>
+                    {pointsOfInterestForFormZone.map((point) => (
+                      <option key={point.id} value={point.id}>
+                        {point.name}
+                      </option>
+                    ))}
+                  </select>
+                  {pointOfInterestLoadingByZone[form.zoneId] ? (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Loading points of interest...
+                    </div>
+                  ) : null}
+                </label>
+              ) : null}
+
+              {form.locationMode === 'coordinates' ? (
+                <>
+                  <label className="text-sm">
+                    Latitude
+                    <input
+                      className="w-full border rounded-md p-2"
+                      type="number"
+                      step="any"
+                      value={form.latitude}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          pointOfInterestId: '',
+                          latitude: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+
+                  <label className="text-sm">
+                    Longitude
+                    <input
+                      className="w-full border rounded-md p-2"
+                      type="number"
+                      step="any"
+                      value={form.longitude}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          pointOfInterestId: '',
+                          longitude: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
+
+              {form.locationMode === 'polygon' ? (
+                <label className="text-sm md:col-span-2">
+                  Polygon Points
+                  <textarea
+                    className="w-full border rounded-md p-2"
+                    rows={4}
+                    placeholder="[[lng,lat],[lng,lat],[lng,lat]]"
+                    value={form.polygonPoints}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        pointOfInterestId: '',
+                        polygonPoints: event.target.value,
+                      }))
+                    }
+                  />
+                  <div className="mt-1 text-xs text-gray-500">
+                    Enter at least 3 points as JSON. Example:{' '}
+                    <code>
+                      [[ -73.98, 40.75 ], [ -73.97, 40.75 ], [ -73.97, 40.76 ]]
+                    </code>
                   </div>
-                ) : null}
-              </label>
-
-              <label className="text-sm">
-                Latitude
-                <input
-                  className="w-full border rounded-md p-2"
-                  type="number"
-                  step="any"
-                  value={form.latitude}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      pointOfInterestId: '',
-                      latitude: event.target.value,
-                    }))
-                  }
-                  disabled={hasSelectedPointOfInterest}
-                />
-              </label>
-
-              <label className="text-sm">
-                Longitude
-                <input
-                  className="w-full border rounded-md p-2"
-                  type="number"
-                  step="any"
-                  value={form.longitude}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      pointOfInterestId: '',
-                      longitude: event.target.value,
-                    }))
-                  }
-                  disabled={hasSelectedPointOfInterest}
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 mb-3">
-              <button
-                type="button"
-                className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
-                onClick={handleUseCurrentLocation}
-                disabled={geoLoading || hasSelectedPointOfInterest}
-              >
-                {geoLoading ? 'Locating...' : 'Use Current Browser Location'}
-              </button>
-              {hasSelectedPointOfInterest ? (
-                <div className="text-xs text-gray-500 mt-1">
-                  Clear point of interest selection to set manual coordinates.
-                </div>
+                </label>
               ) : null}
             </div>
 
-            {!hasSelectedPointOfInterest && (
+            {isCoordinateMode ? (
+              <div className="mt-3 mb-3">
+                <button
+                  type="button"
+                  className="bg-gray-700 text-white px-3 py-2 rounded-md disabled:opacity-60"
+                  onClick={handleUseCurrentLocation}
+                  disabled={geoLoading}
+                >
+                  {geoLoading ? 'Locating...' : 'Use Current Browser Location'}
+                </button>
+              </div>
+            ) : null}
+
+            {isCoordinateMode ? (
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm">Map Location Picker</span>
@@ -1692,7 +1824,7 @@ export const Challenges = () => {
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
               <label className="text-sm">

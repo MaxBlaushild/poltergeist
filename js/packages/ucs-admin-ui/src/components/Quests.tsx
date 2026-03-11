@@ -43,9 +43,16 @@ type MonsterNodeOption = {
 type ChallengeNodeOption = {
   id: string;
   zoneId: string;
+  pointOfInterestId?: string | null;
   latitude: number;
   longitude: number;
   question: string;
+};
+
+type SelectOption = {
+  value: string;
+  label: string;
+  secondary?: string;
 };
 
 type MonsterRecord = {
@@ -74,6 +81,7 @@ type QuickCreateScenarioForm = {
 };
 
 type QuickCreateChallengeForm = {
+  pointOfInterestId: string;
   question: string;
   description: string;
   imageUrl: string;
@@ -176,6 +184,7 @@ const emptyQuickCreateScenarioForm = (): QuickCreateScenarioForm => ({
 });
 
 const emptyQuickCreateChallengeForm = (): QuickCreateChallengeForm => ({
+  pointOfInterestId: '',
   question: '',
   description: '',
   imageUrl: '',
@@ -204,6 +213,101 @@ const emptyQuickCreateMonsterEncounterForm = (): QuickCreateMonsterEncounterForm
 const parseIntSafe = (value: string, fallback = 0) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const SearchableSelect = ({
+  label,
+  placeholder,
+  options,
+  value,
+  onChange,
+  disabled = false,
+  noMatchesLabel = 'No matches found',
+}: {
+  label: string;
+  placeholder: string;
+  options: SelectOption[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  noMatchesLabel?: string;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const selected = options.find((option) => option.value === value);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return options;
+    return options.filter((option) => {
+      const haystack = `${option.label} ${option.secondary ?? ''}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [options, query]);
+
+  const displayValue = open ? query : selected?.label ?? '';
+
+  return (
+    <div className="relative">
+      <label className="block text-sm">{label}</label>
+      <input
+        value={displayValue}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          if (disabled) return;
+          setOpen(true);
+          setQuery('');
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setOpen(false), 150);
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="w-full border rounded-md p-2 disabled:bg-gray-100 disabled:text-gray-500"
+      />
+      {open && !disabled ? (
+        <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-gray-500">{noMatchesLabel}</div>
+          ) : (
+            filtered.map((option) => (
+              <button
+                type="button"
+                key={option.value || '__empty-option__'}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-indigo-50"
+              >
+                <span className="font-medium text-gray-900">{option.label}</span>
+                {option.secondary ? (
+                  <span className="text-xs text-gray-500">{option.secondary}</span>
+                ) : null}
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const getQuestRewardMode = (quest: Quest): 'explicit' | 'random' => {
+  if (quest.rewardMode === 'explicit' || quest.rewardMode === 'random') {
+    return quest.rewardMode;
+  }
+  const hasExplicitRewards =
+    (quest.rewardExperience ?? 0) > 0 ||
+    (quest.gold ?? 0) > 0 ||
+    (quest.itemRewards?.length ?? 0) > 0 ||
+    (quest.spellRewards?.length ?? 0) > 0;
+  return hasExplicitRewards ? 'explicit' : 'random';
 };
 
 const questRecurrenceOptions = [
@@ -603,7 +707,9 @@ export const Quests = () => {
   }, [apiClient, questForm.zoneId, zoneDetailsById]);
 
   useEffect(() => {
-    if (!poiFiltersOpen || zonePoiMapLoaded || zonePoiMapLoading || zones.length === 0) return;
+    if ((!poiFiltersOpen && !quickCreateOpen.challenge) || zonePoiMapLoaded || zonePoiMapLoading || zones.length === 0) {
+      return;
+    }
     let isMounted = true;
     const loadZonePoiMap = async () => {
       setZonePoiMapLoading(true);
@@ -626,7 +732,7 @@ export const Quests = () => {
     return () => {
       isMounted = false;
     };
-  }, [apiClient, poiFiltersOpen, zonePoiMapLoaded, zonePoiMapLoading, zones]);
+  }, [apiClient, poiFiltersOpen, quickCreateOpen.challenge, zonePoiMapLoaded, zonePoiMapLoading, zones]);
 
   useEffect(() => {
     if (questMapContainer.current && !questMap.current) {
@@ -979,6 +1085,23 @@ export const Quests = () => {
     }
     return filtered;
   }, [pointsOfInterest, poiSearch, poiZoneFilterId, zonePoiMap, poiTagFilterIds]);
+
+  const quickCreateChallengePointsOfInterest = useMemo(() => {
+    if (!questForm.zoneId) return pointsOfInterest;
+    const allowedPoiIds = zonePoiMap[questForm.zoneId];
+    if (!allowedPoiIds) return pointsOfInterest;
+    return pointsOfInterest.filter((poi) => allowedPoiIds.has(poi.id));
+  }, [pointsOfInterest, questForm.zoneId, zonePoiMap]);
+
+  const quickCreateChallengePoiOptions = useMemo(
+    () =>
+      quickCreateChallengePointsOfInterest.map((poi) => ({
+        value: poi.id,
+        label: poi.name,
+        secondary: [poi.googleMapsPlaceName, poi.originalName].filter(Boolean).join(' · '),
+      })),
+    [quickCreateChallengePointsOfInterest]
+  );
 
   const filteredScenarios = useMemo(() => {
     let filtered = scenarios;
@@ -1746,6 +1869,7 @@ export const Quests = () => {
   };
 
   const handleSelectQuest = (quest: Quest) => {
+    const rewardMode = getQuestRewardMode(quest);
     setSelectedQuestId(quest.id);
     setQuestForm({
       name: quest.name ?? '',
@@ -1756,7 +1880,7 @@ export const Quests = () => {
       questGiverCharacterId: quest.questGiverCharacterId ?? '',
       questArchetypeId: quest.questArchetypeId ?? '',
       recurrenceFrequency: quest.recurrenceFrequency ?? '',
-      rewardMode: (quest.rewardMode as 'explicit' | 'random') ?? 'random',
+      rewardMode,
       randomRewardSize: (quest.randomRewardSize as 'small' | 'medium' | 'large') ?? 'small',
       rewardExperience: quest.rewardExperience ?? 0,
       gold: quest.gold ?? 0,
@@ -1978,10 +2102,11 @@ const handleRemoveQuestReward = (index: number) => {
       alert('Select a zone for the quest before creating a challenge.');
       return;
     }
+    const pointOfInterestId = quickCreateChallengeForm.pointOfInterestId.trim();
     const latitude = Number.parseFloat(quickCreateChallengeForm.latitude);
     const longitude = Number.parseFloat(quickCreateChallengeForm.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-      alert('Challenge latitude and longitude are required.');
+    if (!pointOfInterestId && (!Number.isFinite(latitude) || !Number.isFinite(longitude))) {
+      alert('Select a point of interest or provide challenge latitude and longitude.');
       return;
     }
     if (!quickCreateChallengeForm.question.trim()) {
@@ -1993,6 +2118,7 @@ const handleRemoveQuestReward = (index: number) => {
     try {
       const created = await apiClient.post<ChallengeNodeOption>('/sonar/challenges', {
         zoneId: questForm.zoneId,
+        pointOfInterestId: pointOfInterestId || null,
         latitude,
         longitude,
         question: quickCreateChallengeForm.question.trim(),
@@ -2908,14 +3034,66 @@ const handleRemoveQuestReward = (index: number) => {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700">Reward Mode</label>
+                  <select
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                    value={questForm.rewardMode}
+                    onChange={(e) =>
+                      setQuestForm((prev) => ({
+                        ...prev,
+                        rewardMode: e.target.value as 'explicit' | 'random',
+                      }))
+                    }
+                  >
+                    <option value="random">Random Reward</option>
+                    <option value="explicit">Explicit Reward</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Random Reward Size</label>
+                  <select
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                    value={questForm.randomRewardSize}
+                    disabled={questForm.rewardMode !== 'random'}
+                    onChange={(e) =>
+                      setQuestForm((prev) => ({
+                        ...prev,
+                        randomRewardSize: e.target.value as 'small' | 'medium' | 'large',
+                      }))
+                    }
+                  >
+                    <option value="small">Small</option>
+                    <option value="medium">Medium</option>
+                    <option value="large">Large</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Experience Reward</label>
+                  <input
+                    type="number"
+                    className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                    value={questForm.rewardExperience}
+                    disabled={questForm.rewardMode !== 'explicit'}
+                    onChange={(e) =>
+                      setQuestForm((prev) => ({ ...prev, rewardExperience: Number(e.target.value) }))
+                    }
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-gray-700">Gold Reward</label>
                   <input
                     type="number"
                     className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                     value={questForm.gold}
+                    disabled={questForm.rewardMode !== 'explicit'}
                     onChange={(e) => setQuestForm((prev) => ({ ...prev, gold: Number(e.target.value) }))}
                   />
                 </div>
+                {questForm.rewardMode === 'random' && (
+                  <div className="md:col-span-2 text-xs text-gray-500">
+                    Random rewards ignore explicit gold/item/spell fields.
+                  </div>
+                )}
                 <div className="md:col-span-2">
                   <div className="flex items-center justify-between">
                     <label className="block text-sm font-medium text-gray-700">Item Rewards</label>
@@ -3568,8 +3746,38 @@ const handleRemoveQuestReward = (index: number) => {
                           ))}
                         </select>
                         {quickCreateOpen.challenge && (
-                          <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="mt-3 rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="md:col-span-2">
+                                <SearchableSelect
+                                  label="Point of Interest (Optional)"
+                                  placeholder="Search points of interest..."
+                                  options={quickCreateChallengePoiOptions}
+                                  value={quickCreateChallengeForm.pointOfInterestId}
+                                  onChange={(pointOfInterestId) => {
+                                    const selectedPoint = quickCreateChallengePointsOfInterest.find(
+                                      (point) => point.id === pointOfInterestId
+                                    );
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      pointOfInterestId,
+                                      latitude:
+                                        selectedPoint?.lat !== undefined ? selectedPoint.lat : prev.latitude,
+                                      longitude:
+                                        selectedPoint?.lng !== undefined ? selectedPoint.lng : prev.longitude,
+                                    }));
+                                  }}
+                                  disabled={!questForm.zoneId}
+                                  noMatchesLabel={
+                                    questForm.zoneId
+                                      ? 'No matching points of interest.'
+                                      : 'Select a quest zone first.'
+                                  }
+                                />
+                                {zonePoiMapLoading && questForm.zoneId ? (
+                                  <div className="mt-1 text-xs text-gray-500">Loading points of interest...</div>
+                                ) : null}
+                              </div>
                               <label className="text-sm md:col-span-2">
                                 Question
                                 <textarea
@@ -3625,8 +3833,13 @@ const handleRemoveQuestReward = (index: number) => {
                                   className="mt-1 block w-full rounded-md border border-gray-300 p-2"
                                   value={quickCreateChallengeForm.latitude}
                                   onChange={(e) =>
-                                    setQuickCreateChallengeForm((prev) => ({ ...prev, latitude: e.target.value }))
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      pointOfInterestId: '',
+                                      latitude: e.target.value,
+                                    }))
                                   }
+                                  disabled={Boolean(quickCreateChallengeForm.pointOfInterestId)}
                                 />
                               </label>
                               <label className="text-sm">
@@ -3636,8 +3849,13 @@ const handleRemoveQuestReward = (index: number) => {
                                   className="mt-1 block w-full rounded-md border border-gray-300 p-2"
                                   value={quickCreateChallengeForm.longitude}
                                   onChange={(e) =>
-                                    setQuickCreateChallengeForm((prev) => ({ ...prev, longitude: e.target.value }))
+                                    setQuickCreateChallengeForm((prev) => ({
+                                      ...prev,
+                                      pointOfInterestId: '',
+                                      longitude: e.target.value,
+                                    }))
                                   }
+                                  disabled={Boolean(quickCreateChallengeForm.pointOfInterestId)}
                                 />
                               </label>
                               <label className="text-sm">

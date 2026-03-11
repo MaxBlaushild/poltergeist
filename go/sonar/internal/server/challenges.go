@@ -31,6 +31,7 @@ type challengeUpsertRequest struct {
 	PointOfInterestID   string                      `json:"pointOfInterestId"`
 	Latitude            float64                     `json:"latitude"`
 	Longitude           float64                     `json:"longitude"`
+	PolygonPoints       [][2]float64                `json:"polygonPoints"`
 	Question            string                      `json:"question"`
 	Description         string                      `json:"description"`
 	ImageURL            string                      `json:"imageUrl"`
@@ -121,15 +122,9 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 	if err != nil {
 		return nil, nil, err
 	}
-	resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
-		ctx,
-		&zoneID,
-		pointOfInterestID,
-		body.Latitude,
-		body.Longitude,
-	)
-	if err != nil {
-		return nil, nil, err
+	hasPolygon := len(body.PolygonPoints) > 0
+	if pointOfInterestID != nil && hasPolygon {
+		return nil, nil, fmt.Errorf("challenge location must use either pointOfInterestId or polygonPoints, not both")
 	}
 
 	itemChoiceRewards := make([]models.ChallengeItemChoiceReward, 0, len(body.ItemChoiceRewards))
@@ -158,9 +153,6 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 
 	challenge := &models.Challenge{
 		ZoneID:             zoneID,
-		PointOfInterestID:  resolvedPointOfInterestID,
-		Latitude:           resolvedLatitude,
-		Longitude:          resolvedLongitude,
 		Question:           question,
 		Description:        description,
 		ImageURL:           imageURL,
@@ -175,6 +167,25 @@ func (s *server) parseChallengeUpsertRequest(ctx *gin.Context, body challengeUps
 		Difficulty:         body.Difficulty,
 		StatTags:           parseChallengeStatTags(body.StatTags),
 		Proficiency:        proficiencyPtr,
+	}
+	if hasPolygon {
+		if err := challenge.SetPolygonPoints(body.PolygonPoints); err != nil {
+			return nil, nil, err
+		}
+	} else {
+		resolvedPointOfInterestID, resolvedLatitude, resolvedLongitude, err := s.resolveStandaloneLocation(
+			ctx,
+			&zoneID,
+			pointOfInterestID,
+			body.Latitude,
+			body.Longitude,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		challenge.PointOfInterestID = resolvedPointOfInterestID
+		challenge.Latitude = resolvedLatitude
+		challenge.Longitude = resolvedLongitude
 	}
 	return challenge, itemChoiceRewards, nil
 }
@@ -265,7 +276,7 @@ func (s *server) createChallenge(ctx *gin.Context) {
 
 	challenge, itemChoiceRewards, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	challenge.ID = uuid.New()
@@ -332,7 +343,7 @@ func (s *server) updateChallenge(ctx *gin.Context) {
 
 	updates, itemChoiceRewards, err := s.parseChallengeUpsertRequest(ctx, requestBody)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid challenge payload"})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	updates.RecurringChallengeID = existing.RecurringChallengeID

@@ -9733,15 +9733,22 @@ func (s *server) submitStandaloneChallenge(ctx *gin.Context) {
 		return
 	}
 
-	distance := util.HaversineDistance(
-		userLat,
-		userLng,
-		challenge.Latitude,
-		challenge.Longitude,
-	)
-	if distance > 100 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-		return
+	if challenge.HasPolygon() {
+		if !challenge.ContainsPoint(userLat, userLng) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
+			return
+		}
+	} else {
+		distance := util.HaversineDistance(
+			userLat,
+			userLng,
+			challenge.Latitude,
+			challenge.Longitude,
+		)
+		if distance > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+			return
+		}
 	}
 
 	textSubmission := requestBody.TextSubmission
@@ -10204,15 +10211,22 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load challenge"})
 			return
 		}
-		distance := util.HaversineDistance(
-			userLat,
-			userLng,
-			standaloneChallenge.Latitude,
-			standaloneChallenge.Longitude,
-		)
-		if distance > 100 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
-			return
+		if standaloneChallenge.HasPolygon() {
+			if !standaloneChallenge.ContainsPoint(userLat, userLng) {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "you must be inside the challenge area to submit an answer"})
+				return
+			}
+		} else {
+			distance := util.HaversineDistance(
+				userLat,
+				userLng,
+				standaloneChallenge.Latitude,
+				standaloneChallenge.Longitude,
+			)
+			if distance > 100 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 100 meters of the location to submit an answer. Currently %.0f meters away", distance)})
+				return
+			}
 		}
 	} else {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "quest node has no location"})
