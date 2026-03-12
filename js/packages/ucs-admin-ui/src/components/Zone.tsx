@@ -343,10 +343,23 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, allZoneBo
   );
 };
 
+type ZoneFlavorGenerationJob = {
+  id: string;
+  zoneId: string;
+  status: string;
+  generatedDescription?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const isZoneFlavorPendingStatus = (status?: string | null) =>
+  status === 'queued' || status === 'in_progress';
+
 export const Zone = () => {
   const { id } = useParams();
   const { apiClient } = useAPI();
-  const { zones, createZone, deleteZone, editZone } =
+  const { zones, createZone, deleteZone, editZone, refreshZones } =
     useZoneContext();
   const zone = zones.find((zone) => zone.id === id);
   const { pointsOfInterest, loading, error } = useZonePointsOfInterest(id!);
@@ -385,6 +398,10 @@ export const Zone = () => {
   const [isEditingZone, setIsEditingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
+  const [queueingZoneFlavor, setQueueingZoneFlavor] = useState(false);
+  const [zoneFlavorJobs, setZoneFlavorJobs] = useState<ZoneFlavorGenerationJob[]>([]);
+  const [zoneFlavorJobsError, setZoneFlavorJobsError] = useState<string | null>(null);
+  const lastCompletedZoneFlavorJobIdRef = useRef<string | null>(null);
   const {
     candidates,
     loading: candidatesLoading,
@@ -407,6 +424,50 @@ export const Zone = () => {
       setBoundaryPoints(zone.points.map(point => [point.longitude, point.latitude] as [number, number]));
     }
   }, [zone]);
+
+  useEffect(() => {
+    setName(zone?.name || '');
+    setDescription(zone?.description || '');
+  }, [zone?.name, zone?.description]);
+
+  useEffect(() => {
+    if (!id) return;
+
+    let active = true;
+    const fetchZoneFlavorJobs = async () => {
+      try {
+        const response = await apiClient.get<ZoneFlavorGenerationJob[]>(
+          `/sonar/admin/zone-flavor-generation-jobs?zoneId=${id}&limit=10`
+        );
+        if (!active) return;
+        setZoneFlavorJobs(response);
+        setZoneFlavorJobsError(null);
+      } catch (error) {
+        console.error('Error fetching zone flavor jobs:', error);
+        if (!active) return;
+        setZoneFlavorJobsError('Unable to load zone flavor jobs.');
+      }
+    };
+
+    fetchZoneFlavorJobs();
+    const interval = window.setInterval(fetchZoneFlavorJobs, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [apiClient, id]);
+
+  useEffect(() => {
+    const latestJob = zoneFlavorJobs[0];
+    if (!latestJob || latestJob.status !== 'completed') {
+      return;
+    }
+    if (lastCompletedZoneFlavorJobIdRef.current === latestJob.id) {
+      return;
+    }
+    lastCompletedZoneFlavorJobIdRef.current = latestJob.id;
+    refreshZones();
+  }, [zoneFlavorJobs, refreshZones]);
 
   const handleMapClick = (lngLat: mapboxgl.LngLat) => {
     const newPoint: [number, number] = [lngLat.lng, lngLat.lat];
@@ -444,6 +505,24 @@ export const Zone = () => {
     await apiClient.post(`/sonar/zones/${id}/questArchetypes`, {});
   };
 
+  const handleGenerateZoneFlavor = async () => {
+    if (!id || queueingZoneFlavor) return;
+    setQueueingZoneFlavor(true);
+    try {
+      const queuedJob = await apiClient.post<ZoneFlavorGenerationJob>(
+        '/sonar/admin/zone-flavor-generation-jobs',
+        { zoneId: id }
+      );
+      setZoneFlavorJobs((prev) => [queuedJob, ...prev.filter((job) => job.id !== queuedJob.id)]);
+      setZoneFlavorJobsError(null);
+    } catch (error) {
+      console.error('Error queueing zone flavor job:', error);
+      setZoneFlavorJobsError('Unable to queue zone flavor generation.');
+    } finally {
+      setQueueingZoneFlavor(false);
+    }
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -464,6 +543,7 @@ export const Zone = () => {
   const filteredPoints = pointsOfInterest.filter(point => 
     point.name.toLowerCase().includes(nameFilter.toLowerCase())
   );
+  const latestZoneFlavorJob = zoneFlavorJobs[0];
   const allZoneBoundaries = zones
     .filter((candidateZone) => candidateZone.id !== id && candidateZone.points.length > 0)
     .map((candidateZone) =>
@@ -507,7 +587,46 @@ export const Zone = () => {
         >
           Edit Zone
         </button>
+        <button
+          onClick={handleGenerateZoneFlavor}
+          disabled={queueingZoneFlavor}
+          className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 disabled:bg-emerald-300"
+        >
+          {queueingZoneFlavor ? 'Queueing Flavor...' : 'Generate Zone Flavor'}
+        </button>
       </div>
+
+      {(latestZoneFlavorJob || zoneFlavorJobsError) && (
+        <div className="mb-6 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {latestZoneFlavorJob && (
+            <>
+              <div className="font-semibold">
+                Zone flavor job: {latestZoneFlavorJob.status.replace(/_/g, ' ')}
+              </div>
+              {latestZoneFlavorJob.generatedDescription && (
+                <p className="mt-2 text-emerald-800">
+                  {latestZoneFlavorJob.generatedDescription}
+                </p>
+              )}
+              {latestZoneFlavorJob.errorMessage && (
+                <p className="mt-2 text-red-700">
+                  {latestZoneFlavorJob.errorMessage}
+                </p>
+              )}
+              {isZoneFlavorPendingStatus(latestZoneFlavorJob.status) && (
+                <p className="mt-2 text-emerald-700">
+                  The worker is generating in-world flavor from this zone’s boundary coordinates.
+                </p>
+              )}
+            </>
+          )}
+          {zoneFlavorJobsError && (
+            <p className={latestZoneFlavorJob ? 'mt-2 text-red-700' : 'text-red-700'}>
+              {zoneFlavorJobsError}
+            </p>
+          )}
+        </div>
+      )}
 
       {isEditingZone && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

@@ -4464,10 +4464,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       } catch (_) {}
 
       if (imageBytes != null) {
-        final imageId = 'healing_fountain_${fountain.id}_$_mapThumbnailVersion';
-        try {
-          await c.addImage(imageId, imageBytes);
-        } catch (_) {}
+        final imageKey = imageSource.hashCode.abs();
+        final imageId =
+            'healing_fountain_${fountain.id}_${imageKey}_$_mapThumbnailVersion';
+        await _ensureMapImage(c, imageId, imageBytes);
 
         final existingCircle = _healingFountainCircleById[fountain.id];
         if (existingCircle != null) {
@@ -7257,6 +7257,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         fountain: fountain,
         onClose: () => Navigator.of(context).pop(),
         onUnlocked: () async {
+          final zoneProvider = context.read<ZoneProvider>();
           if (!mounted) return;
           setState(() {
             _healingFountains = _healingFountains
@@ -7268,6 +7269,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 .toList(growable: false);
           });
           await _refreshHealingFountainSymbols();
+          _invalidateZoneBaseContent(fountain.zoneId);
+          final selectedZoneId = zoneProvider.selectedZone?.id;
+          if (selectedZoneId == fountain.zoneId) {
+            await _loadTreasureChestsForSelectedZone();
+          }
         },
         onUsed: (result) {
           if (!mounted) return;
