@@ -11,6 +11,24 @@ interface TreasureChestItemForm {
   quantity: number;
 }
 
+interface TreasureChestDistributionResponse {
+  message: string;
+  updatedCount: number;
+  counts: {
+    unlocked: number;
+    tier1To10: number;
+    tier11To25: number;
+    tier26To50: number;
+    tier51To75: number;
+    tier76To100: number;
+  };
+  rewardSizes: {
+    small: number;
+    medium: number;
+    large: number;
+  };
+}
+
 export const TreasureChests = () => {
   const { apiClient } = useAPI();
   const { zones } = useZoneContext();
@@ -30,6 +48,18 @@ export const TreasureChests = () => {
     new Set()
   );
   const [seeding, setSeeding] = useState(false);
+  const [showDistributionControls, setShowDistributionControls] =
+    useState(false);
+  const [redistributingLockTiers, setRedistributingLockTiers] =
+    useState(false);
+  const [distributionForm, setDistributionForm] = useState({
+    unlockedPercentage: '10',
+    tier1To10Percentage: '20',
+    tier11To25Percentage: '20',
+    tier26To50Percentage: '25',
+    tier51To75Percentage: '20',
+    tier76To100Percentage: '5',
+  });
   const [quickCreating, setQuickCreating] = useState(false);
   const [zoneQuery, setZoneQuery] = useState('');
   const [showZoneSuggestions, setShowZoneSuggestions] = useState(false);
@@ -38,6 +68,7 @@ export const TreasureChests = () => {
     latitude: '',
     longitude: '',
     zoneId: '',
+    unlockTier: '' as string | number,
     rewardMode: 'random' as 'explicit' | 'random',
     randomRewardSize: 'small' as 'small' | 'medium' | 'large',
     rewardExperience: '' as string | number,
@@ -55,6 +86,7 @@ export const TreasureChests = () => {
       latitude: coords ? coords.latitude.toFixed(6) : '',
       longitude: coords ? coords.longitude.toFixed(6) : '',
       zoneId: '',
+      unlockTier: '',
       rewardMode: 'random',
       randomRewardSize: 'small',
       rewardExperience: '',
@@ -117,6 +149,7 @@ export const TreasureChests = () => {
       latitude: '',
       longitude: '',
       zoneId: '',
+      unlockTier: '',
       rewardMode: 'random',
       randomRewardSize: 'small',
       rewardExperience: '',
@@ -168,6 +201,10 @@ export const TreasureChests = () => {
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
         zoneId: formData.zoneId,
+        unlockTier:
+          formData.unlockTier === ''
+            ? undefined
+            : parseInt(formData.unlockTier.toString(), 10),
         rewardMode: formData.rewardMode,
         randomRewardSize: formData.randomRewardSize,
         rewardExperience:
@@ -208,6 +245,10 @@ export const TreasureChests = () => {
       if (formData.longitude)
         submitData.longitude = parseFloat(formData.longitude);
       if (formData.zoneId) submitData.zoneId = formData.zoneId;
+      submitData.unlockTier =
+        formData.unlockTier === ''
+          ? undefined
+          : parseInt(formData.unlockTier.toString(), 10);
       submitData.rewardMode = formData.rewardMode;
       submitData.randomRewardSize = formData.randomRewardSize;
       submitData.rewardExperience =
@@ -282,6 +323,79 @@ export const TreasureChests = () => {
     }
   };
 
+  const handleReconfigureLockDistribution = async () => {
+    const unlockedPercentage = parseInt(
+      distributionForm.unlockedPercentage,
+      10
+    );
+    const tier1To10Percentage = parseInt(
+      distributionForm.tier1To10Percentage,
+      10
+    );
+    const tier11To25Percentage = parseInt(
+      distributionForm.tier11To25Percentage,
+      10
+    );
+    const tier26To50Percentage = parseInt(
+      distributionForm.tier26To50Percentage,
+      10
+    );
+    const tier51To75Percentage = parseInt(
+      distributionForm.tier51To75Percentage,
+      10
+    );
+    const tier76To100Percentage = parseInt(
+      distributionForm.tier76To100Percentage,
+      10
+    );
+    const percentages = [
+      unlockedPercentage,
+      tier1To10Percentage,
+      tier11To25Percentage,
+      tier26To50Percentage,
+      tier51To75Percentage,
+      tier76To100Percentage,
+    ];
+
+    if (percentages.some((value) => Number.isNaN(value) || value < 0 || value > 100)) {
+      alert('Each percentage must be a whole number between 0 and 100.');
+      return;
+    }
+
+    const total = percentages.reduce((sum, value) => sum + value, 0);
+    if (total !== 100) {
+      alert('The lock tier percentages must add up to 100.');
+      return;
+    }
+
+    setRedistributingLockTiers(true);
+    try {
+      const response =
+        await apiClient.post<TreasureChestDistributionResponse>(
+          '/sonar/admin/treasure-chests/reconfigure-lock-distribution',
+          {
+            unlockedPercentage,
+            tier1To10Percentage,
+            tier11To25Percentage,
+            tier26To50Percentage,
+            tier51To75Percentage,
+            tier76To100Percentage,
+          }
+        );
+      await fetchChests();
+      alert(
+        `Updated ${response.updatedCount} treasure chests. ` +
+          `Unlocked: ${response.counts.unlocked}, 1-10: ${response.counts.tier1To10}, 11-25: ${response.counts.tier11To25}, 26-50: ${response.counts.tier26To50}, 51-75: ${response.counts.tier51To75}, 76-100: ${response.counts.tier76To100}. ` +
+          `Reward sizes now map to Small: ${response.rewardSizes.small}, Medium: ${response.rewardSizes.medium}, Large: ${response.rewardSizes.large}.`
+      );
+    } catch (error) {
+      console.error('Error reconfiguring treasure chest lock distribution:', error);
+      alert('Error reconfiguring treasure chest lock distribution.');
+    } finally {
+      setRedistributingLockTiers(false);
+    }
+  };
+
   const handleEditChest = (chest: TreasureChest) => {
     setEditingChest(chest);
     const zoneName = zones.find((z) => z.id === chest.zoneId)?.name || '';
@@ -289,6 +403,10 @@ export const TreasureChests = () => {
       latitude: chest.latitude.toString(),
       longitude: chest.longitude.toString(),
       zoneId: chest.zoneId,
+      unlockTier:
+        chest.unlockTier !== null && chest.unlockTier !== undefined
+          ? chest.unlockTier.toString()
+          : '',
       rewardMode: chest.rewardMode || 'random',
       randomRewardSize: chest.randomRewardSize || 'small',
       rewardExperience: chest.rewardExperience
@@ -457,8 +575,147 @@ export const TreasureChests = () => {
           >
             {seeding ? 'Queuing...' : 'Seed Treasure Chests'}
           </button>
+          <button
+            className="bg-amber-600 text-white px-4 py-2 rounded-md"
+            onClick={() =>
+              setShowDistributionControls((current) => !current)
+            }
+          >
+            {showDistributionControls
+              ? 'Hide Lock Distribution'
+              : 'Reconfigure Lock Tiers'}
+          </button>
         </div>
       </div>
+
+      {showDistributionControls && (
+        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <h2 className="text-lg font-semibold text-amber-900">
+            Treasure Chest Lock Distribution
+          </h2>
+          <p className="mt-1 text-sm text-amber-800">
+            Reassign lock tiers across all active treasure chests by percentage.
+            Chests can also remain fully unlocked. Locked chests get a real lock
+            strength inside one of these bands: 1-10, 11-25, 26-50, 51-75, or
+            76-100. Random reward sizes are then derived from the resulting
+            strength: unlocked and 1-25 small, 26-50 medium,
+            51-100 large.
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
+            <label className="text-sm text-amber-900">
+              Unlocked %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.unlockedPercentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    unlockedPercentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm text-amber-900">
+              1-10 %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.tier1To10Percentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    tier1To10Percentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm text-amber-900">
+              11-25 %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.tier11To25Percentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    tier11To25Percentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm text-amber-900">
+              26-50 %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.tier26To50Percentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    tier26To50Percentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm text-amber-900">
+              51-75 %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.tier51To75Percentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    tier51To75Percentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm text-amber-900">
+              76-100 %
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={distributionForm.tier76To100Percentage}
+                onChange={(e) =>
+                  setDistributionForm({
+                    ...distributionForm,
+                    tier76To100Percentage: e.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-md border border-amber-200 px-3 py-2"
+              />
+            </label>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              className="rounded-md bg-amber-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleReconfigureLockDistribution}
+              disabled={redistributingLockTiers}
+            >
+              {redistributingLockTiers
+                ? 'Reconfiguring...'
+                : 'Apply Distribution'}
+            </button>
+            <span className="text-sm text-amber-800">
+              Total must equal 100%.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div className="mb-4">
@@ -544,6 +801,13 @@ export const TreasureChests = () => {
               <p style={{ margin: '5px 0', color: '#666' }}>
                 Location: {chest.latitude.toFixed(6)},{' '}
                 {chest.longitude.toFixed(6)}
+              </p>
+
+              <p style={{ margin: '5px 0', color: '#666' }}>
+                Lock Strength:{' '}
+                {chest.unlockTier !== null && chest.unlockTier !== undefined
+                  ? chest.unlockTier
+                  : 'None'}
               </p>
 
               <p style={{ margin: '5px 0', color: '#666' }}>
@@ -800,6 +1064,34 @@ export const TreasureChests = () => {
                 <option value="random">Random scaled reward</option>
                 <option value="explicit">Explicit reward</option>
               </select>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Lock Strength:
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={formData.unlockTier}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    unlockTier:
+                      e.target.value === ''
+                        ? ''
+                        : parseInt(e.target.value, 10),
+                  })
+                }
+                placeholder="Leave empty if the chest is not locked"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                }}
+              />
             </div>
 
             <div style={{ marginBottom: '15px' }}>

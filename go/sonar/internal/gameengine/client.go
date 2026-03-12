@@ -757,6 +757,9 @@ func (c *gameEngineClient) AwardQuestTurnInRewards(ctx context.Context, userID u
 				if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
 					return goldAwarded, itemsAwarded, spellsAwarded, err
 				}
+				if _, err := c.db.UserCharacterStats().RestoreResourcesToFull(ctx, member.ID); err != nil {
+					return goldAwarded, itemsAwarded, spellsAwarded, err
+				}
 			}
 		}
 	}
@@ -915,6 +918,9 @@ func (c *gameEngineClient) awardExperiencePoints(ctx context.Context, submission
 			if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
 				return err
 			}
+			if _, err := c.db.UserCharacterStats().RestoreResourcesToFull(ctx, member.ID); err != nil {
+				return err
+			}
 			activityData, err := json.Marshal(models.LevelUpActivity{
 				NewLevel: userLevel.Level,
 			})
@@ -1009,6 +1015,9 @@ func (c *gameEngineClient) awardExperiencePointsForZone(ctx context.Context, use
 
 		if userLevel.LevelsGained > 0 {
 			if _, err := c.db.UserCharacterStats().EnsureLevelPoints(ctx, member.ID, userLevel.Level); err != nil {
+				return 0, err
+			}
+			if _, err := c.db.UserCharacterStats().RestoreResourcesToFull(ctx, member.ID); err != nil {
 				return 0, err
 			}
 			activityData, err := json.Marshal(models.LevelUpActivity{

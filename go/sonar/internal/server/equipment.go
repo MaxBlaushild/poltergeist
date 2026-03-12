@@ -108,7 +108,7 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "ring items must be equipped to a ring slot"})
 			return
 		}
-	} else if equipSlot != requestedSlot {
+	} else if !canEquipInventoryItemToSlot(item, requestedSlot) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item cannot be equipped to that slot"})
 		return
 	}
@@ -179,6 +179,26 @@ func isTwoHandedDominantItem(item *models.InventoryItem) bool {
 	}
 	return strings.TrimSpace(*item.EquipSlot) == string(models.EquipmentSlotDominantHand) &&
 		strings.TrimSpace(*item.Handedness) == string(models.HandednessTwoHanded)
+}
+
+func isOneHandedWeaponItem(item *models.InventoryItem) bool {
+	if item == nil || item.EquipSlot == nil || item.HandItemCategory == nil || item.Handedness == nil {
+		return false
+	}
+	return strings.TrimSpace(*item.EquipSlot) == string(models.EquipmentSlotDominantHand) &&
+		strings.TrimSpace(*item.HandItemCategory) == string(models.HandItemCategoryWeapon) &&
+		strings.TrimSpace(*item.Handedness) == string(models.HandednessOneHanded)
+}
+
+func canEquipInventoryItemToSlot(item *models.InventoryItem, requestedSlot string) bool {
+	if item == nil || item.EquipSlot == nil {
+		return false
+	}
+	equipSlot := strings.TrimSpace(*item.EquipSlot)
+	if equipSlot == requestedSlot {
+		return true
+	}
+	return requestedSlot == string(models.EquipmentSlotOffHand) && isOneHandedWeaponItem(item)
 }
 
 func (s *server) unequipInventoryItem(ctx *gin.Context) {

@@ -2481,10 +2481,27 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	now := time.Now()
+	if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.advanceBattleStatusDurations(ctx, user.ID, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	battle, err = s.dbClient.MonsterBattle().FindByID(ctx, battle.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if monsterDotDamage > 0 {
+		battle.MonsterHealthDeficit += monsterDotDamage
 	}
 	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2497,9 +2514,11 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"battle":        monsterBattleResponseFrom(battle),
-		"battleDetail":  battleDetail,
-		"appliedDamage": requestBody.Damage,
+		"battle":                     monsterBattleResponseFrom(battle),
+		"battleDetail":               battleDetail,
+		"appliedDamage":              requestBody.Damage,
+		"battleTurnUserDotDamage":    userDotDamage,
+		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})
 }
 
@@ -2576,10 +2595,27 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	now := time.Now()
+	if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.advanceBattleStatusDurations(ctx, user.ID, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	battle, err = s.dbClient.MonsterBattle().FindByID(ctx, battle.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if monsterDotDamage > 0 {
+		battle.MonsterHealthDeficit += monsterDotDamage
 	}
 	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2592,9 +2628,11 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"battle":        monsterBattleResponseFrom(battle),
-		"battleDetail":  battleDetail,
-		"appliedDamage": requestBody.Damage,
+		"battle":                     monsterBattleResponseFrom(battle),
+		"battleDetail":               battleDetail,
+		"appliedDamage":              requestBody.Damage,
+		"battleTurnUserDotDamage":    userDotDamage,
+		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})
 }
 

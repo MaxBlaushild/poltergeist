@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useZoneContext } from '@poltergeist/contexts';
 import { v4 as uuidv4 } from 'uuid';
 import { useParams } from 'react-router-dom';
@@ -6,7 +6,7 @@ import { useZonePointsOfInterest } from '../hooks/useZonePointsOfInterest.ts';
 import { usePlaceTypes } from '../hooks/usePlaceTypes.ts';
 import { useGeneratePointsOfInterest } from '../hooks/useGeneratePointsOfInterest.ts';
 import { useCandidates } from '@poltergeist/hooks';
-import { Candidate } from '@poltergeist/types';
+import { Candidate, TreasureChest } from '@poltergeist/types';
 import { useQuestArchtypes } from '../hooks/useQuestArchtypes.ts';
 import { useAPI } from '@poltergeist/contexts';
 import mapboxgl from 'mapbox-gl';
@@ -25,7 +25,219 @@ interface MapProps {
   boundaryPoints?: [number, number][];
   allZoneBoundaries?: [number, number][][];
   showBoundaryControls?: boolean;
+  pins?: AdminMapPin[];
+  pinDragEnabled?: boolean;
+  onPinLocationChange?: (
+    pin: AdminMapPin,
+    coordinates: [number, number]
+  ) => Promise<void> | void;
 }
+
+type HealingFountainRecord = {
+  id: string;
+  name: string;
+  thumbnailUrl: string;
+  latitude: number;
+  longitude: number;
+};
+
+type ScenarioRecord = {
+  id: string;
+  pointOfInterestId?: string | null;
+  prompt: string;
+  latitude: number;
+  longitude: number;
+  imageUrl: string;
+  thumbnailUrl: string;
+};
+
+type MonsterEncounterRecord = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  imageUrl: string;
+  thumbnailUrl: string;
+};
+
+type ChallengeRecord = {
+  id: string;
+  pointOfInterestId?: string | null;
+  question: string;
+  latitude: number;
+  longitude: number;
+  imageUrl: string;
+  thumbnailUrl: string;
+  polygonPoints?: [number, number][] | null;
+};
+
+type AdminMapPinKind =
+  | 'pointOfInterest'
+  | 'treasureChest'
+  | 'healingFountain'
+  | 'scenario'
+  | 'monster'
+  | 'challenge';
+
+type AdminMapPin = {
+  id: string;
+  entityId: string;
+  kind: AdminMapPinKind;
+  name: string;
+  coordinates: [number, number];
+  imageUrl: string;
+  draggable: boolean;
+};
+
+const chestImageUrl =
+  'https://crew-points-of-interest.s3.amazonaws.com/inventory-items/1762314753387-0gdf0170kq5m.png';
+const poiMysteryImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+const scenarioMysteryImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
+const monsterMysteryImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const healingFountainDiscoveredImageUrl =
+  'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
+
+const markerStyleByKind: Record<
+  AdminMapPinKind,
+  { ring: string; badge: string; shortLabel: string; fullLabel: string; fallbackImage: string }
+> = {
+  pointOfInterest: {
+    ring: '#2563eb',
+    badge: '#1d4ed8',
+    shortLabel: 'POI',
+    fullLabel: 'Point of Interest',
+    fallbackImage: poiMysteryImageUrl,
+  },
+  treasureChest: {
+    ring: '#f59e0b',
+    badge: '#b45309',
+    shortLabel: 'TC',
+    fullLabel: 'Treasure Chest',
+    fallbackImage: chestImageUrl,
+  },
+  healingFountain: {
+    ring: '#10b981',
+    badge: '#047857',
+    shortLabel: 'HF',
+    fullLabel: 'Healing Fountain',
+    fallbackImage: healingFountainDiscoveredImageUrl,
+  },
+  scenario: {
+    ring: '#14b8a6',
+    badge: '#0f766e',
+    shortLabel: 'SC',
+    fullLabel: 'Scenario',
+    fallbackImage: scenarioMysteryImageUrl,
+  },
+  monster: {
+    ring: '#ef4444',
+    badge: '#991b1b',
+    shortLabel: 'MO',
+    fullLabel: 'Monster',
+    fallbackImage: monsterMysteryImageUrl,
+  },
+  challenge: {
+    ring: '#8b5cf6',
+    badge: '#6d28d9',
+    shortLabel: 'CH',
+    fullLabel: 'Challenge',
+    fallbackImage: scenarioMysteryImageUrl,
+  },
+};
+
+const isValidCoordinate = (latitude: number, longitude: number) =>
+  Number.isFinite(latitude) &&
+  Number.isFinite(longitude) &&
+  !(latitude === 0 && longitude === 0);
+
+const createPinPopup = (pin: AdminMapPin) => {
+  const style = markerStyleByKind[pin.kind];
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.gap = '2px';
+
+  const title = document.createElement('div');
+  title.style.fontWeight = '600';
+  title.style.color = '#0f172a';
+  title.textContent = pin.name;
+  container.appendChild(title);
+
+  const subtitle = document.createElement('div');
+  subtitle.style.fontSize = '12px';
+  subtitle.style.color = '#475569';
+  subtitle.textContent = style.fullLabel;
+  container.appendChild(subtitle);
+
+  return container;
+};
+
+const createPinElement = (
+  pin: AdminMapPin,
+  interactive: boolean,
+  draggable = false
+) => {
+  const style = markerStyleByKind[pin.kind];
+  const root = document.createElement('button');
+  root.type = 'button';
+  root.title = `${style.fullLabel}: ${pin.name}`;
+  root.style.width = '48px';
+  root.style.height = '60px';
+  root.style.display = 'flex';
+  root.style.flexDirection = 'column';
+  root.style.alignItems = 'center';
+  root.style.justifyContent = 'flex-start';
+  root.style.padding = '0';
+  root.style.background = 'transparent';
+  root.style.border = 'none';
+  root.style.cursor = draggable ? 'grab' : interactive ? 'pointer' : 'default';
+  root.style.pointerEvents = interactive || draggable ? 'auto' : 'none';
+
+  const imageFrame = document.createElement('div');
+  imageFrame.style.width = '40px';
+  imageFrame.style.height = '40px';
+  imageFrame.style.borderRadius = '9999px';
+  imageFrame.style.overflow = 'hidden';
+  imageFrame.style.border = `3px solid ${style.ring}`;
+  imageFrame.style.background = '#e2e8f0';
+  imageFrame.style.boxShadow = '0 8px 18px rgba(15, 23, 42, 0.28)';
+
+  const image = document.createElement('img');
+  image.src = pin.imageUrl || style.fallbackImage;
+  image.alt = pin.name;
+  image.width = 40;
+  image.height = 40;
+  image.style.width = '100%';
+  image.style.height = '100%';
+  image.style.objectFit = 'cover';
+  image.loading = 'lazy';
+  image.onerror = () => {
+    if (image.src !== style.fallbackImage) {
+      image.src = style.fallbackImage;
+    }
+  };
+  imageFrame.appendChild(image);
+
+  const badge = document.createElement('div');
+  badge.textContent = style.shortLabel;
+  badge.style.marginTop = '-8px';
+  badge.style.padding = '2px 6px';
+  badge.style.borderRadius = '9999px';
+  badge.style.background = style.badge;
+  badge.style.color = '#ffffff';
+  badge.style.fontSize = '9px';
+  badge.style.fontWeight = '700';
+  badge.style.letterSpacing = '0.06em';
+  badge.style.boxShadow = '0 4px 12px rgba(15, 23, 42, 0.25)';
+
+  root.appendChild(imageFrame);
+  root.appendChild(badge);
+
+  return root;
+};
 
 const sortBoundaryPoints = (points: [number, number][]) => {
   const sortedPoints = points.slice();
@@ -54,11 +266,21 @@ const sortBoundaryPoints = (points: [number, number][]) => {
   return sortedPoints;
 };
 
-const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, allZoneBoundaries, showBoundaryControls }) => {
+const Map: React.FC<MapProps> = ({
+  center,
+  onMapClick,
+  boundaryPoints,
+  allZoneBoundaries,
+  showBoundaryControls,
+  pins = [],
+  pinDragEnabled = false,
+  onPinLocationChange,
+}) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const markers = useRef<mapboxgl.Marker[]>([]);
+  const boundaryMarkers = useRef<mapboxgl.Marker[]>([]);
+  const pinMarkers = useRef<mapboxgl.Marker[]>([]);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
@@ -108,22 +330,26 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, allZoneBo
       if (canvasContainer instanceof HTMLElement) {
         canvasContainer.style.cursor = 'default';
       }
-
-      map.current.on('click', (e) => {
-        console.log('clicked')
-        onMapClick(e.lngLat);
-      });
-    }
-    
-    if (map.current && mapLoaded && !onMapClick) {
+    } else if (map.current && mapLoaded) {
       map.current.dragPan.enable();
       const canvasContainer = mapContainer.current?.querySelector('.mapboxgl-canvas-container');
       if (canvasContainer instanceof HTMLElement) {
         canvasContainer.style.cursor = 'grab';
       }
-      
-      map.current.on('click', (e) => {});
     }
+
+    if (!map.current || !mapLoaded || !onMapClick) {
+      return;
+    }
+
+    const handleClick = (e: mapboxgl.MapMouseEvent) => {
+      onMapClick(e.lngLat);
+    };
+
+    map.current.on('click', handleClick);
+    return () => {
+      map.current?.off('click', handleClick);
+    };
   }, [mapLoaded, onMapClick]);
 
   useEffect(() => {
@@ -136,8 +362,8 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, allZoneBo
   useEffect(() => {
     if (map.current && mapLoaded) {
       // Remove existing markers
-      markers.current.forEach(marker => marker.remove());
-      markers.current = [];
+      boundaryMarkers.current.forEach(marker => marker.remove());
+      boundaryMarkers.current = [];
 
       const sortedPoints = boundaryPoints ? sortBoundaryPoints(boundaryPoints) : [];
       if (sortedPoints.length > 0) {
@@ -149,11 +375,65 @@ const Map: React.FC<MapProps> = ({ center, onMapClick, boundaryPoints, allZoneBo
           })
             .setLngLat(point)
             .addTo(map.current!);
-          markers.current.push(marker);
+          boundaryMarkers.current.push(marker);
         });
       }
     }
   }, [boundaryPoints, mapLoaded]);
+
+  useEffect(() => {
+    if (!map.current || !mapLoaded) {
+      return;
+    }
+
+    pinMarkers.current.forEach((marker) => marker.remove());
+    pinMarkers.current = [];
+
+    pins.forEach((pin) => {
+      const marker = new mapboxgl.Marker({
+        element: createPinElement(
+          pin,
+          !onMapClick || pinDragEnabled,
+          pinDragEnabled && pin.draggable
+        ),
+        anchor: 'bottom',
+        draggable: pinDragEnabled && pin.draggable,
+      }).setLngLat(pin.coordinates);
+
+      let lastSavedCoordinates = pin.coordinates;
+      if (!pinDragEnabled) {
+        marker.setPopup(
+          new mapboxgl.Popup({
+            offset: 18,
+            closeButton: false,
+            className: 'zone-map-pin-popup',
+          }).setDOMContent(createPinPopup(pin))
+        );
+      }
+
+      if (pinDragEnabled && pin.draggable && onPinLocationChange) {
+        marker.on('dragend', async () => {
+          const lngLat = marker.getLngLat();
+          const nextCoordinates: [number, number] = [lngLat.lng, lngLat.lat];
+          try {
+            await onPinLocationChange(pin, nextCoordinates);
+            lastSavedCoordinates = nextCoordinates;
+          } catch (_) {
+            marker.setLngLat(lastSavedCoordinates);
+          }
+        });
+      }
+
+      marker.addTo(map.current!);
+
+      pinMarkers.current.push(marker);
+    });
+
+    return () => {
+      pinMarkers.current.forEach((marker) => marker.remove());
+      pinMarkers.current = [];
+    };
+  }, [mapLoaded, onMapClick, onPinLocationChange, pinDragEnabled, pins]);
 
   useEffect(() => {
     if (map.current && mapLoaded && boundaryPoints && boundaryPoints.length > 0) {
@@ -363,6 +643,12 @@ export const Zone = () => {
     useZoneContext();
   const zone = zones.find((zone) => zone.id === id);
   const { pointsOfInterest, loading, error } = useZonePointsOfInterest(id!);
+  const [treasureChests, setTreasureChests] = useState<TreasureChest[]>([]);
+  const [healingFountains, setHealingFountains] = useState<HealingFountainRecord[]>([]);
+  const [scenarios, setScenarios] = useState<ScenarioRecord[]>([]);
+  const [monsterEncounters, setMonsterEncounters] = useState<MonsterEncounterRecord[]>([]);
+  const [challenges, setChallenges] = useState<ChallengeRecord[]>([]);
+  const [zoneMapPinsError, setZoneMapPinsError] = useState<string | null>(null);
   const {
     placeTypes,
     loading: placeTypesLoading,
@@ -395,9 +681,16 @@ export const Zone = () => {
   const [nameFilter, setNameFilter] = useState('');
   const [boundaryPoints, setBoundaryPoints] = useState<[number, number][]>([]);
   const [isEditingBoundary, setIsEditingBoundary] = useState(false);
+  const [isEditingPins, setIsEditingPins] = useState(false);
   const [isEditingZone, setIsEditingZone] = useState(false);
   const [name, setName] = useState(zone?.name || '');
   const [description, setDescription] = useState(zone?.description || '');
+  const [movingPinId, setMovingPinId] = useState<string | null>(null);
+  const [pinMoveStatus, setPinMoveStatus] = useState<string | null>(null);
+  const [pinMoveError, setPinMoveError] = useState<string | null>(null);
+  const [pinLocationOverrides, setPinLocationOverrides] = useState<
+    Record<string, [number, number]>
+  >({});
   const [queueingZoneFlavor, setQueueingZoneFlavor] = useState(false);
   const [zoneFlavorJobs, setZoneFlavorJobs] = useState<ZoneFlavorGenerationJob[]>([]);
   const [zoneFlavorJobsError, setZoneFlavorJobsError] = useState<string | null>(null);
@@ -431,9 +724,51 @@ export const Zone = () => {
   }, [zone?.name, zone?.description]);
 
   useEffect(() => {
+    setIsEditingBoundary(false);
+    setIsEditingPins(false);
+    setPinMoveStatus(null);
+    setPinMoveError(null);
+    setPinLocationOverrides({});
+  }, [id]);
+
+  useEffect(() => {
     if (!id) return;
 
     let active = true;
+    const loadZoneMapPins = async () => {
+      try {
+        const [
+          fetchedTreasureChests,
+          fetchedHealingFountains,
+          fetchedScenarios,
+          fetchedMonsterEncounters,
+          fetchedChallenges,
+        ] = await Promise.all([
+          apiClient.get<TreasureChest[]>(`/sonar/zones/${id}/treasure-chests`),
+          apiClient.get<HealingFountainRecord[]>(`/sonar/zones/${id}/healing-fountains`),
+          apiClient.get<ScenarioRecord[]>(`/sonar/zones/${id}/scenarios`),
+          apiClient.get<MonsterEncounterRecord[]>(`/sonar/zones/${id}/monster-encounters`),
+          apiClient.get<ChallengeRecord[]>(`/sonar/zones/${id}/challenges`),
+        ]);
+        if (!active) return;
+        setTreasureChests(fetchedTreasureChests);
+        setHealingFountains(fetchedHealingFountains);
+        setScenarios(fetchedScenarios);
+        setMonsterEncounters(fetchedMonsterEncounters);
+        setChallenges(fetchedChallenges);
+        setZoneMapPinsError(null);
+      } catch (error) {
+        console.error('Error fetching zone map pins:', error);
+        if (!active) return;
+        setTreasureChests([]);
+        setHealingFountains([]);
+        setScenarios([]);
+        setMonsterEncounters([]);
+        setChallenges([]);
+        setZoneMapPinsError('Unable to load the full in-game pin set for this zone.');
+      }
+    };
+
     const fetchZoneFlavorJobs = async () => {
       try {
         const response = await apiClient.get<ZoneFlavorGenerationJob[]>(
@@ -449,6 +784,7 @@ export const Zone = () => {
       }
     };
 
+    loadZoneMapPins();
     fetchZoneFlavorJobs();
     const interval = window.setInterval(fetchZoneFlavorJobs, 5000);
     return () => {
@@ -484,6 +820,95 @@ export const Zone = () => {
       } catch (error) {
         console.error('Error saving boundary:', error);
       }
+    }
+  };
+
+  const toggleBoundaryEditing = () => {
+    setPinMoveError(null);
+    setPinMoveStatus(null);
+    setIsEditingBoundary((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsEditingPins(false);
+      }
+      return next;
+    });
+  };
+
+  const togglePinEditing = () => {
+    setPinMoveError(null);
+    setPinMoveStatus(null);
+    setIsEditingPins((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsEditingBoundary(false);
+      }
+      return next;
+    });
+  };
+
+  const handlePinLocationChange = async (
+    pin: AdminMapPin,
+    coordinates: [number, number]
+  ) => {
+    const [longitude, latitude] = coordinates;
+    setMovingPinId(pin.id);
+    setPinMoveError(null);
+    setPinMoveStatus(`Saving ${pin.name}...`);
+
+    try {
+      switch (pin.kind) {
+        case 'pointOfInterest':
+          await apiClient.patch(
+            `/sonar/pointsOfInterest/${pin.entityId}/location`,
+            { latitude, longitude }
+          );
+          break;
+        case 'treasureChest':
+          await apiClient.patch(
+            `/sonar/treasure-chests/${pin.entityId}/location`,
+            { latitude, longitude }
+          );
+          break;
+        case 'healingFountain':
+          await apiClient.patch(
+            `/sonar/healing-fountains/${pin.entityId}/location`,
+            { latitude, longitude }
+          );
+          break;
+        case 'scenario':
+          await apiClient.patch(`/sonar/scenarios/${pin.entityId}/location`, {
+            latitude,
+            longitude,
+          });
+          break;
+        case 'monster':
+          await apiClient.patch(
+            `/sonar/monster-encounters/${pin.entityId}/location`,
+            { latitude, longitude }
+          );
+          break;
+        case 'challenge':
+          await apiClient.patch(`/sonar/challenges/${pin.entityId}/location`, {
+            latitude,
+            longitude,
+          });
+          break;
+        default:
+          break;
+      }
+
+      setPinLocationOverrides((prev) => ({
+        ...prev,
+        [pin.id]: [longitude, latitude],
+      }));
+      setPinMoveStatus(`${pin.name} moved.`);
+    } catch (error) {
+      console.error('Error updating pin location:', error);
+      setPinMoveError(`Unable to move ${pin.name} right now.`);
+      throw error;
+    } finally {
+      setMovingPinId(null);
     }
   };
 
@@ -523,6 +948,147 @@ export const Zone = () => {
     }
   };
 
+  const filteredPoints = pointsOfInterest.filter(point => 
+    point.name.toLowerCase().includes(nameFilter.toLowerCase())
+  );
+  const latestZoneFlavorJob = zoneFlavorJobs[0];
+  const allZoneBoundaries = zones
+    .filter((candidateZone) => candidateZone.id !== id && candidateZone.points.length > 0)
+    .map((candidateZone) =>
+      candidateZone.points.map((point) => [point.longitude, point.latitude] as [number, number])
+    );
+  const mapPins = useMemo<AdminMapPin[]>(() => {
+    const resolveCoordinates = (
+      pinId: string,
+      longitude: number,
+      latitude: number
+    ): [number, number] =>
+      pinLocationOverrides[pinId] ?? [longitude, latitude];
+
+    const poiPins = pointsOfInterest
+      .map((point) => {
+        const latitude = Number(point.lat);
+        const longitude = Number(point.lng);
+        if (!isValidCoordinate(latitude, longitude)) {
+          return null;
+        }
+
+        return {
+          id: `poi:${point.id}`,
+          entityId: point.id,
+          kind: 'pointOfInterest' as const,
+          name: point.name || 'Point of Interest',
+          coordinates: resolveCoordinates(`poi:${point.id}`, longitude, latitude),
+          imageUrl:
+            point.thumbnailUrl?.trim() ||
+            point.imageURL?.trim() ||
+            markerStyleByKind.pointOfInterest.fallbackImage,
+          draggable: true,
+        };
+      })
+      .filter((pin): pin is AdminMapPin => pin !== null);
+
+    const treasureChestPins = treasureChests
+      .filter((chest) => isValidCoordinate(chest.latitude, chest.longitude))
+      .map((chest) => ({
+        id: `treasureChest:${chest.id}`,
+        entityId: chest.id,
+        kind: 'treasureChest' as const,
+        name: chest.unlockTier ? `Treasure Chest T${chest.unlockTier}` : 'Treasure Chest',
+        coordinates: resolveCoordinates(
+          `treasureChest:${chest.id}`,
+          chest.longitude,
+          chest.latitude
+        ),
+        imageUrl: markerStyleByKind.treasureChest.fallbackImage,
+        draggable: true,
+      }));
+
+    const healingFountainPins = healingFountains
+      .filter((fountain) => isValidCoordinate(fountain.latitude, fountain.longitude))
+      .map((fountain) => ({
+        id: `healingFountain:${fountain.id}`,
+        entityId: fountain.id,
+        kind: 'healingFountain' as const,
+        name: fountain.name || 'Healing Fountain',
+        coordinates: resolveCoordinates(
+          `healingFountain:${fountain.id}`,
+          fountain.longitude,
+          fountain.latitude
+        ),
+        imageUrl:
+          fountain.thumbnailUrl?.trim() ||
+          markerStyleByKind.healingFountain.fallbackImage,
+        draggable: true,
+      }));
+
+    const scenarioPins = scenarios
+      .filter((scenario) => isValidCoordinate(scenario.latitude, scenario.longitude))
+      .map((scenario) => ({
+        id: `scenario:${scenario.id}`,
+        entityId: scenario.id,
+        kind: 'scenario' as const,
+        name: scenario.prompt || 'Scenario',
+        coordinates: resolveCoordinates(
+          `scenario:${scenario.id}`,
+          scenario.longitude,
+          scenario.latitude
+        ),
+        imageUrl:
+          scenario.thumbnailUrl?.trim() ||
+          scenario.imageUrl?.trim() ||
+          markerStyleByKind.scenario.fallbackImage,
+        draggable: true,
+      }));
+
+    const monsterPins = monsterEncounters
+      .filter((monster) => isValidCoordinate(monster.latitude, monster.longitude))
+      .map((monster) => ({
+        id: `monster:${monster.id}`,
+        entityId: monster.id,
+        kind: 'monster' as const,
+        name: monster.name || 'Monster Encounter',
+        coordinates: resolveCoordinates(
+          `monster:${monster.id}`,
+          monster.longitude,
+          monster.latitude
+        ),
+        imageUrl:
+          monster.thumbnailUrl?.trim() ||
+          monster.imageUrl?.trim() ||
+          markerStyleByKind.monster.fallbackImage,
+        draggable: true,
+      }));
+
+    const challengePins = challenges
+      .filter((challenge) => isValidCoordinate(challenge.latitude, challenge.longitude))
+      .map((challenge) => ({
+        id: `challenge:${challenge.id}`,
+        entityId: challenge.id,
+        kind: 'challenge' as const,
+        name: challenge.question || 'Challenge',
+        coordinates: resolveCoordinates(
+          `challenge:${challenge.id}`,
+          challenge.longitude,
+          challenge.latitude
+        ),
+        imageUrl:
+          challenge.thumbnailUrl?.trim() ||
+          challenge.imageUrl?.trim() ||
+          markerStyleByKind.challenge.fallbackImage,
+        draggable: !(challenge.polygonPoints?.length && challenge.polygonPoints.length >= 3),
+      }));
+
+    return [
+      ...poiPins,
+      ...treasureChestPins,
+      ...healingFountainPins,
+      ...scenarioPins,
+      ...monsterPins,
+      ...challengePins,
+    ];
+  }, [pointsOfInterest, treasureChests, healingFountains, scenarios, monsterEncounters, challenges, pinLocationOverrides]);
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -539,16 +1105,6 @@ export const Zone = () => {
   if (generatePointsOfInterestError) {
     return <div>Error: {generatePointsOfInterestError.message}</div>;
   }
-
-  const filteredPoints = pointsOfInterest.filter(point => 
-    point.name.toLowerCase().includes(nameFilter.toLowerCase())
-  );
-  const latestZoneFlavorJob = zoneFlavorJobs[0];
-  const allZoneBoundaries = zones
-    .filter((candidateZone) => candidateZone.id !== id && candidateZone.points.length > 0)
-    .map((candidateZone) =>
-      candidateZone.points.map((point) => [point.longitude, point.latitude] as [number, number])
-    );
 
   return (
     <div className="m-10 p-8 bg-white rounded-lg shadow-lg">
@@ -700,7 +1256,7 @@ export const Zone = () => {
               Clear Boundary
             </button>
             <button
-              onClick={() => setIsEditingBoundary(!isEditingBoundary)}
+              onClick={toggleBoundaryEditing}
               className={`px-4 py-2 rounded-md ${
                 isEditingBoundary
                   ? 'bg-red-500 hover:bg-red-600'
@@ -708,6 +1264,16 @@ export const Zone = () => {
               } text-white`}
             >
               {isEditingBoundary ? 'Stop Editing' : 'Edit Boundary'}
+            </button>
+            <button
+              onClick={togglePinEditing}
+              className={`px-4 py-2 rounded-md ${
+                isEditingPins
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-slate-700 hover:bg-slate-800'
+              } text-white`}
+            >
+              {isEditingPins ? 'Stop Moving Pins' : 'Move Pins'}
             </button>
             {isEditingBoundary && (
               <button
@@ -725,10 +1291,53 @@ export const Zone = () => {
           boundaryPoints={boundaryPoints}
           allZoneBoundaries={allZoneBoundaries}
           showBoundaryControls={true}
+          pins={mapPins}
+          pinDragEnabled={isEditingPins}
+          onPinLocationChange={handlePinLocationChange}
         />
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+          {(
+            [
+              ['pointOfInterest', 'POI'],
+              ['treasureChest', 'Treasure Chest'],
+              ['healingFountain', 'Healing Fountain'],
+              ['scenario', 'Scenario'],
+              ['monster', 'Monster'],
+              ['challenge', 'Challenge'],
+            ] as Array<[AdminMapPinKind, string]>
+          ).map(([kind, label]) => (
+            <span
+              key={kind}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1"
+            >
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: markerStyleByKind[kind].ring }}
+              />
+              {label}
+            </span>
+          ))}
+        </div>
+        {zoneMapPinsError ? (
+          <p className="mt-2 text-sm text-amber-700">{zoneMapPinsError}</p>
+        ) : null}
+        {pinMoveError ? (
+          <p className="mt-2 text-sm text-red-600">{pinMoveError}</p>
+        ) : null}
+        {pinMoveStatus ? (
+          <p className="mt-2 text-sm text-slate-600">
+            {movingPinId ? 'Saving location...' : pinMoveStatus}
+          </p>
+        ) : null}
+        {isEditingPins && !pinMoveError ? (
+          <p className="text-sm text-gray-600 mt-2">
+            Drag pins to reposition them. Standalone pins save on drop. Polygon
+            challenges stay locked to their polygon editor.
+          </p>
+        ) : null}
         {isEditingBoundary && (
           <p className="text-sm text-gray-600 mt-2">
-            Click on the map to add boundary points. Click "Save Boundary" when done.
+            Click on the map to add boundary points. The gameplay pins stay visible for context, but they won&apos;t intercept clicks while boundary editing is on.
           </p>
         )}
       </div>

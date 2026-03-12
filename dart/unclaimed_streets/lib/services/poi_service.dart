@@ -388,9 +388,23 @@ class PoiService {
     );
   }
 
-  Future<Map<String, dynamic>> openTreasureChest(String chestId) async {
+  Future<Map<String, dynamic>> openTreasureChest(
+    String chestId, {
+    String? unlockMethod,
+    String? ownedInventoryItemId,
+    String? spellId,
+  }) async {
     return await _api.post<Map<String, dynamic>>(
       '/sonar/treasure-chests/$chestId/open',
+      data: {
+        if (unlockMethod != null && unlockMethod.trim().isNotEmpty)
+          'unlockMethod': unlockMethod.trim(),
+        if (ownedInventoryItemId != null &&
+            ownedInventoryItemId.trim().isNotEmpty)
+          'ownedInventoryItemId': ownedInventoryItemId.trim(),
+        if (spellId != null && spellId.trim().isNotEmpty)
+          'spellId': spellId.trim(),
+      },
     );
   }
 

@@ -259,6 +259,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.PATCH("/sonar/pointsOfInterest/challenge/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editPointOfInterestChallenge))
 	r.POST("/sonar/pointsOfInterest/challenge", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createPointOfInterestChallenge))
 	r.PATCH("/sonar/pointsOfInterest/:id", s.editPointOfInterest)
+	r.PATCH("/sonar/pointsOfInterest/:id/location", s.updatePointOfInterestLocation)
 	r.DELETE("/sonar/pointsOfInterest/:id", s.deletePointOfInterest)
 	r.PATCH("/sonar/pointsofInterest/group/imageUrl/:id", s.editPointOfInterestGroupImageUrl)
 	r.PATCH("/sonar/pointsofInterest/imageUrl/:id", s.editPointOfInterestImageUrl)
@@ -308,6 +309,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/zones/imports/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteZoneImport))
 	r.POST("/sonar/admin/zones/:id/seed-draft", middleware.WithAuthentication(s.authClient, s.livenessClient, s.seedZoneDraft))
 	r.POST("/sonar/admin/zone-seed-jobs/bulk-queue", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkQueueZoneSeedJobs))
+	r.POST("/sonar/admin/zone-seed-jobs/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJobs))
 	r.GET("/sonar/admin/zone-seed-jobs/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getZoneSeedJob))
 	r.POST("/sonar/admin/zone-seed-jobs/:id/approve", middleware.WithAuthentication(s.authClient, s.livenessClient, s.approveZoneSeedJob))
@@ -452,14 +454,17 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getTreasureChestsForZone))
 	r.POST("/sonar/treasure-chests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createTreasureChest))
 	r.PUT("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChest))
+	r.PATCH("/sonar/treasure-chests/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateTreasureChestLocation))
 	r.DELETE("/sonar/treasure-chests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTreasureChest))
 	r.POST("/sonar/treasure-chests/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteTreasureChests))
 	r.POST("/sonar/treasure-chests/:id/open", middleware.WithAuthentication(s.authClient, s.livenessClient, s.openTreasureChest))
+	r.POST("/sonar/admin/treasure-chests/reconfigure-lock-distribution", middleware.WithAuthentication(s.authClient, s.livenessClient, s.reconfigureTreasureChestLockDistribution))
 	r.GET("/sonar/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountains))
 	r.GET("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountain))
 	r.GET("/sonar/zones/:id/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainsForZone))
 	r.POST("/sonar/healing-fountains", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createHealingFountain))
 	r.PUT("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateHealingFountain))
+	r.PATCH("/sonar/healing-fountains/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateHealingFountainLocation))
 	r.DELETE("/sonar/healing-fountains/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/unlock", middleware.WithAuthentication(s.authClient, s.livenessClient, s.unlockHealingFountain))
 	r.POST("/sonar/healing-fountains/:id/use", middleware.WithAuthentication(s.authClient, s.livenessClient, s.useHealingFountain))
@@ -502,6 +507,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/monsters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonster))
 	r.POST("/sonar/monster-encounters", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createMonsterEncounter))
 	r.PUT("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterEncounter))
+	r.PATCH("/sonar/monster-encounters/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateMonsterEncounterLocation))
 	r.DELETE("/sonar/monster-encounters/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterEncounter))
 	r.GET("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarios))
 	r.GET("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenario))
@@ -509,6 +515,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/scenarios", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createScenario))
 	r.POST("/sonar/scenarios/bulk-delete", middleware.WithAuthentication(s.authClient, s.livenessClient, s.bulkDeleteScenarios))
 	r.PUT("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenario))
+	r.PATCH("/sonar/scenarios/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateScenarioLocation))
 	r.POST("/sonar/scenarios/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioImage))
 	r.DELETE("/sonar/scenarios/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenario))
 	r.POST("/sonar/scenarios/:id/perform", middleware.WithAuthentication(s.authClient, s.livenessClient, s.performScenario))
@@ -518,6 +525,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.GET("/sonar/zones/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getChallengesForZone))
 	r.POST("/sonar/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createChallenge))
 	r.PUT("/sonar/challenges/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallenge))
+	r.PATCH("/sonar/challenges/:id/location", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateChallengeLocation))
 	r.POST("/sonar/challenges/:id/submit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.submitStandaloneChallenge))
 	r.POST("/sonar/challenges/:id/rewards/choose-item", middleware.WithAuthenticationWithoutLocation(s.authClient, s.chooseChallengeItemChoiceReward))
 	r.POST("/sonar/challenges/:id/generate-image", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateChallengeImage))
@@ -4871,6 +4879,7 @@ func (s *server) bulkQueueZoneSeedJobs(ctx *gin.Context) {
 
 func (s *server) getZoneSeedJobs(ctx *gin.Context) {
 	zoneIDParam := strings.TrimSpace(ctx.Query("zoneId"))
+	statusesParam := strings.TrimSpace(ctx.Query("statuses"))
 	limit := 20
 	if limitParam := strings.TrimSpace(ctx.Query("limit")); limitParam != "" {
 		if parsed, err := strconv.Atoi(limitParam); err == nil && parsed > 0 {
@@ -4878,25 +4887,49 @@ func (s *server) getZoneSeedJobs(ctx *gin.Context) {
 		}
 	}
 
-	var (
-		jobsList []models.ZoneSeedJob
-		err      error
-	)
+	var zoneID *uuid.UUID
 	if zoneIDParam != "" {
-		zoneID, parseErr := uuid.Parse(zoneIDParam)
+		parsedZoneID, parseErr := uuid.Parse(zoneIDParam)
 		if parseErr != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid zoneId"})
 			return
 		}
-		jobsList, err = s.dbClient.ZoneSeedJob().FindByZoneID(ctx, zoneID, limit)
-	} else {
-		jobsList, err = s.dbClient.ZoneSeedJob().FindRecent(ctx, limit)
+		zoneID = &parsedZoneID
 	}
+	statuses, err := normalizeZoneSeedJobStatuses(strings.Split(statusesParam, ","))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	jobsList, err := s.dbClient.ZoneSeedJob().FindFiltered(ctx, zoneID, statuses, limit)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, jobsList)
+}
+
+func normalizeZoneSeedJobStatuses(rawStatuses []string) ([]string, error) {
+	if len(rawStatuses) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(rawStatuses))
+	statuses := make([]string, 0, len(rawStatuses))
+	for _, rawStatus := range rawStatuses {
+		status := strings.TrimSpace(rawStatus)
+		if status == "" {
+			continue
+		}
+		if !models.IsValidZoneSeedStatus(status) {
+			return nil, fmt.Errorf("invalid zone seed status: %s", status)
+		}
+		if _, exists := seen[status]; exists {
+			continue
+		}
+		seen[status] = struct{}{}
+		statuses = append(statuses, status)
+	}
+	return statuses, nil
 }
 
 func (s *server) getZoneSeedJob(ctx *gin.Context) {
@@ -5210,6 +5243,78 @@ func (s *server) deleteZoneSeedJob(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"deleted": true})
+}
+
+func (s *server) bulkDeleteZoneSeedJobs(ctx *gin.Context) {
+	var requestBody struct {
+		IDs []string `json:"ids" binding:"required"`
+	}
+
+	if err := ctx.ShouldBindJSON(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array is required"})
+		return
+	}
+
+	if len(requestBody.IDs) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(requestBody.IDs))
+	ids := make([]uuid.UUID, 0, len(requestBody.IDs))
+	for _, idStr := range requestBody.IDs {
+		id, err := uuid.Parse(strings.TrimSpace(idStr))
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("invalid zone seed job ID: %s", idStr),
+			})
+			return
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	if len(ids) == 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "ids array cannot be empty"})
+		return
+	}
+
+	for _, id := range ids {
+		job, err := s.dbClient.ZoneSeedJob().FindByID(ctx, id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to load zone seed job %s: %s", id.String(), err.Error()),
+			})
+			return
+		}
+		if job == nil {
+			ctx.JSON(http.StatusNotFound, gin.H{
+				"error": fmt.Sprintf("zone seed job not found: %s", id.String()),
+			})
+			return
+		}
+		if job.Status == models.ZoneSeedStatusInProgress || job.Status == models.ZoneSeedStatusApplying {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("cannot delete zone seed job %s while it is %s", id.String(), job.Status),
+			})
+			return
+		}
+		if err := s.dbClient.ZoneSeedJob().DeleteByID(ctx, id); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("failed to delete zone seed job %s: %s", id.String(), err.Error()),
+			})
+			return
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("deleted %d zone seed job(s)", len(ids)),
+		"deleted": len(ids),
+		"ids":     ids,
+	})
 }
 
 func (s *server) createScenarioGenerationJob(ctx *gin.Context) {
@@ -13308,6 +13413,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		Latitude         float64 `json:"latitude" binding:"required"`
 		Longitude        float64 `json:"longitude" binding:"required"`
 		ZoneID           string  `json:"zoneId" binding:"required"`
+		UnlockTier       *int    `json:"unlockTier"`
 		RewardMode       string  `json:"rewardMode"`
 		RandomRewardSize string  `json:"randomRewardSize"`
 		RewardExperience int     `json:"rewardExperience"`
@@ -13320,6 +13426,10 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.UnlockTier != nil && *requestBody.UnlockTier < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
 
@@ -13351,6 +13461,7 @@ func (s *server) createTreasureChest(ctx *gin.Context) {
 		Latitude:         requestBody.Latitude,
 		Longitude:        requestBody.Longitude,
 		ZoneID:           zoneID,
+		UnlockTier:       requestBody.UnlockTier,
 		RewardMode:       rewardMode,
 		RandomRewardSize: randomRewardSize,
 		RewardExperience: rewardExperience,
@@ -13406,6 +13517,7 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		Latitude         *float64 `json:"latitude"`
 		Longitude        *float64 `json:"longitude"`
 		ZoneID           *string  `json:"zoneId"`
+		UnlockTier       *int     `json:"unlockTier"`
 		RewardMode       string   `json:"rewardMode"`
 		RandomRewardSize string   `json:"randomRewardSize"`
 		RewardExperience *int     `json:"rewardExperience"`
@@ -13418,6 +13530,10 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.UnlockTier != nil && *requestBody.UnlockTier < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockTier must be zero or greater"})
 		return
 	}
 
@@ -13447,6 +13563,9 @@ func (s *server) updateTreasureChest(ctx *gin.Context) {
 		updates.ZoneID = zoneID
 	} else {
 		updates.ZoneID = existingChest.ZoneID
+	}
+	if requestBody.UnlockTier != nil {
+		updates.UnlockTier = requestBody.UnlockTier
 	}
 
 	if requestBody.Gold != nil {
@@ -13605,6 +13724,27 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		return
 	}
 
+	var requestBody struct {
+		UnlockMethod         string `json:"unlockMethod"`
+		OwnedInventoryItemID string `json:"ownedInventoryItemId"`
+		SpellID              string `json:"spellId"`
+	}
+	if ctx.Request.ContentLength > 0 {
+		if err := ctx.ShouldBindJSON(&requestBody); err != nil && !stdErrors.Is(err, io.EOF) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	unlockSelection, err := buildTreasureChestUnlockSelection(
+		requestBody.UnlockMethod,
+		requestBody.OwnedInventoryItemID,
+		requestBody.SpellID,
+	)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	id := ctx.Param("id")
 	treasureChestID, err := uuid.Parse(id)
 	if err != nil {
@@ -13634,7 +13774,7 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 		return
 	}
 
-	// Validate user proximity (10 meters)
+	// Validate user proximity (25 meters)
 	locationStr, err := s.livenessClient.GetUserLocation(ctx, user.ID)
 	if err != nil || locationStr == "" {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "user location not available"})
@@ -13660,13 +13800,14 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	}
 
 	distance := util.HaversineDistance(userLat, userLng, treasureChest.Latitude, treasureChest.Longitude)
-	if distance > 10 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 10 meters of the treasure chest. Currently %.0f meters away", distance)})
+	if distance > 25 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("you must be within 25 meters of the treasure chest. Currently %.0f meters away", distance)})
 		return
 	}
 
 	// Check if chest is locked
 	var unlockItemID *uuid.UUID
+	var unlockSpellID *uuid.UUID
 	if treasureChest.UnlockTier != nil {
 		requiredStrength := *treasureChest.UnlockTier
 
@@ -13696,13 +13837,15 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 			return
 		}
 
-		hasUnlockSkill := hasTreasureChestUnlockSkill(requiredStrength, userSpells)
-		if !hasUnlockSkill {
-			unlockItemID = selectTreasureChestUnlockItemID(requiredStrength, ownedItems, inventoryByID)
-		}
-
-		if !hasUnlockSkill && unlockItemID == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you do not have an item or skill with sufficient lock strength to open this chest"})
+		unlockItemID, unlockSpellID, err = resolveTreasureChestUnlockFromSelection(
+			requiredStrength,
+			unlockSelection,
+			ownedItems,
+			inventoryByID,
+			userSpells,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 	}
@@ -13776,6 +13919,7 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{
 		"message":          "treasure chest opened successfully",
+		"unlockMethod":     unlockMethodForResponse(unlockItemID, unlockSpellID),
 		"rewardMode":       rewardMode,
 		"randomRewardSize": rewardSize,
 		"rewardExperience": rewardExperience,
@@ -15181,6 +15325,9 @@ func (s *server) awardScenarioRewards(
 		}
 		if userLevel.LevelsGained > 0 {
 			if _, err := s.dbClient.UserCharacterStats().EnsureLevelPoints(ctx, userID, userLevel.Level); err != nil {
+				return nil, nil, err
+			}
+			if _, err := s.dbClient.UserCharacterStats().RestoreResourcesToFull(ctx, userID); err != nil {
 				return nil, nil, err
 			}
 		}

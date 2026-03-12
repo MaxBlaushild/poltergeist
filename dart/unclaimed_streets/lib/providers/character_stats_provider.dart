@@ -133,12 +133,20 @@ class CharacterStatsProvider with ChangeNotifier {
     return true;
   }
 
-  Future<String?> castSpell(String spellId, {String? targetUserId}) async {
+  Future<String?> castSpell(
+    String spellId, {
+    String? targetUserId,
+    String? targetMonsterId,
+  }) async {
     if (_userId == null) {
       return 'You must be logged in to cast spells.';
     }
     try {
-      await _service.castSpell(spellId, targetUserId: targetUserId);
+      await _service.castSpell(
+        spellId,
+        targetUserId: targetUserId,
+        targetMonsterId: targetMonsterId,
+      );
       await refresh(silent: true);
       return null;
     } catch (e) {
@@ -158,12 +166,17 @@ class CharacterStatsProvider with ChangeNotifier {
   Future<String?> castTechnique(
     String techniqueId, {
     String? targetUserId,
+    String? targetMonsterId,
   }) async {
     if (_userId == null) {
       return 'You must be logged in to use techniques.';
     }
     try {
-      await _service.castTechnique(techniqueId, targetUserId: targetUserId);
+      await _service.castTechnique(
+        techniqueId,
+        targetUserId: targetUserId,
+        targetMonsterId: targetMonsterId,
+      );
       await refresh(silent: true);
       return null;
     } catch (e) {

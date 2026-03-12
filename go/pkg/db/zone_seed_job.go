@@ -32,20 +32,27 @@ func (h *zoneSeedJobHandle) FindByID(ctx context.Context, id uuid.UUID) (*models
 }
 
 func (h *zoneSeedJobHandle) FindRecent(ctx context.Context, limit int) ([]models.ZoneSeedJob, error) {
-	var jobs []models.ZoneSeedJob
-	q := h.db.WithContext(ctx).Order("created_at DESC")
-	if limit > 0 {
-		q = q.Limit(limit)
-	}
-	if err := q.Find(&jobs).Error; err != nil {
-		return nil, err
-	}
-	return jobs, nil
+	return h.FindFiltered(ctx, nil, nil, limit)
 }
 
 func (h *zoneSeedJobHandle) FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneSeedJob, error) {
+	return h.FindFiltered(ctx, &zoneID, nil, limit)
+}
+
+func (h *zoneSeedJobHandle) FindFiltered(
+	ctx context.Context,
+	zoneID *uuid.UUID,
+	statuses []string,
+	limit int,
+) ([]models.ZoneSeedJob, error) {
 	var jobs []models.ZoneSeedJob
-	q := h.db.WithContext(ctx).Where("zone_id = ?", zoneID).Order("created_at DESC")
+	q := h.db.WithContext(ctx).Order("created_at DESC")
+	if zoneID != nil {
+		q = q.Where("zone_id = ?", *zoneID)
+	}
+	if len(statuses) > 0 {
+		q = q.Where("status IN ?", statuses)
+	}
 	if limit > 0 {
 		q = q.Limit(limit)
 	}

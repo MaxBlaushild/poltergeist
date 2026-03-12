@@ -8,6 +8,7 @@ class Spell {
   final String abilityType;
   final int abilityLevel;
   final int cooldownTurns;
+  final int cooldownTurnsRemaining;
   final String effectText;
   final String schoolOfMagic;
   final int manaCost;
@@ -21,6 +22,7 @@ class Spell {
     this.abilityType = 'spell',
     this.abilityLevel = 1,
     this.cooldownTurns = 0,
+    this.cooldownTurnsRemaining = 0,
     this.effectText = '',
     this.schoolOfMagic = '',
     this.manaCost = 0,
@@ -36,6 +38,8 @@ class Spell {
       abilityType: json['abilityType']?.toString() ?? 'spell',
       abilityLevel: (json['abilityLevel'] as num?)?.toInt() ?? 1,
       cooldownTurns: (json['cooldownTurns'] as num?)?.toInt() ?? 0,
+      cooldownTurnsRemaining:
+          (json['cooldownTurnsRemaining'] as num?)?.toInt() ?? 0,
       effectText: json['effectText']?.toString() ?? '',
       schoolOfMagic: json['schoolOfMagic']?.toString() ?? '',
       manaCost: (json['manaCost'] as num?)?.toInt() ?? 0,
@@ -57,6 +61,7 @@ class Spell {
     'abilityType': abilityType,
     'abilityLevel': abilityLevel,
     'cooldownTurns': cooldownTurns,
+    'cooldownTurnsRemaining': cooldownTurnsRemaining,
     'effectText': effectText,
     'schoolOfMagic': schoolOfMagic,
     'manaCost': manaCost,

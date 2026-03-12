@@ -11,15 +11,22 @@ import (
 	"github.com/google/uuid"
 )
 
-func buildZoneNameDiversityGuidance(
+type zoneNameDiversityContext struct {
+	Guidance              string
+	ForbiddenLeadingRoots []string
+}
+
+func buildZoneNameDiversityContext(
 	ctx context.Context,
 	dbClient db.DbClient,
 	currentZoneID uuid.UUID,
-) string {
+) zoneNameDiversityContext {
 	zones, err := dbClient.Zone().FindAll(ctx)
 	if err != nil {
 		log.Printf("Failed to load zones for naming guidance: %v", err)
-		return "- Existing zone names unavailable.\n- Avoid repeating the same opening word or cadence across multiple names."
+		return zoneNameDiversityContext{
+			Guidance: "- Existing zone names unavailable.\n- Avoid repeating the same opening word or cadence across multiple names.",
+		}
 	}
 
 	sort.Slice(zones, func(i, j int) bool {
@@ -48,19 +55,19 @@ func buildZoneNameDiversityGuidance(
 			existingNames = append(existingNames, name)
 		}
 
-		firstWord := normalizedZoneLeadingWord(name)
-		if firstWord != "" {
-			leadingWordCounts[firstWord]++
+		firstRoot := normalizedZoneLeadingRoot(name)
+		if firstRoot != "" {
+			leadingWordCounts[firstRoot]++
 		}
 	}
 
-	overusedLeadingWords := make([]string, 0)
+	overusedLeadingRoots := make([]string, 0)
 	for word, count := range leadingWordCounts {
 		if count >= 2 {
-			overusedLeadingWords = append(overusedLeadingWords, word)
+			overusedLeadingRoots = append(overusedLeadingRoots, word)
 		}
 	}
-	sort.Strings(overusedLeadingWords)
+	sort.Strings(overusedLeadingRoots)
 
 	lines := []string{}
 	if len(existingNames) > 0 {
@@ -69,24 +76,67 @@ func buildZoneNameDiversityGuidance(
 		lines = append(lines, "- Existing zone names: none yet")
 	}
 
-	if len(overusedLeadingWords) > 0 {
+	if len(overusedLeadingRoots) > 0 {
 		lines = append(
 			lines,
-			fmt.Sprintf("- Avoid starting the new name with these overused opening words: %s", strings.Join(overusedLeadingWords, ", ")),
+			fmt.Sprintf("- Avoid starting the new name with these overused opening roots or variants: %s", strings.Join(overusedLeadingRoots, ", ")),
 		)
 	} else {
 		lines = append(lines, "- No repeated opening word is currently dominant, but still avoid cliché repeated prefixes.")
 	}
 
-	return strings.Join(lines, "\n")
+	return zoneNameDiversityContext{
+		Guidance:              strings.Join(lines, "\n"),
+		ForbiddenLeadingRoots: overusedLeadingRoots,
+	}
 }
 
-func normalizedZoneLeadingWord(name string) string {
+func normalizedZoneLeadingRoot(name string) string {
 	parts := strings.Fields(strings.TrimSpace(name))
 	if len(parts) == 0 {
 		return ""
 	}
 
 	word := strings.Trim(parts[0], ".,;:!?\"'`()[]{}")
-	return strings.ToLower(word)
+	return canonicalizeZoneNameRoot(word)
+}
+
+func canonicalizeZoneNameRoot(word string) string {
+	word = strings.ToLower(strings.TrimSpace(word))
+	if word == "" {
+		return ""
+	}
+	if strings.HasPrefix(word, "whisper") {
+		return "whisper"
+	}
+	if len(word) > 6 && strings.HasSuffix(word, "ing") {
+		word = strings.TrimSuffix(word, "ing")
+	}
+	if len(word) > 5 && strings.HasSuffix(word, "ers") {
+		word = strings.TrimSuffix(word, "ers")
+	}
+	if len(word) > 4 && strings.HasSuffix(word, "es") {
+		word = strings.TrimSuffix(word, "es")
+	} else if len(word) > 3 && strings.HasSuffix(word, "s") {
+		word = strings.TrimSuffix(word, "s")
+	}
+	return word
+}
+
+func zoneNameUsesForbiddenLeadingRoot(name string, forbiddenRoots []string) bool {
+	if len(forbiddenRoots) == 0 {
+		return false
+	}
+
+	root := normalizedZoneLeadingRoot(name)
+	if root == "" {
+		return false
+	}
+
+	for _, forbidden := range forbiddenRoots {
+		if root == forbidden {
+			return true
+		}
+	}
+	return false
 }

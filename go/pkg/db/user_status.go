@@ -83,6 +83,26 @@ func (h *userStatusHandler) UpdateLastTickAt(
 		Error
 }
 
+func (h *userStatusHandler) ShiftActiveExpirations(
+	ctx context.Context,
+	userID uuid.UUID,
+	shift time.Duration,
+) error {
+	seconds := int(shift / time.Second)
+	if seconds == 0 {
+		return nil
+	}
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.UserStatus{}).
+		Where("user_id = ? AND started_at <= ? AND expires_at > ?", userID, now, now).
+		Updates(map[string]interface{}{
+			"expires_at": gorm.Expr("expires_at + (? * interval '1 second')", seconds),
+			"updated_at": now,
+		}).
+		Error
+}
+
 func (h *userStatusHandler) DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error {
 	normalized := make([]string, 0, len(names))
 	seen := map[string]struct{}{}

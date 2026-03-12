@@ -271,6 +271,23 @@ class _InventoryPanelState extends State<InventoryPanel>
     return _equipmentSlotLabels[slot] ?? slot;
   }
 
+  InventoryItem? _twoHandedDominantHandItem() {
+    final dominantHandItem = _equipmentBySlot['dominant_hand']?.inventoryItem;
+    if (dominantHandItem == null) return null;
+    final handedness = dominantHandItem.handedness?.trim().toLowerCase();
+    if (handedness != 'two_handed') return null;
+    return dominantHandItem;
+  }
+
+  bool _isOneHandedWeapon(InventoryItem inv) {
+    final slot = inv.equipSlot?.trim().toLowerCase();
+    final category = inv.handItemCategory?.trim().toLowerCase();
+    final handedness = inv.handedness?.trim().toLowerCase();
+    return slot == 'dominant_hand' &&
+        category == 'weapon' &&
+        handedness == 'one_handed';
+  }
+
   bool _userNeedsPortrait(User? user) {
     if (user == null) return true;
     if (!user.hasCustomizedPortrait) return true;
@@ -483,6 +500,46 @@ class _InventoryPanelState extends State<InventoryPanel>
     );
   }
 
+  Future<String?> _pickHandSlot(InventoryItem inv) async {
+    final dominantItem = _equipmentBySlot['dominant_hand']?.inventoryItem?.name;
+    final offHandItem = _equipmentBySlot['off_hand']?.inventoryItem?.name;
+    final blockingTwoHandedItem = _twoHandedDominantHandItem();
+    final offHandAvailable = blockingTwoHandedItem == null;
+    final unavailableReason = blockingTwoHandedItem == null
+        ? null
+        : 'Unavailable while ${blockingTwoHandedItem.name} is equipped';
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Equip ${inv.name} where?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Dominant hand'),
+              subtitle: dominantItem != null
+                  ? Text('Replaces $dominantItem')
+                  : null,
+              onTap: () => Navigator.of(context).pop('dominant_hand'),
+            ),
+            ListTile(
+              enabled: offHandAvailable,
+              title: const Text('Off-hand'),
+              subtitle: offHandAvailable
+                  ? offHandItem != null
+                        ? Text('Replaces $offHandItem')
+                        : const Text('Deals half damage while equipped here')
+                  : Text(unavailableReason ?? ''),
+              onTap: offHandAvailable
+                  ? () => Navigator.of(context).pop('off_hand')
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _equip(OwnedInventoryItem owned, InventoryItem inv) async {
     if (_using) return;
     final slot = inv.equipSlot?.trim();
@@ -492,6 +549,9 @@ class _InventoryPanelState extends State<InventoryPanel>
     String? resolvedSlot = slot;
     if (slot == 'ring') {
       resolvedSlot = await _pickRingSlot();
+      if (resolvedSlot == null) return;
+    } else if (_isOneHandedWeapon(inv)) {
+      resolvedSlot = await _pickHandSlot(inv);
       if (resolvedSlot == null) return;
     }
     setState(() {
@@ -889,12 +949,13 @@ class _InventoryPanelState extends State<InventoryPanel>
     final totalPages = totalItems == 0
         ? 1
         : ((totalItems + _pageSize - 1) ~/ _pageSize);
-    final pageStart = _pageIndex * _pageSize;
+    final currentPageIndex = _pageIndex.clamp(0, totalPages - 1);
+    final pageStart = currentPageIndex * _pageSize;
     final pageItems = totalItems == 0
         ? <OwnedInventoryItem>[]
         : _owned.skip(pageStart).take(_pageSize).toList();
-    final isFirstPage = _pageIndex <= 0;
-    final isLastPage = _pageIndex >= totalPages - 1;
+    final isFirstPage = currentPageIndex <= 0;
+    final isLastPage = currentPageIndex >= totalPages - 1;
 
     return SingleChildScrollView(
       child: Column(
@@ -911,27 +972,28 @@ class _InventoryPanelState extends State<InventoryPanel>
                 ),
               ),
               const Spacer(),
-              if (totalItems > 0)
+              if (totalItems > 0) ...[
                 Text(
-                  'Page ${_pageIndex + 1} of $totalPages',
+                  'Page ${currentPageIndex + 1} of $totalPages',
                   style: theme.textTheme.labelLarge?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
+              ],
               if (totalPages > 1) ...[
                 const SizedBox(width: 8),
                 IconButton(
                   tooltip: 'Previous page',
                   onPressed: isFirstPage
                       ? null
-                      : () => setState(() => _pageIndex -= 1),
+                      : () => setState(() => _pageIndex = currentPageIndex - 1),
                   icon: const Icon(Icons.chevron_left),
                 ),
                 IconButton(
                   tooltip: 'Next page',
                   onPressed: isLastPage
                       ? null
-                      : () => setState(() => _pageIndex += 1),
+                      : () => setState(() => _pageIndex = currentPageIndex + 1),
                   icon: const Icon(Icons.chevron_right),
                 ),
               ],
@@ -1041,6 +1103,10 @@ class _InventoryPanelState extends State<InventoryPanel>
     final entry = _equipmentBySlot[slot];
     final inventoryItem = entry?.inventoryItem;
     final hasItem = entry != null && inventoryItem != null;
+    final occupyingTwoHandedItem = slot == 'off_hand' && !hasItem
+        ? _twoHandedDominantHandItem()
+        : null;
+    final isOccupiedByTwoHandedItem = occupyingTwoHandedItem != null;
     final rarityAccent = inventoryItem == null
         ? null
         : _rarityAccentColor(inventoryItem.rarityTier);
@@ -1098,6 +1164,11 @@ class _InventoryPanelState extends State<InventoryPanel>
                         ),
                       ),
                     )
+                  : isOccupiedByTwoHandedItem
+                  ? Icon(
+                      Icons.do_not_disturb_alt_rounded,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )
                   : Icon(
                       Icons.inventory_2_outlined,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -1117,7 +1188,11 @@ class _InventoryPanelState extends State<InventoryPanel>
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    hasItem ? inventoryItem.name : 'Empty',
+                    hasItem
+                        ? inventoryItem.name
+                        : isOccupiedByTwoHandedItem
+                        ? 'Occupied'
+                        : 'Empty',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(

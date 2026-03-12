@@ -412,31 +412,65 @@ Respond ONLY as JSON:
 `
 
 func (p *SeedZoneDraftProcessor) generateZoneBranding(ctx context.Context, zone models.Zone, places []googlemaps.Place) (*zoneBrandingResponse, error) {
-	prompt := fmt.Sprintf(
+	diversityContext := buildZoneNameDiversityContext(ctx, p.dbClient, zone.ID)
+	basePrompt := fmt.Sprintf(
 		zoneBrandingPromptTemplate,
 		zone.Name,
 		truncate(zone.Description, 300),
 		formatPlacesForPrompt(places, 8),
-		buildZoneNameDiversityGuidance(ctx, p.dbClient, zone.ID),
+		diversityContext.Guidance,
 	)
 
-	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})
-	if err != nil {
-		return nil, err
+	var (
+		response zoneBrandingResponse
+		lastErr  error
+	)
+	attempts := 1
+	if len(diversityContext.ForbiddenLeadingRoots) > 0 {
+		attempts = 3
 	}
 
-	var response zoneBrandingResponse
-	if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
-		return nil, err
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptPrompt := basePrompt
+		if attempt > 0 && len(diversityContext.ForbiddenLeadingRoots) > 0 {
+			attemptPrompt = fmt.Sprintf(
+				"%s\nAdditional correction:\n- The previous candidate still used a forbidden repeated opening root.\n- Absolutely do not begin the fantasy name with any variant of: %s.\n- Choose a different opening word and a distinct naming rhythm.\n",
+				basePrompt,
+				strings.Join(diversityContext.ForbiddenLeadingRoots, ", "),
+			)
+		}
+
+		answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: attemptPrompt})
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if err := json.Unmarshal([]byte(extractJSON(answer.Answer)), &response); err != nil {
+			lastErr = err
+			continue
+		}
+
+		response.FantasyName = strings.TrimSpace(response.FantasyName)
+		response.ZoneDescription = strings.TrimSpace(response.ZoneDescription)
+		if response.FantasyName == "" {
+			response.FantasyName = zone.Name
+		}
+		if response.ZoneDescription == "" {
+			lastErr = fmt.Errorf("zone description was empty")
+			continue
+		}
+		if zoneNameUsesForbiddenLeadingRoot(response.FantasyName, diversityContext.ForbiddenLeadingRoots) {
+			lastErr = fmt.Errorf("generated zone name %q used an overused leading root", response.FantasyName)
+			continue
+		}
+
+		lastErr = nil
+		break
 	}
 
-	response.FantasyName = strings.TrimSpace(response.FantasyName)
-	response.ZoneDescription = strings.TrimSpace(response.ZoneDescription)
-	if response.FantasyName == "" {
-		response.FantasyName = zone.Name
-	}
-	if response.ZoneDescription == "" {
-		return nil, fmt.Errorf("zone description was empty")
+	if lastErr != nil {
+		return nil, lastErr
 	}
 
 	return &response, nil

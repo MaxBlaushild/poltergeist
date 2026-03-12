@@ -360,6 +360,7 @@ type ZoneSeedJobHandle interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*models.ZoneSeedJob, error)
 	FindRecent(ctx context.Context, limit int) ([]models.ZoneSeedJob, error)
 	FindByZoneID(ctx context.Context, zoneID uuid.UUID, limit int) ([]models.ZoneSeedJob, error)
+	FindFiltered(ctx context.Context, zoneID *uuid.UUID, statuses []string, limit int) ([]models.ZoneSeedJob, error)
 	DeleteByID(ctx context.Context, id uuid.UUID) error
 }
 
@@ -402,6 +403,7 @@ type SpellHandle interface {
 type UserSpellHandle interface {
 	GrantToUser(ctx context.Context, userID uuid.UUID, spellID uuid.UUID) error
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserSpell, error)
+	UpdateCooldownExpiresAt(ctx context.Context, userID uuid.UUID, spellID uuid.UUID, expiresAt *time.Time) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -651,6 +653,7 @@ type UserCharacterStatsHandle interface {
 	ApplyAllocations(ctx context.Context, userID uuid.UUID, currentLevel int, allocations map[string]int) (*models.UserCharacterStats, error)
 	AddStatPoints(ctx context.Context, userID uuid.UUID, additions map[string]int) (*models.UserCharacterStats, error)
 	AdjustResourceDeficits(ctx context.Context, userID uuid.UUID, healthDeficitDelta int, manaDeficitDelta int) (*models.UserCharacterStats, error)
+	RestoreResourcesToFull(ctx context.Context, userID uuid.UUID) (*models.UserCharacterStats, error)
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -667,6 +670,7 @@ type UserStatusHandle interface {
 	FindActiveByUserID(ctx context.Context, userID uuid.UUID) ([]models.UserStatus, error)
 	GetActiveStatBonuses(ctx context.Context, userID uuid.UUID) (models.CharacterStatBonuses, error)
 	UpdateLastTickAt(ctx context.Context, statusID uuid.UUID, lastTickAt time.Time) error
+	ShiftActiveExpirations(ctx context.Context, userID uuid.UUID, shift time.Duration) error
 	DeleteActiveByUserIDAndNames(ctx context.Context, userID uuid.UUID, names []string) error
 	DeleteAllForUser(ctx context.Context, userID uuid.UUID) error
 }
@@ -676,6 +680,7 @@ type MonsterStatusHandle interface {
 	FindActiveByBattleID(ctx context.Context, battleID uuid.UUID) ([]models.MonsterStatus, error)
 	GetActiveStatBonuses(ctx context.Context, battleID uuid.UUID) (models.CharacterStatBonuses, error)
 	UpdateLastTickAt(ctx context.Context, statusID uuid.UUID, lastTickAt time.Time) error
+	ShiftActiveExpirations(ctx context.Context, battleID uuid.UUID, shift time.Duration) error
 	DeleteActiveByBattleIDAndNames(ctx context.Context, battleID uuid.UUID, names []string) error
 	DeleteAllForBattleID(ctx context.Context, battleID uuid.UUID) error
 }

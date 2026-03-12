@@ -42,6 +42,23 @@ func (h *userSpellHandler) FindByUserID(ctx context.Context, userID uuid.UUID) (
 	return userSpells, nil
 }
 
+func (h *userSpellHandler) UpdateCooldownExpiresAt(
+	ctx context.Context,
+	userID uuid.UUID,
+	spellID uuid.UUID,
+	expiresAt *time.Time,
+) error {
+	updates := map[string]interface{}{
+		"cooldown_expires_at": expiresAt,
+		"updated_at":          time.Now(),
+	}
+	return h.db.WithContext(ctx).
+		Model(&models.UserSpell{}).
+		Where("user_id = ? AND spell_id = ?", userID, spellID).
+		Updates(updates).
+		Error
+}
+
 func (h *userSpellHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserSpell{}).Error
 }

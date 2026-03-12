@@ -34,10 +34,14 @@ class CharacterStatsService {
   Future<Map<String, dynamic>> castSpell(
     String spellId, {
     String? targetUserId,
+    String? targetMonsterId,
   }) async {
     final payload = <String, dynamic>{};
     if (targetUserId != null && targetUserId.trim().isNotEmpty) {
       payload['targetUserId'] = targetUserId.trim();
+    }
+    if (targetMonsterId != null && targetMonsterId.trim().isNotEmpty) {
+      payload['targetMonsterId'] = targetMonsterId.trim();
     }
     final data = await _api.post<Map<String, dynamic>>(
       ApiConstants.castSpellEndpoint(spellId),
@@ -49,10 +53,14 @@ class CharacterStatsService {
   Future<Map<String, dynamic>> castTechnique(
     String techniqueId, {
     String? targetUserId,
+    String? targetMonsterId,
   }) async {
     final payload = <String, dynamic>{};
     if (targetUserId != null && targetUserId.trim().isNotEmpty) {
       payload['targetUserId'] = targetUserId.trim();
+    }
+    if (targetMonsterId != null && targetMonsterId.trim().isNotEmpty) {
+      payload['targetMonsterId'] = targetMonsterId.trim();
     }
     final data = await _api.post<Map<String, dynamic>>(
       ApiConstants.castTechniqueEndpoint(techniqueId),

@@ -98,7 +98,20 @@ const knownEffectTypes = [
   'revive_all_downed_party_members',
   'apply_beneficial_statuses',
   'remove_detrimental_statuses',
+  'unlock_locks',
 ] as const;
+
+const effectTypeLabels: Record<(typeof knownEffectTypes)[number], string> = {
+  deal_damage: 'Deal Damage',
+  deal_damage_all_enemies: 'Deal Damage (All Enemies)',
+  restore_life_party_member: 'Restore Life (Party Member)',
+  restore_life_all_party_members: 'Restore Life (All Party Members)',
+  revive_party_member: 'Revive Party Member',
+  revive_all_downed_party_members: 'Revive All Downed Party Members',
+  apply_beneficial_statuses: 'Apply Beneficial Statuses',
+  remove_detrimental_statuses: 'Remove Detrimental Statuses',
+  unlock_locks: 'Unlock Locks',
+};
 
 const damageAffinityOptions = [
   'physical',
@@ -1486,7 +1499,7 @@ export const Spells = () => {
                             >
                               {knownEffectTypes.map((type) => (
                                 <option key={type} value={type}>
-                                  {type}
+                                  {effectTypeLabels[type]}
                                 </option>
                               ))}
                               <option value="__custom__">Custom</option>

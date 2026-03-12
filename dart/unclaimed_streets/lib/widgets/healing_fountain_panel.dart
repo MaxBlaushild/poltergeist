@@ -13,6 +13,8 @@ import 'paper_texture.dart';
 
 const _fallbackFountainImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+const _discoveredFountainImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
 const _healingFountainCooldownDuration = Duration(days: 7);
 
 class HealingFountainPanel extends StatefulWidget {
@@ -27,7 +29,7 @@ class HealingFountainPanel extends StatefulWidget {
   final HealingFountain fountain;
   final VoidCallback onClose;
   final void Function(Map<String, dynamic> result)? onUsed;
-  final Future<void> Function()? onUnlocked;
+  final Future<void> Function(HealingFountain fountain)? onUnlocked;
 
   @override
   State<HealingFountainPanel> createState() => _HealingFountainPanelState();
@@ -327,13 +329,32 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
 
   bool get _isDiscovered => _fountain.discovered || _justUnlocked;
 
-  Future<void> _completeUnlock() async {
-    await widget.onUnlocked?.call();
+  String _resolvedThumbnailUrl(HealingFountain fountain) {
+    final raw = fountain.thumbnailUrl.trim();
+    if (!fountain.discovered) {
+      return _fallbackFountainImageUrl;
+    }
+    if (raw.isEmpty || raw == _fallbackFountainImageUrl) {
+      return _discoveredFountainImageUrl;
+    }
+    return raw;
+  }
+
+  Future<void> _completeUnlock([Map<String, dynamic>? result]) async {
+    final rawThumbnailUrl = result?['thumbnailUrl']?.toString().trim() ?? '';
+    final thumbnailUrl = rawThumbnailUrl.isNotEmpty
+        ? rawThumbnailUrl
+        : _discoveredFountainImageUrl;
+    final unlockedFountain = _fountain.copyWith(
+      discovered: true,
+      thumbnailUrl: thumbnailUrl,
+    );
+    await widget.onUnlocked?.call(unlockedFountain);
     if (!mounted) return;
     setState(() {
       _loading = false;
       _justUnlocked = true;
-      _fountain = _fountain.copyWith(discovered: true);
+      _fountain = unlockedFountain;
     });
     ScaffoldMessenger.of(
       context,
@@ -368,8 +389,10 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
       _error = null;
     });
     try {
-      await context.read<PoiService>().unlockHealingFountain(_fountain.id);
-      await _completeUnlock();
+      final result = await context.read<PoiService>().unlockHealingFountain(
+        _fountain.id,
+      );
+      await _completeUnlock(result);
     } catch (error) {
       if (_isAlreadyDiscoveredError(error)) {
         await _completeUnlock();
@@ -461,9 +484,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
         ? 'Available in ${_formatRemaining(cooldownRemaining)}'
         : (_loading ? 'Restoring...' : 'Restore Health & Mana');
 
-    final thumbnail = _fountain.thumbnailUrl.trim().isNotEmpty
-        ? _fountain.thumbnailUrl.trim()
-        : _fallbackFountainImageUrl;
+    final thumbnail = _resolvedThumbnailUrl(_fountain);
 
     return DraggableScrollableSheet(
       initialChildSize: 0.86,

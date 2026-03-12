@@ -2382,6 +2382,26 @@ func filterUserSpellsByType(
 	return filtered
 }
 
+func spellHasCastableEffect(spell *models.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamage,
+			models.SpellEffectTypeDealDamageAllEnemies,
+			models.SpellEffectTypeRestoreLifePartyMember,
+			models.SpellEffectTypeRestoreLifeAllParty,
+			models.SpellEffectTypeRevivePartyMember,
+			models.SpellEffectTypeReviveAllDownedParty,
+			models.SpellEffectTypeApplyBeneficialStatus,
+			models.SpellEffectTypeRemoveDetrimental:
+			return true
+		}
+	}
+	return false
+}
+
 func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellAbilityType) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -2402,6 +2422,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 
 	var spellToCast *models.Spell
+	var userSpellToCast *models.UserSpell
 	for _, userSpell := range userSpells {
 		if userSpell.SpellID == spellID {
 			spell := userSpell.Spell
@@ -2409,6 +2430,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 				continue
 			}
 			spellToCast = &spell
+			userSpellCopy := userSpell
+			userSpellToCast = &userSpellCopy
 			break
 		}
 	}
@@ -2422,6 +2445,19 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 	abilityType := normalizeSpellAbilityType(string(spellToCast.AbilityType))
 	isTechnique := abilityType == models.SpellAbilityTypeTechnique
+	now := time.Now()
+	cooldownRemaining := cooldownTurnsRemaining(*userSpellToCast, now)
+	if cooldownRemaining > 0 {
+		label := "spell"
+		if isTechnique {
+			label = "technique"
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error":                  fmt.Sprintf("%s is on cooldown", label),
+			"cooldownTurnsRemaining": cooldownRemaining,
+		})
+		return
+	}
 
 	targetHealAmount := 0
 	groupHealAmount := 0
@@ -2460,7 +2496,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		groupHealAmount <= 0 &&
 		targetReviveAmount <= 0 &&
 		groupReviveAmount <= 0 &&
-		!hasStatusEffects {
+		!hasStatusEffects &&
+		!spellHasCastableEffect(spellToCast) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "this ability has no castable effect"})
 		return
 	}
@@ -2563,6 +2600,12 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			return
 		}
 	}
+	if targetMonsterID != nil {
+		if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, &spellID, now); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 
 	if !isTechnique {
 		_, _, _, _, currentMana, err := s.getScenarioResourceState(ctx, user.ID)
@@ -2662,7 +2705,6 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	battleTurnMonsterDotDamage := 0
 
 	if hasStatusEffects {
-		now := time.Now()
 		if targetMonsterID != nil {
 			if monsterBattle == nil {
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": "monster battle unavailable"})
@@ -2771,6 +2813,13 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			}
 		}
 	}
+	if spellToCast.CooldownTurns > 0 {
+		cooldownExpiresAt := cooldownExpiresAtFromTurns(spellToCast.CooldownTurns, now)
+		if err := s.dbClient.UserSpell().UpdateCooldownExpiresAt(ctx, user.ID, spellToCast.ID, cooldownExpiresAt); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
 	if monsterBattle != nil {
 		if err := s.dbClient.MonsterBattle().Touch(ctx, monsterBattle.ID, time.Now()); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2785,6 +2834,10 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		battleTurnUserDotDamage = userDotDamage
 		battleTurnMonsterDotDamage = monsterDotDamage
 		monsterBattle.MonsterHealthDeficit += monsterDotDamage
+		if err := s.advanceBattleStatusDurations(ctx, user.ID, monsterBattle.ID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		monsterBattle, err = s.finalizeMonsterBattleIfDefeated(ctx, monsterBattle)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2799,9 +2852,10 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 
 	response := gin.H{
-		"spellId":     spellToCast.ID,
-		"spellName":   spellToCast.Name,
-		"abilityType": string(abilityType),
+		"spellId":                spellToCast.ID,
+		"spellName":              spellToCast.Name,
+		"abilityType":            string(abilityType),
+		"cooldownTurnsRemaining": spellToCast.CooldownTurns,
 		"manaSpent": func() int {
 			if isTechnique {
 				return 0

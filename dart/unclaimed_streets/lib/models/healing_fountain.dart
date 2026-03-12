@@ -53,6 +53,7 @@ class HealingFountain {
   }
 
   HealingFountain copyWith({
+    String? thumbnailUrl,
     bool? availableNow,
     bool? discovered,
     DateTime? lastUsedAt,
@@ -63,7 +64,7 @@ class HealingFountain {
       id: id,
       name: name,
       description: description,
-      thumbnailUrl: thumbnailUrl,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       zoneId: zoneId,
       latitude: latitude,
       longitude: longitude,

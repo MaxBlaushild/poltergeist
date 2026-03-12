@@ -19,6 +19,25 @@ const (
 	ZoneSeedStatusFailed           = "failed"
 )
 
+var ZoneSeedStatuses = []string{
+	ZoneSeedStatusQueued,
+	ZoneSeedStatusInProgress,
+	ZoneSeedStatusAwaitingApproval,
+	ZoneSeedStatusApproved,
+	ZoneSeedStatusApplying,
+	ZoneSeedStatusApplied,
+	ZoneSeedStatusFailed,
+}
+
+func IsValidZoneSeedStatus(status string) bool {
+	for _, candidate := range ZoneSeedStatuses {
+		if candidate == status {
+			return true
+		}
+	}
+	return false
+}
+
 const (
 	ZoneSeedChallengeShuffleStatusQueued     = "queued"
 	ZoneSeedChallengeShuffleStatusInProgress = "in_progress"

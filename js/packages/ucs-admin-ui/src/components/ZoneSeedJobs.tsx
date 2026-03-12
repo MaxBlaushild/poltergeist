@@ -1,6 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAPI, useZoneContext } from '@poltergeist/contexts';
 import { Zone } from '@poltergeist/types';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
 type ZoneSeedPointOfInterestDraft = {
   draftId: string;
@@ -70,6 +74,375 @@ type BulkQueueZoneSeedJobsResponse = {
   jobs: ZoneSeedJob[];
 };
 
+const sortBoundaryPoints = (points: [number, number][]): [number, number][] => {
+  if (points.length < 3) return points.slice();
+
+  const centroid = points.reduce(
+    (acc, point) => [acc[0] + point[0] / points.length, acc[1] + point[1] / points.length],
+    [0, 0]
+  );
+
+  const sorted = points
+    .slice()
+    .sort((a, b) => {
+      const angleA = Math.atan2(a[1] - centroid[1], a[0] - centroid[0]);
+      const angleB = Math.atan2(b[1] - centroid[1], b[0] - centroid[0]);
+      return angleA - angleB;
+    });
+
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    sorted.push([first[0], first[1]]);
+  }
+
+  return sorted;
+};
+
+const getZoneRing = (zone: Zone): [number, number][] => {
+  if (zone.points?.length) {
+    return sortBoundaryPoints(
+      zone.points.map((point) => [point.longitude, point.latitude] as [number, number])
+    );
+  }
+
+  if (zone.boundaryCoords?.length) {
+    return sortBoundaryPoints(
+      zone.boundaryCoords.map((coord) => [coord.longitude, coord.latitude] as [number, number])
+    );
+  }
+
+  return [];
+};
+
+type BulkZoneSelectionMapProps = {
+  zones: Zone[];
+  matchingZoneIds: Set<string>;
+  selectedZoneIds: Set<string>;
+  onToggleZone: (zoneId: string) => void;
+};
+
+const BulkZoneSelectionMap: React.FC<BulkZoneSelectionMapProps> = ({
+  zones,
+  matchingZoneIds,
+  selectedZoneIds,
+  onToggleZone,
+}) => {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const searchMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const fitBoundsRef = useRef(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+  const [searchCandidates, setSearchCandidates] = useState<
+    Array<{
+      id: string;
+      center: [number, number];
+      placeName: string;
+    }>
+  >([]);
+
+  const focusMapOnLocation = useCallback(
+    (lngLat: [number, number], zoom: number) => {
+      if (!mapRef.current) {
+        return;
+      }
+
+      searchMarkerRef.current?.remove();
+      searchMarkerRef.current = new mapboxgl.Marker({ color: '#2563EB' })
+        .setLngLat(lngLat)
+        .addTo(mapRef.current);
+
+      mapRef.current.flyTo({
+        center: lngLat,
+        zoom: Math.max(mapRef.current.getZoom(), zoom),
+        essential: true,
+      });
+    },
+    []
+  );
+
+  const handleSearchLocation = useCallback(async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchStatus('Enter a city, neighborhood, address, or landmark.');
+      return;
+    }
+
+    if (!mapboxgl.accessToken) {
+      setSearchStatus('Location search is unavailable because the Mapbox token is missing.');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchStatus(null);
+    setShowSearchSuggestions(false);
+
+    try {
+      const response = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${encodeURIComponent(mapboxgl.accessToken)}&limit=6&types=country,region,postcode,district,place,locality,neighborhood,address,poi`
+      );
+
+      if (!response.ok) {
+        throw new Error('Search request failed.');
+      }
+
+      const data = (await response.json()) as {
+        features?: Array<{
+          id?: string;
+          center?: [number, number];
+          place_name?: string;
+        }>;
+      };
+
+      const candidates = (data.features ?? [])
+        .filter((feature) => feature.center && feature.center.length >= 2)
+        .map((feature, index) => ({
+          id: feature.id || `${feature.place_name || 'candidate'}-${index}`,
+          center: [feature.center![0], feature.center![1]] as [number, number],
+          placeName: feature.place_name || 'Unknown location',
+        }));
+
+      if (candidates.length === 0) {
+        setSearchCandidates([]);
+        setSearchStatus(`No location match found for "${query}".`);
+        return;
+      }
+
+      setSearchCandidates(candidates);
+      setShowSearchSuggestions(true);
+      setSearchStatus('Select a result below to move the map.');
+    } catch (error) {
+      console.error('Error searching for location:', error);
+      setSearchCandidates([]);
+      setSearchStatus('Unable to search for that location right now.');
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (mapContainer.current && !mapRef.current) {
+      mapRef.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [-87.6298, 41.8781],
+        zoom: 10,
+        interactive: true,
+      });
+
+      mapRef.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      mapRef.current.on('load', () => setMapLoaded(true));
+    }
+
+    return () => {
+      searchMarkerRef.current?.remove();
+      searchMarkerRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current || !mapLoaded) {
+      return;
+    }
+
+    const features = zones
+      .map((zone) => {
+        const ring = getZoneRing(zone);
+        if (ring.length < 4) {
+          return null;
+        }
+
+        return {
+          type: 'Feature' as const,
+          geometry: {
+            type: 'Polygon' as const,
+            coordinates: [ring],
+          },
+          properties: {
+            id: zone.id,
+            name: zone.name,
+            selected: selectedZoneIds.has(zone.id),
+            matching: matchingZoneIds.has(zone.id),
+          },
+        };
+      })
+      .filter(Boolean);
+
+    const geojson = {
+      type: 'FeatureCollection' as const,
+      features: features as Array<GeoJSON.Feature<GeoJSON.Polygon>>,
+    };
+
+    const existingSource = mapRef.current.getSource('bulk-zone-selector') as
+      | mapboxgl.GeoJSONSource
+      | undefined;
+
+    if (existingSource) {
+      existingSource.setData(geojson);
+    } else {
+      mapRef.current.addSource('bulk-zone-selector', {
+        type: 'geojson',
+        data: geojson,
+      });
+
+      mapRef.current.addLayer({
+        id: 'bulk-zone-selector-fill',
+        type: 'fill',
+        source: 'bulk-zone-selector',
+        paint: {
+          'fill-color': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            '#7c3aed',
+            ['boolean', ['get', 'matching'], false],
+            '#2563eb',
+            '#94a3b8',
+          ],
+          'fill-opacity': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            0.45,
+            ['boolean', ['get', 'matching'], false],
+            0.18,
+            0.08,
+          ],
+        },
+      });
+
+      mapRef.current.addLayer({
+        id: 'bulk-zone-selector-outline',
+        type: 'line',
+        source: 'bulk-zone-selector',
+        paint: {
+          'line-color': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            '#5b21b6',
+            ['boolean', ['get', 'matching'], false],
+            '#1d4ed8',
+            '#64748b',
+          ],
+          'line-width': [
+            'case',
+            ['boolean', ['get', 'selected'], false],
+            3,
+            1.5,
+          ],
+        },
+      });
+
+      mapRef.current.on('click', 'bulk-zone-selector-fill', (event) => {
+        const feature = event.features?.[0];
+        const zoneId = feature?.properties?.id;
+        if (typeof zoneId === 'string' && zoneId) {
+          onToggleZone(zoneId);
+        }
+      });
+
+      mapRef.current.on('mouseenter', 'bulk-zone-selector-fill', () => {
+        mapRef.current?.getCanvas().style.setProperty('cursor', 'pointer');
+      });
+      mapRef.current.on('mouseleave', 'bulk-zone-selector-fill', () => {
+        mapRef.current?.getCanvas().style.setProperty('cursor', '');
+      });
+    }
+
+    if (!fitBoundsRef.current && features.length > 0) {
+      const bounds = new mapboxgl.LngLatBounds();
+      features.forEach((feature) => {
+        feature.geometry.coordinates[0].forEach((coord) => {
+          bounds.extend(coord as [number, number]);
+        });
+      });
+      mapRef.current.fitBounds(bounds, { padding: 36, maxZoom: 12 });
+      fitBoundsRef.current = true;
+    }
+  }, [zones, selectedZoneIds, matchingZoneIds, mapLoaded, onToggleZone]);
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">
+      <div className="mb-2">
+        <div className="text-sm font-semibold text-gray-900">Visual zone selection</div>
+        <div className="text-xs text-gray-500">
+          Click zone polygons to add or remove them from the bulk queue.
+        </div>
+      </div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <div className="relative min-w-[240px] flex-1">
+          <input
+            className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            value={searchQuery}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearchQuery(value);
+              setSearchStatus(null);
+              if (value.trim() === '') {
+                setSearchCandidates([]);
+                setShowSearchSuggestions(false);
+              }
+            }}
+            onFocus={() => {
+              if (searchCandidates.length > 0) {
+                setShowSearchSuggestions(true);
+              }
+            }}
+            onBlur={() => {
+              setTimeout(() => setShowSearchSuggestions(false), 120);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void handleSearchLocation();
+              }
+            }}
+            placeholder="Search for a city, neighborhood, address, or landmark"
+          />
+          {showSearchSuggestions && searchCandidates.length > 0 && (
+            <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+              {searchCandidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(candidate.placeName);
+                    setShowSearchSuggestions(false);
+                    focusMapOnLocation(candidate.center, 13);
+                    setSearchStatus(`Moved map to ${candidate.placeName}.`);
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  {candidate.placeName}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleSearchLocation()}
+          className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          disabled={isSearching}
+        >
+          {isSearching ? 'Searching...' : 'Search'}
+        </button>
+      </div>
+      <div
+        ref={mapContainer}
+        className="h-[320px] w-full overflow-hidden rounded border border-gray-200"
+      />
+      {searchStatus && <p className="mt-2 text-xs text-gray-500">{searchStatus}</p>}
+    </div>
+  );
+};
+
 const statusBadgeClass = (status: string) => {
   switch (status) {
     case 'queued':
@@ -90,6 +463,19 @@ const statusBadgeClass = (status: string) => {
       return 'bg-gray-600';
   }
 };
+
+const zoneSeedJobStateOptions = [
+  'queued',
+  'in_progress',
+  'awaiting_approval',
+  'approved',
+  'applying',
+  'applied',
+  'failed',
+] as const;
+
+const canDeleteZoneSeedJob = (job: ZoneSeedJob) =>
+  job.status !== 'in_progress' && job.status !== 'applying';
 
 const formatDate = (value?: string) => {
   if (!value) return 'n/a';
@@ -145,6 +531,7 @@ export const ZoneSeedJobs = () => {
   const { zones, refreshZones } = useZoneContext();
   const [draftZoneId, setDraftZoneId] = useState<string>('');
   const [jobFilterZoneId, setJobFilterZoneId] = useState<string>('');
+  const [jobFilterStatuses, setJobFilterStatuses] = useState<string[]>([]);
   const [jobs, setJobs] = useState<ZoneSeedJob[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
   const [creatingDraft, setCreatingDraft] = useState(false);
@@ -152,6 +539,7 @@ export const ZoneSeedJobs = () => {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [bulkDeletingJobs, setBulkDeletingJobs] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [placeCount, setPlaceCount] = useState('0');
@@ -166,8 +554,8 @@ export const ZoneSeedJobs = () => {
   const [shopkeeperItemTags, setShopkeeperItemTags] = useState<string[]>([]);
   const [shopkeeperTagQuery, setShopkeeperTagQuery] = useState('');
   const [bulkZoneQuery, setBulkZoneQuery] = useState('');
-  const [bulkZoneCount, setBulkZoneCount] = useState('5');
-  const [bulkSelectAll, setBulkSelectAll] = useState(false);
+  const [bulkSelectedZoneIds, setBulkSelectedZoneIds] = useState<string[]>([]);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
 
   const knownPlaceTags = useMemo(
     () => [
@@ -236,14 +624,6 @@ export const ZoneSeedJobs = () => {
     return sortedZones.filter((zone) => zone.name.toLowerCase().includes(query));
   }, [sortedZones, filterZoneQuery]);
 
-  const bulkRequestedZoneCount = useMemo(() => {
-    const parsed = Number.parseInt(bulkZoneCount, 10);
-    if (Number.isNaN(parsed) || parsed < 0) {
-      return 0;
-    }
-    return parsed;
-  }, [bulkZoneCount]);
-
   const bulkMatchingZones = useMemo(() => {
     const query = bulkZoneQuery.trim().toLowerCase();
     if (!query) {
@@ -253,14 +633,19 @@ export const ZoneSeedJobs = () => {
   }, [sortedZones, bulkZoneQuery]);
 
   const bulkTargetZones = useMemo(() => {
-    if (bulkSelectAll) {
-      return bulkMatchingZones;
-    }
-    if (bulkRequestedZoneCount <= 0) {
-      return [];
-    }
-    return bulkMatchingZones.slice(0, bulkRequestedZoneCount);
-  }, [bulkMatchingZones, bulkRequestedZoneCount, bulkSelectAll]);
+    const selectedZoneIds = new Set(bulkSelectedZoneIds);
+    return sortedZones.filter((zone) => selectedZoneIds.has(zone.id));
+  }, [sortedZones, bulkSelectedZoneIds]);
+
+  const bulkMatchingZoneIds = useMemo(
+    () => new Set(bulkMatchingZones.map((zone) => zone.id)),
+    [bulkMatchingZones]
+  );
+
+  const bulkSelectedZoneIdSet = useMemo(
+    () => new Set(bulkSelectedZoneIds),
+    [bulkSelectedZoneIds]
+  );
 
   useEffect(() => {
     if (sortedZones.length === 0) {
@@ -272,13 +657,20 @@ export const ZoneSeedJobs = () => {
     }
   }, [sortedZones, draftZoneId, refreshZones]);
 
-  const fetchJobs = useCallback(async (zoneId?: string) => {
+  const fetchJobs = useCallback(async (zoneId?: string, statuses: string[] = []) => {
     setLoadingJobs(true);
     setError(null);
     try {
+      const query: Record<string, string | number> = { limit: 25 };
+      if (zoneId) {
+        query.zoneId = zoneId;
+      }
+      if (statuses.length > 0) {
+        query.statuses = statuses.join(',');
+      }
       const response = await apiClient.get<ZoneSeedJob[]>(
         '/sonar/admin/zone-seed-jobs',
-        zoneId ? { zoneId, limit: 25 } : { limit: 25 }
+        query
       );
       setJobs(response);
     } catch (err) {
@@ -290,14 +682,116 @@ export const ZoneSeedJobs = () => {
   }, [apiClient]);
 
   useEffect(() => {
-    fetchJobs(jobFilterZoneId || undefined);
-  }, [fetchJobs, jobFilterZoneId]);
+    fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
+  }, [fetchJobs, jobFilterZoneId, jobFilterStatuses]);
 
   useEffect(() => {
     if (selectedZone?.name) {
       setDraftZoneQuery(selectedZone.name);
     }
   }, [selectedZone]);
+
+  useEffect(() => {
+    const validZoneIds = new Set(sortedZones.map((zone) => zone.id));
+    setBulkSelectedZoneIds((prev) => prev.filter((zoneId) => validZoneIds.has(zoneId)));
+  }, [sortedZones]);
+
+  useEffect(() => {
+    const visibleDeletableJobIds = new Set(
+      jobs.filter((job) => canDeleteZoneSeedJob(job)).map((job) => job.id)
+    );
+    setSelectedJobIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (visibleDeletableJobIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [jobs]);
+
+  const visibleDeletableJobs = useMemo(
+    () => jobs.filter((job) => canDeleteZoneSeedJob(job)),
+    [jobs]
+  );
+
+  const allVisibleDeletableJobsSelected =
+    visibleDeletableJobs.length > 0 &&
+    visibleDeletableJobs.every((job) => selectedJobIds.has(job.id));
+
+  const toggleJobFilterStatus = useCallback((status: string) => {
+    setJobFilterStatuses((prev) =>
+      prev.includes(status)
+        ? prev.filter((existing) => existing !== status)
+        : [...prev, status]
+    );
+  }, []);
+
+  const clearJobSelection = useCallback(() => {
+    setSelectedJobIds(new Set());
+  }, []);
+
+  const handleToggleJobSelection = useCallback((jobId: string) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectVisibleJobs = useCallback(() => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      visibleDeletableJobs.forEach((job) => next.add(job.id));
+      return next;
+    });
+  }, [visibleDeletableJobs]);
+
+  const handleBulkDeleteJobs = useCallback(async () => {
+    if (bulkDeletingJobs || selectedJobIds.size === 0 || deletingId !== null) {
+      return;
+    }
+
+    const selectedIds = Array.from(selectedJobIds);
+    const selectedLabels = jobs
+      .filter((job) => selectedJobIds.has(job.id))
+      .map((job) => `${zoneNameById.get(job.zoneId) || job.zoneId} · ${job.id.slice(0, 8)}`);
+    const preview = selectedLabels.slice(0, 5).join(', ');
+    const moreCount = Math.max(0, selectedLabels.length - 5);
+    const confirmMessage =
+      selectedIds.length === 1
+        ? `Delete 1 selected zone seed job (${preview})? This cannot be undone.`
+        : `Delete ${selectedIds.length} selected zone seed jobs${
+            preview ? ` (${preview}${moreCount > 0 ? ` +${moreCount} more` : ''})` : ''
+          }? This cannot be undone.`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setBulkDeletingJobs(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiClient.post('/sonar/admin/zone-seed-jobs/bulk-delete', { ids: selectedIds });
+      const deletedIds = new Set(selectedIds);
+      setJobs((prev) => prev.filter((job) => !deletedIds.has(job.id)));
+      setSelectedJobIds(new Set());
+      setSuccess(
+        selectedIds.length === 1
+          ? 'Draft job deleted.'
+          : `Deleted ${selectedIds.length} draft jobs.`
+      );
+    } catch (err) {
+      console.error('Failed to bulk delete zone seed jobs', err);
+      setError('Failed to delete selected draft jobs.');
+    } finally {
+      setBulkDeletingJobs(false);
+    }
+  }, [apiClient, bulkDeletingJobs, deletingId, jobs, selectedJobIds, zoneNameById]);
 
   const handleCreateDraft = async () => {
     if (!draftZoneId) {
@@ -337,12 +831,8 @@ export const ZoneSeedJobs = () => {
   };
 
   const handleBulkCreateDrafts = async () => {
-    if (!bulkSelectAll && bulkRequestedZoneCount <= 0) {
-      setError('Bulk zone count must be greater than zero.');
-      return;
-    }
     if (bulkTargetZones.length === 0) {
-      setError('No zones match the current bulk filter.');
+      setError('Select at least one zone for bulk queueing.');
       return;
     }
 
@@ -388,6 +878,27 @@ export const ZoneSeedJobs = () => {
     }
   };
 
+  const handleBulkToggleZone = useCallback((zoneId: string) => {
+    setBulkSelectedZoneIds((prev) => {
+      if (prev.includes(zoneId)) {
+        return prev.filter((existingId) => existingId !== zoneId);
+      }
+      return [...prev, zoneId];
+    });
+  }, []);
+
+  const handleSelectMatchingZones = useCallback(() => {
+    setBulkSelectedZoneIds((prev) => {
+      const next = new Set(prev);
+      bulkMatchingZones.forEach((zone) => next.add(zone.id));
+      return Array.from(next);
+    });
+  }, [bulkMatchingZones]);
+
+  const handleClearBulkSelection = useCallback(() => {
+    setBulkSelectedZoneIds([]);
+  }, []);
+
   const handleApprove = async (job: ZoneSeedJob) => {
     if (approvingId) return;
     setApprovingId(job.id);
@@ -396,7 +907,7 @@ export const ZoneSeedJobs = () => {
     try {
       await apiClient.post(`/sonar/admin/zone-seed-jobs/${job.id}/approve`);
       setSuccess('Draft approved and applying.');
-      await fetchJobs(job.zoneId);
+      await fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
     } catch (err) {
       console.error('Failed to approve draft', err);
       setError('Failed to approve draft.');
@@ -432,7 +943,7 @@ export const ZoneSeedJobs = () => {
     try {
       await apiClient.post(`/sonar/admin/zone-seed-jobs/${job.id}/retry`);
       setSuccess('Draft retry queued.');
-      await fetchJobs(job.zoneId);
+      await fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses);
     } catch (err) {
       console.error('Failed to retry draft job', err);
       setError('Failed to retry draft job.');
@@ -481,7 +992,7 @@ export const ZoneSeedJobs = () => {
         </div>
         <button
           className="px-4 py-2 rounded bg-gray-800 text-white hover:bg-gray-700"
-          onClick={() => fetchJobs(jobFilterZoneId || undefined)}
+          onClick={() => fetchJobs(jobFilterZoneId || undefined, jobFilterStatuses)}
           disabled={loadingJobs}
         >
           {loadingJobs ? 'Refreshing...' : 'Refresh drafts'}
@@ -748,27 +1259,7 @@ export const ZoneSeedJobs = () => {
                   Queue this same seed configuration across many zones at once.
                 </p>
               </div>
-              {!bulkSelectAll && (
-                <div className="w-24">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">
-                    Zones
-                  </label>
-                  <input
-                    className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
-                    value={bulkZoneCount}
-                    onChange={(e) => setBulkZoneCount(e.target.value)}
-                  />
-                </div>
-              )}
             </div>
-            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={bulkSelectAll}
-                onChange={(e) => setBulkSelectAll(e.target.checked)}
-              />
-              Select all matching zones
-            </label>
             <div className="mt-3">
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Zone filter
@@ -780,14 +1271,36 @@ export const ZoneSeedJobs = () => {
                 placeholder="Optional name filter..."
               />
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={handleSelectMatchingZones}
+                disabled={bulkMatchingZones.length === 0}
+              >
+                Select matching
+              </button>
+              <button
+                type="button"
+                className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={handleClearBulkSelection}
+                disabled={bulkTargetZones.length === 0}
+              >
+                Clear selection
+              </button>
+            </div>
+            <BulkZoneSelectionMap
+              zones={sortedZones}
+              matchingZoneIds={bulkMatchingZoneIds}
+              selectedZoneIds={bulkSelectedZoneIdSet}
+              onToggleZone={handleBulkToggleZone}
+            />
             <p className="mt-2 text-xs text-gray-500">
-              Matching zones: {bulkMatchingZones.length}. Targeting {bulkTargetZones.length}
-              {!bulkSelectAll && bulkRequestedZoneCount > 0 ? ` of requested ${bulkRequestedZoneCount}` : ''}
-              {bulkSelectAll ? ' with select all enabled.' : '.'}
+              Matching zones: {bulkMatchingZones.length}. Selected zones: {bulkTargetZones.length}.
             </p>
             {bulkTargetZones.length > 0 && (
               <p className="mt-2 text-xs text-gray-500">
-                Preview: {bulkTargetZones.slice(0, 5).map((zone) => zone.name).join(', ')}
+                Selected: {bulkTargetZones.slice(0, 5).map((zone) => zone.name).join(', ')}
                 {bulkTargetZones.length > 5 ? ` +${bulkTargetZones.length - 5} more` : ''}
               </p>
             )}
@@ -802,38 +1315,39 @@ export const ZoneSeedJobs = () => {
         </div>
 
         <div className="lg:col-span-2 rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Draft jobs</h2>
-            <div className="relative w-full md:w-72">
-              <input
-                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                value={filterZoneQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFilterZoneQuery(value);
-                  setShowFilterZoneSuggestions(true);
-                  if (value.trim() === '') {
-                    setJobFilterZoneId('');
-                  }
-                }}
-                onFocus={() => setShowFilterZoneSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowFilterZoneSuggestions(false), 120)}
-                placeholder="Filter by zone (optional)..."
-              />
-              {showFilterZoneSuggestions && filterZoneSuggestions.length > 0 && (
-                <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
-                  <button
-                    type="button"
-                    onClick={() => {
+          <div className="mb-4 space-y-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Draft jobs</h2>
+              <div className="relative w-full md:w-72">
+                <input
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                  value={filterZoneQuery}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFilterZoneQuery(value);
+                    setShowFilterZoneSuggestions(true);
+                    if (value.trim() === '') {
                       setJobFilterZoneId('');
-                      setFilterZoneQuery('');
-                      setShowFilterZoneSuggestions(false);
-                    }}
-                    className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    All zones
-                  </button>
-                  {filterZoneSuggestions.map((zone) => (
+                    }
+                  }}
+                  onFocus={() => setShowFilterZoneSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowFilterZoneSuggestions(false), 120)}
+                  placeholder="Filter by zone (optional)..."
+                />
+                {showFilterZoneSuggestions && filterZoneSuggestions.length > 0 && (
+                  <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded border border-gray-200 bg-white shadow">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setJobFilterZoneId('');
+                        setFilterZoneQuery('');
+                        setShowFilterZoneSuggestions(false);
+                      }}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      All zones
+                    </button>
+                    {filterZoneSuggestions.map((zone) => (
                       <button
                         type="button"
                         key={zone.id}
@@ -846,25 +1360,110 @@ export const ZoneSeedJobs = () => {
                       >
                         {zone.name}
                       </button>
-                  ))}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                State filters
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setJobFilterStatuses([])}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                    jobFilterStatuses.length === 0
+                      ? 'bg-gray-900 text-white'
+                      : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  All states
+                </button>
+                {zoneSeedJobStateOptions.map((status) => {
+                  const active = jobFilterStatuses.includes(status);
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => toggleJobFilterStatus(status)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        active
+                          ? 'bg-indigo-600 text-white'
+                          : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      {status.replace(/_/g, ' ')}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-gray-200 bg-gray-50 px-3 py-2">
+              <div className="text-sm text-gray-600">
+                {selectedJobIds.size > 0
+                  ? `${selectedJobIds.size} draft job${selectedJobIds.size === 1 ? '' : 's'} selected`
+                  : `${visibleDeletableJobs.length} visible deletable draft job${visibleDeletableJobs.length === 1 ? '' : 's'}`}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  onClick={handleSelectVisibleJobs}
+                  disabled={visibleDeletableJobs.length === 0 || allVisibleDeletableJobsSelected}
+                >
+                  {allVisibleDeletableJobsSelected ? 'All visible selected' : 'Select visible'}
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  onClick={clearJobSelection}
+                  disabled={selectedJobIds.size === 0}
+                >
+                  Clear selection
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  onClick={handleBulkDeleteJobs}
+                  disabled={selectedJobIds.size === 0 || bulkDeletingJobs || deletingId !== null}
+                >
+                  {bulkDeletingJobs ? 'Deleting selected...' : 'Delete selected'}
+                </button>
+              </div>
             </div>
           </div>
           {loadingJobs ? (
             <p className="text-sm text-gray-500">Loading drafts...</p>
           ) : jobs.length === 0 ? (
-            <p className="text-sm text-gray-500">No draft jobs for this zone yet.</p>
+            <p className="text-sm text-gray-500">
+              {jobFilterZoneId || jobFilterStatuses.length > 0
+                ? 'No draft jobs match these filters.'
+                : 'No draft jobs for this zone yet.'}
+            </p>
           ) : (
             <div className="space-y-4">
               {jobs.map((job) => {
                 const zoneName = zoneNameById.get(job.zoneId) || job.zoneId;
+                const canDelete = canDeleteZoneSeedJob(job);
                 return (
                   <div
                     key={job.id}
                     className="rounded-lg border border-gray-200 p-4"
                   >
                   <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedJobIds.has(job.id)}
+                        disabled={!canDelete || bulkDeletingJobs}
+                        onChange={() => handleToggleJobSelection(job.id)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={canDelete ? 'Select draft job' : 'Cannot select a running job'}
+                      />
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900">
                         Job {job.id.slice(0, 8)}
@@ -892,6 +1491,7 @@ export const ZoneSeedJobs = () => {
                         </p>
                       )}
                     </div>
+                    </div>
                     <div className="flex items-center gap-2">
                       <span
                         className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold text-white ${statusBadgeClass(
@@ -913,9 +1513,9 @@ export const ZoneSeedJobs = () => {
                       <button
                         className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                         onClick={() => handleDelete(job)}
-                        disabled={deletingId === job.id || job.status === 'in_progress' || job.status === 'applying'}
+                        disabled={deletingId === job.id || bulkDeletingJobs || !canDelete}
                         title={
-                          job.status === 'in_progress' || job.status === 'applying'
+                          !canDelete
                             ? 'Cannot delete while running'
                             : 'Delete draft job'
                         }

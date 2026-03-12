@@ -119,27 +119,64 @@ func (p *GenerateZoneFlavorProcessor) generateFlavor(ctx context.Context, job *m
 		currentDescription = "none"
 	}
 
-	prompt := fmt.Sprintf(
+	diversityContext := buildZoneNameDiversityContext(ctx, p.dbClient, zone.ID)
+	basePrompt := fmt.Sprintf(
 		zoneFlavorPromptTemplate,
 		zoneName,
 		currentDescription,
 		buildZoneFlavorGeometrySummary(*zone),
-		buildZoneNameDiversityGuidance(ctx, p.dbClient, zone.ID),
+		diversityContext.Guidance,
 	)
-	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
-	if err != nil {
-		return fmt.Errorf("failed to generate zone flavor: %w", err)
+
+	var (
+		name        string
+		description string
+		lastErr     error
+	)
+	attempts := 1
+	if len(diversityContext.ForbiddenLeadingRoots) > 0 {
+		attempts = 3
 	}
 
-	var generated zoneFlavorGenerationResponse
-	if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &generated); err != nil {
-		return fmt.Errorf("failed to parse generated zone flavor payload: %w", err)
+	for attempt := 0; attempt < attempts; attempt++ {
+		attemptPrompt := basePrompt
+		if attempt > 0 && len(diversityContext.ForbiddenLeadingRoots) > 0 {
+			attemptPrompt = fmt.Sprintf(
+				"%s\nAdditional correction:\n- The previous candidate still used a forbidden repeated opening root.\n- Absolutely do not begin the name with any variant of: %s.\n- Pick a different opening word and a fresher cadence.\n",
+				basePrompt,
+				strings.Join(diversityContext.ForbiddenLeadingRoots, ", "),
+			)
+		}
+
+		answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: attemptPrompt})
+		if err != nil {
+			lastErr = fmt.Errorf("failed to generate zone flavor: %w", err)
+			continue
+		}
+
+		var generated zoneFlavorGenerationResponse
+		if err := json.Unmarshal([]byte(extractGeneratedJSONObject(answer.Answer)), &generated); err != nil {
+			lastErr = fmt.Errorf("failed to parse generated zone flavor payload: %w", err)
+			continue
+		}
+
+		name = sanitizeZoneFlavorName(generated.Name, zoneName)
+		description = sanitizeZoneFlavorDescription(generated.Description)
+		if description == "" {
+			lastErr = fmt.Errorf("generated zone flavor was empty")
+			continue
+		}
+		if zoneNameUsesForbiddenLeadingRoot(name, diversityContext.ForbiddenLeadingRoots) {
+			lastErr = fmt.Errorf("generated zone name %q used an overused leading root", name)
+			continue
+		}
+
+		lastErr = nil
+		break
 	}
 
-	name := sanitizeZoneFlavorName(generated.Name, zoneName)
-	description := sanitizeZoneFlavorDescription(generated.Description)
-	if description == "" {
-		return fmt.Errorf("generated zone flavor was empty")
+	if lastErr != nil {
+		return lastErr
 	}
 
 	if err := p.dbClient.Zone().UpdateNameAndDescription(ctx, zone.ID, name, description); err != nil {

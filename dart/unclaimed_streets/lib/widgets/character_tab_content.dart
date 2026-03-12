@@ -10,6 +10,7 @@ import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/user_level_provider.dart';
 import '../services/inventory_service.dart';
+import '../utils/hand_attack_profile.dart';
 
 class CharacterTabContent extends StatefulWidget {
   const CharacterTabContent({
@@ -728,32 +729,19 @@ class _CharacterTabContentState extends State<CharacterTabContent> {
 
   Widget _buildDamageCard(BuildContext context) {
     final theme = Theme.of(context);
+    final handAttackProfile = buildHandAttackProfile(
+      _equippedItems.where((entry) => _handEquipmentSlots.contains(entry.slot)),
+    );
     final handItems = _equippedItems
         .where((entry) => _handEquipmentSlots.contains(entry.slot))
         .map((entry) => entry.inventoryItem)
         .whereType<InventoryItem>()
         .toList();
-    final weaponItems = handItems
-        .where((item) => (item.damageMin ?? 0) > 0 && (item.damageMax ?? 0) > 0)
-        .toList();
-    final hasWeapon = weaponItems.isNotEmpty;
-    final damageMin = hasWeapon
-        ? weaponItems.fold<int>(0, (sum, item) => sum + (item.damageMin ?? 0))
-        : 1;
-    final damageMax = hasWeapon
-        ? weaponItems.fold<int>(0, (sum, item) => sum + (item.damageMax ?? 0))
-        : 2;
-    final swipesPerAttack = hasWeapon
-        ? weaponItems.fold<int>(
-            0,
-            (sum, item) =>
-                sum +
-                ((item.swipesPerAttack ?? 0) > 0 ? item.swipesPerAttack! : 1),
-          )
-        : 1;
-    final attackSource = hasWeapon
-        ? weaponItems.map((item) => item.name).join(' + ')
-        : 'Unarmed';
+    final hasWeapon = handAttackProfile.hasWeapon;
+    final damageMin = hasWeapon ? handAttackProfile.damageMin : 1;
+    final damageMax = hasWeapon ? handAttackProfile.damageMax : 2;
+    final swipesPerAttack = hasWeapon ? handAttackProfile.swipesPerAttack : 1;
+    final attackSource = handAttackProfile.source;
     final spellDamageBonus = handItems.fold<int>(
       0,
       (sum, item) =>

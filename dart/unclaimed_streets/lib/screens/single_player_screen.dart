@@ -81,6 +81,8 @@ const _characterMysteryImageUrl =
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
 const _healingFountainFallbackImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+const _healingFountainDiscoveredImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/healing-fountain-discovered.png';
 const _legacyMysteryImageUrl =
     'https://crew-points-of-interest.s3.amazonaws.com/question-mark.webp';
 const _defeatedMonstersPrefsKeyPrefix = 'single_player_defeated_monsters';
@@ -200,8 +202,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   Future<void> _challengeRefreshSequence = Future<void>.value();
   Set<String> _lastQuestPoiIds = <String>{};
   Set<String> _lastQuestTurnInCharacterIds = <String>{};
-  Map<String, String> _lastTrackedQuestObjectiveSignatures =
-      <String, String>{};
+  Map<String, String> _lastTrackedQuestObjectiveSignatures = <String, String>{};
   bool _hasTrackedQuestObjectiveSnapshot = false;
   int _lastQuestPolygonHash = 0;
   String _lastMapFilterKey = '';
@@ -2630,8 +2631,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final isTutorialMonster = _isTutorialFocusedMonsterEncounterId(
         monster.id,
       );
-      final shouldPulseLikeQuest =
-          isCurrentQuestMonster || isTutorialMonster;
+      final shouldPulseLikeQuest = isCurrentQuestMonster || isTutorialMonster;
       final mystery = _isMonsterMystery(monster);
       String? symbolImageId;
       if (mystery) {
@@ -2674,12 +2674,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               iconImage: symbolImageId,
               iconSize: 0.78,
               iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: shouldPulseLikeQuest
-                  ? '#e1b12c'
-                  : '#000000',
-              iconHaloWidth: shouldPulseLikeQuest
-                  ? 1.15
-                  : 0.75,
+              iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+              iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
               iconAnchor: 'center',
               zIndex: shouldPulseLikeQuest ? 4 : 2,
             ),
@@ -2697,12 +2693,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 geometry: LatLng(monster.latitude, monster.longitude),
                 iconImage: symbolImageId,
                 iconOpacity: _mapMarkerStartingOpacity(1.0),
-                iconHaloColor: shouldPulseLikeQuest
-                    ? '#e1b12c'
-                    : '#000000',
-                iconHaloWidth: shouldPulseLikeQuest
-                    ? 1.15
-                    : 0.75,
+                iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+                iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
                 zIndex: shouldPulseLikeQuest ? 4 : 2,
               ),
             );
@@ -3449,8 +3441,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         questNode: nodeForPoi,
         linkedChallenges: linkedChallenges,
         onClose: () => Navigator.of(context).pop(),
-        onQuestObjectiveTap:
-            objectiveQuest != null && objectiveNode != null
+        onQuestObjectiveTap: objectiveQuest != null && objectiveNode != null
             ? () {
                 Navigator.of(context).pop();
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -4419,6 +4410,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     }
   }
 
+  String _healingFountainImageUrl(HealingFountain fountain) {
+    final thumbnail = fountain.thumbnailUrl.trim();
+    if (!fountain.discovered) {
+      return _healingFountainFallbackImageUrl;
+    }
+    if (thumbnail.isEmpty || thumbnail == _healingFountainFallbackImageUrl) {
+      return _healingFountainDiscoveredImageUrl;
+    }
+    return thumbnail;
+  }
+
   Future<void> _refreshHealingFountainSymbols() async {
     final c = _mapController;
     if (c == null || !_styleLoaded) return;
@@ -4455,9 +4457,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final circleColor = discovered
           ? (fountain.availableNow ? '#2ecc71' : '#7f8c8d')
           : '#3388ff';
-      final imageSource = discovered && fountain.thumbnailUrl.trim().isNotEmpty
-          ? fountain.thumbnailUrl.trim()
-          : _healingFountainFallbackImageUrl;
+      final imageSource = _healingFountainImageUrl(fountain);
       Uint8List? imageBytes;
       try {
         imageBytes = await loadPoiThumbnail(imageSource);
@@ -6064,17 +6064,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 : (reason.isNotEmpty
                                       ? reason
                                       : 'Submission failed');
-                            _setQuestSubmissionOverlay(
-                              success
-                                  ? QuestSubmissionOverlayPhase.success
-                                  : QuestSubmissionOverlayPhase.failure,
-                              message: baseMessage,
-                              score: score,
-                              difficulty: difficulty,
-                              combinedScore: combined,
-                              statTags: statTags,
-                              statValues: statValues,
-                            );
+                            if (mounted) {
+                              _dismissQuestSubmissionOverlay();
+                            }
                             if (success && standaloneChallengeId != null) {
                               unawaited(
                                 _refreshStandaloneChallengeZoneContent(
@@ -6082,14 +6074,28 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                                 ),
                               );
                             }
-                            if (standaloneChallengeId != null &&
-                                mounted &&
-                                parentContext.mounted) {
+                            if (mounted && parentContext.mounted) {
                               parentContext
                                   .read<CompletedTaskProvider>()
                                   .showModal(
                                     'challengeOutcome',
-                                    data: Map<String, dynamic>.from(resp),
+                                    data: {
+                                      ...Map<String, dynamic>.from(resp),
+                                      if (baseMessage.isNotEmpty &&
+                                          (resp['reason']?.toString().trim() ??
+                                                  '')
+                                              .isEmpty)
+                                        'reason': baseMessage,
+                                      if (score != null) 'score': score,
+                                      if (difficulty != null)
+                                        'difficulty': difficulty,
+                                      if (combined != null)
+                                        'combinedScore': combined,
+                                      if (statTags != null)
+                                        'statTags': statTags,
+                                      if (statValues != null)
+                                        'statValues': statValues,
+                                    },
                                   );
                             }
                           },
@@ -7256,14 +7262,17 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       builder: (context) => HealingFountainPanel(
         fountain: fountain,
         onClose: () => Navigator.of(context).pop(),
-        onUnlocked: () async {
+        onUnlocked: (unlockedFountain) async {
           final zoneProvider = context.read<ZoneProvider>();
           if (!mounted) return;
           setState(() {
             _healingFountains = _healingFountains
                 .map(
                   (item) => item.id == fountain.id
-                      ? item.copyWith(discovered: true)
+                      ? item.copyWith(
+                          discovered: true,
+                          thumbnailUrl: unlockedFountain.thumbnailUrl,
+                        )
                       : item,
                 )
                 .toList(growable: false);

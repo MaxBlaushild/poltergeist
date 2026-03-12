@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/monster.dart';
 import '../models/spell.dart';
@@ -13,6 +14,7 @@ import '../providers/character_stats_provider.dart';
 import '../providers/party_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
+import '../utils/hand_attack_profile.dart';
 import 'paper_texture.dart';
 
 enum MonsterBattleOutcome { victory, defeat, escaped }
@@ -154,6 +156,7 @@ class MonsterBattleDialog extends StatefulWidget {
 }
 
 class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
+  static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
   final math.Random _random = math.Random();
   final List<String> _battleLog = <String>[];
 
@@ -173,6 +176,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late final String _playerBackSpriteUrl;
   late final bool _hasTrueBackSprite;
   List<_BattleItemChoice> _items = const [];
+  List<EquippedItem> _equippedHandItems = const [];
+  bool _equipmentLoaded = false;
 
   _BattleMenuView _menuView = _BattleMenuView.root;
   String? _selectedCommandKey;
@@ -206,8 +211,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   int _lastPartyMonsterHealthDeficit = -1;
   int _pendingLocalDamage = 0;
   bool _partySelfResourceSyncInFlight = false;
-  final Map<String, int> _techniqueAvailableOnTurn = <String, int>{};
-  int _selfTurnSequence = 0;
+  final Map<String, int> _techniqueCooldownRemainingById = <String, int>{};
 
   bool _isBattleStatusNotFoundError(Object error) {
     if (error is DioException) {
@@ -269,6 +273,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     _playerStats = statsProvider.stats;
     _spells = statsProvider.spells;
     _techniques = statsProvider.techniques;
+    _syncTechniqueCooldownsFromAbilities();
     _playerMaxHealth = math.max(1, statsProvider.maxHealth);
     _playerMaxMana = math.max(0, statsProvider.maxMana);
     _playerHealth = math.max(0, statsProvider.health);
@@ -340,6 +345,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       if (!mounted) return;
       unawaited(_refreshBattleAbilities());
     });
+    unawaited(_ensureEquipmentLoaded());
     unawaited(_loadItemChoices());
   }
 
@@ -360,6 +366,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     setState(() {
       _spells = statsProvider.spells;
       _techniques = statsProvider.techniques;
+      _syncTechniqueCooldownsFromAbilities();
     });
   }
 
@@ -481,15 +488,26 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   }
 
   void _beginSelfTurn() {
-    _selfTurnSequence += 1;
+    final next = <String, int>{};
+    for (final entry in _techniqueCooldownRemainingById.entries) {
+      final remaining = math.max(0, entry.value - 1);
+      if (remaining > 0) {
+        next[entry.key] = remaining;
+      }
+    }
+    _techniqueCooldownRemainingById
+      ..clear()
+      ..addAll(next);
   }
 
   int _techniqueCooldownRemaining(Spell technique) {
     final id = technique.id.trim();
     if (id.isEmpty) return 0;
-    final availableOnTurn = _techniqueAvailableOnTurn[id];
-    if (availableOnTurn == null) return 0;
-    return math.max(0, availableOnTurn - _selfTurnSequence);
+    final override = _techniqueCooldownRemainingById[id];
+    if (override != null) {
+      return math.max(0, override);
+    }
+    return math.max(0, technique.cooldownTurnsRemaining);
   }
 
   bool _isTechniqueOnCooldown(Spell technique) =>
@@ -498,12 +516,31 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   void _setTechniqueCooldown(Spell technique) {
     final id = technique.id.trim();
     if (id.isEmpty) return;
-    final cooldownTurns = math.max(0, technique.cooldownTurns);
+    final cooldownTurns = math.max(
+      0,
+      technique.cooldownTurnsRemaining > 0
+          ? technique.cooldownTurnsRemaining
+          : technique.cooldownTurns,
+    );
     if (cooldownTurns <= 0) {
-      _techniqueAvailableOnTurn.remove(id);
+      _techniqueCooldownRemainingById.remove(id);
       return;
     }
-    _techniqueAvailableOnTurn[id] = _selfTurnSequence + cooldownTurns + 1;
+    _techniqueCooldownRemainingById[id] = cooldownTurns;
+  }
+
+  void _syncTechniqueCooldownsFromAbilities() {
+    final next = <String, int>{};
+    for (final technique in _techniques) {
+      final id = technique.id.trim();
+      if (id.isEmpty) continue;
+      final remaining = math.max(0, technique.cooldownTurnsRemaining);
+      if (remaining <= 0) continue;
+      next[id] = remaining;
+    }
+    _techniqueCooldownRemainingById
+      ..clear()
+      ..addAll(next);
   }
 
   void _advancePartyTurn() {
@@ -1327,6 +1364,20 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   bool _isPhysicalTechnique(Spell ability) => _isTechnique(ability);
 
   int _playerAttackDamage() {
+    final attackProfile = buildHandAttackProfile(_equippedHandItems);
+    if (attackProfile.hasWeapon) {
+      var totalDamage = 0;
+      for (final contribution in attackProfile.contributions) {
+        for (var i = 0; i < contribution.swipesPerAttack; i++) {
+          totalDamage += _rollDamage(
+            contribution.damageMin,
+            contribution.damageMax,
+          );
+        }
+      }
+      return math.max(1, totalDamage);
+    }
+
     final strength =
         _playerStats['strength'] ?? CharacterStatsProvider.baseStatValue;
     final dexterity =
@@ -1341,6 +1392,20 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       minDamage + math.max<int>(1, (dexterity / 3).floor()) + strengthBonus,
     );
     return _rollDamage(minDamage, maxDamage);
+  }
+
+  Future<void> _ensureEquipmentLoaded() async {
+    if (_equipmentLoaded) return;
+    final inventoryService = context.read<InventoryService>();
+    final equipment = await inventoryService.getEquipment();
+    if (!mounted) return;
+    setState(() {
+      _equippedHandItems = equipment
+          .where((entry) => _handEquipmentSlots.contains(entry.slot))
+          .where((entry) => entry.inventoryItem != null)
+          .toList(growable: false);
+      _equipmentLoaded = true;
+    });
   }
 
   int _monsterAttackDamage(Monster monster) {
@@ -2070,6 +2135,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   Future<void> _attack() async {
     if (!_canAct) return;
+    await _ensureEquipmentLoaded();
+    if (!mounted || !_canAct) return;
     int? targetIndex;
     if (_aliveEnemies.length > 1) {
       targetIndex = await _pickSingleTargetEnemyIndex(actionLabel: 'Attack');
@@ -2089,6 +2156,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
   Future<void> _useAbility(Spell ability) async {
     if (!_canAct) return;
+    final statsProvider = context.read<CharacterStatsProvider>();
+    await _ensureEquipmentLoaded();
+    if (!mounted || !_canAct) return;
     if (_isTechnique(ability) && _isTechniqueOnCooldown(ability)) {
       final remaining = _techniqueCooldownRemaining(ability);
       setState(() {
@@ -2143,6 +2213,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     int? targetIndex;
     int? allyTargetIndex;
     String? allyTargetName;
+    final resolvedBattleMonsterId = () {
+      if (widget.isPartyBattle) {
+        final partyMonsterId = (_partyBattleMonsterId ?? '').trim();
+        if (partyMonsterId.isNotEmpty) return partyMonsterId;
+      }
+      final dialogMonsterId =
+          (widget.battleMonsterId ?? _activeEnemy?.monster.id ?? '').trim();
+      if (dialogMonsterId.isNotEmpty) return dialogMonsterId;
+      return '';
+    }();
     if (damage > 0) {
       if (allEnemiesDamage == 0 && _aliveEnemies.length > 1) {
         targetIndex = await _pickSingleTargetEnemyIndex(
@@ -2175,16 +2255,17 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               allyTargetIndex < _partyAllies.length)
           ? _partyAllies[allyTargetIndex].userId
           : '';
-      if (targetUserId.isNotEmpty && ability.id.trim().isNotEmpty) {
-        final statsProvider = context.read<CharacterStatsProvider>();
+      if (ability.id.trim().isNotEmpty) {
         final error = _isTechnique(ability)
             ? await statsProvider.castTechnique(
                 ability.id,
-                targetUserId: targetUserId,
+                targetUserId: targetUserId.isNotEmpty ? targetUserId : null,
+                targetMonsterId: resolvedBattleMonsterId,
               )
             : await statsProvider.castSpell(
                 ability.id,
-                targetUserId: targetUserId,
+                targetUserId: targetUserId.isNotEmpty ? targetUserId : null,
+                targetMonsterId: resolvedBattleMonsterId,
               );
         if (error != null && error.trim().isNotEmpty) {
           setState(() {
@@ -2195,10 +2276,36 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         }
         _playerHealth = math.max(0, statsProvider.health);
         _playerMana = math.max(0, statsProvider.mana);
+        _spells = statsProvider.spells;
+        _techniques = statsProvider.techniques;
+        _syncTechniqueCooldownsFromAbilities();
         _syncSelfAllyFromLocalResources();
       }
     }
-    if (_isTechnique(ability)) {
+    if (!isSupportAbility && ability.id.trim().isNotEmpty) {
+      final error = _isTechnique(ability)
+          ? await statsProvider.castTechnique(
+              ability.id,
+              targetMonsterId: resolvedBattleMonsterId,
+            )
+          : await statsProvider.castSpell(
+              ability.id,
+              targetMonsterId: resolvedBattleMonsterId,
+            );
+      if (error != null && error.trim().isNotEmpty) {
+        setState(() {
+          _battleLog.add(error.trim());
+          _menuView = _BattleMenuView.root;
+        });
+        return;
+      }
+      _playerHealth = math.max(0, statsProvider.health);
+      _playerMana = math.max(0, statsProvider.mana);
+      _spells = statsProvider.spells;
+      _techniques = statsProvider.techniques;
+      _syncTechniqueCooldownsFromAbilities();
+      _syncSelfAllyFromLocalResources();
+    } else if (_isTechnique(ability)) {
       _setTechniqueCooldown(ability);
     }
     await _resolvePlayerAction(

@@ -158,7 +158,12 @@ class CelebrationModalManager extends StatelessWidget {
           children: rewards,
         );
       case 'treasureChestOpened':
-        final goldAwarded = (data['goldAwarded'] as num?)?.toInt() ?? 0;
+        final rewardExperience =
+            (data['rewardExperience'] as num?)?.toInt() ?? 0;
+        final goldAwarded =
+            (data['rewardGold'] as num?)?.toInt() ??
+            (data['goldAwarded'] as num?)?.toInt() ??
+            0;
         final itemsAwarded =
             (data['itemsAwarded'] as List<dynamic>?)
                 ?.whereType<Map>()
@@ -173,6 +178,7 @@ class CelebrationModalManager extends StatelessWidget {
           const SizedBox(height: 10),
           _buildRewardSection(
             context,
+            experience: rewardExperience,
             gold: goldAwarded,
             items: itemsAwarded,
             emptyMessage: 'No loot this time.',
@@ -694,10 +700,8 @@ class CelebrationModalManager extends StatelessWidget {
         const <String>[];
     final statValues =
         (data['statValues'] as Map?)?.map(
-          (key, value) => MapEntry(
-            key.toString().trim(),
-            (value as num?)?.toInt() ?? 0,
-          ),
+          (key, value) =>
+              MapEntry(key.toString().trim(), (value as num?)?.toInt() ?? 0),
         ) ??
         const <String, int>{};
     final itemsAwarded =

@@ -51,17 +51,18 @@ type characterStatusResponse struct {
 }
 
 type characterSpellResponse struct {
-	ID            uuid.UUID           `json:"id"`
-	Name          string              `json:"name"`
-	Description   string              `json:"description"`
-	IconURL       string              `json:"iconUrl"`
-	AbilityType   string              `json:"abilityType"`
-	AbilityLevel  int                 `json:"abilityLevel"`
-	CooldownTurns int                 `json:"cooldownTurns"`
-	EffectText    string              `json:"effectText"`
-	SchoolOfMagic string              `json:"schoolOfMagic"`
-	ManaCost      int                 `json:"manaCost"`
-	Effects       models.SpellEffects `json:"effects"`
+	ID                     uuid.UUID           `json:"id"`
+	Name                   string              `json:"name"`
+	Description            string              `json:"description"`
+	IconURL                string              `json:"iconUrl"`
+	AbilityType            string              `json:"abilityType"`
+	AbilityLevel           int                 `json:"abilityLevel"`
+	CooldownTurns          int                 `json:"cooldownTurns"`
+	CooldownTurnsRemaining int                 `json:"cooldownTurnsRemaining"`
+	EffectText             string              `json:"effectText"`
+	SchoolOfMagic          string              `json:"schoolOfMagic"`
+	ManaCost               int                 `json:"manaCost"`
+	Effects                models.SpellEffects `json:"effects"`
 }
 
 type characterStatsAllocationRequest struct {
@@ -297,23 +298,25 @@ func characterStatusResponsesFrom(statuses []models.UserStatus) []characterStatu
 
 func characterSpellResponsesFrom(spells []models.UserSpell) []characterSpellResponse {
 	response := make([]characterSpellResponse, 0, len(spells))
+	now := time.Now()
 	for _, userSpell := range spells {
 		spell := userSpell.Spell
 		if spell.ID == uuid.Nil {
 			continue
 		}
 		response = append(response, characterSpellResponse{
-			ID:            spell.ID,
-			Name:          spell.Name,
-			Description:   spell.Description,
-			IconURL:       spell.IconURL,
-			AbilityType:   string(models.NormalizeSpellAbilityType(string(spell.AbilityType))),
-			AbilityLevel:  spell.AbilityLevel,
-			CooldownTurns: spell.CooldownTurns,
-			EffectText:    spell.EffectText,
-			SchoolOfMagic: spell.SchoolOfMagic,
-			ManaCost:      spell.ManaCost,
-			Effects:       spell.Effects,
+			ID:                     spell.ID,
+			Name:                   spell.Name,
+			Description:            spell.Description,
+			IconURL:                spell.IconURL,
+			AbilityType:            string(models.NormalizeSpellAbilityType(string(spell.AbilityType))),
+			AbilityLevel:           spell.AbilityLevel,
+			CooldownTurns:          spell.CooldownTurns,
+			CooldownTurnsRemaining: cooldownTurnsRemaining(userSpell, now),
+			EffectText:             spell.EffectText,
+			SchoolOfMagic:          spell.SchoolOfMagic,
+			ManaCost:               spell.ManaCost,
+			Effects:                spell.Effects,
 		})
 	}
 	return response

@@ -95,6 +95,26 @@ func (h *monsterStatusHandler) UpdateLastTickAt(
 		Error
 }
 
+func (h *monsterStatusHandler) ShiftActiveExpirations(
+	ctx context.Context,
+	battleID uuid.UUID,
+	shift time.Duration,
+) error {
+	seconds := int(shift / time.Second)
+	if seconds == 0 {
+		return nil
+	}
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterStatus{}).
+		Where("battle_id = ? AND started_at <= ? AND expires_at > ?", battleID, now, now).
+		Updates(map[string]interface{}{
+			"expires_at": gorm.Expr("expires_at + (? * interval '1 second')", seconds),
+			"updated_at": now,
+		}).
+		Error
+}
+
 func (h *monsterStatusHandler) DeleteActiveByBattleIDAndNames(
 	ctx context.Context,
 	battleID uuid.UUID,

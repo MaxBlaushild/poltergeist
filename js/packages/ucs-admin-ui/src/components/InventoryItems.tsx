@@ -467,6 +467,7 @@ export const InventoryItems = () => {
     isCaptureType: false,
     sellValue: undefined as number | undefined,
     unlockTier: undefined as number | undefined,
+    unlockLocksStrength: undefined as number | undefined,
     itemLevel: 1,
     equipSlot: '',
     strengthMod: 0,
@@ -584,6 +585,7 @@ export const InventoryItems = () => {
       isCaptureType: false,
       sellValue: undefined,
       unlockTier: undefined,
+      unlockLocksStrength: undefined,
       itemLevel: 1,
       equipSlot: '',
       strengthMod: 0,
@@ -1258,6 +1260,7 @@ export const InventoryItems = () => {
       isCaptureType: item.isCaptureType,
       sellValue: item.sellValue,
       unlockTier: item.unlockTier,
+      unlockLocksStrength: item.unlockLocksStrength,
       itemLevel: item.itemLevel ?? 1,
       equipSlot: item.equipSlot || '',
       strengthMod: item.strengthMod ?? 0,
@@ -2214,6 +2217,36 @@ export const InventoryItems = () => {
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
                 Set the tier level required to unlock this item. Leave empty if no tier requirement.
+              </small>
+            </div>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px' }}>
+                Unlock Locks Strength:
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={
+                  formData.unlockLocksStrength !== undefined
+                    ? formData.unlockLocksStrength
+                    : ''
+                }
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    unlockLocksStrength:
+                      e.target.value === ''
+                        ? undefined
+                        : parseInt(e.target.value, 10),
+                  })
+                }
+                placeholder="Leave empty if this item cannot unlock locks"
+                style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+              />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Items with this effect can unlock chests or doors with lock strength less than or equal to this value.
               </small>
             </div>
 

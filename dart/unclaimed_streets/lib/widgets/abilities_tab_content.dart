@@ -341,6 +341,9 @@ class _AbilityRow extends StatelessWidget {
         ? 'Use Group Support'
         : 'Use Support';
     final cooldownTurns = ability.cooldownTurns < 0 ? 0 : ability.cooldownTurns;
+    final cooldownTurnsRemaining = ability.cooldownTurnsRemaining < 0
+        ? 0
+        : ability.cooldownTurnsRemaining;
 
     return Container(
       width: double.infinity,
@@ -385,7 +388,9 @@ class _AbilityRow extends StatelessWidget {
                 if (ability.schoolOfMagic.trim().isNotEmpty)
                   Text(
                     isTechnique
-                        ? cooldownTurns > 0
+                        ? cooldownTurnsRemaining > 0
+                              ? '${ability.schoolOfMagic} · Technique · $cooldownTurnsRemaining turn${cooldownTurnsRemaining == 1 ? '' : 's'} remaining'
+                              : cooldownTurns > 0
                               ? '${ability.schoolOfMagic} · Technique · Cooldown $cooldownTurns turn${cooldownTurns == 1 ? '' : 's'}'
                               : '${ability.schoolOfMagic} · Technique'
                         : '${ability.schoolOfMagic} · Mana ${ability.manaCost}',
@@ -395,9 +400,9 @@ class _AbilityRow extends StatelessWidget {
                   ),
                 if (isTechnique &&
                     ability.schoolOfMagic.trim().isEmpty &&
-                    cooldownTurns > 0)
+                    cooldownTurnsRemaining > 0)
                   Text(
-                    'Cooldown $cooldownTurns turn${cooldownTurns == 1 ? '' : 's'}',
+                    '$cooldownTurnsRemaining turn${cooldownTurnsRemaining == 1 ? '' : 's'} remaining',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -407,15 +412,6 @@ class _AbilityRow extends StatelessWidget {
                   Text(
                     ability.effectText.trim(),
                     style: theme.textTheme.bodySmall,
-                  ),
-                ],
-                if (!isSupportAbility) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Casting is only available for support abilities here.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
                   ),
                 ],
                 if (isSupportAbility) ...[

@@ -123,6 +123,32 @@ func (h *userCharacterStatsHandler) AdjustResourceDeficits(
 	return result, nil
 }
 
+func (h *userCharacterStatsHandler) RestoreResourcesToFull(
+	ctx context.Context,
+	userID uuid.UUID,
+) (*models.UserCharacterStats, error) {
+	var result *models.UserCharacterStats
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stats, err := h.findOrCreateForUserTx(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		stats.HealthDeficit = 0
+		stats.ManaDeficit = 0
+		stats.UpdatedAt = time.Now()
+		if err := tx.Save(stats).Error; err != nil {
+			return err
+		}
+		result = stats
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (h *userCharacterStatsHandler) DeleteAllForUser(ctx context.Context, userID uuid.UUID) error {
 	return h.db.WithContext(ctx).Where("user_id = ?", userID).Delete(&models.UserCharacterStats{}).Error
 }

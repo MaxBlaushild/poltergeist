@@ -368,6 +368,7 @@ func (s *server) unlockHealingFountain(ctx *gin.Context) {
 			"message":           "healing fountain already discovered",
 			"healingFountainId": fountain.ID,
 			"discovered":        true,
+			"thumbnailUrl":      staticThumbnailURL(healingFountainDiscoveredIconKey),
 		})
 		return
 	}
@@ -402,6 +403,7 @@ func (s *server) unlockHealingFountain(ctx *gin.Context) {
 		"message":           "healing fountain discovered",
 		"healingFountainId": fountain.ID,
 		"discovered":        true,
+		"thumbnailUrl":      staticThumbnailURL(healingFountainDiscoveredIconKey),
 	})
 }
 
