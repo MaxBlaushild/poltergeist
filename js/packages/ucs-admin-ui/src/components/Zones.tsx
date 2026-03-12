@@ -136,8 +136,100 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const markers = useRef<mapboxgl.Marker[]>([]);
+  const searchMarker = useRef<mapboxgl.Marker | null>(null);
   const [isLocating, setIsLocating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [searchCandidates, setSearchCandidates] = useState<
+    Array<{
+      id: string;
+      center: [number, number];
+      placeName: string;
+    }>
+  >([]);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [searchStatus, setSearchStatus] = useState<string | null>(null);
+
+  const focusMapOnLocation = (
+    lngLat: [number, number],
+    zoom: number,
+    markerColor = '#2563EB'
+  ) => {
+    if (!map.current) {
+      return;
+    }
+
+    searchMarker.current?.remove();
+    searchMarker.current = new mapboxgl.Marker({ color: markerColor })
+      .setLngLat(lngLat)
+      .addTo(map.current);
+
+    map.current.flyTo({
+      center: lngLat,
+      zoom: Math.max(map.current.getZoom(), zoom),
+      essential: true,
+    });
+  };
+
+  const handleSearchLocation = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchStatus('Enter a city, neighborhood, address, or landmark.');
+      return;
+    }
+
+    if (!mapboxgl.accessToken) {
+      setSearchStatus('Location search is unavailable because the Mapbox token is missing.');
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchStatus(null);
+    setLocationError(null);
+    setShowSearchSuggestions(false);
+
+    try {
+      const response = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${encodeURIComponent(mapboxgl.accessToken)}&limit=6&types=country,region,postcode,district,place,locality,neighborhood,address,poi`
+      );
+
+      if (!response.ok) {
+        throw new Error('Search request failed.');
+      }
+
+      const data = (await response.json()) as {
+        features?: Array<{
+          id?: string;
+          center?: [number, number];
+          place_name?: string;
+        }>;
+      };
+      const candidates = (data.features ?? [])
+        .filter((feature) => feature.center && feature.center.length >= 2)
+        .map((feature, index) => ({
+          id: feature.id || `${feature.place_name || 'candidate'}-${index}`,
+          center: [feature.center![0], feature.center![1]] as [number, number],
+          placeName: feature.place_name || 'Unknown location',
+        }));
+
+      if (candidates.length === 0) {
+        setSearchCandidates([]);
+        setSearchStatus(`No location match found for "${query}".`);
+        return;
+      }
+
+      setSearchCandidates(candidates);
+      setShowSearchSuggestions(true);
+      setSearchStatus('Select a location below to move the map.');
+    } catch (error) {
+      console.error('Error searching for location:', error);
+      setSearchCandidates([]);
+      setSearchStatus('Unable to search for that location right now.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const cleanupBoundary = () => {
     if (!map.current) {
@@ -171,6 +263,8 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
 
     return () => {
       cleanupBoundary();
+      searchMarker.current?.remove();
+      searchMarker.current = null;
       if (map.current) {
         map.current.remove();
         map.current = null;
@@ -414,11 +508,10 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
                 (pos) => {
                   setIsLocating(false);
                   const { latitude, longitude } = pos.coords;
-                  map.current?.flyTo({
-                    center: [longitude, latitude],
-                    zoom: Math.max(map.current?.getZoom() ?? 12, 16),
-                    essential: true,
-                  });
+                  focusMapOnLocation([longitude, latitude], 16, '#16A34A');
+                  setSearchCandidates([]);
+                  setShowSearchSuggestions(false);
+                  setSearchStatus('Moved map to your current location.');
                 },
                 (err) => {
                   setIsLocating(false);
@@ -440,6 +533,107 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
         </div>
       </div>
       <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '10px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ position: 'relative', flex: '1 1 320px', minWidth: '240px' }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearchQuery(value);
+              setSearchStatus(null);
+              if (value.trim() === '') {
+                setSearchCandidates([]);
+                setShowSearchSuggestions(false);
+              }
+            }}
+            onFocus={() => {
+              if (searchCandidates.length > 0) {
+                setShowSearchSuggestions(true);
+              }
+            }}
+            onBlur={() => {
+              setTimeout(() => setShowSearchSuggestions(false), 120);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void handleSearchLocation();
+              }
+            }}
+            placeholder="Search for a city, neighborhood, address, or landmark"
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+            }}
+          />
+          {showSearchSuggestions && searchCandidates.length > 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                marginTop: '4px',
+                maxHeight: '220px',
+                overflowY: 'auto',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                backgroundColor: '#fff',
+                zIndex: 20,
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.08)',
+              }}
+            >
+              {searchCandidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(candidate.placeName);
+                    setShowSearchSuggestions(false);
+                    focusMapOnLocation(candidate.center, 13);
+                    setSearchStatus(`Moved map to ${candidate.placeName}.`);
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    padding: '8px 10px',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {candidate.placeName}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleSearchLocation()}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '4px',
+            border: '1px solid #ccc',
+            backgroundColor: '#fff',
+            fontWeight: 600,
+          }}
+          disabled={isSearching}
+        >
+          {isSearching ? 'Searching...' : 'Search'}
+        </button>
+      </div>
+      <div
         ref={mapContainer}
         style={{
           width: '100%',
@@ -455,6 +649,9 @@ const ZoneBoundaryEditorMap: React.FC<BoundaryEditorMapProps> = ({
       </div>
       {locationError && (
         <div style={{ marginTop: '8px', color: '#dc2626', fontSize: '12px' }}>{locationError}</div>
+      )}
+      {searchStatus && (
+        <div style={{ marginTop: '8px', color: '#475569', fontSize: '12px' }}>{searchStatus}</div>
       )}
     </div>
   );
@@ -486,14 +683,21 @@ export const Zones = () => {
   const handlersAttachedRef = useRef(false);
   const fitBoundsRef = useRef(false);
 
+  const mostRecentlyCreatedZone = zones.reduce<Zone | null>((latest, zone) => {
+    if (!latest) {
+      return zone;
+    }
+
+    return new Date(zone.createdAt).getTime() > new Date(latest.createdAt).getTime()
+      ? zone
+      : latest;
+  }, null);
+
   const openCreateZoneModal = () => {
-    const currentCenter = mapRef.current?.getCenter();
     setCreateMapCenter(
-      currentCenter
-        ? [currentCenter.lng, currentCenter.lat]
-        : zones[0]
-          ? [zones[0].longitude, zones[0].latitude]
-          : [-87.6298, 41.8781]
+      mostRecentlyCreatedZone
+        ? [mostRecentlyCreatedZone.longitude, mostRecentlyCreatedZone.latitude]
+        : [-87.6298, 41.8781]
     );
     setName('');
     setDescription('');
@@ -827,7 +1031,15 @@ export const Zones = () => {
     .filter((points) => points.length >= 4);
   
   return <div className="m-10">
-    <h1 className='text-2xl font-bold'>Zones</h1>
+    <div className="flex items-center justify-between gap-4">
+      <h1 className='text-2xl font-bold'>Zones</h1>
+      <button
+        className="rounded-md bg-blue-500 px-4 py-2 font-semibold text-white"
+        onClick={openCreateZoneModal}
+      >
+        Create Zone
+      </button>
+    </div>
     <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-800">Import Neighborhood Zones</h2>
       <p className="text-sm text-slate-500">Select a metro area to import neighborhood polygons from OSM.</p>
@@ -985,12 +1197,6 @@ export const Zones = () => {
         
       ))}
     </div>
-    <button
-      className="bg-blue-500 text-white px-4 py-2 rounded-md"
-      onClick={openCreateZoneModal}
-    >
-      Create Zone
-    </button>
     {showCreateZone && (
       <div style={{
         position: 'fixed',

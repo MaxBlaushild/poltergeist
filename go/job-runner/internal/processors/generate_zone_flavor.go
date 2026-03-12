@@ -18,24 +18,31 @@ import (
 )
 
 const zoneFlavorPromptTemplate = `
-You are writing zone flavor text for a fantasy MMORPG-style location-based game.
+You are writing zone naming and flavor text for a fantasy MMORPG-style location-based game.
 
 Zone:
-- name: %s
+- current name: %s
 - current description: %s
 
 Geometry context:
 %s
 
+World naming context:
+%s
+
 Return JSON only:
 {
+  "name": "1-3 words",
   "description": "2-4 vivid sentences, about 55-110 words"
 }
 
 Rules:
+- Generate a zone name that fits the description and sounds like an explorable MMO region, district, ward, harbor, pass, or quarter.
+- The name and description must clearly belong to the same fictional place.
 - Write in the same adventurous, mystical voice as a fantasy MMO map or quest journal.
 - Base the fiction on the shape, scale, and positioning cues implied by the coordinates.
 - Treat the real-world geometry as inspiration for in-world terrain, districts, routes, choke points, shorelines, courtyards, or edges.
+- Avoid repeated fantasy crutches and do not reuse an overrepresented opening word from the world naming context.
 - Do not mention GPS, coordinates, polygons, latitude, longitude, OpenStreetMap, apps, or modern map tooling.
 - Do not mention brands, real businesses, or modern infrastructure by name.
 - Keep it useful as a zone description players might read in the UI.
@@ -43,6 +50,7 @@ Rules:
 `
 
 type zoneFlavorGenerationResponse struct {
+	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
@@ -116,6 +124,7 @@ func (p *GenerateZoneFlavorProcessor) generateFlavor(ctx context.Context, job *m
 		zoneName,
 		currentDescription,
 		buildZoneFlavorGeometrySummary(*zone),
+		buildZoneNameDiversityGuidance(ctx, p.dbClient, zone.ID),
 	)
 	answer, err := p.deepPriestClient.PetitionTheFount(&deep_priest.Question{Question: prompt})
 	if err != nil {
@@ -127,13 +136,14 @@ func (p *GenerateZoneFlavorProcessor) generateFlavor(ctx context.Context, job *m
 		return fmt.Errorf("failed to parse generated zone flavor payload: %w", err)
 	}
 
+	name := sanitizeZoneFlavorName(generated.Name, zoneName)
 	description := sanitizeZoneFlavorDescription(generated.Description)
 	if description == "" {
 		return fmt.Errorf("generated zone flavor was empty")
 	}
 
-	if err := p.dbClient.Zone().UpdateNameAndDescription(ctx, zone.ID, zone.Name, description); err != nil {
-		return fmt.Errorf("failed to update zone description: %w", err)
+	if err := p.dbClient.Zone().UpdateNameAndDescription(ctx, zone.ID, name, description); err != nil {
+		return fmt.Errorf("failed to update zone name and description: %w", err)
 	}
 
 	job.Status = models.ZoneFlavorGenerationStatusCompleted
@@ -215,6 +225,15 @@ func sanitizeZoneFlavorDescription(raw string) string {
 	text := strings.TrimSpace(raw)
 	if text == "" {
 		return ""
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	return text
+}
+
+func sanitizeZoneFlavorName(raw string, fallback string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return fallback
 	}
 	text = strings.Join(strings.Fields(text), " ")
 	return text

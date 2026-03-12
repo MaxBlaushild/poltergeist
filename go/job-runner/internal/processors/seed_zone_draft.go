@@ -250,8 +250,12 @@ Existing description (if any): %s
 Top points of interest in this neighborhood:
 %s
 
+World naming context:
+%s
+
 Create a fantasy district name and a vivid 1-2 paragraph description that captures the unique flavor of the neighborhood.
 Keep the tone whimsical yet grounded in the POI list. Do not mention real-world brand names directly.
+Do not start the new name with an overused opening word from the world naming context, and avoid repetitive adjective-led naming patterns.
 
 Respond ONLY as JSON:
 {
@@ -413,6 +417,7 @@ func (p *SeedZoneDraftProcessor) generateZoneBranding(ctx context.Context, zone 
 		zone.Name,
 		truncate(zone.Description, 300),
 		formatPlacesForPrompt(places, 8),
+		buildZoneNameDiversityGuidance(ctx, p.dbClient, zone.ID),
 	)
 
 	answer, err := p.deepPriest.PetitionTheFount(&deep_priest.Question{Question: prompt})

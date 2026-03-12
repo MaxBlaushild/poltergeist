@@ -555,6 +555,14 @@ export const Zone = () => {
       <h1 className="text-3xl font-bold mb-6 text-gray-800">{zone?.name}</h1>
       <p className="text-lg text-gray-600 mb-3">Latitude: {zone?.latitude}</p>
       <p className="text-lg text-gray-600 mb-3">Longitude: {zone?.longitude}</p>
+      <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+          Description
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-base text-slate-700">
+          {zone.description?.trim() || 'No description yet.'}
+        </p>
+      </div>
 
       <div className="mb-6 space-x-2">
         <button
@@ -615,7 +623,7 @@ export const Zone = () => {
               )}
               {isZoneFlavorPendingStatus(latestZoneFlavorJob.status) && (
                 <p className="mt-2 text-emerald-700">
-                  The worker is generating in-world flavor from this zone’s boundary coordinates.
+                  The worker is generating a matched zone name and in-world flavor from this zone’s boundary coordinates.
                 </p>
               )}
             </>
