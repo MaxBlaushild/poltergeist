@@ -9,6 +9,8 @@ class Spell {
   final int abilityLevel;
   final int cooldownTurns;
   final int cooldownTurnsRemaining;
+  final int cooldownSecondsRemaining;
+  final DateTime? cooldownExpiresAt;
   final String effectText;
   final String schoolOfMagic;
   final int manaCost;
@@ -23,6 +25,8 @@ class Spell {
     this.abilityLevel = 1,
     this.cooldownTurns = 0,
     this.cooldownTurnsRemaining = 0,
+    this.cooldownSecondsRemaining = 0,
+    this.cooldownExpiresAt,
     this.effectText = '',
     this.schoolOfMagic = '',
     this.manaCost = 0,
@@ -40,6 +44,9 @@ class Spell {
       cooldownTurns: (json['cooldownTurns'] as num?)?.toInt() ?? 0,
       cooldownTurnsRemaining:
           (json['cooldownTurnsRemaining'] as num?)?.toInt() ?? 0,
+      cooldownSecondsRemaining:
+          (json['cooldownSecondsRemaining'] as num?)?.toInt() ?? 0,
+      cooldownExpiresAt: _parseDateTime(json['cooldownExpiresAt']),
       effectText: json['effectText']?.toString() ?? '',
       schoolOfMagic: json['schoolOfMagic']?.toString() ?? '',
       manaCost: (json['manaCost'] as num?)?.toInt() ?? 0,
@@ -62,11 +69,20 @@ class Spell {
     'abilityLevel': abilityLevel,
     'cooldownTurns': cooldownTurns,
     'cooldownTurnsRemaining': cooldownTurnsRemaining,
+    'cooldownSecondsRemaining': cooldownSecondsRemaining,
+    'cooldownExpiresAt': cooldownExpiresAt?.toIso8601String(),
     'effectText': effectText,
     'schoolOfMagic': schoolOfMagic,
     'manaCost': manaCost,
     'effects': effects.map((effect) => effect.toJson()).toList(),
   };
+
+  static DateTime? _parseDateTime(dynamic raw) {
+    if (raw is String && raw.trim().isNotEmpty) {
+      return DateTime.tryParse(raw.trim());
+    }
+    return null;
+  }
 }
 
 class SpellEffect {

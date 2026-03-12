@@ -7,7 +7,10 @@ class QuestLogService {
   QuestLogService(this._api);
 
   /// GET /sonar/questlog?zoneId=...&tags=name1,name2
-  Future<QuestLog> getQuestLog({String? zoneId, List<String> tags = const []}) async {
+  Future<QuestLog> getQuestLog({
+    String? zoneId,
+    List<String> tags = const [],
+  }) async {
     final params = <String, dynamic>{};
     if (zoneId != null && zoneId.isNotEmpty) {
       params['zoneId'] = zoneId;
@@ -16,7 +19,9 @@ class QuestLogService {
       params['tags'] = tags.join(',');
     }
     final raw = await _api.get<dynamic>('/sonar/questlog', params: params);
-    final map = raw is Map ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>) : <String, dynamic>{};
+    final map = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
     return QuestLog.fromJson(map);
   }
 
@@ -43,9 +48,16 @@ class QuestLogService {
   Future<Map<String, dynamic>> turnInQuest(String questId) async {
     final raw = await _api.post<dynamic>('/sonar/quests/turnIn/$questId');
     final map = raw is Map
-        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     return map;
+  }
+
+  Future<void> shareQuest(String questId, String targetUserId) async {
+    await _api.post<dynamic>(
+      '/sonar/quests/$questId/share',
+      data: {'targetUserId': targetUserId},
+    );
   }
 
   /// POST /sonar/questNodes/:id/submit
@@ -63,12 +75,14 @@ class QuestLogService {
         if (questNodeChallengeId != null && questNodeChallengeId.isNotEmpty)
           'questNodeChallengeId': questNodeChallengeId,
         if (textSubmission != null) 'textSubmission': textSubmission,
-        if (imageSubmissionUrl != null) 'imageSubmissionUrl': imageSubmissionUrl,
-        if (videoSubmissionUrl != null) 'videoSubmissionUrl': videoSubmissionUrl,
+        if (imageSubmissionUrl != null)
+          'imageSubmissionUrl': imageSubmissionUrl,
+        if (videoSubmissionUrl != null)
+          'videoSubmissionUrl': videoSubmissionUrl,
       },
     );
     final map = raw is Map
-        ? Map<String, dynamic>.from(raw as Map<dynamic, dynamic>)
+        ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     return map;
   }

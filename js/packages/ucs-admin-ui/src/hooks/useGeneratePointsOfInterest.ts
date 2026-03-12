@@ -53,7 +53,9 @@ export const useGeneratePointsOfInterest = (zoneId: string) => {
   const generateQuest = async (zoneId: string, questArchTypeID: string) => {
     try {
       setLoading(true);
-      await apiClient.post(`/sonar/quests/${zoneId}/${questArchTypeID}/generate`);
+      await apiClient.post(
+        `/sonar/zones/${zoneId}/quests/${questArchTypeID}/generate`,
+      );
       setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err : new Error('Failed to generate quest'));

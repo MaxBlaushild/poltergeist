@@ -119,9 +119,17 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 		return
 	}
 
+	equippedCopiesOfOwned := 0
+	requestedSlotAlreadyUsesOwned := false
 	var offHandOwnedID *uuid.UUID
 	var dominantEquippedItem *models.InventoryItem
 	for _, equipped := range equippedSlots {
+		if equipped.OwnedInventoryItemID == owned.ID {
+			equippedCopiesOfOwned++
+			if equipped.Slot == requestedSlot {
+				requestedSlotAlreadyUsesOwned = true
+			}
+		}
 		if equipped.Slot != string(models.EquipmentSlotOffHand) && equipped.Slot != string(models.EquipmentSlotDominantHand) {
 			continue
 		}
@@ -142,6 +150,10 @@ func (s *server) equipInventoryItem(ctx *gin.Context) {
 			continue
 		}
 		dominantEquippedItem = equippedItem
+	}
+	if !requestedSlotAlreadyUsesOwned && equippedCopiesOfOwned >= owned.Quantity {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "all copies of this item are already equipped"})
+		return
 	}
 
 	if requestedSlot == string(models.EquipmentSlotOffHand) && dominantEquippedItem != nil && isTwoHandedDominantItem(dominantEquippedItem) {

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
@@ -56,13 +57,12 @@ class QuestLogProvider with ChangeNotifier {
   List<String> get trackedPointOfInterestIds => _trackedPointOfInterestIds;
   List<PointOfInterest> get pointsOfInterest => _pointsOfInterest;
   List<String> get currentNodePoiIds => _currentNodePoiIds;
-  List<List<QuestNodePolygonPoint>> get currentNodePolygons => _currentNodePolygons;
+  List<List<QuestNodePolygonPoint>> get currentNodePolygons =>
+      _currentNodePolygons;
   bool get loading => _loading;
 
   bool isRootNode(PointOfInterest poi) {
-    return _quests.any(
-      (q) => q.currentNode?.pointOfInterest?.id == poi.id,
-    );
+    return _quests.any((q) => q.currentNode?.pointOfInterest?.id == poi.id);
   }
 
   void _onZoneOrTagsChanged() {
@@ -194,5 +194,23 @@ class QuestLogProvider with ChangeNotifier {
     );
     await refresh();
     return resp;
+  }
+
+  Future<String?> shareQuest(String questId, String targetUserId) async {
+    try {
+      await _service.shareQuest(questId, targetUserId);
+      return null;
+    } catch (e) {
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map<String, dynamic>) {
+          final message = data['error'];
+          if (message is String && message.trim().isNotEmpty) {
+            return message.trim();
+          }
+        }
+      }
+      return 'Failed to share quest.';
+    }
   }
 }

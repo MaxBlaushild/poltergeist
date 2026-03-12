@@ -94,7 +94,7 @@ class _InventoryPanelState extends State<InventoryPanel>
   List<OwnedInventoryItem> _owned = [];
   List<EquippedItem> _equipment = [];
   Map<String, EquippedItem> _equipmentBySlot = {};
-  Map<String, EquippedItem> _equipmentByOwnedId = {};
+  Map<String, List<EquippedItem>> _equipmentByOwnedId = {};
   bool _loading = true;
   bool _using = false;
   String? _error;
@@ -163,9 +163,12 @@ class _InventoryPanelState extends State<InventoryPanel>
         _owned = filteredOwned;
         _equipment = equipment;
         _equipmentBySlot = {for (final entry in equipment) entry.slot: entry};
-        _equipmentByOwnedId = {
-          for (final entry in equipment) entry.ownedInventoryItemId: entry,
-        };
+        final equipmentByOwnedId = <String, List<EquippedItem>>{};
+        for (final entry in equipment) {
+          equipmentByOwnedId.putIfAbsent(entry.ownedInventoryItemId, () => []);
+          equipmentByOwnedId[entry.ownedInventoryItemId]!.add(entry);
+        }
+        _equipmentByOwnedId = equipmentByOwnedId;
         _pageIndex = nextPageIndex;
         if (_selected != null) {
           final stillOwned = _owned.any((o) => o.id == _selected!.id);
@@ -263,8 +266,8 @@ class _InventoryPanelState extends State<InventoryPanel>
     return slot.trim().isNotEmpty;
   }
 
-  EquippedItem? _equippedForOwned(OwnedInventoryItem owned) {
-    return _equipmentByOwnedId[owned.id];
+  List<EquippedItem> _equippedEntriesForOwned(OwnedInventoryItem owned) {
+    return _equipmentByOwnedId[owned.id] ?? const <EquippedItem>[];
   }
 
   String _slotLabel(String slot) {
@@ -286,6 +289,73 @@ class _InventoryPanelState extends State<InventoryPanel>
     return slot == 'dominant_hand' &&
         category == 'weapon' &&
         handedness == 'one_handed';
+  }
+
+  List<String> _availableEquipSlotsFor(
+    OwnedInventoryItem owned,
+    InventoryItem inv,
+  ) {
+    final equippedEntries = _equippedEntriesForOwned(owned);
+    if (owned.quantity <= equippedEntries.length) {
+      return const <String>[];
+    }
+
+    final occupiedByThisStack = equippedEntries
+        .map((entry) => entry.slot.trim().toLowerCase())
+        .where((slot) => slot.isNotEmpty)
+        .toSet();
+    final slot = inv.equipSlot?.trim().toLowerCase();
+    if (slot == null || slot.isEmpty) {
+      return const <String>[];
+    }
+
+    if (slot == 'ring') {
+      return <String>[
+        if (!occupiedByThisStack.contains('ring_left')) 'ring_left',
+        if (!occupiedByThisStack.contains('ring_right')) 'ring_right',
+      ];
+    }
+
+    if (_isOneHandedWeapon(inv)) {
+      return <String>[
+        if (!occupiedByThisStack.contains('dominant_hand')) 'dominant_hand',
+        if (!occupiedByThisStack.contains('off_hand') &&
+            _twoHandedDominantHandItem() == null)
+          'off_hand',
+      ];
+    }
+
+    return occupiedByThisStack.contains(slot)
+        ? const <String>[]
+        : <String>[slot];
+  }
+
+  String _formatSlotList(Iterable<String> slots) {
+    final labels = slots
+        .map((slot) => _slotLabel(slot))
+        .where((label) => label.trim().isNotEmpty)
+        .toList();
+    if (labels.isEmpty) return '';
+    if (labels.length == 1) return labels.first;
+    if (labels.length == 2) return '${labels.first} and ${labels.last}';
+    return '${labels.sublist(0, labels.length - 1).join(', ')}, and ${labels.last}';
+  }
+
+  String _equipActionLabel(
+    OwnedInventoryItem owned,
+    InventoryItem inv,
+    List<String> availableSlots,
+  ) {
+    if (availableSlots.length == 1) {
+      return 'Equip to ${_slotLabel(availableSlots.first)}';
+    }
+    if (_equippedEntriesForOwned(owned).isNotEmpty) {
+      return 'Equip another';
+    }
+    return _isOneHandedWeapon(inv) ||
+            inv.equipSlot?.trim().toLowerCase() == 'ring'
+        ? 'Choose slot'
+        : 'Equip';
   }
 
   bool _userNeedsPortrait(User? user) {
@@ -540,18 +610,26 @@ class _InventoryPanelState extends State<InventoryPanel>
     );
   }
 
-  Future<void> _equip(OwnedInventoryItem owned, InventoryItem inv) async {
+  Future<void> _equip(
+    OwnedInventoryItem owned,
+    InventoryItem inv, {
+    String? preferredSlot,
+  }) async {
     if (_using) return;
     final slot = inv.equipSlot?.trim();
     if (slot == null || slot.isEmpty) {
       return;
     }
-    String? resolvedSlot = slot;
+    String? resolvedSlot = preferredSlot ?? slot;
     if (slot == 'ring') {
-      resolvedSlot = await _pickRingSlot();
+      if (preferredSlot == null) {
+        resolvedSlot = await _pickRingSlot();
+      }
       if (resolvedSlot == null) return;
     } else if (_isOneHandedWeapon(inv)) {
-      resolvedSlot = await _pickHandSlot(inv);
+      if (preferredSlot == null) {
+        resolvedSlot = await _pickHandSlot(inv);
+      }
       if (resolvedSlot == null) return;
     }
     setState(() {
@@ -1275,7 +1353,7 @@ class _InventoryPanelState extends State<InventoryPanel>
     required bool pulseForMissingProfilePicture,
   }) {
     final theme = Theme.of(context);
-    final equipped = _equippedForOwned(owned);
+    final equippedEntries = _equippedEntriesForOwned(owned);
     final rarityAccent = _rarityAccentColor(inv.rarityTier);
     final shouldPulse = pulseForMissingProfilePicture && _isOutfitItem(inv);
 
@@ -1336,7 +1414,7 @@ class _InventoryPanelState extends State<InventoryPanel>
                 ),
               ),
             ),
-            if (equipped != null)
+            if (equippedEntries.isNotEmpty)
               Positioned(
                 top: 6,
                 left: 6,
@@ -1350,7 +1428,9 @@ class _InventoryPanelState extends State<InventoryPanel>
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'Equipped',
+                    equippedEntries.length > 1
+                        ? 'Equipped x${equippedEntries.length}'
+                        : 'Equipped',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10,
@@ -1430,9 +1510,13 @@ class _InventoryPanelState extends State<InventoryPanel>
     final outfitStatus = _outfitGeneration;
     final outfitPending = isOutfit && (outfitStatus?.isPending ?? false);
     final isEquippable = _isEquippable(inv);
-    final equippedEntry = _equippedForOwned(owned);
-    final equippedSlot = equippedEntry?.slot;
-    final isEquipped = equippedSlot != null;
+    final equippedEntries = _equippedEntriesForOwned(owned);
+    final equippedSlots = equippedEntries.map((entry) => entry.slot).toList();
+    final isEquipped = equippedEntries.isNotEmpty;
+    final availableEquipSlots = isEquippable
+        ? _availableEquipSlotsFor(owned, inv)
+        : const <String>[];
+    final canEquipAnother = availableEquipSlots.isNotEmpty;
     final canUse =
         owned.quantity > 0 &&
         (isOutfit || _isUsableInMenu(inv.id) || _hasConsumableEffects(inv)) &&
@@ -1474,7 +1558,7 @@ class _InventoryPanelState extends State<InventoryPanel>
         _buildMetaChip(
           context,
           icon: Icons.verified,
-          label: 'Equipped ${_slotLabel(equippedSlot)}',
+          label: 'Equipped ${_formatSlotList(equippedSlots)}',
         ),
       if (isOutfit)
         _buildMetaChip(context, icon: Icons.auto_awesome, label: 'Outfit item'),
@@ -1549,31 +1633,53 @@ class _InventoryPanelState extends State<InventoryPanel>
         ],
       );
     } else if (isEquippable) {
+      final equipLabel = _equipActionLabel(owned, inv, availableEquipSlots);
       actionArea = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (isEquipped)
             Text(
-              'Equipped in ${_slotLabel(equippedSlot)}',
+              'Equipped in ${_formatSlotList(equippedSlots)}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
           if (isEquipped) const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _using
-                ? null
-                : isEquipped
-                ? () => _unequip(equippedSlot)
-                : () => _equip(owned, inv),
-            child: Text(
-              _using
-                  ? 'Working…'
-                  : isEquipped
-                  ? 'Unequip'
-                  : 'Equip',
+          if (canEquipAnother)
+            FilledButton(
+              onPressed: _using
+                  ? null
+                  : () => _equip(
+                      owned,
+                      inv,
+                      preferredSlot: availableEquipSlots.length == 1
+                          ? availableEquipSlots.first
+                          : null,
+                    ),
+              child: Text(_using ? 'Working…' : equipLabel),
+            )
+          else if (equippedEntries.length == 1)
+            FilledButton(
+              onPressed: _using
+                  ? null
+                  : () => _unequip(equippedEntries.first.slot),
+              child: Text(_using ? 'Working…' : 'Unequip'),
             ),
-          ),
+          if (equippedEntries.length > 1 ||
+              (isEquipped && canEquipAnother)) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final entry in equippedEntries)
+                  OutlinedButton(
+                    onPressed: _using ? null : () => _unequip(entry.slot),
+                    child: Text('Unequip ${_slotLabel(entry.slot)}'),
+                  ),
+              ],
+            ),
+          ],
         ],
       );
     } else if (canUse) {

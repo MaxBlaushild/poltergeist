@@ -71,79 +71,11 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     return earthRadiusMeters * c;
   }
 
-  String _formatRemaining(Duration remaining) {
-    if (remaining.isNegative) return 'Ready now';
-    final days = remaining.inDays;
-    final hours = remaining.inHours % 24;
-    final minutes = remaining.inMinutes % 60;
-    if (days > 0) {
-      return '${days}d ${hours}h';
-    }
-    if (hours > 0) {
-      return '${hours}h ${minutes}m';
-    }
-    return '${math.max(1, remaining.inMinutes)}m';
-  }
-
-  String _formatRemainingLong(Duration remaining) {
-    if (remaining.isNegative) return 'Ready now';
-    final days = remaining.inDays;
-    final hours = remaining.inHours % 24;
-    final minutes = remaining.inMinutes % 60;
-
-    if (days > 0) {
-      if (hours > 0) {
-        return '$days day${days == 1 ? '' : 's'} $hours hour${hours == 1 ? '' : 's'}';
-      }
-      return '$days day${days == 1 ? '' : 's'}';
-    }
-    if (hours > 0) {
-      if (minutes > 0) {
-        return '$hours hour${hours == 1 ? '' : 's'} $minutes min';
-      }
-      return '$hours hour${hours == 1 ? '' : 's'}';
-    }
-    final clampedMinutes = math.max(1, remaining.inMinutes);
-    return '$clampedMinutes minute${clampedMinutes == 1 ? '' : 's'}';
-  }
-
   double _cooldownProgress(Duration remaining) {
     final totalSeconds = _healingFountainCooldownDuration.inSeconds;
     if (totalSeconds <= 0) return 1;
     final clampedRemaining = remaining.inSeconds.clamp(0, totalSeconds);
     return 1 - (clampedRemaining / totalSeconds);
-  }
-
-  ({String title, String description, IconData icon}) _cooldownFlavor(
-    Duration remaining,
-  ) {
-    final progress = _cooldownProgress(remaining);
-    if (progress < 0.2) {
-      return (
-        title: 'Runes Cooling',
-        description: 'The fountain is still settling after the last blessing.',
-        icon: Icons.ac_unit,
-      );
-    }
-    if (progress < 0.5) {
-      return (
-        title: 'Waters Gathering',
-        description: 'Arcane currents are pooling back into the basin.',
-        icon: Icons.water_drop_outlined,
-      );
-    }
-    if (progress < 0.85) {
-      return (
-        title: 'Mana Rising',
-        description: 'The basin is refilling and the glow is returning.',
-        icon: Icons.bolt_outlined,
-      );
-    }
-    return (
-      title: 'Almost Overflowing',
-      description: 'Only a little longer before the fountain can heal again.',
-      icon: Icons.auto_awesome,
-    );
   }
 
   String _formatReadyAt(BuildContext context, DateTime dateTime) {
@@ -183,116 +115,39 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     DateTime nextAvailableAt,
   ) {
     final theme = Theme.of(context);
-    final flavor = _cooldownFlavor(remaining);
     final progress = _cooldownProgress(remaining);
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          colors: [
-            theme.colorScheme.primaryContainer.withValues(alpha: 0.95),
-            theme.colorScheme.secondaryContainer.withValues(alpha: 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.25),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: theme.colorScheme.primary.withValues(alpha: 0.1),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(flavor.icon, color: theme.colorScheme.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Fountain Recharging',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer.withValues(
-                          alpha: 0.75,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      flavor.title,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           Text(
-            _formatRemaining(remaining),
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              height: 0.95,
+            'Fountain Recharging',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${_formatRemainingLong(remaining)} until the blessing returns.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onPrimaryContainer.withValues(
-                alpha: 0.78,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(flavor.description, style: theme.textTheme.bodyMedium),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: progress,
               minHeight: 10,
-              backgroundColor: theme.colorScheme.surface.withValues(alpha: 0.4),
+              backgroundColor: theme.colorScheme.surface,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _CooldownDetailPill(
-                  icon: Icons.timelapse,
-                  label: 'Recharge',
-                  value: '${(progress * 100).round()}%',
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _CooldownDetailPill(
-                  icon: Icons.event,
-                  label: 'Ready again',
-                  value: _formatReadyAt(context, nextAvailableAt),
-                ),
-              ),
-            ],
+          const SizedBox(height: 10),
+          Text(
+            'Ready again ${_formatReadyAt(context, nextAvailableAt)}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -476,12 +331,9 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
     final remaining = nextAvailableAt?.difference(now);
     final cooldownActive =
         !_fountain.availableNow && remaining != null && !remaining.isNegative;
-    final cooldownRemaining = remaining ?? Duration.zero;
     final buttonDisabled = _loading || !withinRange || cooldownActive;
     final buttonLabel = !withinRange
         ? 'Too far away'
-        : cooldownActive
-        ? 'Available in ${_formatRemaining(cooldownRemaining)}'
         : (_loading ? 'Restoring...' : 'Restore Health & Mana');
 
     final thumbnail = _resolvedThumbnailUrl(_fountain);
@@ -567,11 +419,7 @@ class _HealingFountainPanelState extends State<HealingFountainPanel> {
                     ),
                     if (cooldownActive && nextAvailableAt != null) ...[
                       const SizedBox(height: 14),
-                      _buildCooldownCard(
-                        context,
-                        cooldownRemaining,
-                        nextAvailableAt,
-                      ),
+                      _buildCooldownCard(context, remaining, nextAvailableAt),
                     ],
                     if (_error != null) ...[
                       const SizedBox(height: 12),
@@ -725,60 +573,6 @@ class _InfoChip extends StatelessWidget {
           Icon(icon, size: 14),
           const SizedBox(width: 6),
           Text(label, style: theme.textTheme.labelMedium),
-        ],
-      ),
-    );
-  }
-}
-
-class _CooldownDetailPill extends StatelessWidget {
-  const _CooldownDetailPill({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(icon, size: 16, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );

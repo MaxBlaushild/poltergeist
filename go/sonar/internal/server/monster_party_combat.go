@@ -736,7 +736,16 @@ func (s *server) completeQuestMonsterObjectives(
 	}
 
 	now := time.Now()
+	sharedQuestNodeIDs := map[uuid.UUID]struct{}{}
 	for _, userID := range userIDs {
+		user, err := s.dbClient.User().FindByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if user == nil {
+			continue
+		}
+
 		acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
 		if err != nil {
 			return err
@@ -760,30 +769,24 @@ func (s *server) completeQuestMonsterObjectives(
 				continue
 			}
 
-			progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(ctx, acceptance.ID, currentNode.ID)
+			completedNode, err := s.markQuestNodeCompleteForAcceptance(
+				ctx,
+				&acceptance,
+				currentNode.ID,
+				now,
+			)
 			if err != nil {
 				return err
 			}
-			if progress == nil {
-				progress = &models.QuestNodeProgress{
-					ID:                uuid.New(),
-					CreatedAt:         now,
-					UpdatedAt:         now,
-					QuestAcceptanceID: acceptance.ID,
-					QuestNodeID:       currentNode.ID,
-					CompletedAt:       &now,
-				}
-				if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
-					return err
-				}
+			if !completedNode {
 				continue
 			}
-			if progress.CompletedAt != nil {
+
+			if _, exists := sharedQuestNodeIDs[currentNode.ID]; exists {
 				continue
 			}
-			if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
-				return err
-			}
+			sharedQuestNodeIDs[currentNode.ID] = struct{}{}
+			s.shareQuestNodeCompletionWithEligiblePartyMembers(ctx, user, quest, currentNode)
 		}
 	}
 

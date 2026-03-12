@@ -357,7 +357,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/pointOfInterest/image/refresh", middleware.WithAuthentication(s.authClient, s.livenessClient, s.refreshPointOfInterestImage))
 	r.GET("/sonar/google/places", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlaces))
 	r.GET("/sonar/google/place/:placeID", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getGooglePlace))
-	r.POST("/sonar/quests/:zoneID/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuest))
+	r.POST("/sonar/zones/:id/quests/:questArchTypeID/generate", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateQuest))
 	r.GET("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuests))
 	r.GET("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getQuest))
 	r.POST("/sonar/quests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuest))
@@ -365,7 +365,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/quests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuest))
 	r.POST("/sonar/questNodes", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNode))
 	r.POST("/sonar/questNodes/:id/challenges", middleware.WithAuthentication(s.authClient, s.livenessClient, s.createQuestNodeChallenge))
-	r.PATCH("/sonar/questNodes/:nodeId/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
+	r.PATCH("/sonar/questNodes/:id/challenges/:challengeId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.updateQuestNodeChallenge))
 	r.POST("/sonar/questNodeChallenges/:challengeId/shuffle", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shuffleQuestNodeChallenge))
 	r.DELETE("/sonar/questNodes/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteQuestNode))
 	r.POST("/sonar/tags/move", middleware.WithAuthentication(s.authClient, s.livenessClient, s.moveTagToTagGroup))
@@ -404,6 +404,7 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.DELETE("/sonar/trackedQuests/:id", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteTrackedPointOfInterestGroup))
 	r.DELETE("/sonar/trackedQuests", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteAllTrackedPointOfInterestGroups))
 	r.POST("/sonar/quests/accept", middleware.WithAuthentication(s.authClient, s.livenessClient, s.acceptQuest))
+	r.POST("/sonar/quests/:id/share", middleware.WithAuthentication(s.authClient, s.livenessClient, s.shareQuest))
 	r.POST("/sonar/quests/turnIn/:questId", middleware.WithAuthentication(s.authClient, s.livenessClient, s.turnInQuest))
 	r.POST("/sonar/zones/:id/boundary", middleware.WithAuthentication(s.authClient, s.livenessClient, s.upsertZoneBoundary))
 	r.PATCH("/sonar/zones/:id/edit", middleware.WithAuthentication(s.authClient, s.livenessClient, s.editZone))
@@ -2161,6 +2162,109 @@ func (s *server) acceptQuest(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{"message": "quest accepted successfully"})
 }
 
+func (s *server) shareQuest(ctx *gin.Context) {
+	user, err := s.getAuthenticatedUser(ctx)
+	if err != nil || user == nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	questID, err := uuid.Parse(strings.TrimSpace(ctx.Param("id")))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid quest ID"})
+		return
+	}
+
+	var requestBody struct {
+		TargetUserID uuid.UUID `json:"targetUserId" binding:"required"`
+	}
+	if err := ctx.Bind(&requestBody); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if requestBody.TargetUserID == user.ID {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot share a quest with yourself"})
+		return
+	}
+
+	quest, err := s.dbClient.Quest().FindByID(ctx, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if quest == nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "quest not found"})
+		return
+	}
+
+	sharerAcceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, user.ID, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if sharerAcceptance == nil {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "you can only share quests you have accepted"})
+		return
+	}
+	if sharerAcceptance.TurnedInAt != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "cannot share a quest that has already been turned in"})
+		return
+	}
+
+	partyMembers, err := s.dbClient.User().FindPartyMembers(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	targetIsPartyMember := false
+	for _, member := range partyMembers {
+		if member.ID == requestBody.TargetUserID {
+			targetIsPartyMember = true
+			break
+		}
+	}
+	if !targetIsPartyMember {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "target user must be in your party"})
+		return
+	}
+
+	targetAcceptance, err := s.dbClient.QuestAcceptanceV2().FindByUserAndQuest(ctx, requestBody.TargetUserID, questID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if targetAcceptance != nil {
+		if targetAcceptance.TurnedInAt != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "that party member has already completed this quest"})
+			return
+		}
+		if err := s.dbClient.TrackedQuest().Create(ctx, questID, requestBody.TargetUserID); err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "quest already shared"})
+		return
+	}
+
+	questAcceptance := &models.QuestAcceptanceV2{
+		ID:         uuid.New(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		UserID:     requestBody.TargetUserID,
+		QuestID:    questID,
+		AcceptedAt: time.Now(),
+	}
+	if err := s.dbClient.QuestAcceptanceV2().Create(ctx, questAcceptance); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.dbClient.TrackedQuest().Create(ctx, questID, requestBody.TargetUserID); err != nil {
+		log.Printf("Error tracking shared quest after acceptance: %v", err)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "quest shared successfully"})
+}
+
 func (s *server) turnInQuest(ctx *gin.Context) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil || user == nil {
@@ -3848,7 +3952,7 @@ func (s *server) createQuestNodeChallenge(ctx *gin.Context) {
 }
 
 func (s *server) updateQuestNodeChallenge(ctx *gin.Context) {
-	nodeIDParam := ctx.Param("nodeId")
+	nodeIDParam := ctx.Param("id")
 	challengeIDParam := ctx.Param("challengeId")
 
 	nodeID, err := uuid.Parse(nodeIDParam)
@@ -4157,7 +4261,7 @@ func (s *server) createTagGroup(ctx *gin.Context) {
 }
 
 func (s *server) generateQuest(ctx *gin.Context) {
-	id := ctx.Param("zoneID")
+	id := ctx.Param("id")
 	questArchTypeID := ctx.Param("questArchTypeID")
 	zoneID, err := uuid.Parse(id)
 	if err != nil {
@@ -10530,32 +10634,18 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 		return
 	}
 
-	progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(ctx, acceptance.ID, node.ID)
+	shouldAward, err := s.markQuestNodeCompleteForAcceptance(
+		ctx,
+		acceptance,
+		node.ID,
+		time.Now(),
+	)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	shouldAward := progress == nil || progress.CompletedAt == nil
-	if progress == nil {
-		now := time.Now()
-		progress = &models.QuestNodeProgress{
-			ID:                uuid.New(),
-			CreatedAt:         now,
-			UpdatedAt:         now,
-			QuestAcceptanceID: acceptance.ID,
-			QuestNodeID:       node.ID,
-			CompletedAt:       &now,
-		}
-		if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-	} else if progress.CompletedAt == nil {
-		if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
+	if shouldAward {
+		s.shareQuestNodeCompletionWithEligiblePartyMembers(ctx, user, quest, node)
 	}
 
 	completed, err := s.questlogClient.AreQuestObjectivesComplete(ctx, user.ID, quest.ID)
@@ -16199,6 +16289,47 @@ func (s *server) performScenario(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+	}
+
+	questTargets, err := s.findMatchingCurrentQuestNodeTargets(
+		ctx,
+		user.ID,
+		func(node *models.QuestNode) bool {
+			return node != nil &&
+				node.ScenarioID != nil &&
+				*node.ScenarioID == scenario.ID
+		},
+	)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	sharedQuestNodeIDs := map[uuid.UUID]struct{}{}
+	completedAt := time.Now()
+	for _, target := range questTargets {
+		completedNode, err := s.markQuestNodeCompleteForAcceptance(
+			ctx,
+			target.Acceptance,
+			target.Node.ID,
+			completedAt,
+		)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if !completedNode {
+			continue
+		}
+		if _, exists := sharedQuestNodeIDs[target.Node.ID]; exists {
+			continue
+		}
+		sharedQuestNodeIDs[target.Node.ID] = struct{}{}
+		s.shareQuestNodeCompletionWithEligiblePartyMembers(
+			ctx,
+			user,
+			target.Quest,
+			target.Node,
+		)
 	}
 
 	response := scenarioPerformResponse{

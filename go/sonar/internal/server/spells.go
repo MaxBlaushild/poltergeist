@@ -2447,14 +2447,16 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	isTechnique := abilityType == models.SpellAbilityTypeTechnique
 	now := time.Now()
 	cooldownRemaining := cooldownTurnsRemaining(*userSpellToCast, now)
+	cooldownSeconds := cooldownSecondsRemaining(*userSpellToCast, now)
 	if cooldownRemaining > 0 {
 		label := "spell"
 		if isTechnique {
 			label = "technique"
 		}
 		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error":                  fmt.Sprintf("%s is on cooldown", label),
-			"cooldownTurnsRemaining": cooldownRemaining,
+			"error":                    fmt.Sprintf("%s is on cooldown", label),
+			"cooldownTurnsRemaining":   cooldownRemaining,
+			"cooldownSecondsRemaining": cooldownSeconds,
 		})
 		return
 	}
@@ -2852,10 +2854,11 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 
 	response := gin.H{
-		"spellId":                spellToCast.ID,
-		"spellName":              spellToCast.Name,
-		"abilityType":            string(abilityType),
-		"cooldownTurnsRemaining": spellToCast.CooldownTurns,
+		"spellId":                  spellToCast.ID,
+		"spellName":                spellToCast.Name,
+		"abilityType":              string(abilityType),
+		"cooldownTurnsRemaining":   spellToCast.CooldownTurns,
+		"cooldownSecondsRemaining": spellToCast.CooldownTurns * int(combatTurnDuration/time.Second),
 		"manaSpent": func() int {
 			if isTechnique {
 				return 0

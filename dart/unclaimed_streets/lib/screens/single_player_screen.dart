@@ -1824,6 +1824,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         if (scenario.zoneId != zoneId) continue;
         scenarioById[scenario.id] = scenario;
       }
+      final activeTutorialScenarioId =
+          _tutorialStatus != null && _tutorialStatus!.hasActiveScenario
+          ? _tutorialStatus!.scenarioId?.trim() ?? ''
+          : '';
+      if (activeTutorialScenarioId.isNotEmpty &&
+          !scenarioById.containsKey(activeTutorialScenarioId)) {
+        Scenario? tutorialScenario;
+        for (final scenario in _scenarios) {
+          if (scenario.id == activeTutorialScenarioId) {
+            tutorialScenario = scenario;
+            break;
+          }
+        }
+        tutorialScenario ??= await svc.getScenarioById(
+          activeTutorialScenarioId,
+        );
+        if (tutorialScenario != null && tutorialScenario.zoneId == zoneId) {
+          scenarioById[tutorialScenario.id] = tutorialScenario;
+        }
+      }
       for (final monsterId in currentQuestMonsterIds) {
         if (monsterById.containsKey(monsterId)) continue;
         if (monsterByMemberID.containsKey(monsterId)) {
@@ -1858,6 +1878,26 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           monsters: [legacyMonster],
         );
       }
+      final activeTutorialMonsterEncounterId =
+          _tutorialStatus != null && _tutorialStatus!.hasActiveMonsterEncounter
+          ? _tutorialStatus!.monsterEncounterId?.trim() ?? ''
+          : '';
+      if (activeTutorialMonsterEncounterId.isNotEmpty &&
+          !monsterById.containsKey(activeTutorialMonsterEncounterId)) {
+        MonsterEncounter? tutorialEncounter;
+        for (final encounter in _monsters) {
+          if (encounter.id == activeTutorialMonsterEncounterId) {
+            tutorialEncounter = encounter;
+            break;
+          }
+        }
+        tutorialEncounter ??= await svc.getMonsterEncounterById(
+          activeTutorialMonsterEncounterId,
+        );
+        if (tutorialEncounter != null && tutorialEncounter.zoneId == zoneId) {
+          monsterById[tutorialEncounter.id] = tutorialEncounter;
+        }
+      }
       for (final challengeId in currentQuestChallengeIds) {
         if (challengeById.containsKey(challengeId)) continue;
         final challenge = await svc.getChallengeById(challengeId);
@@ -1870,6 +1910,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           .where(
             (scenario) =>
                 (currentQuestScenarioIds.contains(scenario.id)) ||
+                scenario.id == activeTutorialScenarioId ||
                 (!scenario.attemptedByUser &&
                     !_resolvedScenarioIds.contains(scenario.id) &&
                     !_resolvedScenarioSignatures.contains(
@@ -1881,6 +1922,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           .where(
             (monster) =>
                 currentQuestMonsterIds.contains(monster.id) ||
+                monster.id == activeTutorialMonsterEncounterId ||
                 !_defeatedMonsterIds.contains(monster.id),
           )
           .toList();

@@ -25,22 +25,18 @@ func (h *userEquipmentHandler) FindByUserID(ctx context.Context, userID uuid.UUI
 func (h *userEquipmentHandler) Equip(ctx context.Context, userID uuid.UUID, slot string, ownedInventoryItemID uuid.UUID) (*models.UserEquipment, error) {
 	var result *models.UserEquipment
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ? AND owned_inventory_item_id = ?", userID, ownedInventoryItemID).
-			Delete(&models.UserEquipment{}).Error; err != nil {
-			return err
-		}
 		if err := tx.Where("user_id = ? AND slot = ?", userID, slot).
 			Delete(&models.UserEquipment{}).Error; err != nil {
 			return err
 		}
 		now := time.Now()
 		equipment := &models.UserEquipment{
-			ID:                  uuid.New(),
-			UserID:              userID,
-			Slot:                slot,
+			ID:                   uuid.New(),
+			UserID:               userID,
+			Slot:                 slot,
 			OwnedInventoryItemID: ownedInventoryItemID,
-			CreatedAt:           now,
-			UpdatedAt:           now,
+			CreatedAt:            now,
+			UpdatedAt:            now,
 		}
 		if err := tx.Create(equipment).Error; err != nil {
 			return err

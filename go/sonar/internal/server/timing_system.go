@@ -21,6 +21,17 @@ func cooldownTurnsRemaining(userSpell models.UserSpell, now time.Time) int {
 	return int((remaining + combatTurnDuration - time.Nanosecond) / combatTurnDuration)
 }
 
+func cooldownSecondsRemaining(userSpell models.UserSpell, now time.Time) int {
+	if userSpell.CooldownExpiresAt == nil {
+		return 0
+	}
+	remaining := userSpell.CooldownExpiresAt.Sub(now)
+	if remaining <= 0 {
+		return 0
+	}
+	return int((remaining + time.Second - time.Nanosecond) / time.Second)
+}
+
 func cooldownExpiresAtFromTurns(turns int, now time.Time) *time.Time {
 	if turns <= 0 {
 		return nil

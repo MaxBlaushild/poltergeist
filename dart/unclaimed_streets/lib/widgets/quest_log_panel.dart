@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
 import '../models/quest_node.dart';
+import '../models/user.dart';
+import '../providers/auth_provider.dart';
 import '../providers/discoveries_provider.dart';
+import '../providers/party_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
 import 'quest_objective_display.dart';
@@ -35,6 +38,7 @@ class QuestLogPanel extends StatefulWidget {
 class _QuestLogPanelState extends State<QuestLogPanel> {
   Quest? _selectedQuest;
   final Map<String, bool> _expanded = {};
+  String? _sharingQuestId;
 
   @override
   void initState() {
@@ -59,6 +63,110 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   void _focusTurnInQuest(Quest quest) {
     widget.onClose();
     widget.onFocusTurnInQuest(quest);
+  }
+
+  String _displayName(User user) {
+    if (user.username.trim().isNotEmpty) return '@${user.username.trim()}';
+    if (user.name.trim().isNotEmpty) return user.name.trim();
+    if (user.phoneNumber.trim().isNotEmpty) return user.phoneNumber.trim();
+    return user.id;
+  }
+
+  Future<String?> _selectPartyMemberForQuestShare(
+    BuildContext context, {
+    required Quest quest,
+    required List<User> partyMembers,
+  }) async {
+    if (partyMembers.isEmpty) return null;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 24,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'Share Quest',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    quest.name,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: partyMembers.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (_, index) {
+                        final member = partyMembers[index];
+                        return FilledButton.tonal(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(member.id),
+                          style: FilledButton.styleFrom(
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                          ),
+                          child: Text(_displayName(member)),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _shareQuestWithPartyMember(
+    BuildContext context,
+    Quest quest,
+    List<User> partyMembers,
+  ) async {
+    if (_sharingQuestId != null) return;
+    final targetUserId = await _selectPartyMemberForQuestShare(
+      context,
+      quest: quest,
+      partyMembers: partyMembers,
+    );
+    if (!mounted || targetUserId == null || targetUserId.isEmpty) return;
+    final questLog = this.context.read<QuestLogProvider>();
+    final messenger = ScaffoldMessenger.of(this.context);
+
+    setState(() {
+      _sharingQuestId = quest.id;
+    });
+    final error = await questLog.shareQuest(quest.id, targetUserId);
+    if (!mounted) return;
+    setState(() {
+      _sharingQuestId = null;
+    });
+    messenger.showSnackBar(
+      SnackBar(content: Text(error ?? 'Quest shared successfully.')),
+    );
   }
 
   @override
@@ -309,11 +417,35 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
   }
 
   Widget _buildQuestDetail(BuildContext context, Quest quest) {
-    return Consumer2<QuestLogProvider, DiscoveriesProvider>(
-      builder: (context, ql, discoveries, _) {
+    return Consumer4<
+      QuestLogProvider,
+      DiscoveriesProvider,
+      PartyProvider,
+      AuthProvider
+    >(
+      builder: (context, ql, discoveries, partyProvider, authProvider, _) {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
         final node = quest.currentNode;
         final poi = node?.pointOfInterest;
+        final currentUserId = authProvider.user?.id ?? '';
+        final seenPartyMemberIds = <String>{};
+        final partyMembers = <User>[
+          if (partyProvider.party?.leader.id.isNotEmpty == true &&
+              partyProvider.party!.leader.id != currentUserId &&
+              seenPartyMemberIds.add(partyProvider.party!.leader.id))
+            partyProvider.party!.leader,
+          ...(partyProvider.party?.members.where(
+                (member) =>
+                    member.id != currentUserId &&
+                    member.id.isNotEmpty &&
+                    seenPartyMemberIds.add(member.id),
+              ) ??
+              const <User>[]),
+        ];
+        final canShareQuest =
+            quest.isAccepted &&
+            quest.turnedInAt == null &&
+            partyMembers.isNotEmpty;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
@@ -352,15 +484,38 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   if (quest.turnedInAt == null)
-                    FilledButton(
-                      onPressed: () async {
-                        if (isTracked) {
-                          await ql.untrackQuest(quest.id);
-                        } else {
-                          await ql.trackQuest(quest.id);
-                        }
-                      },
-                      child: Text(isTracked ? 'Untrack Quest' : 'Track Quest'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (canShareQuest)
+                          FilledButton.tonal(
+                            onPressed: _sharingQuestId == quest.id
+                                ? null
+                                : () => _shareQuestWithPartyMember(
+                                    context,
+                                    quest,
+                                    partyMembers,
+                                  ),
+                            child: Text(
+                              _sharingQuestId == quest.id
+                                  ? 'Sharing...'
+                                  : 'Share Quest',
+                            ),
+                          ),
+                        FilledButton(
+                          onPressed: () async {
+                            if (isTracked) {
+                              await ql.untrackQuest(quest.id);
+                            } else {
+                              await ql.trackQuest(quest.id);
+                            }
+                          },
+                          child: Text(
+                            isTracked ? 'Untrack Quest' : 'Track Quest',
+                          ),
+                        ),
+                      ],
                     ),
                 ],
               ),
