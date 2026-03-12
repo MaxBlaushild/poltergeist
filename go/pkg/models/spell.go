@@ -20,6 +20,7 @@ const (
 	SpellEffectTypeReviveAllDownedParty   SpellEffectType = "revive_all_downed_party_members"
 	SpellEffectTypeApplyBeneficialStatus  SpellEffectType = "apply_beneficial_statuses"
 	SpellEffectTypeRemoveDetrimental      SpellEffectType = "remove_detrimental_statuses"
+	SpellEffectTypeUnlockLocks            SpellEffectType = "unlock_locks"
 )
 
 type SpellAbilityType string
@@ -50,6 +51,7 @@ func IsValidSpellAbilityType(raw string) bool {
 type SpellEffect struct {
 	Type             SpellEffectType                `json:"type"`
 	Amount           int                            `json:"amount,omitempty"`
+	Hits             int                            `json:"hits,omitempty"`
 	DamageAffinity   *string                        `json:"damageAffinity,omitempty"`
 	StatusesToApply  ScenarioFailureStatusTemplates `json:"statusesToApply,omitempty"`
 	StatusesToRemove StringArray                    `json:"statusesToRemove,omitempty"`

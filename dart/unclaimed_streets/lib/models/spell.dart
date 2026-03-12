@@ -1,4 +1,6 @@
 class Spell {
+  static const effectTypeUnlockLocks = 'unlock_locks';
+
   final String id;
   final String name;
   final String description;
@@ -65,15 +67,21 @@ class Spell {
 class SpellEffect {
   final String type;
   final int amount;
+  final int hits;
 
-  const SpellEffect({required this.type, this.amount = 0});
+  const SpellEffect({required this.type, this.amount = 0, this.hits = 0});
 
   factory SpellEffect.fromJson(Map<String, dynamic> json) {
     return SpellEffect(
       type: json['type']?.toString() ?? '',
       amount: (json['amount'] as num?)?.toInt() ?? 0,
+      hits: (json['hits'] as num?)?.toInt() ?? 0,
     );
   }
 
-  Map<String, dynamic> toJson() => {'type': type, 'amount': amount};
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'amount': amount,
+    'hits': hits,
+  };
 }

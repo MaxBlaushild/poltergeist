@@ -26,6 +26,7 @@ class QuestNode {
   final String id;
   final int orderIndex;
   final PointOfInterest? pointOfInterest;
+  final String objectiveText;
   final String? scenarioId;
   final String? monsterId;
   final String? monsterEncounterId;
@@ -39,6 +40,7 @@ class QuestNode {
     required this.orderIndex,
     this.submissionType = submissionTypePhoto,
     this.pointOfInterest,
+    this.objectiveText = '',
     this.scenarioId,
     this.monsterId,
     this.monsterEncounterId,
@@ -66,6 +68,7 @@ class QuestNode {
               json['pointOfInterest'] as Map<String, dynamic>,
             )
           : null,
+      objectiveText: json['objectiveText']?.toString() ?? '',
       scenarioId: json['scenarioId']?.toString(),
       monsterId: json['monsterId']?.toString(),
       monsterEncounterId: json['monsterEncounterId']?.toString(),

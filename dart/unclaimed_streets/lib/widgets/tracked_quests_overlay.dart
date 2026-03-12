@@ -6,9 +6,7 @@ import '../models/quest.dart';
 import '../models/quest_node.dart';
 import '../providers/discoveries_provider.dart';
 import '../providers/quest_log_provider.dart';
-
-const _placeholderImageUrl =
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+import 'quest_objective_display.dart';
 
 class TrackedQuestsOverlayController extends ChangeNotifier {
   void open() {
@@ -237,6 +235,7 @@ class _TrackedQuestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final node = quest.currentNode;
     final poi = node?.pointOfInterest;
+    final objectiveLines = questObjectiveLines(node);
 
     return Container(
       padding: const EdgeInsets.all(8),
@@ -262,41 +261,48 @@ class _TrackedQuestCard extends StatelessWidget {
             )
           else if (poi != null)
             _QuestPoiTile(
+              node: node,
               poi: poi,
-              discovered: discoveredIds.contains(poi.id),
+              discoveredIds: discoveredIds,
               onTap: () => onPoITap(poi),
               onChallengeTap: () => onNodeTap(node),
               onChevronTap: onOpenQuestDetails == null
                   ? null
                   : () => onOpenQuestDetails!(quest),
-              challenges: node.challenges.map((c) => c.question).toList(),
+              objectiveLines: objectiveLines,
             )
           else
-            Column(
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    'Reach the highlighted area to submit your answer.',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                  ),
+                QuestObjectiveIcon(
+                  node: node,
+                  discoveredPoiIds: discoveredIds,
+                  size: 28,
+                  borderRadius: 4,
+                  iconColor: Colors.white70,
+                  backgroundColor: Colors.grey.shade700,
                 ),
-                ...node.challenges.map(
-                  (q) => GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => onNodeTap(node),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(
-                        q.question,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ...objectiveLines.map(
+                        (line) => GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => onNodeTap(node),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              line,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.white70),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ],
@@ -309,32 +315,25 @@ class _TrackedQuestCard extends StatelessWidget {
 
 class _QuestPoiTile extends StatelessWidget {
   const _QuestPoiTile({
+    required this.node,
     required this.poi,
-    required this.discovered,
+    required this.discoveredIds,
     required this.onTap,
     required this.onChallengeTap,
-    required this.challenges,
+    required this.objectiveLines,
     this.onChevronTap,
   });
 
+  final QuestNode node;
   final PointOfInterest poi;
-  final bool discovered;
+  final Set<String> discoveredIds;
   final VoidCallback onTap;
   final VoidCallback onChallengeTap;
-  final List<String> challenges;
+  final List<String> objectiveLines;
   final VoidCallback? onChevronTap;
 
   @override
   Widget build(BuildContext context) {
-    final thumbUrl = poi.thumbnailUrl;
-    final imageUrl = discovered
-        ? (thumbUrl != null && thumbUrl.isNotEmpty
-              ? thumbUrl
-              : (poi.imageURL != null && poi.imageURL!.isNotEmpty
-                    ? poi.imageURL!
-                    : _placeholderImageUrl))
-        : _placeholderImageUrl;
-
     return Padding(
       padding: const EdgeInsets.only(left: 4, top: 4, bottom: 4, right: 8),
       child: Row(
@@ -349,24 +348,13 @@ class _QuestPoiTile extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.network(
-                        imageUrl,
-                        width: 28,
-                        height: 28,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          width: 28,
-                          height: 28,
-                          color: Colors.grey.shade700,
-                          child: const Icon(
-                            Icons.place,
-                            size: 14,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ),
+                    QuestObjectiveIcon(
+                      node: node,
+                      discoveredPoiIds: discoveredIds,
+                      size: 28,
+                      borderRadius: 4,
+                      iconColor: Colors.white70,
+                      backgroundColor: Colors.grey.shade700,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -381,8 +369,8 @@ class _QuestPoiTile extends StatelessWidget {
                                   fontWeight: FontWeight.w600,
                                 ),
                           ),
-                          ...challenges.map(
-                            (q) => GestureDetector(
+                          ...objectiveLines.map(
+                            (line) => GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: onChallengeTap,
                               child: Padding(
@@ -390,7 +378,7 @@ class _QuestPoiTile extends StatelessWidget {
                                   vertical: 2,
                                 ),
                                 child: Text(
-                                  q,
+                                  line,
                                   style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: Colors.white70),
                                 ),

@@ -26,6 +26,7 @@ import (
 type spellEffectPayload struct {
 	Type             string                         `json:"type"`
 	Amount           *int                           `json:"amount"`
+	Hits             *int                           `json:"hits"`
 	DamageAffinity   *string                        `json:"damageAffinity"`
 	StatusesToApply  []scenarioFailureStatusPayload `json:"statusesToApply"`
 	StatusesToRemove []string                       `json:"statusesToRemove"`
@@ -883,6 +884,10 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 		if effectPayload.Amount != nil {
 			amount = *effectPayload.Amount
 		}
+		hits := 0
+		if effectPayload.Hits != nil {
+			hits = *effectPayload.Hits
+		}
 
 		statusesToApply, err := parseScenarioFailureStatusTemplates(
 			effectPayload.StatusesToApply,
@@ -905,6 +910,9 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 				return nil, fmt.Errorf("effects[%d].amount must be greater than 0", index)
 			}
 			if effectType == models.SpellEffectTypeDealDamage || effectType == models.SpellEffectTypeDealDamageAllEnemies {
+				if hits <= 0 {
+					hits = 1
+				}
 				rawAffinity := ""
 				if effectPayload.DamageAffinity != nil {
 					rawAffinity = strings.TrimSpace(*effectPayload.DamageAffinity)
@@ -921,6 +929,10 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 			if len(statusesToRemove) == 0 {
 				return nil, fmt.Errorf("effects[%d].statusesToRemove is required", index)
 			}
+		case models.SpellEffectTypeUnlockLocks:
+			if amount < 1 || amount > 100 {
+				return nil, fmt.Errorf("effects[%d].amount must be between 1 and 100", index)
+			}
 		default:
 			// Allow new effect types without backend changes.
 		}
@@ -928,6 +940,7 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 		effects = append(effects, models.SpellEffect{
 			Type:             effectType,
 			Amount:           amount,
+			Hits:             hits,
 			DamageAffinity:   damageAffinity,
 			StatusesToApply:  statusesToApply,
 			StatusesToRemove: statusesToRemove,
@@ -1033,7 +1046,11 @@ func inferSpellProgressionBand(spell *models.Spell) int {
 	}
 	powerScore := float64(spellMaxInt(spell.ManaCost, 0))
 	for _, effect := range spell.Effects {
-		powerScore += float64(spellMaxInt(effect.Amount, 0))
+		effectMagnitude := spellMaxInt(effect.Amount, 0)
+		if effect.Type == models.SpellEffectTypeDealDamage || effect.Type == models.SpellEffectTypeDealDamageAllEnemies {
+			effectMagnitude *= spellMaxInt(effect.Hits, 1)
+		}
+		powerScore += float64(effectMagnitude)
 		powerScore += float64(len(effect.StatusesToApply) * 8)
 		if len(effect.StatusesToRemove) > 0 {
 			powerScore += 6
@@ -1508,6 +1525,7 @@ func buildScaledSpellProgressionEffects(
 		next := models.SpellEffect{
 			Type:             effect.Type,
 			Amount:           scaleSpellProgressionCombatAmount(effect.Amount, effect.Type, seedBand, targetBand),
+			Hits:             effect.Hits,
 			StatusesToRemove: append(models.StringArray(nil), effect.StatusesToRemove...),
 			EffectData:       cloneSpellEffectData(effect.EffectData),
 		}
@@ -1559,11 +1577,17 @@ func buildSpellProgressionEffectText(effects models.SpellEffects) string {
 		if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
 			affinity = strings.TrimSpace(*effect.DamageAffinity)
 		}
+		if spellMaxInt(effect.Hits, 1) > 1 {
+			return fmt.Sprintf("Deals %d %s damage to all enemies %d times.", spellMaxInt(effect.Amount, 1), affinity, spellMaxInt(effect.Hits, 1))
+		}
 		return fmt.Sprintf("Deals %d %s damage to all enemies.", spellMaxInt(effect.Amount, 1), affinity)
 	default:
 		affinity := "magical"
 		if effect.DamageAffinity != nil && strings.TrimSpace(*effect.DamageAffinity) != "" {
 			affinity = strings.TrimSpace(*effect.DamageAffinity)
+		}
+		if spellMaxInt(effect.Hits, 1) > 1 {
+			return fmt.Sprintf("Deals %d %s damage to a target %d times.", spellMaxInt(effect.Amount, 1), affinity, spellMaxInt(effect.Hits, 1))
 		}
 		return fmt.Sprintf("Deals %d %s damage to a target.", spellMaxInt(effect.Amount, 1), affinity)
 	}

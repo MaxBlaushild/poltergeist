@@ -13,6 +13,8 @@ const _questMarkerPadding = 6;
 
 final Map<String, Uint8List> _thumbnailCache = {};
 final Map<String, Future<Uint8List?>> _thumbnailInFlight = {};
+final Map<String, Uint8List> _sourceImageCache = {};
+final Map<String, Future<Uint8List?>> _sourceImageInFlight = {};
 
 Future<Uint8List?> _loadThumbnailCached(
   String cacheKey,
@@ -38,6 +40,50 @@ Future<Uint8List?> _loadThumbnailCached(
   return future;
 }
 
+Future<Uint8List?> _loadSourceCached(String url) {
+  final cached = _sourceImageCache[url];
+  if (cached != null) return Future.value(cached);
+  final inFlight = _sourceImageInFlight[url];
+  if (inFlight != null) return inFlight;
+  final future =
+      () async {
+            try {
+              final response = await http.get(Uri.parse(url));
+              if (response.statusCode != 200) return null;
+              return response.bodyBytes;
+            } catch (_) {
+              return null;
+            }
+          }()
+          .then((bytes) {
+            if (bytes != null) {
+              _sourceImageCache[url] = bytes;
+            }
+            _sourceImageInFlight.remove(url);
+            return bytes;
+          })
+          .catchError((_) {
+            _sourceImageInFlight.remove(url);
+            return null;
+          });
+  _sourceImageInFlight[url] = future;
+  return future;
+}
+
+Uint8List? peekPoiThumbnail(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _thumbnailCache['plain|$url'];
+}
+
+Uint8List? peekPoiThumbnailWithQuestMarker(String? imageUrl) {
+  final url = imageUrl != null && imageUrl.isNotEmpty
+      ? imageUrl
+      : _placeholderUrl;
+  return _thumbnailCache['quest|$url'];
+}
+
 /// Fetches the POI image (or placeholder), resizes to a square, applies
 /// rounded corners, and returns PNG bytes suitable for MapLibre addImage.
 Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
@@ -46,23 +92,18 @@ Future<Uint8List?> loadPoiThumbnail(String? imageUrl) {
       : _placeholderUrl;
   final cacheKey = 'plain|$url';
   return _loadThumbnailCached(cacheKey, () async {
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) return null;
-      final bytes = response.bodyBytes;
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return null;
-      final square = img.copyResizeCropSquare(
-        decoded,
-        size: _thumbnailSize,
-        radius: _cornerRadius,
-        antialias: true,
-      );
-      _applyParchmentFrame(square);
-      return Uint8List.fromList(img.encodePng(square));
-    } catch (_) {
-      return null;
-    }
+    final bytes = await _loadSourceCached(url);
+    if (bytes == null) return null;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final square = img.copyResizeCropSquare(
+      decoded,
+      size: _thumbnailSize,
+      radius: _cornerRadius,
+      antialias: true,
+    );
+    _applyParchmentFrame(square);
+    return Uint8List.fromList(img.encodePng(square));
   });
 }
 
@@ -78,44 +119,34 @@ Future<Uint8List?> loadPoiThumbnailWithBorder(
       : _placeholderUrl;
   final cacheKey = 'border:$borderWidth|$url';
   return _loadThumbnailCached(cacheKey, () async {
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) return null;
-      final bytes = response.bodyBytes;
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return null;
-      final square = img.copyResizeCropSquare(
-        decoded,
-        size: _thumbnailSize,
-        radius: _cornerRadius,
-        antialias: true,
-      );
-      _applyParchmentFrame(square);
-      final borderedSize = _thumbnailSize + borderWidth * 2;
-      final bordered = img.Image(width: borderedSize, height: borderedSize);
-      img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
-      final gold = img.ColorRgba8(245, 197, 66, 255);
-      final max = borderedSize - 1;
-      for (var i = 0; i < borderWidth; i++) {
-        img.drawRect(
-          bordered,
-          x1: i,
-          y1: i,
-          x2: max - i,
-          y2: max - i,
-          color: gold,
-        );
-      }
-      img.compositeImage(
+    final bytes = await _loadSourceCached(url);
+    if (bytes == null) return null;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final square = img.copyResizeCropSquare(
+      decoded,
+      size: _thumbnailSize,
+      radius: _cornerRadius,
+      antialias: true,
+    );
+    _applyParchmentFrame(square);
+    final borderedSize = _thumbnailSize + borderWidth * 2;
+    final bordered = img.Image(width: borderedSize, height: borderedSize);
+    img.fill(bordered, color: img.ColorRgba8(0, 0, 0, 0));
+    final gold = img.ColorRgba8(245, 197, 66, 255);
+    final max = borderedSize - 1;
+    for (var i = 0; i < borderWidth; i++) {
+      img.drawRect(
         bordered,
-        square,
-        dstX: borderWidth,
-        dstY: borderWidth,
+        x1: i,
+        y1: i,
+        x2: max - i,
+        y2: max - i,
+        color: gold,
       );
-      return Uint8List.fromList(img.encodePng(bordered));
-    } catch (_) {
-      return null;
     }
+    img.compositeImage(bordered, square, dstX: borderWidth, dstY: borderWidth);
+    return Uint8List.fromList(img.encodePng(bordered));
   });
 }
 
@@ -126,24 +157,19 @@ Future<Uint8List?> loadPoiThumbnailWithQuestMarker(String? imageUrl) {
       : _placeholderUrl;
   final cacheKey = 'quest|$url';
   return _loadThumbnailCached(cacheKey, () async {
-    try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) return null;
-      final bytes = response.bodyBytes;
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return null;
-      final square = img.copyResizeCropSquare(
-        decoded,
-        size: _thumbnailSize,
-        radius: _cornerRadius,
-        antialias: true,
-      );
-      _applyParchmentFrame(square);
-      _drawQuestMarker(square);
-      return Uint8List.fromList(img.encodePng(square));
-    } catch (_) {
-      return null;
-    }
+    final bytes = await _loadSourceCached(url);
+    if (bytes == null) return null;
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    final square = img.copyResizeCropSquare(
+      decoded,
+      size: _thumbnailSize,
+      radius: _cornerRadius,
+      antialias: true,
+    );
+    _applyParchmentFrame(square);
+    _drawQuestMarker(square);
+    return Uint8List.fromList(img.encodePng(square));
   });
 }
 

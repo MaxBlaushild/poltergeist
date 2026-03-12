@@ -14,6 +14,7 @@ type InventoryItem struct {
 	IsCaptureType                            bool                           `json:"isCaptureType" gorm:"column:is_capture_type"`
 	SellValue                                *int                           `json:"sellValue" gorm:"column:sell_value"`
 	UnlockTier                               *int                           `json:"unlockTier" gorm:"column:unlock_tier"`
+	UnlockLocksStrength                      *int                           `json:"unlockLocksStrength" gorm:"column:unlock_locks_strength"`
 	ItemLevel                                int                            `json:"itemLevel" gorm:"column:item_level"`
 	EquipSlot                                *string                        `json:"equipSlot" gorm:"column:equip_slot"`
 	StrengthMod                              int                            `json:"strengthMod" gorm:"column:strength_mod"`
@@ -35,6 +36,10 @@ type InventoryItem struct {
 	ConsumeManaDelta                         int                            `json:"consumeManaDelta" gorm:"column:consume_mana_delta"`
 	ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth" gorm:"column:consume_revive_party_member_health"`
 	ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth" gorm:"column:consume_revive_all_downed_party_members_health"`
+	ConsumeDealDamage                        int                            `json:"consumeDealDamage" gorm:"column:consume_deal_damage"`
+	ConsumeDealDamageHits                    int                            `json:"consumeDealDamageHits" gorm:"column:consume_deal_damage_hits"`
+	ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies" gorm:"column:consume_deal_damage_all_enemies"`
+	ConsumeDealDamageAllEnemiesHits          int                            `json:"consumeDealDamageAllEnemiesHits" gorm:"column:consume_deal_damage_all_enemies_hits"`
 	ConsumeStatusesToAdd                     ScenarioFailureStatusTemplates `json:"consumeStatusesToAdd" gorm:"column:consume_statuses_to_add;type:jsonb"`
 	ConsumeStatusesToRemove                  StringArray                    `json:"consumeStatusesToRemove" gorm:"column:consume_statuses_to_remove;type:jsonb"`
 	ConsumeSpellIDs                          StringArray                    `json:"consumeSpellIds" gorm:"column:consume_spell_ids;type:jsonb"`

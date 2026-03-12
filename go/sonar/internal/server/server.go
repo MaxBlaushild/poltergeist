@@ -7373,6 +7373,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier                               string                         `json:"rarityTier" binding:"required"`
 		IsCaptureType                            bool                           `json:"isCaptureType"`
 		UnlockTier                               *int                           `json:"unlockTier"`
+		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
 		ItemLevel                                *int                           `json:"itemLevel"`
 		EquipSlot                                *string                        `json:"equipSlot"`
 		StrengthMod                              int                            `json:"strengthMod"`
@@ -7394,6 +7395,10 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
 		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
 		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
+		ConsumeDealDamage                        int                            `json:"consumeDealDamage"`
+		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
+		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
+		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
@@ -7411,6 +7416,33 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	if itemLevel < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
 		return
+	}
+	if requestBody.UnlockLocksStrength != nil &&
+		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockLocksStrength must be between 1 and 100"})
+		return
+	}
+	consumeDealDamageHits := 0
+	if requestBody.ConsumeDealDamage > 0 {
+		consumeDealDamageHits = 1
+		if requestBody.ConsumeDealDamageHits != nil {
+			consumeDealDamageHits = *requestBody.ConsumeDealDamageHits
+		}
+		if consumeDealDamageHits < 1 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageHits must be 1 or greater when consumeDealDamage is set"})
+			return
+		}
+	}
+	consumeDealDamageAllEnemiesHits := 0
+	if requestBody.ConsumeDealDamageAllEnemies > 0 {
+		consumeDealDamageAllEnemiesHits = 1
+		if requestBody.ConsumeDealDamageAllEnemiesHits != nil {
+			consumeDealDamageAllEnemiesHits = *requestBody.ConsumeDealDamageAllEnemiesHits
+		}
+		if consumeDealDamageAllEnemiesHits < 1 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageAllEnemiesHits must be 1 or greater when consumeDealDamageAllEnemies is set"})
+			return
+		}
 	}
 
 	var equipSlot *string
@@ -7471,6 +7503,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		RarityTier:                               requestBody.RarityTier,
 		IsCaptureType:                            requestBody.IsCaptureType,
 		UnlockTier:                               requestBody.UnlockTier,
+		UnlockLocksStrength:                      requestBody.UnlockLocksStrength,
 		ItemLevel:                                itemLevel,
 		EquipSlot:                                equipSlot,
 		StrengthMod:                              requestBody.StrengthMod,
@@ -7492,6 +7525,10 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta:                         requestBody.ConsumeManaDelta,
 		ConsumeRevivePartyMemberHealth:           requestBody.ConsumeRevivePartyMemberHealth,
 		ConsumeReviveAllDownedPartyMembersHealth: requestBody.ConsumeReviveAllDownedPartyMembersHealth,
+		ConsumeDealDamage:                        requestBody.ConsumeDealDamage,
+		ConsumeDealDamageHits:                    consumeDealDamageHits,
+		ConsumeDealDamageAllEnemies:              requestBody.ConsumeDealDamageAllEnemies,
+		ConsumeDealDamageAllEnemiesHits:          consumeDealDamageAllEnemiesHits,
 		ConsumeStatusesToAdd:                     consumeStatusesToAdd,
 		ConsumeStatusesToRemove:                  consumeStatusesToRemove,
 		ConsumeSpellIDs:                          consumeSpellIDs,
@@ -9291,6 +9328,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		RarityTier                               string                         `json:"rarityTier"`
 		IsCaptureType                            bool                           `json:"isCaptureType"`
 		UnlockTier                               *int                           `json:"unlockTier"`
+		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
 		ItemLevel                                *int                           `json:"itemLevel"`
 		EquipSlot                                *string                        `json:"equipSlot"`
 		StrengthMod                              int                            `json:"strengthMod"`
@@ -9312,6 +9350,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		ConsumeManaDelta                         int                            `json:"consumeManaDelta"`
 		ConsumeRevivePartyMemberHealth           int                            `json:"consumeRevivePartyMemberHealth"`
 		ConsumeReviveAllDownedPartyMembersHealth int                            `json:"consumeReviveAllDownedPartyMembersHealth"`
+		ConsumeDealDamage                        int                            `json:"consumeDealDamage"`
+		ConsumeDealDamageHits                    *int                           `json:"consumeDealDamageHits"`
+		ConsumeDealDamageAllEnemies              int                            `json:"consumeDealDamageAllEnemies"`
+		ConsumeDealDamageAllEnemiesHits          *int                           `json:"consumeDealDamageAllEnemiesHits"`
 		ConsumeStatusesToAdd                     []scenarioFailureStatusPayload `json:"consumeStatusesToAdd"`
 		ConsumeStatusesToRemove                  []string                       `json:"consumeStatusesToRemove"`
 		ConsumeSpellIDs                          []string                       `json:"consumeSpellIds"`
@@ -9332,6 +9374,33 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	if itemLevel < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
 		return
+	}
+	if requestBody.UnlockLocksStrength != nil &&
+		(*requestBody.UnlockLocksStrength < 1 || *requestBody.UnlockLocksStrength > 100) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unlockLocksStrength must be between 1 and 100"})
+		return
+	}
+	consumeDealDamageHits := 0
+	if requestBody.ConsumeDealDamage > 0 {
+		consumeDealDamageHits = 1
+		if requestBody.ConsumeDealDamageHits != nil {
+			consumeDealDamageHits = *requestBody.ConsumeDealDamageHits
+		}
+		if consumeDealDamageHits < 1 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageHits must be 1 or greater when consumeDealDamage is set"})
+			return
+		}
+	}
+	consumeDealDamageAllEnemiesHits := 0
+	if requestBody.ConsumeDealDamageAllEnemies > 0 {
+		consumeDealDamageAllEnemiesHits = 1
+		if requestBody.ConsumeDealDamageAllEnemiesHits != nil {
+			consumeDealDamageAllEnemiesHits = *requestBody.ConsumeDealDamageAllEnemiesHits
+		}
+		if consumeDealDamageAllEnemiesHits < 1 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "consumeDealDamageAllEnemiesHits must be 1 or greater when consumeDealDamageAllEnemies is set"})
+			return
+		}
 	}
 
 	var equipSlot *string
@@ -9392,6 +9461,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"rarity_tier":                        requestBody.RarityTier,
 		"is_capture_type":                    requestBody.IsCaptureType,
 		"unlock_tier":                        requestBody.UnlockTier,
+		"unlock_locks_strength":              requestBody.UnlockLocksStrength,
 		"item_level":                         itemLevel,
 		"equip_slot":                         equipSlot,
 		"strength_mod":                       requestBody.StrengthMod,
@@ -9413,6 +9483,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"consume_mana_delta":                 requestBody.ConsumeManaDelta,
 		"consume_revive_party_member_health": requestBody.ConsumeRevivePartyMemberHealth,
 		"consume_revive_all_downed_party_members_health": requestBody.ConsumeReviveAllDownedPartyMembersHealth,
+		"consume_deal_damage":                            requestBody.ConsumeDealDamage,
+		"consume_deal_damage_hits":                       consumeDealDamageHits,
+		"consume_deal_damage_all_enemies":                requestBody.ConsumeDealDamageAllEnemies,
+		"consume_deal_damage_all_enemies_hits":           consumeDealDamageAllEnemiesHits,
 		"consume_statuses_to_add":                        consumeStatusesToAdd,
 		"consume_statuses_to_remove":                     consumeStatusesToRemove,
 		"consume_spell_ids":                              consumeSpellIDs,
@@ -13591,51 +13665,43 @@ func (s *server) openTreasureChest(ctx *gin.Context) {
 	// Check if chest is locked
 	var unlockItemID *uuid.UUID
 	if treasureChest.UnlockTier != nil {
-		// Find user's owned inventory items with unlock tier
+		requiredStrength := *treasureChest.UnlockTier
+
+		// Find user's owned inventory items with sufficient lock-unlock strength.
 		ownedItems, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &user.ID})
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user inventory"})
 			return
 		}
-
-		// Find inventory items with unlock tier >= chest unlock tier
-		var validUnlockItems []models.OwnedInventoryItem
+		inventoryByID := make(map[int]*models.InventoryItem, len(ownedItems))
 		for _, ownedItem := range ownedItems {
-			if ownedItem.Quantity > 0 {
-				// Get the inventory item to check unlock tier
-				inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedItem.InventoryItemID)
-				if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
-					if *inventoryItem.UnlockTier >= *treasureChest.UnlockTier {
-						validUnlockItems = append(validUnlockItems, ownedItem)
-					}
-				}
+			if ownedItem.Quantity <= 0 {
+				continue
+			}
+			if _, exists := inventoryByID[ownedItem.InventoryItemID]; exists {
+				continue
+			}
+			inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedItem.InventoryItemID)
+			if err == nil && inventoryItem != nil {
+				inventoryByID[ownedItem.InventoryItemID] = inventoryItem
 			}
 		}
 
-		if len(validUnlockItems) == 0 {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you do not have an item with sufficient unlock tier to open this chest"})
+		userSpells, err := s.dbClient.UserSpell().FindByUserID(ctx, user.ID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user abilities"})
 			return
 		}
 
-		// Find the item with the lowest unlock tier
-		var lowestTierItem *models.OwnedInventoryItem
-		var lowestTier int
-		for i := range validUnlockItems {
-			inventoryItem, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, validUnlockItems[i].InventoryItemID)
-			if err == nil && inventoryItem != nil && inventoryItem.UnlockTier != nil {
-				if lowestTierItem == nil || *inventoryItem.UnlockTier < lowestTier {
-					lowestTier = *inventoryItem.UnlockTier
-					lowestTierItem = &validUnlockItems[i]
-				}
-			}
+		hasUnlockSkill := hasTreasureChestUnlockSkill(requiredStrength, userSpells)
+		if !hasUnlockSkill {
+			unlockItemID = selectTreasureChestUnlockItemID(requiredStrength, ownedItems, inventoryByID)
 		}
 
-		if lowestTierItem == nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "could not find valid unlock item"})
+		if !hasUnlockSkill && unlockItemID == nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "you do not have an item or skill with sufficient lock strength to open this chest"})
 			return
 		}
-
-		unlockItemID = &lowestTierItem.ID
 	}
 
 	// Consume unlock item if needed

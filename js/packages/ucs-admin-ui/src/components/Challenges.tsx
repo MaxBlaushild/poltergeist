@@ -227,7 +227,10 @@ const formatDate = (value?: string | null): string => {
   return parsed.toLocaleString();
 };
 
-const parsePolygonPoints = (input: string): [number, number][] | null => {
+const parsePolygonPoints = (
+  input: string,
+  minimumPoints = 3
+): [number, number][] | null => {
   if (!input.trim()) return null;
   try {
     const parsed = JSON.parse(input);
@@ -240,7 +243,7 @@ const parsePolygonPoints = (input: string): [number, number][] | null => {
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
       points.push([lng, lat]);
     }
-    return points.length >= 3 ? points : null;
+    return points.length >= minimumPoints ? points : null;
   } catch {
     return null;
   }
@@ -249,6 +252,19 @@ const parsePolygonPoints = (input: string): [number, number][] | null => {
 const formatPolygonPoints = (points?: [number, number][] | null): string => {
   if (!points || points.length === 0) return '';
   return JSON.stringify(points);
+};
+
+const polygonCenter = (
+  points?: [number, number][] | null
+): [number, number] | null => {
+  if (!points || points.length === 0) return null;
+  let lngSum = 0;
+  let latSum = 0;
+  points.forEach(([lng, lat]) => {
+    lngSum += lng;
+    latSum += lat;
+  });
+  return [lngSum / points.length, latSum / points.length];
 };
 
 const emptyForm = (): ChallengeFormState => ({
@@ -378,6 +394,10 @@ export const Challenges = () => {
   const markerRef = React.useRef<mapboxgl.Marker | null>(null);
   const formLatitudeRef = React.useRef(form.latitude);
   const formLongitudeRef = React.useRef(form.longitude);
+  const formLocationModeRef = React.useRef(form.locationMode);
+  const [polygonDraftPoints, setPolygonDraftPoints] = useState<
+    [number, number][]
+  >([]);
 
   const loadPointsOfInterestForZone = useCallback(
     async (zoneId: string) => {
@@ -590,12 +610,22 @@ export const Challenges = () => {
   const hasSelectedPointOfInterest =
     form.locationMode === 'poi' && form.pointOfInterestId.trim().length > 0;
   const isCoordinateMode = form.locationMode === 'coordinates';
+  const isPolygonMode = form.locationMode === 'polygon';
+  const usesInteractiveMap = isCoordinateMode || isPolygonMode;
 
   useEffect(() => {
     if (!showModal) return;
     if (!form.zoneId) return;
     void loadPointsOfInterestForZone(form.zoneId);
   }, [form.zoneId, loadPointsOfInterestForZone, showModal]);
+
+  useEffect(() => {
+    if (form.locationMode !== 'polygon') {
+      setPolygonDraftPoints([]);
+      return;
+    }
+    setPolygonDraftPoints(parsePolygonPoints(form.polygonPoints, 1) ?? []);
+  }, [form.locationMode, form.polygonPoints]);
 
   useEffect(() => {
     if (!generationForm.zoneId) return;
@@ -648,7 +678,8 @@ export const Challenges = () => {
   useEffect(() => {
     formLatitudeRef.current = form.latitude;
     formLongitudeRef.current = form.longitude;
-  }, [form.latitude, form.longitude]);
+    formLocationModeRef.current = form.locationMode;
+  }, [form.latitude, form.locationMode, form.longitude]);
 
   const setFormLocation = useCallback((latitude: number, longitude: number) => {
     setForm((prev) => ({
@@ -679,13 +710,71 @@ export const Challenges = () => {
     );
   }, [setFormLocation]);
 
+  const ensurePolygonDraftLayers = useCallback((map: mapboxgl.Map) => {
+    if (!map.isStyleLoaded()) return;
+
+    if (!map.getSource('challenge-draft-line')) {
+      map.addSource('challenge-draft-line', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [] },
+          properties: {},
+        },
+      });
+      map.addLayer({
+        id: 'challenge-draft-line',
+        type: 'line',
+        source: 'challenge-draft-line',
+        paint: {
+          'line-color': '#0f766e',
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      });
+    }
+
+    if (!map.getSource('challenge-draft-polygon')) {
+      map.addSource('challenge-draft-polygon', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: { type: 'Polygon', coordinates: [] },
+          properties: {},
+        },
+      });
+      map.addLayer({
+        id: 'challenge-draft-polygon',
+        type: 'fill',
+        source: 'challenge-draft-polygon',
+        paint: {
+          'fill-color': '#2563eb',
+          'fill-opacity': 0.16,
+        },
+      });
+      map.addLayer({
+        id: 'challenge-draft-polygon-outline',
+        type: 'line',
+        source: 'challenge-draft-polygon',
+        paint: {
+          'line-color': '#1d4ed8',
+          'line-width': 2,
+        },
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!showModal) return;
-    if (!isCoordinateMode || hasSelectedPointOfInterest) return;
+    if (!usesInteractiveMap || hasSelectedPointOfInterest) return;
     if (!mapContainerRef.current) return;
     if (!mapboxgl.accessToken) return;
     if (mapRef.current) return;
 
+    const polygonCenterPoint =
+      formLocationModeRef.current === 'polygon'
+        ? polygonCenter(parsePolygonPoints(form.polygonPoints, 1))
+        : null;
     const parsedLat = Number.parseFloat(formLatitudeRef.current);
     const parsedLng = Number.parseFloat(formLongitudeRef.current);
     const selectedZone = zones.find((zone) => zone.id === form.zoneId);
@@ -696,8 +785,9 @@ export const Challenges = () => {
       ? Number.parseFloat(String(selectedZone.longitude ?? ''))
       : Number.NaN;
 
-    const center: [number, number] =
-      Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+    const center: [number, number] = polygonCenterPoint
+      ? polygonCenterPoint
+      : Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
         ? [parsedLng, parsedLat]
         : Number.isFinite(zoneLat) && Number.isFinite(zoneLng)
           ? [zoneLng, zoneLat]
@@ -710,7 +800,64 @@ export const Challenges = () => {
       zoom: 13,
     });
 
+    const initializePolygonLayers = () => {
+      ensurePolygonDraftLayers(map);
+      const draftPoints =
+        formLocationModeRef.current === 'polygon'
+          ? parsePolygonPoints(form.polygonPoints, 1) ?? []
+          : [];
+      const lineSource = map.getSource(
+        'challenge-draft-line'
+      ) as mapboxgl.GeoJSONSource | null;
+      const polygonSource = map.getSource(
+        'challenge-draft-polygon'
+      ) as mapboxgl.GeoJSONSource | null;
+      if (lineSource) {
+        lineSource.setData({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: draftPoints },
+          properties: {},
+        });
+      }
+      if (polygonSource) {
+        polygonSource.setData({
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates:
+              draftPoints.length >= 3 ? [[...draftPoints, draftPoints[0]]] : [],
+          },
+          properties: {},
+        });
+      }
+      if (draftPoints.length > 0) {
+        const bounds = new mapboxgl.LngLatBounds();
+        draftPoints.forEach(([lng, lat]) => bounds.extend([lng, lat]));
+        map.fitBounds(bounds, { padding: 48, duration: 0, maxZoom: 15 });
+      }
+    };
+    if (map.isStyleLoaded()) {
+      initializePolygonLayers();
+    } else {
+      map.on('load', initializePolygonLayers);
+    }
+
     map.on('click', (event) => {
+      if (formLocationModeRef.current === 'polygon') {
+        setPolygonDraftPoints((prev) => {
+          const next = [...prev, [event.lngLat.lng, event.lngLat.lat]] as [
+            number,
+            number,
+          ][];
+          setForm((formPrev) => ({
+            ...formPrev,
+            pointOfInterestId: '',
+            polygonPoints: JSON.stringify(next),
+          }));
+          return next;
+        });
+        return;
+      }
       setFormLocation(event.lngLat.lat, event.lngLat.lng);
     });
 
@@ -719,22 +866,70 @@ export const Challenges = () => {
     return () => {
       markerRef.current?.remove();
       markerRef.current = null;
+      map.off('load', initializePolygonLayers);
       map.remove();
       mapRef.current = null;
     };
   }, [
     form.zoneId,
-    isCoordinateMode,
+    ensurePolygonDraftLayers,
+    form.polygonPoints,
     hasSelectedPointOfInterest,
     setFormLocation,
     showModal,
+    usesInteractiveMap,
     zones,
   ]);
 
   useEffect(() => {
     if (!showModal) return;
-    if (!isCoordinateMode || hasSelectedPointOfInterest) return;
+    if (!usesInteractiveMap) return;
     if (!mapRef.current) return;
+    window.setTimeout(() => mapRef.current?.resize(), 0);
+  }, [isCoordinateMode, isPolygonMode, showModal, usesInteractiveMap]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!mapRef.current) return;
+
+    const map = mapRef.current;
+    const lineSource = map.getSource(
+      'challenge-draft-line'
+    ) as mapboxgl.GeoJSONSource | null;
+    const polygonSource = map.getSource(
+      'challenge-draft-polygon'
+    ) as mapboxgl.GeoJSONSource | null;
+
+    if (lineSource) {
+      lineSource.setData({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: isPolygonMode ? polygonDraftPoints : [],
+        },
+        properties: {},
+      });
+    }
+
+    if (polygonSource) {
+      polygonSource.setData({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates:
+            isPolygonMode && polygonDraftPoints.length >= 3
+              ? [[...polygonDraftPoints, polygonDraftPoints[0]]]
+              : [],
+        },
+        properties: {},
+      });
+    }
+
+    if (!isCoordinateMode || hasSelectedPointOfInterest) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
 
     const lat = Number.parseFloat(form.latitude);
     const lng = Number.parseFloat(form.longitude);
@@ -752,14 +947,30 @@ export const Challenges = () => {
       markerRef.current.setLngLat([lng, lat]);
     }
 
-    mapRef.current.easeTo({ center: [lng, lat], duration: 350 });
+    map.easeTo({ center: [lng, lat], duration: 350 });
   }, [
     form.latitude,
     form.longitude,
     hasSelectedPointOfInterest,
     isCoordinateMode,
+    isPolygonMode,
+    polygonDraftPoints,
     showModal,
   ]);
+
+  useEffect(() => {
+    if (!showModal) return;
+    if (!isPolygonMode) return;
+    if (!mapRef.current) return;
+    if (polygonDraftPoints.length === 0) return;
+
+    const map = mapRef.current;
+    const bounds = new mapboxgl.LngLatBounds();
+    polygonDraftPoints.forEach(([lng, lat]) => {
+      bounds.extend([lng, lat]);
+    });
+    map.fitBounds(bounds, { padding: 48, duration: 0, maxZoom: 15 });
+  }, [isPolygonMode, polygonDraftPoints, showModal]);
 
   const handleQueueChallengeGeneration = async () => {
     if (!generationForm.zoneId) {
@@ -1771,21 +1982,45 @@ export const Challenges = () => {
                   <textarea
                     className="w-full border rounded-md p-2"
                     rows={4}
-                    placeholder="[[lng,lat],[lng,lat],[lng,lat]]"
+                    placeholder="Click on the map to draw the polygon"
                     value={form.polygonPoints}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        pointOfInterestId: '',
-                        polygonPoints: event.target.value,
-                      }))
-                    }
+                    readOnly
                   />
-                  <div className="mt-1 text-xs text-gray-500">
-                    Enter at least 3 points as JSON. Example:{' '}
-                    <code>
-                      [[ -73.98, 40.75 ], [ -73.97, 40.75 ], [ -73.97, 40.76 ]]
-                    </code>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
+                    <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700">
+                      Click on the map to add polygon points.
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                      onClick={() => {
+                        setPolygonDraftPoints([]);
+                        setForm((prev) => ({ ...prev, polygonPoints: '' }));
+                      }}
+                    >
+                      Clear polygon
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-md border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50"
+                      onClick={() => {
+                        setPolygonDraftPoints((prev) => {
+                          if (prev.length === 0) return prev;
+                          const next = prev.slice(0, -1);
+                          setForm((formPrev) => ({
+                            ...formPrev,
+                            polygonPoints: JSON.stringify(next),
+                          }));
+                          return next;
+                        });
+                      }}
+                    >
+                      Undo last point
+                    </button>
+                    <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-700">
+                      {polygonDraftPoints.length} point
+                      {polygonDraftPoints.length === 1 ? '' : 's'}
+                    </span>
                   </div>
                 </label>
               ) : null}
@@ -1804,12 +2039,18 @@ export const Challenges = () => {
               </div>
             ) : null}
 
-            {isCoordinateMode ? (
+            {usesInteractiveMap ? (
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm">Map Location Picker</span>
+                  <span className="text-sm">
+                    {isPolygonMode
+                      ? 'Polygon Draft Map'
+                      : 'Map Location Picker'}
+                  </span>
                   <span className="text-xs text-gray-500">
-                    Click map to set latitude/longitude
+                    {isPolygonMode
+                      ? 'Click map to add polygon points'
+                      : 'Click map to set latitude/longitude'}
                   </span>
                 </div>
                 {mapboxgl.accessToken ? (

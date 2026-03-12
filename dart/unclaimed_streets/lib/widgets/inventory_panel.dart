@@ -1383,11 +1383,11 @@ class _InventoryPanelState extends State<InventoryPanel>
           icon: Icons.sell_outlined,
           label: 'Sell ${inv.sellValue}',
         ),
-      if (inv.unlockTier != null)
+      if ((inv.unlockLocksStrength ?? inv.unlockTier) != null)
         _buildMetaChip(
           context,
           icon: Icons.lock_open,
-          label: 'Tier ${inv.unlockTier}',
+          label: 'Lock ${inv.unlockLocksStrength ?? inv.unlockTier}',
         ),
       if (isEquippable)
         _buildMetaChip(

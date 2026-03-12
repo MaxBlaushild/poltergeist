@@ -261,108 +261,7 @@ class CelebrationModalManager extends StatelessWidget {
           ],
         );
       case 'challengeOutcome':
-        final successful = data['successful'] == true;
-        final challengeId = data['challengeId']?.toString().trim() ?? '';
-        final reason = (data['reason'] as String?)?.trim() ?? '';
-        final score = (data['score'] as num?)?.toInt() ?? 0;
-        final difficulty = (data['difficulty'] as num?)?.toInt() ?? 0;
-        final combinedScore = (data['combinedScore'] as num?)?.toInt() ?? 0;
-        final rewardExperience =
-            (data['rewardExperience'] as num?)?.toInt() ?? 0;
-        final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
-        final statTags =
-            (data['statTags'] as List<dynamic>?)
-                ?.map((value) => value.toString().trim())
-                .where((value) => value.isNotEmpty)
-                .toList() ??
-            const <String>[];
-        final statValues =
-            (data['statValues'] as Map?)?.map(
-              (key, value) => MapEntry(
-                key.toString().trim(),
-                (value as num?)?.toInt() ?? 0,
-              ),
-            ) ??
-            const <String, int>{};
-        final itemsAwarded =
-            (data['itemsAwarded'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList() ??
-            const [];
-        final spellsAwarded =
-            (data['spellsAwarded'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList() ??
-            const [];
-        final itemChoiceRewards =
-            (data['itemChoiceRewards'] as List<dynamic>?)
-                ?.whereType<Map>()
-                .map((item) => Map<String, dynamic>.from(item))
-                .toList() ??
-            const [];
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              successful
-                  ? 'Your party passed the challenge.'
-                  : 'Your party did not meet the challenge threshold.',
-            ),
-            if (reason.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(reason, style: Theme.of(context).textTheme.bodySmall),
-            ],
-            const SizedBox(height: 10),
-            Text('Score: $score'),
-            if (statTags.isNotEmpty)
-              Text(
-                'Modifiers: ${statTags.map((tag) => '+${statValues[tag] ?? 0} $tag').join(' · ')}',
-              ),
-            Text('Combined: $combinedScore'),
-            Text('Target: $difficulty'),
-            if (successful && itemChoiceRewards.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              if (challengeId.isEmpty)
-                const Text(
-                  'Item choice reward is available, but challenge context is missing.',
-                )
-              else
-                _ItemChoiceRewardPicker(
-                  choices: itemChoiceRewards,
-                  onChoose: (inventoryItemId) {
-                    return context.read<PoiService>().chooseChallengeRewardItem(
-                      challengeId,
-                      inventoryItemId: inventoryItemId,
-                    );
-                  },
-                ),
-            ],
-            if (rewardExperience > 0 ||
-                rewardGold > 0 ||
-                itemsAwarded.isNotEmpty ||
-                spellsAwarded.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                'Rewards',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              _buildRewardSection(
-                context,
-                experience: rewardExperience,
-                gold: rewardGold,
-                items: itemsAwarded,
-                spells: spellsAwarded,
-              ),
-            ],
-          ],
-        );
+        return _buildChallengeOutcomeContent(context, data);
       case 'scenarioOutcome':
         return _buildScenarioOutcomeContent(context, data);
       case 'monsterBattleVictory':
@@ -744,6 +643,301 @@ class CelebrationModalManager extends StatelessWidget {
                 onChoose: (inventoryItemId) {
                   return context.read<PoiService>().chooseScenarioRewardItem(
                     scenarioId,
+                    inventoryItemId: inventoryItemId,
+                  );
+                },
+              ),
+          ],
+          if (rewardExperience > 0 ||
+              rewardGold > 0 ||
+              itemsAwarded.isNotEmpty ||
+              spellsAwarded.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Rewards',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildRewardSection(
+              context,
+              experience: rewardExperience,
+              gold: rewardGold,
+              items: itemsAwarded,
+              spells: spellsAwarded,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChallengeOutcomeContent(
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) {
+    final theme = Theme.of(context);
+    final successful = data['successful'] == true;
+    final challengeId = data['challengeId']?.toString().trim() ?? '';
+    final reason = (data['reason'] as String?)?.trim() ?? '';
+    final score = (data['score'] as num?)?.toInt() ?? 0;
+    final difficulty = (data['difficulty'] as num?)?.toInt() ?? 0;
+    final combinedScore = (data['combinedScore'] as num?)?.toInt() ?? 0;
+    final rewardExperience = (data['rewardExperience'] as num?)?.toInt() ?? 0;
+    final rewardGold = (data['rewardGold'] as num?)?.toInt() ?? 0;
+    final statTags =
+        (data['statTags'] as List<dynamic>?)
+            ?.map((value) => value.toString().trim())
+            .where((value) => value.isNotEmpty)
+            .toList() ??
+        const <String>[];
+    final statValues =
+        (data['statValues'] as Map?)?.map(
+          (key, value) => MapEntry(
+            key.toString().trim(),
+            (value as num?)?.toInt() ?? 0,
+          ),
+        ) ??
+        const <String, int>{};
+    final itemsAwarded =
+        (data['itemsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList() ??
+        const [];
+    final spellsAwarded =
+        (data['spellsAwarded'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList() ??
+        const [];
+    final itemChoiceRewards =
+        (data['itemChoiceRewards'] as List<dynamic>?)
+            ?.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList() ??
+        const [];
+
+    final progressValue = difficulty <= 0
+        ? 1.0
+        : (combinedScore / math.max(1, difficulty)).clamp(0.0, 1.0).toDouble();
+    final accentColor = successful
+        ? Colors.green.shade700
+        : Colors.red.shade700;
+    final accentTint = successful
+        ? Colors.green.withValues(alpha: 0.12)
+        : Colors.red.withValues(alpha: 0.12);
+    final segments = <_ScenarioScoreSegment>[
+      _ScenarioScoreSegment(
+        label: 'Submission',
+        caption: 'Your answer before modifiers.',
+        icon: Icons.edit_note_rounded,
+        value: score,
+        color: Colors.deepPurple.shade400,
+      ),
+      for (final tag in statTags)
+        _ScenarioScoreSegment(
+          label: _formatStatLabel(tag),
+          caption: 'Stat bonus applied to the challenge.',
+          icon: Icons.bolt_rounded,
+          value: statValues[tag] ?? 0,
+          color: theme.colorScheme.primary,
+        ),
+    ];
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 16 * (1 - value)),
+            child: child,
+          ),
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: successful
+                    ? [Colors.green.shade50, Colors.teal.shade50]
+                    : [Colors.red.shade50, Colors.orange.shade50],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: accentColor.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: accentTint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    successful
+                        ? Icons.emoji_events_rounded
+                        : Icons.shield_outlined,
+                    color: accentColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        reason.isNotEmpty
+                            ? reason
+                            : (successful
+                                  ? 'Your party passed the challenge.'
+                                  : 'Your party did not meet the challenge threshold.'),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: accentColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Total',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Scored $combinedScore / Needed $difficulty',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: accentColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: progressValue),
+                  duration: const Duration(milliseconds: 650),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        minHeight: 10,
+                        value: value,
+                        backgroundColor: theme.colorScheme.surfaceContainerHigh,
+                        valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.14),
+              ),
+            ),
+            child: Theme(
+              data: theme.copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 2,
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                iconColor: theme.colorScheme.onSurfaceVariant,
+                collapsedIconColor: theme.colorScheme.onSurfaceVariant,
+                title: Text(
+                  'Score Breakdown',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  statTags.isEmpty
+                      ? 'This challenge used your base submission score.'
+                      : 'See how the final total was built.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cardWidth = constraints.maxWidth >= 520
+                          ? (constraints.maxWidth - 10) / 2
+                          : constraints.maxWidth;
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (var i = 0; i < segments.length; i++)
+                            _buildScenarioScoreSegmentCard(
+                              context,
+                              segments[i],
+                              index: i,
+                              width: cardWidth,
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (successful && itemChoiceRewards.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            if (challengeId.isEmpty)
+              const Text(
+                'Item choice reward is available, but challenge context is missing.',
+              )
+            else
+              _ItemChoiceRewardPicker(
+                choices: itemChoiceRewards,
+                onChoose: (inventoryItemId) {
+                  return context.read<PoiService>().chooseChallengeRewardItem(
+                    challengeId,
                     inventoryItemId: inventoryItemId,
                   );
                 },

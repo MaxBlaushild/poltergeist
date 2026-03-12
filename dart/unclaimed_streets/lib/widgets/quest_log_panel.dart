@@ -3,14 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../models/point_of_interest.dart';
 import '../models/quest.dart';
-import '../models/quest_node_challenge.dart';
+import '../models/quest_node.dart';
 import '../providers/discoveries_provider.dart';
-import '../providers/character_stats_provider.dart';
 import '../providers/quest_log_provider.dart';
 import '../providers/tags_provider.dart';
-
-const _placeholderImageUrl =
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/poi-undiscovered.png';
+import 'quest_objective_display.dart';
 
 /// Bottom-sheet content for Quest Log.
 /// [onFocusPoI] when user taps a POI in a quest: close sheet, fly to POI, open POI panel.
@@ -122,6 +119,9 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
         }
 
         final completed = ql.completedQuests;
+        final discoveredIds = <String>{
+          for (final d in discoveries.discoveries) d.pointOfInterestId,
+        };
 
         final hasQuestListItems =
             readyToTurnIn.isNotEmpty ||
@@ -153,6 +153,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   _QuestAccordion(
                                     title: 'Ready to Turn In',
                                     quests: readyToTurnIn,
+                                    discoveredPoiIds: discoveredIds,
                                     expanded: _expanded['ready'] ?? true,
                                     onToggle: () {
                                       setState(() {
@@ -168,6 +169,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   _QuestAccordion(
                                     title: 'Tracked Quests',
                                     quests: tracked,
+                                    discoveredPoiIds: discoveredIds,
                                     expanded: _expanded['tracked'] ?? false,
                                     onToggle: () {
                                       setState(() {
@@ -181,12 +183,14 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   ),
                                 ...tags.tagGroups.map((g) {
                                   final list = tagBuckets[g.id] ?? [];
-                                  if (list.isEmpty)
+                                  if (list.isEmpty) {
                                     return const SizedBox.shrink();
+                                  }
                                   return _QuestAccordion(
                                     key: ValueKey(g.id),
                                     title: g.name,
                                     quests: list,
+                                    discoveredPoiIds: discoveredIds,
                                     expanded: _expanded[g.id] ?? false,
                                     onToggle: () {
                                       setState(() {
@@ -203,6 +207,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                                   _QuestAccordion(
                                     title: 'The Rest',
                                     quests: untagged,
+                                    discoveredPoiIds: discoveredIds,
                                     expanded: _expanded['untagged'] ?? false,
                                     onToggle: () {
                                       setState(() {
@@ -238,6 +243,7 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                         child: _QuestAccordion(
                           title: 'Completed Quests',
                           quests: completed,
+                          discoveredPoiIds: discoveredIds,
                           expanded: _expanded['completed'] ?? true,
                           onToggle: () {
                             setState(() {
@@ -264,57 +270,54 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
     return poi.tags.map((t) => t.name).toList();
   }
 
-  double _averageStatValueForChallenge(
-    Map<String, int> stats,
-    QuestNodeChallenge challenge,
-  ) {
-    if (stats.isEmpty) return 0;
-    final tags = challenge.statTags
-        .map((tag) => tag.trim().toLowerCase())
-        .where((tag) => tag.isNotEmpty)
-        .toSet();
-    if (tags.isEmpty) {
-      final values = stats.values;
-      final total = values.fold<int>(0, (sum, value) => sum + value);
-      return total / values.length;
+  String _randomRewardLabel(String size) {
+    switch (size) {
+      case Quest.randomRewardSizeLarge:
+        return 'Large random reward';
+      case Quest.randomRewardSizeMedium:
+        return 'Medium random reward';
+      default:
+        return 'Small random reward';
     }
-    var total = 0;
-    var count = 0;
-    for (final tag in tags) {
-      if (!stats.containsKey(tag)) continue;
-      total += stats[tag] ?? 0;
-      count += 1;
-    }
-    if (count == 0) return 0;
-    return total / count;
   }
 
-  Color _difficultyColor(double statAverage, int difficulty) {
-    if (statAverage > difficulty) {
-      return const Color(0xFFC9C2B2);
-    }
-    if (statAverage > difficulty - 25) {
-      return const Color(0xFF6F8F5E);
-    }
-    if (statAverage > difficulty - 50) {
-      return const Color(0xFFC89A3A);
-    }
-    return const Color(0xFFA35B4B);
+  Widget _buildRandomRewardNotice(BuildContext context, Quest quest) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEE6D3),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFC7B28A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.casino_outlined, color: Color(0xFF7A5B20), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _randomRewardLabel(quest.randomRewardSize),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF5F4618),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildQuestDetail(BuildContext context, Quest quest) {
-    return Consumer3<
-      QuestLogProvider,
-      DiscoveriesProvider,
-      CharacterStatsProvider
-    >(
-      builder: (context, ql, discoveries, statsProvider, _) {
+    return Consumer2<QuestLogProvider, DiscoveriesProvider>(
+      builder: (context, ql, discoveries, _) {
         final isTracked = ql.trackedQuestIds.contains(quest.id);
         final node = quest.currentNode;
         final poi = node?.pointOfInterest;
         final discoveredIds = <String>{
           for (final d in discoveries.discoveries) d.pointOfInterestId,
         };
+        final objectiveLines = questObjectiveLines(node);
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -417,7 +420,13 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                     ),
                   );
                 }),
+              if (quest.hasRandomRewards &&
+                  quest.gold <= 0 &&
+                  quest.itemRewards.isEmpty &&
+                  quest.spellRewards.isEmpty)
+                _buildRandomRewardNotice(context, quest),
               if (quest.gold <= 0 &&
+                  !quest.hasRandomRewards &&
                   quest.itemRewards.isEmpty &&
                   quest.spellRewards.isEmpty)
                 Text(
@@ -444,8 +453,10 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                 const SizedBox(height: 8),
                 if (poi != null)
                   _QuestPoiCard(
+                    node: node,
                     poi: poi,
-                    discovered: discoveredIds.contains(poi.id),
+                    discoveredPoiIds: discoveredIds,
+                    objectiveSummary: questObjectiveSummary(node),
                     onTap: () => _focusPoI(poi),
                   )
                 else
@@ -456,51 +467,34 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.amber.shade200),
                     ),
-                    child: const Text(
-                      'Reach the highlighted quest area to submit your answer.',
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Text(
-                  'Challenges',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                ...node.challenges.map((c) {
-                  final statAvg = _averageStatValueForChallenge(
-                    statsProvider.stats,
-                    c,
-                  );
-                  final color = _difficultyColor(statAvg, c.difficulty);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          margin: const EdgeInsets.only(top: 6),
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                          ),
+                        QuestObjectiveIcon(
+                          node: node,
+                          discoveredPoiIds: discoveredIds,
+                          size: 40,
+                          borderRadius: 6,
+                          iconColor: Theme.of(context).colorScheme.onSurface,
+                          backgroundColor: Colors.amber.shade100,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
-                            c.question,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.copyWith(color: color),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: objectiveLines
+                                .map(
+                                  (line) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(line),
+                                  ),
+                                )
+                                .toList(),
                           ),
                         ),
                       ],
                     ),
-                  );
-                }),
+                  ),
               ],
             ],
           ),
@@ -512,25 +506,21 @@ class _QuestLogPanelState extends State<QuestLogPanel> {
 
 class _QuestPoiCard extends StatelessWidget {
   const _QuestPoiCard({
+    required this.node,
     required this.poi,
-    required this.discovered,
+    required this.discoveredPoiIds,
+    required this.objectiveSummary,
     required this.onTap,
   });
 
+  final QuestNode node;
   final PointOfInterest poi;
-  final bool discovered;
+  final Set<String> discoveredPoiIds;
+  final String objectiveSummary;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final thumbnailUrl = poi.thumbnailUrl;
-    final imageUrl = discovered
-        ? (thumbnailUrl != null && thumbnailUrl.isNotEmpty
-              ? thumbnailUrl
-              : (poi.imageURL != null && poi.imageURL!.isNotEmpty
-                    ? poi.imageURL!
-                    : _placeholderImageUrl))
-        : _placeholderImageUrl;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -542,28 +532,35 @@ class _QuestPoiCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                imageUrl,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 48,
-                  height: 48,
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.place, size: 20),
-                ),
-              ),
+            QuestObjectiveIcon(
+              node: node,
+              discoveredPoiIds: discoveredPoiIds,
+              size: 48,
+              borderRadius: 6,
+              iconColor: Theme.of(context).colorScheme.onSurface,
+              backgroundColor: Colors.grey.shade300,
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                poi.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    poi.name,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (objectiveSummary.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      objectiveSummary,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             const Icon(Icons.chevron_right),
@@ -579,6 +576,7 @@ class _QuestAccordion extends StatelessWidget {
     super.key,
     required this.title,
     required this.quests,
+    required this.discoveredPoiIds,
     required this.expanded,
     required this.onToggle,
     required this.onQuestTap,
@@ -587,6 +585,7 @@ class _QuestAccordion extends StatelessWidget {
 
   final String title;
   final List<Quest> quests;
+  final Set<String> discoveredPoiIds;
   final bool expanded;
   final VoidCallback onToggle;
   final void Function(Quest) onQuestTap;
@@ -646,7 +645,8 @@ class _QuestAccordion extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Column(
                   children: quests.map((q) {
-                    final poi = q.currentNode?.pointOfInterest;
+                    final node = q.currentNode;
+                    final objectiveSummary = questObjectiveSummary(node);
                     return InkWell(
                       onTap: () {
                         if (q.readyToTurnIn && onReadyQuestTap != null) {
@@ -687,30 +687,45 @@ class _QuestAccordion extends StatelessWidget {
                                         : Colors.grey.shade400,
                                   ),
                             const SizedBox(width: 12),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(6),
-                              child: Image.network(
-                                (poi?.thumbnailUrl ?? '').isNotEmpty
-                                    ? poi!.thumbnailUrl!
-                                    : ((poi?.imageURL ?? '').isNotEmpty
-                                          ? poi!.imageURL!
-                                          : _placeholderImageUrl),
-                                width: 36,
-                                height: 36,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  width: 36,
-                                  height: 36,
-                                  color: Colors.grey.shade300,
-                                  child: const Icon(Icons.place, size: 18),
-                                ),
-                              ),
+                            QuestObjectiveIcon(
+                              node: node,
+                              discoveredPoiIds: discoveredPoiIds,
+                              size: 36,
+                              borderRadius: 6,
+                              iconColor: Theme.of(
+                                context,
+                              ).colorScheme.onSurface,
+                              backgroundColor: Colors.grey.shade300,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: Text(
-                                q.name,
-                                style: Theme.of(context).textTheme.bodyLarge,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    q.name,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
+                                  ),
+                                  if (objectiveSummary.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      objectiveSummary,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurface
+                                                .withValues(alpha: 0.72),
+                                          ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                             if (q.completionCount > 1)

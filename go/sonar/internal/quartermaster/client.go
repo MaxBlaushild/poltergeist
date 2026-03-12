@@ -145,6 +145,9 @@ func inventoryItemHasConfiguredConsumeEffects(item *models.InventoryItem) bool {
 	if item.ConsumeHealthDelta != 0 || item.ConsumeManaDelta != 0 {
 		return true
 	}
+	if item.ConsumeDealDamage > 0 || item.ConsumeDealDamageAllEnemies > 0 {
+		return true
+	}
 	if item.ConsumeRevivePartyMemberHealth > 0 || item.ConsumeReviveAllDownedPartyMembersHealth > 0 {
 		return true
 	}

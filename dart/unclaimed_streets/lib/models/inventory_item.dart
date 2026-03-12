@@ -7,6 +7,7 @@ class InventoryItem {
   final String rarityTier;
   final int? sellValue;
   final int? unlockTier;
+  final int? unlockLocksStrength;
   final int itemLevel;
   final String? equipSlot;
   final int strengthMod;
@@ -27,6 +28,10 @@ class InventoryItem {
   final int consumeManaDelta;
   final int consumeRevivePartyMemberHealth;
   final int consumeReviveAllDownedPartyMembersHealth;
+  final int consumeDealDamage;
+  final int consumeDealDamageHits;
+  final int consumeDealDamageAllEnemies;
+  final int consumeDealDamageAllEnemiesHits;
   final List<InventoryConsumeStatus> consumeStatusesToAdd;
   final List<String> consumeStatusesToRemove;
   final List<String> consumeSpellIds;
@@ -40,6 +45,7 @@ class InventoryItem {
     this.rarityTier = '',
     this.sellValue,
     this.unlockTier,
+    this.unlockLocksStrength,
     this.itemLevel = 1,
     this.equipSlot,
     this.strengthMod = 0,
@@ -60,6 +66,10 @@ class InventoryItem {
     this.consumeManaDelta = 0,
     this.consumeRevivePartyMemberHealth = 0,
     this.consumeReviveAllDownedPartyMembersHealth = 0,
+    this.consumeDealDamage = 0,
+    this.consumeDealDamageHits = 0,
+    this.consumeDealDamageAllEnemies = 0,
+    this.consumeDealDamageAllEnemiesHits = 0,
     this.consumeStatusesToAdd = const [],
     this.consumeStatusesToRemove = const [],
     this.consumeSpellIds = const [],
@@ -75,6 +85,7 @@ class InventoryItem {
       rarityTier: json['rarityTier'] as String? ?? '',
       sellValue: (json['sellValue'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
+      unlockLocksStrength: (json['unlockLocksStrength'] as num?)?.toInt(),
       itemLevel: (json['itemLevel'] as num?)?.toInt() ?? 1,
       equipSlot: json['equipSlot'] as String?,
       strengthMod: (json['strengthMod'] as num?)?.toInt() ?? 0,
@@ -99,6 +110,13 @@ class InventoryItem {
       consumeReviveAllDownedPartyMembersHealth:
           (json['consumeReviveAllDownedPartyMembersHealth'] as num?)?.toInt() ??
           0,
+      consumeDealDamage: (json['consumeDealDamage'] as num?)?.toInt() ?? 0,
+      consumeDealDamageHits:
+          (json['consumeDealDamageHits'] as num?)?.toInt() ?? 0,
+      consumeDealDamageAllEnemies:
+          (json['consumeDealDamageAllEnemies'] as num?)?.toInt() ?? 0,
+      consumeDealDamageAllEnemiesHits:
+          (json['consumeDealDamageAllEnemiesHits'] as num?)?.toInt() ?? 0,
       consumeStatusesToAdd:
           (json['consumeStatusesToAdd'] as List<dynamic>?)
               ?.map(

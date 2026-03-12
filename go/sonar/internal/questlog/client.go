@@ -25,13 +25,22 @@ type QuestNodeChallenge struct {
 }
 
 type QuestNode struct {
-	ID             uuid.UUID                      `json:"id"`
-	OrderIndex     int                            `json:"orderIndex"`
-	ScenarioID     *uuid.UUID                     `json:"scenarioId,omitempty"`
-	MonsterID      *uuid.UUID                     `json:"monsterId,omitempty"`
-	ChallengeID    *uuid.UUID                     `json:"challengeId,omitempty"`
-	Challenges     []QuestNodeChallenge           `json:"challenges"`
-	SubmissionType models.QuestNodeSubmissionType `json:"submissionType"`
+	ID                 uuid.UUID                      `json:"id"`
+	OrderIndex         int                            `json:"orderIndex"`
+	ObjectiveText      string                         `json:"objectiveText,omitempty"`
+	PointOfInterest    *models.PointOfInterest        `json:"pointOfInterest,omitempty"`
+	Polygon            []QuestNodePolygonPoint        `json:"polygon,omitempty"`
+	ScenarioID         *uuid.UUID                     `json:"scenarioId,omitempty"`
+	MonsterID          *uuid.UUID                     `json:"monsterId,omitempty"`
+	MonsterEncounterID *uuid.UUID                     `json:"monsterEncounterId,omitempty"`
+	ChallengeID        *uuid.UUID                     `json:"challengeId,omitempty"`
+	Challenges         []QuestNodeChallenge           `json:"challenges"`
+	SubmissionType     models.QuestNodeSubmissionType `json:"submissionType"`
+}
+
+type QuestNodePolygonPoint struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
 }
 
 type QuestItemReward struct {
@@ -46,21 +55,23 @@ type QuestSpellReward struct {
 }
 
 type Quest struct {
-	ID                    uuid.UUID          `json:"id"`
-	Name                  string             `json:"name"`
-	Description           string             `json:"description"`
-	AcceptanceDialogue    []string           `json:"acceptanceDialogue,omitempty"`
-	ImageUrl              string             `json:"imageUrl"`
-	Gold                  int                `json:"gold"`
-	ItemRewards           []QuestItemReward  `json:"itemRewards"`
-	SpellRewards          []QuestSpellReward `json:"spellRewards"`
-	QuestGiverCharacterID *uuid.UUID         `json:"questGiverCharacterId,omitempty"`
-	RecurringQuestID      *uuid.UUID         `json:"recurringQuestId,omitempty"`
-	IsAccepted            bool               `json:"isAccepted"`
-	TurnedInAt            *time.Time         `json:"turnedInAt,omitempty"`
-	CompletionCount       int                `json:"completionCount,omitempty"`
-	ReadyToTurnIn         bool               `json:"readyToTurnIn"`
-	CurrentNode           *QuestNode         `json:"currentNode,omitempty"`
+	ID                    uuid.UUID               `json:"id"`
+	Name                  string                  `json:"name"`
+	Description           string                  `json:"description"`
+	AcceptanceDialogue    []string                `json:"acceptanceDialogue,omitempty"`
+	ImageUrl              string                  `json:"imageUrl"`
+	RewardMode            models.RewardMode       `json:"rewardMode"`
+	RandomRewardSize      models.RandomRewardSize `json:"randomRewardSize"`
+	Gold                  int                     `json:"gold"`
+	ItemRewards           []QuestItemReward       `json:"itemRewards"`
+	SpellRewards          []QuestSpellReward      `json:"spellRewards"`
+	QuestGiverCharacterID *uuid.UUID              `json:"questGiverCharacterId,omitempty"`
+	RecurringQuestID      *uuid.UUID              `json:"recurringQuestId,omitempty"`
+	IsAccepted            bool                    `json:"isAccepted"`
+	TurnedInAt            *time.Time              `json:"turnedInAt,omitempty"`
+	CompletionCount       int                     `json:"completionCount,omitempty"`
+	ReadyToTurnIn         bool                    `json:"readyToTurnIn"`
+	CurrentNode           *QuestNode              `json:"currentNode,omitempty"`
 }
 
 type QuestLog struct {
@@ -108,12 +119,31 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		}
 	}
 
+	trackedAccepted := make([]uuid.UUID, 0, len(trackedQuestIDs))
+	trackedAcceptedSet := make(map[uuid.UUID]struct{}, len(trackedQuestIDs))
+	for _, questID := range trackedQuestIDs {
+		if acc, ok := acceptanceByQuest[questID]; ok && acc.TurnedInAt == nil {
+			trackedAccepted = append(trackedAccepted, questID)
+			trackedAcceptedSet[questID] = struct{}{}
+		}
+	}
+
+	if len(trackedAccepted) > 0 {
+		trackedQuests, err := c.dbClient.Quest().FindByIDs(ctx, trackedAccepted)
+		if err != nil {
+			return nil, err
+		}
+		quests = appendTrackedQuests(quests, trackedQuests, trackedAccepted)
+	}
+
 	filtered := make([]Quest, 0, len(quests))
 	completedBySeries := map[uuid.UUID]Quest{}
 	completedCounts := map[uuid.UUID]int{}
 	for _, quest := range quests {
 		if quest.ZoneID != nil && *quest.ZoneID != zoneID {
-			continue
+			if _, ok := trackedAcceptedSet[quest.ID]; !ok {
+				continue
+			}
 		}
 
 		acceptance, accepted := acceptanceByQuest[quest.ID]
@@ -132,7 +162,10 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			}
 		}
 
-		currentNode := buildCurrentNode(&quest, progress)
+		currentNode, err := buildCurrentNode(ctx, c.dbClient, &quest, progress)
+		if err != nil {
+			return nil, err
+		}
 		allCompleted := len(quest.Nodes) > 0 && allNodesCompleted(&quest, progress)
 		itemRewards := make([]QuestItemReward, 0, len(quest.ItemRewards))
 		for _, reward := range quest.ItemRewards {
@@ -169,6 +202,8 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 			Description:           quest.Description,
 			AcceptanceDialogue:    []string(quest.AcceptanceDialogue),
 			ImageUrl:              quest.ImageURL,
+			RewardMode:            quest.RewardMode,
+			RandomRewardSize:      quest.RandomRewardSize,
 			Gold:                  quest.Gold,
 			ItemRewards:           itemRewards,
 			SpellRewards:          spellRewards,
@@ -210,18 +245,46 @@ func (c *questlogClient) GetQuestLog(ctx context.Context, userID uuid.UUID, zone
 		return left.After(*right)
 	})
 
-	trackedAccepted := []uuid.UUID{}
-	for _, questID := range trackedQuestIDs {
-		if acc, ok := acceptanceByQuest[questID]; ok && acc.TurnedInAt == nil {
-			trackedAccepted = append(trackedAccepted, questID)
-		}
-	}
-
 	return &QuestLog{
 		Quests:          filtered,
 		CompletedQuests: completed,
 		TrackedQuestIDs: trackedAccepted,
 	}, nil
+}
+
+func appendTrackedQuests(
+	quests []models.Quest,
+	trackedQuests []models.Quest,
+	trackedIDs []uuid.UUID,
+) []models.Quest {
+	if len(trackedQuests) == 0 || len(trackedIDs) == 0 {
+		return quests
+	}
+
+	existing := make(map[uuid.UUID]struct{}, len(quests))
+	for _, quest := range quests {
+		existing[quest.ID] = struct{}{}
+	}
+
+	trackedByID := make(map[uuid.UUID]models.Quest, len(trackedQuests))
+	for _, quest := range trackedQuests {
+		trackedByID[quest.ID] = quest
+	}
+
+	merged := append([]models.Quest{}, quests...)
+	for _, questID := range trackedIDs {
+		if _, ok := existing[questID]; ok {
+			continue
+		}
+		quest, ok := trackedByID[questID]
+		if !ok {
+			continue
+		}
+		merged = append(merged, quest)
+		existing[questID] = struct{}{}
+	}
+
+	return merged
 }
 
 func (c *questlogClient) AreQuestObjectivesComplete(ctx context.Context, userID uuid.UUID, questID uuid.UUID) (bool, error) {
@@ -267,9 +330,14 @@ func allNodesCompleted(quest *models.Quest, completed map[uuid.UUID]bool) bool {
 	return true
 }
 
-func buildCurrentNode(quest *models.Quest, completed map[uuid.UUID]bool) *QuestNode {
+func buildCurrentNode(
+	ctx context.Context,
+	dbClient db.DbClient,
+	quest *models.Quest,
+	completed map[uuid.UUID]bool,
+) (*QuestNode, error) {
 	if quest == nil || len(quest.Nodes) == 0 {
-		return nil
+		return nil, nil
 	}
 	nodes := append([]models.QuestNode(nil), quest.Nodes...)
 	sort.Slice(nodes, func(i, j int) bool {
@@ -279,12 +347,16 @@ func buildCurrentNode(quest *models.Quest, completed map[uuid.UUID]bool) *QuestN
 		if completed[node.ID] {
 			continue
 		}
-		return buildQuestNodeView(node)
+		return buildQuestNodeView(ctx, dbClient, node)
 	}
-	return nil
+	return nil, nil
 }
 
-func buildQuestNodeView(node models.QuestNode) *QuestNode {
+func buildQuestNodeView(
+	ctx context.Context,
+	dbClient db.DbClient,
+	node models.QuestNode,
+) (*QuestNode, error) {
 	challenges := make([]QuestNodeChallenge, 0, len(node.Challenges))
 	for _, ch := range node.Challenges {
 		submissionType := ch.SubmissionType
@@ -307,6 +379,15 @@ func buildQuestNodeView(node models.QuestNode) *QuestNode {
 		})
 	}
 
+	objectiveText, pointOfInterest, polygon, err := resolveNodePresentation(
+		ctx,
+		dbClient,
+		node,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	submissionType := node.SubmissionType
 	if strings.TrimSpace(string(submissionType)) == "" {
 		if len(challenges) > 0 {
@@ -318,12 +399,108 @@ func buildQuestNodeView(node models.QuestNode) *QuestNode {
 	}
 
 	return &QuestNode{
-		ID:             node.ID,
-		OrderIndex:     node.OrderIndex,
-		ScenarioID:     node.ScenarioID,
-		MonsterID:      node.MonsterID,
-		ChallengeID:    node.ChallengeID,
-		Challenges:     challenges,
-		SubmissionType: submissionType,
+		ID:                 node.ID,
+		OrderIndex:         node.OrderIndex,
+		ObjectiveText:      objectiveText,
+		PointOfInterest:    pointOfInterest,
+		Polygon:            polygon,
+		ScenarioID:         node.ScenarioID,
+		MonsterID:          node.MonsterID,
+		MonsterEncounterID: node.MonsterEncounterID,
+		ChallengeID:        node.ChallengeID,
+		Challenges:         challenges,
+		SubmissionType:     submissionType,
+	}, nil
+}
+
+func resolveNodePresentation(
+	ctx context.Context,
+	dbClient db.DbClient,
+	node models.QuestNode,
+) (string, *models.PointOfInterest, []QuestNodePolygonPoint, error) {
+	if node.ChallengeID != nil {
+		challenge, err := dbClient.Challenge().FindByID(ctx, *node.ChallengeID)
+		if err != nil {
+			log.Printf("resolveObjectiveText: challenge lookup failed for %s: %v", node.ChallengeID.String(), err)
+			return "", nil, nil, nil
+		}
+		if challenge != nil {
+			return strings.TrimSpace(challenge.Question),
+				challenge.PointOfInterest,
+				convertPolygonPoints(challenge.PolygonPoints),
+				nil
+		}
+		return "", nil, nil, nil
 	}
+
+	if node.ScenarioID != nil {
+		scenario, err := dbClient.Scenario().FindByID(ctx, *node.ScenarioID)
+		if err != nil {
+			log.Printf("resolveObjectiveText: scenario lookup failed for %s: %v", node.ScenarioID.String(), err)
+			return "Investigate the situation", nil, nil, nil
+		}
+		if scenario != nil {
+			return "Investigate the situation", scenario.PointOfInterest, nil, nil
+		}
+		return "Investigate the situation", nil, nil, nil
+	}
+
+	if node.MonsterEncounterID != nil {
+		encounter, err := dbClient.MonsterEncounter().FindByID(
+			ctx,
+			*node.MonsterEncounterID,
+		)
+		if err != nil {
+			log.Printf(
+				"resolveObjectiveText: monster encounter lookup failed for %s: %v",
+				node.MonsterEncounterID.String(),
+				err,
+			)
+			return "", nil, nil, nil
+		}
+		if encounter != nil {
+			name := strings.TrimSpace(encounter.Name)
+			if name != "" {
+				return "Defeat " + name, nil, nil, nil
+			}
+		}
+		return "", nil, nil, nil
+	}
+
+	if node.MonsterID != nil {
+		encounter, err := dbClient.MonsterEncounter().FindFirstByMonsterID(
+			ctx,
+			*node.MonsterID,
+		)
+		if err != nil {
+			log.Printf(
+				"resolveObjectiveText: monster encounter lookup by monster failed for %s: %v",
+				node.MonsterID.String(),
+				err,
+			)
+			return "", nil, nil, nil
+		}
+		if encounter != nil {
+			name := strings.TrimSpace(encounter.Name)
+			if name != "" {
+				return "Defeat " + name, nil, nil, nil
+			}
+		}
+	}
+
+	return "", nil, nil, nil
+}
+
+func convertPolygonPoints(raw [][2]float64) []QuestNodePolygonPoint {
+	if len(raw) == 0 {
+		return nil
+	}
+	points := make([]QuestNodePolygonPoint, 0, len(raw))
+	for _, point := range raw {
+		points = append(points, QuestNodePolygonPoint{
+			Latitude:  point[1],
+			Longitude: point[0],
+		})
+	}
+	return points
 }

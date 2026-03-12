@@ -33,6 +33,7 @@ export type InventoryItem = {
   isCaptureType: boolean;
   sellValue?: number;
   unlockTier?: number;
+  unlockLocksStrength?: number;
   itemLevel?: number;
   equipSlot?: string | null;
   strengthMod?: number;
@@ -54,6 +55,10 @@ export type InventoryItem = {
   consumeManaDelta?: number;
   consumeRevivePartyMemberHealth?: number;
   consumeReviveAllDownedPartyMembersHealth?: number;
+  consumeDealDamage?: number;
+  consumeDealDamageHits?: number;
+  consumeDealDamageAllEnemies?: number;
+  consumeDealDamageAllEnemiesHits?: number;
   consumeStatusesToAdd?: InventoryConsumeStatus[];
   consumeStatusesToRemove?: string[];
   consumeSpellIds?: string[];

@@ -61,6 +61,7 @@ class PointOfInterestPanel extends StatefulWidget {
     this.onUnlocked,
     this.onCharacterTap,
     this.onChallengeTap,
+    this.onQuestObjectiveTap,
     this.onQuestSubmissionState,
   });
 
@@ -75,6 +76,7 @@ class PointOfInterestPanel extends StatefulWidget {
   final Future<void> Function()? onUnlocked;
   final void Function(Character character)? onCharacterTap;
   final void Function(Challenge challenge)? onChallengeTap;
+  final VoidCallback? onQuestObjectiveTap;
   final QuestSubmissionOverlayCallback? onQuestSubmissionState;
 
   @override
@@ -1266,6 +1268,10 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
     final tags = poi.tags;
     final characters = poi.characters;
     final linkedChallenges = widget.linkedChallenges;
+    final questChallengeText = widget.questNode?.challenges
+        .map((challenge) => challenge.question.trim())
+        .where((question) => question.isNotEmpty)
+        .join('\n\n');
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -1430,20 +1436,21 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 6),
-                          ...widget.questNode!.challenges.map(
-                            (c) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Text(
-                                '• ${c.question}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
+                          if (questChallengeText != null &&
+                              questChallengeText.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              questChallengeText,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
-                          ),
+                          ],
                           const SizedBox(height: 8),
                           FilledButton(
-                            onPressed: _showQuestSubmissionModal,
-                            child: Text('Quest: ${widget.quest!.name}'),
+                            onPressed:
+                                widget.onQuestObjectiveTap ??
+                                _showQuestSubmissionModal,
+                            child: const Text('Submit answer'),
                           ),
                         ],
                       ),

@@ -39,6 +39,10 @@ class _BattleItemChoice {
     required this.manaDelta,
     required this.revivePartyMemberHealth,
     required this.reviveAllDownedPartyMembersHealth,
+    required this.dealDamage,
+    required this.dealDamageHits,
+    required this.dealDamageAllEnemies,
+    required this.dealDamageAllEnemiesHits,
     required this.quantity,
   });
 
@@ -48,6 +52,10 @@ class _BattleItemChoice {
   final int manaDelta;
   final int revivePartyMemberHealth;
   final int reviveAllDownedPartyMembersHealth;
+  final int dealDamage;
+  final int dealDamageHits;
+  final int dealDamageAllEnemies;
+  final int dealDamageAllEnemiesHits;
   final int quantity;
 
   _BattleItemChoice copyWith({int? quantity}) => _BattleItemChoice(
@@ -57,6 +65,10 @@ class _BattleItemChoice {
     manaDelta: manaDelta,
     revivePartyMemberHealth: revivePartyMemberHealth,
     reviveAllDownedPartyMembersHealth: reviveAllDownedPartyMembersHealth,
+    dealDamage: dealDamage,
+    dealDamageHits: dealDamageHits,
+    dealDamageAllEnemies: dealDamageAllEnemies,
+    dealDamageAllEnemiesHits: dealDamageAllEnemiesHits,
     quantity: quantity ?? this.quantity,
   );
 }
@@ -1298,6 +1310,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         normalized.contains('revive');
   }
 
+  int _damageHits(int hits, {required bool hasDamage}) {
+    if (!hasDamage) return 0;
+    return hits > 0 ? hits : 1;
+  }
+
   int _strengthDamageBonus() {
     final strength =
         _playerStats['strength'] ?? CharacterStatsProvider.baseStatValue;
@@ -1348,7 +1365,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
     final explicitDamage = damageEffects.fold<int>(
       0,
-      (sum, effect) => sum + math.max(0, effect.amount),
+      (sum, effect) =>
+          sum +
+          math.max(0, effect.amount) *
+              _damageHits(effect.hits, hasDamage: effect.amount > 0),
     );
     if (damageEffects.isNotEmpty) {
       final strengthBonus = _isPhysicalTechnique(ability)
@@ -1396,7 +1416,10 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
 
     final explicitDamage = damageEffects.fold<int>(
       0,
-      (sum, effect) => sum + math.max(0, effect.amount),
+      (sum, effect) =>
+          sum +
+          math.max(0, effect.amount) *
+              _damageHits(effect.hits, hasDamage: effect.amount > 0),
     );
     final strengthBonus = _isPhysicalTechnique(ability)
         ? _strengthDamageBonus()
@@ -1432,6 +1455,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         if (item == null) continue;
         if (item.consumeHealthDelta == 0 &&
             item.consumeManaDelta == 0 &&
+            item.consumeDealDamage == 0 &&
+            item.consumeDealDamageAllEnemies == 0 &&
             item.consumeRevivePartyMemberHealth <= 0 &&
             item.consumeReviveAllDownedPartyMembersHealth <= 0) {
           continue;
@@ -1445,6 +1470,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             revivePartyMemberHealth: item.consumeRevivePartyMemberHealth,
             reviveAllDownedPartyMembersHealth:
                 item.consumeReviveAllDownedPartyMembersHealth,
+            dealDamage: item.consumeDealDamage,
+            dealDamageHits: _damageHits(
+              item.consumeDealDamageHits,
+              hasDamage: item.consumeDealDamage > 0,
+            ),
+            dealDamageAllEnemies: item.consumeDealDamageAllEnemies,
+            dealDamageAllEnemiesHits: _damageHits(
+              item.consumeDealDamageAllEnemiesHits,
+              hasDamage: item.consumeDealDamageAllEnemies > 0,
+            ),
             quantity: entry.quantity,
           ),
         );
@@ -2189,12 +2224,40 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
 
     final parts = <String>['$_playerName uses ${item.name}'];
+    final singleTargetDamage = item.dealDamage * item.dealDamageHits;
+    final allEnemiesDamage =
+        item.dealDamageAllEnemies * item.dealDamageAllEnemiesHits;
     final canTargetAlly =
         widget.isPartyBattle &&
         _partyAllies.length > 1 &&
         (item.healthDelta > 0 ||
             item.manaDelta > 0 ||
             item.revivePartyMemberHealth > 0);
+    int? targetIndex;
+    if (singleTargetDamage > 0) {
+      if (allEnemiesDamage == 0 && _aliveEnemies.length > 1) {
+        targetIndex = await _pickSingleTargetEnemyIndex(actionLabel: item.name);
+        if (!mounted || !_canAct || targetIndex == null) return;
+      } else {
+        targetIndex = _resolveTargetEnemyIndex(_activeEnemyIndex);
+      }
+      if (item.dealDamageHits > 1) {
+        parts.add(
+          'dealing ${item.dealDamage} damage ${item.dealDamageHits} times',
+        );
+      } else {
+        parts.add('dealing $singleTargetDamage damage');
+      }
+    }
+    if (allEnemiesDamage > 0) {
+      if (item.dealDamageAllEnemiesHits > 1) {
+        parts.add(
+          'dealing ${item.dealDamageAllEnemies} damage to all enemies ${item.dealDamageAllEnemiesHits} times',
+        );
+      } else {
+        parts.add('dealing $allEnemiesDamage damage to all enemies');
+      }
+    }
     int? allyTargetIndex;
     if (canTargetAlly) {
       allyTargetIndex = await _pickSingleTargetAllyIndex(
@@ -2309,7 +2372,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     await _resolvePlayerAction(
       message: '${parts.join(', ')}.',
-      damageToMonster: 0,
+      damageToMonster: singleTargetDamage,
+      damageToAllEnemies: allEnemiesDamage,
+      targetEnemyIndex: targetIndex,
       playerHealthDelta: playerHealthDelta,
       playerManaDelta: allyTargetIndex == null ? item.manaDelta : 0,
       allyTargetIndex: allyTargetIndex,
@@ -3312,10 +3377,16 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               .map((entry) {
                 final index = entry.key;
                 final item = entry.value;
+                final damageLabel = item.dealDamage > 0
+                    ? ' | DMG ${item.dealDamage}x${item.dealDamageHits}'
+                    : '';
+                final allEnemiesDamageLabel = item.dealDamageAllEnemies > 0
+                    ? ' | AOE ${item.dealDamageAllEnemies}x${item.dealDamageAllEnemiesHits}'
+                    : '';
                 return _buildCommandButton(
                   context: context,
                   label:
-                      '${item.name} x${item.quantity}${item.healthDelta != 0 ? ' | HP ${item.healthDelta > 0 ? '+' : ''}${item.healthDelta}' : ''}${item.manaDelta != 0 ? ' | MP ${item.manaDelta > 0 ? '+' : ''}${item.manaDelta}' : ''}',
+                      '${item.name} x${item.quantity}${item.healthDelta != 0 ? ' | HP ${item.healthDelta > 0 ? '+' : ''}${item.healthDelta}' : ''}${item.manaDelta != 0 ? ' | MP ${item.manaDelta > 0 ? '+' : ''}${item.manaDelta}' : ''}$damageLabel$allEnemiesDamageLabel',
                   commandKey: 'item:$index',
                   onPressed: _canAct ? () => _useItem(item) : null,
                 );

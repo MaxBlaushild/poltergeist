@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 
 import '../constants/gameplay_constants.dart';
 import '../models/inventory_item.dart';
+import '../models/spell.dart';
 import '../models/treasure_chest.dart';
+import '../providers/character_stats_provider.dart';
 import '../providers/location_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
@@ -82,26 +84,46 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
     return R * c;
   }
 
-  bool get _hasUnlockItem {
+  int _inventoryItemLockUnlockStrength(InventoryItem? item) {
+    if (item == null) return 0;
+    return item.unlockLocksStrength ?? item.unlockTier ?? 0;
+  }
+
+  int _spellLockUnlockStrength(Spell spell) {
+    var best = 0;
+    for (final effect in spell.effects) {
+      if (effect.type.trim().toLowerCase() != Spell.effectTypeUnlockLocks) {
+        continue;
+      }
+      if (effect.amount > best) {
+        best = effect.amount;
+      }
+    }
+    return best;
+  }
+
+  bool _hasUnlockCapability(List<Spell> abilities) {
     final t = widget.treasureChest.unlockTier;
     if (t == null) return true;
     for (final o in _ownedItems) {
       if (o.quantity <= 0) continue;
-      InventoryItem? inv;
-      for (final i in _inventoryItems) {
-        if (i.id == o.inventoryItemId) {
-          inv = i;
-          break;
-        }
+      final inv = _inventoryItemForId(o.inventoryItemId);
+      if (_inventoryItemLockUnlockStrength(inv) >= t) {
+        return true;
       }
-      if (inv != null && inv.unlockTier != null && inv.unlockTier! >= t) {
+    }
+    for (final ability in abilities) {
+      if (_spellLockUnlockStrength(ability) >= t) {
         return true;
       }
     }
     return false;
   }
 
-  ({String text, bool disabled}) _buttonState(bool isWithinRange) {
+  ({String text, bool disabled}) _buttonState(
+    bool isWithinRange,
+    List<Spell> abilities,
+  ) {
     if (widget.treasureChest.openedByUser == true) {
       return (text: 'Already opened', disabled: true);
     }
@@ -111,7 +133,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
     if (widget.treasureChest.unlockTier == null) {
       return (text: 'Open Chest', disabled: false);
     }
-    if (_hasUnlockItem) {
+    if (_hasUnlockCapability(abilities)) {
       return (text: 'Unlock', disabled: false);
     }
     return (text: 'Locked', disabled: true);
@@ -195,6 +217,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final loc = context.watch<LocationProvider>().location;
+    final abilities = context.watch<CharacterStatsProvider>().abilities;
     final distance = loc != null
         ? _calculateDistance(
             loc.latitude,
@@ -204,7 +227,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
           )
         : null;
     final isWithinRange = distance != null && distance <= _openRadiusMeters;
-    final button = _buttonState(isWithinRange);
+    final button = _buttonState(isWithinRange, abilities);
     final isOpened = widget.treasureChest.openedByUser == true;
 
     return DraggableScrollableSheet(
@@ -339,7 +362,7 @@ class _TreasureChestPanelState extends State<TreasureChestPanel> {
                           _InfoChip(
                             icon: Icons.vpn_key_outlined,
                             label:
-                                'Unlock tier ${widget.treasureChest.unlockTier}',
+                                'Lock Strength ${widget.treasureChest.unlockTier}',
                           ),
                       ],
                     ),

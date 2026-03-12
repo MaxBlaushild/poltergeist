@@ -692,6 +692,10 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 	if err != nil {
 		return nil, err
 	}
+	participantIDs := make([]uuid.UUID, 0, len(participants))
+	for _, participant := range participants {
+		participantIDs = append(participantIDs, participant.UserID)
+	}
 	if encounter != nil {
 		for _, participant := range participants {
 			if err := s.dbClient.UserMonsterEncounterVictory().Upsert(
@@ -703,6 +707,14 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 			}
 		}
 	}
+	if err := s.completeQuestMonsterObjectives(
+		ctx,
+		participantIDs,
+		encounter,
+		monster.ID,
+	); err != nil {
+		return nil, err
+	}
 	if monster.OwnerUserID != nil {
 		if encounter != nil {
 			if err := s.dbClient.Tutorial().MarkMonsterCompleted(ctx, battle.UserID, encounter.ID); err != nil {
@@ -711,6 +723,88 @@ func (s *server) finalizeMonsterBattleIfDefeated(
 		}
 	}
 	return battle, nil
+}
+
+func (s *server) completeQuestMonsterObjectives(
+	ctx context.Context,
+	userIDs []uuid.UUID,
+	encounter *models.MonsterEncounter,
+	defeatedMonsterID uuid.UUID,
+) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	for _, userID := range userIDs {
+		acceptances, err := s.dbClient.QuestAcceptanceV2().FindByUserID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		for _, acceptance := range acceptances {
+			if acceptance.TurnedInAt != nil {
+				continue
+			}
+			quest, err := s.dbClient.Quest().FindByID(ctx, acceptance.QuestID)
+			if err != nil {
+				return err
+			}
+			if quest == nil {
+				continue
+			}
+			currentNode, err := s.currentQuestNode(ctx, quest, acceptance.ID)
+			if err != nil {
+				return err
+			}
+			if currentNode == nil || !questNodeMatchesMonsterVictory(currentNode, encounter, defeatedMonsterID) {
+				continue
+			}
+
+			progress, err := s.dbClient.QuestNodeProgress().FindByAcceptanceAndNode(ctx, acceptance.ID, currentNode.ID)
+			if err != nil {
+				return err
+			}
+			if progress == nil {
+				progress = &models.QuestNodeProgress{
+					ID:                uuid.New(),
+					CreatedAt:         now,
+					UpdatedAt:         now,
+					QuestAcceptanceID: acceptance.ID,
+					QuestNodeID:       currentNode.ID,
+					CompletedAt:       &now,
+				}
+				if err := s.dbClient.QuestNodeProgress().Create(ctx, progress); err != nil {
+					return err
+				}
+				continue
+			}
+			if progress.CompletedAt != nil {
+				continue
+			}
+			if err := s.dbClient.QuestNodeProgress().MarkCompleted(ctx, progress.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func questNodeMatchesMonsterVictory(
+	node *models.QuestNode,
+	encounter *models.MonsterEncounter,
+	defeatedMonsterID uuid.UUID,
+) bool {
+	if node == nil {
+		return false
+	}
+	if encounter != nil && node.MonsterEncounterID != nil && *node.MonsterEncounterID == encounter.ID {
+		return true
+	}
+	if node.MonsterID != nil && *node.MonsterID == defeatedMonsterID {
+		return true
+	}
+	return false
 }
 
 func (s *server) getMonsterBattleInvites(ctx *gin.Context) {

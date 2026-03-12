@@ -48,11 +48,19 @@ class QuestSpellReward {
 }
 
 class Quest {
+  static const rewardModeExplicit = 'explicit';
+  static const rewardModeRandom = 'random';
+  static const randomRewardSizeSmall = 'small';
+  static const randomRewardSizeMedium = 'medium';
+  static const randomRewardSizeLarge = 'large';
+
   final String id;
   final String name;
   final String description;
   final List<String> acceptanceDialogue;
   final String? imageUrl;
+  final String rewardMode;
+  final String randomRewardSize;
   final String? zoneId;
   final String? questArchetypeId;
   final String? questGiverCharacterId;
@@ -75,6 +83,8 @@ class Quest {
     required this.description,
     this.acceptanceDialogue = const [],
     this.imageUrl,
+    this.rewardMode = rewardModeRandom,
+    this.randomRewardSize = randomRewardSizeSmall,
     this.zoneId,
     this.questArchetypeId,
     this.questGiverCharacterId,
@@ -103,6 +113,9 @@ class Quest {
               .toList() ??
           const [],
       imageUrl: json['imageUrl'] as String?,
+      rewardMode: json['rewardMode']?.toString() ?? rewardModeRandom,
+      randomRewardSize:
+          json['randomRewardSize']?.toString() ?? randomRewardSizeSmall,
       zoneId: json['zoneId'] as String?,
       questArchetypeId: json['questArchetypeId'] as String?,
       questGiverCharacterId: json['questGiverCharacterId'] as String?,
@@ -149,4 +162,6 @@ class Quest {
           : null,
     );
   }
+
+  bool get hasRandomRewards => rewardMode == rewardModeRandom;
 }
