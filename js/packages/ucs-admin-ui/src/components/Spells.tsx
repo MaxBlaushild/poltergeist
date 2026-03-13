@@ -6,7 +6,11 @@ type SpellStatusTemplateForm = {
   name: string;
   description: string;
   effect: string;
+  effectType: string;
   positive: boolean;
+  damagePerTick: string;
+  healthPerTick: string;
+  manaPerTick: string;
   durationSeconds: string;
   strengthMod: string;
   dexterityMod: string;
@@ -129,11 +133,22 @@ const damageAffinityOptions = [
   'shadow',
 ] as const;
 
+const statusEffectTypeOptions = [
+  'stat_modifier',
+  'damage_over_time',
+  'health_over_time',
+  'mana_over_time',
+] as const;
+
 const emptyStatusTemplate = (): SpellStatusTemplateForm => ({
   name: '',
   description: '',
   effect: '',
+  effectType: 'stat_modifier',
   positive: true,
+  damagePerTick: '0',
+  healthPerTick: '0',
+  manaPerTick: '0',
   durationSeconds: '60',
   strengthMod: '0',
   dexterityMod: '0',
@@ -261,7 +276,11 @@ const parseStatusTemplate = (
     name,
     description: template.description.trim(),
     effect: template.effect.trim(),
+    effectType: template.effectType.trim().toLowerCase() || 'stat_modifier',
     positive: template.positive,
+    damagePerTick: parseIntSafe(template.damagePerTick, 0),
+    healthPerTick: parseIntSafe(template.healthPerTick, 0),
+    manaPerTick: parseIntSafe(template.manaPerTick, 0),
     durationSeconds: duration,
     strengthMod: parseIntSafe(template.strengthMod, 0),
     dexterityMod: parseIntSafe(template.dexterityMod, 0),
@@ -334,7 +353,11 @@ const formFromSpell = (spell: Spell): SpellFormState => {
                 name: status.name ?? '',
                 description: status.description ?? '',
                 effect: status.effect ?? '',
+                effectType: status.effectType ?? 'stat_modifier',
                 positive: status.positive ?? true,
+                damagePerTick: String(status.damagePerTick ?? 0),
+                healthPerTick: String(status.healthPerTick ?? 0),
+                manaPerTick: String(status.manaPerTick ?? 0),
                 durationSeconds: String(status.durationSeconds ?? 60),
                 strengthMod: String(status.strengthMod ?? 0),
                 dexterityMod: String(status.dexterityMod ?? 0),
@@ -1690,6 +1713,28 @@ export const Spells = () => {
                                           )
                                         }
                                       />
+                                  </label>
+                                    <label className="text-xs">
+                                      Status Effect Type
+                                      <select
+                                        className="w-full border rounded-md p-1.5"
+                                        value={status.effectType}
+                                        onChange={(e) =>
+                                          updateEffectStatus(
+                                            effectIndex,
+                                            statusIndex,
+                                            {
+                                              effectType: e.target.value,
+                                            }
+                                          )
+                                        }
+                                      >
+                                        {statusEffectTypeOptions.map((type) => (
+                                          <option key={type} value={type}>
+                                            {type}
+                                          </option>
+                                        ))}
+                                      </select>
                                     </label>
                                     <label className="text-xs md:col-span-2">
                                       Description
@@ -1746,6 +1791,38 @@ export const Spells = () => {
                                         ? 'Forced Detrimental'
                                         : 'Positive'}
                                     </label>
+                                    <div className="grid grid-cols-3 gap-2 md:col-span-2">
+                                      {[
+                                        ['damagePerTick', 'Damage / Tick'],
+                                        ['healthPerTick', 'Health / Tick'],
+                                        ['manaPerTick', 'Mana / Tick'],
+                                      ].map(([key, label]) => (
+                                        <label
+                                          className="text-[11px]"
+                                          key={key}
+                                        >
+                                          {label}
+                                          <input
+                                            className="w-full border rounded-md p-1"
+                                            type="number"
+                                            value={
+                                              status[
+                                                key as keyof SpellStatusTemplateForm
+                                              ] as string
+                                            }
+                                            onChange={(e) =>
+                                              updateEffectStatus(
+                                                effectIndex,
+                                                statusIndex,
+                                                {
+                                                  [key]: e.target.value,
+                                                }
+                                              )
+                                            }
+                                          />
+                                        </label>
+                                      ))}
+                                    </div>
                                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:col-span-2">
                                       {[
                                         ['strengthMod', 'STR'],

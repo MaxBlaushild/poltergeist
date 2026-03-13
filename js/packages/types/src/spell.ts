@@ -29,7 +29,11 @@ export interface SpellStatusTemplate {
   name: string;
   description: string;
   effect: string;
+  effectType?: string;
   positive: boolean;
+  damagePerTick?: number;
+  healthPerTick?: number;
+  manaPerTick?: number;
   durationSeconds: number;
   strengthMod: number;
   dexterityMod: number;

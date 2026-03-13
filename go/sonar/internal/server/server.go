@@ -8681,6 +8681,8 @@ func scaleConsumableStatuses(
 			next.DurationSeconds = maxInt(1, int(math.Round(float64(next.DurationSeconds)*durationMultiplier)))
 		}
 		next.DamagePerTick = scaleConsumableValue(next.DamagePerTick, powerMultiplier)
+		next.HealthPerTick = scaleConsumableValue(next.HealthPerTick, powerMultiplier)
+		next.ManaPerTick = scaleConsumableValue(next.ManaPerTick, powerMultiplier)
 		next.StrengthMod = scaleConsumableValue(next.StrengthMod, powerMultiplier)
 		next.DexterityMod = scaleConsumableValue(next.DexterityMod, powerMultiplier)
 		next.ConstitutionMod = scaleConsumableValue(next.ConstitutionMod, powerMultiplier)
@@ -12118,6 +12120,8 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		EffectType      string `json:"effectType"`
 		Positive        *bool  `json:"positive"`
 		DamagePerTick   int    `json:"damagePerTick"`
+		HealthPerTick   int    `json:"healthPerTick"`
+		ManaPerTick     int    `json:"manaPerTick"`
 		DurationSeconds int    `json:"durationSeconds" binding:"required"`
 		StrengthMod     int    `json:"strengthMod"`
 		DexterityMod    int    `json:"dexterityMod"`
@@ -12142,9 +12146,22 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		return
 	}
 	effectType := normalizeUserStatusEffectType(requestBody.EffectType)
-	if effectType == models.UserStatusEffectTypeDamageOverTime && requestBody.DamagePerTick <= 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damagePerTick must be > 0 for damage_over_time statuses"})
-		return
+	switch effectType {
+	case models.UserStatusEffectTypeDamageOverTime:
+		if requestBody.DamagePerTick <= 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "damagePerTick must be > 0 for damage_over_time statuses"})
+			return
+		}
+	case models.UserStatusEffectTypeHealthOverTime:
+		if requestBody.HealthPerTick == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "healthPerTick must be non-zero for health_over_time statuses"})
+			return
+		}
+	case models.UserStatusEffectTypeManaOverTime:
+		if requestBody.ManaPerTick == 0 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "manaPerTick must be non-zero for mana_over_time statuses"})
+			return
+		}
 	}
 
 	user, err := s.dbClient.User().FindByID(ctx, userID)
@@ -12171,6 +12188,8 @@ func (s *server) adminCreateUserStatus(ctx *gin.Context) {
 		Positive:        isPositive,
 		EffectType:      effectType,
 		DamagePerTick:   requestBody.DamagePerTick,
+		HealthPerTick:   requestBody.HealthPerTick,
+		ManaPerTick:     requestBody.ManaPerTick,
 		StrengthMod:     requestBody.StrengthMod,
 		DexterityMod:    requestBody.DexterityMod,
 		ConstitutionMod: requestBody.ConstitutionMod,
@@ -14099,6 +14118,8 @@ type scenarioFailureStatusPayload struct {
 	EffectType      string `json:"effectType"`
 	Positive        *bool  `json:"positive"`
 	DamagePerTick   int    `json:"damagePerTick"`
+	HealthPerTick   int    `json:"healthPerTick"`
+	ManaPerTick     int    `json:"manaPerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 	StrengthMod     int    `json:"strengthMod"`
 	DexterityMod    int    `json:"dexterityMod"`
@@ -14260,6 +14281,8 @@ type scenarioAppliedFailureStatus struct {
 	EffectType      string `json:"effectType"`
 	Positive        bool   `json:"positive"`
 	DamagePerTick   int    `json:"damagePerTick"`
+	HealthPerTick   int    `json:"healthPerTick"`
+	ManaPerTick     int    `json:"manaPerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 }
 
@@ -14365,8 +14388,19 @@ func parseScenarioFailureStatusTemplates(
 			return nil, fmt.Errorf("%s[%d].durationSeconds must be > 0", fieldName, idx)
 		}
 		effectType := normalizeUserStatusEffectType(status.EffectType)
-		if effectType == models.UserStatusEffectTypeDamageOverTime && status.DamagePerTick <= 0 {
-			return nil, fmt.Errorf("%s[%d].damagePerTick must be > 0 for damage_over_time statuses", fieldName, idx)
+		switch effectType {
+		case models.UserStatusEffectTypeDamageOverTime:
+			if status.DamagePerTick <= 0 {
+				return nil, fmt.Errorf("%s[%d].damagePerTick must be > 0 for damage_over_time statuses", fieldName, idx)
+			}
+		case models.UserStatusEffectTypeHealthOverTime:
+			if status.HealthPerTick == 0 {
+				return nil, fmt.Errorf("%s[%d].healthPerTick must be non-zero for health_over_time statuses", fieldName, idx)
+			}
+		case models.UserStatusEffectTypeManaOverTime:
+			if status.ManaPerTick == 0 {
+				return nil, fmt.Errorf("%s[%d].manaPerTick must be non-zero for mana_over_time statuses", fieldName, idx)
+			}
 		}
 		positive := true
 		if status.Positive != nil {
@@ -14379,6 +14413,8 @@ func parseScenarioFailureStatusTemplates(
 			EffectType:      string(effectType),
 			Positive:        positive,
 			DamagePerTick:   status.DamagePerTick,
+			HealthPerTick:   status.HealthPerTick,
+			ManaPerTick:     status.ManaPerTick,
 			DurationSeconds: status.DurationSeconds,
 			StrengthMod:     status.StrengthMod,
 			DexterityMod:    status.DexterityMod,
@@ -14823,6 +14859,8 @@ func (s *server) applyScenarioFailurePenalty(
 			Positive:        statusTemplate.Positive,
 			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
 			DamagePerTick:   statusTemplate.DamagePerTick,
+			HealthPerTick:   statusTemplate.HealthPerTick,
+			ManaPerTick:     statusTemplate.ManaPerTick,
 			StrengthMod:     statusTemplate.StrengthMod,
 			DexterityMod:    statusTemplate.DexterityMod,
 			ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -14842,6 +14880,8 @@ func (s *server) applyScenarioFailurePenalty(
 			EffectType:      string(normalizeUserStatusEffectType(statusTemplate.EffectType)),
 			Positive:        statusTemplate.Positive,
 			DamagePerTick:   statusTemplate.DamagePerTick,
+			HealthPerTick:   statusTemplate.HealthPerTick,
+			ManaPerTick:     statusTemplate.ManaPerTick,
 			DurationSeconds: statusTemplate.DurationSeconds,
 		})
 	}
@@ -14901,6 +14941,8 @@ func (s *server) applyScenarioSuccessReward(
 			Positive:        statusTemplate.Positive,
 			EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
 			DamagePerTick:   statusTemplate.DamagePerTick,
+			HealthPerTick:   statusTemplate.HealthPerTick,
+			ManaPerTick:     statusTemplate.ManaPerTick,
 			StrengthMod:     statusTemplate.StrengthMod,
 			DexterityMod:    statusTemplate.DexterityMod,
 			ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -14920,6 +14962,8 @@ func (s *server) applyScenarioSuccessReward(
 			EffectType:      string(normalizeUserStatusEffectType(statusTemplate.EffectType)),
 			Positive:        statusTemplate.Positive,
 			DamagePerTick:   statusTemplate.DamagePerTick,
+			HealthPerTick:   statusTemplate.HealthPerTick,
+			ManaPerTick:     statusTemplate.ManaPerTick,
 			DurationSeconds: statusTemplate.DurationSeconds,
 		})
 	}

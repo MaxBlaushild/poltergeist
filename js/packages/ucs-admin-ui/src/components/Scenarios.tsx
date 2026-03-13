@@ -21,7 +21,11 @@ type ScenarioFailureStatus = {
   name: string;
   description: string;
   effect: string;
+  effectType: string;
   positive: boolean;
+  damagePerTick: number;
+  healthPerTick: number;
+  manaPerTick: number;
   durationSeconds: number;
   strengthMod: number;
   dexterityMod: number;
@@ -179,11 +183,22 @@ const failureDrainTypes: ScenarioFailureDrainType[] = [
   'percent',
 ];
 
+const statusEffectTypes = [
+  'stat_modifier',
+  'damage_over_time',
+  'health_over_time',
+  'mana_over_time',
+] as const;
+
 const emptyFailureStatus = (): ScenarioFailureStatus => ({
   name: '',
   description: '',
   effect: '',
+  effectType: 'stat_modifier',
   positive: true,
+  damagePerTick: 0,
+  healthPerTick: 0,
+  manaPerTick: 0,
   durationSeconds: 60,
   strengthMod: 0,
   dexterityMod: 0,
@@ -313,6 +328,19 @@ const normalizeFailureStatus = (
     name: (status.name ?? '').trim(),
     description: (status.description ?? '').trim(),
     effect: (status.effect ?? '').trim(),
+    effectType:
+      typeof status.effectType === 'string' && status.effectType.trim() !== ''
+        ? status.effectType.trim().toLowerCase()
+        : base.effectType,
+    damagePerTick: Number.isFinite(status.damagePerTick)
+      ? Number(status.damagePerTick)
+      : 0,
+    healthPerTick: Number.isFinite(status.healthPerTick)
+      ? Number(status.healthPerTick)
+      : 0,
+    manaPerTick: Number.isFinite(status.manaPerTick)
+      ? Number(status.manaPerTick)
+      : 0,
     durationSeconds: Number.isFinite(status.durationSeconds)
       ? Number(status.durationSeconds)
       : base.durationSeconds,
@@ -1920,6 +1948,24 @@ export const Scenarios = () => {
                 min={1}
               />
             </label>
+            <label className="text-sm">
+              Status Effect Type
+              <select
+                value={status.effectType}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    effectType: e.target.value,
+                  })
+                }
+                className="w-full border rounded-md p-2"
+              >
+                {statusEffectTypes.map((effectType) => (
+                  <option key={effectType} value={effectType}>
+                    {effectType}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="text-sm md:col-span-2">
               Description
               <input
@@ -1956,6 +2002,48 @@ export const Scenarios = () => {
             />
             Positive status
           </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+            <label className="text-sm">
+              Damage Per Tick
+              <input
+                value={status.damagePerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    damagePerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+            <label className="text-sm">
+              Health Per Tick
+              <input
+                value={status.healthPerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    healthPerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+            <label className="text-sm">
+              Mana Per Tick
+              <input
+                value={status.manaPerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    manaPerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
             <label className="text-xs">
@@ -2184,6 +2272,24 @@ export const Scenarios = () => {
                 min={1}
               />
             </label>
+            <label className="text-sm">
+              Status Effect Type
+              <select
+                value={status.effectType}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    effectType: e.target.value,
+                  })
+                }
+                className="w-full border rounded-md p-2"
+              >
+                {statusEffectTypes.map((effectType) => (
+                  <option key={effectType} value={effectType}>
+                    {effectType}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="text-sm md:col-span-2">
               Description
               <input
@@ -2220,6 +2326,48 @@ export const Scenarios = () => {
             />
             Positive status
           </label>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+            <label className="text-sm">
+              Damage Per Tick
+              <input
+                value={status.damagePerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    damagePerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+            <label className="text-sm">
+              Health Per Tick
+              <input
+                value={status.healthPerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    healthPerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+            <label className="text-sm">
+              Mana Per Tick
+              <input
+                value={status.manaPerTick}
+                onChange={(e) =>
+                  config.onUpdateStatus(statusIndex, {
+                    manaPerTick: parseIntValue(e.target.value, 0),
+                  })
+                }
+                className="w-full border rounded-md p-2"
+                type="number"
+              />
+            </label>
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
             <label className="text-xs">

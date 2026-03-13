@@ -15,6 +15,10 @@ func normalizeUserStatusEffectType(raw string) models.UserStatusEffectType {
 	switch models.UserStatusEffectType(strings.TrimSpace(strings.ToLower(raw))) {
 	case models.UserStatusEffectTypeDamageOverTime:
 		return models.UserStatusEffectTypeDamageOverTime
+	case models.UserStatusEffectTypeHealthOverTime:
+		return models.UserStatusEffectTypeHealthOverTime
+	case models.UserStatusEffectTypeManaOverTime:
+		return models.UserStatusEffectTypeManaOverTime
 	default:
 		return models.UserStatusEffectTypeStatModifier
 	}
@@ -24,8 +28,49 @@ func normalizeMonsterStatusEffectType(raw string) models.MonsterStatusEffectType
 	switch models.MonsterStatusEffectType(strings.TrimSpace(strings.ToLower(raw))) {
 	case models.MonsterStatusEffectTypeDamageOverTime:
 		return models.MonsterStatusEffectTypeDamageOverTime
+	case models.MonsterStatusEffectTypeHealthOverTime:
+		return models.MonsterStatusEffectTypeHealthOverTime
 	default:
 		return models.MonsterStatusEffectTypeStatModifier
+	}
+}
+
+func userStatusTickDeltas(status models.UserStatus) (healthDelta int, manaDelta int, applies bool) {
+	switch normalizeUserStatusEffectType(string(status.EffectType)) {
+	case models.UserStatusEffectTypeDamageOverTime:
+		if status.DamagePerTick <= 0 {
+			return 0, 0, false
+		}
+		return -status.DamagePerTick, 0, true
+	case models.UserStatusEffectTypeHealthOverTime:
+		if status.HealthPerTick == 0 {
+			return 0, 0, false
+		}
+		return status.HealthPerTick, 0, true
+	case models.UserStatusEffectTypeManaOverTime:
+		if status.ManaPerTick == 0 {
+			return 0, 0, false
+		}
+		return 0, status.ManaPerTick, true
+	default:
+		return 0, 0, false
+	}
+}
+
+func monsterStatusHealthTickDelta(status models.MonsterStatus) (healthDelta int, applies bool) {
+	switch normalizeMonsterStatusEffectType(string(status.EffectType)) {
+	case models.MonsterStatusEffectTypeDamageOverTime:
+		if status.DamagePerTick <= 0 {
+			return 0, false
+		}
+		return -status.DamagePerTick, true
+	case models.MonsterStatusEffectTypeHealthOverTime:
+		if status.HealthPerTick == 0 {
+			return 0, false
+		}
+		return status.HealthPerTick, true
+	default:
+		return 0, false
 	}
 }
 
@@ -47,12 +92,11 @@ func (s *server) applyOutOfBattleUserDamageOverTime(ctx context.Context, userID 
 	}
 
 	now := time.Now()
-	totalDamage := 0
+	totalHealthDelta := 0
+	totalManaDelta := 0
 	for _, status := range statuses {
-		if normalizeUserStatusEffectType(string(status.EffectType)) != models.UserStatusEffectTypeDamageOverTime {
-			continue
-		}
-		if status.DamagePerTick <= 0 {
+		healthDelta, manaDelta, applies := userStatusTickDeltas(status)
+		if !applies {
 			continue
 		}
 
@@ -69,15 +113,16 @@ func (s *server) applyOutOfBattleUserDamageOverTime(ctx context.Context, userID 
 			continue
 		}
 
-		totalDamage += ticks * status.DamagePerTick
+		totalHealthDelta += ticks * healthDelta
+		totalManaDelta += ticks * manaDelta
 		newLastTickAt := lastTickAnchor.Add(time.Duration(ticks) * userOutOfBattleDamageOverTimeTickInterval)
 		if err := s.dbClient.UserStatus().UpdateLastTickAt(ctx, status.ID, newLastTickAt); err != nil {
 			return err
 		}
 	}
 
-	if totalDamage > 0 {
-		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, totalDamage, 0); err != nil {
+	if totalHealthDelta != 0 || totalManaDelta != 0 {
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -totalHealthDelta, -totalManaDelta); err != nil {
 			return err
 		}
 	}
@@ -96,15 +141,20 @@ func (s *server) applyBattleTurnDamageOverTime(
 		return 0, 0, err
 	}
 	for _, status := range userStatuses {
-		if normalizeUserStatusEffectType(string(status.EffectType)) != models.UserStatusEffectTypeDamageOverTime {
+		healthDelta, manaDelta, applies := userStatusTickDeltas(status)
+		if !applies {
 			continue
 		}
-		if status.DamagePerTick <= 0 {
-			continue
+		if healthDelta < 0 {
+			userDamage += -healthDelta
 		}
-		userDamage += status.DamagePerTick
 		if err := s.dbClient.UserStatus().UpdateLastTickAt(ctx, status.ID, now); err != nil {
 			return 0, 0, err
+		}
+		if manaDelta != 0 || healthDelta != 0 {
+			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, -healthDelta, -manaDelta); err != nil {
+				return 0, 0, err
+			}
 		}
 	}
 
@@ -113,26 +163,20 @@ func (s *server) applyBattleTurnDamageOverTime(
 		return 0, 0, err
 	}
 	for _, status := range monsterStatuses {
-		if normalizeMonsterStatusEffectType(string(status.EffectType)) != models.MonsterStatusEffectTypeDamageOverTime {
+		healthDelta, applies := monsterStatusHealthTickDelta(status)
+		if !applies {
 			continue
 		}
-		if status.DamagePerTick <= 0 {
-			continue
+		if healthDelta < 0 {
+			monsterDamage += -healthDelta
 		}
-		monsterDamage += status.DamagePerTick
 		if err := s.dbClient.MonsterStatus().UpdateLastTickAt(ctx, status.ID, now); err != nil {
 			return 0, 0, err
 		}
-	}
-
-	if userDamage > 0 {
-		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, userDamage, 0); err != nil {
-			return 0, 0, err
-		}
-	}
-	if monsterDamage > 0 {
-		if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battleID, monsterDamage); err != nil {
-			return 0, 0, err
+		if healthDelta != 0 {
+			if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battleID, -healthDelta); err != nil {
+				return 0, 0, err
+			}
 		}
 	}
 	return userDamage, monsterDamage, nil

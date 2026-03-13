@@ -45,6 +45,8 @@ type characterStatusResponse struct {
 	Positive      bool       `json:"positive"`
 	EffectType    string     `json:"effectType"`
 	DamagePerTick int        `json:"damagePerTick"`
+	HealthPerTick int        `json:"healthPerTick"`
+	ManaPerTick   int        `json:"manaPerTick"`
 	StartedAt     time.Time  `json:"startedAt"`
 	LastTickAt    *time.Time `json:"lastTickAt,omitempty"`
 	ExpiresAt     time.Time  `json:"expiresAt"`
@@ -290,6 +292,8 @@ func characterStatusResponsesFrom(statuses []models.UserStatus) []characterStatu
 			Positive:      status.Positive,
 			EffectType:    effectType,
 			DamagePerTick: status.DamagePerTick,
+			HealthPerTick: status.HealthPerTick,
+			ManaPerTick:   status.ManaPerTick,
 			StartedAt:     status.StartedAt,
 			LastTickAt:    status.LastTickAt,
 			ExpiresAt:     status.ExpiresAt,

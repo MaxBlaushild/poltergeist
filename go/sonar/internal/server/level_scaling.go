@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	scenarioScaledDifficultyBuffer     = 10
+	scenarioScaledStatGainPerLevel     = 2
 	challengeScaledDifficultyBuffer    = 20
 	challengeScaledStatGainPerLevel    = 3
 	challengeScaledNoStatDifficultyCap = 50
@@ -22,14 +22,14 @@ func normalizeScaledLevel(level int) int {
 	return level
 }
 
-func expectedSpecializedStatForLevel(level int) int {
+func expectedScenarioStatForLevel(level int) int {
 	normalizedLevel := normalizeScaledLevel(level)
-	pointsGained := (normalizedLevel - 1) * models.CharacterStatPointsPerLevel
+	pointsGained := (normalizedLevel - 1) * scenarioScaledStatGainPerLevel
 	return models.CharacterStatBaseValue + pointsGained
 }
 
 func scaledScenarioDifficultyForUserLevel(level int) int {
-	return maxInt(0, expectedSpecializedStatForLevel(level)+scenarioScaledDifficultyBuffer)
+	return maxInt(0, expectedScenarioStatForLevel(level))
 }
 
 func expectedFocusedChallengeStatForLevel(level int) int {

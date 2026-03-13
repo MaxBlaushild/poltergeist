@@ -34,6 +34,8 @@ type ScenarioFailureStatusTemplate struct {
 	EffectType      string `json:"effectType"`
 	Positive        bool   `json:"positive"`
 	DamagePerTick   int    `json:"damagePerTick"`
+	HealthPerTick   int    `json:"healthPerTick"`
+	ManaPerTick     int    `json:"manaPerTick"`
 	DurationSeconds int    `json:"durationSeconds"`
 	StrengthMod     int    `json:"strengthMod"`
 	DexterityMod    int    `json:"dexterityMod"`

@@ -1595,6 +1595,8 @@ func buildScaledSpellProgressionEffects(
 				scaledStatus := status
 				scaledStatus.DurationSeconds = spellMaxInt(1, scaleSpellProgressionValue(status.DurationSeconds, seedBand, targetBand, 0.35))
 				scaledStatus.DamagePerTick = scaleSpellProgressionDamagePerTick(status.DamagePerTick, seedBand, targetBand)
+				scaledStatus.HealthPerTick = scaleSpellProgressionDamagePerTick(status.HealthPerTick, seedBand, targetBand)
+				scaledStatus.ManaPerTick = scaleSpellProgressionDamagePerTick(status.ManaPerTick, seedBand, targetBand)
 				scaledStatus.StrengthMod = scaleSpellProgressionValue(status.StrengthMod, seedBand, targetBand, 0.4)
 				scaledStatus.DexterityMod = scaleSpellProgressionValue(status.DexterityMod, seedBand, targetBand, 0.4)
 				scaledStatus.ConstitutionMod = scaleSpellProgressionValue(status.ConstitutionMod, seedBand, targetBand, 0.4)
@@ -2807,6 +2809,10 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 				if name == "" || statusTemplate.DurationSeconds <= 0 {
 					continue
 				}
+				if normalizeUserStatusEffectType(statusTemplate.EffectType) == models.UserStatusEffectTypeManaOverTime {
+					ctx.JSON(http.StatusBadRequest, gin.H{"error": "mana_over_time statuses are not supported on monsters"})
+					return
+				}
 				status := &models.MonsterStatus{
 					UserID:          user.ID,
 					BattleID:        monsterBattle.ID,
@@ -2817,6 +2823,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Positive:        statusTemplate.Positive,
 					EffectType:      normalizeMonsterStatusEffectType(statusTemplate.EffectType),
 					DamagePerTick:   statusTemplate.DamagePerTick,
+					HealthPerTick:   statusTemplate.HealthPerTick,
 					StrengthMod:     statusTemplate.StrengthMod,
 					DexterityMod:    statusTemplate.DexterityMod,
 					ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -2837,6 +2844,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					EffectType:      string(status.EffectType),
 					Positive:        status.Positive,
 					DamagePerTick:   status.DamagePerTick,
+					HealthPerTick:   status.HealthPerTick,
+					ManaPerTick:     0,
 					DurationSeconds: statusTemplate.DurationSeconds,
 				})
 			}
@@ -2866,6 +2875,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					Positive:        statusTemplate.Positive,
 					EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
 					DamagePerTick:   statusTemplate.DamagePerTick,
+					HealthPerTick:   statusTemplate.HealthPerTick,
+					ManaPerTick:     statusTemplate.ManaPerTick,
 					StrengthMod:     statusTemplate.StrengthMod,
 					DexterityMod:    statusTemplate.DexterityMod,
 					ConstitutionMod: statusTemplate.ConstitutionMod,
@@ -2886,6 +2897,8 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 					EffectType:      string(status.EffectType),
 					Positive:        status.Positive,
 					DamagePerTick:   status.DamagePerTick,
+					HealthPerTick:   status.HealthPerTick,
+					ManaPerTick:     status.ManaPerTick,
 					DurationSeconds: statusTemplate.DurationSeconds,
 				})
 			}

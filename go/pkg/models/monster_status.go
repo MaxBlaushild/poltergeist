@@ -11,6 +11,7 @@ type MonsterStatusEffectType string
 const (
 	MonsterStatusEffectTypeStatModifier   MonsterStatusEffectType = "stat_modifier"
 	MonsterStatusEffectTypeDamageOverTime MonsterStatusEffectType = "damage_over_time"
+	MonsterStatusEffectTypeHealthOverTime MonsterStatusEffectType = "health_over_time"
 )
 
 type MonsterStatus struct {
@@ -26,6 +27,7 @@ type MonsterStatus struct {
 	Positive        bool                    `json:"positive" gorm:"column:positive"`
 	EffectType      MonsterStatusEffectType `json:"effectType" gorm:"column:effect_type"`
 	DamagePerTick   int                     `json:"damagePerTick" gorm:"column:damage_per_tick"`
+	HealthPerTick   int                     `json:"healthPerTick" gorm:"column:health_per_tick"`
 	StrengthMod     int                     `json:"strengthMod" gorm:"column:strength_mod"`
 	DexterityMod    int                     `json:"dexterityMod" gorm:"column:dexterity_mod"`
 	ConstitutionMod int                     `json:"constitutionMod" gorm:"column:constitution_mod"`
