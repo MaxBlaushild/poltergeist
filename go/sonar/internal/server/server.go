@@ -7581,6 +7581,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		EffectText                               string                         `json:"effectText"`
 		RarityTier                               string                         `json:"rarityTier" binding:"required"`
 		IsCaptureType                            bool                           `json:"isCaptureType"`
+		BuyPrice                                 *int                           `json:"buyPrice"`
 		UnlockTier                               *int                           `json:"unlockTier"`
 		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
 		ItemLevel                                *int                           `json:"itemLevel"`
@@ -7624,6 +7625,10 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 	}
 	if itemLevel < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
+		return
+	}
+	if requestBody.BuyPrice != nil && *requestBody.BuyPrice < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "buyPrice must be 0 or greater"})
 		return
 	}
 	if requestBody.UnlockLocksStrength != nil &&
@@ -7711,6 +7716,7 @@ func (s *server) createInventoryItem(ctx *gin.Context) {
 		EffectText:                               requestBody.EffectText,
 		RarityTier:                               requestBody.RarityTier,
 		IsCaptureType:                            requestBody.IsCaptureType,
+		BuyPrice:                                 requestBody.BuyPrice,
 		UnlockTier:                               requestBody.UnlockTier,
 		UnlockLocksStrength:                      requestBody.UnlockLocksStrength,
 		ItemLevel:                                itemLevel,
@@ -7939,7 +7945,7 @@ func (s *server) generateInventoryItemSet(ctx *gin.Context) {
 			EffectText:              "",
 			RarityTier:              sourceItem.RarityTier,
 			IsCaptureType:           false,
-			SellValue:               cloneIntPtr(sourceItem.SellValue),
+			BuyPrice:                cloneIntPtr(sourceItem.BuyPrice),
 			UnlockTier:              cloneIntPtr(sourceItem.UnlockTier),
 			ItemLevel:               setItemLevel,
 			EquipSlot:               stringPtr(slot),
@@ -8535,7 +8541,7 @@ func (s *server) generateConsumableQualities(ctx *gin.Context) {
 			EffectText:                               buildConsumableQualityEffectText(baseName, quality, consumeHealthDelta, consumeManaDelta, consumeRevivePartyMemberHealth, consumeReviveAllDownedPartyMembersHealth, statusesToAdd, sourceItem.ConsumeStatusesToRemove),
 			RarityTier:                               selectConsumableQualityRarity(sourceItem.RarityTier, quality.DefaultRarity),
 			IsCaptureType:                            false,
-			SellValue:                                scaleConsumableOptionalInt(sourceItem.SellValue, powerScale),
+			BuyPrice:                                 scaleConsumableOptionalInt(sourceItem.BuyPrice, powerScale),
 			UnlockTier:                               scaleConsumableOptionalInt(sourceItem.UnlockTier, math.Max(1.0, powerScale*0.5)),
 			ItemLevel:                                quality.LevelMin,
 			EquipSlot:                                nil,
@@ -9536,6 +9542,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		EffectText                               string                         `json:"effectText"`
 		RarityTier                               string                         `json:"rarityTier"`
 		IsCaptureType                            bool                           `json:"isCaptureType"`
+		BuyPrice                                 *int                           `json:"buyPrice"`
 		UnlockTier                               *int                           `json:"unlockTier"`
 		UnlockLocksStrength                      *int                           `json:"unlockLocksStrength"`
 		ItemLevel                                *int                           `json:"itemLevel"`
@@ -9582,6 +9589,10 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 	}
 	if itemLevel < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "itemLevel must be 1 or greater"})
+		return
+	}
+	if requestBody.BuyPrice != nil && *requestBody.BuyPrice < 0 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "buyPrice must be 0 or greater"})
 		return
 	}
 	if requestBody.UnlockLocksStrength != nil &&
@@ -9669,6 +9680,7 @@ func (s *server) updateInventoryItem(ctx *gin.Context) {
 		"effect_text":                        requestBody.EffectText,
 		"rarity_tier":                        requestBody.RarityTier,
 		"is_capture_type":                    requestBody.IsCaptureType,
+		"buy_price":                          requestBody.BuyPrice,
 		"unlock_tier":                        requestBody.UnlockTier,
 		"unlock_locks_strength":              requestBody.UnlockLocksStrength,
 		"item_level":                         itemLevel,
@@ -13333,14 +13345,20 @@ func (s *server) sellToShop(ctx *gin.Context) {
 		return
 	}
 
-	// Check if item has a sell value
-	if inventoryItem.SellValue == nil {
+	// Check if item has a base vendor buy price.
+	if inventoryItem.BuyPrice == nil || *inventoryItem.BuyPrice <= 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "item cannot be sold"})
 		return
 	}
 
-	// Calculate total sell value
-	totalSellValue := *inventoryItem.SellValue * requestBody.Quantity
+	charisma, err := s.currentUserCharisma(ctx, user.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve character charisma: " + err.Error()})
+		return
+	}
+
+	// Calculate total sell value from the item's buy price and the user's charisma.
+	totalSellValue := adjustedShopSellPrice(*inventoryItem.BuyPrice, charisma) * requestBody.Quantity
 
 	// Verify user owns the item and has sufficient quantity
 	ownedItems, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &user.ID})

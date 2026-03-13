@@ -7,6 +7,7 @@ import '../models/character_action.dart';
 import '../models/inventory_item.dart';
 import '../models/user.dart';
 import '../providers/auth_provider.dart';
+import '../providers/character_stats_provider.dart';
 import '../services/inventory_service.dart';
 import '../services/poi_service.dart';
 import '../widgets/paper_texture.dart';
@@ -119,9 +120,29 @@ class _ShopModalState extends State<ShopModal> {
 
   bool _passesFilters(InventoryItem item) {
     if (_filterUsable && !_isUsableItem(item.id)) return false;
-    if (_filterSellable && (item.sellValue ?? 0) <= 0) return false;
+    if (_filterSellable && _sellValueForItem(item, _currentCharisma()) <= 0) {
+      return false;
+    }
     if (_filterOutfit && !_isOutfitItem(item)) return false;
     return true;
+  }
+
+  int _currentCharisma() {
+    return context.read<CharacterStatsProvider>().stats['charisma'] ??
+        CharacterStatsProvider.baseStatValue;
+  }
+
+  int _sellValueForItem(InventoryItem? item, int charisma) {
+    final buyPrice = item?.buyPrice ?? 0;
+    if (buyPrice <= 0) return 0;
+    final normalized = charisma <= 0
+        ? 0.0
+        : charisma >= 100
+        ? 1.0
+        : charisma / 100.0;
+    final multiplier = 0.5 + (0.25 * normalized);
+    final value = (buyPrice * multiplier).round();
+    return value > 0 ? value : 1;
   }
 
   Future<void> _purchase(int itemId, int price) async {
@@ -140,17 +161,18 @@ class _ShopModalState extends State<ShopModal> {
       _success = null;
     });
     try {
-      await context.read<PoiService>().purchaseFromShop(
+      final response = await context.read<PoiService>().purchaseFromShop(
         widget.action.id,
         itemId,
       );
       if (mounted) {
         await _loadInventory();
         await context.read<AuthProvider>().refresh();
+        final totalPrice = (response['totalPrice'] as num?)?.toInt() ?? price;
         setState(() {
           _purchasingItemId = null;
           _success =
-              'Purchased ${_getItemById(itemId)?.name ?? 'item'} for $price gold!';
+              'Purchased ${_getItemById(itemId)?.name ?? 'item'} for $totalPrice gold!';
         });
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted) setState(() => _success = null);
@@ -173,7 +195,7 @@ class _ShopModalState extends State<ShopModal> {
       return;
     }
     final item = _getItemById(itemId);
-    final sellValue = item?.sellValue ?? 0;
+    final sellValue = _sellValueForItem(item, _currentCharisma());
     if (sellValue == 0) {
       setState(() => _error = 'Item cannot be sold');
       return;
@@ -188,7 +210,7 @@ class _ShopModalState extends State<ShopModal> {
       _success = null;
     });
     try {
-      await context.read<PoiService>().sellToShop(
+      final response = await context.read<PoiService>().sellToShop(
         widget.action.id,
         itemId,
         quantity: quantity,
@@ -196,7 +218,9 @@ class _ShopModalState extends State<ShopModal> {
       if (mounted) {
         await _loadInventory();
         await context.read<AuthProvider>().refresh();
-        final totalValue = sellValue * quantity;
+        final totalValue =
+            (response['totalSellValue'] as num?)?.toInt() ??
+            (sellValue * quantity);
         setState(() {
           _sellingItemId = null;
           _success =
@@ -223,6 +247,9 @@ class _ShopModalState extends State<ShopModal> {
     final media = MediaQuery.of(context);
     final horizontalPadding = media.size.width >= 900 ? 24.0 : 12.0;
     final user = context.watch<AuthProvider>().user;
+    final charisma =
+        context.watch<CharacterStatsProvider>().stats['charisma'] ??
+        CharacterStatsProvider.baseStatValue;
     final gold = user?.gold ?? 0;
     final shopItems = widget.action.shopInventory ?? [];
     final filteredShopItems = shopItems.where((shopItem) {
@@ -233,7 +260,7 @@ class _ShopModalState extends State<ShopModal> {
     final sellableItems = _ownedItems.where((o) {
       if (o.quantity <= 0) return false;
       final item = _getItemById(o.inventoryItemId);
-      return (item?.sellValue ?? 0) > 0;
+      return _sellValueForItem(item, charisma) > 0;
     }).toList();
     final filteredSellableItems = sellableItems.where((o) {
       final item = _getItemById(o.inventoryItemId);
@@ -363,6 +390,7 @@ class _ShopModalState extends State<ShopModal> {
                                     : _buildSellList(
                                         context,
                                         filteredSellableItems,
+                                        charisma,
                                       ),
                               ),
                             ],
@@ -709,6 +737,7 @@ class _ShopModalState extends State<ShopModal> {
   Widget _buildSellList(
     BuildContext context,
     List<OwnedInventoryItem> sellableItems,
+    int charisma,
   ) {
     if (sellableItems.isEmpty) {
       return _buildEmptyState(
@@ -724,7 +753,10 @@ class _ShopModalState extends State<ShopModal> {
         final itemB = _getItemById(b.inventoryItemId);
         switch (_sortMode) {
           case 'price':
-            return (itemB?.sellValue ?? 0).compareTo(itemA?.sellValue ?? 0);
+            return _sellValueForItem(
+              itemB,
+              charisma,
+            ).compareTo(_sellValueForItem(itemA, charisma));
           case 'owned':
             return b.quantity.compareTo(a.quantity);
           case 'name':
@@ -739,7 +771,7 @@ class _ShopModalState extends State<ShopModal> {
       itemBuilder: (_, i) {
         final owned = sorted[i];
         final item = _getItemById(owned.inventoryItemId);
-        return _buildSellItemCard(context, owned, item);
+        return _buildSellItemCard(context, owned, item, charisma);
       },
     );
   }
@@ -886,9 +918,10 @@ class _ShopModalState extends State<ShopModal> {
     BuildContext context,
     OwnedInventoryItem owned,
     InventoryItem? item,
+    int charisma,
   ) {
     final theme = Theme.of(context);
-    final sellValue = item?.sellValue ?? 0;
+    final sellValue = _sellValueForItem(item, charisma);
     final img = item?.imageUrl ?? '';
     final name = item?.name ?? 'Unknown';
     final isSellingItem = _sellingItemId == owned.inventoryItemId;

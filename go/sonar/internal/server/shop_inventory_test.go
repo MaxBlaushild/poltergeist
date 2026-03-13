@@ -46,9 +46,9 @@ func TestNormalizeShopMetadataTagsMode(t *testing.T) {
 }
 
 func TestResolveTaggedShopInventoryFiltersByTagAndLevelBand(t *testing.T) {
-	sellValue := 25
+	buyPrice := 50
 	items := []models.InventoryItem{
-		{ID: 1, ItemLevel: 40, InternalTags: models.StringArray{"potion"}, SellValue: &sellValue},
+		{ID: 1, ItemLevel: 40, InternalTags: models.StringArray{"potion"}, BuyPrice: &buyPrice},
 		{ID: 2, ItemLevel: 60, InternalTags: models.StringArray{"potion"}},
 		{ID: 3, ItemLevel: 62, InternalTags: models.StringArray{"elixir"}},
 		{ID: 4, ItemLevel: 20, InternalTags: models.StringArray{"potion"}},
@@ -62,9 +62,24 @@ func TestResolveTaggedShopInventoryFiltersByTagAndLevelBand(t *testing.T) {
 		t.Fatalf("unexpected item IDs in resolved inventory: %+v", resolved)
 	}
 	if resolved[0].Price != 50 {
-		t.Fatalf("expected sell-value-based price for item 1 to be 50, got %d", resolved[0].Price)
+		t.Fatalf("expected buy-price-based price for item 1 to be 50, got %d", resolved[0].Price)
 	}
 	if resolved[1].Price <= 0 {
 		t.Fatalf("expected generated price for item 2 to be positive, got %d", resolved[1].Price)
+	}
+}
+
+func TestAdjustedShopPriceForCharisma(t *testing.T) {
+	if got := adjustedShopPurchasePrice(100, 0); got != 100 {
+		t.Fatalf("expected charisma 0 purchase price to stay at 100, got %d", got)
+	}
+	if got := adjustedShopSellPrice(100, 0); got != 50 {
+		t.Fatalf("expected charisma 0 sell price to be 50, got %d", got)
+	}
+	if got := adjustedShopPurchasePrice(100, 100); got != 75 {
+		t.Fatalf("expected charisma 100 purchase price to be 75, got %d", got)
+	}
+	if got := adjustedShopSellPrice(100, 100); got != 75 {
+		t.Fatalf("expected charisma 100 sell price to be 75, got %d", got)
 	}
 }

@@ -1536,11 +1536,11 @@ class _InventoryPanelState extends State<InventoryPanel>
           label: inv.rarityTier.trim(),
           colorOverride: _rarityAccentColor(inv.rarityTier),
         ),
-      if (inv.sellValue != null)
+      if (inv.buyPrice != null)
         _buildMetaChip(
           context,
           icon: Icons.sell_outlined,
-          label: 'Sell ${inv.sellValue}',
+          label: 'Buy ${inv.buyPrice}',
         ),
       if ((inv.unlockLocksStrength ?? inv.unlockTier) != null)
         _buildMetaChip(

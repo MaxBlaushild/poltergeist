@@ -31,7 +31,7 @@ export type InventoryItem = {
   effectText: string;
   rarityTier: Rarity | string;
   isCaptureType: boolean;
-  sellValue?: number;
+  buyPrice?: number;
   unlockTier?: number;
   unlockLocksStrength?: number;
   itemLevel?: number;

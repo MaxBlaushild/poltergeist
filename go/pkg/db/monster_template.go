@@ -61,6 +61,8 @@ func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, update
 		"base_intelligence":       updates.BaseIntelligence,
 		"base_wisdom":             updates.BaseWisdom,
 		"base_charisma":           updates.BaseCharisma,
+		"strong_against_affinity": updates.StrongAgainstAffinity,
+		"weak_against_affinity":   updates.WeakAgainstAffinity,
 		"image_generation_status": updates.ImageGenerationStatus,
 		"image_generation_error":  updates.ImageGenerationError,
 		"updated_at":              updates.UpdatedAt,

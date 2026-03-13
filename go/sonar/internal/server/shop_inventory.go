@@ -15,6 +15,7 @@ const (
 	shopModeExplicit         = "explicit"
 	shopModeTags             = "tags"
 	shopTaggedLevelBandDelta = 15
+	shopPriceCharismaCap     = 100
 )
 
 var errShopHasNoInventory = stdErrors.New("shop has no inventory")
@@ -172,8 +173,8 @@ func inventoryItemEffectiveLevel(item models.InventoryItem) int {
 }
 
 func defaultShopPriceForItem(item models.InventoryItem) int {
-	if item.SellValue != nil && *item.SellValue > 0 {
-		return maxInt(*item.SellValue*2, 1)
+	if item.BuyPrice != nil && *item.BuyPrice > 0 {
+		return maxInt(*item.BuyPrice, 1)
 	}
 
 	level := inventoryItemEffectiveLevel(item)
@@ -191,6 +192,32 @@ func defaultShopPriceForItem(item models.InventoryItem) int {
 		rarityMultiplier = 2.25
 	}
 	return maxInt(int(math.Round(base*rarityMultiplier)), 1)
+}
+
+func normalizedShopCharisma(charisma int) float64 {
+	if charisma <= 0 {
+		return 0
+	}
+	if charisma >= shopPriceCharismaCap {
+		return 1
+	}
+	return float64(charisma) / float64(shopPriceCharismaCap)
+}
+
+func adjustedShopPurchasePrice(buyPrice int, charisma int) int {
+	if buyPrice <= 0 {
+		return 0
+	}
+	multiplier := 1.0 - (0.25 * normalizedShopCharisma(charisma))
+	return maxInt(int(math.Round(float64(buyPrice)*multiplier)), 1)
+}
+
+func adjustedShopSellPrice(buyPrice int, charisma int) int {
+	if buyPrice <= 0 {
+		return 0
+	}
+	multiplier := 0.5 + (0.25 * normalizedShopCharisma(charisma))
+	return maxInt(int(math.Round(float64(buyPrice)*multiplier)), 1)
 }
 
 func itemHasAnyInternalTag(item models.InventoryItem, tagSet map[string]struct{}) bool {
@@ -271,6 +298,52 @@ func resolveTaggedShopInventory(items []models.InventoryItem, userLevel int, tag
 	return resolved
 }
 
+func inventoryItemMap(items []models.InventoryItem) map[int]models.InventoryItem {
+	byID := make(map[int]models.InventoryItem, len(items))
+	for _, item := range items {
+		if item.ID <= 0 {
+			continue
+		}
+		byID[item.ID] = item
+	}
+	return byID
+}
+
+func priceShopInventoryForUser(
+	inventory []shopInventoryItem,
+	itemByID map[int]models.InventoryItem,
+	charisma int,
+) []shopInventoryItem {
+	priced := make([]shopInventoryItem, 0, len(inventory))
+	for _, entry := range inventory {
+		buyPrice := entry.Price
+		if item, ok := itemByID[entry.ItemID]; ok {
+			buyPrice = defaultShopPriceForItem(item)
+		}
+		priced = append(priced, shopInventoryItem{
+			ItemID: entry.ItemID,
+			Price:  adjustedShopPurchasePrice(buyPrice, charisma),
+		})
+	}
+	return priced
+}
+
+func (s *server) currentUserCharisma(ctx context.Context, userID uuid.UUID) (int, error) {
+	stats, err := s.dbClient.UserCharacterStats().FindOrCreateForUser(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	equipmentBonuses, err := s.dbClient.UserEquipment().GetStatBonuses(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return stats.Charisma + equipmentBonuses.Add(statusBonuses).Charisma, nil
+}
+
 func (s *server) resolveShopInventoryForUser(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -310,12 +383,25 @@ func (s *server) resolveShopInventoryForUser(
 		if err != nil {
 			return nil, err
 		}
-		return resolveTaggedShopInventory(items, userLevel, tags), nil
+		charisma, err := s.currentUserCharisma(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		resolved := resolveTaggedShopInventory(items, userLevel, tags)
+		return priceShopInventoryForUser(resolved, inventoryItemMap(items), charisma), nil
 	default:
 		if len(inventory) == 0 {
 			return nil, errShopHasNoInventory
 		}
-		return inventory, nil
+		items, err := s.dbClient.InventoryItem().FindAllInventoryItems(ctx)
+		if err != nil {
+			return nil, err
+		}
+		charisma, err := s.currentUserCharisma(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		return priceShopInventoryForUser(inventory, inventoryItemMap(items), charisma), nil
 	}
 }
 

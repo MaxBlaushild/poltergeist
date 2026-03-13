@@ -47,6 +47,18 @@ func NormalizeDamageAffinity(raw string) DamageAffinity {
 	}
 }
 
+func NormalizeOptionalDamageAffinity(raw *string) *string {
+	if raw == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil
+	}
+	normalized := string(NormalizeDamageAffinity(trimmed))
+	return &normalized
+}
+
 func IsValidDamageAffinity(raw string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	for _, affinity := range DamageAffinities {

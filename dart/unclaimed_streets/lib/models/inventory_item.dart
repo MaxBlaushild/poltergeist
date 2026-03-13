@@ -5,7 +5,7 @@ class InventoryItem {
   final String flavorText;
   final String effectText;
   final String rarityTier;
-  final int? sellValue;
+  final int? buyPrice;
   final int? unlockTier;
   final int? unlockLocksStrength;
   final int itemLevel;
@@ -43,7 +43,7 @@ class InventoryItem {
     required this.flavorText,
     required this.effectText,
     this.rarityTier = '',
-    this.sellValue,
+    this.buyPrice,
     this.unlockTier,
     this.unlockLocksStrength,
     this.itemLevel = 1,
@@ -83,7 +83,7 @@ class InventoryItem {
       flavorText: json['flavorText'] as String? ?? '',
       effectText: json['effectText'] as String? ?? '',
       rarityTier: json['rarityTier'] as String? ?? '',
-      sellValue: (json['sellValue'] as num?)?.toInt(),
+      buyPrice: (json['buyPrice'] as num?)?.toInt(),
       unlockTier: (json['unlockTier'] as num?)?.toInt(),
       unlockLocksStrength: (json['unlockLocksStrength'] as num?)?.toInt(),
       itemLevel: (json['itemLevel'] as num?)?.toInt() ?? 1,

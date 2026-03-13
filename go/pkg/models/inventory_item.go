@@ -12,7 +12,7 @@ type InventoryItem struct {
 	EffectText                               string                         `json:"effectText" gorm:"column:effect_text"`
 	RarityTier                               string                         `json:"rarityTier" gorm:"column:rarity_tier"`
 	IsCaptureType                            bool                           `json:"isCaptureType" gorm:"column:is_capture_type"`
-	SellValue                                *int                           `json:"sellValue" gorm:"column:sell_value"`
+	BuyPrice                                 *int                           `json:"buyPrice" gorm:"column:buy_price"`
 	UnlockTier                               *int                           `json:"unlockTier" gorm:"column:unlock_tier"`
 	UnlockLocksStrength                      *int                           `json:"unlockLocksStrength" gorm:"column:unlock_locks_strength"`
 	ItemLevel                                int                            `json:"itemLevel" gorm:"column:item_level"`

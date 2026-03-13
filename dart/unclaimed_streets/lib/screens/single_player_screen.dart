@@ -3621,7 +3621,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     final markerGeneration = ++_poiMarkerGeneration;
     final tutorialMapFocused = _isTutorialMapFocusActive;
     final deferPinReveal =
-        !tutorialMapFocused && !_tutorialNormalPinsRevealInProgress;
+        !tutorialMapFocused && _tutorialNormalPinsRevealInProgress;
     _pinBatchRevealInProgress = deferPinReveal;
     debugPrint(
       'SinglePlayer: _addPoiMarkers start (pois=${_pois.length} chars=${_characters.length} chests=${_treasureChests.length} fountains=${_healingFountains.length} scenarios=${_scenarios.length} monsters=${_monsters.length} challenges=${_challenges.length})',
@@ -3822,140 +3822,6 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
         return;
       }
 
-      final selectedZone = context.read<ZoneProvider>().selectedZone;
-      for (final ch in _characters) {
-        final points = ch.locations
-            .map((loc) => LatLng(loc.latitude, loc.longitude))
-            .where((p) => p.latitude != 0 || p.longitude != 0)
-            .toList();
-
-        if (points.isEmpty) continue;
-
-        final hasDiscovered = _hasDiscoveredCharacter(ch);
-        final visiblePoints = hasDiscovered
-            ? points
-            : selectedZone == null
-            ? <LatLng>[]
-            : points
-                  .where(
-                    (point) => _isPointInZone(
-                      selectedZone,
-                      point.latitude,
-                      point.longitude,
-                    ),
-                  )
-                  .toList();
-        if (visiblePoints.isEmpty) continue;
-        final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
-        final hasQuestAvailable = ch.hasAvailableQuest;
-        final shouldPulseLikeQuest = _isCurrentQuestTurnInCharacter(ch.id);
-        Uint8List? markerBytes;
-        String? markerId;
-        if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
-          try {
-            markerBytes = hasQuestAvailable
-                ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
-                : await loadPoiThumbnail(thumbnailUrl);
-            if (markerBytes != null) {
-              markerId = hasQuestAvailable
-                  ? 'character_${ch.id}_quest'
-                  : 'character_${ch.id}';
-            }
-          } catch (_) {}
-        }
-
-        if (markerBytes == null) {
-          markerBytes = hasQuestAvailable
-              ? (characterAvailablePlaceholderBytes ??
-                    availablePlaceholderBytes)
-              : (characterPlaceholderBytes ?? placeholderBytes);
-          markerId = hasQuestAvailable
-              ? 'character_placeholder_available'
-              : 'character_placeholder';
-        }
-
-        if (markerBytes != null && markerId != null) {
-          final versionedId = '${markerId}_$_mapThumbnailVersion';
-          try {
-            await c.addImage(versionedId, markerBytes);
-          } catch (_) {}
-          for (final point in visiblePoints) {
-            final sym = await c.addSymbol(
-              SymbolOptions(
-                geometry: point,
-                iconImage: versionedId,
-                iconSize: _standardMarkerThumbnailSize,
-                iconOpacity: _mapMarkerStartingOpacity(1.0),
-                iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
-                iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
-                iconAnchor: 'center',
-                zIndex: shouldPulseLikeQuest ? 4 : 2,
-              ),
-              {'type': 'character', 'id': ch.id, 'name': ch.name},
-            );
-            if (!mounted) return;
-            _characterSymbols.add(sym);
-            (_characterSymbolsById[ch.id] ??= []).add(sym);
-            _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
-          }
-          continue;
-        }
-
-        for (final point in visiblePoints) {
-          await c.addCircle(
-            CircleOptions(
-              geometry: point,
-              circleRadius: 30,
-              circleOpacity: _mapMarkerStartingOpacity(1.0),
-              circleColor: '#ff8833',
-              circleStrokeWidth: 2,
-              circleStrokeColor: '#ffffff',
-            ),
-            {'type': 'character', 'id': ch.id, 'name': ch.name},
-          );
-        }
-      }
-      for (final tc in _treasureChests) {
-        if (tc.openedByUser == true) continue;
-        if (chestBytes != null) {
-          final sym = await c.addSymbol(
-            SymbolOptions(
-              geometry: LatLng(tc.latitude, tc.longitude),
-              iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
-              iconSize: 0.75,
-              iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: '#000000',
-              iconHaloWidth: 0.75,
-              iconAnchor: 'center',
-            ),
-            {'type': 'chest', 'id': tc.id},
-          );
-          if (!mounted) return;
-          _chestSymbols.add(sym);
-          _chestSymbolById[tc.id] = sym;
-        } else {
-          final circle = await c.addCircle(
-            CircleOptions(
-              geometry: LatLng(tc.latitude, tc.longitude),
-              circleRadius: 24,
-              circleOpacity: _mapMarkerStartingOpacity(1.0),
-              circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
-              circleStrokeWidth: 2,
-              circleStrokeColor: '#ffffff',
-            ),
-            {'type': 'chest', 'id': tc.id},
-          );
-          if (!mounted) return;
-          _chestCircles.add(circle);
-          _chestCircleById[tc.id] = circle;
-          _chestCircleOpened[tc.id] = tc.openedByUser == true;
-        }
-      }
-      await _refreshHealingFountainSymbols();
-      await _refreshScenarioSymbols();
-      await _refreshMonsterSymbols();
-      await _refreshChallengeSymbols();
-
       final discoveries = context.read<DiscoveriesProvider>();
       final hadEmptyDiscoveries = discoveries.discoveries.isEmpty;
       final poiImageUpdates = <_PoiImageUpdate>[];
@@ -4089,6 +3955,140 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           unawaited(_loadPoiImagesAndUpdate(markerGeneration, poiImageUpdates));
         }
       }
+
+      final selectedZone = context.read<ZoneProvider>().selectedZone;
+      for (final ch in _characters) {
+        final points = ch.locations
+            .map((loc) => LatLng(loc.latitude, loc.longitude))
+            .where((p) => p.latitude != 0 || p.longitude != 0)
+            .toList();
+
+        if (points.isEmpty) continue;
+
+        final hasDiscovered = _hasDiscoveredCharacter(ch);
+        final visiblePoints = hasDiscovered
+            ? points
+            : selectedZone == null
+            ? <LatLng>[]
+            : points
+                  .where(
+                    (point) => _isPointInZone(
+                      selectedZone,
+                      point.latitude,
+                      point.longitude,
+                    ),
+                  )
+                  .toList();
+        if (visiblePoints.isEmpty) continue;
+        final thumbnailUrl = hasDiscovered ? ch.thumbnailUrl : null;
+        final hasQuestAvailable = ch.hasAvailableQuest;
+        final shouldPulseLikeQuest = _isCurrentQuestTurnInCharacter(ch.id);
+        Uint8List? markerBytes;
+        String? markerId;
+        if (thumbnailUrl != null && thumbnailUrl.isNotEmpty) {
+          try {
+            markerBytes = hasQuestAvailable
+                ? await loadPoiThumbnailWithQuestMarker(thumbnailUrl)
+                : await loadPoiThumbnail(thumbnailUrl);
+            if (markerBytes != null) {
+              markerId = hasQuestAvailable
+                  ? 'character_${ch.id}_quest'
+                  : 'character_${ch.id}';
+            }
+          } catch (_) {}
+        }
+
+        if (markerBytes == null) {
+          markerBytes = hasQuestAvailable
+              ? (characterAvailablePlaceholderBytes ??
+                    availablePlaceholderBytes)
+              : (characterPlaceholderBytes ?? placeholderBytes);
+          markerId = hasQuestAvailable
+              ? 'character_placeholder_available'
+              : 'character_placeholder';
+        }
+
+        if (markerBytes != null && markerId != null) {
+          final versionedId = '${markerId}_$_mapThumbnailVersion';
+          try {
+            await c.addImage(versionedId, markerBytes);
+          } catch (_) {}
+          for (final point in visiblePoints) {
+            final sym = await c.addSymbol(
+              SymbolOptions(
+                geometry: point,
+                iconImage: versionedId,
+                iconSize: _standardMarkerThumbnailSize,
+                iconOpacity: _mapMarkerStartingOpacity(1.0),
+                iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+                iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
+                iconAnchor: 'center',
+                zIndex: shouldPulseLikeQuest ? 4 : 2,
+              ),
+              {'type': 'character', 'id': ch.id, 'name': ch.name},
+            );
+            if (!mounted) return;
+            _characterSymbols.add(sym);
+            (_characterSymbolsById[ch.id] ??= []).add(sym);
+            _setQuestPoiHighlight(sym, shouldPulseLikeQuest);
+          }
+          continue;
+        }
+
+        for (final point in visiblePoints) {
+          await c.addCircle(
+            CircleOptions(
+              geometry: point,
+              circleRadius: 30,
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
+              circleColor: '#ff8833',
+              circleStrokeWidth: 2,
+              circleStrokeColor: '#ffffff',
+            ),
+            {'type': 'character', 'id': ch.id, 'name': ch.name},
+          );
+        }
+      }
+      for (final tc in _treasureChests) {
+        if (tc.openedByUser == true) continue;
+        if (chestBytes != null) {
+          final sym = await c.addSymbol(
+            SymbolOptions(
+              geometry: LatLng(tc.latitude, tc.longitude),
+              iconImage: 'chest_thumbnail_$_mapThumbnailVersion',
+              iconSize: 0.75,
+              iconOpacity: _mapMarkerStartingOpacity(1.0),
+              iconHaloColor: '#000000',
+              iconHaloWidth: 0.75,
+              iconAnchor: 'center',
+            ),
+            {'type': 'chest', 'id': tc.id},
+          );
+          if (!mounted) return;
+          _chestSymbols.add(sym);
+          _chestSymbolById[tc.id] = sym;
+        } else {
+          final circle = await c.addCircle(
+            CircleOptions(
+              geometry: LatLng(tc.latitude, tc.longitude),
+              circleRadius: 24,
+              circleOpacity: _mapMarkerStartingOpacity(1.0),
+              circleColor: tc.openedByUser == true ? '#888888' : '#ffcc00',
+              circleStrokeWidth: 2,
+              circleStrokeColor: '#ffffff',
+            ),
+            {'type': 'chest', 'id': tc.id},
+          );
+          if (!mounted) return;
+          _chestCircles.add(circle);
+          _chestCircleById[tc.id] = circle;
+          _chestCircleOpened[tc.id] = tc.openedByUser == true;
+        }
+      }
+      await _refreshHealingFountainSymbols();
+      await _refreshScenarioSymbols();
+      await _refreshMonsterSymbols();
+      await _refreshChallengeSymbols();
       if (_scenarioVisibilityRefreshPending) {
         _scenarioVisibilityRefreshPending = false;
         await _refreshScenarioSymbols();

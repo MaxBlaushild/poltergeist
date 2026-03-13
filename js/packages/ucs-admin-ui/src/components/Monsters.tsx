@@ -4,6 +4,16 @@ import { Spell } from '@poltergeist/types';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
+type DamageAffinity =
+  | 'physical'
+  | 'fire'
+  | 'ice'
+  | 'lightning'
+  | 'poison'
+  | 'arcane'
+  | 'holy'
+  | 'shadow';
+
 type MonsterTemplateRecord = {
   id: string;
   createdAt: string;
@@ -18,6 +28,8 @@ type MonsterTemplateRecord = {
   baseIntelligence: number;
   baseWisdom: number;
   baseCharisma: number;
+  strongAgainstAffinity?: DamageAffinity | null;
+  weakAgainstAffinity?: DamageAffinity | null;
   spells: Spell[];
   imageGenerationStatus?: string;
   imageGenerationError?: string | null;
@@ -66,6 +78,8 @@ type MonsterRecord = {
   attackDamageMin: number;
   attackDamageMax: number;
   attackSwipesPerAttack: number;
+  strongAgainstAffinity?: DamageAffinity | null;
+  weakAgainstAffinity?: DamageAffinity | null;
   spells: Spell[];
   rewardMode?: 'explicit' | 'random';
   randomRewardSize?: 'small' | 'medium' | 'large';
@@ -156,6 +170,8 @@ type MonsterTemplateFormState = {
   baseIntelligence: string;
   baseWisdom: string;
   baseCharisma: string;
+  strongAgainstAffinity: string;
+  weakAgainstAffinity: string;
   spellIds: string[];
   techniqueIds: string[];
 };
@@ -204,6 +220,17 @@ const recurrenceOptions = [
   { value: 'monthly', label: 'Monthly' },
 ];
 
+const damageAffinityOptions: DamageAffinity[] = [
+  'physical',
+  'fire',
+  'ice',
+  'lightning',
+  'poison',
+  'arcane',
+  'holy',
+  'shadow',
+];
+
 const parseIntSafe = (value: string, fallback = 0): number => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -232,6 +259,8 @@ const emptyTemplateForm = (): MonsterTemplateFormState => ({
   baseIntelligence: '10',
   baseWisdom: '10',
   baseCharisma: '10',
+  strongAgainstAffinity: '',
+  weakAgainstAffinity: '',
   spellIds: [],
   techniqueIds: [],
 });
@@ -249,6 +278,8 @@ const templateFormFromRecord = (
   baseIntelligence: String(template.baseIntelligence ?? 10),
   baseWisdom: String(template.baseWisdom ?? 10),
   baseCharisma: String(template.baseCharisma ?? 10),
+  strongAgainstAffinity: template.strongAgainstAffinity ?? '',
+  weakAgainstAffinity: template.weakAgainstAffinity ?? '',
   spellIds: (template.spells ?? [])
     .filter((spell) => (spell.abilityType ?? 'spell') !== 'technique')
     .map((spell) => spell.id),
@@ -268,6 +299,8 @@ const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
   baseIntelligence: parseIntSafe(form.baseIntelligence, 10),
   baseWisdom: parseIntSafe(form.baseWisdom, 10),
   baseCharisma: parseIntSafe(form.baseCharisma, 10),
+  strongAgainstAffinity: form.strongAgainstAffinity.trim(),
+  weakAgainstAffinity: form.weakAgainstAffinity.trim(),
   spellIds: Array.from(new Set([...form.spellIds, ...form.techniqueIds])),
 });
 
@@ -422,6 +455,11 @@ const formatGenerationStatus = (status?: string) => {
     default:
       return 'None';
   }
+};
+
+const formatAffinityLabel = (affinity?: string | null): string => {
+  if (!affinity) return 'None';
+  return affinity.charAt(0).toUpperCase() + affinity.slice(1);
 };
 
 const formatBulkTemplateStatus = (status?: string): string => {
@@ -805,6 +843,13 @@ export const Monsters = () => {
         payload.baseCharisma <= 0
       ) {
         alert('All base stats must be positive.');
+        return;
+      }
+      if (
+        payload.strongAgainstAffinity &&
+        payload.strongAgainstAffinity === payload.weakAgainstAffinity
+      ) {
+        alert('Strong against and weak against affinities must be different.');
         return;
       }
 
@@ -1855,6 +1900,15 @@ export const Monsters = () => {
                               {template.baseCharisma}
                             </p>
                             <p className="text-sm text-gray-500 mt-1">
+                              Strong vs{' '}
+                              {formatAffinityLabel(
+                                template.strongAgainstAffinity
+                              )}
+                              {' · '}
+                              Weak vs{' '}
+                              {formatAffinityLabel(template.weakAgainstAffinity)}
+                            </p>
+                            <p className="text-sm text-gray-500 mt-1">
                               Spells:{' '}
                               {template.spells?.filter(
                                 (spell) =>
@@ -1989,6 +2043,19 @@ export const Monsters = () => {
                             <p className="text-sm text-gray-600">
                               Health {monster.health}/{monster.maxHealth} · Mana{' '}
                               {monster.mana}/{monster.maxMana}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              Strong vs{' '}
+                              {formatAffinityLabel(
+                                monster.strongAgainstAffinity ??
+                                  monster.template?.strongAgainstAffinity
+                              )}
+                              {' · '}
+                              Weak vs{' '}
+                              {formatAffinityLabel(
+                                monster.weakAgainstAffinity ??
+                                  monster.template?.weakAgainstAffinity
+                              )}
                             </p>
                             <p className="text-sm text-gray-600">
                               STR {monster.strength} · DEX {monster.dexterity} ·
@@ -2367,6 +2434,46 @@ export const Monsters = () => {
                       }))
                     }
                   />
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Strong Against</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.strongAgainstAffinity}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        strongAgainstAffinity: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">None</option>
+                    {damageAffinityOptions.map((affinity) => (
+                      <option key={`strong-${affinity}`} value={affinity}>
+                        {formatAffinityLabel(affinity)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-sm mb-1">Weak Against</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.weakAgainstAffinity}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        weakAgainstAffinity: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">None</option>
+                    {damageAffinityOptions.map((affinity) => (
+                      <option key={`weak-${affinity}`} value={affinity}>
+                        {formatAffinityLabel(affinity)}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 

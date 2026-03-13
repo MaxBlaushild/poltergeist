@@ -22,17 +22,19 @@ import (
 )
 
 type monsterTemplateUpsertRequest struct {
-	Name             string   `json:"name"`
-	Description      string   `json:"description"`
-	ImageURL         string   `json:"imageUrl"`
-	ThumbnailURL     string   `json:"thumbnailUrl"`
-	BaseStrength     int      `json:"baseStrength"`
-	BaseDexterity    int      `json:"baseDexterity"`
-	BaseConstitution int      `json:"baseConstitution"`
-	BaseIntelligence int      `json:"baseIntelligence"`
-	BaseWisdom       int      `json:"baseWisdom"`
-	BaseCharisma     int      `json:"baseCharisma"`
-	SpellIDs         []string `json:"spellIds"`
+	Name                  string   `json:"name"`
+	Description           string   `json:"description"`
+	ImageURL              string   `json:"imageUrl"`
+	ThumbnailURL          string   `json:"thumbnailUrl"`
+	BaseStrength          int      `json:"baseStrength"`
+	BaseDexterity         int      `json:"baseDexterity"`
+	BaseConstitution      int      `json:"baseConstitution"`
+	BaseIntelligence      int      `json:"baseIntelligence"`
+	BaseWisdom            int      `json:"baseWisdom"`
+	BaseCharisma          int      `json:"baseCharisma"`
+	StrongAgainstAffinity string   `json:"strongAgainstAffinity"`
+	WeakAgainstAffinity   string   `json:"weakAgainstAffinity"`
+	SpellIDs              []string `json:"spellIds"`
 }
 
 type bulkGenerateMonsterTemplatesRequest struct {
@@ -290,6 +292,8 @@ type monsterTemplateResponse struct {
 	BaseIntelligence      int            `json:"baseIntelligence"`
 	BaseWisdom            int            `json:"baseWisdom"`
 	BaseCharisma          int            `json:"baseCharisma"`
+	StrongAgainstAffinity *string        `json:"strongAgainstAffinity,omitempty"`
+	WeakAgainstAffinity   *string        `json:"weakAgainstAffinity,omitempty"`
 	Spells                []models.Spell `json:"spells"`
 	ImageGenerationStatus string         `json:"imageGenerationStatus"`
 	ImageGenerationError  *string        `json:"imageGenerationError,omitempty"`
@@ -329,6 +333,8 @@ type monsterResponse struct {
 	AttackDamageMin             int                        `json:"attackDamageMin"`
 	AttackDamageMax             int                        `json:"attackDamageMax"`
 	AttackSwipesPerAttack       int                        `json:"attackSwipesPerAttack"`
+	StrongAgainstAffinity       *string                    `json:"strongAgainstAffinity,omitempty"`
+	WeakAgainstAffinity         *string                    `json:"weakAgainstAffinity,omitempty"`
 	Spells                      []models.Spell             `json:"spells"`
 	Statuses                    []models.MonsterStatus     `json:"statuses"`
 	ActiveBattleID              *uuid.UUID                 `json:"activeBattleId,omitempty"`
@@ -460,6 +466,8 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 	if template == nil {
 		return nil
 	}
+	strongAgainst := models.NormalizeOptionalDamageAffinity(template.StrongAgainstAffinity)
+	weakAgainst := models.NormalizeOptionalDamageAffinity(template.WeakAgainstAffinity)
 	spells := make([]models.Spell, 0, len(template.Spells))
 	for _, templateSpell := range template.Spells {
 		if templateSpell.Spell.ID == uuid.Nil {
@@ -481,6 +489,8 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		BaseIntelligence:      template.BaseIntelligence,
 		BaseWisdom:            template.BaseWisdom,
 		BaseCharisma:          template.BaseCharisma,
+		StrongAgainstAffinity: strongAgainst,
+		WeakAgainstAffinity:   weakAgainst,
 		Spells:                spells,
 		ImageGenerationStatus: template.ImageGenerationStatus,
 		ImageGenerationError:  template.ImageGenerationError,
@@ -523,6 +533,12 @@ func monsterResponseFrom(
 	}
 	if thumbnailURL == "" {
 		thumbnailURL = imageURL
+	}
+	var strongAgainstAffinity *string
+	var weakAgainstAffinity *string
+	if monster.Template != nil {
+		strongAgainstAffinity = models.NormalizeOptionalDamageAffinity(monster.Template.StrongAgainstAffinity)
+		weakAgainstAffinity = models.NormalizeOptionalDamageAffinity(monster.Template.WeakAgainstAffinity)
 	}
 
 	dominantItemID := monster.DominantHandInventoryItemID
@@ -568,6 +584,8 @@ func monsterResponseFrom(
 		AttackDamageMin:             damageMin,
 		AttackDamageMax:             damageMax,
 		AttackSwipesPerAttack:       swipes,
+		StrongAgainstAffinity:       strongAgainstAffinity,
+		WeakAgainstAffinity:         weakAgainstAffinity,
 		Spells:                      spells,
 		Statuses:                    activeStatuses,
 		ActiveBattleID: func() *uuid.UUID {
@@ -751,6 +769,25 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 		body.BaseCharisma < 1 {
 		return nil, nil, fmt.Errorf("all base stats must be positive")
 	}
+	strongAgainstAffinity, err := parseOptionalDamageAffinity(
+		body.StrongAgainstAffinity,
+		"strongAgainstAffinity",
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	weakAgainstAffinity, err := parseOptionalDamageAffinity(
+		body.WeakAgainstAffinity,
+		"weakAgainstAffinity",
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if strongAgainstAffinity != nil &&
+		weakAgainstAffinity != nil &&
+		*strongAgainstAffinity == *weakAgainstAffinity {
+		return nil, nil, fmt.Errorf("strongAgainstAffinity and weakAgainstAffinity must be different")
+	}
 
 	spells := []models.MonsterTemplateSpell{}
 	seenSpellIDs := map[uuid.UUID]bool{}
@@ -773,16 +810,18 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	}
 
 	template := &models.MonsterTemplate{
-		Name:             name,
-		Description:      strings.TrimSpace(body.Description),
-		ImageURL:         strings.TrimSpace(body.ImageURL),
-		ThumbnailURL:     strings.TrimSpace(body.ThumbnailURL),
-		BaseStrength:     body.BaseStrength,
-		BaseDexterity:    body.BaseDexterity,
-		BaseConstitution: body.BaseConstitution,
-		BaseIntelligence: body.BaseIntelligence,
-		BaseWisdom:       body.BaseWisdom,
-		BaseCharisma:     body.BaseCharisma,
+		Name:                  name,
+		Description:           strings.TrimSpace(body.Description),
+		ImageURL:              strings.TrimSpace(body.ImageURL),
+		ThumbnailURL:          strings.TrimSpace(body.ThumbnailURL),
+		BaseStrength:          body.BaseStrength,
+		BaseDexterity:         body.BaseDexterity,
+		BaseConstitution:      body.BaseConstitution,
+		BaseIntelligence:      body.BaseIntelligence,
+		BaseWisdom:            body.BaseWisdom,
+		BaseCharisma:          body.BaseCharisma,
+		StrongAgainstAffinity: strongAgainstAffinity,
+		WeakAgainstAffinity:   weakAgainstAffinity,
 	}
 	if template.ThumbnailURL == "" && template.ImageURL != "" {
 		template.ThumbnailURL = template.ImageURL
@@ -2431,7 +2470,8 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Damage int `json:"damage"`
+		Damage         int     `json:"damage"`
+		DamageAffinity *string `json:"damageAffinity"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2440,6 +2480,14 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 	if requestBody.Damage <= 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damage must be positive"})
 		return
+	}
+	var damageAffinity *string
+	if requestBody.DamageAffinity != nil {
+		damageAffinity, err = parseOptionalDamageAffinity(*requestBody.DamageAffinity, "damageAffinity")
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	battle, err := s.findActiveMonsterBattleForUser(ctx, user.ID, monsterID)
@@ -2477,7 +2525,18 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, requestBody.Damage); err != nil {
+	monster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
+		monster,
+		requestBody.Damage,
+		damageAffinity,
+	)
+
+	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, appliedDamage); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2516,7 +2575,10 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"battle":                     monsterBattleResponseFrom(battle),
 		"battleDetail":               battleDetail,
-		"appliedDamage":              requestBody.Damage,
+		"baseDamage":                 requestBody.Damage,
+		"appliedDamage":              appliedDamage,
+		"damageAffinity":             normalizedAffinity,
+		"affinityModifier":           affinityModifier,
 		"battleTurnUserDotDamage":    userDotDamage,
 		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})
@@ -2536,7 +2598,8 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 	}
 
 	var requestBody struct {
-		Damage int `json:"damage"`
+		Damage         int     `json:"damage"`
+		DamageAffinity *string `json:"damageAffinity"`
 	}
 	if err := ctx.Bind(&requestBody); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -2545,6 +2608,14 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 	if requestBody.Damage <= 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "damage must be positive"})
 		return
+	}
+	var damageAffinity *string
+	if requestBody.DamageAffinity != nil {
+		damageAffinity, err = parseOptionalDamageAffinity(*requestBody.DamageAffinity, "damageAffinity")
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 
 	battle, err := s.dbClient.MonsterBattle().FindByID(ctx, battleID)
@@ -2591,7 +2662,18 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		return
 	}
 
-	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, requestBody.Damage); err != nil {
+	monster, err := s.dbClient.Monster().FindByID(ctx, battle.MonsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	appliedDamage, normalizedAffinity, affinityModifier := applyMonsterAffinityDamage(
+		monster,
+		requestBody.Damage,
+		damageAffinity,
+	)
+
+	if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, appliedDamage); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2630,7 +2712,10 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, gin.H{
 		"battle":                     monsterBattleResponseFrom(battle),
 		"battleDetail":               battleDetail,
-		"appliedDamage":              requestBody.Damage,
+		"baseDamage":                 requestBody.Damage,
+		"appliedDamage":              appliedDamage,
+		"damageAffinity":             normalizedAffinity,
+		"affinityModifier":           affinityModifier,
 		"battleTurnUserDotDamage":    userDotDamage,
 		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})

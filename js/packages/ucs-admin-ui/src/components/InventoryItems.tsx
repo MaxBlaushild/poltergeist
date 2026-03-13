@@ -440,8 +440,8 @@ export const InventoryItems = () => {
     equippable: '',
     minId: '',
     maxId: '',
-    minSellValue: '',
-    maxSellValue: '',
+    minBuyPrice: '',
+    maxBuyPrice: '',
     minUnlockTier: '',
     maxUnlockTier: '',
     minStrength: '',
@@ -465,7 +465,7 @@ export const InventoryItems = () => {
     effectText: '',
     rarityTier: 'Common' as string,
     isCaptureType: false,
-    sellValue: undefined as number | undefined,
+    buyPrice: undefined as number | undefined,
     unlockTier: undefined as number | undefined,
     unlockLocksStrength: undefined as number | undefined,
     itemLevel: 1,
@@ -583,7 +583,7 @@ export const InventoryItems = () => {
       effectText: '',
       rarityTier: 'Common',
       isCaptureType: false,
-      sellValue: undefined,
+      buyPrice: undefined,
       unlockTier: undefined,
       unlockLocksStrength: undefined,
       itemLevel: 1,
@@ -1258,7 +1258,7 @@ export const InventoryItems = () => {
       effectText: item.effectText,
       rarityTier: item.rarityTier,
       isCaptureType: item.isCaptureType,
-      sellValue: item.sellValue,
+      buyPrice: item.buyPrice,
       unlockTier: item.unlockTier,
       unlockLocksStrength: item.unlockLocksStrength,
       itemLevel: item.itemLevel ?? 1,
@@ -1364,7 +1364,7 @@ export const InventoryItems = () => {
     { value: 'equipSlot', label: 'Equip Slot' },
     { value: 'imageGenerationStatus', label: 'Image Status' },
     { value: 'isCaptureType', label: 'Capture Type' },
-    { value: 'sellValue', label: 'Sell Value' },
+    { value: 'buyPrice', label: 'Buy Price' },
     { value: 'unlockTier', label: 'Unlock Tier' },
     { value: 'strengthMod', label: 'STR' },
     { value: 'dexterityMod', label: 'DEX' },
@@ -1413,7 +1413,7 @@ export const InventoryItems = () => {
         item.rarityTier,
         item.equipSlot,
         item.imageGenerationStatus,
-        item.sellValue?.toString(),
+        item.buyPrice?.toString(),
         item.unlockTier?.toString(),
         item.strengthMod?.toString(),
         item.dexterityMod?.toString(),
@@ -1452,7 +1452,7 @@ export const InventoryItems = () => {
       if (filters.equippable === 'no' && item.equipSlot) return false;
 
       if (!matchRange(item.id, filters.minId, filters.maxId)) return false;
-      if (!matchRange(item.sellValue, filters.minSellValue, filters.maxSellValue)) return false;
+      if (!matchRange(item.buyPrice, filters.minBuyPrice, filters.maxBuyPrice)) return false;
       if (!matchRange(item.unlockTier, filters.minUnlockTier, filters.maxUnlockTier)) return false;
 
       if (!matchRange(item.strengthMod ?? 0, filters.minStrength, filters.maxStrength, 0)) return false;
@@ -1659,8 +1659,8 @@ export const InventoryItems = () => {
                   equippable: '',
                   minId: '',
                   maxId: '',
-                  minSellValue: '',
-                  maxSellValue: '',
+                  minBuyPrice: '',
+                  maxBuyPrice: '',
                   minUnlockTier: '',
                   maxUnlockTier: '',
                   minStrength: '',
@@ -1765,16 +1765,16 @@ export const InventoryItems = () => {
                 />
                 <input
                   type="number"
-                  placeholder="Min sell value"
-                  value={filters.minSellValue}
-                  onChange={(e) => setFilters({ ...filters, minSellValue: e.target.value })}
+                  placeholder="Min buy price"
+                  value={filters.minBuyPrice}
+                  onChange={(e) => setFilters({ ...filters, minBuyPrice: e.target.value })}
                   className="w-full p-2 border rounded-md"
                 />
                 <input
                   type="number"
-                  placeholder="Max sell value"
-                  value={filters.maxSellValue}
-                  onChange={(e) => setFilters({ ...filters, maxSellValue: e.target.value })}
+                  placeholder="Max buy price"
+                  value={filters.maxBuyPrice}
+                  onChange={(e) => setFilters({ ...filters, maxBuyPrice: e.target.value })}
                   className="w-full p-2 border rounded-md"
                 />
                 <input
@@ -1985,9 +1985,9 @@ export const InventoryItems = () => {
               </p>
             )}
             
-            {item.sellValue !== undefined && item.sellValue !== null && (
+            {item.buyPrice !== undefined && item.buyPrice !== null && (
               <p style={{ margin: '5px 0', color: '#666' }}>
-                Sell Value: {item.sellValue} gold
+                Buy Price: {item.buyPrice} gold
               </p>
             )}
 
@@ -2185,20 +2185,20 @@ export const InventoryItems = () => {
             </div>
 
             <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px' }}>Sell Value (gold):</label>
+              <label style={{ display: 'block', marginBottom: '5px' }}>Buy Price (gold):</label>
               <input
                 type="number"
                 min="0"
-                value={formData.sellValue !== undefined ? formData.sellValue : ''}
+                value={formData.buyPrice !== undefined ? formData.buyPrice : ''}
                 onChange={(e) => setFormData({ 
                   ...formData, 
-                  sellValue: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
+                  buyPrice: e.target.value === '' ? undefined : parseInt(e.target.value, 10) 
                 })}
-                placeholder="Leave empty if item cannot be sold"
+                placeholder="Leave empty if shops should not use a fixed buy price"
                 style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
               />
               <small style={{ color: '#666', fontSize: '12px' }}>
-                Set the amount of gold this item sells for. Leave empty if the item cannot be sold.
+                Base vendor price. Shops sell for this amount before charisma discounts, and buy from players for half before charisma bonuses.
               </small>
             </div>
 

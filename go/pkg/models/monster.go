@@ -56,6 +56,8 @@ type MonsterTemplate struct {
 	BaseIntelligence      int                    `json:"baseIntelligence" gorm:"column:base_intelligence"`
 	BaseWisdom            int                    `json:"baseWisdom" gorm:"column:base_wisdom"`
 	BaseCharisma          int                    `json:"baseCharisma" gorm:"column:base_charisma"`
+	StrongAgainstAffinity *string                `json:"strongAgainstAffinity,omitempty" gorm:"column:strong_against_affinity"`
+	WeakAgainstAffinity   *string                `json:"weakAgainstAffinity,omitempty" gorm:"column:weak_against_affinity"`
 	ImageGenerationStatus string                 `json:"imageGenerationStatus" gorm:"column:image_generation_status"`
 	ImageGenerationError  *string                `json:"imageGenerationError,omitempty" gorm:"column:image_generation_error"`
 	Spells                []MonsterTemplateSpell `json:"spells" gorm:"foreignKey:MonsterTemplateID"`
