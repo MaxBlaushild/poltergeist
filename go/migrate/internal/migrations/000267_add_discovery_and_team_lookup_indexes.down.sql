@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_point_of_interest_discoveries_user_id;

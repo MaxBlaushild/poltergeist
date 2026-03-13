@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	scenarioScaledDifficultyBuffer  = 10
-	challengeScaledDifficultyBuffer = 20
+	scenarioScaledDifficultyBuffer     = 10
+	challengeScaledDifficultyBuffer    = 20
+	challengeScaledStatGainPerLevel    = 3
+	challengeScaledNoStatDifficultyCap = 50
 )
 
 func normalizeScaledLevel(level int) int {
@@ -30,8 +32,32 @@ func scaledScenarioDifficultyForUserLevel(level int) int {
 	return maxInt(0, expectedSpecializedStatForLevel(level)+scenarioScaledDifficultyBuffer)
 }
 
+func expectedFocusedChallengeStatForLevel(level int) int {
+	normalizedLevel := normalizeScaledLevel(level)
+	pointsGained := (normalizedLevel - 1) * challengeScaledStatGainPerLevel
+	return models.CharacterStatBaseValue + pointsGained
+}
+
 func scaledChallengeDifficultyForUserLevel(level int) int {
-	return maxInt(0, expectedSpecializedStatForLevel(level)+challengeScaledDifficultyBuffer)
+	return maxInt(
+		0,
+		expectedFocusedChallengeStatForLevel(level)+challengeScaledDifficultyBuffer,
+	)
+}
+
+func scaledChallengeDifficultyForStatTags(level int, statTags []string) int {
+	difficulty := scaledChallengeDifficultyForUserLevel(level)
+	hasStatTags := false
+	for _, tag := range statTags {
+		if tag != "" {
+			hasStatTags = true
+			break
+		}
+	}
+	if !hasStatTags && difficulty > challengeScaledNoStatDifficultyCap {
+		return challengeScaledNoStatDifficultyCap
+	}
+	return difficulty
 }
 
 func (s *server) currentUserLevel(ctx context.Context, userID uuid.UUID) (int, error) {
@@ -90,7 +116,7 @@ func challengeDifficultyForUserLevel(challenge *models.Challenge, userLevel int)
 	if !challenge.ScaleWithUserLevel {
 		return challenge.Difficulty
 	}
-	return scaledChallengeDifficultyForUserLevel(userLevel)
+	return scaledChallengeDifficultyForStatTags(userLevel, []string(challenge.StatTags))
 }
 
 func scenarioWithScaledDifficulty(scenario models.Scenario, userLevel int) models.Scenario {

@@ -89,12 +89,30 @@ class _LogisterFormState extends State<_LogisterForm> {
       NotificationPermissionState.notDetermined;
 
   @override
+  void initState() {
+    super.initState();
+    _countryCodeController.addListener(_handleFormChanged);
+    _phoneController.addListener(_handleFormChanged);
+    _codeController.addListener(_handleFormChanged);
+    _nameController.addListener(_handleFormChanged);
+  }
+
+  @override
   void dispose() {
+    _countryCodeController.removeListener(_handleFormChanged);
+    _phoneController.removeListener(_handleFormChanged);
+    _codeController.removeListener(_handleFormChanged);
+    _nameController.removeListener(_handleFormChanged);
     _countryCodeController.dispose();
     _phoneController.dispose();
     _codeController.dispose();
     _nameController.dispose();
     super.dispose();
+  }
+
+  void _handleFormChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   String _formattedPhoneNumber() {
@@ -250,6 +268,11 @@ class _LogisterFormState extends State<_LogisterForm> {
     final auth = widget.auth;
     final waiting = auth.isWaitingForVerificationCode;
     final colorScheme = Theme.of(context).colorScheme;
+    final canRequestCode = _formattedPhoneNumber().isNotEmpty;
+    final canSubmitCode =
+        _formattedPhoneNumber().isNotEmpty &&
+        _codeController.text.trim().length == 6;
+    final canSubmitProfile = _nameController.text.trim().length >= 2;
 
     if (_showProfileSetup) {
       return Column(
@@ -279,7 +302,7 @@ class _LogisterFormState extends State<_LogisterForm> {
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: (_loading || _nameController.text.trim().length < 2)
+            onPressed: (_loading || !canSubmitProfile)
                 ? null
                 : _submitProfileSetup,
             child: _loading
@@ -463,7 +486,7 @@ class _LogisterFormState extends State<_LogisterForm> {
           children: [
             if (waiting)
               FilledButton.icon(
-                onPressed: _loading ? null : _submit,
+                onPressed: (_loading || !canSubmitCode) ? null : _submit,
                 icon: const Icon(Icons.lock_open),
                 label: _loading
                     ? const SizedBox(
@@ -475,7 +498,7 @@ class _LogisterFormState extends State<_LogisterForm> {
               )
             else
               FilledButton.icon(
-                onPressed: _loading ? null : _getCode,
+                onPressed: (_loading || !canRequestCode) ? null : _getCode,
                 icon: const Icon(Icons.wifi_tethering),
                 label: _loading
                     ? const SizedBox(

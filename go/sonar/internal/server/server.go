@@ -110,6 +110,30 @@ type Server interface {
 	SetupRoutes(r *gin.Engine)
 }
 
+type pointOfInterestDiscoverySummary struct {
+	ID                uuid.UUID  `json:"id"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
+	TeamID            *uuid.UUID `json:"teamId"`
+	UserID            *uuid.UUID `json:"userId"`
+	PointOfInterestID uuid.UUID  `json:"pointOfInterestId"`
+}
+
+func summarizePointOfInterestDiscoveries(discoveries []models.PointOfInterestDiscovery) []pointOfInterestDiscoverySummary {
+	summaries := make([]pointOfInterestDiscoverySummary, 0, len(discoveries))
+	for _, discovery := range discoveries {
+		summaries = append(summaries, pointOfInterestDiscoverySummary{
+			ID:                discovery.ID,
+			CreatedAt:         discovery.CreatedAt,
+			UpdatedAt:         discovery.UpdatedAt,
+			TeamID:            discovery.TeamID,
+			UserID:            discovery.UserID,
+			PointOfInterestID: discovery.PointOfInterestID,
+		})
+	}
+	return summaries
+}
+
 func NewServer(
 	authClient auth.Client,
 	texterClient texter.Client,
@@ -5957,39 +5981,12 @@ func (s *server) getPointOfInterestDiscoveries(ctx *gin.Context) {
 		return
 	}
 
-	matchID, err := s.dbClient.Match().FindCurrentMatchIDForUser(ctx, user.ID)
-	if matchID == nil || err != nil {
-		discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForUser(user.ID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		ctx.JSON(http.StatusOK, discoveries)
-		return
-	}
-
-	teams, err := s.dbClient.Team().GetByMatchID(ctx, *matchID)
+	discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForUser(user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	var teamID uuid.UUID
-	for _, team := range teams {
-		for _, user := range team.Users {
-			if user.ID == user.ID {
-				teamID = team.ID
-				break
-			}
-		}
-	}
-
-	discoveries, err := s.dbClient.PointOfInterestDiscovery().GetDiscoveriesForTeam(teamID)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, discoveries)
+	ctx.JSON(http.StatusOK, summarizePointOfInterestDiscoveries(discoveries))
 }
 
 func (s *server) getPointOfInterestChallengeSubmissions(ctx *gin.Context) {
@@ -10611,7 +10608,10 @@ func (s *server) submitQuestNodeChallenge(ctx *gin.Context) {
 
 	difficulty := challenge.Difficulty
 	if challengeScaleWithUserLevel {
-		difficulty = scaledChallengeDifficultyForUserLevel(userLevel)
+		difficulty = scaledChallengeDifficultyForStatTags(
+			userLevel,
+			[]string(challenge.StatTags),
+		)
 	}
 	if combinedScore < difficulty {
 		reason := strings.TrimSpace(judgement.Judgement.Reason)

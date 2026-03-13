@@ -1520,10 +1520,14 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     try {
       await _restoreDefeatedMonsterIds();
       await _restoreDiscoveredCharacterIds();
-      await discoveriesProvider.refresh();
-      final zones = await svc.getZones();
-      final pois = await svc.getPointsOfInterest();
-      final characters = await svc.getCharacters();
+      final discoveriesFuture = discoveriesProvider.refresh();
+      final zonesFuture = svc.getZones();
+      final poisFuture = svc.getPointsOfInterest();
+      final charactersFuture = svc.getCharacters();
+      await discoveriesFuture;
+      final zones = await zonesFuture;
+      final pois = await poisFuture;
+      final characters = await charactersFuture;
       if (!mounted) return;
       debugPrint(
         'SinglePlayer: _loadAll data: zones=${zones.length} pois=${pois.length} chars=${characters.length}',
@@ -3545,13 +3549,10 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     if (!mounted) return;
     if (!_styleLoaded || _mapController == null || !_markersAdded) return;
     final discoveries = context.read<DiscoveriesProvider>();
-    if (discoveries.discoveries.isEmpty) return;
+    if (discoveries.discoveredPoiIds.isEmpty) return;
     final questLog = context.read<QuestLogProvider>();
     final questPoiIds = _currentQuestPoiIdsForFilter(questLog);
-    final discoveredPoiIds = <String>{
-      for (final d in discoveries.discoveries) d.pointOfInterestId,
-    };
-    for (final poiId in discoveredPoiIds) {
+    for (final poiId in discoveries.discoveredPoiIds) {
       await _updatePoiSymbolForQuestState(
         poiId,
         isQuestCurrent: questPoiIds.contains(poiId),

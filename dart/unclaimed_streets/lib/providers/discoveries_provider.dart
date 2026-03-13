@@ -9,7 +9,9 @@ class DiscoveriesProvider with ChangeNotifier {
   final AuthProvider _auth;
 
   List<PointOfInterestDiscovery> _discoveries = [];
+  Set<String> _discoveredPoiIds = <String>{};
   bool _loading = false;
+  Future<void>? _refreshFuture;
 
   DiscoveriesProvider(this._poi, this._auth) {
     _auth.addListener(_onAuthChanged);
@@ -19,6 +21,7 @@ class DiscoveriesProvider with ChangeNotifier {
     final u = _auth.user;
     if (u == null) {
       _discoveries = [];
+      _discoveredPoiIds = <String>{};
       notifyListeners();
       return;
     }
@@ -30,30 +33,53 @@ class DiscoveriesProvider with ChangeNotifier {
   }
 
   List<PointOfInterestDiscovery> get discoveries => _discoveries;
+  Set<String> get discoveredPoiIds => _discoveredPoiIds;
   bool get loading => _loading;
 
   /// True if the current user has discovered the given POI.
   bool hasDiscovered(String pointOfInterestId) {
-    final uid = _auth.user?.id;
-    if (uid == null || uid.isEmpty) return false;
-    return hasDiscoveredPointOfInterest(pointOfInterestId, uid, _discoveries);
+    if (pointOfInterestId.isEmpty) return false;
+    return _discoveredPoiIds.contains(pointOfInterestId);
   }
 
   Future<void> refresh() async {
+    if (_refreshFuture != null) {
+      return _refreshFuture!;
+    }
     final uid = _auth.user?.id;
     if (uid == null || uid.isEmpty) {
       _discoveries = [];
+      _discoveredPoiIds = <String>{};
       notifyListeners();
       return;
     }
     _loading = true;
     notifyListeners();
+
+    final future = _refreshForUser(uid);
+    _refreshFuture = future;
+    await future;
+  }
+
+  Future<void> _refreshForUser(String uid) async {
     try {
-      _discoveries = await _poi.getDiscoveries();
+      final discoveries = await _poi.getDiscoveries();
+      if (_auth.user?.id != uid) return;
+      _discoveries = discoveries;
+      _discoveredPoiIds = discoveries
+          .map((discovery) => discovery.pointOfInterestId)
+          .where((id) => id.isNotEmpty)
+          .toSet();
     } catch (_) {
+      if (_auth.user?.id != uid) return;
       _discoveries = [];
+      _discoveredPoiIds = <String>{};
+    } finally {
+      if (_auth.user?.id == uid) {
+        _loading = false;
+        notifyListeners();
+      }
+      _refreshFuture = null;
     }
-    _loading = false;
-    notifyListeners();
   }
 }
