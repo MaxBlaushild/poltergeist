@@ -53,12 +53,13 @@ class AuthProvider with ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final (result, user) = await _auth.logister(phoneNumber, code);
-      _user = user;
+      final response = await _auth.logister(phoneNumber, code);
+      _user = response.user;
       _isWaitingForVerificationCode = false;
-      _isRegistrationFlowActive = result == LogisterResult.needsProfileSetup;
+      _isRegistrationFlowActive =
+          response.result == LogisterResult.needsProfileSetup;
       notifyListeners();
-      if (result == LogisterResult.done) {
+      if (response.result == LogisterResult.done) {
         try {
           _user = await _auth.whoami();
           notifyListeners();
@@ -66,7 +67,21 @@ class AuthProvider with ChangeNotifier {
           // If the refresh fails, keep the login response data.
         }
       }
-      return result == LogisterResult.needsProfileSetup;
+      return response.result == LogisterResult.needsProfileSetup;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> completeRegistration({required String username}) async {
+    _error = null;
+    notifyListeners();
+    try {
+      _user = await _auth.completePendingRegistration(username: username);
+      _isRegistrationFlowActive = true;
+      notifyListeners();
     } catch (e) {
       _error = e.toString();
       notifyListeners();
@@ -105,6 +120,15 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> logout() async {
     await _auth.logout();
+    _user = null;
+    _error = null;
+    _isWaitingForVerificationCode = false;
+    _isRegistrationFlowActive = false;
+    notifyListeners();
+  }
+
+  void cancelRegistrationFlow() {
+    _auth.cancelPendingRegistration();
     _user = null;
     _error = null;
     _isWaitingForVerificationCode = false;

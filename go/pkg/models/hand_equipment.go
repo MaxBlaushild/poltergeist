@@ -128,14 +128,14 @@ func validateDominantHandAttributes(attrs HandEquipmentAttributes) (HandEquipmen
 		return HandEquipmentAttributes{}, fmt.Errorf("dominant hand items require damageMin, damageMax, and swipesPerAttack")
 	}
 	if attrs.DamageAffinity == nil {
-		defaultAffinity := string(DamageAffinityPhysical)
+		defaultAffinity := string(DamageAffinitySlashing)
 		if category == string(HandItemCategoryStaff) {
 			defaultAffinity = string(DamageAffinityArcane)
 		}
 		attrs.DamageAffinity = &defaultAffinity
 	}
 	if !IsValidDamageAffinity(*attrs.DamageAffinity) {
-		return HandEquipmentAttributes{}, fmt.Errorf("damageAffinity must be one of: physical, fire, ice, lightning, poison, arcane, holy, shadow")
+		return HandEquipmentAttributes{}, fmt.Errorf("damageAffinity must be one of: physical, piercing, slashing, bludgeoning, fire, ice, lightning, poison, arcane, holy, shadow")
 	}
 	if *attrs.DamageMin <= 0 || *attrs.DamageMax <= 0 || *attrs.SwipesPerAttack <= 0 {
 		return HandEquipmentAttributes{}, fmt.Errorf("damageMin, damageMax, and swipesPerAttack must be positive")

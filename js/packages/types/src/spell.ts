@@ -6,11 +6,16 @@ export type SpellEffectType =
   | 'revive_party_member'
   | 'revive_all_downed_party_members'
   | 'apply_beneficial_statuses'
+  | 'apply_detrimental_statuses'
+  | 'apply_detrimental_statuses_all_enemies'
   | 'remove_detrimental_statuses'
   | string;
 
 export type DamageAffinity =
   | 'physical'
+  | 'piercing'
+  | 'slashing'
+  | 'bludgeoning'
   | 'fire'
   | 'ice'
   | 'lightning'

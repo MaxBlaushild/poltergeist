@@ -23,6 +23,7 @@ import (
 	"github.com/MaxBlaushild/poltergeist/pkg/deep_priest"
 	"github.com/MaxBlaushild/poltergeist/pkg/dungeonmaster"
 	"github.com/MaxBlaushild/poltergeist/pkg/googlemaps"
+	pkghttp "github.com/MaxBlaushild/poltergeist/pkg/http"
 	"github.com/MaxBlaushild/poltergeist/pkg/jobs"
 	"github.com/MaxBlaushild/poltergeist/pkg/liveness"
 	"github.com/MaxBlaushild/poltergeist/pkg/locationseeder"
@@ -9326,10 +9327,9 @@ func generateInventoryItemHandAttributes(rarity string, category string, handedn
 }
 
 func generatedInventoryDamageAffinity(category string) string {
-	var options []models.DamageAffinity
 	switch strings.ToLower(strings.TrimSpace(category)) {
 	case string(models.HandItemCategoryStaff):
-		options = []models.DamageAffinity{
+		options := []models.DamageAffinity{
 			models.DamageAffinityArcane,
 			models.DamageAffinityFire,
 			models.DamageAffinityIce,
@@ -9337,19 +9337,12 @@ func generatedInventoryDamageAffinity(category string) string {
 			models.DamageAffinityShadow,
 			models.DamageAffinityHoly,
 		}
+		return string(options[secureRandomIntBetween(0, len(options)-1)])
+	case string(models.HandItemCategoryWeapon):
+		return string(models.DamageAffinitySlashing)
 	default:
-		options = []models.DamageAffinity{
-			models.DamageAffinityPhysical,
-			models.DamageAffinityFire,
-			models.DamageAffinityIce,
-			models.DamageAffinityLightning,
-			models.DamageAffinityPoison,
-		}
-	}
-	if len(options) == 0 {
 		return string(models.DamageAffinityPhysical)
 	}
-	return string(options[secureRandomIntBetween(0, len(options)-1)])
 }
 
 func generatedInventoryDamageRangeByRarity(rarity string) (int, int) {
@@ -11178,7 +11171,12 @@ func (s *server) login(ctx *gin.Context) {
 
 	authenticateResponse, err := s.authClient.LoginByText(ctx, &requestBody)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
+		statusCode := http.StatusBadRequest
+		var statusErr *pkghttp.StatusError
+		if stdErrors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
+			statusCode = http.StatusNotFound
+		}
+		ctx.JSON(statusCode, gin.H{
 			"error": err.Error(),
 		})
 		return

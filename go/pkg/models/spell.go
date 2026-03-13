@@ -19,6 +19,8 @@ const (
 	SpellEffectTypeRevivePartyMember      SpellEffectType = "revive_party_member"
 	SpellEffectTypeReviveAllDownedParty   SpellEffectType = "revive_all_downed_party_members"
 	SpellEffectTypeApplyBeneficialStatus  SpellEffectType = "apply_beneficial_statuses"
+	SpellEffectTypeApplyDetrimentalStatus SpellEffectType = "apply_detrimental_statuses"
+	SpellEffectTypeApplyDetrimentalAll    SpellEffectType = "apply_detrimental_statuses_all_enemies"
 	SpellEffectTypeRemoveDetrimental      SpellEffectType = "remove_detrimental_statuses"
 	SpellEffectTypeUnlockLocks            SpellEffectType = "unlock_locks"
 )

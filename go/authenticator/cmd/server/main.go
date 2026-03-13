@@ -308,16 +308,16 @@ func main() {
 			return
 		}
 
-		if err := dbClient.TextVerificationCode().MarkUsed(ctx, code.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
+		user, err := dbClient.User().FindByPhoneNumber(ctx, requestBody.PhoneNumber)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
 
-		user, err := dbClient.User().FindByPhoneNumber(ctx, requestBody.PhoneNumber)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{
+		if err := dbClient.TextVerificationCode().MarkUsed(ctx, code.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
 			return

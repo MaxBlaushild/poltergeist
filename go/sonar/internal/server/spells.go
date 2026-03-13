@@ -165,6 +165,31 @@ func normalizeSpellStatusNames(values []string) models.StringArray {
 	return out
 }
 
+func isSpellDetrimentalStatusEffectType(effectType models.SpellEffectType) bool {
+	switch effectType {
+	case models.SpellEffectTypeApplyDetrimentalStatus, models.SpellEffectTypeApplyDetrimentalAll:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeSpellStatusesForEffectType(
+	effectType models.SpellEffectType,
+	statuses models.ScenarioFailureStatusTemplates,
+) models.ScenarioFailureStatusTemplates {
+	if len(statuses) == 0 || !isSpellDetrimentalStatusEffectType(effectType) {
+		return statuses
+	}
+	normalized := make(models.ScenarioFailureStatusTemplates, 0, len(statuses))
+	for _, status := range statuses {
+		next := status
+		next.Positive = false
+		normalized = append(normalized, next)
+	}
+	return normalized
+}
+
 func nextUniqueAbilityName(base string, used map[string]struct{}, abilityType models.SpellAbilityType) string {
 	trimmed := strings.TrimSpace(base)
 	if trimmed == "" {
@@ -925,6 +950,12 @@ func (s *server) parseSpellEffects(input []spellEffectPayload) (models.SpellEffe
 			if len(statusesToApply) == 0 {
 				return nil, fmt.Errorf("effects[%d].statusesToApply is required", index)
 			}
+		case models.SpellEffectTypeApplyDetrimentalStatus,
+			models.SpellEffectTypeApplyDetrimentalAll:
+			if len(statusesToApply) == 0 {
+				return nil, fmt.Errorf("effects[%d].statusesToApply is required", index)
+			}
+			statusesToApply = normalizeSpellStatusesForEffectType(effectType, statusesToApply)
 		case models.SpellEffectTypeRemoveDetrimental:
 			if len(statusesToRemove) == 0 {
 				return nil, fmt.Errorf("effects[%d].statusesToRemove is required", index)
@@ -1200,6 +1231,28 @@ func spellProgressionBandTerm(effectType models.SpellEffectType, levelBand int) 
 		default:
 			return "Citadel"
 		}
+	case models.SpellEffectTypeApplyDetrimentalStatus:
+		switch levelBand {
+		case 10:
+			return "Hex"
+		case 25:
+			return "Curse"
+		case 50:
+			return "Scourge"
+		default:
+			return "Malediction"
+		}
+	case models.SpellEffectTypeApplyDetrimentalAll:
+		switch levelBand {
+		case 10:
+			return "Haze"
+		case 25:
+			return "Miasma"
+		case 50:
+			return "Blight"
+		default:
+			return "Plague"
+		}
 	case models.SpellEffectTypeRemoveDetrimental:
 		switch levelBand {
 		case 10:
@@ -1453,7 +1506,10 @@ func spellProgressionTargetManaCost(effectType models.SpellEffectType, targetBan
 		})
 		target := int(math.Round(float64(playerMana) * ratio))
 		return spellMaxInt(bandFloor, target)
-	case models.SpellEffectTypeApplyBeneficialStatus, models.SpellEffectTypeRemoveDetrimental:
+	case models.SpellEffectTypeApplyBeneficialStatus,
+		models.SpellEffectTypeApplyDetrimentalStatus,
+		models.SpellEffectTypeApplyDetrimentalAll,
+		models.SpellEffectTypeRemoveDetrimental:
 		return spellProgressionBandFloor(targetBand, map[int]int{
 			10: 12,
 			25: 26,
@@ -1570,6 +1626,16 @@ func buildSpellProgressionEffectText(effects models.SpellEffects) string {
 			return fmt.Sprintf("Applies %s to allies.", strings.TrimSpace(effect.StatusesToApply[0].Name))
 		}
 		return "Applies beneficial statuses to allies."
+	case models.SpellEffectTypeApplyDetrimentalStatus:
+		if len(effect.StatusesToApply) > 0 && strings.TrimSpace(effect.StatusesToApply[0].Name) != "" {
+			return fmt.Sprintf("Applies %s to one enemy.", strings.TrimSpace(effect.StatusesToApply[0].Name))
+		}
+		return "Applies detrimental statuses to one enemy."
+	case models.SpellEffectTypeApplyDetrimentalAll:
+		if len(effect.StatusesToApply) > 0 && strings.TrimSpace(effect.StatusesToApply[0].Name) != "" {
+			return fmt.Sprintf("Applies %s to all enemies.", strings.TrimSpace(effect.StatusesToApply[0].Name))
+		}
+		return "Applies detrimental statuses to all enemies."
 	case models.SpellEffectTypeRemoveDetrimental:
 		return "Removes detrimental statuses from allies."
 	case models.SpellEffectTypeDealDamageAllEnemies:
@@ -1648,6 +1714,10 @@ func buildSpellProgressionFlavorDescription(
 		return "A radiant wave of restorative power washes across the party, renewing battered allies."
 	case models.SpellEffectTypeApplyBeneficialStatus:
 		return "A focused invocation fortifies allies, sharpening their edge for the clash ahead."
+	case models.SpellEffectTypeApplyDetrimentalStatus:
+		return "A cruel working binds a single foe with a lingering detrimental condition."
+	case models.SpellEffectTypeApplyDetrimentalAll:
+		return "A spreading curse rolls across the battlefield, burdening every enemy it touches."
 	case models.SpellEffectTypeRemoveDetrimental:
 		return "A cleansing pulse strips away harmful effects and restores clarity in the heat of battle."
 	case models.SpellEffectTypeDealDamageAllEnemies:
@@ -2395,6 +2465,8 @@ func spellHasCastableEffect(spell *models.Spell) bool {
 			models.SpellEffectTypeRevivePartyMember,
 			models.SpellEffectTypeReviveAllDownedParty,
 			models.SpellEffectTypeApplyBeneficialStatus,
+			models.SpellEffectTypeApplyDetrimentalStatus,
+			models.SpellEffectTypeApplyDetrimentalAll,
 			models.SpellEffectTypeRemoveDetrimental:
 			return true
 		}
@@ -2467,6 +2539,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	groupReviveAmount := 0
 	statusesToApply := models.ScenarioFailureStatusTemplates{}
 	statusNamesToRemove := make([]string, 0)
+	requiresMonsterTargetForStatuses := false
 	for _, effect := range spellToCast.Effects {
 		switch effect.Type {
 		case models.SpellEffectTypeRestoreLifePartyMember:
@@ -2487,6 +2560,13 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			}
 		case models.SpellEffectTypeApplyBeneficialStatus:
 			statusesToApply = append(statusesToApply, effect.StatusesToApply...)
+		case models.SpellEffectTypeApplyDetrimentalStatus,
+			models.SpellEffectTypeApplyDetrimentalAll:
+			requiresMonsterTargetForStatuses = true
+			statusesToApply = append(
+				statusesToApply,
+				normalizeSpellStatusesForEffectType(effect.Type, effect.StatusesToApply)...,
+			)
 		case models.SpellEffectTypeRemoveDetrimental:
 			statusNamesToRemove = append(statusNamesToRemove, effect.StatusesToRemove...)
 		}
@@ -2541,6 +2621,10 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			return
 		}
 		targetMonsterID = &parsedMonsterID
+	}
+	if requiresMonsterTargetForStatuses && targetMonsterID == nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetMonsterId is required for detrimental status abilities"})
+		return
 	}
 	var monsterBattle *models.MonsterBattle
 	if targetMonsterID != nil {

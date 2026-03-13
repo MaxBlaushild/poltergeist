@@ -5,18 +5,24 @@ import "strings"
 type DamageAffinity string
 
 const (
-	DamageAffinityPhysical  DamageAffinity = "physical"
-	DamageAffinityFire      DamageAffinity = "fire"
-	DamageAffinityIce       DamageAffinity = "ice"
-	DamageAffinityLightning DamageAffinity = "lightning"
-	DamageAffinityPoison    DamageAffinity = "poison"
-	DamageAffinityArcane    DamageAffinity = "arcane"
-	DamageAffinityHoly      DamageAffinity = "holy"
-	DamageAffinityShadow    DamageAffinity = "shadow"
+	DamageAffinityPhysical    DamageAffinity = "physical"
+	DamageAffinityPiercing    DamageAffinity = "piercing"
+	DamageAffinitySlashing    DamageAffinity = "slashing"
+	DamageAffinityBludgeoning DamageAffinity = "bludgeoning"
+	DamageAffinityFire        DamageAffinity = "fire"
+	DamageAffinityIce         DamageAffinity = "ice"
+	DamageAffinityLightning   DamageAffinity = "lightning"
+	DamageAffinityPoison      DamageAffinity = "poison"
+	DamageAffinityArcane      DamageAffinity = "arcane"
+	DamageAffinityHoly        DamageAffinity = "holy"
+	DamageAffinityShadow      DamageAffinity = "shadow"
 )
 
 var DamageAffinities = []DamageAffinity{
 	DamageAffinityPhysical,
+	DamageAffinityPiercing,
+	DamageAffinitySlashing,
+	DamageAffinityBludgeoning,
 	DamageAffinityFire,
 	DamageAffinityIce,
 	DamageAffinityLightning,
@@ -28,6 +34,12 @@ var DamageAffinities = []DamageAffinity{
 
 func NormalizeDamageAffinity(raw string) DamageAffinity {
 	switch DamageAffinity(strings.ToLower(strings.TrimSpace(raw))) {
+	case DamageAffinityPiercing:
+		return DamageAffinityPiercing
+	case DamageAffinitySlashing:
+		return DamageAffinitySlashing
+	case DamageAffinityBludgeoning:
+		return DamageAffinityBludgeoning
 	case DamageAffinityFire:
 		return DamageAffinityFire
 	case DamageAffinityIce:
@@ -44,6 +56,15 @@ func NormalizeDamageAffinity(raw string) DamageAffinity {
 		return DamageAffinityShadow
 	default:
 		return DamageAffinityPhysical
+	}
+}
+
+func IsPhysicalLikeDamageAffinity(raw string) bool {
+	switch NormalizeDamageAffinity(raw) {
+	case DamageAffinityPhysical, DamageAffinityPiercing, DamageAffinitySlashing, DamageAffinityBludgeoning:
+		return true
+	default:
+		return false
 	}
 }
 

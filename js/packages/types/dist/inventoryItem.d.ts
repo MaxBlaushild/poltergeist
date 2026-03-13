@@ -11,7 +11,7 @@ export type InventoryConsumeStatus = {
     wisdomMod: number;
     charismaMod: number;
 };
-type DamageAffinity = 'physical' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
+type DamageAffinity = 'physical' | 'piercing' | 'slashing' | 'bludgeoning' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
 export type InventoryItem = {
     id: number;
     name: string;

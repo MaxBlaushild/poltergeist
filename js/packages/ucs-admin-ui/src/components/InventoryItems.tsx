@@ -55,6 +55,8 @@ type ConsumableQualitiesResponse = {
   message: string;
 };
 
+type BulkTagAction = 'none' | 'replace' | 'add' | 'remove' | 'clear';
+
 const emptyConsumeStatus = (): InventoryConsumeStatus => ({
   name: '',
   description: '',
@@ -102,6 +104,33 @@ const parseInternalTagsInput = (value: string): string[] =>
         .filter((tag) => tag !== '')
     )
   );
+
+const normalizeInternalTags = (tags?: string[] | null): string[] =>
+  parseInternalTagsInput((tags ?? []).join(','));
+
+const applyBulkTagAction = (
+  currentTags: string[] | undefined,
+  nextTags: string[],
+  action: BulkTagAction
+): string[] => {
+  const normalizedCurrent = normalizeInternalTags(currentTags);
+
+  switch (action) {
+    case 'replace':
+      return nextTags;
+    case 'add':
+      return Array.from(new Set([...normalizedCurrent, ...nextTags]));
+    case 'remove': {
+      const tagsToRemove = new Set(nextTags);
+      return normalizedCurrent.filter((tag) => !tagsToRemove.has(tag));
+    }
+    case 'clear':
+      return [];
+    case 'none':
+    default:
+      return normalizedCurrent;
+  }
+};
 
 const SearchableSelect = ({
   label,
@@ -213,6 +242,9 @@ const itemSetRarityOptions: SelectOption[] = [
 
 const damageAffinityOptions: SelectOption[] = [
   { value: 'physical', label: 'Physical' },
+  { value: 'piercing', label: 'Piercing' },
+  { value: 'slashing', label: 'Slashing' },
+  { value: 'bludgeoning', label: 'Bludgeoning' },
   { value: 'fire', label: 'Fire' },
   { value: 'ice', label: 'Ice' },
   { value: 'lightning', label: 'Lightning' },
@@ -413,6 +445,10 @@ export const InventoryItems = () => {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [selectedItemIDs, setSelectedItemIDs] = useState<Set<number>>(new Set());
   const [bulkDeleteBusy, setBulkDeleteBusy] = useState(false);
+  const [bulkEditBusy, setBulkEditBusy] = useState(false);
+  const [bulkBuyPriceInput, setBulkBuyPriceInput] = useState('');
+  const [bulkTagsInput, setBulkTagsInput] = useState('');
+  const [bulkTagAction, setBulkTagAction] = useState<BulkTagAction>('none');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -480,7 +516,7 @@ export const InventoryItems = () => {
     handedness: '',
     damageMin: undefined as number | undefined,
     damageMax: undefined as number | undefined,
-    damageAffinity: 'physical',
+    damageAffinity: 'slashing',
     swipesPerAttack: undefined as number | undefined,
     blockPercentage: undefined as number | undefined,
     damageBlocked: undefined as number | undefined,
@@ -598,7 +634,7 @@ export const InventoryItems = () => {
       handedness: '',
       damageMin: undefined,
       damageMax: undefined,
-      damageAffinity: 'physical',
+      damageAffinity: 'slashing',
       swipesPerAttack: undefined,
       blockPercentage: undefined,
       damageBlocked: undefined,
@@ -870,7 +906,7 @@ export const InventoryItems = () => {
         next.blockPercentage = undefined;
         next.damageBlocked = undefined;
       } else if (category === 'weapon') {
-        next.damageAffinity = 'physical';
+        next.damageAffinity = 'slashing';
         next.spellDamageBonusPercent = undefined;
         next.blockPercentage = undefined;
         next.damageBlocked = undefined;
@@ -931,6 +967,75 @@ export const InventoryItems = () => {
       console.error('Error creating inventory item:', error);
       alert('Error creating inventory item. Please check all required fields.');
     }
+  };
+
+  const buildItemSubmitData = (
+    item: InventoryItemRecord,
+    overrides: Partial<InventoryItemRecord> = {}
+  ) => {
+    const next: InventoryItemRecord = {
+      ...item,
+      ...overrides,
+      consumeStatusesToAdd: (overrides.consumeStatusesToAdd ?? item.consumeStatusesToAdd ?? [])
+        .map((status) => normalizeConsumeStatus(status))
+        .filter((status) => status.name !== '' && status.durationSeconds > 0),
+      consumeStatusesToRemove: Array.from(
+        new Set(
+          (overrides.consumeStatusesToRemove ?? item.consumeStatusesToRemove ?? [])
+            .map((name) => name.trim())
+            .filter((name) => name !== '')
+        )
+      ),
+      consumeSpellIds: Array.from(
+        new Set(
+          (overrides.consumeSpellIds ?? item.consumeSpellIds ?? [])
+            .map((spellID) => spellID.trim())
+            .filter((spellID) => spellID !== '')
+        )
+      ),
+      internalTags: normalizeInternalTags(overrides.internalTags ?? item.internalTags),
+    };
+
+    if (!isHandEquipSlot(next.equipSlot ?? '')) {
+      return { ...next, ...clearHandFields() };
+    }
+
+    if (next.equipSlot === 'dominant_hand') {
+      if (next.handItemCategory !== 'weapon' && next.handItemCategory !== 'staff') {
+        next.handItemCategory = '';
+      }
+      if (!next.damageAffinity) {
+        next.damageAffinity = next.handItemCategory === 'staff' ? 'arcane' : 'physical';
+      }
+      next.blockPercentage = undefined;
+      next.damageBlocked = undefined;
+      if (next.handItemCategory === 'staff') {
+        next.handedness = 'two_handed';
+      }
+      if (next.handItemCategory === 'weapon') {
+        next.spellDamageBonusPercent = undefined;
+      }
+    }
+
+    if (next.equipSlot === 'off_hand') {
+      if (next.handItemCategory !== 'shield' && next.handItemCategory !== 'orb') {
+        next.handItemCategory = '';
+      }
+      next.handedness = 'one_handed';
+      next.damageMin = undefined;
+      next.damageMax = undefined;
+      next.damageAffinity = undefined;
+      next.swipesPerAttack = undefined;
+      if (next.handItemCategory === 'shield') {
+        next.spellDamageBonusPercent = undefined;
+      }
+      if (next.handItemCategory === 'orb') {
+        next.blockPercentage = undefined;
+        next.damageBlocked = undefined;
+      }
+    }
+
+    return next;
   };
 
   const handleUpdateItem = async () => {
@@ -1100,6 +1205,76 @@ export const InventoryItems = () => {
       alert('Error bulk deleting inventory items.');
     } finally {
       setBulkDeleteBusy(false);
+    }
+  };
+
+  const handleBulkEditSelected = async () => {
+    const selectedItems = items.filter((item) => selectedItemIDs.has(item.id));
+    if (selectedItems.length === 0) return;
+
+    const trimmedPrice = bulkBuyPriceInput.trim();
+    const hasPriceChange = trimmedPrice !== '';
+    const hasTagChange = bulkTagAction !== 'none';
+
+    if (!hasPriceChange && !hasTagChange) {
+      alert('Choose a buy price and/or a tag action before applying bulk edits.');
+      return;
+    }
+
+    let buyPrice: number | undefined;
+    if (hasPriceChange) {
+      buyPrice = Number(trimmedPrice);
+      if (!Number.isFinite(buyPrice) || buyPrice < 0) {
+        alert('Buy price must be a non-negative number.');
+        return;
+      }
+    }
+
+    const parsedTags =
+      hasTagChange && bulkTagAction !== 'clear'
+        ? parseInternalTagsInput(bulkTagsInput)
+        : [];
+
+    if (hasTagChange && bulkTagAction !== 'clear' && parsedTags.length === 0) {
+      alert('Enter at least one tag for the selected tag action.');
+      return;
+    }
+
+    setBulkEditBusy(true);
+    try {
+      const updatedItems = await Promise.all(
+        selectedItems.map((item) => {
+          const submitData = buildItemSubmitData(item, {
+            ...(hasPriceChange ? { buyPrice } : {}),
+            ...(hasTagChange
+              ? {
+                  internalTags: applyBulkTagAction(
+                    item.internalTags,
+                    parsedTags,
+                    bulkTagAction
+                  ),
+                }
+              : {}),
+          });
+
+          return apiClient.put<InventoryItemRecord>(
+            `/sonar/inventory-items/${item.id}`,
+            submitData
+          );
+        })
+      );
+
+      const updatedByID = new Map(updatedItems.map((item) => [item.id, item]));
+      setItems((prev) => prev.map((item) => updatedByID.get(item.id) ?? item));
+      setBulkBuyPriceInput('');
+      setBulkTagsInput('');
+      setBulkTagAction('none');
+      alert(`Updated ${updatedItems.length} inventory item(s).`);
+    } catch (error) {
+      console.error('Error bulk updating inventory items:', error);
+      alert('Error bulk updating inventory items.');
+    } finally {
+      setBulkEditBusy(false);
     }
   };
 
@@ -1901,6 +2076,71 @@ export const InventoryItems = () => {
         <span className="text-sm text-gray-700">
           {selectedItemIDs.size} selected
         </span>
+      </div>
+
+      <div className="mb-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+        <div className="mb-2 text-sm font-semibold text-amber-950">
+          Bulk Edit Selected Items
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Set Buy Price</label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={bulkBuyPriceInput}
+              onChange={(e) => setBulkBuyPriceInput(e.target.value)}
+              placeholder="Leave blank to keep"
+              disabled={bulkEditBusy || !hasSelectedItems}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Tag Action</label>
+            <select
+              value={bulkTagAction}
+              onChange={(e) => setBulkTagAction(e.target.value as BulkTagAction)}
+              disabled={bulkEditBusy || !hasSelectedItems}
+              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+            >
+              <option value="none">No tag changes</option>
+              <option value="replace">Replace tags</option>
+              <option value="add">Add tags</option>
+              <option value="remove">Remove tags</option>
+              <option value="clear">Clear all tags</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">Tags</label>
+            <input
+              type="text"
+              value={bulkTagsInput}
+              onChange={(e) => setBulkTagsInput(e.target.value)}
+              placeholder="comma,separated,tags"
+              disabled={
+                bulkEditBusy ||
+                !hasSelectedItems ||
+                bulkTagAction === 'none' ||
+                bulkTagAction === 'clear'
+              }
+              className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={handleBulkEditSelected}
+              disabled={!hasSelectedItems || bulkEditBusy}
+              className="w-full rounded-md bg-amber-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {bulkEditBusy ? 'Applying...' : `Apply to ${selectedItemIDs.size} selected`}
+            </button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-600">
+          Leave buy price blank to keep current values. Tags are normalized to lowercase.
+        </p>
       </div>
 
       {/* Items Grid */}

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/api_constants.dart';
@@ -13,6 +14,13 @@ class AuthResponse {
 
 enum LogisterResult { done, needsProfileSetup }
 
+class LogisterResponse {
+  final LogisterResult result;
+  final User? user;
+
+  LogisterResponse({required this.result, this.user});
+}
+
 class AuthService {
   final ApiClient _apiClient;
   static const String _tokenKey = 'token';
@@ -20,6 +28,8 @@ class AuthService {
   static const String _dryRunCode = '123456';
   static const String _dryRunUserId = '00000000-0000-0000-0000-00000000d002';
   User? _dryRunUser;
+  String? _pendingRegistrationPhone;
+  String? _pendingRegistrationCode;
 
   AuthService(this._apiClient);
 
@@ -34,6 +44,8 @@ class AuthService {
       _isDryRunPhone(phoneNumber) && code == _dryRunCode;
 
   bool get isDryRunRegistrationActive => _dryRunUser != null;
+  bool get hasPendingRegistration =>
+      _pendingRegistrationPhone != null && _pendingRegistrationCode != null;
 
   /// Request verification code. Sets waiting state; actual API sends SMS.
   Future<void> getVerificationCode(String phoneNumber) async {
@@ -48,8 +60,9 @@ class AuthService {
     );
   }
 
-  /// Try login, then register. Returns (result, user). needsProfileSetup when we registered.
-  Future<(LogisterResult, User)> logister(
+  /// Try login first. If the phone number is new, keep a pending registration
+  /// locally and only create the user once profile setup is submitted.
+  Future<LogisterResponse> logister(
     String phoneNumber,
     String code,
   ) async {
@@ -63,7 +76,10 @@ class AuthService {
         profilePictureUrl: '',
       );
       _dryRunUser = user;
-      return (LogisterResult.needsProfileSetup, user);
+      return LogisterResponse(
+        result: LogisterResult.needsProfileSetup,
+        user: user,
+      );
     }
 
     try {
@@ -75,20 +91,44 @@ class AuthService {
       final token = data['token'] as String;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, token);
-      return (LogisterResult.done, user);
-    } catch (_) {
-      // try register
+      _pendingRegistrationPhone = null;
+      _pendingRegistrationCode = null;
+      return LogisterResponse(result: LogisterResult.done, user: user);
+    } on DioException catch (error) {
+      if (error.response?.statusCode != 404) {
+        rethrow;
+      }
+      _pendingRegistrationPhone = formatted;
+      _pendingRegistrationCode = code;
+      return LogisterResponse(result: LogisterResult.needsProfileSetup);
+    }
+  }
+
+  Future<User> completePendingRegistration({required String username}) async {
+    if (_dryRunUser != null) {
+      return _dryRunUser!;
+    }
+    final phone = _pendingRegistrationPhone;
+    final code = _pendingRegistrationCode;
+    if (phone == null || code == null) {
+      throw StateError('No pending registration is available.');
     }
 
     final data = await _apiClient.post<Map<String, dynamic>>(
       ApiConstants.registerEndpoint,
-      data: {'phoneNumber': formatted, 'code': code},
+      data: {
+        'phoneNumber': phone,
+        'code': code,
+        'username': username,
+      },
     );
     final user = User.fromJson(data['user'] as Map<String, dynamic>);
     final token = data['token'] as String;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
-    return (LogisterResult.needsProfileSetup, user);
+    _pendingRegistrationPhone = null;
+    _pendingRegistrationCode = null;
+    return user;
   }
 
   Future<User> whoami() async {
@@ -133,8 +173,16 @@ class AuthService {
 
   Future<void> logout() async {
     _dryRunUser = null;
+    _pendingRegistrationPhone = null;
+    _pendingRegistrationCode = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
+  }
+
+  void cancelPendingRegistration() {
+    _dryRunUser = null;
+    _pendingRegistrationPhone = null;
+    _pendingRegistrationCode = null;
   }
 
   Future<String?> getStoredToken() async {

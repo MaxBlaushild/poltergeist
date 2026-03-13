@@ -170,7 +170,7 @@ class _LogisterFormState extends State<_LogisterForm> {
         return;
       }
 
-      await widget.auth.updateProfile(username: username);
+      await widget.auth.completeRegistration(username: username);
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -263,6 +263,13 @@ class _LogisterFormState extends State<_LogisterForm> {
     widget.onSuccess();
   }
 
+  void _handleBack() {
+    if (_showProfileSetup || _showNotificationSetup) {
+      widget.auth.cancelRegistrationFlow();
+    }
+    widget.onSkip();
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = widget.auth;
@@ -301,17 +308,24 @@ class _LogisterFormState extends State<_LogisterForm> {
             ),
           ),
           const SizedBox(height: 16),
-          FilledButton(
-            onPressed: (_loading || !canSubmitProfile)
-                ? null
-                : _submitProfileSetup,
-            child: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Continue'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FilledButton(
+                onPressed: (_loading || !canSubmitProfile)
+                    ? null
+                    : _submitProfileSetup,
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Continue'),
+              ),
+              const SizedBox(width: 12),
+              TextButton(onPressed: _handleBack, child: const Text('Back')),
+            ],
           ),
         ],
       );
@@ -509,7 +523,7 @@ class _LogisterFormState extends State<_LogisterForm> {
                     : const Text('Send code'),
               ),
             const SizedBox(width: 12),
-            TextButton(onPressed: widget.onSkip, child: const Text('Back')),
+            TextButton(onPressed: _handleBack, child: const Text('Back')),
           ],
         ),
       ],

@@ -93,6 +93,12 @@ func inferGeneratedDamageAffinity(text string, abilityType models.SpellAbilityTy
 
 func affinityKeywordsForName(affinity string) []string {
 	switch models.NormalizeDamageAffinity(affinity) {
+	case models.DamageAffinityPiercing:
+		return []string{"piercing", "javelin", "spear", "arrow", "bolt", "impale"}
+	case models.DamageAffinitySlashing:
+		return []string{"slashing", "blade", "slash", "cleave", "rend", "carve"}
+	case models.DamageAffinityBludgeoning:
+		return []string{"bludgeoning", "hammer", "slam", "crush", "impact", "maul"}
 	case models.DamageAffinityFire:
 		return []string{"fire", "flame", "ember", "inferno", "burn"}
 	case models.DamageAffinityIce:
@@ -175,10 +181,10 @@ func generatedAbilityNameMatchesEffect(
 		effectType != models.SpellEffectTypeDealDamageAllEnemies {
 		return true
 	}
-	normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
-	if normalizedAffinity == models.DamageAffinityPhysical {
+	if models.IsPhysicalLikeDamageAffinity(damageAffinity) {
 		return true
 	}
+	normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
 	return containsAnyKeyword(trimmed, affinityKeywordsForName(string(normalizedAffinity)))
 }
 
@@ -563,10 +569,10 @@ func generatedAbilityDescriptionMatchesEffect(
 	}
 	if effectType == models.SpellEffectTypeDealDamage ||
 		effectType == models.SpellEffectTypeDealDamageAllEnemies {
-		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
-		if normalizedAffinity == models.DamageAffinityPhysical {
+		if models.IsPhysicalLikeDamageAffinity(damageAffinity) {
 			return true
 		}
+		normalizedAffinity := models.NormalizeDamageAffinity(damageAffinity)
 		return containsAnyKeyword(trimmed, affinityKeywordsForName(string(normalizedAffinity)))
 	}
 	return true
@@ -605,6 +611,12 @@ func generatedAbilityDescriptionForEffect(effect models.SpellEffect, abilityType
 	case models.SpellEffectTypeDealDamage, models.SpellEffectTypeDealDamageAllEnemies:
 		affinity := "force"
 		switch models.NormalizeDamageAffinity(stringValue(effect.DamageAffinity)) {
+		case models.DamageAffinityPiercing:
+			affinity = "piercing"
+		case models.DamageAffinitySlashing:
+			affinity = "slashing"
+		case models.DamageAffinityBludgeoning:
+			affinity = "bludgeoning"
 		case models.DamageAffinityFire:
 			affinity = "fire"
 		case models.DamageAffinityIce:

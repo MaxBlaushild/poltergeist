@@ -22,6 +22,15 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+type StatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *StatusError) Error() string {
+	return e.Message
+}
+
 type Client interface {
 	Get(ctx context.Context, uri string) ([]byte, error)
 	Post(ctx context.Context, uri string, body interface{}) ([]byte, error)
@@ -68,12 +77,15 @@ func (c *client) Get(ctx context.Context, uri string) ([]byte, error) {
 			)
 		}
 
-		return nil, fmt.Errorf(
-			"error returned from %s%s: %s",
-			c.baseUrl,
-			uri,
-			errorResp.Error,
-		)
+		return nil, &StatusError{
+			StatusCode: resp.StatusCode,
+			Message: fmt.Sprintf(
+				"error returned from %s%s: %s",
+				c.baseUrl,
+				uri,
+				errorResp.Error,
+			),
+		}
 	}
 
 	return body, nil
@@ -118,12 +130,15 @@ func (c *client) Post(ctx context.Context, uri string, body interface{}) ([]byte
 			)
 		}
 
-		return nil, fmt.Errorf(
-			"error returned from %s%s: %s",
-			c.baseUrl,
-			uri,
-			errorResp.Error,
-		)
+		return nil, &StatusError{
+			StatusCode: resp.StatusCode,
+			Message: fmt.Sprintf(
+				"error returned from %s%s: %s",
+				c.baseUrl,
+				uri,
+				errorResp.Error,
+			),
+		}
 	}
 
 	return respBody, nil

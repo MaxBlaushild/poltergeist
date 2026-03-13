@@ -1,5 +1,5 @@
-export type SpellEffectType = 'deal_damage' | 'deal_damage_all_enemies' | 'restore_life_party_member' | 'restore_life_all_party_members' | 'revive_party_member' | 'revive_all_downed_party_members' | 'apply_beneficial_statuses' | 'remove_detrimental_statuses' | string;
-export type DamageAffinity = 'physical' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
+export type SpellEffectType = 'deal_damage' | 'deal_damage_all_enemies' | 'restore_life_party_member' | 'restore_life_all_party_members' | 'revive_party_member' | 'revive_all_downed_party_members' | 'apply_beneficial_statuses' | 'apply_detrimental_statuses' | 'apply_detrimental_statuses_all_enemies' | 'remove_detrimental_statuses' | string;
+export type DamageAffinity = 'physical' | 'piercing' | 'slashing' | 'bludgeoning' | 'fire' | 'ice' | 'lightning' | 'poison' | 'arcane' | 'holy' | 'shadow' | string;
 export interface SpellStatusTemplate {
     name: string;
     description: string;

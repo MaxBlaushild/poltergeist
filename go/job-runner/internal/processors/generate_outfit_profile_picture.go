@@ -29,6 +29,11 @@ const outfitPromptTemplate = `
 	Render %s of the person described below wearing %s.
 	Clean, light background.`
 
+type outfitSelfieAnalysis struct {
+	Appearance         string `json:"appearance"`
+	GenderPresentation string `json:"genderPresentation"`
+}
+
 type GenerateOutfitProfilePictureProcessor struct {
 	dbClient         db.DbClient
 	deepPriestClient deep_priest.DeepPriest
@@ -73,14 +78,16 @@ func (p *GenerateOutfitProfilePictureProcessor) ProcessTask(ctx context.Context,
 	}
 
 	selfieUrl := p.resolveSelfieURL(payload.SelfieUrl)
-	appearanceDescriptor := p.inferAppearanceDescriptor(ctx, selfieUrl)
-	frontPrompt := buildOutfitPrompt(outfitName, appearanceDescriptor, false)
+	analysis := p.inferAppearanceDescriptor(ctx, selfieUrl)
+	genderPresentation := analysis.GenderPresentation
+
+	frontPrompt := buildOutfitPrompt(outfitName, analysis.Appearance, genderPresentation, false)
 	frontImageBytes, err := p.generateOutfitPortrait(selfieUrl, frontPrompt)
 	if err != nil {
 		return p.markOutfitFailed(ctx, gen.ID, err)
 	}
 
-	backPrompt := buildOutfitPrompt(outfitName, appearanceDescriptor, true)
+	backPrompt := buildOutfitPrompt(outfitName, analysis.Appearance, genderPresentation, true)
 	backImageBytes, err := p.generateOutfitPortrait(selfieUrl, backPrompt)
 	if err != nil {
 		return p.markOutfitFailed(ctx, gen.ID, err)
@@ -136,31 +143,54 @@ func (p *GenerateOutfitProfilePictureProcessor) markOutfitFailed(ctx context.Con
 	return err
 }
 
-func (p *GenerateOutfitProfilePictureProcessor) inferAppearanceDescriptor(ctx context.Context, selfieURL string) string {
+func (p *GenerateOutfitProfilePictureProcessor) inferAppearanceDescriptor(
+	ctx context.Context,
+	selfieURL string,
+) outfitSelfieAnalysis {
 	if strings.TrimSpace(selfieURL) == "" {
-		return ""
+		return outfitSelfieAnalysis{}
 	}
+	question := "Return compact JSON with keys \"appearance\" and \"genderPresentation\". " +
+		"\"appearance\" should be a short sentence describing hair and key facial features " +
+		"(hair length, color, texture; facial hair; face shape; eyes; glasses). " +
+		"\"genderPresentation\" should be a short phrase describing the person's visible gender presentation. " +
+		"If no hair is visible, say bald."
 	answer, err := p.deepPriestClient.PetitionTheFountWithImage(&deep_priest.QuestionWithImage{
-		Question: "Describe the person's hair and key facial features in a short sentence (hair length, color, texture; facial hair; face shape; eyes; glasses). If no hair, say bald.",
+		Question: question,
 		Image:    selfieURL,
 	})
 	if err != nil || answer == nil {
-		return ""
+		return outfitSelfieAnalysis{}
 	}
-	desc := strings.TrimSpace(answer.Answer)
-	if desc == "" {
-		return ""
+	raw := strings.TrimSpace(answer.Answer)
+	if raw == "" {
+		return outfitSelfieAnalysis{}
 	}
-	return desc
+
+	var analysis outfitSelfieAnalysis
+	if err := json.Unmarshal([]byte(raw), &analysis); err == nil {
+		analysis.Appearance = strings.TrimSpace(analysis.Appearance)
+		analysis.GenderPresentation = strings.TrimSpace(analysis.GenderPresentation)
+		return analysis
+	}
+
+	return outfitSelfieAnalysis{Appearance: raw}
 }
 
-func buildOutfitPrompt(outfitName, appearanceDescriptor string, backView bool) string {
+func buildOutfitPrompt(outfitName, appearanceDescriptor, genderPresentation string, backView bool) string {
 	viewDescription := "a front-facing, shoulders-up character portrait"
 	if backView {
 		viewDescription = "a back-facing, shoulders-up character portrait showing only the back of the head and shoulders"
 	}
 
 	prompt := fmt.Sprintf(outfitPromptTemplate, viewDescription, outfitName)
+	if genderPresentation != "" {
+		prompt = fmt.Sprintf(
+			"%s\nPreserve the person's gender presentation explicitly: %s.",
+			prompt,
+			genderPresentation,
+		)
+	}
 	if appearanceDescriptor != "" {
 		if backView {
 			prompt = fmt.Sprintf("%s\nMatch the same person from this appearance description by hair shape, length, color, and texture: %s.", prompt, appearanceDescriptor)

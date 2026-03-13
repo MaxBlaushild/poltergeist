@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildOutfitPromptFrontView(t *testing.T) {
-	prompt := buildOutfitPrompt("a silver knight outfit", "short black hair", false)
+	prompt := buildOutfitPrompt("a silver knight outfit", "short black hair", "", false)
 
 	if !strings.Contains(prompt, "front-facing") {
 		t.Fatalf("expected front-facing prompt, got: %s", prompt)
@@ -20,7 +20,7 @@ func TestBuildOutfitPromptFrontView(t *testing.T) {
 }
 
 func TestBuildOutfitPromptBackView(t *testing.T) {
-	prompt := buildOutfitPrompt("a silver knight outfit", "short black hair", true)
+	prompt := buildOutfitPrompt("a silver knight outfit", "short black hair", "", true)
 
 	if !strings.Contains(prompt, "back-facing") {
 		t.Fatalf("expected back-facing prompt, got: %s", prompt)
@@ -30,5 +30,13 @@ func TestBuildOutfitPromptBackView(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "Do not show the face") {
 		t.Fatalf("expected no-face constraint, got: %s", prompt)
+	}
+}
+
+func TestBuildOutfitPromptIncludesGenderPresentation(t *testing.T) {
+	prompt := buildOutfitPrompt("a silver knight outfit", "short black hair", "woman", false)
+
+	if !strings.Contains(prompt, "Preserve the person's gender presentation explicitly: woman.") {
+		t.Fatalf("expected explicit gender guidance, got: %s", prompt)
 	}
 }

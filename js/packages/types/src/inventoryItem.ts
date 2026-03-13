@@ -14,6 +14,9 @@ export type InventoryConsumeStatus = {
 
 type DamageAffinity =
   | 'physical'
+  | 'piercing'
+  | 'slashing'
+  | 'bludgeoning'
   | 'fire'
   | 'ice'
   | 'lightning'

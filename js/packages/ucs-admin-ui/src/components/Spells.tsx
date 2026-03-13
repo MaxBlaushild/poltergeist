@@ -97,6 +97,8 @@ const knownEffectTypes = [
   'revive_party_member',
   'revive_all_downed_party_members',
   'apply_beneficial_statuses',
+  'apply_detrimental_statuses',
+  'apply_detrimental_statuses_all_enemies',
   'remove_detrimental_statuses',
   'unlock_locks',
 ] as const;
@@ -109,6 +111,9 @@ const effectTypeLabels: Record<(typeof knownEffectTypes)[number], string> = {
   revive_party_member: 'Revive Party Member',
   revive_all_downed_party_members: 'Revive All Downed Party Members',
   apply_beneficial_statuses: 'Apply Beneficial Statuses',
+  apply_detrimental_statuses: 'Apply Detrimental Statuses (One Target)',
+  apply_detrimental_statuses_all_enemies:
+    'Apply Detrimental Statuses (All Enemies)',
   remove_detrimental_statuses: 'Remove Detrimental Statuses',
   unlock_locks: 'Unlock Locks',
 };
@@ -284,6 +289,30 @@ const normalizeEffectType = (effect: SpellEffectForm): string => {
   return effect.type.trim().toLowerCase();
 };
 
+const isDetrimentalStatusApplyEffectType = (effectType: string): boolean =>
+  effectType === 'apply_detrimental_statuses' ||
+  effectType === 'apply_detrimental_statuses_all_enemies';
+
+const normalizeStatusTemplateForEffectType = (
+  effectType: string,
+  template: SpellStatusTemplate
+): SpellStatusTemplate => ({
+  ...template,
+  positive: isDetrimentalStatusApplyEffectType(effectType)
+    ? false
+    : template.positive,
+});
+
+const normalizeStatusTemplateFormForEffectType = (
+  effectType: string,
+  template: SpellStatusTemplateForm
+): SpellStatusTemplateForm => ({
+  ...template,
+  positive: isDetrimentalStatusApplyEffectType(effectType)
+    ? false
+    : template.positive,
+});
+
 const formFromSpell = (spell: Spell): SpellFormState => {
   const effects =
     spell.effects?.length > 0
@@ -300,19 +329,21 @@ const formFromSpell = (spell: Spell): SpellFormState => {
                 ? String(effect.amount)
                 : '0',
             damageAffinity: (effect.damageAffinity ?? 'physical').toString(),
-            statusesToApply: (effect.statusesToApply ?? []).map((status) => ({
-              name: status.name ?? '',
-              description: status.description ?? '',
-              effect: status.effect ?? '',
-              positive: status.positive ?? true,
-              durationSeconds: String(status.durationSeconds ?? 60),
-              strengthMod: String(status.strengthMod ?? 0),
-              dexterityMod: String(status.dexterityMod ?? 0),
-              constitutionMod: String(status.constitutionMod ?? 0),
-              intelligenceMod: String(status.intelligenceMod ?? 0),
-              wisdomMod: String(status.wisdomMod ?? 0),
-              charismaMod: String(status.charismaMod ?? 0),
-            })),
+            statusesToApply: (effect.statusesToApply ?? []).map((status) =>
+              normalizeStatusTemplateFormForEffectType(rawType, {
+                name: status.name ?? '',
+                description: status.description ?? '',
+                effect: status.effect ?? '',
+                positive: status.positive ?? true,
+                durationSeconds: String(status.durationSeconds ?? 60),
+                strengthMod: String(status.strengthMod ?? 0),
+                dexterityMod: String(status.dexterityMod ?? 0),
+                constitutionMod: String(status.constitutionMod ?? 0),
+                intelligenceMod: String(status.intelligenceMod ?? 0),
+                wisdomMod: String(status.wisdomMod ?? 0),
+                charismaMod: String(status.charismaMod ?? 0),
+              })
+            ),
             statusesToRemove: (effect.statusesToRemove ?? []).join(', '),
             effectData: effect.effectData
               ? JSON.stringify(effect.effectData, null, 2)
@@ -350,7 +381,8 @@ const payloadFromForm = (form: SpellFormState) => {
 
     const statusesToApply = effect.statusesToApply
       .map(parseStatusTemplate)
-      .filter((status): status is SpellStatusTemplate => status !== null);
+      .filter((status): status is SpellStatusTemplate => status !== null)
+      .map((status) => normalizeStatusTemplateForEffectType(effectType, status));
     const statusesToRemove = effect.statusesToRemove
       .split(',')
       .map((value) => value.trim())
@@ -522,7 +554,14 @@ export const Spells = () => {
   const updateEffect = (index: number, next: Partial<SpellEffectForm>) => {
     setForm((prev) => {
       const effects = [...prev.effects];
-      effects[index] = { ...effects[index], ...next };
+      const nextEffect = { ...effects[index], ...next };
+      const normalizedType = normalizeEffectType(nextEffect);
+      effects[index] = {
+        ...nextEffect,
+        statusesToApply: nextEffect.statusesToApply.map((status) =>
+          normalizeStatusTemplateFormForEffectType(normalizedType, status)
+        ),
+      };
       return { ...prev, effects };
     });
   };
@@ -530,11 +569,15 @@ export const Spells = () => {
   const addEffectStatus = (effectIndex: number) => {
     setForm((prev) => {
       const effects = [...prev.effects];
+      const effectType = normalizeEffectType(effects[effectIndex]);
       effects[effectIndex] = {
         ...effects[effectIndex],
         statusesToApply: [
           ...effects[effectIndex].statusesToApply,
-          emptyStatusTemplate(),
+          normalizeStatusTemplateFormForEffectType(
+            effectType,
+            emptyStatusTemplate()
+          ),
         ],
       };
       return { ...prev, effects };
@@ -1591,7 +1634,11 @@ export const Spells = () => {
                         <div className="border rounded-md p-3 bg-white">
                           <div className="flex items-center justify-between mb-2">
                             <div className="font-medium text-sm">
-                              Statuses to Apply
+                              {isDetrimentalStatusApplyEffectType(
+                                normalizeEffectType(effect)
+                              )
+                                ? 'Detrimental Statuses to Apply'
+                                : 'Statuses to Apply'}
                             </div>
                             <button
                               type="button"
@@ -1680,6 +1727,9 @@ export const Spells = () => {
                                       <input
                                         type="checkbox"
                                         checked={status.positive}
+                                        disabled={isDetrimentalStatusApplyEffectType(
+                                          normalizeEffectType(effect)
+                                        )}
                                         onChange={(e) =>
                                           updateEffectStatus(
                                             effectIndex,
@@ -1690,7 +1740,11 @@ export const Spells = () => {
                                           )
                                         }
                                       />
-                                      Positive
+                                      {isDetrimentalStatusApplyEffectType(
+                                        normalizeEffectType(effect)
+                                      )
+                                        ? 'Forced Detrimental'
+                                        : 'Positive'}
                                     </label>
                                     <div className="grid grid-cols-3 md:grid-cols-6 gap-2 md:col-span-2">
                                       {[
