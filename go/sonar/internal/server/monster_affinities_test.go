@@ -142,3 +142,24 @@ func TestParseMonsterTemplateUpsertRequestAffinities(t *testing.T) {
 		}
 	})
 }
+
+func TestParseMonsterTemplateUpsertRequestNormalizesMonsterType(t *testing.T) {
+	s := &server{}
+
+	template, _, err := s.parseMonsterTemplateUpsertRequest(nil, monsterTemplateUpsertRequest{
+		MonsterType:      " RAID ",
+		Name:             "Catacomb Engine",
+		BaseStrength:     10,
+		BaseDexterity:    10,
+		BaseConstitution: 10,
+		BaseIntelligence: 10,
+		BaseWisdom:       10,
+		BaseCharisma:     10,
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if template.MonsterType != models.MonsterTemplateTypeRaid {
+		t.Fatalf("expected normalized raid monster type, got %q", template.MonsterType)
+	}
+}

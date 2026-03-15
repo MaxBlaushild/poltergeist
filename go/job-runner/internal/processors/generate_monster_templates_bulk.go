@@ -55,6 +55,7 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 		JobID:        payload.JobID,
 		Status:       jobs.MonsterTemplateBulkStatusInProgress,
 		Source:       strings.TrimSpace(payload.Source),
+		MonsterType:  string(models.NormalizeMonsterTemplateType(payload.MonsterType)),
 		TotalCount:   payload.TotalCount,
 		CreatedCount: 0,
 		StartedAt:    &now,
@@ -83,6 +84,7 @@ func (p *GenerateMonsterTemplatesBulkProcessor) ProcessTask(ctx context.Context,
 	for index, spec := range payload.Templates {
 		emptyError := ""
 		template := &models.MonsterTemplate{
+			MonsterType:           models.NormalizeMonsterTemplateType(spec.MonsterType),
 			Name:                  strings.TrimSpace(spec.Name),
 			Description:           strings.TrimSpace(spec.Description),
 			BaseStrength:          spec.BaseStrength,
@@ -156,6 +158,12 @@ func normalizeAbilityName(name string) string {
 func preferredAbilityCountForTemplate(template *models.MonsterTemplate) int {
 	if template == nil {
 		return 1
+	}
+	switch models.NormalizeMonsterTemplateType(string(template.MonsterType)) {
+	case models.MonsterTemplateTypeBoss:
+		return 2 + ((template.BaseStrength + template.BaseIntelligence + template.BaseWisdom) % 2)
+	case models.MonsterTemplateTypeRaid:
+		return 3
 	}
 	seed := template.BaseStrength + template.BaseDexterity + template.BaseConstitution + template.BaseIntelligence + template.BaseWisdom + template.BaseCharisma
 	if seed < 0 {

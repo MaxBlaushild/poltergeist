@@ -25,6 +25,9 @@ class CharacterStatus {
   final String effect;
   final bool positive;
   final String effectType;
+  final int damagePerTick;
+  final int healthPerTick;
+  final int manaPerTick;
   final DateTime? startedAt;
   final DateTime? expiresAt;
 
@@ -35,6 +38,9 @@ class CharacterStatus {
     required this.effect,
     required this.positive,
     required this.effectType,
+    this.damagePerTick = 0,
+    this.healthPerTick = 0,
+    this.manaPerTick = 0,
     this.startedAt,
     this.expiresAt,
   });
@@ -57,6 +63,11 @@ class CharacterStatus {
       return fallback;
     }
 
+    int parseInt(dynamic raw) {
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
     return CharacterStatus(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
@@ -64,6 +75,9 @@ class CharacterStatus {
       effect: json['effect']?.toString() ?? '',
       positive: parseBool(json['positive'], fallback: true),
       effectType: json['effectType']?.toString() ?? '',
+      damagePerTick: parseInt(json['damagePerTick']),
+      healthPerTick: parseInt(json['healthPerTick']),
+      manaPerTick: parseInt(json['manaPerTick']),
       startedAt: parseDate(json['startedAt']),
       expiresAt: parseDate(json['expiresAt']),
     );

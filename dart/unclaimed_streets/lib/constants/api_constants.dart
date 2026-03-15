@@ -39,6 +39,8 @@ class ApiConstants {
       '/sonar/monsters/$monsterId/battle/status';
   static String monsterBattleDamageEndpoint(String monsterId) =>
       '/sonar/monsters/$monsterId/battle/damage';
+  static String monsterBattleTurnEndpoint(String monsterId) =>
+      '/sonar/monsters/$monsterId/battle/turn';
   static String monsterBattleEscapeEndpoint(String monsterId) =>
       '/sonar/monsters/$monsterId/battle/escape';
   static String monsterBattleEndEndpoint(String monsterId) =>

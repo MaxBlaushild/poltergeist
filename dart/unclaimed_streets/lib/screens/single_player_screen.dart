@@ -76,6 +76,10 @@ const _scenarioMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/scenario-undiscovered.png';
 const _monsterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png';
+const _bossMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/boss-undiscovered.png';
+const _raidMysteryImageUrl =
+    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/raid-undiscovered.png';
 const _characterMysteryImageUrl =
     'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/character-undiscovered.png';
 const _challengeMysteryImageUrl = _scenarioMysteryImageUrl;
@@ -172,8 +176,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   bool _chestThumbnailAdded = false;
   Uint8List? _scenarioMysteryThumbnailBytes;
   bool _scenarioMysteryThumbnailAdded = false;
-  Uint8List? _monsterMysteryThumbnailBytes;
-  bool _monsterMysteryThumbnailAdded = false;
+  final Map<String, Uint8List?> _monsterMysteryThumbnailBytesByType = {};
+  final Set<String> _monsterMysteryThumbnailTypesAdded = {};
   Uint8List? _challengeMysteryThumbnailBytes;
   bool _challengeMysteryThumbnailAdded = false;
   bool _styleLoaded = false;
@@ -1180,8 +1184,8 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       _challengePolygonFillById.clear();
       _scenarioMysteryThumbnailBytes = null;
       _scenarioMysteryThumbnailAdded = false;
-      _monsterMysteryThumbnailBytes = null;
-      _monsterMysteryThumbnailAdded = false;
+      _monsterMysteryThumbnailBytesByType.clear();
+      _monsterMysteryThumbnailTypesAdded.clear();
       _challengeMysteryThumbnailBytes = null;
       _challengeMysteryThumbnailAdded = false;
       _zoneLines = [];
@@ -2077,6 +2081,49 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
     return distance > kProximityUnlockRadiusMeters;
   }
 
+  String _monsterEncounterMarkerColor(MonsterEncounter encounter) {
+    if (encounter.isBossEncounter) {
+      return '#d97706';
+    }
+    if (encounter.isRaidEncounter) {
+      return '#2563eb';
+    }
+    return '#b63f3f';
+  }
+
+  String _monsterEncounterHaloColor(MonsterEncounter encounter) {
+    if (encounter.isBossEncounter) {
+      return '#8a5a00';
+    }
+    if (encounter.isRaidEncounter) {
+      return '#1e3a8a';
+    }
+    return '#000000';
+  }
+
+  String _monsterMysteryImageUrlForEncounterType(String encounterType) {
+    switch (encounterType.trim().toLowerCase()) {
+      case 'boss':
+        return _bossMysteryImageUrl;
+      case 'raid':
+        return _raidMysteryImageUrl;
+      default:
+        return _monsterMysteryImageUrl;
+    }
+  }
+
+  String _monsterMysteryImageIdForEncounterType(String encounterType) {
+    final normalized = encounterType.trim().toLowerCase();
+    switch (normalized) {
+      case 'boss':
+        return 'boss';
+      case 'raid':
+        return 'raid';
+      default:
+        return 'monster';
+    }
+  }
+
   bool _isChallengeMystery(Challenge challenge) {
     final location = context.read<LocationProvider>().location;
     if (location == null) return true;
@@ -2554,25 +2601,29 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
   }
 
   Future<void> _loadMonsterMysteryThumbnail(MapLibreMapController c) async {
-    if (_monsterMysteryThumbnailBytes == null) {
-      try {
-        _monsterMysteryThumbnailBytes = await loadPoiThumbnail(
-          _monsterMysteryImageUrl,
-        );
-      } catch (_) {}
-      _monsterMysteryThumbnailBytes ??= await loadPoiThumbnail(
-        _legacyMysteryImageUrl,
-      );
-    }
-    if (_monsterMysteryThumbnailBytes != null &&
-        !_monsterMysteryThumbnailAdded) {
-      try {
-        await c.addImage(
-          'monster_mystery_thumbnail_$_mapThumbnailVersion',
-          _monsterMysteryThumbnailBytes!,
-        );
-        _monsterMysteryThumbnailAdded = true;
-      } catch (_) {}
+    for (final encounterType in const ['monster', 'boss', 'raid']) {
+      final imageTypeId = _monsterMysteryImageIdForEncounterType(encounterType);
+      if (!_monsterMysteryThumbnailBytesByType.containsKey(imageTypeId)) {
+        Uint8List? bytes;
+        try {
+          bytes = await loadPoiThumbnail(
+            _monsterMysteryImageUrlForEncounterType(encounterType),
+          );
+        } catch (_) {}
+        bytes ??= await loadPoiThumbnail(_legacyMysteryImageUrl);
+        _monsterMysteryThumbnailBytesByType[imageTypeId] = bytes;
+      }
+      final mysteryBytes = _monsterMysteryThumbnailBytesByType[imageTypeId];
+      if (mysteryBytes != null &&
+          !_monsterMysteryThumbnailTypesAdded.contains(imageTypeId)) {
+        try {
+          await c.addImage(
+            'monster_mystery_thumbnail_${imageTypeId}_$_mapThumbnailVersion',
+            mysteryBytes,
+          );
+          _monsterMysteryThumbnailTypesAdded.add(imageTypeId);
+        } catch (_) {}
+      }
     }
   }
 
@@ -2681,9 +2732,13 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
       final mystery = _isMonsterMystery(monster);
       String? symbolImageId;
       if (mystery) {
-        if (_monsterMysteryThumbnailBytes != null &&
-            _monsterMysteryThumbnailAdded) {
-          symbolImageId = 'monster_mystery_thumbnail_$_mapThumbnailVersion';
+        final mysteryTypeId = _monsterMysteryImageIdForEncounterType(
+          monster.encounterType,
+        );
+        if ((_monsterMysteryThumbnailBytesByType[mysteryTypeId]) != null &&
+            _monsterMysteryThumbnailTypesAdded.contains(mysteryTypeId)) {
+          symbolImageId =
+              'monster_mystery_thumbnail_${mysteryTypeId}_$_mapThumbnailVersion';
         }
       } else {
         final sourceUrl = monster.thumbnailUrl.isNotEmpty
@@ -2720,7 +2775,9 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
               iconImage: symbolImageId,
               iconSize: 0.78,
               iconOpacity: _mapMarkerStartingOpacity(1.0),
-              iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+              iconHaloColor: shouldPulseLikeQuest
+                  ? '#e1b12c'
+                  : (mystery ? '#000000' : _monsterEncounterHaloColor(monster)),
               iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
               iconAnchor: 'center',
               zIndex: shouldPulseLikeQuest ? 4 : 2,
@@ -2739,7 +2796,11 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
                 geometry: LatLng(monster.latitude, monster.longitude),
                 iconImage: symbolImageId,
                 iconOpacity: _mapMarkerStartingOpacity(1.0),
-                iconHaloColor: shouldPulseLikeQuest ? '#e1b12c' : '#000000',
+                iconHaloColor: shouldPulseLikeQuest
+                    ? '#e1b12c'
+                    : (mystery
+                          ? '#000000'
+                          : _monsterEncounterHaloColor(monster)),
                 iconHaloWidth: shouldPulseLikeQuest ? 1.15 : 0.75,
                 zIndex: shouldPulseLikeQuest ? 4 : 2,
               ),
@@ -2775,7 +2836,7 @@ class _SinglePlayerScreenState extends State<SinglePlayerScreen> {
           circleOpacity: _mapMarkerStartingOpacity(1.0),
           circleColor: shouldPulseLikeQuest
               ? '#e1b12c'
-              : (mystery ? '#5a5560' : '#b63f3f'),
+              : (mystery ? '#5a5560' : _monsterEncounterMarkerColor(monster)),
           circleStrokeWidth: 2,
           circleStrokeColor: '#ffffff',
         ),

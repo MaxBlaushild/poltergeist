@@ -22,6 +22,7 @@ import (
 )
 
 type monsterTemplateUpsertRequest struct {
+	MonsterType           string   `json:"monsterType"`
 	Name                  string   `json:"name"`
 	Description           string   `json:"description"`
 	ImageURL              string   `json:"imageUrl"`
@@ -38,7 +39,8 @@ type monsterTemplateUpsertRequest struct {
 }
 
 type bulkGenerateMonsterTemplatesRequest struct {
-	Count int `json:"count"`
+	Count       int    `json:"count"`
+	MonsterType string `json:"monsterType"`
 }
 
 type dndMonsterTemplateSeed struct {
@@ -57,7 +59,10 @@ type generatedMonsterTemplatePayload struct {
 }
 
 const generateMonsterTemplatesPromptTemplate = `
-You are designing %d original monster templates for a fantasy action RPG.
+You are designing %d original %s monster templates for a fantasy action RPG.
+
+Template role guidance:
+%s
 
 Avoid these existing monster template names:
 %s
@@ -270,6 +275,7 @@ type monsterEncounterUpsertRequest struct {
 	Description         string   `json:"description"`
 	ImageURL            string   `json:"imageUrl"`
 	ThumbnailURL        string   `json:"thumbnailUrl"`
+	EncounterType       string   `json:"encounterType"`
 	ScaleWithUserLevel  bool     `json:"scaleWithUserLevel"`
 	RecurrenceFrequency *string  `json:"recurrenceFrequency"`
 	ZoneID              string   `json:"zoneId"`
@@ -282,6 +288,7 @@ type monsterTemplateResponse struct {
 	ID                    uuid.UUID      `json:"id"`
 	CreatedAt             time.Time      `json:"createdAt"`
 	UpdatedAt             time.Time      `json:"updatedAt"`
+	MonsterType           string         `json:"monsterType"`
 	Name                  string         `json:"name"`
 	Description           string         `json:"description"`
 	ImageURL              string         `json:"imageUrl"`
@@ -372,6 +379,7 @@ type monsterEncounterResponse struct {
 	Description                 string                           `json:"description"`
 	ImageURL                    string                           `json:"imageUrl"`
 	ThumbnailURL                string                           `json:"thumbnailUrl"`
+	EncounterType               models.MonsterEncounterType      `json:"encounterType"`
 	ScaleWithUserLevel          bool                             `json:"scaleWithUserLevel"`
 	RecurringMonsterEncounterID *uuid.UUID                       `json:"recurringMonsterEncounterId,omitempty"`
 	RecurrenceFrequency         *string                          `json:"recurrenceFrequency,omitempty"`
@@ -415,7 +423,11 @@ func (s *server) monsterEncounterResponseFrom(
 		member := encounter.Members[i]
 		monster := member.Monster
 		if applyLevelScaling && encounter.ScaleWithUserLevel {
-			monster.Level = scaledEncounterMonsterLevelForUserLevel(userLevel, len(encounter.Members))
+			monster.Level = scaledEncounterMonsterLevelForUserLevelAndType(
+				userLevel,
+				len(encounter.Members),
+				encounter.EncounterType,
+			)
 		}
 		entry, err := s.buildMonsterResponse(ctx, userID, &monster)
 		if err != nil {
@@ -448,6 +460,7 @@ func (s *server) monsterEncounterResponseFrom(
 		Description:                 encounter.Description,
 		ImageURL:                    imageURL,
 		ThumbnailURL:                thumbnailURL,
+		EncounterType:               models.NormalizeMonsterEncounterType(string(encounter.EncounterType)),
 		ScaleWithUserLevel:          encounter.ScaleWithUserLevel,
 		RecurringMonsterEncounterID: encounter.RecurringMonsterEncounterID,
 		RecurrenceFrequency:         encounter.RecurrenceFrequency,
@@ -479,6 +492,7 @@ func monsterTemplateResponseFrom(template *models.MonsterTemplate) *monsterTempl
 		ID:                    template.ID,
 		CreatedAt:             template.CreatedAt,
 		UpdatedAt:             template.UpdatedAt,
+		MonsterType:           string(models.NormalizeMonsterTemplateType(string(template.MonsterType))),
 		Name:                  template.Name,
 		Description:           template.Description,
 		ImageURL:              template.ImageURL,
@@ -788,6 +802,7 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 		*strongAgainstAffinity == *weakAgainstAffinity {
 		return nil, nil, fmt.Errorf("strongAgainstAffinity and weakAgainstAffinity must be different")
 	}
+	monsterType := models.NormalizeMonsterTemplateType(body.MonsterType)
 
 	spells := []models.MonsterTemplateSpell{}
 	seenSpellIDs := map[uuid.UUID]bool{}
@@ -810,6 +825,7 @@ func (s *server) parseMonsterTemplateUpsertRequest(
 	}
 
 	template := &models.MonsterTemplate{
+		MonsterType:           monsterType,
 		Name:                  name,
 		Description:           strings.TrimSpace(body.Description),
 		ImageURL:              strings.TrimSpace(body.ImageURL),
@@ -1034,12 +1050,20 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		return nil, nil, fmt.Errorf("monsterIds must include between 1 and 9 unique monsters")
 	}
 
+	encounterType := models.NormalizeMonsterEncounterType(body.EncounterType)
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
+		encounterLabel := "Encounter"
+		switch encounterType {
+		case models.MonsterEncounterTypeBoss:
+			encounterLabel = "Boss Encounter"
+		case models.MonsterEncounterTypeRaid:
+			encounterLabel = "Raid Encounter"
+		}
 		if len(resolvedMonsters) == 1 {
-			name = fmt.Sprintf("%s Encounter", strings.TrimSpace(resolvedMonsters[0].Name))
+			name = fmt.Sprintf("%s %s", strings.TrimSpace(resolvedMonsters[0].Name), encounterLabel)
 		} else {
-			name = fmt.Sprintf("%d-Monster Encounter", len(resolvedMonsters))
+			name = fmt.Sprintf("%d-Monster %s", len(resolvedMonsters), encounterLabel)
 		}
 	}
 
@@ -1071,6 +1095,7 @@ func (s *server) parseMonsterEncounterUpsertRequest(
 		Description:        description,
 		ImageURL:           imageURL,
 		ThumbnailURL:       thumbnailURL,
+		EncounterType:      encounterType,
 		ScaleWithUserLevel: body.ScaleWithUserLevel,
 		ZoneID:             zoneID,
 		Latitude:           body.Latitude,
@@ -1229,7 +1254,33 @@ func nextUniqueMonsterTemplateName(base string, used map[string]struct{}) string
 	}
 }
 
-func buildBulkMonsterTemplateSpecsFromSeeds(count int, usedNames map[string]struct{}) []jobs.MonsterTemplateCreationSpec {
+func monsterTemplateTypePromptLabel(monsterType models.MonsterTemplateType) string {
+	switch monsterType {
+	case models.MonsterTemplateTypeBoss:
+		return "boss"
+	case models.MonsterTemplateTypeRaid:
+		return "raid"
+	default:
+		return "standard"
+	}
+}
+
+func monsterTemplateTypePromptGuidance(monsterType models.MonsterTemplateType) string {
+	switch monsterType {
+	case models.MonsterTemplateTypeBoss:
+		return "- Boss templates should feel like elite solo threats suited for centerpiece fights.\n- Favor commanding names, climactic descriptions, and a strong single-foe identity."
+	case models.MonsterTemplateTypeRaid:
+		return "- Raid templates should feel like apex threats intended to pressure a full five-player party.\n- Favor large-scale menace, battlefield presence, and dramatic danger."
+	default:
+		return "- Standard templates should feel like everyday field monsters, ambushers, skirmishers, or common elites."
+	}
+}
+
+func buildBulkMonsterTemplateSpecsFromSeeds(
+	count int,
+	usedNames map[string]struct{},
+	monsterType models.MonsterTemplateType,
+) []jobs.MonsterTemplateCreationSpec {
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
 	if count <= 0 || len(dndMonsterTemplateSeeds) == 0 {
 		return specs
@@ -1237,6 +1288,7 @@ func buildBulkMonsterTemplateSpecsFromSeeds(count int, usedNames map[string]stru
 	for i := 0; i < count; i++ {
 		seed := dndMonsterTemplateSeeds[i%len(dndMonsterTemplateSeeds)]
 		specs = append(specs, jobs.MonsterTemplateCreationSpec{
+			MonsterType:      string(monsterType),
 			Name:             nextUniqueMonsterTemplateName(seed.Name, usedNames),
 			Description:      strings.TrimSpace(seed.Description),
 			BaseStrength:     seed.BaseStrength,
@@ -1251,6 +1303,7 @@ func buildBulkMonsterTemplateSpecsFromSeeds(count int, usedNames map[string]stru
 }
 
 func sanitizeMonsterTemplateSpec(spec jobs.MonsterTemplateCreationSpec) jobs.MonsterTemplateCreationSpec {
+	spec.MonsterType = string(models.NormalizeMonsterTemplateType(spec.MonsterType))
 	spec.Name = strings.TrimSpace(spec.Name)
 	spec.Description = strings.TrimSpace(spec.Description)
 	if spec.Description == "" {
@@ -1370,6 +1423,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 	count int,
 	usedNames map[string]struct{},
 	existingNames []string,
+	monsterType models.MonsterTemplateType,
 ) ([]jobs.MonsterTemplateCreationSpec, string, error) {
 	if count <= 0 {
 		return []jobs.MonsterTemplateCreationSpec{}, "none", nil
@@ -1379,7 +1433,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 	source := "seed_generated"
 
 	if s.deepPriest != nil {
-		aiSpecs, err := s.generateMonsterTemplateSpecsWithLLM(count, usedNames, existingNames)
+		aiSpecs, err := s.generateMonsterTemplateSpecsWithLLM(count, usedNames, existingNames, monsterType)
 		if err == nil && len(aiSpecs) > 0 {
 			specs = append(specs, aiSpecs...)
 			source = "ai_generated"
@@ -1387,7 +1441,7 @@ func (s *server) buildBulkMonsterTemplateSpecs(
 	}
 
 	if remaining := count - len(specs); remaining > 0 {
-		fallback := buildBulkMonsterTemplateSpecsFromSeeds(remaining, usedNames)
+		fallback := buildBulkMonsterTemplateSpecsFromSeeds(remaining, usedNames, monsterType)
 		specs = append(specs, fallback...)
 		if source == "ai_generated" {
 			source = "ai_generated_with_seed_fallback"
@@ -1408,6 +1462,7 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 	count int,
 	usedNames map[string]struct{},
 	existingNames []string,
+	monsterType models.MonsterTemplateType,
 ) ([]jobs.MonsterTemplateCreationSpec, error) {
 	specs := make([]jobs.MonsterTemplateCreationSpec, 0, count)
 	if count <= 0 {
@@ -1426,6 +1481,8 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 		prompt := fmt.Sprintf(
 			generateMonsterTemplatesPromptTemplate,
 			remaining,
+			monsterTemplateTypePromptLabel(monsterType),
+			monsterTemplateTypePromptGuidance(monsterType),
 			formatMonsterTemplateNamesForPrompt(denyList),
 			remaining,
 		)
@@ -1446,6 +1503,7 @@ func (s *server) generateMonsterTemplateSpecsWithLLM(
 				break
 			}
 			candidate = sanitizeMonsterTemplateSpec(candidate)
+			candidate.MonsterType = string(monsterType)
 			if candidate.Name == "" {
 				continue
 			}
@@ -1515,6 +1573,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "count must be between 1 and 100"})
 		return
 	}
+	monsterType := models.NormalizeMonsterTemplateType(requestBody.MonsterType)
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
 		return
@@ -1547,7 +1606,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		existingNames = append(existingNames, name)
 	}
 
-	templateSpecs, source, err := s.buildBulkMonsterTemplateSpecs(requestBody.Count, usedNames, existingNames)
+	templateSpecs, source, err := s.buildBulkMonsterTemplateSpecs(requestBody.Count, usedNames, existingNames, monsterType)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1559,6 +1618,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		JobID:        jobID,
 		Status:       jobs.MonsterTemplateBulkStatusQueued,
 		Source:       source,
+		MonsterType:  string(monsterType),
 		TotalCount:   len(templateSpecs),
 		CreatedCount: 0,
 		QueuedAt:     &queuedAt,
@@ -1570,10 +1630,11 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 	}
 
 	payload := jobs.GenerateMonsterTemplatesBulkTaskPayload{
-		JobID:      jobID,
-		Source:     source,
-		TotalCount: len(templateSpecs),
-		Templates:  templateSpecs,
+		JobID:       jobID,
+		Source:      source,
+		MonsterType: string(monsterType),
+		TotalCount:  len(templateSpecs),
+		Templates:   templateSpecs,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -1595,6 +1656,7 @@ func (s *server) bulkGenerateMonsterTemplates(ctx *gin.Context) {
 		"jobId":        status.JobID,
 		"status":       status.Status,
 		"source":       status.Source,
+		"monsterType":  status.MonsterType,
 		"totalCount":   status.TotalCount,
 		"createdCount": status.CreatedCount,
 		"queuedAt":     status.QueuedAt,
@@ -2566,6 +2628,10 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if battle, err = s.advanceMonsterBattleTurnState(ctx, battle, &user.ID, nil); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2582,6 +2648,15 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		"battleTurnUserDotDamage":    userDotDamage,
 		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})
+	log.Printf(
+		"[party-combat][damage-by-monster][result] user=%s battle=%s turnIndex=%d deficit=%d userDot=%d monsterDot=%d",
+		user.ID,
+		battle.ID,
+		battle.TurnIndex,
+		battle.MonsterHealthDeficit,
+		userDotDamage,
+		monsterDotDamage,
+	)
 }
 
 func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
@@ -2703,6 +2778,10 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if battle, err = s.advanceMonsterBattleTurnState(ctx, battle, &user.ID, nil); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	battleDetail, err := s.monsterBattleDetailResponse(ctx, battle)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2719,6 +2798,15 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		"battleTurnUserDotDamage":    userDotDamage,
 		"battleTurnMonsterDotDamage": monsterDotDamage,
 	})
+	log.Printf(
+		"[party-combat][damage-by-id][result] user=%s battle=%s turnIndex=%d deficit=%d userDot=%d monsterDot=%d",
+		user.ID,
+		battle.ID,
+		battle.TurnIndex,
+		battle.MonsterHealthDeficit,
+		userDotDamage,
+		monsterDotDamage,
+	)
 }
 
 func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
@@ -2776,6 +2864,10 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		return
 	}
 	battle.LastActivityAt = now
+	if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
 	if err != nil {
@@ -2785,8 +2877,16 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 	if monsterDotDamage > 0 {
 		battle.MonsterHealthDeficit += monsterDotDamage
 	}
+	if err := s.advanceBattleStatusDurations(ctx, user.ID, battle.ID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if battle, err = s.advanceMonsterBattleTurnState(ctx, battle, nil, &battle.MonsterID); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2822,6 +2922,16 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		"userHealth":       userHealth,
 		"userMaxHealth":    userMaxHealth,
 	})
+	log.Printf(
+		"[party-combat][turn][result] user=%s battle=%s turnIndex=%d deficit=%d userDot=%d monsterDot=%d userHealth=%d",
+		user.ID,
+		battle.ID,
+		battle.TurnIndex,
+		battle.MonsterHealthDeficit,
+		userDotDamage,
+		monsterDotDamage,
+		userHealth,
+	)
 }
 
 func (s *server) createMonster(ctx *gin.Context) {

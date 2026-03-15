@@ -1,5 +1,5 @@
 import { useAPI } from '@poltergeist/contexts';
-import { User, PointOfInterestDiscovery, PointOfInterestChallengeSubmission, ActivityFeed, PointOfInterest } from '@poltergeist/types';
+import { User, PointOfInterestDiscovery, PointOfInterestChallengeSubmission, ActivityFeed, PointOfInterest, InventoryItem, OwnedInventoryItem, UserLevel } from '@poltergeist/types';
 import React, { useState, useEffect } from 'react';
 
 type AdminCharacterStats = {
@@ -9,8 +9,75 @@ type AdminCharacterStats = {
   maxMana: number;
 };
 
+type CharacterProficiency = {
+  proficiency: string;
+  level: number;
+};
+
+type CharacterStatus = {
+  id: string;
+  name: string;
+  description: string;
+  effect: string;
+  positive: boolean;
+  effectType: string;
+  damagePerTick: number;
+  healthPerTick: number;
+  manaPerTick: number;
+  startedAt: string;
+  expiresAt: string;
+};
+
+type CharacterSpell = {
+  id: string;
+  name: string;
+  description: string;
+  iconUrl?: string;
+  abilityType: string;
+  abilityLevel: number;
+  cooldownTurns: number;
+  cooldownTurnsRemaining: number;
+  cooldownSecondsRemaining: number;
+  effectText: string;
+  schoolOfMagic: string;
+  manaCost: number;
+};
+
+type CharacterStatsDetail = AdminCharacterStats & {
+  strength: number;
+  dexterity: number;
+  constitution: number;
+  intelligence: number;
+  wisdom: number;
+  charisma: number;
+  equipmentBonuses: Record<string, number>;
+  statusBonuses: Record<string, number>;
+  unspentPoints: number;
+  level: number;
+  proficiencies: CharacterProficiency[];
+  statuses: CharacterStatus[];
+  spells: CharacterSpell[];
+};
+
+type EquipmentSlotResponse = {
+  slot: string;
+  ownedInventoryItemId?: string;
+  inventoryItemId?: number;
+  inventoryItem?: InventoryItem | null;
+};
+
+type UserInventoryItemResponse = {
+  ownedInventoryItem: OwnedInventoryItem;
+  inventoryItem?: InventoryItem | null;
+  equippedSlots?: string[];
+};
+
 type UserCharacterProfileResponse = {
-  stats?: Partial<AdminCharacterStats>;
+  user?: User;
+  stats?: Partial<CharacterStatsDetail>;
+  userLevel?: UserLevel;
+  equipment?: EquipmentSlotResponse[];
+  inventory?: UserInventoryItemResponse[];
 };
 
 type UserProfilePlaceholderResponse = {
@@ -39,6 +106,22 @@ const placeholderStatusClassName = (status?: string) => {
       return 'bg-gray-500';
   }
 };
+
+const statLabels: Record<string, string> = {
+  strength: 'STR',
+  dexterity: 'DEX',
+  constitution: 'CON',
+  intelligence: 'INT',
+  wisdom: 'WIS',
+  charisma: 'CHA',
+};
+
+const formatTokenLabel = (value?: string | null) =>
+  (value || '')
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Unknown';
 
 export const Users = () => {
   const { apiClient } = useAPI();
@@ -81,6 +164,7 @@ export const Users = () => {
   const [resourceSubmitting, setResourceSubmitting] = useState(false);
   const [resourceMessage, setResourceMessage] = useState<string | null>(null);
   const [resourceMessageKind, setResourceMessageKind] = useState<'success' | 'error' | null>(null);
+  const [selectedUserProfile, setSelectedUserProfile] = useState<UserCharacterProfileResponse | null>(null);
   const [profilePlaceholderPrompt, setProfilePlaceholderPrompt] = useState(defaultUserPlaceholderPrompt);
   const [profilePlaceholderStatus, setProfilePlaceholderStatus] = useState('unknown');
   const [profilePlaceholderUrl, setProfilePlaceholderUrl] = useState('');
@@ -144,11 +228,6 @@ export const Users = () => {
   );
 
   useEffect(() => {
-    fetchUsers();
-    fetchPOIs();
-  }, []);
-
-  useEffect(() => {
     if (searchQuery === '') {
       setFilteredUsers(users);
     } else {
@@ -177,7 +256,7 @@ export const Users = () => {
     return () => window.clearInterval(interval);
   }, [profilePlaceholderStatus, refreshProfilePlaceholderStatus]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = React.useCallback(async () => {
     try {
       const response = await apiClient.get<User[]>('/sonar/users');
       applyUsersResponse(response);
@@ -186,16 +265,21 @@ export const Users = () => {
       console.error('Error fetching users:', error);
       setLoading(false);
     }
-  };
+  }, [apiClient, applyUsersResponse]);
 
-  const fetchPOIs = async () => {
+  const fetchPOIs = React.useCallback(async () => {
     try {
       const response = await apiClient.get<PointOfInterest[]>('/sonar/pointsOfInterest');
       setAvailablePOIs(response);
     } catch (error) {
       console.error('Error fetching POIs:', error);
     }
-  };
+  }, [apiClient]);
+
+  useEffect(() => {
+    void fetchUsers();
+    void fetchPOIs();
+  }, [fetchPOIs, fetchUsers]);
 
   const normalizeResourceStats = (stats?: Partial<AdminCharacterStats> | null): AdminCharacterStats | null => {
     if (!stats) return null;
@@ -210,6 +294,16 @@ export const Users = () => {
       maxMana: Math.max(maxMana, 1),
     };
   };
+
+  const refreshSelectedUserProfile = React.useCallback(
+    async (userId: string) => {
+      const characterProfileRes = await apiClient.get<UserCharacterProfileResponse>(`/sonar/users/${userId}/character`);
+      setSelectedUserProfile(characterProfileRes);
+      setResourceStats(normalizeResourceStats(characterProfileRes?.stats));
+      return characterProfileRes;
+    },
+    [apiClient]
+  );
 
   const selectUser = async (user: User) => {
     setSelectedUser(user);
@@ -234,6 +328,7 @@ export const Users = () => {
     setResourceMessage(null);
     setResourceMessageKind(null);
     setResourceStats(null);
+    setSelectedUserProfile(null);
     setResourceLoading(true);
     
     try {
@@ -247,9 +342,11 @@ export const Users = () => {
       setDiscoveries(discoveriesRes);
       setSubmissions(submissionsRes);
       setActivities(activitiesRes);
+      setSelectedUserProfile(characterProfileRes);
       setResourceStats(normalizeResourceStats(characterProfileRes?.stats));
     } catch (error) {
       console.error('Error fetching user details:', error);
+      setSelectedUserProfile(null);
       setResourceStats(null);
     } finally {
       setResourceLoading(false);
@@ -273,6 +370,7 @@ export const Users = () => {
       // Update the user in the users list
       setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
       setSelectedUser(updatedUser);
+      setSelectedUserProfile((prev) => prev ? { ...prev, user: updatedUser } : prev);
       setEditingGold(false);
       setGoldInputValue('');
     } catch (error) {
@@ -335,6 +433,7 @@ export const Users = () => {
       setStatusIntelligenceMod('0');
       setStatusWisdomMod('0');
       setStatusCharismaMod('0');
+      await refreshSelectedUserProfile(selectedUser.id);
     } catch (error) {
       console.error('Error granting status:', error);
       setStatusGrantMessage('Failed to grant status.');
@@ -366,7 +465,21 @@ export const Users = () => {
         healthDelta,
         manaDelta,
       });
-      setResourceStats(normalizeResourceStats(response));
+      const nextResourceStats = normalizeResourceStats(response);
+      setResourceStats(nextResourceStats);
+      setSelectedUserProfile((prev) => {
+        if (!prev || !prev.stats || !nextResourceStats) return prev;
+        return {
+          ...prev,
+          stats: {
+            ...prev.stats,
+            health: nextResourceStats.health,
+            maxHealth: nextResourceStats.maxHealth,
+            mana: nextResourceStats.mana,
+            maxMana: nextResourceStats.maxMana,
+          },
+        };
+      });
       setResourceMessage(successMessage);
       setResourceMessageKind('success');
     } catch (error) {
@@ -609,6 +722,24 @@ export const Users = () => {
   const usersWithoutProfilePicturesCount = users.filter(
     (user) => !user.profilePictureUrl?.trim()
   ).length;
+  const profileStats = selectedUserProfile?.stats;
+  const profileLevel = selectedUserProfile?.userLevel;
+  const profileEquipment = selectedUserProfile?.equipment ?? [];
+  const profileInventory = [...(selectedUserProfile?.inventory ?? [])].sort((left, right) => {
+    const leftEquipped = (left.equippedSlots?.length || 0) > 0 ? 1 : 0;
+    const rightEquipped = (right.equippedSlots?.length || 0) > 0 ? 1 : 0;
+    if (leftEquipped !== rightEquipped) return rightEquipped - leftEquipped;
+    const leftName = left.inventoryItem?.name || `Item #${left.ownedInventoryItem.inventoryItemId}`;
+    const rightName = right.inventoryItem?.name || `Item #${right.ownedInventoryItem.inventoryItemId}`;
+    return leftName.localeCompare(rightName);
+  });
+  const statEntries = Object.entries(statLabels).map(([key, label]) => ({
+    key,
+    label,
+    value: Number(profileStats?.[key as keyof CharacterStatsDetail] ?? 0),
+    equipmentBonus: Number(profileStats?.equipmentBonuses?.[key] ?? 0),
+    statusBonus: Number(profileStats?.statusBonuses?.[key] ?? 0),
+  }));
 
   return (
     <div className="p-4">
@@ -827,6 +958,50 @@ export const Users = () => {
               </div>
 
               <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)]">
+                {/* Account Snapshot */}
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Account Snapshot</h3>
+                    {profileLevel ? (
+                      <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">
+                        Level {profileLevel.level}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+                    <div>
+                      <div className="text-gray-500">Phone</div>
+                      <div className="font-medium text-gray-900">{selectedUser.phoneNumber || 'Unknown'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Name</div>
+                      <div className="font-medium text-gray-900">{selectedUser.name || 'Unknown'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Party</div>
+                      <div className="font-medium text-gray-900">{selectedUser.partyId || 'None'}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Active</div>
+                      <div className="font-medium text-gray-900">
+                        {selectedUser.isActive === null ? 'Unknown' : selectedUser.isActive ? 'Yes' : 'No'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">Created</div>
+                      <div className="font-medium text-gray-900">
+                        {new Date(selectedUser.createdAt).toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-gray-500">XP to next level</div>
+                      <div className="font-medium text-gray-900">
+                        {profileLevel?.experienceToNextLevel ?? 'Unknown'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Gold Section */}
                 <div>
                   <div className="flex justify-between items-center mb-3">
@@ -999,6 +1174,184 @@ export const Users = () => {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Character Details */}
+                <div className="space-y-4 rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Character Details</h3>
+                    {profileStats ? (
+                      <span className="text-sm text-gray-600">
+                        Unspent points: {profileStats.unspentPoints ?? 0}
+                      </span>
+                    ) : null}
+                  </div>
+                  {profileStats ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                        {statEntries.map((entry) => (
+                          <div key={entry.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                            <div className="text-xs font-semibold text-gray-500">{entry.label}</div>
+                            <div className="mt-1 text-2xl font-bold text-gray-900">{entry.value}</div>
+                            <div className="mt-2 space-y-1 text-xs text-gray-600">
+                              <div>Equipment: {entry.equipmentBonus >= 0 ? '+' : ''}{entry.equipmentBonus}</div>
+                              <div>Status: {entry.statusBonus >= 0 ? '+' : ''}{entry.statusBonus}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        <div className="rounded-lg border border-gray-200 p-3">
+                          <h4 className="mb-2 font-semibold text-gray-900">Proficiencies</h4>
+                          {profileStats.proficiencies?.length ? (
+                            <div className="space-y-2">
+                              {profileStats.proficiencies.map((proficiency) => (
+                                <div key={`${proficiency.proficiency}-${proficiency.level}`} className="flex items-center justify-between rounded bg-gray-50 px-3 py-2 text-sm">
+                                  <span className="text-gray-900">{proficiency.proficiency}</span>
+                                  <span className="font-medium text-gray-700">Lv. {proficiency.level}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500">No proficiencies recorded.</div>
+                          )}
+                        </div>
+
+                        <div className="rounded-lg border border-gray-200 p-3">
+                          <h4 className="mb-2 font-semibold text-gray-900">Active Statuses</h4>
+                          {profileStats.statuses?.length ? (
+                            <div className="space-y-2">
+                              {profileStats.statuses.map((status) => (
+                                <div
+                                  key={status.id}
+                                  className={`rounded border px-3 py-2 text-sm ${
+                                    status.positive
+                                      ? 'border-emerald-200 bg-emerald-50'
+                                      : 'border-rose-200 bg-rose-50'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold text-gray-900">{status.name || formatTokenLabel(status.effectType)}</span>
+                                    <span className="text-xs text-gray-500">
+                                      until {status.expiresAt ? new Date(status.expiresAt).toLocaleString() : 'Unknown'}
+                                    </span>
+                                  </div>
+                                  {status.description ? (
+                                    <div className="mt-1 text-gray-700">{status.description}</div>
+                                  ) : null}
+                                  {status.effect ? (
+                                    <div className="mt-1 text-xs text-gray-600">{status.effect}</div>
+                                  ) : null}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-gray-500">No active statuses.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-gray-200 p-3">
+                        <h4 className="mb-2 font-semibold text-gray-900">Abilities</h4>
+                        {profileStats.spells?.length ? (
+                          <div className="space-y-2">
+                            {profileStats.spells.map((spell) => (
+                              <div key={spell.id} className="rounded bg-gray-50 px-3 py-2 text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="font-semibold text-gray-900">{spell.name}</div>
+                                    <div className="text-xs text-gray-600">
+                                      {formatTokenLabel(spell.abilityType)} · Level {spell.abilityLevel} · Mana {spell.manaCost}
+                                    </div>
+                                  </div>
+                                  <div className="text-right text-xs text-gray-600">
+                                    <div>Cooldown: {spell.cooldownTurnsRemaining || 0} turns</div>
+                                    <div>{spell.schoolOfMagic || 'No school'}</div>
+                                  </div>
+                                </div>
+                                {spell.effectText ? (
+                                  <div className="mt-1 text-xs text-gray-700">{spell.effectText}</div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No abilities learned.</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">Character stats unavailable.</div>
+                  )}
+                </div>
+
+                {/* Equipment */}
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <h3 className="text-lg font-semibold">Equipment</h3>
+                  {profileEquipment.length ? (
+                    <div className="space-y-2">
+                      {profileEquipment.map((slot) => (
+                        <div key={`${slot.slot}-${slot.ownedInventoryItemId || 'empty'}`} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+                          <div>
+                            <div className="font-semibold text-gray-900">{formatTokenLabel(slot.slot)}</div>
+                            <div className="text-gray-600">
+                              {slot.inventoryItem?.name || 'Empty'}
+                            </div>
+                          </div>
+                          {slot.inventoryItem ? (
+                            <div className="text-right text-xs text-gray-600">
+                              <div>Item #{slot.inventoryItem.id}</div>
+                              <div>{slot.inventoryItem.rarityTier || 'Unknown rarity'}</div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">No equipment equipped.</div>
+                  )}
+                </div>
+
+                {/* Inventory */}
+                <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Inventory</h3>
+                    <span className="text-sm text-gray-600">{profileInventory.length} items</span>
+                  </div>
+                  {profileInventory.length ? (
+                    <div className="space-y-2">
+                      {profileInventory.map((entry) => (
+                        <div key={entry.ownedInventoryItem.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-gray-900">
+                                {entry.inventoryItem?.name || `Item #${entry.ownedInventoryItem.inventoryItemId}`}
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Quantity: {entry.ownedInventoryItem.quantity}
+                                {entry.equippedSlots?.length
+                                  ? ` · Equipped in ${entry.equippedSlots.map(formatTokenLabel).join(', ')}`
+                                  : ''}
+                              </div>
+                              {entry.inventoryItem?.effectText ? (
+                                <div className="mt-1 text-xs text-gray-700">{entry.inventoryItem.effectText}</div>
+                              ) : null}
+                            </div>
+                            <div className="text-right text-xs text-gray-600">
+                              <div>Item #{entry.ownedInventoryItem.inventoryItemId}</div>
+                              <div>{entry.inventoryItem?.rarityTier || 'Unknown rarity'}</div>
+                              {entry.inventoryItem?.equipSlot ? (
+                                <div>{formatTokenLabel(entry.inventoryItem.equipSlot)}</div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500">Inventory is empty.</div>
+                  )}
                 </div>
 
                 {/* Statuses Section */}

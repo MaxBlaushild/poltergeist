@@ -1457,7 +1457,7 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  if (canViewNearbyContent && linkedChallenges.isNotEmpty) ...[
+                  if (linkedChallenges.isNotEmpty) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -1480,6 +1480,18 @@ class _PointOfInterestPanelState extends State<PointOfInterestPanel> {
                             style: Theme.of(context).textTheme.titleSmall
                                 ?.copyWith(fontWeight: FontWeight.bold),
                           ),
+                          if (!canViewNearbyContent) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Challenge details unlock when you move back within ${_unlockRadiusMeters.round()} m.',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
                           const SizedBox(height: 8),
                           Builder(
                             builder: (context) {

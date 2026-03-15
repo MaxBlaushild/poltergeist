@@ -9,6 +9,15 @@ import '../services/character_stats_service.dart';
 import 'activity_feed_provider.dart';
 import 'auth_provider.dart';
 
+class AbilityUseResult {
+  const AbilityUseResult({this.error, this.response = const {}});
+
+  final String? error;
+  final Map<String, dynamic> response;
+
+  bool get isSuccess => error == null;
+}
+
 class CharacterStatsProvider with ChangeNotifier {
   static const int baseStatValue = 10;
   static const List<String> statKeys = [
@@ -138,28 +147,52 @@ class CharacterStatsProvider with ChangeNotifier {
     String? targetUserId,
     String? targetMonsterId,
   }) async {
+    final result = await castSpellDetailed(
+      spellId,
+      targetUserId: targetUserId,
+      targetMonsterId: targetMonsterId,
+    );
+    return result.error;
+  }
+
+  Future<AbilityUseResult> castSpellDetailed(
+    String spellId, {
+    String? targetUserId,
+    String? targetMonsterId,
+    bool refreshAfterCast = true,
+  }) async {
     if (_userId == null) {
-      return 'You must be logged in to cast spells.';
+      return const AbilityUseResult(
+        error: 'You must be logged in to cast spells.',
+      );
     }
     try {
-      await _service.castSpell(
+      final response = await _service.castSpell(
         spellId,
         targetUserId: targetUserId,
         targetMonsterId: targetMonsterId,
       );
-      await refresh(silent: true);
-      return null;
+      if (refreshAfterCast) {
+        await refresh(silent: true);
+      }
+      return AbilityUseResult(response: response);
     } catch (e) {
+      debugPrint(
+        '[combat][castSpellDetailed] spellId=$spellId targetUserId=$targetUserId targetMonsterId=$targetMonsterId error=$e',
+      );
       if (e is DioException) {
+        debugPrint(
+          '[combat][castSpellDetailed] status=${e.response?.statusCode} data=${e.response?.data}',
+        );
         final data = e.response?.data;
         if (data is Map<String, dynamic>) {
           final message = data['error'];
           if (message is String && message.trim().isNotEmpty) {
-            return message.trim();
+            return AbilityUseResult(error: message.trim());
           }
         }
       }
-      return 'Failed to cast spell.';
+      return const AbilityUseResult(error: 'Failed to cast spell.');
     }
   }
 
@@ -168,28 +201,52 @@ class CharacterStatsProvider with ChangeNotifier {
     String? targetUserId,
     String? targetMonsterId,
   }) async {
+    final result = await castTechniqueDetailed(
+      techniqueId,
+      targetUserId: targetUserId,
+      targetMonsterId: targetMonsterId,
+    );
+    return result.error;
+  }
+
+  Future<AbilityUseResult> castTechniqueDetailed(
+    String techniqueId, {
+    String? targetUserId,
+    String? targetMonsterId,
+    bool refreshAfterCast = true,
+  }) async {
     if (_userId == null) {
-      return 'You must be logged in to use techniques.';
+      return const AbilityUseResult(
+        error: 'You must be logged in to use techniques.',
+      );
     }
     try {
-      await _service.castTechnique(
+      final response = await _service.castTechnique(
         techniqueId,
         targetUserId: targetUserId,
         targetMonsterId: targetMonsterId,
       );
-      await refresh(silent: true);
-      return null;
+      if (refreshAfterCast) {
+        await refresh(silent: true);
+      }
+      return AbilityUseResult(response: response);
     } catch (e) {
+      debugPrint(
+        '[combat][castTechniqueDetailed] techniqueId=$techniqueId targetUserId=$targetUserId targetMonsterId=$targetMonsterId error=$e',
+      );
       if (e is DioException) {
+        debugPrint(
+          '[combat][castTechniqueDetailed] status=${e.response?.statusCode} data=${e.response?.data}',
+        );
         final data = e.response?.data;
         if (data is Map<String, dynamic>) {
           final message = data['error'];
           if (message is String && message.trim().isNotEmpty) {
-            return message.trim();
+            return AbilityUseResult(error: message.trim());
           }
         }
       }
-      return 'Failed to use technique.';
+      return const AbilityUseResult(error: 'Failed to use technique.');
     }
   }
 
@@ -198,20 +255,39 @@ class CharacterStatsProvider with ChangeNotifier {
   Future<bool> setHealthAndManaTo({
     required int health,
     required int mana,
+    bool refreshBeforeAdjust = true,
+  }) {
+    return setCombatResources(
+      health: health,
+      mana: mana,
+      refreshBeforeAdjust: refreshBeforeAdjust,
+    );
+  }
+
+  Future<bool> setCombatResources({
+    int? health,
+    int? mana,
+    bool refreshBeforeAdjust = true,
   }) async {
     if (_userId == null) return false;
-    if (_stats == null) {
+    if (refreshBeforeAdjust || _stats == null) {
       await refresh(silent: true);
     }
 
     final current = _stats;
     if (current == null) return false;
 
-    final targetHealth = health.clamp(0, current.maxHealth).toInt();
-    final targetMana = mana.clamp(0, current.maxMana).toInt();
+    final targetHealth =
+        (health ?? current.health).clamp(0, current.maxHealth).toInt();
+    final targetMana = (mana ?? current.mana).clamp(0, current.maxMana).toInt();
     final healthDelta = targetHealth - current.health;
     final manaDelta = targetMana - current.mana;
     if (healthDelta == 0 && manaDelta == 0) return true;
+    debugPrint(
+      '[combat][setHealthAndManaTo] currentHealth=${current.health} '
+      'targetHealth=$targetHealth currentMana=${current.mana} '
+      'targetMana=$targetMana healthDelta=$healthDelta manaDelta=$manaDelta',
+    );
 
     final updated = await _service.adjustUserResources(
       _userId!,

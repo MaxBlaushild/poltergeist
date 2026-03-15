@@ -2,11 +2,31 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+type MonsterEncounterType string
+
+const (
+	MonsterEncounterTypeMonster MonsterEncounterType = "monster"
+	MonsterEncounterTypeBoss    MonsterEncounterType = "boss"
+	MonsterEncounterTypeRaid    MonsterEncounterType = "raid"
+)
+
+func NormalizeMonsterEncounterType(raw string) MonsterEncounterType {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case string(MonsterEncounterTypeBoss):
+		return MonsterEncounterTypeBoss
+	case string(MonsterEncounterTypeRaid):
+		return MonsterEncounterTypeRaid
+	default:
+		return MonsterEncounterTypeMonster
+	}
+}
 
 type MonsterEncounter struct {
 	ID                          uuid.UUID                `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
@@ -16,6 +36,7 @@ type MonsterEncounter struct {
 	Description                 string                   `json:"description"`
 	ImageURL                    string                   `json:"imageUrl" gorm:"column:image_url"`
 	ThumbnailURL                string                   `json:"thumbnailUrl" gorm:"column:thumbnail_url"`
+	EncounterType               MonsterEncounterType     `json:"encounterType" gorm:"column:encounter_type"`
 	OwnerUserID                 *uuid.UUID               `json:"ownerUserId,omitempty" gorm:"column:owner_user_id;type:uuid"`
 	OwnerUser                   *User                    `json:"ownerUser,omitempty" gorm:"foreignKey:OwnerUserID"`
 	Ephemeral                   bool                     `json:"ephemeral" gorm:"column:ephemeral"`
@@ -51,6 +72,7 @@ func (m *MonsterEncounterMember) TableName() string {
 }
 
 func (m *MonsterEncounter) BeforeSave(tx *gorm.DB) error {
+	m.EncounterType = NormalizeMonsterEncounterType(string(m.EncounterType))
 	return m.SetGeometry(m.Latitude, m.Longitude)
 }
 

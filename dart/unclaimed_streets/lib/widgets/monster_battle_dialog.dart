@@ -5,10 +5,12 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/character_stats.dart';
 import '../models/equipment_item.dart';
 import '../models/inventory_item.dart';
 import '../models/monster.dart';
 import '../models/spell.dart';
+import '../models/user.dart';
 import '../providers/auth_provider.dart';
 import '../providers/character_stats_provider.dart';
 import '../providers/party_provider.dart';
@@ -76,13 +78,66 @@ class _BattleItemChoice {
 }
 
 class _EncounterEnemyState {
-  _EncounterEnemyState({required this.monster, required this.currentHealth});
+  _EncounterEnemyState({
+    required this.monster,
+    required this.currentHealth,
+    List<MonsterStatus>? statuses,
+  }) : statuses = statuses ?? List<MonsterStatus>.from(monster.statuses);
 
   final Monster monster;
   int currentHealth;
+  List<MonsterStatus> statuses;
 
   int get maxHealth => math.max(1, monster.maxHealth);
   bool get isDefeated => currentHealth <= 0;
+}
+
+class _CombatStatusVisual {
+  const _CombatStatusVisual({
+    required this.name,
+    required this.description,
+    required this.effect,
+    required this.positive,
+    required this.effectType,
+    required this.damagePerTick,
+    required this.healthPerTick,
+    required this.manaPerTick,
+  });
+
+  final String name;
+  final String description;
+  final String effect;
+  final bool positive;
+  final String effectType;
+  final int damagePerTick;
+  final int healthPerTick;
+  final int manaPerTick;
+
+  factory _CombatStatusVisual.fromCharacterStatus(CharacterStatus status) {
+    return _CombatStatusVisual(
+      name: status.name,
+      description: status.description,
+      effect: status.effect,
+      positive: status.positive,
+      effectType: status.effectType,
+      damagePerTick: status.damagePerTick,
+      healthPerTick: status.healthPerTick,
+      manaPerTick: status.manaPerTick,
+    );
+  }
+
+  factory _CombatStatusVisual.fromMonsterStatus(MonsterStatus status) {
+    return _CombatStatusVisual(
+      name: status.name,
+      description: status.description,
+      effect: status.effect,
+      positive: status.positive,
+      effectType: status.effectType,
+      damagePerTick: status.damagePerTick,
+      healthPerTick: status.healthPerTick,
+      manaPerTick: 0,
+    );
+  }
 }
 
 class _TurnOrderEntry {
@@ -157,6 +212,7 @@ class MonsterBattleDialog extends StatefulWidget {
 
 class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   static const Set<String> _handEquipmentSlots = {'dominant_hand', 'off_hand'};
+  static const Duration _combatTurnDuration = Duration(seconds: 150);
   final math.Random _random = math.Random();
   final List<String> _battleLog = <String>[];
 
@@ -169,6 +225,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   late final int _playerMaxMana;
   late int _playerHealth;
   late int _playerMana;
+  List<CharacterStatus> _playerStatuses = const [];
   late final List<_EncounterEnemyState> _enemies;
   int _activeEnemyIndex = 0;
   int? _actingEnemyIndex;
@@ -207,11 +264,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
   List<_TurnOrderEntry> _partyTurnOrder = const [];
   int _partyTurnIndex = 0;
   bool _partyMonsterTurnInFlight = false;
-  bool _partyRemoteTurnSignal = false;
   int _lastPartyMonsterHealthDeficit = -1;
   int _pendingLocalDamage = 0;
   bool _partySelfResourceSyncInFlight = false;
-  final Map<String, int> _techniqueCooldownRemainingById = <String, int>{};
+  bool _partySelfHealthIncreaseSyncAllowed = false;
+  bool _pendingPartySelfHealthSync = false;
+  bool _pendingPartySelfManaSync = false;
+  final Map<String, DateTime> _techniqueCooldownExpiresAtById =
+      <String, DateTime>{};
+  final Set<String> _techniqueCooldownClearedById = <String>{};
 
   bool _isBattleStatusNotFoundError(Object error) {
     if (error is DioException) {
@@ -234,6 +295,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       if (dioMessage.isNotEmpty) {
         return dioMessage;
       }
+    }
+    final rawMessage = error.toString().trim();
+    if (rawMessage.isNotEmpty &&
+        rawMessage != 'Exception' &&
+        rawMessage != 'Error') {
+      return rawMessage;
     }
     return fallback;
   }
@@ -278,6 +345,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     _playerMaxMana = math.max(0, statsProvider.maxMana);
     _playerHealth = math.max(0, statsProvider.health);
     _playerMana = math.max(0, statsProvider.mana);
+    _playerStatuses = List<CharacterStatus>.from(statsProvider.statuses);
     final encounterMonsters = widget.encounter.monsters.isNotEmpty
         ? widget.encounter.monsters
         : widget.encounter.members
@@ -315,9 +383,13 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     _hasTrueBackSprite = _playerBackSpriteUrl.isNotEmpty;
     _selectedCommandKey = 'root:Attack';
     if (_enemies.length == 1) {
-      _battleLog.add('A wild ${_enemies.first.monster.name} appears!');
+      _battleLog.add(
+        '${widget.encounter.encounterTypeLabel}: ${_enemies.first.monster.name} appears!',
+      );
     } else {
-      _battleLog.add('A hostile group of ${_enemies.length} monsters appears!');
+      _battleLog.add(
+        '${widget.encounter.encounterTypeLabel}: a hostile group of ${_enemies.length} monsters appears!',
+      );
     }
     _battleLog.add('Choose a command.');
     if (widget.isPartyBattle) {
@@ -366,8 +438,446 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     setState(() {
       _spells = statsProvider.spells;
       _techniques = statsProvider.techniques;
+      _playerStatuses = List<CharacterStatus>.from(statsProvider.statuses);
       _syncTechniqueCooldownsFromAbilities();
     });
+  }
+
+  String _humanizeToken(String value) {
+    final normalized = value.trim().replaceAll('_', ' ');
+    if (normalized.isEmpty) return '';
+    return normalized
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .map(
+          (part) =>
+              '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+        )
+        .join(' ');
+  }
+
+  String _statusDisplayName(String name, String effectType) {
+    final trimmed = name.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+    return _humanizeToken(effectType);
+  }
+
+  int _playerStatusHealthTick(CharacterStatus status) {
+    final effectType = status.effectType.trim().toLowerCase();
+    if (effectType == 'damage_over_time') {
+      return status.damagePerTick > 0 ? -status.damagePerTick : 0;
+    }
+    if (effectType == 'health_over_time') {
+      return status.healthPerTick;
+    }
+    return 0;
+  }
+
+  int _playerStatusManaTick(CharacterStatus status) {
+    final effectType = status.effectType.trim().toLowerCase();
+    if (effectType == 'mana_over_time') {
+      return status.manaPerTick;
+    }
+    return 0;
+  }
+
+  int _monsterStatusHealthTick(MonsterStatus status) {
+    final effectType = status.effectType.trim().toLowerCase();
+    if (effectType == 'damage_over_time') {
+      return status.damagePerTick > 0 ? -status.damagePerTick : 0;
+    }
+    if (effectType == 'health_over_time') {
+      return status.healthPerTick;
+    }
+    return 0;
+  }
+
+  List<MonsterStatus> _parseMonsterStatuses(dynamic rawStatuses) {
+    final statuses = <MonsterStatus>[];
+    if (rawStatuses is! List) return statuses;
+    for (final raw in rawStatuses) {
+      if (raw is Map<String, dynamic>) {
+        statuses.add(MonsterStatus.fromJson(raw));
+      } else if (raw is Map) {
+        statuses.add(MonsterStatus.fromJson(Map<String, dynamic>.from(raw)));
+      }
+    }
+    return statuses;
+  }
+
+  List<String> _parseRemovedStatusNames(dynamic rawStatuses) {
+    if (rawStatuses is! List) return const [];
+    return rawStatuses
+        .map((status) => status?.toString().trim() ?? '')
+        .where((status) => status.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  void _pruneExpiredStatuses() {
+    final now = DateTime.now();
+    _playerStatuses = _playerStatuses.where((status) {
+      final expiresAt = status.expiresAt;
+      return expiresAt == null || expiresAt.isAfter(now);
+    }).toList();
+    for (final enemy in _enemies) {
+      enemy.statuses = enemy.statuses.where((status) {
+        final expiresAt = status.expiresAt;
+        return expiresAt == null || expiresAt.isAfter(now);
+      }).toList();
+    }
+  }
+
+  void _syncEnemyStatusesFromPayload(Map<String, dynamic>? payload) {
+    if (payload == null || payload.isEmpty) return;
+
+    void syncFromMap(Map<String, dynamic> source) {
+      final rawMonster = source['monster'];
+      if (rawMonster is Map<String, dynamic>) {
+        final monster = Monster.fromJson(rawMonster);
+        final index = _enemies.indexWhere(
+          (enemy) => enemy.monster.id == monster.id,
+        );
+        if (index >= 0) {
+          _enemies[index].statuses = List<MonsterStatus>.from(monster.statuses);
+        }
+      } else if (rawMonster is Map) {
+        final monster = Monster.fromJson(Map<String, dynamic>.from(rawMonster));
+        final index = _enemies.indexWhere(
+          (enemy) => enemy.monster.id == monster.id,
+        );
+        if (index >= 0) {
+          _enemies[index].statuses = List<MonsterStatus>.from(monster.statuses);
+        }
+      }
+
+      final rawMonsters = source['monsters'];
+      if (rawMonsters is List) {
+        for (final raw in rawMonsters) {
+          if (raw is Map<String, dynamic>) {
+            final monster = Monster.fromJson(raw);
+            final index = _enemies.indexWhere(
+              (enemy) => enemy.monster.id == monster.id,
+            );
+            if (index >= 0) {
+              _enemies[index].statuses = List<MonsterStatus>.from(
+                monster.statuses,
+              );
+            }
+          } else if (raw is Map) {
+            final monster = Monster.fromJson(Map<String, dynamic>.from(raw));
+            final index = _enemies.indexWhere(
+              (enemy) => enemy.monster.id == monster.id,
+            );
+            if (index >= 0) {
+              _enemies[index].statuses = List<MonsterStatus>.from(
+                monster.statuses,
+              );
+            }
+          }
+        }
+      }
+
+      final rawMembers = source['members'];
+      if (rawMembers is List) {
+        for (final raw in rawMembers) {
+          final mapped = raw is Map<String, dynamic>
+              ? raw
+              : (raw is Map ? Map<String, dynamic>.from(raw) : null);
+          if (mapped == null) continue;
+          final rawMemberMonster = mapped['monster'];
+          if (rawMemberMonster is Map<String, dynamic>) {
+            final monster = Monster.fromJson(rawMemberMonster);
+            final index = _enemies.indexWhere(
+              (enemy) => enemy.monster.id == monster.id,
+            );
+            if (index >= 0) {
+              _enemies[index].statuses = List<MonsterStatus>.from(
+                monster.statuses,
+              );
+            }
+          } else if (rawMemberMonster is Map) {
+            final monster = Monster.fromJson(
+              Map<String, dynamic>.from(rawMemberMonster),
+            );
+            final index = _enemies.indexWhere(
+              (enemy) => enemy.monster.id == monster.id,
+            );
+            if (index >= 0) {
+              _enemies[index].statuses = List<MonsterStatus>.from(
+                monster.statuses,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    syncFromMap(payload);
+    final nested = payload['battleDetail'];
+    if (nested is Map<String, dynamic>) {
+      syncFromMap(nested);
+    } else if (nested is Map) {
+      syncFromMap(Map<String, dynamic>.from(nested));
+    }
+  }
+
+  void _updatePartyTurnOrderFromPayload(Map<String, dynamic>? payload) {
+    if (!widget.isPartyBattle || payload == null || payload.isEmpty) return;
+    final detailRaw = payload['battleDetail'];
+    if (detailRaw is Map<String, dynamic>) {
+      _updatePartyTurnOrderFromStatus(detailRaw);
+      return;
+    }
+    if (detailRaw is Map) {
+      _updatePartyTurnOrderFromStatus(Map<String, dynamic>.from(detailRaw));
+      return;
+    }
+    _updatePartyTurnOrderFromStatus(payload);
+  }
+
+  void _syncPartyMonsterHealthFromPayload(Map<String, dynamic>? payload) {
+    if (!widget.isPartyBattle || payload == null || payload.isEmpty) return;
+    final detailRaw = payload['battleDetail'];
+    final detail = detailRaw is Map<String, dynamic>
+        ? detailRaw
+        : (detailRaw is Map ? Map<String, dynamic>.from(detailRaw) : payload);
+    final battleRaw = detail['battle'];
+    final battle = battleRaw is Map<String, dynamic>
+        ? battleRaw
+        : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+    if (battle == null || _enemies.isEmpty) return;
+    final deficit = _parseIntValue(
+      battle['monsterHealthDeficit'],
+      fallback: _lastPartyMonsterHealthDeficit,
+    );
+    if (deficit < 0) return;
+    _lastPartyMonsterHealthDeficit = deficit;
+    final primaryEnemy = _enemies.first;
+    primaryEnemy.currentHealth = math.max(0, primaryEnemy.maxHealth - deficit);
+    _ensureSelectedEnemyIsAlive();
+  }
+
+  void _applyMonsterStatusChanges(
+    Map<String, dynamic> response, {
+    int? targetEnemyIndex,
+  }) {
+    final appliedRaw = response['monsterStatusesApplied'];
+    final applied = _parseMonsterStatuses(appliedRaw);
+    final removedNames = _parseRemovedStatusNames(
+      response['monsterStatusesRemoved'],
+    );
+    if (applied.isEmpty && removedNames.isEmpty) return;
+
+    final resolvedTargetIndex = _resolveTargetEnemyIndex(targetEnemyIndex);
+    if (resolvedTargetIndex == null) return;
+
+    final enemy = _enemies[resolvedTargetIndex];
+    final now = DateTime.now();
+    final appliedMaps = appliedRaw is List
+        ? appliedRaw
+              .map(
+                (raw) => raw is Map<String, dynamic>
+                    ? raw
+                    : (raw is Map ? Map<String, dynamic>.from(raw) : null),
+              )
+              .whereType<Map<String, dynamic>>()
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+
+    for (final status in applied) {
+      final matching = appliedMaps.firstWhere(
+        (raw) => (raw['name']?.toString() ?? '').trim() == status.name.trim(),
+        orElse: () => const <String, dynamic>{},
+      );
+      final durationSeconds = matching['durationSeconds'] is num
+          ? (matching['durationSeconds'] as num).toInt()
+          : 0;
+      final expiresAt = durationSeconds > 0
+          ? now.add(Duration(seconds: durationSeconds))
+          : null;
+
+      enemy.statuses.removeWhere(
+        (existing) =>
+            existing.name.trim().toLowerCase() ==
+            status.name.trim().toLowerCase(),
+      );
+      enemy.statuses = [
+        ...enemy.statuses,
+        MonsterStatus(
+          id: status.id,
+          name: status.name,
+          description: status.description,
+          effect: status.effect,
+          positive: status.positive,
+          effectType: status.effectType,
+          damagePerTick: status.damagePerTick,
+          healthPerTick: status.healthPerTick,
+          startedAt: now,
+          expiresAt: expiresAt,
+          lastTickAt: now,
+        ),
+      ];
+      _battleLog.add(
+        '${enemy.monster.name} gains ${_statusDisplayName(status.name, status.effectType)}.',
+      );
+    }
+
+    if (removedNames.isNotEmpty) {
+      enemy.statuses.removeWhere(
+        (status) => removedNames.any(
+          (removed) =>
+              removed.trim().toLowerCase() == status.name.trim().toLowerCase(),
+        ),
+      );
+      for (final removed in removedNames) {
+        _battleLog.add(
+          '${removed.trim()} is removed from ${enemy.monster.name}.',
+        );
+      }
+    }
+  }
+
+  void _applyLocalBattleStatusTicks() {
+    _pruneExpiredStatuses();
+    final mutateResources = !widget.isPartyBattle;
+
+    for (final status in _playerStatuses) {
+      final statusName = _statusDisplayName(status.name, status.effectType);
+      final healthDelta = _playerStatusHealthTick(status);
+      final manaDelta = _playerStatusManaTick(status);
+      if (healthDelta != 0) {
+        if (mutateResources) {
+          _playerHealth = (_playerHealth + healthDelta)
+              .clamp(0, _playerMaxHealth)
+              .toInt();
+        }
+        if (healthDelta < 0) {
+          _battleLog.add(
+            '$statusName deals ${healthDelta.abs()} damage to you.',
+          );
+        } else {
+          _battleLog.add('$statusName restores $healthDelta HP to you.');
+        }
+      }
+      if (manaDelta != 0) {
+        if (mutateResources) {
+          _playerMana = (_playerMana + manaDelta)
+              .clamp(0, _playerMaxMana)
+              .toInt();
+        }
+        if (manaDelta < 0) {
+          _battleLog.add('$statusName drains ${manaDelta.abs()} MP from you.');
+        } else {
+          _battleLog.add('$statusName restores $manaDelta MP to you.');
+        }
+      }
+    }
+    _syncSelfAllyFromLocalResources();
+
+    for (final enemy in _enemies) {
+      if (enemy.isDefeated) continue;
+      for (final status in enemy.statuses) {
+        final delta = _monsterStatusHealthTick(status);
+        if (delta == 0) continue;
+        if (mutateResources) {
+          enemy.currentHealth = (enemy.currentHealth + delta)
+              .clamp(0, enemy.maxHealth)
+              .toInt();
+        }
+        final statusName = _statusDisplayName(status.name, status.effectType);
+        if (delta < 0) {
+          _battleLog.add(
+            '$statusName deals ${delta.abs()} damage to ${enemy.monster.name}.',
+          );
+        } else {
+          _battleLog.add(
+            '$statusName restores $delta HP to ${enemy.monster.name}.',
+          );
+        }
+      }
+    }
+    _ensureSelectedEnemyIsAlive();
+  }
+
+  void _shiftCombatStatusTimersByTurn() {
+    DateTime? shiftExpiry(DateTime? expiresAt) {
+      if (expiresAt == null) return null;
+      return expiresAt.subtract(_combatTurnDuration);
+    }
+
+    _playerStatuses = _playerStatuses
+        .map(
+          (status) => CharacterStatus(
+            id: status.id,
+            name: status.name,
+            description: status.description,
+            effect: status.effect,
+            positive: status.positive,
+            effectType: status.effectType,
+            damagePerTick: status.damagePerTick,
+            healthPerTick: status.healthPerTick,
+            manaPerTick: status.manaPerTick,
+            startedAt: status.startedAt,
+            expiresAt: shiftExpiry(status.expiresAt),
+          ),
+        )
+        .toList();
+
+    for (final enemy in _enemies) {
+      enemy.statuses = enemy.statuses
+          .map(
+            (status) => MonsterStatus(
+              id: status.id,
+              name: status.name,
+              description: status.description,
+              effect: status.effect,
+              positive: status.positive,
+              effectType: status.effectType,
+              damagePerTick: status.damagePerTick,
+              healthPerTick: status.healthPerTick,
+              startedAt: status.startedAt,
+              expiresAt: shiftExpiry(status.expiresAt),
+              lastTickAt: status.lastTickAt,
+            ),
+          )
+          .toList();
+    }
+
+    _pruneExpiredStatuses();
+  }
+
+  void _applyTurnSyncResults({
+    Map<String, dynamic>? setupResponse,
+    Map<String, dynamic>? turnResponse,
+    int? targetEnemyIndex,
+    bool refreshPlayerStatusesFromProvider = false,
+  }) {
+    if (refreshPlayerStatusesFromProvider) {
+      final statsProvider = context.read<CharacterStatsProvider>();
+      _playerStatuses = List<CharacterStatus>.from(statsProvider.statuses);
+      _playerHealth = math.max(0, statsProvider.health);
+      _playerMana = math.max(0, statsProvider.mana);
+    }
+
+    if (setupResponse != null && setupResponse.isNotEmpty) {
+      _updatePartyTurnOrderFromPayload(setupResponse);
+      _syncPartyMonsterHealthFromPayload(setupResponse);
+      _applyMonsterStatusChanges(
+        setupResponse,
+        targetEnemyIndex: targetEnemyIndex,
+      );
+      _syncEnemyStatusesFromPayload(setupResponse);
+    }
+    if (turnResponse != null && turnResponse.isNotEmpty) {
+      _updatePartyTurnOrderFromPayload(turnResponse);
+      _syncPartyMonsterHealthFromPayload(turnResponse);
+      _syncEnemyStatusesFromPayload(turnResponse);
+      _applyLocalBattleStatusTicks();
+      _shiftCombatStatusTimersByTurn();
+    }
+    if (widget.isPartyBattle) {
+      _refreshPartyTurnFlag();
+    }
   }
 
   List<_EncounterEnemyState> get _aliveEnemies =>
@@ -435,13 +945,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return true;
   }
 
-  String _turnActorKey(_TurnOrderEntry entry) {
-    if (entry.isEnemy) {
-      return 'monster:${entry.enemyIndex ?? -1}';
-    }
-    return 'user:${entry.userId ?? ''}';
-  }
-
   bool _isTurnEntryAlive(_TurnOrderEntry entry) {
     if (entry.isEnemy) {
       final index = entry.enemyIndex;
@@ -482,32 +985,73 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return current?.isEnemy == true;
   }
 
-  bool _isPartyOtherUserTurn() {
-    final current = _currentPartyTurnEntry();
-    return current != null && current.isAlly && !current.isSelf;
+  void _beginSelfTurn() {
+    _pruneExpiredTechniqueCooldowns();
   }
 
-  void _beginSelfTurn() {
-    final next = <String, int>{};
-    for (final entry in _techniqueCooldownRemainingById.entries) {
-      final remaining = math.max(0, entry.value - 1);
-      if (remaining > 0) {
-        next[entry.key] = remaining;
+  void _pruneExpiredTechniqueCooldowns() {
+    final now = DateTime.now();
+    final expiredIds = <String>[];
+    _techniqueCooldownExpiresAtById.forEach((id, expiresAt) {
+      if (!expiresAt.isAfter(now)) {
+        expiredIds.add(id);
+      }
+    });
+    for (final id in expiredIds) {
+      _techniqueCooldownExpiresAtById.remove(id);
+      _techniqueCooldownClearedById.add(id);
+    }
+  }
+
+  void _advanceLocalTechniqueCooldownsForAction({String? excludeTechniqueId}) {
+    final now = DateTime.now();
+    final next = <String, DateTime>{};
+    for (final entry in _techniqueCooldownExpiresAtById.entries) {
+      if (excludeTechniqueId != null && entry.key == excludeTechniqueId) {
+        next[entry.key] = entry.value;
+        continue;
+      }
+      final shifted = entry.value.subtract(_combatTurnDuration);
+      if (shifted.isAfter(now)) {
+        next[entry.key] = shifted;
+      } else {
+        _techniqueCooldownClearedById.add(entry.key);
       }
     }
-    _techniqueCooldownRemainingById
+    _techniqueCooldownExpiresAtById
       ..clear()
       ..addAll(next);
+    _pruneExpiredTechniqueCooldowns();
+  }
+
+  int _cooldownTurnsRemainingFromExpiry(
+    DateTime? expiresAt, {
+    int fallbackTurns = 0,
+  }) {
+    if (expiresAt == null) {
+      return math.max(0, fallbackTurns);
+    }
+    final remainingSeconds = expiresAt.difference(DateTime.now()).inSeconds;
+    if (remainingSeconds <= 0) return 0;
+    return (remainingSeconds + _combatTurnDuration.inSeconds - 1) ~/
+        _combatTurnDuration.inSeconds;
   }
 
   int _techniqueCooldownRemaining(Spell technique) {
+    _pruneExpiredTechniqueCooldowns();
     final id = technique.id.trim();
     if (id.isEmpty) return 0;
-    final override = _techniqueCooldownRemainingById[id];
-    if (override != null) {
-      return math.max(0, override);
+    if (_techniqueCooldownClearedById.contains(id)) {
+      return 0;
     }
-    return math.max(0, technique.cooldownTurnsRemaining);
+    final override = _techniqueCooldownExpiresAtById[id];
+    if (override != null) {
+      return _cooldownTurnsRemainingFromExpiry(override);
+    }
+    return _cooldownTurnsRemainingFromExpiry(
+      technique.cooldownExpiresAt,
+      fallbackTurns: technique.cooldownTurnsRemaining,
+    );
   }
 
   bool _isTechniqueOnCooldown(Spell technique) =>
@@ -523,38 +1067,73 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           : technique.cooldownTurns,
     );
     if (cooldownTurns <= 0) {
-      _techniqueCooldownRemainingById.remove(id);
+      _techniqueCooldownExpiresAtById.remove(id);
+      _techniqueCooldownClearedById.add(id);
       return;
     }
-    _techniqueCooldownRemainingById[id] = cooldownTurns;
+    _techniqueCooldownClearedById.remove(id);
+    _techniqueCooldownExpiresAtById[id] =
+        technique.cooldownExpiresAt ??
+        DateTime.now().add(_combatTurnDuration * cooldownTurns);
+  }
+
+  void _setTechniqueCooldownFromResponse(
+    Spell technique,
+    Map<String, dynamic> response,
+  ) {
+    if (!_isTechnique(technique)) return;
+    final id = technique.id.trim();
+    if (id.isEmpty) return;
+
+    final secondsRaw = response['cooldownSecondsRemaining'];
+    final turnsRaw = response['cooldownTurnsRemaining'];
+    final seconds = secondsRaw is num ? secondsRaw.toInt() : 0;
+    final turns = turnsRaw is num ? turnsRaw.toInt() : 0;
+    if (seconds <= 0 && turns <= 0) {
+      _techniqueCooldownExpiresAtById.remove(id);
+      _techniqueCooldownClearedById.add(id);
+      return;
+    }
+
+    final remaining = seconds > 0
+        ? Duration(seconds: seconds)
+        : _combatTurnDuration * turns;
+    _techniqueCooldownClearedById.remove(id);
+    _techniqueCooldownExpiresAtById[id] = DateTime.now().add(remaining);
   }
 
   void _syncTechniqueCooldownsFromAbilities() {
-    final next = <String, int>{};
+    final now = DateTime.now();
+    final next = <String, DateTime>{};
+    final nextCleared = <String>{..._techniqueCooldownClearedById};
     for (final technique in _techniques) {
       final id = technique.id.trim();
       if (id.isEmpty) continue;
       final remaining = math.max(0, technique.cooldownTurnsRemaining);
-      if (remaining <= 0) continue;
-      next[id] = remaining;
+      if (remaining <= 0) {
+        nextCleared.add(id);
+        continue;
+      }
+      if (nextCleared.contains(id)) {
+        continue;
+      }
+      final serverExpiry =
+          technique.cooldownExpiresAt ??
+          now.add(_combatTurnDuration * remaining);
+      final localExpiry = _techniqueCooldownExpiresAtById[id];
+      if (localExpiry != null && localExpiry.isBefore(serverExpiry)) {
+        next[id] = localExpiry;
+      } else {
+        next[id] = serverExpiry;
+      }
     }
-    _techniqueCooldownRemainingById
+    _techniqueCooldownExpiresAtById
       ..clear()
       ..addAll(next);
-  }
-
-  void _advancePartyTurn() {
-    if (!widget.isPartyBattle || _partyTurnOrder.isEmpty) return;
-    final total = _partyTurnOrder.length;
-    var next = (_partyTurnIndex + 1) % total;
-    for (var i = 0; i < total; i++) {
-      final candidate = _partyTurnOrder[next];
-      if (_isTurnEntryAlive(candidate)) {
-        _partyTurnIndex = next;
-        return;
-      }
-      next = (next + 1) % total;
-    }
+    _techniqueCooldownClearedById
+      ..clear()
+      ..addAll(nextCleared);
+    _pruneExpiredTechniqueCooldowns();
   }
 
   void _refreshPartyTurnFlag({bool announce = true}) {
@@ -587,6 +1166,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     final enemy = _enemies[enemyIndex];
     if (enemy.isDefeated) {
+      await _syncPartyBattleState();
       return;
     }
 
@@ -616,7 +1196,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       }
       _syncSelfAllyFromLocalResources();
     });
-    unawaited(_syncPartySelfResourcesToBackend());
+    _requestPartySelfResourceSync(syncHealth: true, syncMana: false);
     if (_playerHealth > 0) {
       unawaited(
         _playSpriteFx(targetMonster: false, amount: damage, healing: false),
@@ -637,12 +1217,21 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _partyMonsterTurnInFlight = false;
       return;
     }
+    Map<String, dynamic>? turnResponse;
+    final monsterId = (_partyBattleMonsterId ?? '').trim();
+    if (monsterId.isNotEmpty) {
+      try {
+        final poiService = context.read<PoiService>();
+        turnResponse = await poiService.advanceMonsterBattleTurn(monsterId);
+      } catch (_) {
+        turnResponse = null;
+      }
+    }
     setState(() {
       _actingEnemyIndex = null;
       _busy = false;
       _selectedCommandKey = 'root:Attack';
-      _advancePartyTurn();
-      _refreshPartyTurnFlag();
+      _applyTurnSyncResults(turnResponse: turnResponse);
       if (_playerHealth <= 0) {
         _battleLog.add('You are down. Waiting for your party...');
       }
@@ -675,6 +1264,76 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _activeAllyIndex = 0;
     }
     return _partyAllies[_activeAllyIndex];
+  }
+
+  _PartyAllyState? get _selfPartyAlly {
+    if (!widget.isPartyBattle || _selfUserId.isEmpty) return null;
+    final index = _partyAllies.indexWhere((ally) => ally.userId == _selfUserId);
+    if (index < 0) return null;
+    return _partyAllies[index];
+  }
+
+  List<_PartyAllyState> _supportTargetOptions() {
+    final options = <_PartyAllyState>[];
+    final seenUserIds = <String>{};
+
+    void addOption(_PartyAllyState ally) {
+      final userId = ally.userId.trim();
+      if (userId.isEmpty || !seenUserIds.add(userId)) return;
+      options.add(ally);
+    }
+
+    if (widget.isPartyBattle && _partyAllies.isNotEmpty) {
+      for (final ally in _partyAllies) {
+        addOption(ally);
+      }
+      return options;
+    }
+
+    if (_selfUserId.isNotEmpty) {
+      addOption(
+        _PartyAllyState(
+          userId: _selfUserId,
+          name: _playerName,
+          iconUrl: _playerFrontSpriteUrl,
+          level: _playerLevel,
+          currentHealth: _playerHealth,
+          maxHealth: _playerMaxHealth,
+          currentMana: _playerMana,
+          maxMana: _playerMaxMana,
+          isSelf: true,
+        ),
+      );
+    }
+
+    final party = context.read<PartyProvider>().party;
+    if (party == null) {
+      return options;
+    }
+    final users = <User>[party.leader, ...party.members];
+    for (final user in users) {
+      final userId = user.id.trim();
+      if (userId.isEmpty) continue;
+      final isSelf = userId == _selfUserId;
+      addOption(
+        _PartyAllyState(
+          userId: userId,
+          name: user.username.trim().isNotEmpty
+              ? '@${user.username.trim()}'
+              : (user.name.trim().isNotEmpty
+                    ? user.name.trim()
+                    : 'Party Member'),
+          iconUrl: user.profilePictureUrl.trim(),
+          level: isSelf ? _playerLevel : 1,
+          currentHealth: isSelf ? _playerHealth : 0,
+          maxHealth: isSelf ? _playerMaxHealth : 1,
+          currentMana: isSelf ? _playerMana : 0,
+          maxMana: isSelf ? _playerMaxMana : 0,
+          isSelf: isSelf,
+        ),
+      );
+    }
+    return options;
   }
 
   void _ensureSelfPartyAlly() {
@@ -767,24 +1426,132 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     self.maxMana = _playerMaxMana;
   }
 
-  Future<void> _syncPartySelfResourcesToBackend() async {
-    if (!widget.isPartyBattle ||
-        _selfUserId.isEmpty ||
-        _partySelfResourceSyncInFlight ||
-        !mounted) {
+  void _allowPartySelfHealthIncreaseSync() {
+    if (!widget.isPartyBattle) return;
+    _partySelfHealthIncreaseSyncAllowed = true;
+  }
+
+  void _applySelfHealsFromResponse(Map<String, dynamic> response) {
+    if (_selfUserId.isEmpty) return;
+    final healsRaw = response['heals'];
+    if (healsRaw is! List) return;
+    for (final raw in healsRaw) {
+      final heal = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : null);
+      if (heal == null) continue;
+      final userId = (heal['userId']?.toString() ?? '').trim();
+      if (userId != _selfUserId) continue;
+      final nextHealth = _parseIntValue(
+        heal['health'],
+        fallback: _playerHealth,
+      ).clamp(0, _playerMaxHealth).toInt();
+      if (widget.isPartyBattle && nextHealth > _playerHealth) {
+        _allowPartySelfHealthIncreaseSync();
+      }
+      _playerHealth = nextHealth;
+      _syncSelfAllyFromLocalResources();
       return;
     }
+  }
+
+  void _requestPartySelfResourceSync({
+    bool syncHealth = true,
+    bool syncMana = true,
+  }) {
+    if (!widget.isPartyBattle) return;
+    if (syncHealth) {
+      _pendingPartySelfHealthSync = true;
+    }
+    if (syncMana) {
+      _pendingPartySelfManaSync = true;
+    }
+    if (_partySelfResourceSyncInFlight) {
+      debugPrint(
+        '[combat][_requestPartySelfResourceSync] queued '
+        'syncHealth=$syncHealth syncMana=$syncMana '
+        'pendingHealth=$_pendingPartySelfHealthSync '
+        'pendingMana=$_pendingPartySelfManaSync',
+      );
+      return;
+    }
+    unawaited(_syncPartySelfResourcesToBackend());
+  }
+
+  Future<void> _syncPartySelfResourcesToBackend() async {
+    if (!widget.isPartyBattle || _selfUserId.isEmpty || !mounted) {
+      return;
+    }
+    if (_partySelfResourceSyncInFlight) {
+      return;
+    }
+    final statsProvider = context.read<CharacterStatsProvider>();
     _partySelfResourceSyncInFlight = true;
     try {
-      final statsProvider = context.read<CharacterStatsProvider>();
-      await statsProvider.setHealthAndManaTo(
-        health: _playerHealth.clamp(0, _playerMaxHealth).toInt(),
-        mana: _playerMana.clamp(0, _playerMaxMana).toInt(),
+      while (mounted &&
+          widget.isPartyBattle &&
+          (_pendingPartySelfHealthSync || _pendingPartySelfManaSync)) {
+        final syncHealth = _pendingPartySelfHealthSync;
+        final syncMana = _pendingPartySelfManaSync;
+        _pendingPartySelfHealthSync = false;
+        _pendingPartySelfManaSync = false;
+        if (!syncHealth && !syncMana) {
+          continue;
+        }
+        await statsProvider.refresh(silent: true);
+        final backendHealth = statsProvider.health.clamp(0, _playerMaxHealth);
+        final backendMana = statsProvider.mana.clamp(0, _playerMaxMana);
+        var targetHealth = _playerHealth.clamp(0, _playerMaxHealth).toInt();
+        var targetMana = _playerMana.clamp(0, _playerMaxMana).toInt();
+        final allowHealthIncrease = _partySelfHealthIncreaseSyncAllowed;
+        if (!syncHealth) {
+          targetHealth = backendHealth;
+        } else if (!allowHealthIncrease && targetHealth > backendHealth) {
+          debugPrint(
+            '[combat][_syncPartySelfResourcesToBackend] suppressingHealthIncrease '
+            'localHealth=$targetHealth backendHealth=$backendHealth '
+            'localMana=$targetMana backendMana=$backendMana',
+          );
+          targetHealth = backendHealth;
+          if (mounted) {
+            setState(() {
+              _playerHealth = targetHealth;
+              _syncSelfAllyFromLocalResources();
+            });
+          } else {
+            _playerHealth = targetHealth;
+            _syncSelfAllyFromLocalResources();
+          }
+        }
+        if (!syncMana) {
+          targetMana = backendMana;
+        }
+        debugPrint(
+          '[combat][_syncPartySelfResourcesToBackend] syncing '
+          'localHealth=$targetHealth backendHealth=$backendHealth '
+          'localMana=$targetMana backendMana=$backendMana '
+          'syncHealth=$syncHealth syncMana=$syncMana '
+          'allowHealthIncrease=$allowHealthIncrease',
+        );
+        await statsProvider.setCombatResources(
+          health: syncHealth ? targetHealth : null,
+          mana: syncMana ? targetMana : null,
+          refreshBeforeAdjust: false,
+        );
+        _partySelfHealthIncreaseSyncAllowed = false;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[combat][_syncPartySelfResourcesToBackend] error=$error\n$stackTrace',
       );
-    } catch (_) {
       // Keep combat flow local if backend resource sync fails.
     } finally {
       _partySelfResourceSyncInFlight = false;
+      if ((_pendingPartySelfHealthSync || _pendingPartySelfManaSync) &&
+          mounted &&
+          widget.isPartyBattle) {
+        unawaited(_syncPartySelfResourcesToBackend());
+      }
     }
   }
 
@@ -812,13 +1579,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final activeParticipantIDs = <String>{};
     final now = DateTime.now();
     final idsToRefresh = <String>[];
-    if (_selfUserId.isNotEmpty) {
-      final selfFetchedAt = _partyAllyFetchedAt[_selfUserId];
-      if (selfFetchedAt == null ||
-          now.difference(selfFetchedAt) >= const Duration(seconds: 2)) {
-        idsToRefresh.add(_selfUserId);
-      }
-    }
     for (final raw in participantsRaw) {
       final mapped = raw is Map<String, dynamic>
           ? raw
@@ -852,6 +1612,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     if (_selfUserId.isNotEmpty) {
       activeParticipantIDs.add(_selfUserId);
+      _partyAllyFetchedAt[_selfUserId] = now;
     }
 
     final uniqueRefreshIDs = idsToRefresh.toSet().toList(growable: false);
@@ -949,14 +1710,9 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       fallback: ally.currentMana,
     ).clamp(0, ally.maxMana).toInt();
 
-    if (ally.isSelf) {
-      _playerHealth = ally.currentHealth;
-      _playerMana = ally.currentMana;
-      return;
-    }
+    if (ally.isSelf) return;
     if (prevHealth != ally.currentHealth) {
       final delta = ally.currentHealth - prevHealth;
-      _partyRemoteTurnSignal = true;
       if (delta > 0) {
         _battleLog.add('${ally.name} recovers $delta HP.');
       } else {
@@ -967,7 +1723,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     if (prevMana != ally.currentMana) {
       final delta = ally.currentMana - prevMana;
-      _partyRemoteTurnSignal = true;
       if (delta > 0) {
         _battleLog.add('${ally.name} recovers $delta MP.');
       } else {
@@ -980,8 +1735,11 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     if (!widget.isPartyBattle) return;
     final turnOrderRaw = status['turnOrder'];
     if (turnOrderRaw is! List || turnOrderRaw.isEmpty) return;
-    final currentTurn = _currentPartyTurnEntry();
-    final currentKey = currentTurn == null ? '' : _turnActorKey(currentTurn);
+    final battleRaw = status['battle'];
+    final battle = battleRaw is Map<String, dynamic>
+        ? battleRaw
+        : (battleRaw is Map ? Map<String, dynamic>.from(battleRaw) : null);
+    final serverTurnIndex = _parseIntValue(battle?['turnIndex'], fallback: 0);
 
     final entries = <_TurnOrderEntry>[];
     for (final raw in turnOrderRaw) {
@@ -1044,17 +1802,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     if (entries.isNotEmpty) {
       _partyTurnOrder = entries;
-      if (currentKey.isNotEmpty) {
-        final preserved = entries.indexWhere(
-          (entry) => _turnActorKey(entry) == currentKey,
-        );
-        if (preserved >= 0) {
-          _partyTurnIndex = preserved;
-        }
-      }
-      if (_partyTurnIndex < 0 || _partyTurnIndex >= _partyTurnOrder.length) {
-        _partyTurnIndex = 0;
-      }
+      _partyTurnIndex = serverTurnIndex.clamp(0, entries.length - 1).toInt();
     }
   }
 
@@ -1074,6 +1822,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       if (!mounted || _battleOver) return;
       await _syncPartyParticipantsFromStatus(status);
       if (!mounted || _battleOver) return;
+      _syncEnemyStatusesFromPayload(status);
       final battleRaw = status['battle'];
       final battle = battleRaw is Map<String, dynamic>
           ? battleRaw
@@ -1093,7 +1842,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             _pendingLocalDamage -= attributedToLocal;
             final remoteDelta = rawDelta - attributedToLocal;
             if (remoteDelta > 0) {
-              _partyRemoteTurnSignal = true;
               _battleLog.add(
                 'A party member hits ${primaryEnemy.monster.name} for $remoteDelta damage.',
               );
@@ -1108,10 +1856,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           _syncSelfAllyFromLocalResources();
           if (_activeAllyIndex < 0 || _activeAllyIndex >= _partyAllies.length) {
             _activeAllyIndex = 0;
-          }
-          if (_isPartyOtherUserTurn() && _partyRemoteTurnSignal) {
-            _advancePartyTurn();
-            _partyRemoteTurnSignal = false;
           }
           _refreshPartyTurnFlag();
         });
@@ -1156,7 +1900,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
           );
         }
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('[combat][_syncPartyBattleState] error=$error\n$stackTrace');
       if (!mounted || _battleOver) return;
       if (_isBattleStatusNotFoundError(error)) {
         await _finishAfterBattleStatusGone();
@@ -1166,35 +1911,55 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
   }
 
-  Future<void> _reportPartyBattleDamage(int damage) async {
-    if (!widget.isPartyBattle || damage <= 0 || _battleOver) return;
+  Future<Map<String, dynamic>?> _reportPartyBattleDamage(int damage) async {
+    if (!widget.isPartyBattle || damage <= 0 || _battleOver) return null;
     final battleId = (_partyBattleId ?? '').trim();
     final monsterId = _partyBattleMonsterId;
-    if ((monsterId == null || monsterId.isEmpty) && battleId.isEmpty) return;
+    if ((monsterId == null || monsterId.isEmpty) && battleId.isEmpty) {
+      return null;
+    }
     try {
       _pendingLocalDamage += damage;
       final poiService = context.read<PoiService>();
+      late final Map<String, dynamic> response;
       if (battleId.isNotEmpty) {
-        await poiService.applyMonsterBattleDamageById(battleId, damage);
+        response = await poiService.applyMonsterBattleDamageById(
+          battleId,
+          damage,
+        );
       } else {
-        await poiService.applyMonsterBattleDamage(monsterId!, damage);
+        response = await poiService.applyMonsterBattleDamage(
+          monsterId!,
+          damage,
+        );
       }
-      await _syncPartyBattleState();
-    } catch (_) {
+      try {
+        await _syncPartyBattleState();
+      } catch (_) {
+        // Keep the successful action response even if the follow-up sync fails.
+      }
+      return response;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[combat][_reportPartyBattleDamage] damage=$damage battleId=$battleId '
+        'monsterId=$monsterId error=$error\n$stackTrace',
+      );
       // Keep combat moving locally if the sync request fails.
+      return null;
     }
   }
 
-  Future<void> _reportSoloBattleDamage(int damage) async {
-    if (widget.isPartyBattle || damage <= 0 || _battleOver) return;
+  Future<Map<String, dynamic>?> _reportSoloBattleDamage(int damage) async {
+    if (widget.isPartyBattle || damage <= 0 || _battleOver) return null;
     final monsterId = (widget.battleMonsterId ?? _activeEnemy?.monster.id ?? '')
         .trim();
-    if (monsterId.isEmpty) return;
+    if (monsterId.isEmpty) return null;
     try {
       final poiService = context.read<PoiService>();
-      await poiService.applyMonsterBattleDamage(monsterId, damage);
+      return await poiService.applyMonsterBattleDamage(monsterId, damage);
     } catch (_) {
       // Keep local combat responsive if the server sync fails.
+      return null;
     }
   }
 
@@ -1653,152 +2418,243 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     int? allyTargetIndex,
     int allyHealthDelta = 0,
     int allyManaDelta = 0,
+    bool? syncPartyHealth,
+    bool? syncPartyMana,
+    Future<void> Function(Map<String, dynamic>? damageResponse)?
+    onAfterTurnSynced,
   }) async {
     if (!_canAct) return;
+    try {
+      final resolvedTargetIndex = _resolveTargetEnemyIndex(targetEnemyIndex);
+      final targetEnemy = resolvedTargetIndex == null
+          ? null
+          : _enemies[resolvedTargetIndex];
+      var targetName = 'the enemy';
+      if (damageToAllEnemies > 0) {
+        for (final enemy in _enemies) {
+          if (enemy.isDefeated) continue;
+          enemy.currentHealth = math.max(
+            0,
+            enemy.currentHealth - damageToAllEnemies,
+          );
+        }
+      }
+      if (targetEnemy != null && !targetEnemy.isDefeated) {
+        targetName = targetEnemy.monster.name;
+        if (damageToMonster > 0) {
+          targetEnemy.currentHealth = math.max(
+            0,
+            targetEnemy.currentHealth - damageToMonster,
+          );
+        }
+      }
+      _ensureSelectedEnemyIsAlive();
 
-    final resolvedTargetIndex = _resolveTargetEnemyIndex(targetEnemyIndex);
-    final targetEnemy = resolvedTargetIndex == null
-        ? null
-        : _enemies[resolvedTargetIndex];
-    var targetName = 'the enemy';
-    if (damageToAllEnemies > 0) {
-      for (final enemy in _enemies) {
-        if (enemy.isDefeated) continue;
-        enemy.currentHealth = math.max(
-          0,
-          enemy.currentHealth - damageToAllEnemies,
+      setState(() {
+        _busy = true;
+        _menuView = _BattleMenuView.root;
+        _selectedCommandKey = 'root:Attack';
+        _playerHealth = (_playerHealth + playerHealthDelta)
+            .clamp(0, _playerMaxHealth)
+            .toInt();
+        _playerMana = (_playerMana + playerManaDelta)
+            .clamp(0, _playerMaxMana)
+            .toInt();
+        if (widget.isPartyBattle &&
+            allyTargetIndex != null &&
+            allyTargetIndex >= 0 &&
+            allyTargetIndex < _partyAllies.length &&
+            (allyHealthDelta != 0 || allyManaDelta != 0)) {
+          final ally = _partyAllies[allyTargetIndex];
+          ally.currentHealth = (ally.currentHealth + allyHealthDelta)
+              .clamp(0, ally.maxHealth)
+              .toInt();
+          ally.currentMana = (ally.currentMana + allyManaDelta)
+              .clamp(0, ally.maxMana)
+              .toInt();
+          if (ally.isSelf) {
+            _playerHealth = ally.currentHealth;
+            _playerMana = ally.currentMana;
+          }
+        }
+        _syncSelfAllyFromLocalResources();
+        if (damageToMonster > 0 && damageToAllEnemies <= 0) {
+          _battleLog.add('$message (Target: $targetName).');
+        } else {
+          _battleLog.add(message);
+        }
+      });
+      if (widget.isPartyBattle &&
+          (playerHealthDelta > 0 ||
+              (allyTargetIndex != null &&
+                  allyTargetIndex >= 0 &&
+                  allyTargetIndex < _partyAllies.length &&
+                  _partyAllies[allyTargetIndex].isSelf &&
+                  allyHealthDelta > 0))) {
+        _allowPartySelfHealthIncreaseSync();
+      }
+      final shouldSyncPartyHealth =
+          syncPartyHealth ??
+          (playerHealthDelta != 0 ||
+              (allyTargetIndex != null &&
+                  allyTargetIndex >= 0 &&
+                  allyTargetIndex < _partyAllies.length &&
+                  _partyAllies[allyTargetIndex].isSelf &&
+                  allyHealthDelta != 0));
+      final shouldSyncPartyMana =
+          syncPartyMana ??
+          (playerManaDelta != 0 ||
+              (allyTargetIndex != null &&
+                  allyTargetIndex >= 0 &&
+                  allyTargetIndex < _partyAllies.length &&
+                  _partyAllies[allyTargetIndex].isSelf &&
+                  allyManaDelta != 0));
+      if (widget.isPartyBattle &&
+          (shouldSyncPartyHealth || shouldSyncPartyMana)) {
+        _requestPartySelfResourceSync(
+          syncHealth: shouldSyncPartyHealth,
+          syncMana: shouldSyncPartyMana,
         );
       }
-    }
-    if (targetEnemy != null && !targetEnemy.isDefeated) {
-      targetName = targetEnemy.monster.name;
-      if (damageToMonster > 0) {
-        targetEnemy.currentHealth = math.max(
-          0,
-          targetEnemy.currentHealth - damageToMonster,
+      final sharedDamage =
+          (math.max(0, damageToMonster) + math.max(0, damageToAllEnemies))
+              .toInt();
+      Map<String, dynamic>? damageResponse;
+      if (sharedDamage > 0) {
+        if (widget.isPartyBattle) {
+          damageResponse = await _reportPartyBattleDamage(sharedDamage);
+        } else {
+          damageResponse = await _reportSoloBattleDamage(sharedDamage);
+        }
+        if (!mounted || _battleOver) return;
+      }
+      if (onAfterTurnSynced != null) {
+        await onAfterTurnSynced(damageResponse);
+        if (!mounted || _battleOver) return;
+      }
+      if (_playerHealth <= 0) {
+        if (widget.isPartyBattle && !_allPartyMembersDefeated()) {
+          setState(() {
+            _busy = false;
+            _actingEnemyIndex = null;
+            _playerTurn = false;
+            _selectedCommandKey = 'root:Attack';
+            _battleLog.add('You are down. Waiting for your party...');
+          });
+          return;
+        }
+        await _finishBattle(
+          MonsterBattleOutcome.defeat,
+          widget.isPartyBattle
+              ? 'Your party has been defeated.'
+              : 'You were defeated by battle effects.',
+        );
+        return;
+      }
+      final monsterFxAmount = math.max(damageToMonster, damageToAllEnemies);
+      if (monsterFxAmount > 0) {
+        unawaited(
+          _playSpriteFx(
+            targetMonster: true,
+            amount: monsterFxAmount,
+            healing: false,
+          ),
         );
       }
-    }
-    _ensureSelectedEnemyIsAlive();
-
-    setState(() {
-      _busy = true;
-      _menuView = _BattleMenuView.root;
-      _selectedCommandKey = 'root:Attack';
-      _playerHealth = (_playerHealth + playerHealthDelta)
-          .clamp(0, _playerMaxHealth)
-          .toInt();
-      _playerMana = (_playerMana + playerManaDelta)
-          .clamp(0, _playerMaxMana)
-          .toInt();
+      if (playerHealthDelta != 0) {
+        unawaited(
+          _playSpriteFx(
+            targetMonster: false,
+            amount: playerHealthDelta.abs(),
+            healing: playerHealthDelta > 0,
+          ),
+        );
+      }
       if (widget.isPartyBattle &&
           allyTargetIndex != null &&
           allyTargetIndex >= 0 &&
           allyTargetIndex < _partyAllies.length &&
-          (allyHealthDelta != 0 || allyManaDelta != 0)) {
-        final ally = _partyAllies[allyTargetIndex];
-        ally.currentHealth = (ally.currentHealth + allyHealthDelta)
-            .clamp(0, ally.maxHealth)
-            .toInt();
-        ally.currentMana = (ally.currentMana + allyManaDelta)
-            .clamp(0, ally.maxMana)
-            .toInt();
-        if (ally.isSelf) {
-          _playerHealth = ally.currentHealth;
-          _playerMana = ally.currentMana;
+          _partyAllies[allyTargetIndex].isSelf &&
+          allyHealthDelta != 0) {
+        unawaited(
+          _playSpriteFx(
+            targetMonster: false,
+            amount: allyHealthDelta.abs(),
+            healing: allyHealthDelta > 0,
+          ),
+        );
+      }
+
+      if (!widget.isPartyBattle && _aliveEnemies.isEmpty) {
+        await _finishBattle(
+          MonsterBattleOutcome.victory,
+          _enemies.length == 1
+              ? 'You defeated ${_enemies.first.monster.name}!'
+              : 'You defeated the entire encounter!',
+        );
+        return;
+      }
+      if (widget.isPartyBattle && _aliveEnemies.isEmpty) {
+        await _finishBattle(
+          MonsterBattleOutcome.victory,
+          _enemies.length == 1
+              ? 'Your party defeated ${_enemies.first.monster.name}!'
+              : 'Your party defeated the entire encounter!',
+        );
+        return;
+      }
+
+      if (widget.isPartyBattle) {
+        setState(() {
+          _busy = false;
+          _actingEnemyIndex = null;
+          _selectedCommandKey = 'root:Attack';
+        });
+        if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
+          await _runPartyMonsterTurn();
+        }
+        return;
+      }
+
+      setState(() {
+        _playerTurn = false;
+        _actingEnemyIndex = _firstAliveEnemyIndex();
+      });
+      await _monsterTurn();
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[combat][_resolvePlayerAction] party=${widget.isPartyBattle} '
+        'damageToMonster=$damageToMonster damageToAllEnemies=$damageToAllEnemies '
+        'playerTurn=$_playerTurn busy=$_busy battleOver=$_battleOver '
+        'turnIndex=$_partyTurnIndex turnOrder=${_partyTurnOrder.length} '
+        'error=$error\n$stackTrace',
+      );
+      if (!mounted || _battleOver) return;
+      if (widget.isPartyBattle) {
+        try {
+          await _syncPartyBattleState();
+        } catch (_) {
+          // Fall through to local unlock if sync recovery fails.
         }
       }
-      _syncSelfAllyFromLocalResources();
-      if (damageToMonster > 0 && damageToAllEnemies <= 0) {
-        _battleLog.add('$message (Target: $targetName).');
-      } else {
-        _battleLog.add(message);
-      }
-    });
-    unawaited(_syncPartySelfResourcesToBackend());
-    final sharedDamage =
-        (math.max(0, damageToMonster) + math.max(0, damageToAllEnemies))
-            .toInt();
-    if (sharedDamage > 0) {
-      if (widget.isPartyBattle) {
-        await _reportPartyBattleDamage(sharedDamage);
-      } else {
-        await _reportSoloBattleDamage(sharedDamage);
-      }
       if (!mounted || _battleOver) return;
-    }
-    final monsterFxAmount = math.max(damageToMonster, damageToAllEnemies);
-    if (monsterFxAmount > 0) {
-      unawaited(
-        _playSpriteFx(
-          targetMonster: true,
-          amount: monsterFxAmount,
-          healing: false,
-        ),
-      );
-    }
-    if (playerHealthDelta != 0) {
-      unawaited(
-        _playSpriteFx(
-          targetMonster: false,
-          amount: playerHealthDelta.abs(),
-          healing: playerHealthDelta > 0,
-        ),
-      );
-    }
-    if (widget.isPartyBattle &&
-        allyTargetIndex != null &&
-        allyTargetIndex >= 0 &&
-        allyTargetIndex < _partyAllies.length &&
-        _partyAllies[allyTargetIndex].isSelf &&
-        allyHealthDelta != 0) {
-      unawaited(
-        _playSpriteFx(
-          targetMonster: false,
-          amount: allyHealthDelta.abs(),
-          healing: allyHealthDelta > 0,
-        ),
-      );
-    }
-
-    if (!widget.isPartyBattle && _aliveEnemies.isEmpty) {
-      await _finishBattle(
-        MonsterBattleOutcome.victory,
-        _enemies.length == 1
-            ? 'You defeated ${_enemies.first.monster.name}!'
-            : 'You defeated the entire encounter!',
-      );
-      return;
-    }
-    if (widget.isPartyBattle && _aliveEnemies.isEmpty) {
-      await _finishBattle(
-        MonsterBattleOutcome.victory,
-        _enemies.length == 1
-            ? 'Your party defeated ${_enemies.first.monster.name}!'
-            : 'Your party defeated the entire encounter!',
-      );
-      return;
-    }
-
-    if (widget.isPartyBattle) {
       setState(() {
         _busy = false;
         _actingEnemyIndex = null;
         _selectedCommandKey = 'root:Attack';
-        _advancePartyTurn();
-        _refreshPartyTurnFlag();
+        _battleLog.add(
+          _extractApiErrorMessage(
+            error,
+            fallback: 'Combat sync hiccuped. Try your action again.',
+          ),
+        );
+        if (!widget.isPartyBattle) {
+          _playerTurn = true;
+        } else {
+          _refreshPartyTurnFlag(announce: false);
+        }
       });
-      if (_isPartyMonsterTurn() && !_partyMonsterTurnInFlight && !_busy) {
-        await _runPartyMonsterTurn();
-      }
-      return;
     }
-
-    setState(() {
-      _playerTurn = false;
-      _actingEnemyIndex = _firstAliveEnemyIndex();
-    });
-    await _monsterTurn();
   }
 
   Future<void> _monsterTurn() async {
@@ -2019,49 +2875,43 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return selected;
   }
 
-  Future<int?> _pickSingleTargetAllyIndex({required String actionLabel}) async {
-    if (!widget.isPartyBattle || _partyAllies.isEmpty) return null;
-    if (_partyAllies.length == 1) return 0;
+  Future<_PartyAllyState?> _pickSingleTargetAlly({
+    required String actionLabel,
+  }) async {
+    final options = _supportTargetOptions();
+    if (options.isEmpty) return null;
+    if (options.length == 1) return options.first;
 
-    final initialTarget =
-        (_activeAllyIndex >= 0 && _activeAllyIndex < _partyAllies.length)
-        ? _activeAllyIndex
-        : 0;
     final selected = await showDialog<int>(
       context: context,
       builder: (dialogContext) {
         final theme = Theme.of(dialogContext);
         return AlertDialog(
-          title: Text('Choose ally for $actionLabel'),
+          title: Text('Choose party member for $actionLabel'),
           content: SizedBox(
             width: 360,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 320),
               child: ListView.separated(
                 shrinkWrap: true,
-                itemCount: _partyAllies.length,
+                itemCount: options.length,
                 separatorBuilder: (context, index) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
-                  final ally = _partyAllies[index];
-                  final isSelected = index == initialTarget;
+                  final ally = options[index];
                   return InkWell(
                     onTap: () => Navigator.of(dialogContext).pop(index),
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: isSelected
-                            ? const Color(0xFFB5872F).withValues(alpha: 0.14)
-                            : theme.colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.45),
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isSelected
-                              ? const Color(0xFFB5872F)
-                              : theme.colorScheme.outline.withValues(
-                                  alpha: 0.55,
-                                ),
-                          width: isSelected ? 1.8 : 1.2,
+                          color: theme.colorScheme.outline.withValues(
+                            alpha: 0.55,
+                          ),
+                          width: 1.2,
                         ),
                       ),
                       child: Row(
@@ -2102,13 +2952,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${ally.currentHealth}/${ally.maxHealth}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                          if (ally.maxHealth > 1 || ally.currentHealth > 0) ...[
+                            const SizedBox(width: 10),
+                            Text(
+                              '${ally.currentHealth}/${ally.maxHealth}',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),
@@ -2126,11 +2978,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         );
       },
     );
-    if (!mounted || selected == null) return selected;
-    setState(() {
-      _activeAllyIndex = selected;
-    });
-    return selected;
+    if (!mounted || selected == null) return null;
+    return options[selected];
   }
 
   Future<void> _attack() async {
@@ -2151,6 +3000,17 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       message: '$_playerName attacks ${target.monster.name} for $damage damage',
       damageToMonster: damage,
       targetEnemyIndex: targetIndex,
+      onAfterTurnSynced: (damageResponse) async {
+        if (damageResponse != null && damageResponse.isNotEmpty) {
+          _advanceLocalTechniqueCooldownsForAction();
+        }
+        setState(() {
+          _applyTurnSyncResults(
+            turnResponse: damageResponse,
+            targetEnemyIndex: targetIndex,
+          );
+        });
+      },
     );
   }
 
@@ -2192,16 +3052,12 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         : 0;
     final damage = singleTargetDamage > 0 ? singleTargetDamage : fallbackDamage;
     final healing = _abilityHealing(ability);
-    final isSupportAbility =
-        widget.isPartyBattle && damage <= 0 && allEnemiesDamage <= 0;
-    final targetedSupportAmount = ability.effects
-        .where((effect) {
-          final type = effect.type.trim().toLowerCase();
-          return type == 'restore_life_party_member' ||
-              type == 'revive_party_member';
-        })
-        .fold<int>(0, (sum, effect) => sum + math.max(0, effect.amount));
-    final requiresSupportTarget = isSupportAbility && targetedSupportAmount > 0;
+    final isSupportAbility = damage <= 0 && allEnemiesDamage <= 0;
+    final requiresSupportTarget = ability.effects.any((effect) {
+      final type = effect.type.trim().toLowerCase();
+      return type == 'restore_life_party_member' ||
+          type == 'revive_party_member';
+    });
     final parts = <String>['$_playerName uses ${ability.name}'];
     if (damage > 0) parts.add('dealing $damage damage');
     if (allEnemiesDamage > 0) {
@@ -2212,6 +3068,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     int? targetIndex;
     int? allyTargetIndex;
+    _PartyAllyState? selectedSupportTarget;
     String? allyTargetName;
     final resolvedBattleMonsterId = () {
       if (widget.isPartyBattle) {
@@ -2234,77 +3091,181 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       }
     }
     if (isSupportAbility) {
-      if (requiresSupportTarget && _partyAllies.length > 1) {
-        allyTargetIndex = await _pickSingleTargetAllyIndex(
+      if (requiresSupportTarget) {
+        selectedSupportTarget = await _pickSingleTargetAlly(
           actionLabel: ability.name,
         );
-        if (!mounted || !_canAct || allyTargetIndex == null) return;
-      } else if (requiresSupportTarget) {
-        allyTargetIndex = _partyAllies.isEmpty ? null : 0;
+        if (!mounted || !_canAct || selectedSupportTarget == null) return;
+        if (widget.isPartyBattle) {
+          allyTargetIndex = _partyAllies.indexWhere(
+            (ally) => ally.userId == selectedSupportTarget!.userId,
+          );
+          if (allyTargetIndex < 0) {
+            allyTargetIndex = null;
+          }
+        }
       }
-      if (allyTargetIndex != null &&
-          allyTargetIndex >= 0 &&
-          allyTargetIndex < _partyAllies.length) {
-        allyTargetName = _partyAllies[allyTargetIndex].name;
+      if (selectedSupportTarget != null) {
+        allyTargetName = selectedSupportTarget.name;
         parts.add('on $allyTargetName');
       }
-      final targetUserId =
-          (requiresSupportTarget &&
-              allyTargetIndex != null &&
-              allyTargetIndex >= 0 &&
-              allyTargetIndex < _partyAllies.length)
-          ? _partyAllies[allyTargetIndex].userId
+      final targetUserId = requiresSupportTarget
+          ? selectedSupportTarget?.userId ?? ''
           : '';
       if (ability.id.trim().isNotEmpty) {
-        final error = _isTechnique(ability)
-            ? await statsProvider.castTechnique(
+        final healthBeforeCast = _playerHealth;
+        final manaBeforeCast = _playerMana;
+        final result = _isTechnique(ability)
+            ? await statsProvider.castTechniqueDetailed(
                 ability.id,
                 targetUserId: targetUserId.isNotEmpty ? targetUserId : null,
                 targetMonsterId: resolvedBattleMonsterId,
+                refreshAfterCast: !widget.isPartyBattle,
               )
-            : await statsProvider.castSpell(
+            : await statsProvider.castSpellDetailed(
                 ability.id,
                 targetUserId: targetUserId.isNotEmpty ? targetUserId : null,
                 targetMonsterId: resolvedBattleMonsterId,
+                refreshAfterCast: !widget.isPartyBattle,
               );
-        if (error != null && error.trim().isNotEmpty) {
+        if (!result.isSuccess && (result.error?.trim().isNotEmpty ?? false)) {
           setState(() {
-            _battleLog.add(error.trim());
+            _battleLog.add(result.error!.trim());
             _menuView = _BattleMenuView.root;
           });
           return;
         }
-        _playerHealth = math.max(0, statsProvider.health);
-        _playerMana = math.max(0, statsProvider.mana);
+        _advanceLocalTechniqueCooldownsForAction(
+          excludeTechniqueId: _isTechnique(ability) ? ability.id.trim() : null,
+        );
+        _playerMana = _parseIntValue(
+          result.response['currentMana'],
+          fallback: _playerMana,
+        ).clamp(0, _playerMaxMana).toInt();
+        _applySelfHealsFromResponse(result.response);
+        if (!widget.isPartyBattle) {
+          _playerStatuses = List<CharacterStatus>.from(statsProvider.statuses);
+        }
+        if (widget.isPartyBattle) {
+          debugPrint(
+            '[combat][_useAbility][support] ability=${ability.name} '
+            'healthBefore=$healthBeforeCast healthAfter=$_playerHealth '
+            'manaBefore=$manaBeforeCast manaAfter=$_playerMana '
+            'response=${result.response}',
+          );
+        }
+        final didSelfHealthChange = _playerHealth != healthBeforeCast;
+        final didManaChange = _playerMana != manaBeforeCast;
         _spells = statsProvider.spells;
         _techniques = statsProvider.techniques;
         _syncTechniqueCooldownsFromAbilities();
+        _setTechniqueCooldownFromResponse(ability, result.response);
         _syncSelfAllyFromLocalResources();
+        await _resolvePlayerAction(
+          message: parts.join(', '),
+          damageToMonster: damage,
+          damageToAllEnemies: allEnemiesDamage,
+          targetEnemyIndex: targetIndex,
+          playerHealthDelta: 0,
+          playerManaDelta: 0,
+          allyTargetIndex: allyTargetIndex,
+          allyHealthDelta: 0,
+          syncPartyHealth: didSelfHealthChange,
+          syncPartyMana: didManaChange,
+          onAfterTurnSynced: (damageResponse) async {
+            final hasSeparateTurnResponse =
+                damageResponse != null && damageResponse.isNotEmpty;
+            setState(() {
+              _applyTurnSyncResults(
+                setupResponse: result.response,
+                turnResponse: hasSeparateTurnResponse ? damageResponse : null,
+                targetEnemyIndex: targetIndex,
+                refreshPlayerStatusesFromProvider: false,
+              );
+            });
+            if (widget.isPartyBattle && !hasSeparateTurnResponse) {
+              await _syncPartyBattleState();
+            }
+          },
+        );
+        return;
       }
     }
     if (!isSupportAbility && ability.id.trim().isNotEmpty) {
-      final error = _isTechnique(ability)
-          ? await statsProvider.castTechnique(
+      final healthBeforeCast = _playerHealth;
+      final manaBeforeCast = _playerMana;
+      final result = _isTechnique(ability)
+          ? await statsProvider.castTechniqueDetailed(
               ability.id,
               targetMonsterId: resolvedBattleMonsterId,
+              refreshAfterCast: !widget.isPartyBattle,
             )
-          : await statsProvider.castSpell(
+          : await statsProvider.castSpellDetailed(
               ability.id,
               targetMonsterId: resolvedBattleMonsterId,
+              refreshAfterCast: !widget.isPartyBattle,
             );
-      if (error != null && error.trim().isNotEmpty) {
+      if (!result.isSuccess && (result.error?.trim().isNotEmpty ?? false)) {
         setState(() {
-          _battleLog.add(error.trim());
+          _battleLog.add(result.error!.trim());
           _menuView = _BattleMenuView.root;
         });
         return;
       }
-      _playerHealth = math.max(0, statsProvider.health);
-      _playerMana = math.max(0, statsProvider.mana);
+      _advanceLocalTechniqueCooldownsForAction(
+        excludeTechniqueId: _isTechnique(ability) ? ability.id.trim() : null,
+      );
+      _playerMana = _parseIntValue(
+        result.response['currentMana'],
+        fallback: _playerMana,
+      ).clamp(0, _playerMaxMana).toInt();
+      _applySelfHealsFromResponse(result.response);
+      if (!widget.isPartyBattle) {
+        _playerStatuses = List<CharacterStatus>.from(statsProvider.statuses);
+      }
+      if (widget.isPartyBattle) {
+        debugPrint(
+          '[combat][_useAbility][offense] ability=${ability.name} '
+          'healthBefore=$healthBeforeCast healthAfter=$_playerHealth '
+          'manaBefore=$manaBeforeCast manaAfter=$_playerMana '
+          'response=${result.response}',
+        );
+      }
+      final didSelfHealthChange = _playerHealth != healthBeforeCast;
+      final didManaChange = _playerMana != manaBeforeCast;
       _spells = statsProvider.spells;
       _techniques = statsProvider.techniques;
       _syncTechniqueCooldownsFromAbilities();
+      _setTechniqueCooldownFromResponse(ability, result.response);
       _syncSelfAllyFromLocalResources();
+      await _resolvePlayerAction(
+        message: parts.join(', '),
+        damageToMonster: damage,
+        damageToAllEnemies: allEnemiesDamage,
+        targetEnemyIndex: targetIndex,
+        playerHealthDelta: 0,
+        playerManaDelta: 0,
+        allyTargetIndex: allyTargetIndex,
+        allyHealthDelta: 0,
+        syncPartyHealth: didSelfHealthChange,
+        syncPartyMana: didManaChange,
+        onAfterTurnSynced: (damageResponse) async {
+          final hasSeparateTurnResponse =
+              damageResponse != null && damageResponse.isNotEmpty;
+          setState(() {
+            _applyTurnSyncResults(
+              setupResponse: result.response,
+              turnResponse: hasSeparateTurnResponse ? damageResponse : null,
+              targetEnemyIndex: targetIndex,
+              refreshPlayerStatusesFromProvider: false,
+            );
+          });
+          if (widget.isPartyBattle && !hasSeparateTurnResponse) {
+            await _syncPartyBattleState();
+          }
+        },
+      );
+      return;
     } else if (_isTechnique(ability)) {
       _setTechniqueCooldown(ability);
     }
@@ -2367,13 +3328,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
     int? allyTargetIndex;
     if (canTargetAlly) {
-      allyTargetIndex = await _pickSingleTargetAllyIndex(
-        actionLabel: item.name,
+      final selectedAlly = await _pickSingleTargetAlly(actionLabel: item.name);
+      if (!mounted || !_canAct || selectedAlly == null) return;
+      allyTargetIndex = _partyAllies.indexWhere(
+        (ally) => ally.userId == selectedAlly.userId,
       );
-      if (!mounted || !_canAct || allyTargetIndex == null) return;
-      if (allyTargetIndex >= 0 && allyTargetIndex < _partyAllies.length) {
-        parts.add('on ${_partyAllies[allyTargetIndex].name}');
+      if (allyTargetIndex < 0) {
+        return;
       }
+      parts.add('on ${_partyAllies[allyTargetIndex].name}');
     } else if (widget.isPartyBattle &&
         item.revivePartyMemberHealth > 0 &&
         _partyAllies.isNotEmpty) {
@@ -2487,6 +3450,15 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       allyTargetIndex: allyTargetIndex,
       allyHealthDelta: allyHealthDelta,
       allyManaDelta: allyTargetIndex != null ? item.manaDelta : 0,
+      onAfterTurnSynced: (damageResponse) async {
+        if (damageResponse == null || damageResponse.isEmpty) return;
+        setState(() {
+          _applyTurnSyncResults(
+            turnResponse: damageResponse,
+            targetEnemyIndex: targetIndex,
+          );
+        });
+      },
     );
   }
 
@@ -2556,6 +3528,77 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     );
   }
 
+  String _combatStatusTickText(_CombatStatusVisual status) {
+    final parts = <String>[];
+    if (status.damagePerTick > 0) {
+      parts.add('-${status.damagePerTick} HP/turn');
+    }
+    if (status.healthPerTick != 0) {
+      final prefix = status.healthPerTick > 0 ? '+' : '';
+      parts.add('$prefix${status.healthPerTick} HP/turn');
+    }
+    if (status.manaPerTick != 0) {
+      final prefix = status.manaPerTick > 0 ? '+' : '';
+      parts.add('$prefix${status.manaPerTick} MP/turn');
+    }
+    return parts.join('  ');
+  }
+
+  Widget _buildCombatStatusWrap(
+    ThemeData theme, {
+    required List<_CombatStatusVisual> statuses,
+  }) {
+    if (statuses.isEmpty) {
+      return Text(
+        'No active effects.',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: statuses
+          .map((status) {
+            final accentColor = status.positive
+                ? const Color(0xFF2B7A4B)
+                : const Color(0xFF8C2F39);
+            final tickText = _combatStatusTickText(status);
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _statusDisplayName(status.name, status.effectType),
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: accentColor,
+                    ),
+                  ),
+                  if (tickText.isNotEmpty)
+                    Text(
+                      tickText,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          })
+          .toList(growable: false),
+    );
+  }
+
   Widget _buildStatusPanel({
     required ThemeData theme,
     required String name,
@@ -2564,6 +3607,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     required int maxHp,
     int? currentMana,
     int? maxMana,
+    List<_CombatStatusVisual> statuses = const [],
   }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
@@ -2616,6 +3660,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
               color: const Color(0xFF355C7D),
             ),
           ],
+          const SizedBox(height: 8),
+          _buildCombatStatusWrap(theme, statuses: statuses),
         ],
       ),
     );
@@ -2653,9 +3699,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                               if (entry.enemyIndex != null &&
                                   !entry.isDefeated) {
                                 _activeEnemyIndex = entry.enemyIndex!;
-                              }
-                              if (entry.allyIndex != null) {
-                                _activeAllyIndex = entry.allyIndex!;
                               }
                             });
                           };
@@ -3048,13 +4091,29 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     final activeEnemyLevel = activeEnemy?.monster.level ?? 1;
     final activeEnemyHp = activeEnemy?.currentHealth ?? 0;
     final activeEnemyMaxHp = activeEnemy?.maxHealth ?? 1;
-    final activeAlly = _activeAlly;
+    final activeEnemyStatuses = activeEnemy == null
+        ? const <_CombatStatusVisual>[]
+        : activeEnemy.statuses
+              .map(_CombatStatusVisual.fromMonsterStatus)
+              .toList(growable: false);
+    final activeAlly = widget.isPartyBattle ? _selfPartyAlly : _activeAlly;
     final allyName = activeAlly?.name ?? _playerName;
     final allyLevel = activeAlly?.level ?? _playerLevel;
-    final allyCurrentHp = activeAlly?.currentHealth ?? _playerHealth;
-    final allyMaxHp = activeAlly?.maxHealth ?? _playerMaxHealth;
-    final allyCurrentMana = activeAlly?.currentMana ?? _playerMana;
-    final allyMaxMana = activeAlly?.maxMana ?? _playerMaxMana;
+    final allyCurrentHp = widget.isPartyBattle
+        ? _playerHealth
+        : (activeAlly?.currentHealth ?? _playerHealth);
+    final allyMaxHp = widget.isPartyBattle
+        ? _playerMaxHealth
+        : (activeAlly?.maxHealth ?? _playerMaxHealth);
+    final allyCurrentMana = widget.isPartyBattle
+        ? _playerMana
+        : (activeAlly?.currentMana ?? _playerMana);
+    final allyMaxMana = widget.isPartyBattle
+        ? _playerMaxMana
+        : (activeAlly?.maxMana ?? _playerMaxMana);
+    final playerStatuses = _playerStatuses
+        .map(_CombatStatusVisual.fromCharacterStatus)
+        .toList(growable: false);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -3092,6 +4151,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                         level: activeEnemyLevel,
                         currentHp: activeEnemyHp,
                         maxHp: activeEnemyMaxHp,
+                        statuses: activeEnemyStatuses,
                       ),
                     ),
                     const Spacer(),
@@ -3121,6 +4181,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
                         maxHp: allyMaxHp,
                         currentMana: allyCurrentMana,
                         maxMana: allyMaxMana,
+                        statuses: playerStatuses,
                       ),
                     ),
                   ],

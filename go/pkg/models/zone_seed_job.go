@@ -57,6 +57,8 @@ type ZoneSeedJob struct {
 	QuestCount           int           `json:"questCount"`
 	MainQuestCount       int           `json:"mainQuestCount"`
 	MonsterCount         int           `json:"monsterCount"`
+	BossEncounterCount   int           `json:"bossEncounterCount"`
+	RaidEncounterCount   int           `json:"raidEncounterCount"`
 	InputEncounterCount  int           `json:"inputEncounterCount"`
 	OptionEncounterCount int           `json:"optionEncounterCount"`
 	TreasureChestCount   int           `json:"treasureChestCount"`

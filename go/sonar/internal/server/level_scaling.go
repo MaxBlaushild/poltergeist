@@ -13,6 +13,8 @@ const (
 	challengeScaledDifficultyBuffer    = 20
 	challengeScaledStatGainPerLevel    = 3
 	challengeScaledNoStatDifficultyCap = 50
+	standardEncounterScaleFactor       = 0.90
+	raidEncounterRecommendedPartySize  = 5.0
 )
 
 func normalizeScaledLevel(level int) int {
@@ -129,12 +131,12 @@ func challengeWithScaledDifficulty(challenge models.Challenge, userLevel int) mo
 	return challenge
 }
 
-func scaledEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
+func scaledStandardEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
 	normalizedLevel := normalizeScaledLevel(level)
-	scaleFactor := 0.90
+	scaleFactor := standardEncounterScaleFactor
 	switch {
 	case memberCount <= 1:
-		scaleFactor = 0.90
+		scaleFactor = standardEncounterScaleFactor
 	case memberCount == 2:
 		scaleFactor = 0.50
 	default:
@@ -142,4 +144,27 @@ func scaledEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
 	}
 	scaled := int(math.Round(float64(normalizedLevel) * scaleFactor))
 	return maxInt(1, scaled)
+}
+
+func scaledRaidEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
+	normalizedLevel := normalizeScaledLevel(level)
+	normalizedMemberCount := maxInt(1, memberCount)
+	scaleFactor := (standardEncounterScaleFactor * raidEncounterRecommendedPartySize) / float64(normalizedMemberCount)
+	scaled := int(math.Round(float64(normalizedLevel) * scaleFactor))
+	return maxInt(1, scaled)
+}
+
+func scaledEncounterMonsterLevelForUserLevelAndType(level int, memberCount int, encounterType models.MonsterEncounterType) int {
+	switch models.NormalizeMonsterEncounterType(string(encounterType)) {
+	case models.MonsterEncounterTypeBoss:
+		return scaledStandardEncounterMonsterLevelForUserLevel(level+5, memberCount)
+	case models.MonsterEncounterTypeRaid:
+		return scaledRaidEncounterMonsterLevelForUserLevel(level, memberCount)
+	default:
+		return scaledStandardEncounterMonsterLevelForUserLevel(level, memberCount)
+	}
+}
+
+func scaledEncounterMonsterLevelForUserLevel(level int, memberCount int) int {
+	return scaledEncounterMonsterLevelForUserLevelAndType(level, memberCount, models.MonsterEncounterTypeMonster)
 }

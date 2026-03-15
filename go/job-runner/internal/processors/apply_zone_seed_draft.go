@@ -271,8 +271,8 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 	zone *models.Zone,
 	job *models.ZoneSeedJob,
 ) error {
-	encounterCount := job.MonsterCount
-	if encounterCount <= 0 {
+	totalEncounterCount := job.MonsterCount + job.BossEncounterCount + job.RaidEncounterCount
+	if totalEncounterCount <= 0 {
 		return nil
 	}
 
@@ -285,97 +285,176 @@ func (p *ApplyZoneSeedDraftProcessor) seedMonsterEncountersForZone(
 	}
 
 	locations := zoneSeedScenarioLocations(job.Draft.PointsOfInterest)
-	for i := 0; i < encounterCount; i++ {
-		location := p.randomLocationForZone(zone, locations)
-		leadTemplate := templates[rand.Intn(len(templates))]
-		memberCount := zoneSeedEncounterMemberCount()
-		now := time.Now()
-		recurringID, recurrenceFrequency, nextRecurrenceAt, err := zoneSeedDefaultRecurrence(now)
-		if err != nil {
-			return fmt.Errorf("failed to calculate monster encounter recurrence: %w", err)
-		}
-
-		encounterName := zoneSeedEncounterName(strings.TrimSpace(leadTemplate.Name), memberCount)
-		encounterDescription := zoneSeedEncounterDescription(strings.TrimSpace(leadTemplate.Description), memberCount)
-		encounterImageURL := strings.TrimSpace(leadTemplate.ImageURL)
-		encounterThumbnailURL := strings.TrimSpace(leadTemplate.ThumbnailURL)
-		if encounterThumbnailURL == "" {
-			encounterThumbnailURL = encounterImageURL
-		}
-
-		encounter := &models.MonsterEncounter{
-			ID:                          uuid.New(),
-			CreatedAt:                   now,
-			UpdatedAt:                   now,
-			Name:                        encounterName,
-			Description:                 encounterDescription,
-			ImageURL:                    encounterImageURL,
-			ThumbnailURL:                encounterThumbnailURL,
-			ScaleWithUserLevel:          true,
-			RecurringMonsterEncounterID: &recurringID,
-			RecurrenceFrequency:         &recurrenceFrequency,
-			NextRecurrenceAt:            &nextRecurrenceAt,
-			ZoneID:                      zone.ID,
-			Latitude:                    location.Latitude,
-			Longitude:                   location.Longitude,
-		}
-		if err := p.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
-			return fmt.Errorf("failed to create monster encounter %d/%d: %w", i+1, encounterCount, err)
-		}
-
-		members := make([]models.MonsterEncounterMember, 0, memberCount)
-		for slot := 0; slot < memberCount; slot++ {
-			template := leadTemplate
-			if slot > 0 {
-				template = templates[rand.Intn(len(templates))]
+	type zoneSeedEncounterBatch struct {
+		count         int
+		encounterType models.MonsterEncounterType
+	}
+	batches := []zoneSeedEncounterBatch{
+		{count: job.MonsterCount, encounterType: models.MonsterEncounterTypeMonster},
+		{count: job.BossEncounterCount, encounterType: models.MonsterEncounterTypeBoss},
+		{count: job.RaidEncounterCount, encounterType: models.MonsterEncounterTypeRaid},
+	}
+	encounterOrdinal := 0
+	for _, batch := range batches {
+		templatePool := preferredZoneSeedTemplatesForEncounterType(templates, batch.encounterType)
+		for i := 0; i < batch.count; i++ {
+			encounterOrdinal++
+			if err := p.createZoneSeedEncounter(ctx, zone, locations, templatePool, encounterOrdinal, totalEncounterCount, batch.encounterType); err != nil {
+				return err
 			}
-			templateID := template.ID
-
-			imageURL := strings.TrimSpace(template.ImageURL)
-			thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
-			if thumbnailURL == "" {
-				thumbnailURL = imageURL
-			}
-
-			monster := &models.Monster{
-				ID:               uuid.New(),
-				CreatedAt:        time.Now(),
-				UpdatedAt:        time.Now(),
-				Name:             strings.TrimSpace(template.Name),
-				Description:      strings.TrimSpace(template.Description),
-				ImageURL:         imageURL,
-				ThumbnailURL:     thumbnailURL,
-				ZoneID:           zone.ID,
-				Latitude:         location.Latitude,
-				Longitude:        location.Longitude,
-				TemplateID:       &templateID,
-				Level:            5 + rand.Intn(26),
-				RewardMode:       models.RewardModeRandom,
-				RandomRewardSize: models.RandomRewardSizeSmall,
-			}
-			if imageURL != "" {
-				monster.ImageGenerationStatus = models.MonsterImageGenerationStatusComplete
-				emptyError := ""
-				monster.ImageGenerationError = &emptyError
-			} else {
-				monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
-			}
-
-			if err := p.dbClient.Monster().Create(ctx, monster); err != nil {
-				return fmt.Errorf("failed to create monster encounter member %d/%d: %w", slot+1, memberCount, err)
-			}
-			members = append(members, models.MonsterEncounterMember{
-				MonsterID: monster.ID,
-				Slot:      slot + 1,
-			})
-		}
-
-		if err := p.dbClient.MonsterEncounter().ReplaceMembers(ctx, encounter.ID, members); err != nil {
-			return fmt.Errorf("failed to attach encounter members: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func (p *ApplyZoneSeedDraftProcessor) createZoneSeedEncounter(
+	ctx context.Context,
+	zone *models.Zone,
+	locations []zoneSeedScenarioLocation,
+	templates []models.MonsterTemplate,
+	encounterOrdinal int,
+	totalEncounterCount int,
+	encounterType models.MonsterEncounterType,
+) error {
+	location := p.randomLocationForZone(zone, locations)
+	leadTemplate := templates[rand.Intn(len(templates))]
+	memberCount := zoneSeedEncounterMemberCount(encounterType)
+	now := time.Now()
+	recurringID, recurrenceFrequency, nextRecurrenceAt, err := zoneSeedDefaultRecurrence(now)
+	if err != nil {
+		return fmt.Errorf("failed to calculate monster encounter recurrence: %w", err)
+	}
+
+	encounterName := zoneSeedEncounterName(strings.TrimSpace(leadTemplate.Name), memberCount, encounterType)
+	encounterDescription := zoneSeedEncounterDescription(strings.TrimSpace(leadTemplate.Description), memberCount, encounterType)
+	encounterImageURL := strings.TrimSpace(leadTemplate.ImageURL)
+	encounterThumbnailURL := strings.TrimSpace(leadTemplate.ThumbnailURL)
+	if encounterThumbnailURL == "" {
+		encounterThumbnailURL = encounterImageURL
+	}
+
+	encounter := &models.MonsterEncounter{
+		ID:                          uuid.New(),
+		CreatedAt:                   now,
+		UpdatedAt:                   now,
+		Name:                        encounterName,
+		Description:                 encounterDescription,
+		ImageURL:                    encounterImageURL,
+		ThumbnailURL:                encounterThumbnailURL,
+		EncounterType:               encounterType,
+		ScaleWithUserLevel:          true,
+		RecurringMonsterEncounterID: &recurringID,
+		RecurrenceFrequency:         &recurrenceFrequency,
+		NextRecurrenceAt:            &nextRecurrenceAt,
+		ZoneID:                      zone.ID,
+		Latitude:                    location.Latitude,
+		Longitude:                   location.Longitude,
+	}
+	if err := p.dbClient.MonsterEncounter().Create(ctx, encounter); err != nil {
+		return fmt.Errorf(
+			"failed to create %s encounter %d/%d: %w",
+			string(encounterType),
+			encounterOrdinal,
+			totalEncounterCount,
+			err,
+		)
+	}
+
+	members := make([]models.MonsterEncounterMember, 0, memberCount)
+	for slot := 0; slot < memberCount; slot++ {
+		template := leadTemplate
+		if slot > 0 {
+			template = templates[rand.Intn(len(templates))]
+		}
+		templateID := template.ID
+
+		imageURL := strings.TrimSpace(template.ImageURL)
+		thumbnailURL := strings.TrimSpace(template.ThumbnailURL)
+		if thumbnailURL == "" {
+			thumbnailURL = imageURL
+		}
+
+		monster := &models.Monster{
+			ID:               uuid.New(),
+			CreatedAt:        time.Now(),
+			UpdatedAt:        time.Now(),
+			Name:             strings.TrimSpace(template.Name),
+			Description:      strings.TrimSpace(template.Description),
+			ImageURL:         imageURL,
+			ThumbnailURL:     thumbnailURL,
+			ZoneID:           zone.ID,
+			Latitude:         location.Latitude,
+			Longitude:        location.Longitude,
+			TemplateID:       &templateID,
+			Level:            5 + rand.Intn(26),
+			RewardMode:       models.RewardModeRandom,
+			RandomRewardSize: models.RandomRewardSizeSmall,
+		}
+		if imageURL != "" {
+			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusComplete
+			emptyError := ""
+			monster.ImageGenerationError = &emptyError
+		} else {
+			monster.ImageGenerationStatus = models.MonsterImageGenerationStatusNone
+		}
+
+		if err := p.dbClient.Monster().Create(ctx, monster); err != nil {
+			return fmt.Errorf(
+				"failed to create %s encounter member %d/%d: %w",
+				string(encounterType),
+				slot+1,
+				memberCount,
+				err,
+			)
+		}
+		members = append(members, models.MonsterEncounterMember{
+			MonsterID: monster.ID,
+			Slot:      slot + 1,
+		})
+	}
+
+	if err := p.dbClient.MonsterEncounter().ReplaceMembers(ctx, encounter.ID, members); err != nil {
+		return fmt.Errorf("failed to attach %s encounter members: %w", string(encounterType), err)
+	}
+
+	return nil
+}
+
+func preferredZoneSeedTemplatesForEncounterType(
+	templates []models.MonsterTemplate,
+	encounterType models.MonsterEncounterType,
+) []models.MonsterTemplate {
+	preferredTypes := []models.MonsterTemplateType{models.MonsterTemplateTypeMonster}
+	switch encounterType {
+	case models.MonsterEncounterTypeBoss:
+		preferredTypes = []models.MonsterTemplateType{
+			models.MonsterTemplateTypeBoss,
+			models.MonsterTemplateTypeMonster,
+			models.MonsterTemplateTypeRaid,
+		}
+	case models.MonsterEncounterTypeRaid:
+		preferredTypes = []models.MonsterTemplateType{
+			models.MonsterTemplateTypeRaid,
+			models.MonsterTemplateTypeBoss,
+			models.MonsterTemplateTypeMonster,
+		}
+	}
+
+	for _, preferredType := range preferredTypes {
+		matches := make([]models.MonsterTemplate, 0, len(templates))
+		for _, template := range templates {
+			if models.NormalizeMonsterTemplateType(string(template.MonsterType)) != preferredType {
+				continue
+			}
+			matches = append(matches, template)
+		}
+		if len(matches) > 0 {
+			return matches
+		}
+	}
+
+	return templates
 }
 
 func (p *ApplyZoneSeedDraftProcessor) enqueueScenarioGenerationJobs(
@@ -738,10 +817,16 @@ func fallbackStandalonePOIChallengeDescription(
 	return fmt.Sprintf("In %s, %s feels like a threshold between the ordinary and the uncanny. Play your part in the unfolding tale, then prove it by completing this action: %s", strings.TrimSpace(zoneName), name, strings.TrimSpace(question))
 }
 
-func zoneSeedEncounterName(baseName string, memberCount int) string {
+func zoneSeedEncounterName(baseName string, memberCount int, encounterType models.MonsterEncounterType) string {
 	trimmed := strings.TrimSpace(baseName)
 	if trimmed == "" {
 		trimmed = "Host"
+	}
+	switch encounterType {
+	case models.MonsterEncounterTypeBoss:
+		return fmt.Sprintf("%s Boss", trimmed)
+	case models.MonsterEncounterTypeRaid:
+		return fmt.Sprintf("%s Raid", trimmed)
 	}
 	if memberCount <= 1 {
 		return fmt.Sprintf("Wandering %s", trimmed)
@@ -749,8 +834,20 @@ func zoneSeedEncounterName(baseName string, memberCount int) string {
 	return fmt.Sprintf("%s Warband", trimmed)
 }
 
-func zoneSeedEncounterDescription(baseDescription string, memberCount int) string {
+func zoneSeedEncounterDescription(baseDescription string, memberCount int, encounterType models.MonsterEncounterType) string {
 	trimmed := strings.TrimSpace(baseDescription)
+	switch encounterType {
+	case models.MonsterEncounterTypeBoss:
+		if trimmed == "" {
+			return "An elite hostile presence dominates this part of the zone."
+		}
+		return fmt.Sprintf("%s This elite encounter is tuned above the player level curve.", trimmed)
+	case models.MonsterEncounterTypeRaid:
+		if trimmed == "" {
+			return "A large-scale hostile force has gathered here, demanding a full party response."
+		}
+		return fmt.Sprintf("%s This raid encounter is tuned for a full party of adventurers.", trimmed)
+	}
 	if trimmed == "" {
 		if memberCount <= 1 {
 			return "A lone hostile presence prowls this part of the zone."
@@ -763,7 +860,13 @@ func zoneSeedEncounterDescription(baseDescription string, memberCount int) strin
 	return fmt.Sprintf("%s This encounter has multiple hostile monsters acting together.", trimmed)
 }
 
-func zoneSeedEncounterMemberCount() int {
+func zoneSeedEncounterMemberCount(encounterType models.MonsterEncounterType) int {
+	switch encounterType {
+	case models.MonsterEncounterTypeBoss:
+		return 1
+	case models.MonsterEncounterTypeRaid:
+		return 5
+	}
 	roll := rand.Intn(100)
 	switch {
 	case roll < 45:

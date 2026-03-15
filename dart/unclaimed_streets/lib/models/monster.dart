@@ -1,5 +1,71 @@
 import 'spell.dart';
 
+class MonsterStatus {
+  final String id;
+  final String name;
+  final String description;
+  final String effect;
+  final bool positive;
+  final String effectType;
+  final int damagePerTick;
+  final int healthPerTick;
+  final DateTime? startedAt;
+  final DateTime? expiresAt;
+  final DateTime? lastTickAt;
+
+  const MonsterStatus({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.effect,
+    required this.positive,
+    required this.effectType,
+    this.damagePerTick = 0,
+    this.healthPerTick = 0,
+    this.startedAt,
+    this.expiresAt,
+    this.lastTickAt,
+  });
+
+  factory MonsterStatus.fromJson(Map<String, dynamic> json) {
+    DateTime? parseDate(dynamic raw) {
+      if (raw is String && raw.trim().isNotEmpty) {
+        return DateTime.tryParse(raw.trim());
+      }
+      return null;
+    }
+
+    bool parseBool(dynamic raw, {bool fallback = true}) {
+      if (raw is bool) return raw;
+      if (raw is String) {
+        final normalized = raw.trim().toLowerCase();
+        if (normalized == 'true') return true;
+        if (normalized == 'false') return false;
+      }
+      return fallback;
+    }
+
+    int parseInt(dynamic raw) {
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? 0;
+    }
+
+    return MonsterStatus(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      effect: json['effect']?.toString() ?? '',
+      positive: parseBool(json['positive'], fallback: true),
+      effectType: json['effectType']?.toString() ?? '',
+      damagePerTick: parseInt(json['damagePerTick']),
+      healthPerTick: parseInt(json['healthPerTick']),
+      startedAt: parseDate(json['startedAt']),
+      expiresAt: parseDate(json['expiresAt']),
+      lastTickAt: parseDate(json['lastTickAt']),
+    );
+  }
+}
+
 class MonsterTemplate {
   final String id;
   final String name;
@@ -142,6 +208,7 @@ class Monster {
   final List<Spell> spells;
   final List<Spell> techniques;
   final List<MonsterItemReward> itemRewards;
+  final List<MonsterStatus> statuses;
 
   const Monster({
     required this.id,
@@ -178,6 +245,7 @@ class Monster {
     this.spells = const [],
     this.techniques = const [],
     this.itemRewards = const [],
+    this.statuses = const [],
   });
 
   factory Monster.fromJson(Map<String, dynamic> json) {
@@ -242,6 +310,20 @@ class Monster {
       }
     }
 
+    final statuses = <MonsterStatus>[];
+    final rawStatuses = json['statuses'];
+    if (rawStatuses is List) {
+      for (final status in rawStatuses) {
+        if (status is Map<String, dynamic>) {
+          statuses.add(MonsterStatus.fromJson(status));
+        } else if (status is Map) {
+          statuses.add(
+            MonsterStatus.fromJson(Map<String, dynamic>.from(status)),
+          );
+        }
+      }
+    }
+
     return Monster(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
@@ -279,6 +361,7 @@ class Monster {
       spells: spells,
       techniques: techniques,
       itemRewards: itemRewards,
+      statuses: statuses,
     );
   }
 }
@@ -318,6 +401,7 @@ class MonsterEncounter {
   final String description;
   final String imageUrl;
   final String thumbnailUrl;
+  final String encounterType;
   final String zoneId;
   final String? pointOfInterestId;
   final double latitude;
@@ -332,6 +416,7 @@ class MonsterEncounter {
     this.description = '',
     this.imageUrl = '',
     this.thumbnailUrl = '',
+    this.encounterType = 'monster',
     required this.zoneId,
     this.pointOfInterestId,
     required this.latitude,
@@ -378,6 +463,10 @@ class MonsterEncounter {
       description: json['description']?.toString() ?? '',
       imageUrl: json['imageUrl']?.toString() ?? '',
       thumbnailUrl: json['thumbnailUrl']?.toString() ?? '',
+      encounterType:
+          (json['encounterType']?.toString().trim().isNotEmpty ?? false)
+          ? json['encounterType']!.toString().trim().toLowerCase()
+          : 'monster',
       zoneId: json['zoneId']?.toString() ?? '',
       pointOfInterestId: json['pointOfInterestId']?.toString(),
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
@@ -395,4 +484,19 @@ class MonsterEncounter {
 
   int get totalRewardGold =>
       monsters.fold<int>(0, (sum, monster) => sum + monster.rewardGold);
+
+  bool get isBossEncounter => encounterType == 'boss';
+
+  bool get isRaidEncounter => encounterType == 'raid';
+
+  String get encounterTypeLabel {
+    switch (encounterType) {
+      case 'boss':
+        return 'Boss Encounter';
+      case 'raid':
+        return 'Raid Encounter';
+      default:
+        return 'Monster Encounter';
+    }
+  }
 }

@@ -14,10 +14,14 @@ type DamageAffinity =
   | 'holy'
   | 'shadow';
 
+type MonsterEncounterType = 'monster' | 'boss' | 'raid';
+type MonsterTemplateType = 'monster' | 'boss' | 'raid';
+
 type MonsterTemplateRecord = {
   id: string;
   createdAt: string;
   updatedAt: string;
+  monsterType: MonsterTemplateType;
   name: string;
   description: string;
   imageUrl: string;
@@ -103,6 +107,7 @@ type MonsterEncounterRecord = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  encounterType: MonsterEncounterType;
   scaleWithUserLevel: boolean;
   recurrenceFrequency?: string | null;
   nextRecurrenceAt?: string | null;
@@ -147,6 +152,7 @@ type BulkMonsterTemplateStatus = {
   jobId: string;
   status: string;
   source?: string;
+  monsterType?: MonsterTemplateType;
   totalCount: number;
   createdCount: number;
   error?: string;
@@ -158,8 +164,27 @@ type BulkMonsterTemplateStatus = {
 
 const defaultMonsterUndiscoveredIconPrompt =
   'A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+const defaultBossUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered boss encounter. Hidden crown-horned beast silhouette with elite warning sigil motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+const defaultRaidUndiscoveredIconPrompt =
+  'A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette.';
+
+type EncounterIconState = {
+  url: string;
+  status: string;
+  exists: boolean;
+  requestedAt: string | null;
+  lastModified: string | null;
+  previewNonce: number;
+  prompt: string;
+  message: string | null;
+  error: string | null;
+  busy: boolean;
+  statusLoading: boolean;
+};
 
 type MonsterTemplateFormState = {
+  monsterType: MonsterTemplateType;
   name: string;
   description: string;
   imageUrl: string;
@@ -205,6 +230,7 @@ type MonsterEncounterFormState = {
   description: string;
   imageUrl: string;
   thumbnailUrl: string;
+  encounterType: MonsterEncounterType;
   scaleWithUserLevel: boolean;
   recurrenceFrequency: string;
   zoneId: string;
@@ -219,6 +245,45 @@ const recurrenceOptions = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
 ];
+
+const monsterEncounterTypeOptions: Array<{
+  value: MonsterEncounterType;
+  label: string;
+}> = [
+  { value: 'monster', label: 'Monster Encounter' },
+  { value: 'boss', label: 'Boss Encounter' },
+  { value: 'raid', label: 'Raid Encounter' },
+];
+
+const monsterTemplateTypeOptions: Array<{
+  value: MonsterTemplateType;
+  label: string;
+}> = [
+  { value: 'monster', label: 'Standard Monster' },
+  { value: 'boss', label: 'Boss Monster' },
+  { value: 'raid', label: 'Raid Monster' },
+];
+
+const encounterIconDefaults: Record<
+  MonsterEncounterType,
+  { label: string; url: string; prompt: string }
+> = {
+  monster: {
+    label: 'Monster',
+    url: 'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png',
+    prompt: defaultMonsterUndiscoveredIconPrompt,
+  },
+  boss: {
+    label: 'Boss',
+    url: 'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/boss-undiscovered.png',
+    prompt: defaultBossUndiscoveredIconPrompt,
+  },
+  raid: {
+    label: 'Raid',
+    url: 'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/raid-undiscovered.png',
+    prompt: defaultRaidUndiscoveredIconPrompt,
+  },
+};
 
 const damageAffinityOptions: DamageAffinity[] = [
   'physical',
@@ -249,6 +314,7 @@ const parseOptionalInt = (value: string): number | undefined => {
 };
 
 const emptyTemplateForm = (): MonsterTemplateFormState => ({
+  monsterType: 'monster',
   name: '',
   description: '',
   imageUrl: '',
@@ -268,6 +334,7 @@ const emptyTemplateForm = (): MonsterTemplateFormState => ({
 const templateFormFromRecord = (
   template: MonsterTemplateRecord
 ): MonsterTemplateFormState => ({
+  monsterType: template.monsterType ?? 'monster',
   name: template.name ?? '',
   description: template.description ?? '',
   imageUrl: template.imageUrl ?? '',
@@ -289,6 +356,7 @@ const templateFormFromRecord = (
 });
 
 const templatePayloadFromForm = (form: MonsterTemplateFormState) => ({
+  monsterType: form.monsterType,
   name: form.name.trim(),
   description: form.description.trim(),
   imageUrl: form.imageUrl.trim(),
@@ -398,6 +466,7 @@ const emptyMonsterEncounterForm = (): MonsterEncounterFormState => ({
   description: '',
   imageUrl: '',
   thumbnailUrl: '',
+  encounterType: 'monster',
   scaleWithUserLevel: false,
   recurrenceFrequency: '',
   zoneId: '',
@@ -413,6 +482,7 @@ const monsterEncounterFormFromRecord = (
   description: encounter.description ?? '',
   imageUrl: encounter.imageUrl ?? '',
   thumbnailUrl: encounter.thumbnailUrl ?? '',
+  encounterType: encounter.encounterType ?? 'monster',
   scaleWithUserLevel: Boolean(encounter.scaleWithUserLevel),
   recurrenceFrequency: encounter.recurrenceFrequency ?? '',
   zoneId: encounter.zoneId ?? '',
@@ -430,6 +500,7 @@ const monsterEncounterPayloadFromForm = (form: MonsterEncounterFormState) => ({
   description: form.description.trim(),
   imageUrl: form.imageUrl.trim(),
   thumbnailUrl: form.thumbnailUrl.trim(),
+  encounterType: form.encounterType,
   scaleWithUserLevel: form.scaleWithUserLevel,
   recurrenceFrequency: form.recurrenceFrequency,
   zoneId: form.zoneId.trim(),
@@ -460,6 +531,32 @@ const formatGenerationStatus = (status?: string) => {
 const formatAffinityLabel = (affinity?: string | null): string => {
   if (!affinity) return 'None';
   return affinity.charAt(0).toUpperCase() + affinity.slice(1);
+};
+
+const formatMonsterEncounterTypeLabel = (
+  encounterType?: string | null
+): string => {
+  switch ((encounterType || '').trim()) {
+    case 'boss':
+      return 'Boss Encounter';
+    case 'raid':
+      return 'Raid Encounter';
+    default:
+      return 'Monster Encounter';
+  }
+};
+
+const formatMonsterTemplateTypeLabel = (
+  monsterType?: string | null
+): string => {
+  switch ((monsterType || '').trim()) {
+    case 'boss':
+      return 'Boss Template';
+    case 'raid':
+      return 'Raid Template';
+    default:
+      return 'Standard Template';
+  }
 };
 
 const formatBulkTemplateStatus = (status?: string): string => {
@@ -500,6 +597,22 @@ const formatDate = (value?: string): string => {
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
 };
+
+const emptyEncounterIconState = (
+  encounterType: MonsterEncounterType
+): EncounterIconState => ({
+  url: encounterIconDefaults[encounterType].url,
+  status: 'unknown',
+  exists: false,
+  requestedAt: null,
+  lastModified: null,
+  previewNonce: Date.now(),
+  prompt: encounterIconDefaults[encounterType].prompt,
+  message: null,
+  error: null,
+  busy: false,
+  statusLoading: false,
+});
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || '';
 
@@ -542,33 +655,13 @@ export const Monsters = () => {
     null
   );
   const [geoLoading, setGeoLoading] = useState(false);
-  const [monsterUndiscoveredBusy, setMonsterUndiscoveredBusy] = useState(false);
-  const [
-    monsterUndiscoveredStatusLoading,
-    setMonsterUndiscoveredStatusLoading,
-  ] = useState(false);
-  const [monsterUndiscoveredError, setMonsterUndiscoveredError] = useState<
-    string | null
-  >(null);
-  const [monsterUndiscoveredMessage, setMonsterUndiscoveredMessage] = useState<
-    string | null
-  >(null);
-  const [monsterUndiscoveredUrl, setMonsterUndiscoveredUrl] = useState(
-    'https://crew-profile-icons.s3.amazonaws.com/thumbnails/placeholders/monster-undiscovered.png'
-  );
-  const [monsterUndiscoveredStatus, setMonsterUndiscoveredStatus] =
-    useState('unknown');
-  const [monsterUndiscoveredExists, setMonsterUndiscoveredExists] =
-    useState(false);
-  const [monsterUndiscoveredRequestedAt, setMonsterUndiscoveredRequestedAt] =
-    useState<string | null>(null);
-  const [monsterUndiscoveredLastModified, setMonsterUndiscoveredLastModified] =
-    useState<string | null>(null);
-  const [monsterUndiscoveredPreviewNonce, setMonsterUndiscoveredPreviewNonce] =
-    useState<number>(Date.now());
-  const [monsterUndiscoveredPrompt, setMonsterUndiscoveredPrompt] = useState(
-    defaultMonsterUndiscoveredIconPrompt
-  );
+  const [encounterIconStates, setEncounterIconStates] = useState<
+    Record<MonsterEncounterType, EncounterIconState>
+  >({
+    monster: emptyEncounterIconState('monster'),
+    boss: emptyEncounterIconState('boss'),
+    raid: emptyEncounterIconState('raid'),
+  });
 
   const [generatingMonsterId, setGeneratingMonsterId] = useState<string | null>(
     null
@@ -577,6 +670,8 @@ export const Monsters = () => {
     string | null
   >(null);
   const [bulkTemplateCount, setBulkTemplateCount] = useState('8');
+  const [bulkTemplateType, setBulkTemplateType] =
+    useState<MonsterTemplateType>('monster');
   const [bulkTemplateBusy, setBulkTemplateBusy] = useState(false);
   const [bulkTemplateJob, setBulkTemplateJob] =
     useState<BulkMonsterTemplateStatus | null>(null);
@@ -902,8 +997,13 @@ export const Monsters = () => {
         if (status.status === 'completed') {
           setBulkTemplateBusy(false);
           setBulkTemplateError(null);
+          const typeLabel = formatMonsterTemplateTypeLabel(
+            status.monsterType ?? bulkTemplateType
+          );
           setBulkTemplateMessage(
-            `Created ${status.createdCount} monster template(s).`
+            `Created ${status.createdCount} ${typeLabel}${
+              status.createdCount === 1 ? '' : 's'
+            }.`
           );
           await load(true);
         } else if (status.status === 'failed') {
@@ -923,7 +1023,7 @@ export const Monsters = () => {
         setBulkTemplateBusy(false);
       }
     },
-    [apiClient, load]
+    [apiClient, bulkTemplateType, load]
   );
 
   const handleBulkGenerateTemplates = async () => {
@@ -939,13 +1039,18 @@ export const Monsters = () => {
       setBulkTemplateJob(null);
       const response = await apiClient.post<BulkMonsterTemplateStatus>(
         '/sonar/monster-templates/bulk-generate',
-        { count }
+        { count, monsterType: bulkTemplateType }
       );
       setBulkTemplateJob(response);
       if (response.status === 'completed') {
         setBulkTemplateBusy(false);
+        const typeLabel = formatMonsterTemplateTypeLabel(
+          response.monsterType ?? bulkTemplateType
+        );
         setBulkTemplateMessage(
-          `Created ${response.createdCount} monster template(s).`
+          `Created ${response.createdCount} ${typeLabel}${
+            response.createdCount === 1 ? '' : 's'
+          }.`
         );
         await load(true);
       } else if (response.status === 'failed') {
@@ -960,6 +1065,43 @@ export const Monsters = () => {
         err instanceof Error
           ? err.message
           : 'Failed to bulk generate monster templates.';
+      setBulkTemplateError(message);
+      setBulkTemplateBusy(false);
+    }
+  };
+
+  const handleGenerateSingleTypedTemplate = async (
+    monsterType: MonsterTemplateType
+  ) => {
+    try {
+      setBulkTemplateBusy(true);
+      setBulkTemplateError(null);
+      setBulkTemplateMessage(null);
+      setBulkTemplateJob(null);
+      const response = await apiClient.post<BulkMonsterTemplateStatus>(
+        '/sonar/monster-templates/bulk-generate',
+        { count: 1, monsterType }
+      );
+      setBulkTemplateJob(response);
+      setBulkTemplateType(monsterType);
+      if (response.status === 'completed') {
+        setBulkTemplateBusy(false);
+        setBulkTemplateMessage(
+          `Created 1 ${formatMonsterTemplateTypeLabel(monsterType)}.`
+        );
+        await load(true);
+      } else if (response.status === 'failed') {
+        setBulkTemplateBusy(false);
+        setBulkTemplateError(
+          response.error || 'Bulk template generation failed.'
+        );
+      }
+    } catch (err) {
+      console.error(`Failed to generate ${monsterType} template`, err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : `Failed to generate ${monsterType} template.`;
       setBulkTemplateError(message);
       setBulkTemplateBusy(false);
     }
@@ -1537,120 +1679,171 @@ export const Monsters = () => {
     setImagePreview(null);
   };
 
-  const refreshUndiscoveredMonsterIconStatus = useCallback(
-    async (showMessage = false) => {
+  const setEncounterIconState = useCallback(
+    (
+      encounterType: MonsterEncounterType,
+      updates:
+        | Partial<EncounterIconState>
+        | ((previous: EncounterIconState) => Partial<EncounterIconState>)
+    ) => {
+      setEncounterIconStates((prev) => {
+        const current = prev[encounterType];
+        const nextUpdates =
+          typeof updates === 'function' ? updates(current) : updates;
+        return {
+          ...prev,
+          [encounterType]: {
+            ...current,
+            ...nextUpdates,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const refreshEncounterIconStatus = useCallback(
+    async (encounterType: MonsterEncounterType, showMessage = false) => {
       try {
-        setMonsterUndiscoveredStatusLoading(true);
-        setMonsterUndiscoveredError(null);
+        setEncounterIconState(encounterType, {
+          statusLoading: true,
+          error: null,
+        });
         const response = await apiClient.get<StaticThumbnailResponse>(
-          '/sonar/admin/thumbnails/monster-undiscovered/status'
+          `/sonar/admin/thumbnails/monster-undiscovered/${encounterType}/status`
         );
         const url = (response?.thumbnailUrl || '').trim();
-        if (url) {
-          setMonsterUndiscoveredUrl(url);
-        }
-        setMonsterUndiscoveredStatus(
-          (response?.status || 'unknown').trim() || 'unknown'
-        );
-        setMonsterUndiscoveredExists(Boolean(response?.exists));
-        setMonsterUndiscoveredRequestedAt(
-          response?.requestedAt ? response.requestedAt : null
-        );
-        setMonsterUndiscoveredLastModified(
-          response?.lastModified ? response.lastModified : null
-        );
-        setMonsterUndiscoveredPreviewNonce(Date.now());
-        if (showMessage) {
-          setMonsterUndiscoveredMessage(
-            'Undiscovered monster icon status refreshed.'
-          );
-        }
+        setEncounterIconState(encounterType, {
+          url: url || encounterIconDefaults[encounterType].url,
+          status: (response?.status || 'unknown').trim() || 'unknown',
+          exists: Boolean(response?.exists),
+          requestedAt: response?.requestedAt ? response.requestedAt : null,
+          lastModified: response?.lastModified ? response.lastModified : null,
+          previewNonce: Date.now(),
+          message: showMessage
+            ? `${encounterIconDefaults[encounterType].label} icon status refreshed.`
+            : null,
+        });
       } catch (err) {
-        console.error('Failed to load undiscovered monster icon status', err);
+        console.error(
+          `Failed to load ${encounterType} undiscovered monster icon status`,
+          err
+        );
         const message =
           err instanceof Error
             ? err.message
-            : 'Failed to load undiscovered monster icon status.';
-        setMonsterUndiscoveredError(message);
+            : `Failed to load ${encounterType} undiscovered monster icon status.`;
+        setEncounterIconState(encounterType, { error: message });
       } finally {
-        setMonsterUndiscoveredStatusLoading(false);
+        setEncounterIconState(encounterType, { statusLoading: false });
       }
     },
-    [apiClient]
+    [apiClient, setEncounterIconState]
   );
 
-  const handleGenerateUndiscoveredMonsterIcon = useCallback(async () => {
-    const prompt = monsterUndiscoveredPrompt.trim();
-    if (!prompt) {
-      setMonsterUndiscoveredError('Prompt is required.');
-      return;
-    }
-    try {
-      setMonsterUndiscoveredBusy(true);
-      setMonsterUndiscoveredError(null);
-      setMonsterUndiscoveredMessage(null);
-      await apiClient.post<StaticThumbnailResponse>(
-        '/sonar/admin/thumbnails/monster-undiscovered',
-        { prompt }
-      );
-      setMonsterUndiscoveredMessage(
-        'Undiscovered monster icon queued for generation.'
-      );
-      await refreshUndiscoveredMonsterIconStatus();
-    } catch (err) {
-      console.error('Failed to generate undiscovered monster icon', err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to generate undiscovered monster icon.';
-      setMonsterUndiscoveredError(message);
-    } finally {
-      setMonsterUndiscoveredBusy(false);
-    }
-  }, [
-    apiClient,
-    monsterUndiscoveredPrompt,
-    refreshUndiscoveredMonsterIconStatus,
-  ]);
+  const handleGenerateEncounterIcon = useCallback(
+    async (encounterType: MonsterEncounterType) => {
+      const prompt = encounterIconStates[encounterType].prompt.trim();
+      if (!prompt) {
+        setEncounterIconState(encounterType, { error: 'Prompt is required.' });
+        return;
+      }
+      try {
+        setEncounterIconState(encounterType, {
+          busy: true,
+          error: null,
+          message: null,
+        });
+        await apiClient.post<StaticThumbnailResponse>(
+          `/sonar/admin/thumbnails/monster-undiscovered/${encounterType}`,
+          { prompt }
+        );
+        setEncounterIconState(encounterType, {
+          message: `${encounterIconDefaults[encounterType].label} icon queued for generation.`,
+        });
+        await refreshEncounterIconStatus(encounterType);
+      } catch (err) {
+        console.error(
+          `Failed to generate ${encounterType} undiscovered monster icon`,
+          err
+        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : `Failed to generate ${encounterType} undiscovered monster icon.`;
+        setEncounterIconState(encounterType, { error: message });
+      } finally {
+        setEncounterIconState(encounterType, { busy: false });
+      }
+    },
+    [
+      apiClient,
+      encounterIconStates,
+      refreshEncounterIconStatus,
+      setEncounterIconState,
+    ]
+  );
 
-  const handleDeleteUndiscoveredMonsterIcon = useCallback(async () => {
-    try {
-      setMonsterUndiscoveredBusy(true);
-      setMonsterUndiscoveredError(null);
-      setMonsterUndiscoveredMessage(null);
-      await apiClient.delete<StaticThumbnailResponse>(
-        '/sonar/admin/thumbnails/monster-undiscovered'
-      );
-      setMonsterUndiscoveredMessage('Undiscovered monster icon deleted.');
-      await refreshUndiscoveredMonsterIconStatus();
-    } catch (err) {
-      console.error('Failed to delete undiscovered monster icon', err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : 'Failed to delete undiscovered monster icon.';
-      setMonsterUndiscoveredError(message);
-    } finally {
-      setMonsterUndiscoveredBusy(false);
-    }
-  }, [apiClient, refreshUndiscoveredMonsterIconStatus]);
+  const handleDeleteEncounterIcon = useCallback(
+    async (encounterType: MonsterEncounterType) => {
+      try {
+        setEncounterIconState(encounterType, {
+          busy: true,
+          error: null,
+          message: null,
+        });
+        await apiClient.delete<StaticThumbnailResponse>(
+          `/sonar/admin/thumbnails/monster-undiscovered/${encounterType}`
+        );
+        setEncounterIconState(encounterType, {
+          message: `${encounterIconDefaults[encounterType].label} icon deleted.`,
+        });
+        await refreshEncounterIconStatus(encounterType);
+      } catch (err) {
+        console.error(
+          `Failed to delete ${encounterType} undiscovered monster icon`,
+          err
+        );
+        const message =
+          err instanceof Error
+            ? err.message
+            : `Failed to delete ${encounterType} undiscovered monster icon.`;
+        setEncounterIconState(encounterType, { error: message });
+      } finally {
+        setEncounterIconState(encounterType, { busy: false });
+      }
+    },
+    [apiClient, refreshEncounterIconStatus, setEncounterIconState]
+  );
 
   useEffect(() => {
-    void refreshUndiscoveredMonsterIconStatus();
-  }, [refreshUndiscoveredMonsterIconStatus]);
+    void Promise.all(
+      (Object.keys(encounterIconDefaults) as MonsterEncounterType[]).map(
+        (encounterType) => refreshEncounterIconStatus(encounterType)
+      )
+    );
+  }, [refreshEncounterIconStatus]);
 
   useEffect(() => {
-    if (
-      monsterUndiscoveredStatus !== 'queued' &&
-      monsterUndiscoveredStatus !== 'in_progress'
-    ) {
+    const hasPendingIcon = (
+      Object.keys(encounterIconDefaults) as MonsterEncounterType[]
+    ).some((encounterType) =>
+      ['queued', 'in_progress'].includes(
+        encounterIconStates[encounterType].status
+      )
+    );
+    if (!hasPendingIcon) {
       return;
     }
     const interval = window.setInterval(() => {
-      void refreshUndiscoveredMonsterIconStatus();
+      void Promise.all(
+        (Object.keys(encounterIconDefaults) as MonsterEncounterType[]).map(
+          (encounterType) => refreshEncounterIconStatus(encounterType)
+        )
+      );
     }, 4000);
     return () => window.clearInterval(interval);
-  }, [monsterUndiscoveredStatus, refreshUndiscoveredMonsterIconStatus]);
+  }, [encounterIconStates, refreshEncounterIconStatus]);
 
   useEffect(() => {
     if (!bulkTemplateJob?.jobId) {
@@ -1681,6 +1874,20 @@ export const Monsters = () => {
               </p>
             </div>
             <div className="flex gap-2">
+              <select
+                value={bulkTemplateType}
+                onChange={(event) =>
+                  setBulkTemplateType(event.target.value as MonsterTemplateType)
+                }
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+                aria-label="Bulk template type"
+              >
+                {monsterTemplateTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 min={1}
@@ -1696,6 +1903,20 @@ export const Monsters = () => {
                 disabled={bulkTemplateBusy}
               >
                 {bulkTemplateBusy ? 'Generating...' : 'Generate Templates'}
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={() => handleGenerateSingleTypedTemplate('boss')}
+                disabled={bulkTemplateBusy}
+              >
+                Generate Boss Template
+              </button>
+              <button
+                className="qa-btn qa-btn-secondary"
+                onClick={() => handleGenerateSingleTypedTemplate('raid')}
+                disabled={bulkTemplateBusy}
+              >
+                Generate Raid Template
               </button>
               <button
                 className="qa-btn qa-btn-secondary"
@@ -1730,6 +1951,12 @@ export const Monsters = () => {
                 Progress: {bulkTemplateJob.createdCount}/
                 {bulkTemplateJob.totalCount}
               </span>
+              <span>
+                Type:{' '}
+                {formatMonsterTemplateTypeLabel(
+                  bulkTemplateJob.monsterType ?? bulkTemplateType
+                )}
+              </span>
               <span>Job: {bulkTemplateJob.jobId}</span>
               <span>Updated: {formatDate(bulkTemplateJob.updatedAt)}</span>
             </div>
@@ -1745,95 +1972,117 @@ export const Monsters = () => {
         </div>
 
         <div className="qa-card">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold">
-                Undiscovered Monster Icon
-              </h2>
-              <p className="text-xs text-gray-600 break-all">
-                URL: {monsterUndiscoveredUrl}
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                Requested:{' '}
-                {formatDate(monsterUndiscoveredRequestedAt ?? undefined)}
-                {' · '}
-                Last updated:{' '}
-                {formatDate(monsterUndiscoveredLastModified ?? undefined)}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={() => void refreshUndiscoveredMonsterIconStatus(true)}
-                disabled={monsterUndiscoveredStatusLoading}
-              >
-                {monsterUndiscoveredStatusLoading
-                  ? 'Refreshing...'
-                  : 'Refresh Status'}
-              </button>
-              <button
-                className="qa-btn qa-btn-secondary"
-                onClick={handleGenerateUndiscoveredMonsterIcon}
-                disabled={
-                  monsterUndiscoveredBusy || monsterUndiscoveredStatusLoading
-                }
-              >
-                {monsterUndiscoveredBusy ? 'Working...' : 'Generate Icon'}
-              </button>
-              <button
-                className="qa-btn qa-btn-danger"
-                onClick={handleDeleteUndiscoveredMonsterIcon}
-                disabled={
-                  monsterUndiscoveredBusy || monsterUndiscoveredStatusLoading
-                }
-              >
-                {monsterUndiscoveredBusy ? 'Working...' : 'Delete Icon'}
-              </button>
-            </div>
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">
+              Undiscovered Encounter Icons
+            </h2>
+            <p className="text-sm text-gray-600">
+              Standard, boss, and raid encounters each have their own mystery
+              pin.
+            </p>
           </div>
-          <div className="mt-2">
-            <span
-              className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
-                monsterUndiscoveredStatus
-              )}`}
-            >
-              {monsterUndiscoveredStatus || 'unknown'}
-            </span>
-          </div>
-          <label className="block text-sm mt-3">
-            Generation Prompt
-            <textarea
-              className="block w-full border border-gray-300 rounded-md p-2 mt-1 min-h-[88px]"
-              value={monsterUndiscoveredPrompt}
-              onChange={(event) =>
-                setMonsterUndiscoveredPrompt(event.target.value)
+          <div className="grid gap-4 lg:grid-cols-3">
+            {(Object.keys(encounterIconDefaults) as MonsterEncounterType[]).map(
+              (encounterType) => {
+                const iconState = encounterIconStates[encounterType];
+                const meta = encounterIconDefaults[encounterType];
+                return (
+                  <div
+                    key={encounterType}
+                    className="rounded-lg border border-gray-200 bg-white p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-base font-semibold">
+                          {meta.label} Icon
+                        </h3>
+                        <p className="text-xs text-gray-600 break-all">
+                          URL: {iconState.url}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Requested:{' '}
+                          {formatDate(iconState.requestedAt ?? undefined)}
+                          {' · '}
+                          Last updated:{' '}
+                          {formatDate(iconState.lastModified ?? undefined)}
+                        </p>
+                      </div>
+                      <span
+                        className={`inline-flex text-white text-xs px-2 py-0.5 rounded ${staticStatusClassName(
+                          iconState.status
+                        )}`}
+                      >
+                        {iconState.status || 'unknown'}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        className="qa-btn qa-btn-secondary"
+                        onClick={() =>
+                          void refreshEncounterIconStatus(encounterType, true)
+                        }
+                        disabled={iconState.statusLoading}
+                      >
+                        {iconState.statusLoading
+                          ? 'Refreshing...'
+                          : 'Refresh Status'}
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-secondary"
+                        onClick={() => void handleGenerateEncounterIcon(encounterType)}
+                        disabled={iconState.busy || iconState.statusLoading}
+                      >
+                        {iconState.busy ? 'Working...' : 'Generate Icon'}
+                      </button>
+                      <button
+                        className="qa-btn qa-btn-danger"
+                        onClick={() => void handleDeleteEncounterIcon(encounterType)}
+                        disabled={iconState.busy || iconState.statusLoading}
+                      >
+                        {iconState.busy ? 'Working...' : 'Delete Icon'}
+                      </button>
+                    </div>
+                    <label className="block text-sm mt-3">
+                      Generation Prompt
+                      <textarea
+                        className="block w-full border border-gray-300 rounded-md p-2 mt-1 min-h-[88px]"
+                        value={iconState.prompt}
+                        onChange={(event) =>
+                          setEncounterIconState(encounterType, {
+                            prompt: event.target.value,
+                          })
+                        }
+                        placeholder={`Prompt used to generate the undiscovered ${meta.label.toLowerCase()} icon.`}
+                      />
+                    </label>
+                    {iconState.exists ? (
+                      <div className="mt-3">
+                        <img
+                          src={`${iconState.url}?v=${iconState.previewNonce}`}
+                          alt={`Undiscovered ${meta.label.toLowerCase()} icon preview`}
+                          className="w-24 h-24 object-cover border rounded-md bg-gray-50"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 mt-2">
+                        No icon currently found at this URL.
+                      </p>
+                    )}
+                    {iconState.message ? (
+                      <p className="text-sm text-emerald-700 mt-2">
+                        {iconState.message}
+                      </p>
+                    ) : null}
+                    {iconState.error ? (
+                      <p className="text-sm text-red-600 mt-2">
+                        {iconState.error}
+                      </p>
+                    ) : null}
+                  </div>
+                );
               }
-              placeholder="Prompt used to generate the undiscovered monster icon."
-            />
-          </label>
-          {monsterUndiscoveredExists ? (
-            <div className="mt-3">
-              <img
-                src={`${monsterUndiscoveredUrl}?v=${monsterUndiscoveredPreviewNonce}`}
-                alt="Undiscovered monster icon preview"
-                className="w-24 h-24 object-cover border rounded-md bg-gray-50"
-              />
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500 mt-2">
-              No icon currently found at this URL.
-            </p>
-          )}
-          {monsterUndiscoveredMessage ? (
-            <p className="text-sm text-emerald-700 mt-2">
-              {monsterUndiscoveredMessage}
-            </p>
-          ) : null}
-          {monsterUndiscoveredError ? (
-            <p className="text-sm text-red-600 mt-2">
-              {monsterUndiscoveredError}
-            </p>
-          ) : null}
+            )}
+          </div>
         </div>
 
         <div className="qa-card">
@@ -1886,6 +2135,11 @@ export const Monsters = () => {
                             <div className="font-semibold text-base">
                               {template.name}
                             </div>
+                            <p className="text-xs uppercase tracking-wide text-gray-500 mt-1">
+                              {formatMonsterTemplateTypeLabel(
+                                template.monsterType
+                              )}
+                            </p>
                             {template.description ? (
                               <p className="text-sm text-gray-600 mt-1">
                                 {template.description}
@@ -2205,6 +2459,12 @@ export const Monsters = () => {
                               {encounter.name}
                             </h3>
                             <p className="text-sm text-gray-600">
+                              Type:{' '}
+                              {formatMonsterEncounterTypeLabel(
+                                encounter.encounterType
+                              )}
+                            </p>
+                            <p className="text-sm text-gray-600">
                               Zone:{' '}
                               {zoneNameById.get(encounter.zoneId) ??
                                 encounter.zoneId}
@@ -2287,6 +2547,25 @@ export const Monsters = () => {
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(92vh-72px)] space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
+                <label className="block">
+                  <span className="block text-sm mb-1">Template Type</span>
+                  <select
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    value={templateForm.monsterType}
+                    onChange={(event) =>
+                      setTemplateForm((prev) => ({
+                        ...prev,
+                        monsterType: event.target.value as MonsterTemplateType,
+                      }))
+                    }
+                  >
+                    {monsterTemplateTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label className="block">
                   <span className="block text-sm mb-1">Name</span>
                   <input
@@ -3021,6 +3300,30 @@ export const Monsters = () => {
                     }))
                   }
                 />
+              </label>
+
+              <label className="block">
+                <span className="block text-sm mb-1">Encounter Type</span>
+                <select
+                  className="w-full border border-gray-300 rounded-md p-2"
+                  value={encounterForm.encounterType}
+                  onChange={(event) =>
+                    setEncounterForm((prev) => ({
+                      ...prev,
+                      encounterType: event.target.value as MonsterEncounterType,
+                    }))
+                  }
+                >
+                  {monsterEncounterTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Boss encounters scale each monster from a player level +5
+                  baseline. Raid encounters are tuned for a five-player party.
+                </p>
               </label>
 
               <label className="block text-sm">

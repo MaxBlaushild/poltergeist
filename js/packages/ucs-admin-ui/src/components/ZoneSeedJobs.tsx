@@ -46,6 +46,8 @@ type ZoneSeedJob = {
   questCount: number;
   mainQuestCount: number;
   monsterCount: number;
+  bossEncounterCount: number;
+  raidEncounterCount: number;
   inputEncounterCount: number;
   optionEncounterCount: number;
   treasureChestCount?: number;
@@ -60,6 +62,8 @@ type ZoneSeedJob = {
 type ZoneSeedDraftPayload = {
   placeCount: number;
   monsterCount: number;
+  bossEncounterCount: number;
+  raidEncounterCount: number;
   inputEncounterCount: number;
   optionEncounterCount: number;
   treasureChestCount: number;
@@ -487,6 +491,8 @@ const formatDate = (value?: string) => {
 const buildSeedDraftPayload = (params: {
   placeCount: string;
   monsterCount: string;
+  bossEncounterCount: string;
+  raidEncounterCount: string;
   inputEncounterCount: string;
   optionEncounterCount: string;
   treasureChestCount: string;
@@ -496,6 +502,8 @@ const buildSeedDraftPayload = (params: {
 }): { payload?: ZoneSeedDraftPayload; error?: string } => {
   const placeCount = Number.parseInt(params.placeCount, 10);
   const monsterCount = Number.parseInt(params.monsterCount, 10);
+  const bossEncounterCount = Number.parseInt(params.bossEncounterCount, 10);
+  const raidEncounterCount = Number.parseInt(params.raidEncounterCount, 10);
   const inputEncounterCount = Number.parseInt(params.inputEncounterCount, 10);
   const optionEncounterCount = Number.parseInt(params.optionEncounterCount, 10);
   const treasureChestCount = Number.parseInt(params.treasureChestCount, 10);
@@ -504,6 +512,8 @@ const buildSeedDraftPayload = (params: {
   if (
     Number.isNaN(placeCount) ||
     Number.isNaN(monsterCount) ||
+    Number.isNaN(bossEncounterCount) ||
+    Number.isNaN(raidEncounterCount) ||
     Number.isNaN(inputEncounterCount) ||
     Number.isNaN(optionEncounterCount) ||
     Number.isNaN(treasureChestCount) ||
@@ -516,6 +526,8 @@ const buildSeedDraftPayload = (params: {
     payload: {
       placeCount,
       monsterCount,
+      bossEncounterCount,
+      raidEncounterCount,
       inputEncounterCount,
       optionEncounterCount,
       treasureChestCount,
@@ -544,6 +556,8 @@ export const ZoneSeedJobs = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [placeCount, setPlaceCount] = useState('0');
   const [monsterCount, setMonsterCount] = useState('0');
+  const [bossEncounterCount, setBossEncounterCount] = useState('0');
+  const [raidEncounterCount, setRaidEncounterCount] = useState('0');
   const [inputEncounterCount, setInputEncounterCount] = useState('0');
   const [optionEncounterCount, setOptionEncounterCount] = useState('0');
   const [treasureChestCount, setTreasureChestCount] = useState('0');
@@ -801,6 +815,8 @@ export const ZoneSeedJobs = () => {
     const { payload, error: payloadError } = buildSeedDraftPayload({
       placeCount,
       monsterCount,
+      bossEncounterCount,
+      raidEncounterCount,
       inputEncounterCount,
       optionEncounterCount,
       treasureChestCount,
@@ -839,6 +855,8 @@ export const ZoneSeedJobs = () => {
     const { payload, error: payloadError } = buildSeedDraftPayload({
       placeCount,
       monsterCount,
+      bossEncounterCount,
+      raidEncounterCount,
       inputEncounterCount,
       optionEncounterCount,
       treasureChestCount,
@@ -1058,7 +1076,7 @@ export const ZoneSeedJobs = () => {
               Selected: {selectedZone.name}
             </p>
           )}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-8">
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">
                 Places
@@ -1077,6 +1095,26 @@ export const ZoneSeedJobs = () => {
                 className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
                 value={monsterCount}
                 onChange={(e) => setMonsterCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Boss encounters
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={bossEncounterCount}
+                onChange={(e) => setBossEncounterCount(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Raid encounters
+              </label>
+              <input
+                className="w-full rounded border border-gray-300 px-2 py-2 text-sm"
+                value={raidEncounterCount}
+                onChange={(e) => setRaidEncounterCount(e.target.value)}
               />
             </div>
             <div>
@@ -1476,6 +1514,7 @@ export const ZoneSeedJobs = () => {
                       </p>
                       <p className="text-xs text-gray-500">
                         Counts: {job.placeCount} POIs/challenges, {job.monsterCount ?? 0} monster encounters,{' '}
+                        {job.bossEncounterCount ?? 0} boss encounters, {job.raidEncounterCount ?? 0} raid encounters,{' '}
                         {job.inputEncounterCount ?? 0} input scenarios, {job.optionEncounterCount ?? 0} option scenarios,{' '}
                         {job.treasureChestCount ?? 0} treasure chests, {job.healingFountainCount ?? 0} healing fountains,{' '}
                         {job.shopkeeperItemTags?.length ?? 0} shopkeepers
@@ -1623,6 +1662,8 @@ export const ZoneSeedJobs = () => {
                             <div>{job.placeCount} POIs selected for challenge placement</div>
                             <div>{job.placeCount} standalone challenges at those POIs</div>
                             <div>{job.monsterCount ?? 0} random monster encounters (scalable)</div>
+                            <div>{job.bossEncounterCount ?? 0} random boss encounters (scalable +5 levels)</div>
+                            <div>{job.raidEncounterCount ?? 0} random raid encounters (scaled for 5-player parties)</div>
                             <div>{job.inputEncounterCount ?? 0} random input scenarios (scalable)</div>
                             <div>{job.optionEncounterCount ?? 0} random option scenarios (scalable)</div>
                             <div>{job.treasureChestCount ?? 0} random treasure chests (scalable rewards)</div>

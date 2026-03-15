@@ -28,6 +28,7 @@ func (h *monsterTemplateHandle) Create(ctx context.Context, template *models.Mon
 		template.CreatedAt = now
 	}
 	template.UpdatedAt = now
+	template.MonsterType = models.NormalizeMonsterTemplateType(string(template.MonsterType))
 	return h.db.WithContext(ctx).Create(template).Error
 }
 
@@ -50,7 +51,9 @@ func (h *monsterTemplateHandle) FindAll(ctx context.Context) ([]models.MonsterTe
 func (h *monsterTemplateHandle) Update(ctx context.Context, id uuid.UUID, updates *models.MonsterTemplate) error {
 	updates.ID = id
 	updates.UpdatedAt = time.Now()
+	updates.MonsterType = models.NormalizeMonsterTemplateType(string(updates.MonsterType))
 	payload := map[string]interface{}{
+		"monster_type":            updates.MonsterType,
 		"name":                    updates.Name,
 		"description":             updates.Description,
 		"image_url":               updates.ImageURL,

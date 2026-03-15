@@ -449,12 +449,9 @@ func (s *server) getUserBattleDexterity(ctx context.Context, userID uuid.UUID) (
 	if err != nil {
 		return 0, err
 	}
-	statusBonuses, err := s.dbClient.UserStatus().GetActiveStatBonuses(ctx, userID)
-	if err != nil {
-		return 0, err
-	}
-	totalBonuses := equipmentBonuses.Add(statusBonuses)
-	return stats.Dexterity + totalBonuses.Dexterity, nil
+	// Keep initiative stable during an active battle. Status effects still apply
+	// to combat resolution, but they should not reshuffle turn order mid-fight.
+	return stats.Dexterity + equipmentBonuses.Dexterity, nil
 }
 
 func (s *server) buildMonsterBattleTurnOrder(
@@ -483,11 +480,7 @@ func (s *server) buildMonsterBattleTurnOrder(
 	if err != nil {
 		return nil, err
 	}
-	statusBonuses, err := s.dbClient.MonsterStatus().GetActiveStatBonuses(ctx, battle.ID)
-	if err != nil {
-		return nil, err
-	}
-	monsterStats := monster.EffectiveStatsWithBonuses(statusBonuses)
+	monsterStats := monster.EffectiveStats()
 	monsterID := battle.MonsterID
 	order = append(order, monsterBattleTurnOrderEntry{
 		EntityType: "monster",
@@ -522,6 +515,122 @@ func (s *server) buildMonsterBattleTurnOrder(
 	})
 
 	return order, nil
+}
+
+func nextMonsterBattleTurnIndex(
+	currentIndex int,
+	entryCount int,
+	isAlive func(index int) bool,
+) int {
+	if entryCount <= 0 {
+		return 0
+	}
+	if currentIndex < 0 || currentIndex >= entryCount {
+		currentIndex = 0
+	}
+	for offset := 1; offset <= entryCount; offset++ {
+		nextIndex := (currentIndex + offset) % entryCount
+		if isAlive == nil || isAlive(nextIndex) {
+			return nextIndex
+		}
+	}
+	return currentIndex
+}
+
+func monsterBattleTurnEntryMatchesActor(
+	entry monsterBattleTurnOrderEntry,
+	actingUserID *uuid.UUID,
+	actingMonsterID *uuid.UUID,
+) bool {
+	if actingUserID != nil && entry.UserID != nil && *actingUserID == *entry.UserID {
+		return true
+	}
+	if actingMonsterID != nil && entry.MonsterID != nil && *actingMonsterID == *entry.MonsterID {
+		return true
+	}
+	return false
+}
+
+func (s *server) monsterBattleTurnEntryIsAlive(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	entry monsterBattleTurnOrderEntry,
+) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(entry.EntityType)) {
+	case "monster":
+		monsterID := battle.MonsterID
+		if entry.MonsterID != nil && *entry.MonsterID != uuid.Nil {
+			monsterID = *entry.MonsterID
+		}
+		monster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+		if err != nil {
+			return false, err
+		}
+		if monster == nil {
+			return false, nil
+		}
+		return monster.DerivedMaxHealth()-battle.MonsterHealthDeficit > 0, nil
+	case "user":
+		if entry.UserID == nil || *entry.UserID == uuid.Nil {
+			return false, nil
+		}
+		_, _, _, health, _, err := s.getScenarioResourceState(ctx, *entry.UserID)
+		if err != nil {
+			return false, err
+		}
+		return health > 0, nil
+	default:
+		return false, nil
+	}
+}
+
+func (s *server) advanceMonsterBattleTurnState(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	actingUserID *uuid.UUID,
+	actingMonsterID *uuid.UUID,
+) (*models.MonsterBattle, error) {
+	if battle == nil || battle.EndedAt != nil {
+		return battle, nil
+	}
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		return nil, err
+	}
+	turnOrder, err := s.buildMonsterBattleTurnOrder(ctx, battle, participants)
+	if err != nil {
+		return nil, err
+	}
+	if len(turnOrder) == 0 {
+		return battle, nil
+	}
+	aliveByIndex := make([]bool, len(turnOrder))
+	for i := range turnOrder {
+		alive, err := s.monsterBattleTurnEntryIsAlive(ctx, battle, turnOrder[i])
+		if err != nil {
+			return nil, err
+		}
+		aliveByIndex[i] = alive
+	}
+	currentIndex := battle.TurnIndex
+	for i, entry := range turnOrder {
+		if monsterBattleTurnEntryMatchesActor(entry, actingUserID, actingMonsterID) {
+			currentIndex = i
+			break
+		}
+	}
+	nextIndex := nextMonsterBattleTurnIndex(
+		currentIndex,
+		len(turnOrder),
+		func(index int) bool {
+			return aliveByIndex[index]
+		},
+	)
+	if err := s.dbClient.MonsterBattle().SetTurnIndex(ctx, battle.ID, nextIndex); err != nil {
+		return nil, err
+	}
+	battle.TurnIndex = nextIndex
+	return battle, nil
 }
 
 func (s *server) monsterBattleDetailResponse(

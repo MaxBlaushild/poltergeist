@@ -221,6 +221,15 @@ class PoiService {
     return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> advanceMonsterBattleTurn(
+    String monsterId,
+  ) async {
+    final raw = await _api.post<dynamic>(
+      ApiConstants.monsterBattleTurnEndpoint(monsterId),
+    );
+    return raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+  }
+
   Future<TutorialStatus?> getTutorialStatus() async {
     try {
       final raw = await _api.get<Map<String, dynamic>>(

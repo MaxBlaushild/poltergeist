@@ -153,6 +153,7 @@ func (h *monsterEncounterHandle) Update(
 		"description":                    updates.Description,
 		"image_url":                      updates.ImageURL,
 		"thumbnail_url":                  updates.ThumbnailURL,
+		"encounter_type":                 updates.EncounterType,
 		"scale_with_user_level":          updates.ScaleWithUserLevel,
 		"recurring_monster_encounter_id": updates.RecurringMonsterEncounterID,
 		"recurrence_frequency":           updates.RecurrenceFrequency,

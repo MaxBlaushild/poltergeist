@@ -55,18 +55,24 @@ const (
 	poiUndiscoveredIconKey             = "thumbnails/placeholders/poi-undiscovered.png"
 	scenarioUndiscoveredIconKey        = "thumbnails/placeholders/scenario-undiscovered.png"
 	monsterUndiscoveredIconKey         = "thumbnails/placeholders/monster-undiscovered.png"
+	bossUndiscoveredIconKey            = "thumbnails/placeholders/boss-undiscovered.png"
+	raidUndiscoveredIconKey            = "thumbnails/placeholders/raid-undiscovered.png"
 	characterUndiscoveredIconKey       = "thumbnails/placeholders/character-undiscovered.png"
 	healingFountainDiscoveredIconKey   = "thumbnails/placeholders/healing-fountain-discovered.png"
 	userProfilePlaceholderKey          = "thumbnails/placeholders/users/default-profile.png"
 	poiUndiscoveredStatusKey           = "admin:thumbnails:poi-undiscovered:requested-at"
 	scenarioUndiscoveredStatusKey      = "admin:thumbnails:scenario-undiscovered:requested-at"
 	monsterUndiscoveredStatusKey       = "admin:thumbnails:monster-undiscovered:requested-at"
+	bossUndiscoveredStatusKey          = "admin:thumbnails:boss-undiscovered:requested-at"
+	raidUndiscoveredStatusKey          = "admin:thumbnails:raid-undiscovered:requested-at"
 	characterUndiscoveredStatusKey     = "admin:thumbnails:character-undiscovered:requested-at"
 	healingFountainDiscoveredStatusKey = "admin:thumbnails:healing-fountain-discovered:requested-at"
 	userProfilePlaceholderStatusKey    = "admin:thumbnails:user-profile-placeholder:requested-at"
 	poiUndiscoveredIconText            = "A retro 16-bit RPG map marker icon for an undiscovered point of interest. Enigmatic landmark silhouette with cartographer glyph motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	scenarioUndiscoveredIconText       = "A retro 16-bit RPG map marker icon for an undiscovered scenario. Mysterious parchment sigil, subtle compass motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	monsterUndiscoveredIconText        = "A retro 16-bit RPG map marker icon for an undiscovered monster. Hidden beast silhouette and warning rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	bossUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered boss encounter. Hidden crown-horned beast silhouette with elite warning sigil motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
+	raidUndiscoveredIconText           = "A retro 16-bit RPG map marker icon for an undiscovered raid encounter. Hidden multi-creature threat silhouette with party danger rune motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	characterUndiscoveredIconText      = "A retro 16-bit RPG map marker icon for an undiscovered character. Hidden wanderer silhouette, mysterious cloak motif, no text, no logos, transparent or clean background, centered composition, crisp outlines, limited palette."
 	healingFountainDiscoveredIconText  = "A discovered magical healing fountain in a retro 16-bit RPG style. Top-down map-ready icon art, luminous water, ancient stone basin, mystic runes, no text, no logos, centered composition, crisp outlines, limited palette."
 	userProfilePlaceholderText         = "A polished fantasy RPG profile portrait avatar. Head-and-shoulders, centered composition, expressive face, clean background, no text, no logos, game-ready artwork."
@@ -354,18 +360,21 @@ func (s *server) SetupRoutes(r *gin.Engine) {
 	r.POST("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generatePoiUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateScenarioUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
+	r.POST("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateMonsterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateCharacterUndiscoveredIcon))
 	r.POST("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateHealingFountainDiscoveredIcon))
 	r.POST("/sonar/admin/users/profile-picture-placeholder", middleware.WithAuthentication(s.authClient, s.livenessClient, s.generateUserProfilePicturePlaceholder))
 	r.GET("/sonar/admin/thumbnails/poi-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPoiUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/scenario-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getScenarioUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/monster-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
+	r.GET("/sonar/admin/thumbnails/monster-undiscovered/:encounterType/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getMonsterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/character-undiscovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getCharacterUndiscoveredIconStatus))
 	r.GET("/sonar/admin/thumbnails/healing-fountain-discovered/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getHealingFountainDiscoveredIconStatus))
 	r.GET("/sonar/admin/users/profile-picture-placeholder/status", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getUserProfilePicturePlaceholderStatus))
 	r.DELETE("/sonar/admin/thumbnails/poi-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deletePoiUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/scenario-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteScenarioUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
+	r.DELETE("/sonar/admin/thumbnails/monster-undiscovered/:encounterType", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteMonsterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/character-undiscovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteCharacterUndiscoveredIcon))
 	r.DELETE("/sonar/admin/thumbnails/healing-fountain-discovered", middleware.WithAuthentication(s.authClient, s.livenessClient, s.deleteHealingFountainDiscoveredIcon))
 	r.GET("/sonar/zones/:id/pointsOfInterest", middleware.WithAuthentication(s.authClient, s.livenessClient, s.getPointsOfInterestForZone))
@@ -4797,6 +4806,8 @@ func (s *server) seedZoneDraft(ctx *gin.Context) {
 type zoneSeedDraftRequest struct {
 	PlaceCount           *int     `json:"placeCount"`
 	MonsterCount         *int     `json:"monsterCount"`
+	BossEncounterCount   *int     `json:"bossEncounterCount"`
+	RaidEncounterCount   *int     `json:"raidEncounterCount"`
 	InputEncounterCount  *int     `json:"inputEncounterCount"`
 	OptionEncounterCount *int     `json:"optionEncounterCount"`
 	TreasureChestCount   *int     `json:"treasureChestCount"`
@@ -4808,6 +4819,8 @@ type zoneSeedDraftRequest struct {
 type normalizedZoneSeedDraftRequest struct {
 	PlaceCount           int
 	MonsterCount         int
+	BossEncounterCount   int
+	RaidEncounterCount   int
 	InputEncounterCount  int
 	OptionEncounterCount int
 	TreasureChestCount   int
@@ -4824,6 +4837,14 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	monsterCount := 0
 	if requestBody.MonsterCount != nil {
 		monsterCount = *requestBody.MonsterCount
+	}
+	bossEncounterCount := 0
+	if requestBody.BossEncounterCount != nil {
+		bossEncounterCount = *requestBody.BossEncounterCount
+	}
+	raidEncounterCount := 0
+	if requestBody.RaidEncounterCount != nil {
+		raidEncounterCount = *requestBody.RaidEncounterCount
 	}
 	inputEncounterCount := 0
 	if requestBody.InputEncounterCount != nil {
@@ -4872,8 +4893,8 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 		}
 	}
 
-	if placeCount < 0 || monsterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 || healingFountainCount < 0 {
-		return nil, fmt.Errorf("placeCount, monsterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater")
+	if placeCount < 0 || monsterCount < 0 || bossEncounterCount < 0 || raidEncounterCount < 0 || inputEncounterCount < 0 || optionEncounterCount < 0 || treasureChestCount < 0 || healingFountainCount < 0 {
+		return nil, fmt.Errorf("placeCount, monsterCount, bossEncounterCount, raidEncounterCount, inputEncounterCount, optionEncounterCount, treasureChestCount, and healingFountainCount must be zero or greater")
 	}
 	if placeCount > 0 && len(requiredPlaceTags) > placeCount {
 		return nil, fmt.Errorf("requiredPlaceTags cannot exceed placeCount")
@@ -4885,6 +4906,8 @@ func normalizeZoneSeedDraftRequest(requestBody zoneSeedDraftRequest) (*normalize
 	return &normalizedZoneSeedDraftRequest{
 		PlaceCount:           placeCount,
 		MonsterCount:         monsterCount,
+		BossEncounterCount:   bossEncounterCount,
+		RaidEncounterCount:   raidEncounterCount,
 		InputEncounterCount:  inputEncounterCount,
 		OptionEncounterCount: optionEncounterCount,
 		TreasureChestCount:   treasureChestCount,
@@ -4914,6 +4937,8 @@ func (s *server) createAndEnqueueZoneSeedJob(
 		QuestCount:           0,
 		MainQuestCount:       0,
 		MonsterCount:         settings.MonsterCount,
+		BossEncounterCount:   settings.BossEncounterCount,
+		RaidEncounterCount:   settings.RaidEncounterCount,
 		InputEncounterCount:  settings.InputEncounterCount,
 		OptionEncounterCount: settings.OptionEncounterCount,
 		TreasureChestCount:   settings.TreasureChestCount,
@@ -6675,6 +6700,17 @@ func (s *server) readStaticThumbnailStatus(ctx *gin.Context, destinationKey stri
 	return status, exists, requestedAt, lastModified, nil
 }
 
+func monsterEncounterUndiscoveredThumbnailConfig(rawEncounterType string) (prompt string, destinationKey string, statusKey string) {
+	switch models.NormalizeMonsterEncounterType(rawEncounterType) {
+	case models.MonsterEncounterTypeBoss:
+		return bossUndiscoveredIconText, bossUndiscoveredIconKey, bossUndiscoveredStatusKey
+	case models.MonsterEncounterTypeRaid:
+		return raidUndiscoveredIconText, raidUndiscoveredIconKey, raidUndiscoveredStatusKey
+	default:
+		return monsterUndiscoveredIconText, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey
+	}
+}
+
 func (s *server) queueGeneratedStaticThumbnail(ctx *gin.Context, defaultPrompt string, destinationKey string, statusKey string) {
 	if s.asyncClient == nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "async client unavailable"})
@@ -6745,7 +6781,10 @@ func (s *server) generatePoiUndiscoveredIcon(ctx *gin.Context) {
 }
 
 func (s *server) generateMonsterUndiscoveredIcon(ctx *gin.Context) {
-	s.queueGeneratedStaticThumbnail(ctx, monsterUndiscoveredIconText, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+	prompt, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
+		ctx.Param("encounterType"),
+	)
+	s.queueGeneratedStaticThumbnail(ctx, prompt, destinationKey, statusKey)
 }
 
 func (s *server) generateCharacterUndiscoveredIcon(ctx *gin.Context) {
@@ -6786,7 +6825,10 @@ func (s *server) getPoiUndiscoveredIconStatus(ctx *gin.Context) {
 }
 
 func (s *server) getMonsterUndiscoveredIconStatus(ctx *gin.Context) {
-	s.getStaticThumbnailStatus(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+	_, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
+		ctx.Param("encounterType"),
+	)
+	s.getStaticThumbnailStatus(ctx, destinationKey, statusKey)
 }
 
 func (s *server) getCharacterUndiscoveredIconStatus(ctx *gin.Context) {
@@ -6900,7 +6942,10 @@ func (s *server) deletePoiUndiscoveredIcon(ctx *gin.Context) {
 }
 
 func (s *server) deleteMonsterUndiscoveredIcon(ctx *gin.Context) {
-	s.deleteStaticThumbnail(ctx, monsterUndiscoveredIconKey, monsterUndiscoveredStatusKey)
+	_, destinationKey, statusKey := monsterEncounterUndiscoveredThumbnailConfig(
+		ctx.Param("encounterType"),
+	)
+	s.deleteStaticThumbnail(ctx, destinationKey, statusKey)
 }
 
 func (s *server) deleteCharacterUndiscoveredIcon(ctx *gin.Context) {

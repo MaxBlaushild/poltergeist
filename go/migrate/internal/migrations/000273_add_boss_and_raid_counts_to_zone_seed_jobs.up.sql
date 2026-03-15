@@ -1,0 +1,3 @@
+ALTER TABLE zone_seed_jobs
+  ADD COLUMN IF NOT EXISTS boss_encounter_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS raid_encounter_count INTEGER NOT NULL DEFAULT 0;

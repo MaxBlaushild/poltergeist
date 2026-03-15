@@ -74,9 +74,17 @@ type characterStatsAllocationRequest struct {
 }
 
 type userCharacterProfileResponse struct {
-	User      models.User            `json:"user"`
-	Stats     characterStatsResponse `json:"stats"`
-	UserLevel *models.UserLevel      `json:"userLevel"`
+	User      models.User                 `json:"user"`
+	Stats     characterStatsResponse      `json:"stats"`
+	UserLevel *models.UserLevel           `json:"userLevel"`
+	Equipment []equipmentSlotResponse     `json:"equipment"`
+	Inventory []userInventoryItemResponse `json:"inventory"`
+}
+
+type userInventoryItemResponse struct {
+	OwnedInventoryItem models.OwnedInventoryItem `json:"ownedInventoryItem"`
+	InventoryItem      *models.InventoryItem     `json:"inventoryItem,omitempty"`
+	EquippedSlots      []string                  `json:"equippedSlots,omitempty"`
 }
 
 func (s *server) getCharacterStats(ctx *gin.Context) {
@@ -174,11 +182,49 @@ func (s *server) getUserCharacterProfile(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	equipment, err := s.buildEquipmentResponse(ctx, userID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ownedItems, err := s.dbClient.InventoryItem().GetItems(ctx, models.OwnedInventoryItem{UserID: &userID})
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	equippedSlotsByOwnedID := make(map[uuid.UUID][]string, len(equipment))
+	for _, slot := range equipment {
+		if slot.OwnedInventoryItemID == nil {
+			continue
+		}
+		equippedSlotsByOwnedID[*slot.OwnedInventoryItemID] = append(
+			equippedSlotsByOwnedID[*slot.OwnedInventoryItemID],
+			slot.Slot,
+		)
+	}
+	inventory := make([]userInventoryItemResponse, 0, len(ownedItems))
+	for _, ownedItem := range ownedItems {
+		if ownedItem.Quantity <= 0 {
+			continue
+		}
+		item, err := s.dbClient.InventoryItem().FindInventoryItemByID(ctx, ownedItem.InventoryItemID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		inventory = append(inventory, userInventoryItemResponse{
+			OwnedInventoryItem: ownedItem,
+			InventoryItem:      item,
+			EquippedSlots:      equippedSlotsByOwnedID[ownedItem.ID],
+		})
+	}
 
 	ctx.JSON(http.StatusOK, userCharacterProfileResponse{
 		User:      *target,
 		Stats:     characterStatsResponseFrom(stats, userLevel.Level, proficiencies, equipmentBonuses, statusBonuses, statuses, spells),
 		UserLevel: userLevel,
+		Equipment: equipment,
+		Inventory: inventory,
 	})
 }
 

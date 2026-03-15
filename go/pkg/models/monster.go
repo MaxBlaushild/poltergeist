@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,6 +47,7 @@ type MonsterTemplate struct {
 	ID                    uuid.UUID              `json:"id" gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
 	CreatedAt             time.Time              `json:"createdAt"`
 	UpdatedAt             time.Time              `json:"updatedAt"`
+	MonsterType           MonsterTemplateType    `json:"monsterType" gorm:"column:monster_type"`
 	Name                  string                 `json:"name"`
 	Description           string                 `json:"description"`
 	ImageURL              string                 `json:"imageUrl" gorm:"column:image_url"`
@@ -98,10 +100,34 @@ func (m *MonsterItemReward) TableName() string {
 	return "monster_item_rewards"
 }
 
+type MonsterTemplateType string
+
+const (
+	MonsterTemplateTypeMonster MonsterTemplateType = "monster"
+	MonsterTemplateTypeBoss    MonsterTemplateType = "boss"
+	MonsterTemplateTypeRaid    MonsterTemplateType = "raid"
+)
+
+func NormalizeMonsterTemplateType(raw string) MonsterTemplateType {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case string(MonsterTemplateTypeBoss):
+		return MonsterTemplateTypeBoss
+	case string(MonsterTemplateTypeRaid):
+		return MonsterTemplateTypeRaid
+	default:
+		return MonsterTemplateTypeMonster
+	}
+}
+
 func (m *Monster) BeforeSave(tx *gorm.DB) error {
 	if err := m.SetGeometry(m.Latitude, m.Longitude); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (m *MonsterTemplate) BeforeSave(tx *gorm.DB) error {
+	m.MonsterType = NormalizeMonsterTemplateType(string(m.MonsterType))
 	return nil
 }
 

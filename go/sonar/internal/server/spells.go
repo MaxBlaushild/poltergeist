@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"sort"
@@ -2476,6 +2477,22 @@ func spellHasCastableEffect(spell *models.Spell) bool {
 	return false
 }
 
+func spellDealsMonsterDamage(spell *models.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamage,
+			models.SpellEffectTypeDealDamageAllEnemies:
+			if effect.Amount > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellAbilityType) {
 	user, err := s.getAuthenticatedUser(ctx)
 	if err != nil {
@@ -2628,6 +2645,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "targetMonsterId is required for detrimental status abilities"})
 		return
 	}
+	advanceCombatTurnOnCast := targetMonsterID != nil && !spellDealsMonsterDamage(spellToCast)
 	var monsterBattle *models.MonsterBattle
 	if targetMonsterID != nil {
 		monsterBattle, err = s.getOrCreateActiveMonsterBattle(ctx, user.ID, *targetMonsterID)
@@ -2652,6 +2670,20 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			})
 			return
 		}
+	}
+	if targetMonsterID != nil {
+		log.Printf(
+			"[combat][cast] user=%s spell=%s abilityType=%s battle=%s monster=%s damageSpell=%t applyOnCast=%t statusesApply=%d statusesRemove=%d",
+			user.ID,
+			spellID,
+			abilityType,
+			monsterBattle.ID,
+			*targetMonsterID,
+			spellDealsMonsterDamage(spellToCast),
+			advanceCombatTurnOnCast,
+			len(statusesToApply),
+			len(statusesToRemove),
+		)
 	}
 
 	allowedTargets := map[uuid.UUID]bool{
@@ -2688,7 +2720,7 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			return
 		}
 	}
-	if targetMonsterID != nil {
+	if advanceCombatTurnOnCast {
 		if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, &spellID, now); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -2803,6 +2835,18 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
+			activeMonsterStatusNames := make([]string, 0, len(statusesToApply))
+			for _, statusTemplate := range statusesToApply {
+				name := strings.TrimSpace(statusTemplate.Name)
+				if name == "" || statusTemplate.DurationSeconds <= 0 {
+					continue
+				}
+				activeMonsterStatusNames = append(activeMonsterStatusNames, name)
+			}
+			if err := s.dbClient.MonsterStatus().DeleteActiveByBattleIDAndNames(ctx, monsterBattle.ID, activeMonsterStatusNames); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 
 			for _, statusTemplate := range statusesToApply {
 				name := strings.TrimSpace(statusTemplate.Name)
@@ -2862,6 +2906,18 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			if hasTargetUserID {
 				statusTargetUserID = targetUserID
 			}
+			activeUserStatusNames := make([]string, 0, len(statusesToApply))
+			for _, statusTemplate := range statusesToApply {
+				name := strings.TrimSpace(statusTemplate.Name)
+				if name == "" || statusTemplate.DurationSeconds <= 0 {
+					continue
+				}
+				activeUserStatusNames = append(activeUserStatusNames, name)
+			}
+			if err := s.dbClient.UserStatus().DeleteActiveByUserIDAndNames(ctx, statusTargetUserID, activeUserStatusNames); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
 			for _, statusTemplate := range statusesToApply {
 				name := strings.TrimSpace(statusTemplate.Name)
 				if name == "" || statusTemplate.DurationSeconds <= 0 {
@@ -2920,11 +2976,13 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 		}
 	}
 	if monsterBattle != nil {
+		monsterBattleID = &monsterBattle.ID
+	}
+	if monsterBattle != nil && advanceCombatTurnOnCast {
 		if err := s.dbClient.MonsterBattle().Touch(ctx, monsterBattle.ID, time.Now()); err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		monsterBattleID = &monsterBattle.ID
 		userDotDamage, monsterDotDamage, dotErr := s.applyBattleTurnDamageOverTime(ctx, user.ID, monsterBattle.ID)
 		if dotErr != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": dotErr.Error()})
@@ -2938,6 +2996,11 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			return
 		}
 		monsterBattle, err = s.finalizeMonsterBattleIfDefeated(ctx, monsterBattle)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		monsterBattle, err = s.advanceMonsterBattleTurnState(ctx, monsterBattle, &user.ID, nil)
 		if err != nil {
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -2978,6 +3041,14 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	if monsterBattle != nil && monsterBattle.EndedAt != nil {
 		response["battleEndedAt"] = monsterBattle.EndedAt
 	}
+	if monsterBattle != nil {
+		battleDetail, detailErr := s.monsterBattleDetailResponse(ctx, monsterBattle)
+		if detailErr != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": detailErr.Error()})
+			return
+		}
+		response["battleDetail"] = battleDetail
+	}
 	if len(appliedUserStatuses) > 0 {
 		response["userStatusesApplied"] = appliedUserStatuses
 	}
@@ -2995,6 +3066,20 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 	}
 	if battleTurnMonsterDotDamage > 0 {
 		response["battleTurnMonsterDotDamage"] = battleTurnMonsterDotDamage
+	}
+	if monsterBattle != nil {
+		log.Printf(
+			"[combat][cast][result] user=%s spell=%s battle=%s turnIndex=%d monsterHealthDeficit=%d userDot=%d monsterDot=%d monsterStatusesApplied=%d monsterStatusesRemoved=%d",
+			user.ID,
+			spellID,
+			monsterBattle.ID,
+			monsterBattle.TurnIndex,
+			monsterBattle.MonsterHealthDeficit,
+			battleTurnUserDotDamage,
+			battleTurnMonsterDotDamage,
+			len(appliedMonsterStatuses),
+			len(removedMonsterStatuses),
+		)
 	}
 
 	ctx.JSON(http.StatusOK, response)
