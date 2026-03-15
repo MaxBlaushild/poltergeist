@@ -693,6 +693,7 @@ type MonsterBattleHandle interface {
 	HasAnyActiveForUser(ctx context.Context, userID uuid.UUID) (bool, error)
 	Touch(ctx context.Context, battleID uuid.UUID, at time.Time) error
 	AdjustMonsterHealthDeficit(ctx context.Context, battleID uuid.UUID, delta int) error
+	UpdateMonsterCombatState(ctx context.Context, battleID uuid.UUID, manaDeficit int, cooldowns models.MonsterBattleAbilityCooldowns) error
 	SetState(ctx context.Context, battleID uuid.UUID, state string) error
 	SetTurnIndex(ctx context.Context, battleID uuid.UUID, turnIndex int) error
 	End(ctx context.Context, battleID uuid.UUID, endedAt time.Time) error

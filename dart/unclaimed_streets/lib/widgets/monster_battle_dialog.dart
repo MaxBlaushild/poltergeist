@@ -81,14 +81,22 @@ class _EncounterEnemyState {
   _EncounterEnemyState({
     required this.monster,
     required this.currentHealth,
+    int? currentMana,
     List<MonsterStatus>? statuses,
-  }) : statuses = statuses ?? List<MonsterStatus>.from(monster.statuses);
+    Map<String, DateTime>? cooldownExpiresAtByAbilityId,
+  }) : currentMana = currentMana ?? math.max(0, monster.mana),
+       statuses = statuses ?? List<MonsterStatus>.from(monster.statuses),
+       cooldownExpiresAtByAbilityId =
+           cooldownExpiresAtByAbilityId ?? <String, DateTime>{};
 
   final Monster monster;
   int currentHealth;
+  int currentMana;
   List<MonsterStatus> statuses;
+  final Map<String, DateTime> cooldownExpiresAtByAbilityId;
 
   int get maxHealth => math.max(1, monster.maxHealth);
+  int get maxMana => math.max(0, monster.maxMana);
   bool get isDefeated => currentHealth <= 0;
 }
 
@@ -357,7 +365,8 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
         .map(
           (monster) => _EncounterEnemyState(
             monster: monster,
-            currentHealth: math.max(1, monster.maxHealth),
+            currentHealth: math.max(0, monster.health),
+            currentMana: math.max(0, monster.mana),
           ),
         )
         .toList(growable: false);
@@ -372,6 +381,7 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
             longitude: 0,
           ),
           currentHealth: 1,
+          currentMana: 0,
         ),
       );
     }
@@ -880,6 +890,122 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     }
   }
 
+  void _applyParticipantResourcesFromPayload(Map<String, dynamic> payload) {
+    final rawSnapshots = payload['participantResources'];
+    if (rawSnapshots is! List) {
+      return;
+    }
+    for (final raw in rawSnapshots) {
+      final snapshot = raw is Map<String, dynamic>
+          ? raw
+          : (raw is Map ? Map<String, dynamic>.from(raw) : null);
+      if (snapshot == null) {
+        continue;
+      }
+      final userId = (snapshot['userId']?.toString() ?? '').trim();
+      if (userId.isEmpty) {
+        continue;
+      }
+      final health = _parseIntValue(snapshot['health']);
+      final maxHealth = math.max(1, _parseIntValue(snapshot['maxHealth']));
+      final mana = _parseIntValue(snapshot['mana']);
+      final maxMana = math.max(0, _parseIntValue(snapshot['maxMana']));
+      if (userId == _selfUserId) {
+        _playerHealth = health.clamp(0, maxHealth).toInt();
+        _playerMaxHealth = maxHealth;
+        _playerMana = mana.clamp(0, maxMana).toInt();
+        _playerMaxMana = maxMana;
+        _syncSelfAllyFromLocalResources();
+      }
+      final allyIndex = _partyAllies.indexWhere(
+        (ally) => ally.userId == userId,
+      );
+      if (allyIndex < 0) {
+        continue;
+      }
+      final ally = _partyAllies[allyIndex];
+      ally.maxHealth = maxHealth;
+      ally.currentHealth = health.clamp(0, maxHealth).toInt();
+      ally.maxMana = maxMana;
+      ally.currentMana = mana.clamp(0, maxMana).toInt();
+    }
+  }
+
+  void _applyMonsterActionPayload(Map<String, dynamic>? payload) {
+    if (payload == null || payload.isEmpty) {
+      return;
+    }
+    _applyParticipantResourcesFromPayload(payload);
+
+    final rawAction = payload['monsterAction'];
+    final action = rawAction is Map<String, dynamic>
+        ? rawAction
+        : (rawAction is Map ? Map<String, dynamic>.from(rawAction) : null);
+    if (action == null || action.isEmpty) {
+      return;
+    }
+
+    final actorName = (action['actorMonsterName']?.toString() ?? '').trim();
+    final abilityName = (action['abilityName']?.toString() ?? '').trim();
+    final damage = _parseIntValue(action['damage']);
+    final heal = _parseIntValue(action['heal']);
+    final targetUserId = (action['targetUserId']?.toString() ?? '').trim();
+    final targetUserIds =
+        ((action['targetUserIds'] as List<dynamic>?) ?? const [])
+            .map((entry) => entry?.toString().trim() ?? '')
+            .where((entry) => entry.isNotEmpty)
+            .toList(growable: false);
+
+    String targetLabel() {
+      if (targetUserIds.length > 1) {
+        return 'the party';
+      }
+      if (targetUserId == _selfUserId || targetUserIds.contains(_selfUserId)) {
+        return 'you';
+      }
+      if (targetUserId.isNotEmpty) {
+        final ally = _partyAllies.where(
+          (entry) => entry.userId == targetUserId,
+        );
+        if (ally.isNotEmpty) {
+          return ally.first.name;
+        }
+      }
+      return 'the party';
+    }
+
+    final actor = actorName.isNotEmpty ? actorName : 'The monster';
+    final actionType = (action['actionType']?.toString() ?? '').trim();
+    final statusesApplied =
+        ((action['userStatusesApplied'] as List<dynamic>?) ?? const []).length;
+
+    if (actionType == 'attack' && damage > 0) {
+      _battleLog.add('$actor attacks ${targetLabel()} for $damage damage.');
+    } else if (abilityName.isNotEmpty && damage > 0) {
+      _battleLog.add(
+        '$actor uses $abilityName on ${targetLabel()} for $damage damage.',
+      );
+    } else if (abilityName.isNotEmpty && heal > 0) {
+      _battleLog.add('$actor uses $abilityName and restores $heal HP.');
+    } else if (abilityName.isNotEmpty && statusesApplied > 0) {
+      _battleLog.add('$actor uses $abilityName on ${targetLabel()}.');
+    } else if (abilityName.isNotEmpty) {
+      _battleLog.add('$actor uses $abilityName.');
+    }
+
+    if ((targetUserId == _selfUserId || targetUserIds.contains(_selfUserId)) &&
+        damage > 0) {
+      unawaited(
+        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
+      );
+    }
+    if (heal > 0) {
+      unawaited(
+        _playSpriteFx(targetMonster: true, amount: heal, healing: true),
+      );
+    }
+  }
+
   List<_EncounterEnemyState> get _aliveEnemies =>
       _enemies.where((enemy) => !enemy.isDefeated).toList(growable: false);
 
@@ -1180,43 +1306,6 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _partyMonsterTurnInFlight = false;
       return;
     }
-
-    final damage = _monsterAttackDamage(enemy.monster);
-    final weaponName = enemy.monster.weaponInventoryItemName.trim().isNotEmpty
-        ? enemy.monster.weaponInventoryItemName.trim()
-        : 'its weapon';
-    setState(() {
-      if (_playerHealth > 0) {
-        _playerHealth = math.max(0, _playerHealth - damage);
-        _battleLog.add(
-          '${enemy.monster.name} attacks with $weaponName for $damage damage.',
-        );
-      } else {
-        _battleLog.add('${enemy.monster.name} attacks your party.');
-      }
-      _syncSelfAllyFromLocalResources();
-    });
-    _requestPartySelfResourceSync(syncHealth: true, syncMana: false);
-    if (_playerHealth > 0) {
-      unawaited(
-        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
-      );
-    }
-
-    if (_allPartyMembersDefeated() && !_battleOver) {
-      _partyMonsterTurnInFlight = false;
-      await _finishBattle(
-        MonsterBattleOutcome.defeat,
-        'Your party has been defeated.',
-      );
-      return;
-    }
-
-    await Future<void>.delayed(const Duration(milliseconds: 220));
-    if (!mounted || _battleOver) {
-      _partyMonsterTurnInFlight = false;
-      return;
-    }
     Map<String, dynamic>? turnResponse;
     final monsterId = (_partyBattleMonsterId ?? '').trim();
     if (monsterId.isNotEmpty) {
@@ -1231,11 +1320,20 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       _actingEnemyIndex = null;
       _busy = false;
       _selectedCommandKey = 'root:Attack';
+      _applyMonsterActionPayload(turnResponse);
       _applyTurnSyncResults(turnResponse: turnResponse);
       if (_playerHealth <= 0) {
         _battleLog.add('You are down. Waiting for your party...');
       }
     });
+    if (!_battleOver && _allPartyMembersDefeated()) {
+      _partyMonsterTurnInFlight = false;
+      await _finishBattle(
+        MonsterBattleOutcome.defeat,
+        'Your party has been defeated.',
+      );
+      return;
+    }
     _partyMonsterTurnInFlight = false;
   }
 
@@ -2185,6 +2283,179 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
     return math.max(1, totalDamage);
   }
 
+  int _monsterAbilityDamage(Monster monster, Spell ability) {
+    final damageEffects = ability.effects
+        .where((effect) => _isDamageEffect(effect.type))
+        .toList(growable: false);
+    if (damageEffects.isEmpty) {
+      return 0;
+    }
+    final explicitDamage = damageEffects.fold<int>(
+      0,
+      (sum, effect) =>
+          sum +
+          math.max(0, effect.amount) *
+              _damageHits(effect.hits, hasDamage: effect.amount > 0),
+    );
+    final techniqueBonus = _isTechnique(ability)
+        ? math.max(0, (monster.strength - 10) ~/ 2)
+        : 0;
+    return math.max<int>(
+      1,
+      explicitDamage + math.max<int>(0, monster.level ~/ 3) + techniqueBonus,
+    );
+  }
+
+  int _monsterAbilityHealing(Spell ability) {
+    return ability.effects
+        .where((effect) => _isHealingEffect(effect.type))
+        .fold<int>(0, (sum, effect) => sum + math.max(0, effect.amount));
+  }
+
+  void _pruneExpiredMonsterAbilityCooldowns(_EncounterEnemyState enemy) {
+    final now = DateTime.now();
+    final expiredIds = <String>[];
+    enemy.cooldownExpiresAtByAbilityId.forEach((abilityId, expiresAt) {
+      if (!expiresAt.isAfter(now)) {
+        expiredIds.add(abilityId);
+      }
+    });
+    for (final abilityId in expiredIds) {
+      enemy.cooldownExpiresAtByAbilityId.remove(abilityId);
+    }
+  }
+
+  int _monsterAbilityCooldownRemaining(
+    _EncounterEnemyState enemy,
+    Spell ability,
+  ) {
+    _pruneExpiredMonsterAbilityCooldowns(enemy);
+    final abilityId = ability.id.trim();
+    if (abilityId.isEmpty) return 0;
+    final expiresAt = enemy.cooldownExpiresAtByAbilityId[abilityId];
+    return _cooldownTurnsRemainingFromExpiry(expiresAt);
+  }
+
+  bool _monsterCanUseAbility(_EncounterEnemyState enemy, Spell ability) {
+    if (_monsterAbilityCooldownRemaining(enemy, ability) > 0) {
+      return false;
+    }
+    final manaCost = _isTechnique(ability) ? 0 : math.max(0, ability.manaCost);
+    return manaCost <= enemy.currentMana;
+  }
+
+  void _consumeMonsterAbilityResources(
+    _EncounterEnemyState enemy,
+    Spell ability,
+  ) {
+    final manaCost = _isTechnique(ability) ? 0 : math.max(0, ability.manaCost);
+    if (manaCost > 0) {
+      enemy.currentMana = math.max(0, enemy.currentMana - manaCost);
+    }
+    final cooldownTurns = math.max(0, ability.cooldownTurns);
+    final abilityId = ability.id.trim();
+    if (cooldownTurns <= 0 || abilityId.isEmpty) {
+      return;
+    }
+    enemy.cooldownExpiresAtByAbilityId[abilityId] = DateTime.now().add(
+      _combatTurnDuration * cooldownTurns,
+    );
+  }
+
+  Spell? _pickMonsterAbility(
+    _EncounterEnemyState enemy,
+    Monster monster,
+    int currentHealth,
+    int maxHealth,
+  ) {
+    final abilities = <Spell>[...monster.spells, ...monster.techniques]
+        .where((ability) => _monsterCanUseAbility(enemy, ability))
+        .toList(growable: false);
+    if (abilities.isEmpty) {
+      return null;
+    }
+    final support = abilities
+        .where((ability) => _monsterAbilityHealing(ability) > 0)
+        .toList(growable: false);
+    final offense = abilities
+        .where((ability) => _monsterAbilityDamage(monster, ability) > 0)
+        .toList(growable: false);
+    final healthRatio = maxHealth <= 0
+        ? 1.0
+        : currentHealth / math.max(1, maxHealth);
+
+    if (healthRatio <= 0.45 && support.isNotEmpty) {
+      support.sort(
+        (left, right) => _monsterAbilityHealing(
+          right,
+        ).compareTo(_monsterAbilityHealing(left)),
+      );
+      return support.first;
+    }
+    if (offense.isNotEmpty && _random.nextInt(100) < 55) {
+      offense.sort(
+        (left, right) => _monsterAbilityDamage(
+          monster,
+          right,
+        ).compareTo(_monsterAbilityDamage(monster, left)),
+      );
+      return offense.first;
+    }
+    if (support.isNotEmpty && offense.isEmpty) {
+      return support.first;
+    }
+    if (offense.isNotEmpty) {
+      return offense[_random.nextInt(offense.length)];
+    }
+    return null;
+  }
+
+  bool _applySoloMonsterAbility(_EncounterEnemyState enemy) {
+    final ability = _pickMonsterAbility(
+      enemy,
+      enemy.monster,
+      enemy.currentHealth,
+      enemy.maxHealth,
+    );
+    if (ability == null) {
+      return false;
+    }
+
+    final healAmount = _monsterAbilityHealing(ability);
+    if (healAmount > 0 && enemy.currentHealth < enemy.maxHealth) {
+      setState(() {
+        _consumeMonsterAbilityResources(enemy, ability);
+        enemy.currentHealth = (enemy.currentHealth + healAmount)
+            .clamp(0, enemy.maxHealth)
+            .toInt();
+        _battleLog.add(
+          '${enemy.monster.name} uses ${ability.name} and restores $healAmount HP.',
+        );
+      });
+      unawaited(
+        _playSpriteFx(targetMonster: true, amount: healAmount, healing: true),
+      );
+      return true;
+    }
+
+    final damage = _monsterAbilityDamage(enemy.monster, ability);
+    if (damage <= 0) {
+      return false;
+    }
+    setState(() {
+      _consumeMonsterAbilityResources(enemy, ability);
+      _playerHealth = math.max(0, _playerHealth - damage);
+      _syncSelfAllyFromLocalResources();
+      _battleLog.add(
+        '${enemy.monster.name} uses ${ability.name} for $damage damage.',
+      );
+    });
+    unawaited(
+      _playSpriteFx(targetMonster: false, amount: damage, healing: false),
+    );
+    return true;
+  }
+
   int _abilityDamage(Spell ability) {
     final damageEffects = ability.effects
         .where((effect) => _isDamageEffect(effect.type))
@@ -2667,22 +2938,29 @@ class _MonsterBattleDialogState extends State<MonsterBattleDialog> {
       final enemy = _enemies[i];
       if (enemy.isDefeated) continue;
 
-      final damage = _monsterAttackDamage(enemy.monster);
-      final weaponName = enemy.monster.weaponInventoryItemName.trim().isNotEmpty
-          ? enemy.monster.weaponInventoryItemName.trim()
-          : 'its weapon';
-
       setState(() {
         _actingEnemyIndex = i;
-        _playerHealth = math.max(0, _playerHealth - damage);
-        _syncSelfAllyFromLocalResources();
-        _battleLog.add(
-          '${enemy.monster.name} attacks with $weaponName for $damage damage.',
-        );
       });
-      unawaited(
-        _playSpriteFx(targetMonster: false, amount: damage, healing: false),
-      );
+
+      final usedAbility = _applySoloMonsterAbility(enemy);
+      if (!usedAbility) {
+        final damage = _monsterAttackDamage(enemy.monster);
+        final weaponName =
+            enemy.monster.weaponInventoryItemName.trim().isNotEmpty
+            ? enemy.monster.weaponInventoryItemName.trim()
+            : 'its weapon';
+
+        setState(() {
+          _playerHealth = math.max(0, _playerHealth - damage);
+          _syncSelfAllyFromLocalResources();
+          _battleLog.add(
+            '${enemy.monster.name} attacks with $weaponName for $damage damage.',
+          );
+        });
+        unawaited(
+          _playSpriteFx(targetMonster: false, amount: damage, healing: false),
+        );
+      }
 
       if (_playerHealth <= 0) {
         if (widget.isPartyBattle && !_allPartyMembersDefeated()) {

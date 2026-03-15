@@ -363,6 +363,7 @@ type monsterBattleResponse struct {
 	StartedAt            time.Time  `json:"startedAt"`
 	LastActivityAt       time.Time  `json:"lastActivityAt"`
 	MonsterHealthDeficit int        `json:"monsterHealthDeficit"`
+	MonsterManaDeficit   int        `json:"monsterManaDeficit"`
 	EndedAt              *time.Time `json:"endedAt,omitempty"`
 }
 
@@ -406,6 +407,7 @@ func monsterBattleResponseFrom(battle *models.MonsterBattle) *monsterBattleRespo
 		StartedAt:            battle.StartedAt,
 		LastActivityAt:       battle.LastActivityAt,
 		MonsterHealthDeficit: battle.MonsterHealthDeficit,
+		MonsterManaDeficit:   battle.MonsterManaDeficit,
 		EndedAt:              battle.EndedAt,
 	}
 }
@@ -522,10 +524,15 @@ func monsterResponseFrom(
 	maxMana := monster.DerivedMaxManaWithBonuses(statusBonuses)
 	damageMin, damageMax, swipes := monster.DerivedAttackProfileWithBonuses(statusBonuses)
 	currentHealth := maxHealth
+	currentMana := maxMana
 	if activeBattle != nil {
 		currentHealth = maxHealth - activeBattle.MonsterHealthDeficit
 		if currentHealth < 0 {
 			currentHealth = 0
+		}
+		currentMana = maxMana - activeBattle.MonsterManaDeficit
+		if currentMana < 0 {
+			currentMana = 0
 		}
 	}
 	spells := []models.Spell{}
@@ -593,7 +600,7 @@ func monsterResponseFrom(
 		Charisma:                    stats.Charisma,
 		Health:                      currentHealth,
 		MaxHealth:                   maxHealth,
-		Mana:                        maxMana,
+		Mana:                        currentMana,
 		MaxMana:                     maxMana,
 		AttackDamageMin:             damageMin,
 		AttackDamageMax:             damageMax,
@@ -2607,6 +2614,10 @@ func (s *server) applyMonsterBattleDamage(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := s.advanceMonsterCooldownsForCombatTurn(ctx, battle, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2757,6 +2768,10 @@ func (s *server) applyMonsterBattleDamageByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if err := s.advanceMonsterCooldownsForCombatTurn(ctx, battle, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	userDotDamage, monsterDotDamage, err := s.applyBattleTurnDamageOverTime(ctx, user.ID, battle.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2858,6 +2873,28 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		return
 	}
 
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	turnOrder, err := s.buildMonsterBattleTurnOrder(ctx, battle, participants)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(turnOrder) > 0 {
+		currentIndex := battle.TurnIndex
+		if currentIndex < 0 || currentIndex >= len(turnOrder) {
+			currentIndex = 0
+		}
+		currentTurn := turnOrder[currentIndex]
+		if strings.ToLower(strings.TrimSpace(currentTurn.EntityType)) != "monster" {
+			ctx.JSON(http.StatusConflict, gin.H{"error": "it is not the monster's turn"})
+			return
+		}
+	}
+
 	now := time.Now()
 	if err := s.dbClient.MonsterBattle().Touch(ctx, battle.ID, now); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -2865,6 +2902,10 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 	}
 	battle.LastActivityAt = now
 	if err := s.advanceUserCooldownsForCombatTurn(ctx, user.ID, nil, now); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.advanceMonsterCooldownsForCombatTurn(ctx, battle, nil, now); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -2882,6 +2923,22 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		return
 	}
 
+	updatedMonster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	monsterAction, participantResources, err := s.executeMonsterBattleAction(ctx, battle, updatedMonster)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	battle, err = s.dbClient.MonsterBattle().FindByID(ctx, battle.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	if battle, err = s.finalizeMonsterBattleIfDefeated(ctx, battle); err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2891,7 +2948,7 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 		return
 	}
 
-	updatedMonster, err := s.dbClient.Monster().FindByID(ctx, monsterID)
+	updatedMonster, err = s.dbClient.Monster().FindByID(ctx, monsterID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -2914,13 +2971,15 @@ func (s *server) advanceMonsterBattleTurn(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{
-		"battle":           monsterBattleResponseFrom(battle),
-		"battleDetail":     battleDetail,
-		"monster":          monsterResponse,
-		"userDotDamage":    userDotDamage,
-		"monsterDotDamage": monsterDotDamage,
-		"userHealth":       userHealth,
-		"userMaxHealth":    userMaxHealth,
+		"battle":               monsterBattleResponseFrom(battle),
+		"battleDetail":         battleDetail,
+		"monster":              monsterResponse,
+		"userDotDamage":        userDotDamage,
+		"monsterDotDamage":     monsterDotDamage,
+		"userHealth":           userHealth,
+		"userMaxHealth":        userMaxHealth,
+		"monsterAction":        monsterAction,
+		"participantResources": participantResources,
 	})
 	log.Printf(
 		"[party-combat][turn][result] user=%s battle=%s turnIndex=%d deficit=%d userDot=%d monsterDot=%d userHealth=%d",

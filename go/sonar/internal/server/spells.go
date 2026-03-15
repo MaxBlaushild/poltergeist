@@ -2725,6 +2725,12 @@ func (s *server) castSpellWithType(ctx *gin.Context, requiredType *models.SpellA
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if monsterBattle != nil {
+			if err := s.advanceMonsterCooldownsForCombatTurn(ctx, monsterBattle, nil, now); err != nil {
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
 	}
 
 	if !isTechnique {

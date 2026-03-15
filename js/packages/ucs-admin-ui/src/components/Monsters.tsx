@@ -672,6 +672,9 @@ export const Monsters = () => {
   const [bulkTemplateCount, setBulkTemplateCount] = useState('8');
   const [bulkTemplateType, setBulkTemplateType] =
     useState<MonsterTemplateType>('monster');
+  const [templateTypeFilter, setTemplateTypeFilter] = useState<
+    'all' | MonsterTemplateType
+  >('all');
   const [bulkTemplateBusy, setBulkTemplateBusy] = useState(false);
   const [bulkTemplateJob, setBulkTemplateJob] =
     useState<BulkMonsterTemplateStatus | null>(null);
@@ -843,13 +846,22 @@ export const Monsters = () => {
 
   const filteredTemplates = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return templates;
-    return templates.filter(
-      (template) =>
+    return templates.filter((template) => {
+      const matchesType =
+        templateTypeFilter === 'all' ||
+        (template.monsterType ?? 'monster') === templateTypeFilter;
+      if (!matchesType) {
+        return false;
+      }
+      if (!normalized) {
+        return true;
+      }
+      return (
         template.name.toLowerCase().includes(normalized) ||
         template.description.toLowerCase().includes(normalized)
-    );
-  }, [query, templates]);
+      );
+    });
+  }, [query, templateTypeFilter, templates]);
 
   const filteredMonsters = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -2086,12 +2098,31 @@ export const Monsters = () => {
         </div>
 
         <div className="qa-card">
-          <input
-            className="block w-full border border-gray-300 rounded-md p-2"
-            placeholder="Search monsters/templates..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          <div className="flex flex-wrap gap-3">
+            <input
+              className="min-w-[280px] flex-1 border border-gray-300 rounded-md p-2"
+              placeholder="Search monsters/templates..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <select
+              className="rounded-md border border-gray-300 p-2"
+              value={templateTypeFilter}
+              onChange={(event) =>
+                setTemplateTypeFilter(
+                  event.target.value as 'all' | MonsterTemplateType
+                )
+              }
+              aria-label="Filter monster templates by type"
+            >
+              <option value="all">All Template Types</option>
+              {monsterTemplateTypeOptions.map((option) => (
+                <option key={`filter-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {error && <div className="qa-card text-red-600">{error}</div>}

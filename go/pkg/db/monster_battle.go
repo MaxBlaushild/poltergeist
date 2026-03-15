@@ -160,6 +160,29 @@ func (h *monsterBattleHandler) AdjustMonsterHealthDeficit(
 		}).Error
 }
 
+func (h *monsterBattleHandler) UpdateMonsterCombatState(
+	ctx context.Context,
+	battleID uuid.UUID,
+	manaDeficit int,
+	cooldowns models.MonsterBattleAbilityCooldowns,
+) error {
+	if manaDeficit < 0 {
+		manaDeficit = 0
+	}
+	if cooldowns == nil {
+		cooldowns = models.MonsterBattleAbilityCooldowns{}
+	}
+	now := time.Now()
+	return h.db.WithContext(ctx).
+		Model(&models.MonsterBattle{}).
+		Where("id = ? AND ended_at IS NULL", battleID).
+		Updates(map[string]interface{}{
+			"monster_mana_deficit":      manaDeficit,
+			"monster_ability_cooldowns": cooldowns,
+			"updated_at":                now,
+		}).Error
+}
+
 func (h *monsterBattleHandler) SetState(
 	ctx context.Context,
 	battleID uuid.UUID,

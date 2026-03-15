@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strings"
@@ -51,6 +52,31 @@ type monsterBattleDetail struct {
 	Invites          []monsterBattleInviteSummary      `json:"invites"`
 	PendingResponses int64                             `json:"pendingResponses"`
 	TurnOrder        []monsterBattleTurnOrderEntry     `json:"turnOrder"`
+}
+
+type monsterBattleUserResource struct {
+	UserID    uuid.UUID `json:"userId"`
+	Health    int       `json:"health"`
+	MaxHealth int       `json:"maxHealth"`
+	Mana      int       `json:"mana"`
+	MaxMana   int       `json:"maxMana"`
+}
+
+type monsterBattleActionSummary struct {
+	ActionType             string                         `json:"actionType"`
+	AbilityID              *uuid.UUID                     `json:"abilityId,omitempty"`
+	AbilityName            string                         `json:"abilityName,omitempty"`
+	AbilityType            string                         `json:"abilityType,omitempty"`
+	ActorMonsterID         uuid.UUID                      `json:"actorMonsterId"`
+	ActorMonsterName       string                         `json:"actorMonsterName"`
+	TargetUserID           *uuid.UUID                     `json:"targetUserId,omitempty"`
+	TargetUserIDs          []uuid.UUID                    `json:"targetUserIds,omitempty"`
+	Damage                 int                            `json:"damage,omitempty"`
+	Heal                   int                            `json:"heal,omitempty"`
+	UserStatusesApplied    []scenarioAppliedFailureStatus `json:"userStatusesApplied,omitempty"`
+	UserStatusesRemoved    []string                       `json:"userStatusesRemoved,omitempty"`
+	MonsterStatusesApplied []scenarioAppliedFailureStatus `json:"monsterStatusesApplied,omitempty"`
+	MonsterStatusesRemoved []string                       `json:"monsterStatusesRemoved,omitempty"`
 }
 
 func (s *server) findActiveMonsterBattleForUser(
@@ -631,6 +657,535 @@ func (s *server) advanceMonsterBattleTurnState(
 	}
 	battle.TurnIndex = nextIndex
 	return battle, nil
+}
+
+func monsterAbilityTargetsAllEnemies(spell *models.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamageAllEnemies,
+			models.SpellEffectTypeApplyDetrimentalAll:
+			return true
+		}
+	}
+	return false
+}
+
+func monsterAbilityHasOffense(spell *models.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamage,
+			models.SpellEffectTypeDealDamageAllEnemies,
+			models.SpellEffectTypeApplyDetrimentalStatus,
+			models.SpellEffectTypeApplyDetrimentalAll:
+			return true
+		}
+	}
+	return false
+}
+
+func monsterAbilityHasSupport(spell *models.Spell) bool {
+	if spell == nil {
+		return false
+	}
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeRestoreLifePartyMember,
+			models.SpellEffectTypeRestoreLifeAllParty,
+			models.SpellEffectTypeApplyBeneficialStatus,
+			models.SpellEffectTypeRemoveDetrimental:
+			return true
+		}
+	}
+	return false
+}
+
+func monsterAbilityDamageForCombat(monster *models.Monster, spell *models.Spell) int {
+	if monster == nil || spell == nil {
+		return 0
+	}
+	explicitDamage := 0
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeDealDamage, models.SpellEffectTypeDealDamageAllEnemies:
+			hits := effect.Hits
+			if hits <= 0 && effect.Amount > 0 {
+				hits = 1
+			}
+			explicitDamage += maxInt(0, effect.Amount) * maxInt(0, hits)
+		}
+	}
+	if explicitDamage <= 0 {
+		return 0
+	}
+	bonus := maxInt(0, monster.EffectiveLevel()/3)
+	if models.NormalizeSpellAbilityType(string(spell.AbilityType)) == models.SpellAbilityTypeTechnique {
+		bonus += maxInt(0, (monster.EffectiveStats().Strength-10)/2)
+	}
+	return maxInt(1, explicitDamage+bonus)
+}
+
+func monsterAbilityHealingForCombat(spell *models.Spell) int {
+	if spell == nil {
+		return 0
+	}
+	total := 0
+	for _, effect := range spell.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeRestoreLifePartyMember, models.SpellEffectTypeRestoreLifeAllParty:
+			total += maxInt(0, effect.Amount)
+		}
+	}
+	return total
+}
+
+func monsterCombatAbilities(monster *models.Monster) []models.Spell {
+	if monster == nil {
+		return []models.Spell{}
+	}
+	estimatedSize := 0
+	if monster.Template != nil {
+		estimatedSize = len(monster.Template.Spells)
+	}
+	abilities := make([]models.Spell, 0, estimatedSize)
+	seen := map[uuid.UUID]struct{}{}
+	appendAbility := func(spell models.Spell) {
+		if spell.ID == uuid.Nil {
+			return
+		}
+		if _, exists := seen[spell.ID]; exists {
+			return
+		}
+		seen[spell.ID] = struct{}{}
+		abilities = append(abilities, spell)
+	}
+	if monster.Template != nil {
+		for _, templateSpell := range monster.Template.Spells {
+			appendAbility(templateSpell.Spell)
+		}
+	}
+	return abilities
+}
+
+func chooseMonsterBattleAbility(
+	monster *models.Monster,
+	battle *models.MonsterBattle,
+	currentHealth int,
+	maxHealth int,
+	currentMana int,
+	now time.Time,
+) *models.Spell {
+	abilities := monsterCombatAbilities(monster)
+	if len(abilities) == 0 {
+		return nil
+	}
+
+	support := make([]models.Spell, 0, len(abilities))
+	offense := make([]models.Spell, 0, len(abilities))
+	cooldowns := models.MonsterBattleAbilityCooldowns{}
+	if battle != nil {
+		cooldowns = battle.MonsterAbilityCooldowns
+	}
+	for _, ability := range abilities {
+		if normalizeSpellAbilityType(string(ability.AbilityType)) != models.SpellAbilityTypeTechnique &&
+			ability.ManaCost > currentMana {
+			continue
+		}
+		if monsterCooldownTurnsRemaining(cooldowns, ability.ID.String(), now) > 0 {
+			continue
+		}
+		if monsterAbilityHasSupport(&ability) {
+			support = append(support, ability)
+		}
+		if monsterAbilityHasOffense(&ability) {
+			offense = append(offense, ability)
+		}
+	}
+
+	healthRatio := 1.0
+	if maxHealth > 0 {
+		healthRatio = float64(currentHealth) / float64(maxHealth)
+	}
+	if healthRatio <= 0.45 && len(support) > 0 {
+		best := support[0]
+		bestHealing := monsterAbilityHealingForCombat(&best)
+		for _, ability := range support[1:] {
+			healing := monsterAbilityHealingForCombat(&ability)
+			if healing > bestHealing {
+				best = ability
+				bestHealing = healing
+			}
+		}
+		return &best
+	}
+
+	if len(offense) > 0 && rand.Intn(100) < 55 {
+		best := offense[0]
+		bestDamage := monsterAbilityDamageForCombat(monster, &best)
+		for _, ability := range offense[1:] {
+			damage := monsterAbilityDamageForCombat(monster, &ability)
+			if damage > bestDamage {
+				best = ability
+				bestDamage = damage
+			}
+		}
+		return &best
+	}
+
+	if len(support) > 0 && len(offense) == 0 {
+		best := support[0]
+		return &best
+	}
+	if len(offense) > 0 {
+		best := offense[rand.Intn(len(offense))]
+		return &best
+	}
+	return nil
+}
+
+func (s *server) loadMonsterBattleUserResources(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+) ([]monsterBattleUserResource, error) {
+	if battle == nil {
+		return []monsterBattleUserResource{}, nil
+	}
+	participants, err := s.dbClient.MonsterBattleParticipant().FindByBattleID(ctx, battle.ID)
+	if err != nil {
+		return nil, err
+	}
+	resources := make([]monsterBattleUserResource, 0, len(participants))
+	for _, participant := range participants {
+		_, maxHealth, maxMana, health, mana, err := s.getScenarioResourceState(ctx, participant.UserID)
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, monsterBattleUserResource{
+			UserID:    participant.UserID,
+			Health:    health,
+			MaxHealth: maxHealth,
+			Mana:      mana,
+			MaxMana:   maxMana,
+		})
+	}
+	return resources, nil
+}
+
+func chooseMonsterBattleTarget(resources []monsterBattleUserResource) *monsterBattleUserResource {
+	var target *monsterBattleUserResource
+	for i := range resources {
+		if resources[i].Health <= 0 {
+			continue
+		}
+		if target == nil || resources[i].Health < target.Health {
+			target = &resources[i]
+		}
+	}
+	return target
+}
+
+func (s *server) applyMonsterBattleUserStatuses(
+	ctx context.Context,
+	targetUserIDs []uuid.UUID,
+	statusTemplates models.ScenarioFailureStatusTemplates,
+) ([]scenarioAppliedFailureStatus, error) {
+	applied := make([]scenarioAppliedFailureStatus, 0, len(statusTemplates))
+	for _, targetUserID := range targetUserIDs {
+		activeNames := make([]string, 0, len(statusTemplates))
+		for _, statusTemplate := range statusTemplates {
+			name := strings.TrimSpace(statusTemplate.Name)
+			if name == "" || statusTemplate.DurationSeconds <= 0 {
+				continue
+			}
+			activeNames = append(activeNames, name)
+		}
+		if err := s.dbClient.UserStatus().DeleteActiveByUserIDAndNames(ctx, targetUserID, activeNames); err != nil {
+			return nil, err
+		}
+		for _, statusTemplate := range statusTemplates {
+			name := strings.TrimSpace(statusTemplate.Name)
+			if name == "" || statusTemplate.DurationSeconds <= 0 {
+				continue
+			}
+			status := &models.UserStatus{
+				UserID:          targetUserID,
+				Name:            name,
+				Description:     strings.TrimSpace(statusTemplate.Description),
+				Effect:          strings.TrimSpace(statusTemplate.Effect),
+				Positive:        statusTemplate.Positive,
+				EffectType:      normalizeUserStatusEffectType(statusTemplate.EffectType),
+				DamagePerTick:   statusTemplate.DamagePerTick,
+				HealthPerTick:   statusTemplate.HealthPerTick,
+				ManaPerTick:     statusTemplate.ManaPerTick,
+				StrengthMod:     statusTemplate.StrengthMod,
+				DexterityMod:    statusTemplate.DexterityMod,
+				ConstitutionMod: statusTemplate.ConstitutionMod,
+				IntelligenceMod: statusTemplate.IntelligenceMod,
+				WisdomMod:       statusTemplate.WisdomMod,
+				CharismaMod:     statusTemplate.CharismaMod,
+				StartedAt:       time.Now(),
+				ExpiresAt:       time.Now().Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+			}
+			if err := s.dbClient.UserStatus().Create(ctx, status); err != nil {
+				return nil, err
+			}
+			applied = append(applied, scenarioAppliedFailureStatus{
+				Name:            status.Name,
+				Description:     status.Description,
+				Effect:          status.Effect,
+				EffectType:      string(status.EffectType),
+				Positive:        status.Positive,
+				DamagePerTick:   status.DamagePerTick,
+				HealthPerTick:   status.HealthPerTick,
+				ManaPerTick:     status.ManaPerTick,
+				DurationSeconds: statusTemplate.DurationSeconds,
+			})
+		}
+	}
+	return applied, nil
+}
+
+func (s *server) applyMonsterBattleMonsterStatuses(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	monster *models.Monster,
+	statusTemplates models.ScenarioFailureStatusTemplates,
+) ([]scenarioAppliedFailureStatus, error) {
+	if battle == nil || monster == nil {
+		return []scenarioAppliedFailureStatus{}, nil
+	}
+	applied := make([]scenarioAppliedFailureStatus, 0, len(statusTemplates))
+	activeNames := make([]string, 0, len(statusTemplates))
+	for _, statusTemplate := range statusTemplates {
+		name := strings.TrimSpace(statusTemplate.Name)
+		if name == "" || statusTemplate.DurationSeconds <= 0 {
+			continue
+		}
+		activeNames = append(activeNames, name)
+	}
+	if err := s.dbClient.MonsterStatus().DeleteActiveByBattleIDAndNames(ctx, battle.ID, activeNames); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	for _, statusTemplate := range statusTemplates {
+		name := strings.TrimSpace(statusTemplate.Name)
+		if name == "" || statusTemplate.DurationSeconds <= 0 {
+			continue
+		}
+		status := &models.MonsterStatus{
+			UserID:          battle.UserID,
+			BattleID:        battle.ID,
+			MonsterID:       monster.ID,
+			Name:            name,
+			Description:     strings.TrimSpace(statusTemplate.Description),
+			Effect:          strings.TrimSpace(statusTemplate.Effect),
+			Positive:        statusTemplate.Positive,
+			EffectType:      normalizeMonsterStatusEffectType(statusTemplate.EffectType),
+			DamagePerTick:   statusTemplate.DamagePerTick,
+			HealthPerTick:   statusTemplate.HealthPerTick,
+			StrengthMod:     statusTemplate.StrengthMod,
+			DexterityMod:    statusTemplate.DexterityMod,
+			ConstitutionMod: statusTemplate.ConstitutionMod,
+			IntelligenceMod: statusTemplate.IntelligenceMod,
+			WisdomMod:       statusTemplate.WisdomMod,
+			CharismaMod:     statusTemplate.CharismaMod,
+			StartedAt:       now,
+			ExpiresAt:       now.Add(time.Duration(statusTemplate.DurationSeconds) * time.Second),
+		}
+		if err := s.dbClient.MonsterStatus().Create(ctx, status); err != nil {
+			return nil, err
+		}
+		applied = append(applied, scenarioAppliedFailureStatus{
+			Name:            status.Name,
+			Description:     status.Description,
+			Effect:          status.Effect,
+			EffectType:      string(status.EffectType),
+			Positive:        status.Positive,
+			DamagePerTick:   status.DamagePerTick,
+			HealthPerTick:   status.HealthPerTick,
+			ManaPerTick:     0,
+			DurationSeconds: statusTemplate.DurationSeconds,
+		})
+	}
+	return applied, nil
+}
+
+func (s *server) executeMonsterBattleAction(
+	ctx context.Context,
+	battle *models.MonsterBattle,
+	monster *models.Monster,
+) (*monsterBattleActionSummary, []monsterBattleUserResource, error) {
+	if battle == nil || monster == nil {
+		return nil, nil, nil
+	}
+	resources, err := s.loadMonsterBattleUserResources(ctx, battle)
+	if err != nil {
+		return nil, nil, err
+	}
+	statusBonuses, err := s.dbClient.MonsterStatus().GetActiveStatBonuses(ctx, battle.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	currentMonsterHealth := maxInt(0, monster.DerivedMaxHealthWithBonuses(statusBonuses)-battle.MonsterHealthDeficit)
+	maxMonsterHealth := maxInt(1, monster.DerivedMaxHealthWithBonuses(statusBonuses))
+	maxMonsterMana := maxInt(0, monster.DerivedMaxManaWithBonuses(statusBonuses))
+	currentMonsterMana := maxInt(0, maxMonsterMana-battle.MonsterManaDeficit)
+	now := time.Now()
+	ability := chooseMonsterBattleAbility(monster, battle, currentMonsterHealth, maxMonsterHealth, currentMonsterMana, now)
+	if ability == nil {
+		log.Printf(
+			"[party-combat][monster-ai] battle=%s monster=%s action=attack reason=no-usable-abilities currentMana=%d maxMana=%d cooldowns=%d",
+			battle.ID,
+			monster.ID,
+			currentMonsterMana,
+			maxMonsterMana,
+			len(battle.MonsterAbilityCooldowns),
+		)
+		target := chooseMonsterBattleTarget(resources)
+		if target == nil {
+			return nil, resources, nil
+		}
+		damageMin, damageMax, swipesPerAttack := monster.DerivedAttackProfileWithBonuses(statusBonuses)
+		totalDamage := 0
+		for i := 0; i < swipesPerAttack; i++ {
+			if damageMax <= damageMin {
+				totalDamage += damageMin
+				continue
+			}
+			totalDamage += damageMin + rand.Intn(damageMax-damageMin+1)
+		}
+		if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, target.UserID, totalDamage, 0); err != nil {
+			return nil, nil, err
+		}
+		updatedResources, err := s.loadMonsterBattleUserResources(ctx, battle)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &monsterBattleActionSummary{
+			ActionType:       "attack",
+			ActorMonsterID:   monster.ID,
+			ActorMonsterName: strings.TrimSpace(monster.Name),
+			TargetUserID:     &target.UserID,
+			TargetUserIDs:    []uuid.UUID{target.UserID},
+			Damage:           totalDamage,
+		}, updatedResources, nil
+	}
+
+	summary := &monsterBattleActionSummary{
+		ActionType:       "ability",
+		ActorMonsterID:   monster.ID,
+		ActorMonsterName: strings.TrimSpace(monster.Name),
+		AbilityID:        &ability.ID,
+		AbilityName:      strings.TrimSpace(ability.Name),
+		AbilityType:      string(models.NormalizeSpellAbilityType(string(ability.AbilityType))),
+	}
+	log.Printf(
+		"[party-combat][monster-ai] battle=%s monster=%s action=ability ability=%s manaCost=%d currentMana=%d cooldownTurns=%d",
+		battle.ID,
+		monster.ID,
+		ability.ID,
+		ability.ManaCost,
+		currentMonsterMana,
+		ability.CooldownTurns,
+	)
+
+	if normalizeSpellAbilityType(string(ability.AbilityType)) != models.SpellAbilityTypeTechnique &&
+		ability.ManaCost > 0 {
+		battle.MonsterManaDeficit += ability.ManaCost
+		if battle.MonsterManaDeficit > maxMonsterMana {
+			battle.MonsterManaDeficit = maxMonsterMana
+		}
+	}
+	cooldowns := normalizeMonsterAbilityCooldowns(battle.MonsterAbilityCooldowns, now)
+	if ability.CooldownTurns > 0 {
+		if cooldowns == nil {
+			cooldowns = models.MonsterBattleAbilityCooldowns{}
+		}
+		if expiresAt := cooldownExpiresAtFromTurns(ability.CooldownTurns, now); expiresAt != nil {
+			cooldowns[ability.ID.String()] = *expiresAt
+		}
+	}
+	battle.MonsterAbilityCooldowns = cooldowns
+	if err := s.dbClient.MonsterBattle().UpdateMonsterCombatState(
+		ctx,
+		battle.ID,
+		battle.MonsterManaDeficit,
+		battle.MonsterAbilityCooldowns,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	targetAll := monsterAbilityTargetsAllEnemies(ability)
+	targetIDs := make([]uuid.UUID, 0, len(resources))
+	if targetAll {
+		for _, resource := range resources {
+			if resource.Health > 0 {
+				targetIDs = append(targetIDs, resource.UserID)
+			}
+		}
+	} else if target := chooseMonsterBattleTarget(resources); target != nil {
+		targetIDs = append(targetIDs, target.UserID)
+		summary.TargetUserID = &target.UserID
+	}
+	if len(targetIDs) > 0 {
+		summary.TargetUserIDs = append(summary.TargetUserIDs, targetIDs...)
+	}
+
+	damage := monsterAbilityDamageForCombat(monster, ability)
+	if damage > 0 && len(targetIDs) > 0 {
+		for _, userID := range targetIDs {
+			if _, err := s.dbClient.UserCharacterStats().AdjustResourceDeficits(ctx, userID, damage, 0); err != nil {
+				return nil, nil, err
+			}
+		}
+		summary.Damage = damage
+	}
+
+	healAmount := monsterAbilityHealingForCombat(ability)
+	if healAmount > 0 {
+		if err := s.dbClient.MonsterBattle().AdjustMonsterHealthDeficit(ctx, battle.ID, -healAmount); err != nil {
+			return nil, nil, err
+		}
+		summary.Heal = healAmount
+	}
+
+	for _, effect := range ability.Effects {
+		switch effect.Type {
+		case models.SpellEffectTypeApplyDetrimentalStatus, models.SpellEffectTypeApplyDetrimentalAll:
+			statusTemplates := normalizeSpellStatusesForEffectType(effect.Type, effect.StatusesToApply)
+			applied, err := s.applyMonsterBattleUserStatuses(ctx, targetIDs, statusTemplates)
+			if err != nil {
+				return nil, nil, err
+			}
+			summary.UserStatusesApplied = append(summary.UserStatusesApplied, applied...)
+		case models.SpellEffectTypeApplyBeneficialStatus:
+			applied, err := s.applyMonsterBattleMonsterStatuses(ctx, battle, monster, effect.StatusesToApply)
+			if err != nil {
+				return nil, nil, err
+			}
+			summary.MonsterStatusesApplied = append(summary.MonsterStatusesApplied, applied...)
+		case models.SpellEffectTypeRemoveDetrimental:
+			names := normalizeSpellStatusNames(effect.StatusesToRemove)
+			if len(names) == 0 {
+				continue
+			}
+			if err := s.dbClient.MonsterStatus().DeleteActiveByBattleIDAndNames(ctx, battle.ID, []string(names)); err != nil {
+				return nil, nil, err
+			}
+			summary.MonsterStatusesRemoved = append(summary.MonsterStatusesRemoved, []string(names)...)
+		}
+	}
+
+	updatedResources, err := s.loadMonsterBattleUserResources(ctx, battle)
+	if err != nil {
+		return nil, nil, err
+	}
+	return summary, updatedResources, nil
 }
 
 func (s *server) monsterBattleDetailResponse(
